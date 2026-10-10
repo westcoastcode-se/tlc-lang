@@ -206,7 +206,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("export extern func printf() int;\nfunc main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "export extern");
+        EXPECT_EQ(check, errors, "");
     }
 
     {
@@ -2280,6 +2280,59 @@ int run_sema_tests() {
                            "}\n"},
         });
         EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose("export extern int value;\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "export extern");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import { add } from \"math\";\nfunc main() int { return add(20, 22); }\n"},
+            {"math/add.tlc", "package math;\nexport extern func add(a int, b int) int;\n"},
+        });
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func inc(n int) int { return n + 1; }\n"
+            "func apply(fp int (*)(int), n int) int { return fp(n); }\n"
+            "func main() int {\n"
+            "  int (*fp)(int);\n"
+            "  fp = inc;\n"
+            "  f64 x = 20.5;\n"
+            "  f32 y = 1.5f;\n"
+            "  double z = x + y;\n"
+            "  if (z != 22.0) {\n"
+            "    return 0;\n"
+            "  }\n"
+            "  return apply(fp, 41);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(p long long *) int { return *p != 0; }\n"
+            "func main() int {\n"
+            "  i64 n = 1;\n"
+            "  u8 b = 1;\n"
+            "  unsigned char *p = &b;\n"
+            "  return take(&n) + *p;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(p long *) int { return 0; }\n"
+            "func main() int {\n"
+            "  i64 n = 1;\n"
+            "  return take(&n);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     return check.failed;

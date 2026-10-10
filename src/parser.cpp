@@ -234,6 +234,7 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
     IntSpecs ints;
     bool saw_void = false;
     bool saw_bool = false;
+    bool saw_float = false;
     while (true) {
         const Token &token = peek();
         if (token.kind == TokenKind::KwExport) {
@@ -276,7 +277,7 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             continue;
         }
         if (token.kind == TokenKind::KwBool) {
-            if (ints.any || saw_void) {
+            if (ints.any || saw_void || saw_float) {
                 ints.bad = true;
             }
             saw_bool = true;
@@ -285,8 +286,18 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             ++pos_;
             continue;
         }
+        if (token.kind == TokenKind::KwFloat || token.kind == TokenKind::KwDouble) {
+            if (ints.any || saw_void || saw_bool || saw_float) {
+                ints.bad = true;
+            }
+            saw_float = true;
+            specs.type_name = token.kind == TokenKind::KwFloat ? "float" : "double";
+            specs.saw_type = true;
+            ++pos_;
+            continue;
+        }
         if (is_int_spec(token.kind)) {
-            if (saw_void || saw_bool) {
+            if (saw_void || saw_bool || saw_float) {
                 ints.bad = true;
             }
             take_int_spec(ints, token.kind);
@@ -364,7 +375,7 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
         break;
     }
     if (ints.any) {
-        if (ints.bad || saw_void || saw_bool) {
+        if (ints.bad || saw_void || saw_bool || saw_float) {
             diags_.error(specs.loc, "type mismatch");
             specs.type_name = "invalid";
         } else {
@@ -435,6 +446,10 @@ std::vector<FieldDecl> Parser::parse_fields() {
         field.indirections = decl.indirections;
         field.is_array = decl.is_array;
         field.array_len = decl.array_len;
+        field.is_fn_ptr = decl.is_fn_ptr;
+        field.ret_indirections = decl.ret_indirections;
+        field.fn_params = decl.fn_params;
+        field.fn_variadic = decl.fn_variadic;
         fields.push_back(std::move(field));
         expect(TokenKind::Semicolon, "expected ';'");
     }
@@ -447,7 +462,9 @@ bool is_builtin_type_name(const std::string &name) {
     return name.empty() || name == "invalid" || name == "void" || name == "bool" || name == "char" ||
            name == "signed char" || name == "unsigned char" || name == "short" || name == "unsigned short" ||
            name == "int" || name == "unsigned int" || name == "long" || name == "unsigned long" ||
-           name == "long long" || name == "unsigned long long" || name == "float" || name == "double";
+           name == "long long" || name == "unsigned long long" || name == "float" || name == "double" || name == "f32" ||
+           name == "f64" || name == "i8" || name == "i16" || name == "i32" || name == "i64" || name == "u8" ||
+           name == "u16" || name == "u32" || name == "u64";
 }
 
 } // namespace
@@ -463,10 +480,23 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     type.is_const = specs.is_const;
     type.struct_definition = specs.struct_definition;
     type.enum_definition = specs.enum_definition;
+    int stars = 0;
     while (check(TokenKind::Star)) {
-        ++type.indirections;
+        ++stars;
         ++pos_;
     }
+    if (check(TokenKind::LParen) && peek(1).kind == TokenKind::Star) {
+        type.is_fn_ptr = true;
+        type.ret_indirections = stars;
+        std::string name;
+        SourceLoc name_loc;
+        parse_fn_pointer(type.indirections, name, name_loc, type.fn_params, type.fn_variadic);
+        if (!name.empty()) {
+            diags_.error(name_loc, "expected ')'");
+        }
+        return type;
+    }
+    type.indirections = stars;
     if (check(TokenKind::LBracket)) {
         if (!allow_array) {
             error_here("not supported yet");
@@ -518,6 +548,10 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, bool m
         param.indirections = type.indirections;
         param.is_array = type.is_array;
         param.array_len = type.array_len;
+        param.is_fn_ptr = type.is_fn_ptr;
+        param.ret_indirections = type.ret_indirections;
+        param.fn_params = type.fn_params;
+        param.fn_variadic = type.fn_variadic;
         param.is_receiver = as_receiver;
         // The receiver names the struct tag. The signature does not write `struct`.
         if (!type.is_enum && type.type_package.empty() && !is_builtin_type_name(type.type_name)) {
@@ -580,6 +614,10 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, bool m
             param.indirections = type.indirections;
             param.is_array = type.is_array;
             param.array_len = type.array_len;
+            param.is_fn_ptr = type.is_fn_ptr;
+            param.ret_indirections = type.ret_indirections;
+            param.fn_params = type.fn_params;
+            param.fn_variadic = type.fn_variadic;
             params.push_back(std::move(param));
             if (!eat(TokenKind::Comma)) {
                 break;
@@ -603,6 +641,10 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
     slot.is_struct = type.is_struct;
     slot.is_enum = type.is_enum;
     slot.indirections = type.indirections;
+    slot.is_fn_ptr = type.is_fn_ptr;
+    slot.ret_indirections = type.ret_indirections;
+    slot.fn_params = type.fn_params;
+    slot.fn_variadic = type.fn_variadic;
     fn.results.push_back(std::move(slot));
 }
 
@@ -693,12 +735,73 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     return fn;
 }
 
-Parser::Declarator Parser::parse_declarator() {
-    Declarator decl;
-    while (check(TokenKind::Star)) {
-        ++decl.indirections;
+FnParam Parser::fn_param_from(const PlacedType &type) const {
+    FnParam param;
+    param.type_name = type.type_name;
+    param.type_package = type.type_package;
+    param.is_struct = type.is_struct;
+    param.is_enum = type.is_enum;
+    param.indirections = type.indirections;
+    param.is_fn_ptr = type.is_fn_ptr;
+    param.ret_indirections = type.ret_indirections;
+    param.params = type.fn_params;
+    param.variadic = type.fn_variadic;
+    return param;
+}
+
+void Parser::parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, std::vector<FnParam> &params,
+                              bool &variadic) {
+    expect(TokenKind::LParen, "expected '('");
+    fn_depth = 0;
+    while (eat(TokenKind::Star)) {
+        ++fn_depth;
+    }
+    if (fn_depth < 1) {
+        error_here("expected '*'");
+    }
+    if (check(TokenKind::Identifier)) {
+        name = peek().text;
+        loc = peek().loc;
         ++pos_;
     }
+    expect(TokenKind::RParen, "expected ')'");
+    expect(TokenKind::LParen, "expected '('");
+    if (!check(TokenKind::RParen)) {
+        while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+            if (check(TokenKind::Ellipsis)) {
+                variadic = true;
+                ++pos_;
+                break;
+            }
+            params.push_back(fn_param_from(parse_placed_type(false, false)));
+            if (check(TokenKind::Identifier)) {
+                ++pos_;
+            }
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+}
+
+Parser::Declarator Parser::parse_declarator() {
+    Declarator decl;
+    int stars = 0;
+    while (check(TokenKind::Star)) {
+        ++stars;
+        ++pos_;
+    }
+    if (check(TokenKind::LParen) && peek(1).kind == TokenKind::Star) {
+        decl.is_fn_ptr = true;
+        decl.ret_indirections = stars;
+        parse_fn_pointer(decl.indirections, decl.name, decl.loc, decl.fn_params, decl.fn_variadic);
+        if (decl.name.empty()) {
+            error_here("expected an identifier");
+        }
+        return decl;
+    }
+    decl.indirections = stars;
     if (check(TokenKind::Identifier)) {
         decl.name = peek().text;
         decl.loc = peek().loc;
@@ -893,6 +996,10 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             item.indirections = decl.indirections;
             item.is_array = decl.is_array;
             item.array_len = decl.array_len;
+            item.is_fn_ptr = decl.is_fn_ptr;
+            item.ret_indirections = decl.ret_indirections;
+            item.fn_params = decl.fn_params;
+            item.fn_variadic = decl.fn_variadic;
             item.exported = specs.exported;
             TopDecl top;
             top.data = std::move(item);
@@ -922,6 +1029,10 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         var.indirections = decl.indirections;
         var.is_array = decl.is_array;
         var.array_len = decl.array_len;
+        var.is_fn_ptr = decl.is_fn_ptr;
+        var.ret_indirections = decl.ret_indirections;
+        var.fn_params = decl.fn_params;
+        var.fn_variadic = decl.fn_variadic;
         var.exported = specs.exported;
         var.is_static = specs.is_static;
         var.is_extern = specs.is_extern;
@@ -1014,6 +1125,10 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         var.indirections = declarator.indirections;
         var.is_array = declarator.is_array;
         var.array_len = declarator.array_len;
+        var.is_fn_ptr = declarator.is_fn_ptr;
+        var.ret_indirections = declarator.ret_indirections;
+        var.fn_params = declarator.fn_params;
+        var.fn_variadic = declarator.fn_variadic;
         var.exported = specs.exported;
         var.is_static = specs.is_static;
         var.is_extern = specs.is_extern;
@@ -1520,7 +1635,15 @@ bool Parser::starts_type_paren() const {
         while (is_int_spec(peek(index).kind)) {
             ++index;
         }
-    } else if (kind == TokenKind::KwVoid || kind == TokenKind::KwBool) {
+    } else if (kind == TokenKind::KwVoid || kind == TokenKind::KwBool || kind == TokenKind::KwFloat ||
+               kind == TokenKind::KwDouble) {
+        ++index;
+    } else if (kind == TokenKind::Identifier &&
+               (peek(index).text == "f32" || peek(index).text == "f64" || peek(index).text == "i8" ||
+                peek(index).text == "i16" || peek(index).text == "i32" || peek(index).text == "i64" ||
+                peek(index).text == "u8" || peek(index).text == "u16" || peek(index).text == "u32" ||
+                peek(index).text == "u64") &&
+               (peek(index + 1).kind == TokenKind::RParen || peek(index + 1).kind == TokenKind::Star)) {
         ++index;
     } else if (kind == TokenKind::KwStruct || kind == TokenKind::KwEnum) {
         if (peek(index + 1).kind != TokenKind::Identifier) {
@@ -1561,6 +1684,10 @@ Parser::ParenType Parser::parse_paren_type() {
         type.name = "void";
     } else if (eat(TokenKind::KwBool)) {
         type.name = "bool";
+    } else if (eat(TokenKind::KwFloat)) {
+        type.name = "float";
+    } else if (eat(TokenKind::KwDouble)) {
+        type.name = "double";
     } else if (eat(TokenKind::KwStruct)) {
         type.is_struct = true;
         if (check(TokenKind::Identifier)) {
@@ -1745,10 +1872,15 @@ std::unique_ptr<Expr> Parser::parse_primary() {
         return make_expr(std::move(literal));
     }
     if (check(TokenKind::FloatLiteral)) {
-        const SourceLoc loc = peek().loc;
-        error_here("not supported yet");
+        Expr::Float literal;
+        literal.loc = peek().loc;
+        literal.text = peek().text;
+        if (!literal.text.empty() && (literal.text.back() == 'l' || literal.text.back() == 'L')) {
+            error_here("not supported yet");
+        }
+        literal.is_f32 = !literal.text.empty() && (literal.text.back() == 'f' || literal.text.back() == 'F');
         ++pos_;
-        return unsupported_expr(loc);
+        return make_expr(std::move(literal));
     }
     if (eat(TokenKind::LParen)) {
         auto expr = parse_expr();

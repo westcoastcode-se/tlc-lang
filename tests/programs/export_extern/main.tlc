@@ -1,0 +1,7 @@
+import "math";
+
+extern func add(a int, b int) int;
+
+func main() int {
+    return add(20, 22);
+}

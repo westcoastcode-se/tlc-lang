@@ -1,0 +1,43 @@
+func read32(p i32 *) int {
+    return *p;
+}
+
+func main() int {
+    if (sizeof(i8) != 1 || sizeof(u8) != 1) {
+        return 1;
+    }
+    if (sizeof(i16) != 2 || sizeof(u16) != 2) {
+        return 2;
+    }
+    if (sizeof(i32) != 4 || sizeof(u32) != 4) {
+        return 3;
+    }
+    if (sizeof(i64) != 8 || sizeof(u64) != 8) {
+        return 4;
+    }
+    i8 s8 = -1;
+    if (s8 != -1) {
+        return 5;
+    }
+    u8 u = 200;
+    if (u != 200) {
+        return 6;
+    }
+    i16 s16 = -2;
+    if (s16 != -2) {
+        return 7;
+    }
+    u32 n = 0;
+    n = n - 1;
+    if (n < 1) {
+        return 8;
+    }
+    i64 wide = 100000;
+    wide = wide * 100000;
+    if (wide / 100000 / 100000 != 1) {
+        return 9;
+    }
+    int x = 40;
+    u64 extra = 2;
+    return read32(&x) + extra;
+}

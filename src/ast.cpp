@@ -80,6 +80,9 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
     out += ' ';
     out += type_text(var.type_name, var.type_package, var.is_struct, var.is_enum, var.indirections, var.is_array,
                      var.array_len);
+    if (var.is_fn_ptr) {
+        out += " fnptr";
+    }
     if (var.init) {
         out += ' ';
         out += dump_expr(*var.init);
@@ -381,6 +384,8 @@ std::string dump_expr(const Expr &expr) {
                 return "(nullptr)";
             } else if constexpr (std::is_same_v<T, Expr::Char>) {
                 return "(char " + std::to_string(node.value) + ")";
+            } else if constexpr (std::is_same_v<T, Expr::Float>) {
+                return std::string(node.is_f32 ? "(float " : "(double ") + node.text + ")";
             } else if constexpr (std::is_same_v<T, Expr::Func>) {
                 if (!node.decl) {
                     return "(anon)";

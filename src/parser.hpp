@@ -43,6 +43,10 @@ class Parser {
         std::vector<Param> params;
         bool variadic = false;
         std::string method_struct;
+        bool is_fn_ptr = false;
+        int ret_indirections = 0;
+        std::vector<FnParam> fn_params;
+        bool fn_variadic = false;
     };
 
     struct ArrayMark {
@@ -75,6 +79,10 @@ class Parser {
         int indirections = 0;
         bool is_array = false;
         int array_len = 0;
+        bool is_fn_ptr = false;
+        int ret_indirections = 0;
+        std::vector<FnParam> fn_params;
+        bool fn_variadic = false;
     };
 
     bool starts_declaration() const;
@@ -85,6 +93,8 @@ class Parser {
     std::vector<Enumerator> parse_enumerators();
     std::vector<FieldDecl> parse_fields();
     Declarator parse_declarator();
+    void parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, std::vector<FnParam> &params, bool &variadic);
+    FnParam fn_param_from(const PlacedType &type) const;
     ArrayMark parse_array_suffix(bool allow_unsized);
     PlacedType parse_placed_type(bool allow_const, bool allow_array);
     std::vector<Param> parse_params(bool allow_const, bool &variadic, bool method = false);

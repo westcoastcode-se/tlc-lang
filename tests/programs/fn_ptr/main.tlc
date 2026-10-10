@@ -1,0 +1,13 @@
+func inc(n int) int {
+    return n + 1;
+}
+
+func apply(fp int (*)(int), n int) int {
+    return fp(n);
+}
+
+func main() int {
+    int (*fp)(int);
+    fp = inc;
+    return apply(fp, 41);
+}

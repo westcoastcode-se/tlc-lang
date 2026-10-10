@@ -147,6 +147,12 @@ class Checker {
                      bool receiver = false);
     Type spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
                       int indirections, SourceLoc loc);
+    Type type_of_fn_param(const FnParam &param, SourceLoc loc);
+    Type type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
+                        int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
+                        SourceLoc loc);
+    Type type_of_param(const Param &param);
+    Type type_of_result(const ResultSlot &slot, SourceLoc loc);
     std::string type_desc(const Type &type) const;
     void mismatch(SourceLoc loc, const Type &want, const Type &got);
     Type lookup_tag(const std::string &name, SourceLoc loc, bool allow_incomplete);
@@ -225,6 +231,13 @@ Type type_rank(int rank, bool is_unsigned) {
 Type type_bool() {
     Type type;
     type.kind = TypeKind::Bool;
+    return type;
+}
+
+Type type_float(int bits) {
+    Type type;
+    type.kind = TypeKind::Float;
+    type.rank = bits >= 64 ? 64 : 32;
     return type;
 }
 
@@ -315,6 +328,9 @@ bool same_type(const Type &lhs, const Type &rhs) {
     if (lhs.kind == TypeKind::Int || lhs.kind == TypeKind::Char) {
         return lhs.rank == rhs.rank && lhs.is_unsigned == rhs.is_unsigned && lhs.plain_char == rhs.plain_char;
     }
+    if (lhs.kind == TypeKind::Float) {
+        return lhs.rank == rhs.rank;
+    }
     if (lhs.kind == TypeKind::Tuple) {
         if (lhs.results.size() != rhs.results.size()) {
             return false;
@@ -389,12 +405,48 @@ bool fill_builtin(const std::string &name, Type &out) {
         out = type_rank(5, false);
         return true;
     }
-    if (name == "unsigned long long") {
+    if (name == "unsigned long long" || name == "u64") {
         out = type_rank(5, true);
+        return true;
+    }
+    if (name == "i8") {
+        out = type_rank(1, false);
+        return true;
+    }
+    if (name == "u8") {
+        out = type_rank(1, true);
+        return true;
+    }
+    if (name == "i16") {
+        out = type_rank(2, false);
+        return true;
+    }
+    if (name == "u16") {
+        out = type_rank(2, true);
+        return true;
+    }
+    if (name == "i32") {
+        out = type_int();
+        return true;
+    }
+    if (name == "u32") {
+        out = type_rank(3, true);
+        return true;
+    }
+    if (name == "i64") {
+        out = type_rank(5, false);
         return true;
     }
     if (name == "bool") {
         out = type_bool();
+        return true;
+    }
+    if (name == "float" || name == "f32") {
+        out = type_float(32);
+        return true;
+    }
+    if (name == "double" || name == "f64") {
+        out = type_float(64);
         return true;
     }
     if (name == "void") {
@@ -414,7 +466,11 @@ Type quiet_type(const std::string &name) {
 
 bool is_integer(const Type &type) { return type.kind == TypeKind::Int || type.kind == TypeKind::Char; }
 
+bool is_float(const Type &type) { return type.kind == TypeKind::Float; }
+
 bool is_scalar(const Type &type) { return is_integer(type) || type.kind == TypeKind::Bool; }
+
+bool is_numeric(const Type &type) { return is_scalar(type) || is_float(type); }
 
 int rank_of(const Type &type) {
     if (type.kind == TypeKind::Bool) {
@@ -559,22 +615,67 @@ bool Checker::captured(const Symbol &symbol) const {
     return symbol.function_id != scopes_.back().function_id;
 }
 
+Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
+    if (param.is_fn_ptr) {
+        return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
+                              param.indirections, param.params, param.variadic, loc);
+    }
+    return object_type(param.type_name, param.indirections, false, 0, loc, true, param.type_package, param.is_struct,
+                       param.is_enum);
+}
+
+Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
+                             int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
+                             SourceLoc loc) {
+    Type result = object_type(ret_name, ret_indirections, false, 0, loc, false, ret_package, ret_struct, ret_enum);
+    std::vector<Type> args;
+    args.reserve(params.size());
+    for (const FnParam &param : params) {
+        args.push_back(type_of_fn_param(param, loc));
+    }
+    Type pointer = type_function(std::move(result), std::move(args), variadic);
+    const int depth = fn_depth < 1 ? 1 : fn_depth;
+    for (int i = 0; i < depth; ++i) {
+        pointer = type_pointer(std::move(pointer));
+    }
+    return pointer;
+}
+
+Type Checker::type_of_param(const Param &param) {
+    if (param.is_fn_ptr) {
+        return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
+                              param.indirections, param.fn_params, param.fn_variadic, param.loc);
+    }
+    return object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
+                       param.type_package, param.is_struct, param.is_enum, param.is_receiver);
+}
+
+Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
+    if (slot.is_fn_ptr) {
+        return type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
+                              slot.indirections, slot.fn_params, slot.fn_variadic, loc);
+    }
+    return slot.is_struct || slot.is_enum || !slot.type_package.empty()
+               ? object_type(slot.type_name, slot.indirections, false, 0, loc, false, slot.type_package, slot.is_struct,
+                             slot.is_enum)
+               : with_indirections(type_of_name(slot.type_name, loc, slot.indirections > 0), slot.indirections, loc);
+}
+
 Type Checker::function_result(const FunctionDecl &fn) {
     if (fn.results.size() > 1) {
         std::vector<Type> parts;
         parts.reserve(fn.results.size());
         for (const ResultSlot &slot : fn.results) {
-            Type part = slot.is_struct || slot.is_enum || !slot.type_package.empty()
-                            ? object_type(slot.type_name, slot.indirections, false, 0, fn.loc, false, slot.type_package,
-                                          slot.is_struct, slot.is_enum)
-                            : with_indirections(type_of_name(slot.type_name, fn.loc, slot.indirections > 0), slot.indirections,
-                                                fn.loc);
+            Type part = type_of_result(slot, fn.loc);
             if (part.kind == TypeKind::Void) {
                 error(fn.loc, "type mismatch");
             }
             parts.push_back(std::move(part));
         }
         return type_tuple(std::move(parts));
+    }
+    if (fn.results.size() == 1) {
+        return type_of_result(fn.results.front(), fn.loc);
     }
     if (fn.is_struct || fn.is_enum || !fn.type_package.empty()) {
         return object_type(fn.return_type, fn.indirections, false, 0, fn.loc, false, fn.type_package, fn.is_struct, fn.is_enum);
@@ -586,8 +687,7 @@ Type Checker::function_signature(const FunctionDecl &fn) {
     std::vector<Type> params;
     params.reserve(fn.params.size());
     for (const Param &param : fn.params) {
-        params.push_back(object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
-                                     param.type_package, param.is_struct, param.is_enum, param.is_receiver));
+        params.push_back(type_of_param(param));
     }
     return type_function(function_result(fn), std::move(params), fn.variadic);
 }
@@ -873,7 +973,8 @@ Type Checker::with_indirections(Type type, int count, SourceLoc loc) {
             return type;
         }
         if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool &&
-            type.kind != TypeKind::Pointer && type.kind != TypeKind::Struct && type.kind != TypeKind::Void) {
+            type.kind != TypeKind::Float && type.kind != TypeKind::Pointer && type.kind != TypeKind::Struct &&
+            type.kind != TypeKind::Void) {
             error(loc, "not supported yet");
             return type_invalid();
         }
@@ -1052,8 +1153,7 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
             }
             std::vector<Type> params;
             for (const Param &param : method.params) {
-                params.push_back(object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc,
-                                             true, param.type_package, param.is_struct, param.is_enum));
+                params.push_back(type_of_param(param));
             }
             Type result = method.is_struct || method.is_enum || !method.type_package.empty()
                               ? object_type(method.return_type, method.indirections, false, 0, method.loc, false,
@@ -1211,8 +1311,12 @@ void Checker::define_struct_fields() {
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid()});
                 continue;
             }
-            Type field_type = object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
-                                          false, field.type_package, field.is_struct, field.is_enum);
+            Type field_type =
+                field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                                                 field.ret_indirections, field.indirections, field.fn_params,
+                                                 field.fn_variadic, field.loc)
+                                : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
+                                              false, field.type_package, field.is_struct, field.is_enum);
             info.fields.push_back(StructInfo::Field{field.name, std::move(field_type)});
         }
         info.complete = true;
@@ -1365,8 +1469,12 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         error(item.loc, "redefinition");
         return;
     }
-    const Type type = object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
-                                  item.type_package, item.is_struct, item.is_enum);
+    const Type type = item.is_fn_ptr
+                          ? type_of_fn_ptr(item.type_name, item.type_package, item.is_struct, item.is_enum,
+                                           item.ret_indirections, item.indirections, item.fn_params, item.fn_variadic,
+                                           item.loc)
+                          : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
+                                        item.type_package, item.is_struct, item.is_enum);
     if (type.kind == TypeKind::Invalid) {
         return;
     }
@@ -1556,6 +1664,8 @@ std::string Checker::type_desc(const Type &type) const {
         return "void";
     case TypeKind::Bool:
         return "bool";
+    case TypeKind::Float:
+        return type.rank >= 64 ? "double" : "float";
     case TypeKind::Nullptr:
         return "nullptr";
     case TypeKind::Char:
@@ -1668,7 +1778,7 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &expr, 
     if (want.kind == TypeKind::Pointer && got.kind == TypeKind::Int && is_null_constant(expr)) {
         return;
     }
-    if (is_scalar(got) && is_scalar(want)) {
+    if (is_numeric(got) && is_numeric(want)) {
         return;
     }
     expect(got, want, loc);
@@ -1685,6 +1795,9 @@ Type Checker::check_expr(const Expr &expr, bool used) {
     const Type type = check_raw(expr, used);
     if (type.kind == TypeKind::Array && type.element) {
         return type_pointer(*type.element);
+    }
+    if (type.kind == TypeKind::Function) {
+        return type_pointer(type);
     }
     return promote(type);
 }
@@ -1742,6 +1855,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 return type_char();
+            } else if constexpr (std::is_same_v<T, Expr::Float>) {
+                (void)used;
+                return type_float(node.is_f32 ? 32 : 64);
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 if (node.op == TokenKind::Star) {
                     const Type inner = check_expr(*node.expr, true);
@@ -1792,8 +1908,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return inner;
                     }
                     if (inner.kind == TypeKind::Function) {
-                        error(node.loc, "not an lvalue");
-                        return type_invalid();
+                        return type_pointer(inner);
                     }
                     if (inner.kind == TypeKind::Array) {
                         error(node.loc, "not supported yet");
@@ -1803,8 +1918,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 const Type inner = check_expr(*node.expr, true);
                 if (node.op == TokenKind::Bang) {
+                    if (is_float(inner)) {
+                        return type_int();
+                    }
                     expect_integer(inner, node.loc);
                     return inner.kind == TypeKind::Invalid ? inner : type_int();
+                }
+                if (is_float(inner) && (node.op == TokenKind::Plus || node.op == TokenKind::Minus)) {
+                    return inner;
                 }
                 expect_integer(inner, node.loc);
                 return inner.kind == TypeKind::Invalid || !is_integer(inner) ? type_invalid() : inner;
@@ -1824,6 +1945,35 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             return type_invalid();
                         }
                         return type_int();
+                    }
+                }
+                if (is_float(lhs) || is_float(rhs)) {
+                    if (lhs.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
+                        return type_invalid();
+                    }
+                    if (!is_numeric(lhs) || !is_numeric(rhs)) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    const bool wide = (is_float(lhs) && lhs.rank >= 64) || (is_float(rhs) && rhs.rank >= 64);
+                    switch (node.op) {
+                    case TokenKind::Percent:
+                    case TokenKind::Amp:
+                    case TokenKind::Pipe:
+                    case TokenKind::Caret:
+                    case TokenKind::LtLt:
+                    case TokenKind::GtGt:
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    case TokenKind::EqEq:
+                    case TokenKind::BangEq:
+                    case TokenKind::Lt:
+                    case TokenKind::Gt:
+                    case TokenKind::Le:
+                    case TokenKind::Ge:
+                        return type_int();
+                    default:
+                        return type_float(wide ? 64 : 32);
                     }
                 }
                 expect_integer(lhs, expr_loc(*node.lhs));
@@ -2045,13 +2195,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     return type_invalid();
                 }
-                if (callee.kind != TypeKind::Function || !callee.result) {
+                const Type *signature = &callee;
+                if (callee.kind == TypeKind::Pointer && callee.pointee && callee.pointee->kind == TypeKind::Function) {
+                    signature = callee.pointee.get();
+                } else if (callee.kind != TypeKind::Function || !callee.result) {
+                    error(node.loc, "type mismatch");
+                    return type_invalid();
+                }
+                if (signature->result == nullptr) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
                 if (deferring) {
-                    bool generic = callee.variadic;
-                    for (const Type &param : callee.params) {
+                    bool generic = signature->variadic;
+                    for (const Type &param : signature->params) {
                         if (mentions_trait(param)) {
                             generic = true;
                         }
@@ -2060,18 +2217,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "not supported yet");
                     }
                 }
-                const bool count_ok = callee.variadic ? node.args.size() >= callee.params.size()
-                                                     : node.args.size() == callee.params.size();
+                const bool count_ok = signature->variadic ? node.args.size() >= signature->params.size()
+                                                         : node.args.size() == signature->params.size();
                 if (!count_ok) {
                     error(node.loc, "argument count");
                 }
                 for (std::size_t i = 0; i < node.args.size(); ++i) {
                     const Type arg = check_expr(*node.args[i], true);
-                    if (count_ok && i < callee.params.size()) {
-                        expect_value(arg, callee.params[i], *node.args[i], expr_loc(*node.args[i]));
+                    if (count_ok && i < signature->params.size()) {
+                        expect_value(arg, signature->params[i], *node.args[i], expr_loc(*node.args[i]));
                     }
                 }
-                return *callee.result;
+                return *signature->result;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
                 const SelectorTarget target = resolve_selector(node);
                 if (target.kind == SelectorTarget::Kind::Failed) {
@@ -2167,8 +2324,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
                 }
-                const bool source_scalar = is_scalar(source);
-                const bool target_scalar = is_scalar(target);
+                const bool source_scalar = is_numeric(source);
+                const bool target_scalar = is_numeric(target);
                 const bool source_int = same_type(source, type_int());
                 const bool target_int = same_type(target, type_int());
                 if ((target.kind == TypeKind::Pointer && source.kind == TypeKind::Pointer) ||
@@ -2579,8 +2736,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 for (const VarDecl &var : node.vars) {
-                    Type type = object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
-                                            var.type_package, var.is_struct, var.is_enum);
+                    Type type = var.is_fn_ptr
+                                    ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum,
+                                                     var.ret_indirections, var.indirections, var.fn_params, var.fn_variadic,
+                                                     var.loc)
+                                    : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc,
+                                                  false, var.type_package, var.is_struct, var.is_enum);
                     Symbol symbol;
                     symbol.name = var.name;
                     symbol.type = type;
@@ -2607,8 +2768,7 @@ void Checker::check_function(const FunctionDecl &fn) {
     switches_.clear();
     return_type_ = function_result(fn);
     for (const Param &param : fn.params) {
-        Type type = object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
-                                param.type_package, param.is_struct, param.is_enum, param.is_receiver);
+        Type type = type_of_param(param);
         Symbol symbol;
         symbol.name = param.name;
         symbol.type = std::move(type);
@@ -2638,9 +2798,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
             std::vector<Type> params;
             for (const Param &param : fn->params) {
-                params.push_back(object_type(param.type_name, param.indirections, param.is_array, param.array_len,
-                                             param.loc, true, param.type_package, param.is_struct, param.is_enum,
-                                             param.is_receiver));
+                params.push_back(type_of_param(param));
             }
             Type result = function_result(*fn);
             Type signature = type_function(std::move(result), std::move(params), fn->variadic);
@@ -2744,8 +2902,12 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 error(var->loc, "redefinition");
                 continue;
             }
-            Type type = object_type(var->type_name, var->indirections, var->is_array, var->array_len, var->loc, false,
-                                    var->type_package, var->is_struct, var->is_enum);
+            Type type = var->is_fn_ptr
+                            ? type_of_fn_ptr(var->type_name, var->type_package, var->is_struct, var->is_enum,
+                                             var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic,
+                                             var->loc)
+                            : object_type(var->type_name, var->indirections, var->is_array, var->array_len, var->loc, false,
+                                          var->type_package, var->is_struct, var->is_enum);
             Symbol symbol;
             symbol.name = var->name;
             symbol.type = std::move(type);
@@ -2855,10 +3017,7 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             if (!fn->method_struct.empty()) {
                 continue;
             }
-            if (fn->exported && fn->is_extern) {
-                error(fn->loc, "export extern");
-            }
-            if (!fn->exported || fn->is_static || fn->is_extern || fn->name.empty()) {
+            if (!fn->exported || fn->is_static || fn->name.empty()) {
                 continue;
             }
             bool generic = false;
@@ -2873,22 +3032,9 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             }
             std::vector<Type> params;
             for (const Param &param : fn->params) {
-                params.push_back(published_object(param.type_name, param.indirections, param.is_array, param.array_len,
-                                                 param.loc, true, param.type_package, param.is_struct, param.is_enum));
+                params.push_back(type_of_param(param));
             }
-            Type result;
-            if (fn->results.size() > 1) {
-                std::vector<Type> parts;
-                parts.reserve(fn->results.size());
-                for (const ResultSlot &slot : fn->results) {
-                    parts.push_back(published_result(slot.type_name, slot.indirections, fn->loc, slot.type_package,
-                                                     slot.is_struct, slot.is_enum));
-                }
-                result = type_tuple(std::move(parts));
-            } else {
-                result = published_result(fn->return_type, fn->indirections, fn->loc, fn->type_package, fn->is_struct,
-                                          fn->is_enum);
-            }
+            Type result = function_result(*fn);
             Symbol symbol;
             symbol.name = fn->name;
             symbol.type = type_function(std::move(result), std::move(params), fn->variadic);

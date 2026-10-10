@@ -15,6 +15,7 @@
 #include "llvm/TargetParser/Host.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <type_traits>
 #include <unordered_map>
@@ -78,6 +79,15 @@ struct Binding {
     bool is_generic = false;
     bool is_static = false;
     const FunctionDecl *decl = nullptr;
+    bool elem_float = false;
+    llvm::FunctionType *fn_ty = nullptr;
+    int fn_ret_depth = 0;
+    bool fn_ret_float = false;
+    int fn_ret_bits = 0;
+    bool fn_ret_unsigned = false;
+    bool fn_ret_char = false;
+    bool fn_ret_bool = false;
+    int fn_ret_struct = -1;
 };
 
 struct TypedValue {
@@ -91,6 +101,15 @@ struct TypedValue {
     int elem_bits = 0;
     bool elem_unsigned = false;
     int trait_id = -1;
+    bool elem_float = false;
+    llvm::FunctionType *fn_ty = nullptr;
+    int fn_ret_depth = 0;
+    bool fn_ret_float = false;
+    int fn_ret_bits = 0;
+    bool fn_ret_unsigned = false;
+    bool fn_ret_char = false;
+    bool fn_ret_bool = false;
+    int fn_ret_struct = -1;
 };
 
 class CodeGen {
@@ -152,6 +171,9 @@ class CodeGen {
         int elem_bits = 0;
         bool elem_unsigned = false;
         const FunctionDecl *decl = nullptr;
+        bool elem_float = false;
+        llvm::Value *indirect = nullptr;
+        llvm::FunctionType *fn_ty = nullptr;
     };
     struct FieldLayout {
         std::string name;
@@ -165,6 +187,7 @@ class CodeGen {
         bool elem_bool = false;
         int elem_bits = 0;
         bool elem_unsigned = false;
+        bool elem_float = false;
     };
     struct StructLayout {
         std::string name;
@@ -184,6 +207,15 @@ class CodeGen {
         int elem_bits = 0;
         bool elem_unsigned = false;
         int trait_id = -1;
+        bool elem_float = false;
+        llvm::FunctionType *fn_ty = nullptr;
+        int fn_ret_depth = 0;
+        bool fn_ret_float = false;
+        int fn_ret_bits = 0;
+        bool fn_ret_unsigned = false;
+        bool fn_ret_char = false;
+        bool fn_ret_bool = false;
+        int fn_ret_struct = -1;
     };
     struct Alias {
         int depth = 0;
@@ -196,6 +228,15 @@ class CodeGen {
         int elem_bits = 0;
         bool elem_unsigned = false;
         int trait_id = -1;
+        bool elem_float = false;
+        llvm::FunctionType *fn_ty = nullptr;
+        int fn_ret_depth = 0;
+        bool fn_ret_float = false;
+        int fn_ret_bits = 0;
+        bool fn_ret_unsigned = false;
+        bool fn_ret_char = false;
+        bool fn_ret_bool = false;
+        int fn_ret_struct = -1;
     };
     struct Shape {
         llvm::Type *type = nullptr;
@@ -209,6 +250,7 @@ class CodeGen {
         bool elem_bool = false;
         int elem_bits = 0;
         bool elem_unsigned = false;
+        bool elem_float = false;
     };
     struct CaseArm {
         const Stmt::Case *node = nullptr;
@@ -236,12 +278,18 @@ class CodeGen {
     llvm::Type *i1() const { return llvm::Type::getInt1Ty(context_); }
     llvm::PointerType *ptr_type() const { return llvm::PointerType::get(context_, 0); }
     llvm::Type *mem_type(int depth, bool elem_char = false) const { return leaf_type(depth, elem_char, -1); }
-    llvm::Type *leaf_type(int depth, bool elem_char, int struct_id, bool elem_bool = false, int elem_bits = 0) const {
+    llvm::Type *f32_ty() const { return llvm::Type::getFloatTy(context_); }
+    llvm::Type *f64_ty() const { return llvm::Type::getDoubleTy(context_); }
+    llvm::Type *leaf_type(int depth, bool elem_char, int struct_id, bool elem_bool = false, int elem_bits = 0,
+                          bool elem_float = false) const {
         if (depth > 0) {
             return ptr_type();
         }
         if (struct_id >= 0 && struct_id < static_cast<int>(structs_.size()) && structs_[static_cast<std::size_t>(struct_id)].type != nullptr) {
             return structs_[static_cast<std::size_t>(struct_id)].type;
+        }
+        if (elem_float) {
+            return elem_bits >= 64 ? f64_ty() : f32_ty();
         }
         if (elem_bool) {
             return i1();
@@ -344,6 +392,23 @@ class CodeGen {
         if (slot_type != nullptr && slot_type->isPointerTy() && from_depth == 0) {
             return null_ptr();
         }
+        if (slot_type != nullptr && slot_type->isFloatingPointTy() && from_depth == 0) {
+            if (value->getType()->isFloatingPointTy()) {
+                if (value->getType() == slot_type) {
+                    return value;
+                }
+                return value->getType()->getPrimitiveSizeInBits() < slot_type->getPrimitiveSizeInBits()
+                           ? builder_.CreateFPExt(value, slot_type)
+                           : builder_.CreateFPTrunc(value, slot_type);
+            }
+            if (value->getType()->isIntegerTy()) {
+                return source_unsigned ? builder_.CreateUIToFP(value, slot_type) : builder_.CreateSIToFP(value, slot_type);
+            }
+            return llvm::ConstantFP::get(slot_type, 0.0);
+        }
+        if (slot_type != nullptr && slot_type->isIntegerTy() && from_depth == 0 && value->getType()->isFloatingPointTy()) {
+            return builder_.CreateFPToSI(value, slot_type);
+        }
         if (slot_type != nullptr && slot_type->isIntegerTy() && from_depth == 0 && value->getType()->isIntegerTy() &&
             value->getType() != slot_type) {
             return resize_int(value, slot_type, source_unsigned);
@@ -353,6 +418,9 @@ class CodeGen {
     llvm::Type *slot_int_type(const TypedValue &slot) const {
         if (slot.depth != 0 || slot.struct_id >= 0 || slot.elem_void) {
             return nullptr;
+        }
+        if (slot.elem_float) {
+            return slot.elem_bits >= 64 ? f64_ty() : f32_ty();
         }
         if (slot.elem_bool) {
             return i1();
@@ -375,6 +443,12 @@ class CodeGen {
         if (rhs.value == nullptr) {
             return zero();
         }
+        if (slot.fn_ty != nullptr) {
+            return rhs.value;
+        }
+        if (slot.elem_float && slot.depth == 0) {
+            return as_stored(rhs.value, rhs.depth, slot.elem_bits >= 64 ? f64_ty() : f32_ty(), rhs.elem_unsigned);
+        }
         if (slot.depth > 0 && rhs.depth == 0) {
             return null_ptr();
         }
@@ -384,10 +458,12 @@ class CodeGen {
         return rhs.value;
     }
     TypedValue load_object(llvm::Value *addr, int depth, bool elem_char, int struct_id = -1, bool elem_void = false,
-                           bool elem_bool = false, int elem_bits = 0, bool elem_unsigned = false) {
-        llvm::Value *loaded = builder_.CreateLoad(leaf_type(depth, elem_char, struct_id, elem_bool, elem_bits), addr);
+                           bool elem_bool = false, int elem_bits = 0, bool elem_unsigned = false, bool elem_float = false) {
+        llvm::Value *loaded =
+            builder_.CreateLoad(leaf_type(depth, elem_char, struct_id, elem_bool, elem_bits, elem_float), addr);
         if (depth != 0) {
-            return {loaded, depth, elem_char, struct_id, false, elem_void, elem_bool, elem_bits, elem_unsigned};
+            return {loaded, depth, elem_char, struct_id, false, elem_void, elem_bool, elem_bits, elem_unsigned, -1,
+                    elem_float};
         }
         if (struct_id >= 0) {
             return {loaded, 0, false, struct_id};
@@ -400,6 +476,9 @@ class CodeGen {
             llvm::Value *wide = zero_extend ? builder_.CreateZExt(loaded, i32()) : builder_.CreateSExt(loaded, i32());
             return {wide, 0};
         }
+        if (elem_float) {
+            return {loaded, 0, false, -1, false, false, false, elem_bits >= 64 ? 64 : 32, false, -1, true};
+        }
         if (elem_bits == 64) {
             return {loaded, 0, false, -1, false, false, false, 64, elem_unsigned};
         }
@@ -411,14 +490,23 @@ class CodeGen {
     TypedValue value_of_binding(const Binding &binding) {
         if (binding.is_function) {
             return {binding.value, binding.depth, binding.elem_char, binding.struct_id, false, binding.elem_void,
-                    binding.elem_bool};
+                    binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};
         }
         if (binding.is_array) {
             return {binding.value, binding.depth + 1, binding.elem_char, binding.struct_id, false, binding.elem_void,
-                    binding.elem_bool};
+                    binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};
         }
-        return load_object(binding.value, binding.depth, binding.elem_char, binding.struct_id, binding.elem_void,
-                           binding.elem_bool, binding.elem_bits, binding.elem_unsigned);
+        TypedValue loaded = load_object(binding.value, binding.depth, binding.elem_char, binding.struct_id, binding.elem_void,
+                                        binding.elem_bool, binding.elem_bits, binding.elem_unsigned, binding.elem_float);
+        loaded.fn_ty = binding.fn_ty;
+        loaded.fn_ret_depth = binding.fn_ret_depth;
+        loaded.fn_ret_float = binding.fn_ret_float;
+        loaded.fn_ret_bits = binding.fn_ret_bits;
+        loaded.fn_ret_unsigned = binding.fn_ret_unsigned;
+        loaded.fn_ret_char = binding.fn_ret_char;
+        loaded.fn_ret_bool = binding.fn_ret_bool;
+        loaded.fn_ret_struct = binding.fn_ret_struct;
+        return loaded;
     }
     llvm::Type *object_type(llvm::Value *addr) const {
         if (const auto *alloca = llvm::dyn_cast<llvm::AllocaInst>(addr)) {
@@ -457,6 +545,11 @@ class CodeGen {
     bool alias_base_ready(uint32_t file, const TypedefDecl &item) const;
     Lowered lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct, int indirections,
                   bool is_array, int array_len, bool parameter) const;
+    Lowered lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package, bool ret_struct,
+                        bool ret_enum, int ret_indirections, int fn_depth, const std::vector<FnParam> &params,
+                        bool variadic) const;
+    Lowered lower_param_type(uint32_t file, const Param &param) const;
+    void apply_low(Binding &binding, const Lowered &low) const;
     const FieldLayout *find_field(int struct_id, const std::string &name, int &index) const;
     TypedValue field_addr(int struct_id, llvm::Value *pointer, const std::string &field, SourceLoc loc);
     bool addressable(const Expr &expr) const;
@@ -613,13 +706,21 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
         !many && fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty();
     llvm::Type *ret = many ? aggregate_return(fn, file)
                            : (returns_void ? llvm::Type::getVoidTy(context_)
-                                           : stored_type(lower(file, fn.return_type, fn.type_package, fn.is_struct,
-                                                               fn.indirections, false, 0, false)));
+                                           : stored_type(fn.results.size() == 1 && fn.results.front().is_fn_ptr
+                                                            ? lower_fnptr(file, fn.results.front().type_name,
+                                                                          fn.results.front().type_package,
+                                                                          fn.results.front().is_struct,
+                                                                          fn.results.front().is_enum,
+                                                                          fn.results.front().ret_indirections,
+                                                                          fn.results.front().indirections,
+                                                                          fn.results.front().fn_params,
+                                                                          fn.results.front().fn_variadic)
+                                                            : lower(file, fn.return_type, fn.type_package, fn.is_struct,
+                                                                    fn.indirections, false, 0, false)));
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (const Param &param : fn.params) {
-        params.push_back(stored_type(lower(file, param.type_name, param.type_package, param.is_struct, param.indirections,
-                                           param.is_array, param.array_len, true)));
+        params.push_back(stored_type(lower_param_type(file, param)));
     }
     return llvm::FunctionType::get(ret, params, fn.variadic);
 }
@@ -775,7 +876,10 @@ bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
         item.type_name == "unsigned short" || item.type_name == "unsigned" || item.type_name == "unsigned int" ||
         item.type_name == "long" || item.type_name == "unsigned long" || item.type_name == "long long" ||
         item.type_name == "unsigned long long" || item.type_name == "void" || item.type_name == "bool" ||
-        item.type_name == "invalid") {
+        item.type_name == "invalid" || item.type_name == "i8" || item.type_name == "i16" || item.type_name == "i32" ||
+        item.type_name == "i64" || item.type_name == "u8" || item.type_name == "u16" || item.type_name == "u32" ||
+        item.type_name == "u64" || item.type_name == "f32" || item.type_name == "f64" || item.type_name == "float" ||
+        item.type_name == "double") {
         return true;
     }
     uint32_t target = file;
@@ -853,18 +957,29 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         }
     } else if (name == "char" || name == "signed char" || name == "unsigned char" || name == "short" ||
                name == "unsigned short" || name == "int" || name == "unsigned" || name == "unsigned int" || name == "long" ||
-               name == "unsigned long" || name == "long long" || name == "unsigned long long") {
+               name == "unsigned long" || name == "long long" || name == "unsigned long long" || name == "i8" ||
+               name == "i16" || name == "i32" || name == "i64" || name == "u8" || name == "u16" || name == "u32" ||
+               name == "u64") {
         base.elem_char = name == "char";
-        base.elem_unsigned = name.starts_with("unsigned");
-        if (name == "char" || name == "signed char" || name == "unsigned char") {
+        base.elem_unsigned = name.starts_with("unsigned") || name.starts_with("u");
+        if (name == "char" || name == "signed char" || name == "unsigned char" || name == "i8" || name == "u8") {
             base.elem_bits = 8;
-        } else if (name == "short" || name == "unsigned short") {
+        } else if (name == "short" || name == "unsigned short" || name == "i16" || name == "u16") {
             base.elem_bits = 16;
-        } else if (name == "long" || name == "unsigned long" || name == "long long" || name == "unsigned long long") {
+        } else if (name == "long" || name == "unsigned long" || name == "long long" || name == "unsigned long long" ||
+                   name == "i64" || name == "u64") {
             base.elem_bits = 64;
         } else {
             base.elem_bits = 32;
         }
+        have = true;
+    } else if (name == "float" || name == "f32") {
+        base.elem_float = true;
+        base.elem_bits = 32;
+        have = true;
+    } else if (name == "double" || name == "f64") {
+        base.elem_float = true;
+        base.elem_bits = 64;
         have = true;
     } else if (name == "void") {
         base.elem_void = true;
@@ -897,6 +1012,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     const bool elem_bool = have && base.elem_bool;
     const int elem_bits = have ? base.elem_bits : 0;
     const bool elem_unsigned = have && base.elem_unsigned;
+    const bool elem_float = have && base.elem_float;
     const int sid = have ? base.struct_id : -1;
     const bool base_array = have && base.is_array;
     if (base_array && (indirections > 0 || is_array)) {
@@ -910,6 +1026,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.elem_bool = elem_bool;
         out.elem_bits = elem_bits;
         out.elem_unsigned = elem_unsigned;
+        out.elem_float = elem_float;
         out.struct_id = sid;
         out.type = ptr_type();
         return out;
@@ -923,8 +1040,9 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.elem_bool = elem_bool;
         out.elem_bits = elem_bits;
         out.elem_unsigned = elem_unsigned;
+        out.elem_float = elem_float;
         out.struct_id = sid;
-        out.type = llvm::ArrayType::get(leaf_type(out.depth, elem_char, sid, elem_bool, elem_bits),
+        out.type = llvm::ArrayType::get(leaf_type(out.depth, elem_char, sid, elem_bool, elem_bits, elem_float),
                                         static_cast<uint64_t>(array_len));
         return out;
     }
@@ -937,8 +1055,9 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.elem_bool = elem_bool;
         out.elem_bits = elem_bits;
         out.elem_unsigned = elem_unsigned;
+        out.elem_float = elem_float;
         out.struct_id = sid;
-        out.type = llvm::ArrayType::get(leaf_type(base_depth, elem_char, sid, elem_bool, elem_bits),
+        out.type = llvm::ArrayType::get(leaf_type(base_depth, elem_char, sid, elem_bool, elem_bits, elem_float),
                                         static_cast<uint64_t>(base.array_len));
         return out;
     }
@@ -948,9 +1067,79 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     out.elem_bool = elem_bool;
     out.elem_bits = elem_bits;
     out.elem_unsigned = elem_unsigned;
+    out.elem_float = elem_float;
     out.struct_id = sid;
-    out.type = leaf_type(out.depth, elem_char, sid, elem_bool, elem_bits);
+    if (indirections == 0 && !is_array) {
+        out.fn_ty = have ? base.fn_ty : nullptr;
+        out.fn_ret_depth = have ? base.fn_ret_depth : 0;
+        out.fn_ret_float = have && base.fn_ret_float;
+        out.fn_ret_bits = have ? base.fn_ret_bits : 0;
+        out.fn_ret_unsigned = have && base.fn_ret_unsigned;
+        out.fn_ret_char = have && base.fn_ret_char;
+        out.fn_ret_bool = have && base.fn_ret_bool;
+        out.fn_ret_struct = have ? base.fn_ret_struct : -1;
+    }
+    out.type = leaf_type(out.depth, elem_char, sid, elem_bool, elem_bits, elem_float);
     return out;
+}
+
+CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package,
+                                      bool ret_struct, bool ret_enum, int ret_indirections, int fn_depth,
+                                      const std::vector<FnParam> &params, bool variadic) const {
+    (void)ret_enum;
+    const Lowered ret = lower(file, ret_name, ret_package, ret_struct, ret_indirections, false, 0, false);
+    std::vector<llvm::Type *> args;
+    args.reserve(params.size());
+    for (const FnParam &param : params) {
+        const Lowered arg = param.is_fn_ptr
+                                ? lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum,
+                                              param.ret_indirections, param.indirections, param.params, param.variadic)
+                                : lower(file, param.type_name, param.type_package, param.is_struct, param.indirections, false,
+                                        0, true);
+        args.push_back(stored_type(arg));
+    }
+    llvm::Type *ret_ty = ret.depth == 0 && ret.elem_void ? llvm::Type::getVoidTy(context_) : stored_type(ret);
+    Lowered out;
+    out.fn_ty = llvm::FunctionType::get(ret_ty, args, variadic);
+    out.depth = fn_depth < 1 ? 1 : fn_depth;
+    out.type = ptr_type();
+    out.fn_ret_depth = ret.depth;
+    out.fn_ret_float = ret.elem_float;
+    out.fn_ret_bits = ret.elem_bits;
+    out.fn_ret_unsigned = ret.elem_unsigned;
+    out.fn_ret_char = ret.elem_char;
+    out.fn_ret_bool = ret.elem_bool;
+    out.fn_ret_struct = ret.struct_id;
+    return out;
+}
+
+CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) const {
+    if (param.is_fn_ptr) {
+        return lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
+                           param.indirections, param.fn_params, param.fn_variadic);
+    }
+    return lower(file, param.type_name, param.type_package, param.is_struct, param.indirections, param.is_array,
+                 param.array_len, true);
+}
+
+void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
+    binding.depth = low.depth;
+    binding.elem_char = low.elem_char;
+    binding.struct_id = low.struct_id;
+    binding.elem_void = low.elem_void;
+    binding.elem_bool = low.elem_bool;
+    binding.elem_bits = low.elem_bits;
+    binding.elem_unsigned = low.elem_unsigned;
+    binding.elem_float = low.elem_float;
+    binding.trait_id = low.trait_id;
+    binding.fn_ty = low.fn_ty;
+    binding.fn_ret_depth = low.fn_ret_depth;
+    binding.fn_ret_float = low.fn_ret_float;
+    binding.fn_ret_bits = low.fn_ret_bits;
+    binding.fn_ret_unsigned = low.fn_ret_unsigned;
+    binding.fn_ret_char = low.fn_ret_char;
+    binding.fn_ret_bool = low.fn_ret_bool;
+    binding.fn_ret_struct = low.fn_ret_struct;
 }
 
 const CodeGen::FieldLayout *CodeGen::find_field(int struct_id, const std::string &name, int &index) const {
@@ -982,7 +1171,7 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
     llvm::Value *gep = builder_.CreateInBoundsGEP(structs_[static_cast<std::size_t>(struct_id)].type, pointer,
                                                    llvm::ArrayRef<llvm::Value *>{zero_index, member});
     return {gep, slot->depth, slot->elem_char, slot->struct_id, slot->is_array, slot->elem_void, slot->elem_bool,
-            slot->elem_bits, slot->elem_unsigned};
+            slot->elem_bits, slot->elem_unsigned, -1, slot->elem_float};
 }
 
 bool CodeGen::addressable(const Expr &expr) const {
@@ -1110,8 +1299,12 @@ void CodeGen::prepare_structs() {
             std::vector<FieldLayout> fields;
             body.reserve(item->fields.size());
             for (const FieldDecl &field : item->fields) {
-                const Lowered low = lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
-                                          field.is_array, field.array_len, false);
+                const Lowered low =
+                    field.is_fn_ptr ? lower_fnptr(file, field.type_name, field.type_package, field.is_struct, field.is_enum,
+                                                  field.ret_indirections, field.indirections, field.fn_params,
+                                                  field.fn_variadic)
+                                   : lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
+                                           field.is_array, field.array_len, false);
                 FieldLayout slot;
                 slot.name = field.name;
                 slot.type = stored_type(low);
@@ -1124,6 +1317,7 @@ void CodeGen::prepare_structs() {
                 slot.elem_bool = low.elem_bool;
                 slot.elem_bits = low.elem_bits;
                 slot.elem_unsigned = low.elem_unsigned;
+                slot.elem_float = low.elem_float;
                 body.push_back(slot.type);
                 fields.push_back(std::move(slot));
             }
@@ -1174,8 +1368,13 @@ void CodeGen::prepare_aliases() {
                 later.push_back(item);
                 continue;
             }
-            const Lowered low = lower(item.file, item.item->type_name, item.item->type_package, item.item->is_struct,
-                                      item.item->indirections, item.item->is_array, item.item->array_len, false);
+            const Lowered low =
+                item.item->is_fn_ptr
+                    ? lower_fnptr(item.file, item.item->type_name, item.item->type_package, item.item->is_struct,
+                                  item.item->is_enum, item.item->ret_indirections, item.item->indirections,
+                                  item.item->fn_params, item.item->fn_variadic)
+                    : lower(item.file, item.item->type_name, item.item->type_package, item.item->is_struct,
+                            item.item->indirections, item.item->is_array, item.item->array_len, false);
             Alias alias;
             alias.depth = low.depth;
             alias.elem_char = low.elem_char;
@@ -1186,6 +1385,15 @@ void CodeGen::prepare_aliases() {
             alias.elem_bool = low.elem_bool;
             alias.elem_bits = low.elem_bits;
             alias.elem_unsigned = low.elem_unsigned;
+            alias.elem_float = low.elem_float;
+            alias.fn_ty = low.fn_ty;
+            alias.fn_ret_depth = low.fn_ret_depth;
+            alias.fn_ret_float = low.fn_ret_float;
+            alias.fn_ret_bits = low.fn_ret_bits;
+            alias.fn_ret_unsigned = low.fn_ret_unsigned;
+            alias.fn_ret_char = low.fn_ret_char;
+            alias.fn_ret_bool = low.fn_ret_bool;
+            alias.fn_ret_struct = low.fn_ret_struct;
             aliases_[item.file].emplace(item.item->name, alias);
             progress = true;
         }
@@ -1303,10 +1511,15 @@ void CodeGen::declare_file(const PackageNode &node) {
         const bool many = acc.fn->results.size() > 1;
         const bool returns_void = !many && acc.fn->return_type == "void" && acc.fn->indirections == 0 && !acc.fn->is_struct &&
                                   acc.fn->type_package.empty();
+        const bool ret_fnptr = !many && acc.fn->results.size() == 1 && acc.fn->results.front().is_fn_ptr;
+        const ResultSlot *ret_slot = ret_fnptr ? &acc.fn->results.front() : nullptr;
         const Lowered ret = returns_void || many
                                 ? Lowered{}
-                                : lower(node.file_id, acc.fn->return_type, acc.fn->type_package, acc.fn->is_struct,
-                                        acc.fn->indirections, false, 0, false);
+                                : (ret_fnptr ? lower_fnptr(node.file_id, ret_slot->type_name, ret_slot->type_package,
+                                                          ret_slot->is_struct, ret_slot->is_enum, ret_slot->ret_indirections,
+                                                          ret_slot->indirections, ret_slot->fn_params, ret_slot->fn_variadic)
+                                             : lower(node.file_id, acc.fn->return_type, acc.fn->type_package, acc.fn->is_struct,
+                                                     acc.fn->indirections, false, 0, false));
         if (function_is_generic(node.file_id, *acc.fn)) {
             Binding binding;
             binding.is_function = true;
@@ -1346,6 +1559,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         binding.elem_bool = !returns_void && ret.elem_bool;
         binding.elem_bits = returns_void ? 0 : ret.elem_bits;
         binding.elem_unsigned = !returns_void && ret.elem_unsigned;
+        binding.elem_float = !returns_void && ret.elem_float;
         binding.trait_id = returns_void ? -1 : ret.trait_id;
         binding.is_static = acc.is_static;
         binding.decl = acc.fn;
@@ -1357,8 +1571,11 @@ void CodeGen::declare_file(const PackageNode &node) {
             continue;
         }
         const SymbolForm form = symbol_form(node, var->name, var->is_extern, var->is_static, var->exported, false);
-        const Lowered low = lower(node.file_id, var->type_name, var->type_package, var->is_struct, var->indirections,
-                                  var->is_array, var->array_len, false);
+        const Lowered low = var->is_fn_ptr
+                                ? lower_fnptr(node.file_id, var->type_name, var->type_package, var->is_struct, var->is_enum,
+                                              var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic)
+                                : lower(node.file_id, var->type_name, var->type_package, var->is_struct, var->indirections,
+                                        var->is_array, var->array_len, false);
         llvm::Type *ty = stored_type(low);
         llvm::GlobalVariable *existing = var->is_extern ? module_.getGlobalVariable(form.name) : nullptr;
         llvm::GlobalVariable *global = existing;
@@ -1369,6 +1586,8 @@ void CodeGen::declare_file(const PackageNode &node) {
                     init = llvm::ConstantAggregateZero::get(ty);
                 } else if (low.depth > 0) {
                     init = null_ptr();
+                } else if (low.elem_float) {
+                    init = llvm::ConstantFP::get(low.elem_bits >= 64 ? f64_ty() : f32_ty(), 0.0);
                 } else if (low.elem_bool) {
                     init = llvm::ConstantInt::get(i1(), 0, false);
                 } else if (low.elem_char || low.elem_bits == 8) {
@@ -1394,7 +1613,16 @@ void CodeGen::declare_file(const PackageNode &node) {
         binding.elem_bool = low.elem_bool;
         binding.elem_bits = low.elem_bits;
         binding.elem_unsigned = low.elem_unsigned;
+        binding.elem_float = low.elem_float;
         binding.trait_id = low.trait_id;
+        binding.fn_ty = low.fn_ty;
+        binding.fn_ret_depth = low.fn_ret_depth;
+        binding.fn_ret_float = low.fn_ret_float;
+        binding.fn_ret_bits = low.fn_ret_bits;
+        binding.fn_ret_unsigned = low.fn_ret_unsigned;
+        binding.fn_ret_char = low.fn_ret_char;
+        binding.fn_ret_bool = low.fn_ret_bool;
+        binding.fn_ret_struct = low.fn_ret_struct;
         binding.is_static = var->is_static;
         file.globals.emplace(var->name, binding);
     }
@@ -1695,8 +1923,7 @@ CodeGen::Lowered CodeGen::lower_param(const FunctionDecl &fn, std::size_t index)
         return lower(current_file_, structs_[static_cast<std::size_t>(active_spec_[index])].name, "", true,
                      param.indirections, false, 0, true);
     }
-    return lower(current_file_, param.type_name, param.type_package, param.is_struct, param.indirections, param.is_array,
-                 param.array_len, true);
+    return lower_param_type(current_file_, param);
 }
 
 llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector<int> &spec) const {
@@ -1744,14 +1971,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
             builder_.CreateStore(&arg, slot);
             Binding binding;
             binding.value = slot;
-            binding.depth = low.depth;
-            binding.elem_char = low.elem_char;
-            binding.struct_id = low.struct_id;
-            binding.elem_void = low.elem_void;
-            binding.elem_bool = low.elem_bool;
-            binding.elem_bits = low.elem_bits;
-            binding.elem_unsigned = low.elem_unsigned;
-            binding.trait_id = low.trait_id;
+            apply_low(binding, low);
             scopes_.back()[name] = binding;
         }
         ++index;
@@ -1822,6 +2042,7 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
         binding.elem_bool = !returns_void && ret.elem_bool;
         binding.elem_bits = returns_void ? 0 : ret.elem_bits;
         binding.elem_unsigned = !returns_void && ret.elem_unsigned;
+        binding.elem_float = !returns_void && ret.elem_float;
         binding.trait_id = returns_void ? -1 : ret.trait_id;
         binding.decl = &fn;
         scopes_.back()[fn.name] = binding;
@@ -2014,11 +2235,34 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
                      method->elem_bool, method->elem_bits, method->elem_unsigned);
             prepared.decl = method->decl;
+            prepared.elem_float = method->elem_float;
             return prepared;
         }
     }
     prepared.decl = node.callee == nullptr ? nullptr : callee_decl(*node.callee);
     const TypedValue callee = emit_rvalue(*node.callee);
+    if (callee.fn_ty != nullptr && callee.value != nullptr && !llvm::isa<llvm::Function>(callee.value)) {
+        std::vector<llvm::Value *> args;
+        args.reserve(node.args.size());
+        unsigned index = 0;
+        for (const auto &arg : node.args) {
+            const TypedValue value = emit_rvalue(*arg);
+            llvm::Type *param = index < callee.fn_ty->getNumParams() ? callee.fn_ty->getParamType(index) : nullptr;
+            args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+            ++index;
+        }
+        prepared.indirect = callee.value;
+        prepared.fn_ty = callee.fn_ty;
+        prepared.args = std::move(args);
+        prepared.depth = callee.fn_ret_depth;
+        prepared.elem_float = callee.fn_ret_float;
+        prepared.elem_bits = callee.fn_ret_bits;
+        prepared.elem_unsigned = callee.fn_ret_unsigned;
+        prepared.elem_char = callee.fn_ret_char;
+        prepared.elem_bool = callee.fn_ret_bool;
+        prepared.struct_id = callee.fn_ret_struct;
+        return prepared;
+    }
     auto *function = llvm::dyn_cast_or_null<llvm::Function>(callee.value);
     if (function == nullptr) {
         error(node.loc, "type mismatch");
@@ -2037,15 +2281,20 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
     }
     remember(function, std::move(args), callee.depth, callee.elem_char, callee.struct_id, callee.elem_void, callee.elem_bool,
              callee.elem_bits, callee.elem_unsigned);
+    prepared.elem_float = callee.elem_float;
     return prepared;
 }
 
 TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
-    if (call.function == nullptr || terminated()) {
+    if (terminated() || (call.function == nullptr && (call.indirect == nullptr || call.fn_ty == nullptr))) {
         return {zero(), 0};
     }
-    llvm::CallInst *inst = builder_.CreateCall(call.function, call.args);
-    inst->setCallingConv(call.function->getCallingConv());
+    llvm::CallInst *inst = call.indirect != nullptr ? builder_.CreateCall(call.fn_ty, call.indirect, call.args)
+                                                    : builder_.CreateCall(call.function, call.args);
+    inst->setCallingConv(llvm::CallingConv::C);
+    if (call.elem_float) {
+        return {inst, 0, false, -1, false, false, false, call.elem_bits >= 64 ? 64 : 32, false, -1, true};
+    }
     if (inst->getType()->isVoidTy()) {
         return {zero(), 0};
     }
@@ -2242,7 +2491,9 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             return {};
         }
         return {binding->value, binding->depth, binding->elem_char, binding->struct_id, false, binding->elem_void,
-                binding->elem_bool, binding->elem_bits, binding->elem_unsigned, binding->trait_id};
+                binding->elem_bool, binding->elem_bits, binding->elem_unsigned, binding->trait_id, binding->elem_float,
+                binding->fn_ty, binding->fn_ret_depth, binding->fn_ret_float, binding->fn_ret_bits,
+                binding->fn_ret_unsigned, binding->fn_ret_char, binding->fn_ret_bool, binding->fn_ret_struct};
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {
         const TypedValue inner = emit_rvalue(*star->expr);
@@ -2594,6 +2845,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return {zero(), 0};
                 }
                 return value_of_binding(*binding);
+            } else if constexpr (std::is_same_v<T, Expr::Float>) {
+                const std::string number = node.text.empty() ? "0" : node.text;
+                const double parsed = std::strtod(number.c_str(), nullptr);
+                llvm::Type *ty = node.is_f32 ? f32_ty() : f64_ty();
+                return {llvm::ConstantFP::get(ty, parsed), 0, false, -1, false, false, false, node.is_f32 ? 32 : 64, false,
+                        -1, true};
             } else if constexpr (std::is_same_v<T, Expr::Int>) {
                 if (node.suffix.long_count > 0) {
                     return {llvm::ConstantInt::get(i64(), node.value, false), 0, false, -1, false, false, false, 64,
@@ -2613,7 +2870,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return {zero(), 0};
                     }
                     return load_object(inner.value, inner.depth - 1, inner.elem_char, inner.struct_id, inner.elem_void,
-                                       inner.elem_bool, inner.elem_bits, inner.elem_unsigned);
+                                       inner.elem_bool, inner.elem_bits, inner.elem_unsigned, inner.elem_float);
                 }
                 if (node.op == TokenKind::Amp) {
                     const TypedValue addr = emit_addr(*node.expr);
@@ -2628,12 +2885,20 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 switch (node.op) {
                 case TokenKind::Plus: return inner_value;
                 case TokenKind::Minus:
+                    if (inner_value.elem_float || (inner != nullptr && inner->getType()->isFloatingPointTy())) {
+                        return {builder_.CreateFNeg(inner), 0, false, -1, false, false, false, inner_value.elem_bits, false,
+                                -1, true};
+                    }
                     return {builder_.CreateNeg(inner), 0, false, -1, false, false, false, inner_value.elem_bits,
                             inner_value.elem_unsigned};
                 case TokenKind::Tilde:
                     return {builder_.CreateNot(inner), 0, false, -1, false, false, false, inner_value.elem_bits,
                             inner_value.elem_unsigned};
                 case TokenKind::Bang:
+                    if (inner_value.elem_float || (inner != nullptr && inner->getType()->isFloatingPointTy())) {
+                        llvm::Value *zero_fp = llvm::ConstantFP::get(inner->getType(), 0.0);
+                        return {builder_.CreateZExt(builder_.CreateFCmpOEQ(inner, zero_fp), i32()), 0};
+                    }
                     return {builder_.CreateZExt(builder_.CreateICmpEQ(inner, typed_zero(inner)), i32()), 0};
                 default: return {zero(), 0};
                 }
@@ -2658,6 +2923,43 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     llvm::Value *cmp = node.op == TokenKind::EqEq ? builder_.CreateICmpEQ(lhs, rhs)
                                                                   : builder_.CreateICmpNE(lhs, rhs);
                     return {builder_.CreateZExt(cmp, i32()), 0};
+                }
+                if (left.elem_float || right.elem_float ||
+                    (lhs != nullptr && lhs->getType()->isFloatingPointTy()) ||
+                    (rhs != nullptr && rhs->getType()->isFloatingPointTy())) {
+                    const bool wide = (left.elem_float && left.elem_bits >= 64) || (right.elem_float && right.elem_bits >= 64) ||
+                                      (lhs != nullptr && lhs->getType()->isDoubleTy()) ||
+                                      (rhs != nullptr && rhs->getType()->isDoubleTy());
+                    llvm::Type *dest = wide ? f64_ty() : f32_ty();
+                    auto to_fp = [&](llvm::Value *value, const TypedValue &meta) -> llvm::Value * {
+                        if (value == nullptr) {
+                            return llvm::ConstantFP::get(dest, 0.0);
+                        }
+                        return as_stored(value, meta.depth, dest, meta.elem_unsigned);
+                    };
+                    lhs = to_fp(lhs, left);
+                    rhs = to_fp(rhs, right);
+                    auto widened_fp = [&](llvm::Value *value) -> TypedValue {
+                        return {value, 0, false, -1, false, false, false, wide ? 64 : 32, false, -1, true};
+                    };
+                    auto compared_fp = [&](llvm::CmpInst::Predicate pred) -> TypedValue {
+                        return {builder_.CreateZExt(builder_.CreateFCmp(pred, lhs, rhs), i32()), 0};
+                    };
+                    switch (node.op) {
+                    case TokenKind::Plus: return widened_fp(builder_.CreateFAdd(lhs, rhs));
+                    case TokenKind::Minus: return widened_fp(builder_.CreateFSub(lhs, rhs));
+                    case TokenKind::Star: return widened_fp(builder_.CreateFMul(lhs, rhs));
+                    case TokenKind::Slash: return widened_fp(builder_.CreateFDiv(lhs, rhs));
+                    case TokenKind::EqEq: return compared_fp(llvm::CmpInst::FCMP_OEQ);
+                    case TokenKind::BangEq: return compared_fp(llvm::CmpInst::FCMP_ONE);
+                    case TokenKind::Lt: return compared_fp(llvm::CmpInst::FCMP_OLT);
+                    case TokenKind::Gt: return compared_fp(llvm::CmpInst::FCMP_OGT);
+                    case TokenKind::Le: return compared_fp(llvm::CmpInst::FCMP_OLE);
+                    case TokenKind::Ge: return compared_fp(llvm::CmpInst::FCMP_OGE);
+                    default:
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
                 }
                 const int left_bits = value_bits(left);
                 const int right_bits = value_bits(right);
@@ -2751,7 +3053,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                 addr.elem_bool, addr.elem_bits, addr.elem_unsigned};
                     }
                     return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,
-                                       addr.elem_bool, addr.elem_bits, addr.elem_unsigned);
+                                       addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.elem_float);
                 }
                 const TypedValue base = node.base != nullptr ? emit_rvalue(*node.base) : TypedValue{};
                 if (base.value != nullptr && base.depth == 1 && base.struct_id >= 0) {
@@ -2764,7 +3066,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                 addr.elem_bool, addr.elem_bits, addr.elem_unsigned};
                     }
                     return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,
-                                       addr.elem_bool, addr.elem_bits, addr.elem_unsigned);
+                                       addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.elem_float);
                 }
                 if (base.value == nullptr || base.depth != 0 || base.struct_id < 0) {
                     error(node.loc, "type mismatch");
@@ -2790,6 +3092,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         zero_extend ? builder_.CreateZExt(extracted, i32()) : builder_.CreateSExt(extracted, i32());
                     return {wide, 0};
                 }
+                if (field->depth == 0 && field->elem_float) {
+                    return {extracted, 0, false, -1, false, false, false, field->elem_bits, false, -1, true};
+                }
                 if (field->depth == 0 && field->elem_bits == 64) {
                     return {extracted, 0, false, -1, false, false, false, 64, field->elem_unsigned};
                 }
@@ -2797,7 +3102,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return {extracted, 0, false, -1, false, false, false, 32, true};
                 }
                 return {extracted, field->depth, field->elem_char, field->struct_id, false, field->elem_void,
-                        field->elem_bool, field->elem_bits, field->elem_unsigned};
+                        field->elem_bool, field->elem_bits, field->elem_unsigned, -1, field->elem_float};
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 llvm::Constant *data = llvm::ConstantDataArray::getString(context_, node.text, true);
                 auto *global = new llvm::GlobalVariable(module_, data->getType(), true,
@@ -2809,7 +3114,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return {zero(), 0};
                 }
                 return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void, addr.elem_bool,
-                                   addr.elem_bits, addr.elem_unsigned);
+                                   addr.elem_bits, addr.elem_unsigned, addr.elem_float);
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 llvm::Type *measured = nullptr;
                 if (node.on_type) {
@@ -2870,6 +3175,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     llvm::Value *wide = builder_.CreatePtrToInt(source.value, intptr);
                     llvm::Value *narrow = wide->getType() == i32() ? wide : builder_.CreateTrunc(wide, i32());
                     return {narrow, 0};
+                }
+                if (target.depth == 0 && source.depth == 0 && (target.elem_float || source.elem_float ||
+                                                              source.value->getType()->isFloatingPointTy())) {
+                    llvm::Type *dest = target.elem_float ? (target.elem_bits >= 64 ? f64_ty() : f32_ty())
+                                                         : bits_type(target.elem_bits == 0 ? 32 : target.elem_bits);
+                    llvm::Value *converted = as_stored(source.value, 0, dest, source.elem_unsigned);
+                    if (target.elem_float) {
+                        return {converted, 0, false, -1, false, false, false, target.elem_bits, false, -1, true};
+                    }
+                    return {converted, 0, target.elem_char, -1, false, false, target.elem_bool, target.elem_bits,
+                            target.elem_unsigned};
                 }
                 if (target.depth == 0 && source.depth == 0 && target.struct_id < 0 && !target.elem_void) {
                     int bits = target.elem_bits;
@@ -3257,8 +3573,11 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                 if (!returns_void && node.value) {
                     const TypedValue value = emit_rvalue(*node.value);
                     ret = value.value;
-                    if (return_depth_ > 0 && value.depth == 0) {
+                    if (return_depth_ > 0 && value.depth == 0 && ret != nullptr && !ret->getType()->isPointerTy()) {
                         ret = null_ptr();
+                    } else if (ret != nullptr && return_type_ != nullptr &&
+                               (return_type_->isFloatingPointTy() || ret->getType()->isFloatingPointTy())) {
+                        ret = as_stored(ret, 0, return_type_, value.elem_unsigned);
                     } else if (ret != nullptr && return_type_ != nullptr && ret->getType()->isIntegerTy() &&
                                return_type_->isIntegerTy() && ret->getType() != return_type_) {
                         ret = resize_int(ret, return_type_, value.elem_unsigned);
@@ -3453,8 +3772,12 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     if (var.name.empty()) {
                         continue;
                     }
-                    const Lowered low = lower(current_file_, var.type_name, var.type_package, var.is_struct, var.indirections,
-                                              var.is_array, var.array_len, false);
+                    const Lowered low = var.is_fn_ptr
+                                            ? lower_fnptr(current_file_, var.type_name, var.type_package, var.is_struct,
+                                                          var.is_enum, var.ret_indirections, var.indirections, var.fn_params,
+                                                          var.fn_variadic)
+                                            : lower(current_file_, var.type_name, var.type_package, var.is_struct,
+                                                    var.indirections, var.is_array, var.array_len, false);
                     if (var.is_array || low.is_array) {
                         if (!low.is_array || low.array_len <= 0) {
                             error(var.loc, "not supported yet");
@@ -3482,6 +3805,8 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     llvm::Value *initial = zero();
                     if (low.depth > 0) {
                         initial = null_ptr();
+                    } else if (low.elem_float) {
+                        initial = llvm::ConstantFP::get(low.elem_bits >= 64 ? f64_ty() : f32_ty(), 0.0);
                     } else if (low.elem_bool) {
                         initial = llvm::ConstantInt::get(i1(), 0, false);
                     } else if (low.elem_char || low.elem_bits == 8) {
@@ -3501,9 +3826,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     binding.struct_id = low.struct_id;
                     binding.elem_void = low.elem_void;
                     binding.elem_bool = low.elem_bool;
-                    binding.elem_bits = low.elem_bits;
-                    binding.elem_unsigned = low.elem_unsigned;
-                    binding.trait_id = low.trait_id;
+                    apply_low(binding, low);
                     scopes_.back()[var.name] = binding;
                     if (var.init) {
                         const TypedValue value = emit_rvalue(*var.init);

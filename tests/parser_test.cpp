@@ -169,9 +169,18 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("double x;\nfunc main() int { return 1.5; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
-        EXPECT(check, parsed.errors.find("not supported yet") != parsed.errors.rfind("not supported yet"));
+        const Parsed parsed = parse_source(
+            "double x;\n"
+            "f32 y;\n"
+            "func main() int {\n"
+            "  int (*fp)(int, f64);\n"
+            "  return 1.5;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var x double");
+        EXPECT_HAS(check, parsed.dump, "(var y f32");
+        EXPECT_HAS(check, parsed.dump, "(var fp int* fnptr");
+        EXPECT_HAS(check, parsed.dump, "(double 1.5)");
     }
 
     {

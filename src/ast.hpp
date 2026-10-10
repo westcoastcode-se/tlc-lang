@@ -88,6 +88,11 @@ struct Expr {
         SourceLoc loc{};
         uint64_t value = 0;
     };
+    struct Float {
+        SourceLoc loc{};
+        std::string text;
+        bool is_f32 = false;
+    };
     struct Func {
         SourceLoc loc{};
         std::unique_ptr<FunctionDecl> decl;
@@ -97,7 +102,7 @@ struct Expr {
     };
 
     using Data = std::variant<Name, Int, Unary, Binary, Assign, Call, Selector, String, Index, Sizeof, Cast, Bool,
-                              Nullptr, Char, Func, Unsupported>;
+                              Nullptr, Char, Float, Func, Unsupported>;
 
     Data data;
 
@@ -107,6 +112,19 @@ struct Expr {
     Expr &operator=(const Expr &) = delete;
     Expr(Expr &&) noexcept;
     Expr &operator=(Expr &&) noexcept;
+};
+
+// A parameter of a function-pointer type. Nested pointers use the same shape.
+struct FnParam {
+    std::string type_name;
+    std::string type_package;
+    bool is_struct = false;
+    bool is_enum = false;
+    int indirections = 0;
+    bool is_fn_ptr = false;
+    int ret_indirections = 0;
+    std::vector<FnParam> params;
+    bool variadic = false;
 };
 
 struct FieldDecl {
@@ -119,6 +137,10 @@ struct FieldDecl {
     int indirections = 0;
     bool is_array = false;
     int array_len = 0;
+    bool is_fn_ptr = false;
+    int ret_indirections = 0;
+    std::vector<FnParam> fn_params;
+    bool fn_variadic = false;
 };
 
 struct StructDecl {
@@ -154,6 +176,10 @@ struct TypedefDecl {
     bool is_array = false;
     int array_len = 0;
     bool exported = false;
+    bool is_fn_ptr = false;
+    int ret_indirections = 0;
+    std::vector<FnParam> fn_params;
+    bool fn_variadic = false;
 };
 
 struct VarDecl {
@@ -166,6 +192,10 @@ struct VarDecl {
     int indirections = 0;
     bool is_array = false;
     int array_len = 0;
+    bool is_fn_ptr = false;
+    int ret_indirections = 0;
+    std::vector<FnParam> fn_params;
+    bool fn_variadic = false;
     std::unique_ptr<Expr> init;
     bool exported = false;
     bool is_static = false;
@@ -271,6 +301,10 @@ struct Param {
     int array_len = 0;
     bool is_const = false;
     bool is_receiver = false;
+    bool is_fn_ptr = false;
+    int ret_indirections = 0;
+    std::vector<FnParam> fn_params;
+    bool fn_variadic = false;
 };
 
 struct ResultSlot {
@@ -279,6 +313,10 @@ struct ResultSlot {
     bool is_struct = false;
     bool is_enum = false;
     int indirections = 0;
+    bool is_fn_ptr = false;
+    int ret_indirections = 0;
+    std::vector<FnParam> fn_params;
+    bool fn_variadic = false;
 };
 
 struct FunctionDecl {

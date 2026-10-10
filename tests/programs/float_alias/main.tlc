@@ -1,0 +1,19 @@
+func add(a f64, b f32) double {
+    return a + b;
+}
+
+func main() int {
+    f64 x = 20.5;
+    float y = 1.5f;
+    f64 z = add(x, y);
+    if (z != 22.0) {
+        return 1;
+    }
+    if (sizeof(f32) != 4) {
+        return 2;
+    }
+    if (sizeof(f64) != 8) {
+        return 3;
+    }
+    return 42;
+}

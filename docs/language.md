@@ -95,7 +95,7 @@ export func add(a int, b int) int {
 
 `secret` can be called from any file in the package. An importer sees `add`.
 
-`export` applies to functions, variables, structs, enums, and typedefs. `export static` is an error. `export extern` is an error.
+`export` applies to functions, variables, structs, enums, and typedefs. `export static` is an error. `export extern` is allowed on a function, and the symbol keeps its C name. `export extern` on a variable is an error.
 
 File-scope `static` keeps the symbol private to that file. A `static` local is rejected.
 
@@ -118,16 +118,18 @@ Integers on `x86_64-pc-linux-gnu` follow LP64. `long` and `long long` are both 6
 
 | Type | Bits |
 | --- | --- |
-| `char`, `signed char`, `unsigned char` | 8 |
-| `short`, `unsigned short` | 16 |
-| `int`, `unsigned int` | 32 |
+| `char`, `signed char`, `unsigned char`, `i8`, `u8` | 8 |
+| `short`, `unsigned short`, `i16`, `u16` | 16 |
+| `int`, `unsigned int`, `i32`, `u32` | 32 |
 | `long`, `unsigned long` | 64 |
-| `long long`, `unsigned long long` | 64 |
+| `long long`, `unsigned long long`, `i64`, `u64` | 64 |
 | pointer | 64 |
 
 Specifiers may appear in any order. `signed int` and `signed` are `int`. `short int` is `short`. `long int` is `long`. `long long int` is `long long`. `unsigned` is `unsigned int`. Contradictory specifiers are `type mismatch`.
 
 `char`, `signed char`, and `unsigned char` are three types. They are assignment-compatible. `int *` and `unsigned int *` are different types.
+
+`i8` is `signed char` and `u8` is `unsigned char`. `i16` is `short` and `u16` is `unsigned short`. `i32` is `int` and `u32` is `unsigned int`. `i64` is `long long` and `u64` is `unsigned long long`. `long` stays a different 64-bit type from `i64`. `char` stays different from `i8`.
 
 The rank order is `bool`, then `char` and its signed variants, then `short`, `int`, `long`, and `long long`. An unsigned type has the same rank as its signed counterpart.
 
@@ -141,7 +143,7 @@ Assignment is allowed among the integer ranks, `char`, and `bool`. A store into 
 
 `void` is a return type and a pointee. It is neither a value nor a variable type.
 
-`float` and `double` are rejected.
+`float` and `f32` are the same 32-bit type. `double` and `f64` are the same 64-bit type. A literal without a suffix has type `double`. A suffix `f` or `F` makes it `float`. `1.5 + 1` is `double`. Comparisons of floating values yield `int`. `%` and bitwise operators are `type mismatch` on a floating value.
 
 A `bool` value is 0 or 1.
 
@@ -200,7 +202,7 @@ A cast between integer types is allowed. Signed `int` can be cast to and from a 
 
 Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
-`++`, `--`, compound assignment, `?:`, `->`, and floating literals are rejected.
+`++`, `--`, compound assignment, `?:`, and `->` are rejected.
 
 ## Statements
 
@@ -307,6 +309,18 @@ func main() int {
 Structs are passed and returned by value. An array parameter becomes a pointer, both as `a int[]` and as `a int[4]`.
 
 A function cannot return an array. There is one `main`.
+
+A function pointer is written with a C declarator. The parameter list uses types, and a name there is optional. A function name used as a value is a pointer to that function.
+
+```c
+func inc(n int) int {
+    return n + 1;
+}
+
+func apply(fp int (*)(int), n int) int {
+    return fp(n);
+}
+```
 
 ## Structs, pointers, and arrays
 
