@@ -37,7 +37,7 @@ func main() int {
     if (d != 5) {
         return 4;
     }
-    var boxes Inner[1];
+    var boxes [1]Inner;
     boxes[0].v = 1;
     e, f := boxes[0].split();
     if (e != 1) {
@@ -46,7 +46,7 @@ func main() int {
     if (f != 2) {
         return 6;
     }
-    var p Inner *;
+    var p *Inner;
     p = &boxes[0];
     g, h := (*p).split();
     if (g != 1) {

@@ -23,7 +23,7 @@ func main() int {
     var p Point;
     p.x = 20;
     p.y = 10;
-    var q Point *;
+    var q *Point;
     q = &p;
     var head Node;
     head.n = 4;

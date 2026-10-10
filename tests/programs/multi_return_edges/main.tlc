@@ -95,13 +95,13 @@ static func hidden() (int, int) {
 }
 
 func adjust(n int) int {
-    var p int * = &n;
+    var p *int = &n;
     n, extra := add(n, 1);
     return *p + extra;
 }
 
 func shadow(n int) int {
-    var p int * = &n;
+    var p *int = &n;
     {
         n, extra := add(1, 2);
     }
@@ -110,7 +110,7 @@ func shadow(n int) int {
 
 func set_outer(n int) int {
     var extra int = 0;
-    var p int * = &n;
+    var p *int = &n;
     {
         n, extra = add(4, 1);
     }
@@ -118,7 +118,7 @@ func set_outer(n int) int {
 }
 
 func mix(keep int) int {
-    var p int * = &keep;
+    var p *int = &keep;
     keep, fresh := add(keep, 2);
     return *p + fresh;
 }
@@ -136,9 +136,9 @@ func hide(outer int) int {
 }
 
 func main() int {
-    var q int *;
+    var q *int;
     var n int;
-    var np int *;
+    var np *int;
     var nn int;
     var wide long long;
     var wk int;

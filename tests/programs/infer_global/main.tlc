@@ -1,6 +1,10 @@
-base := 20;
+var base = 20;
 
 func main() int {
-    var extra i32 = 22;
-    return base + extra;
+    var n = 40;
+    var p = &n;
+    if (*p != 40) {
+        return 1;
+    }
+    return base + 22;
 }

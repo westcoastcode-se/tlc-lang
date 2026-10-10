@@ -195,7 +195,7 @@ A character literal has type `char`. `'A'` is 65 and `'\n'` is 10. A value above
 A string between backticks may span lines. It is an array of `char`, like a quoted string. The characters are copied as written: a backslash is not an escape, and a newline in the source is a newline in the string. The next backtick ends the string.
 
 ```c
-var text char * = `hello
+var text *char = `hello
 world`;
 ```
 
@@ -288,9 +288,9 @@ func main() int {
 
 An anonymous function is an expression, `func (parameters) { body }`. The return type may be omitted, and then it is `void`. A return type is written after the parameters when it is present: `func () int { return 1; }`. Several results use the same parenthesized list as a named function: `func () (int, int) { return 1, 2; }`. The call is the argument list after the body. It does not capture a local or a parameter from an enclosing function.
 
-A variable is `var name type`, or `name := expr` when the type comes from the initializer. `int value = 1` is `expected var`. The type is written the same way as a parameter type, after the name: `var value i32 = 1`, `var p int * = &value`, `var a int[4]`. One `var` names one variable. A variable with no initializer is `var value i32;`. `name := expr` defines a new name and can also assign a name that already exists. `var name := expr` is `type mismatch`.
+A variable is `var name type`, `var name = expr`, or `name := expr`. `int value = 1` is `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *int`, `var buf [32]u8`, `var ps [2]*int`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`. `name := expr` defines a new name and can also assign a name that already exists. `var name := expr` is `type mismatch`. A pointer to an array, as in `*[4]int`, is `not supported yet`.
 
-At file scope, `name := expr` infers the type from the initializer. `var name = expr` and `var a, b = expr` at file scope are `not supported yet`. `export`, `static`, and `extern` go on `var`: `export var n int = 1`, `extern var slot int`. `export` on `name := expr` is `not supported yet`.
+At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `var a, b = expr` at file scope is `not supported yet`. `export`, `static`, and `extern` go on a typed `var`: `export var n int = 1`, `static var n = 1`, `extern var slot int`. `export` or `extern` on an inferred `var name = expr` or `name := expr` is `not supported yet`.
 
 Several results are still bound together: `var a, b = call`. A local struct, enum, or typedef is rejected. Fields, parameters, typedefs, and return types keep their own syntax.
 
@@ -381,7 +381,7 @@ func make(x int, y int) Point {
 
 func main() int {
     var p Point;
-    var q Point *;
+    var q *Point;
     p = make(40, 2);
     q = &p;
     return (*q).x + q.y;
@@ -436,7 +436,7 @@ func add4(p int *) int {
 }
 
 func main() int {
-    var a int[4];
+    var a [4]int;
     a[0] = 10;
     a[1] = 20;
     a[2] = 7;

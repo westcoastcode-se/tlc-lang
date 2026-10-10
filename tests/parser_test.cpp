@@ -173,7 +173,7 @@ int run_parser_tests() {
             "var x double;\n"
             "var y f32;\n"
             "func main() int {\n"
-            "  var fp int (*)(int, f64);\n"
+            "  var fp func (int, f64) int;\n"
             "  return 1.5;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
@@ -232,8 +232,8 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "var p int *;\n"
-            "var q int **;\n"
+            "var p *int;\n"
+            "var q **int;\n"
             "func f(a int *) int *;\n"
             "func main() int {\n"
             "  p = &q;\n"
@@ -249,9 +249,9 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "var a int[4];\n"
-            "var b int *[2];\n"
-            "var s char[3];\n"
+            "var a [4]int;\n"
+            "var b [2]*int;\n"
+            "var s [3]char;\n"
             "func f(xs int[4], t char *) int;\n"
             "func main() int {\n"
             "  return \"hi\"[0];\n"
@@ -265,12 +265,12 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("func main() int { var a int[n]; return 0; }\n");
+        const Parsed parsed = parse_source("func main() int { var a [n]int; return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
     {
-        const Parsed parsed = parse_source("var a int[];\n"
+        const Parsed parsed = parse_source("var a []int;\n"
 "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
@@ -474,7 +474,7 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "func main() int {\n"
             "  var b bool;\n"
-            "  var p int *;\n"
+            "  var p *int;\n"
             "  b = true;\n"
             "  b = false;\n"
             "  p = nullptr;\n"
@@ -781,8 +781,23 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("var n = 1;\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        const Parsed parsed = parse_source("var n = 1;\nfunc main() int { return n; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var n := (int 1))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  var p *i32 = 0;\n"
+            "  var buf [32]u8;\n"
+            "  var ps [2]*int;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var p i32*");
+        EXPECT_HAS(check, parsed.dump, "(var buf u8[32]");
+        EXPECT_HAS(check, parsed.dump, "(var ps int*[2]");
     }
 
     return check.failed;

@@ -749,6 +749,77 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     return type;
 }
 
+Parser::PlacedType Parser::parse_go_type() {
+    auto take_base = [](PlacedType &type, const Specifiers &specs) {
+        if (!type.loc.valid()) {
+            type.loc = specs.loc;
+        }
+        type.type_name = specs.type_name;
+        type.type_package = specs.type_package;
+        type.is_struct = specs.is_struct;
+        type.is_enum = specs.is_enum;
+        type.is_const = specs.is_const;
+        type.struct_definition = specs.struct_definition;
+        type.enum_definition = specs.enum_definition;
+    };
+    if (at_func_type()) {
+        return parse_func_type();
+    }
+    PlacedType type;
+    type.loc = peek().loc;
+    int outer = 0;
+    while (check(TokenKind::Star)) {
+        ++outer;
+        ++pos_;
+    }
+    if (!check(TokenKind::LBracket)) {
+        if (at_func_type()) {
+            PlacedType fn = parse_func_type();
+            if (outer > 0) {
+                diags_.error(type.loc, "not supported yet");
+                fn.indirections += outer;
+            }
+            return fn;
+        }
+        take_base(type, parse_specifiers(false, false, true));
+        type.indirections = outer;
+        return type;
+    }
+    // A star outside the brackets is a pointer to an array.
+    if (outer > 0) {
+        diags_.error(type.loc, "not supported yet");
+    }
+    const ArrayMark array = parse_array_suffix(true);
+    type.is_array = array.is_array;
+    type.array_len = array.length;
+    int inner = 0;
+    while (check(TokenKind::Star)) {
+        ++inner;
+        ++pos_;
+    }
+    if (check(TokenKind::LBracket)) {
+        diags_.error(peek().loc, "not supported yet");
+        while (eat(TokenKind::LBracket)) {
+            while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::Comma) &&
+                   !check(TokenKind::RParen) && !check(TokenKind::Eq) && !check(TokenKind::LBrace) && !eof()) {
+                ++pos_;
+            }
+            eat(TokenKind::RBracket);
+        }
+    }
+    if (at_func_type()) {
+        diags_.error(peek().loc, "not supported yet");
+        PlacedType fn = parse_func_type();
+        fn.is_array = type.is_array;
+        fn.array_len = type.array_len;
+        fn.indirections += inner;
+        return fn;
+    }
+    take_base(type, parse_specifiers(false, false, true));
+    type.indirections = inner;
+    return type;
+}
+
 std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, bool method) {
     std::vector<Param> params;
     variadic = false;
@@ -1205,6 +1276,13 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         if (exported && is_static) {
             diags_.error(storage_loc, "export static");
         }
+        if (var_is_inferred()) {
+            if (exported || is_extern) {
+                diags_.error(peek().loc, "not supported yet");
+            }
+            parse_inferred_global(unit, is_static && !exported && !is_extern, true);
+            return;
+        }
         if (var_is_bind()) {
             diags_.error(peek().loc, "not supported yet");
             parse_bind(true);
@@ -1224,7 +1302,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         if (exported && is_static) {
             diags_.error(storage_loc, "export static");
         }
-        parse_inferred_global(unit, is_static && !exported && !is_extern);
+        parse_inferred_global(unit, is_static && !exported && !is_extern, false);
         return;
     }
     if (check(TokenKind::KwFunc)) {
@@ -1637,6 +1715,10 @@ bool Parser::var_is_bind() const {
     return after == TokenKind::Comma || after == TokenKind::Eq || after == TokenKind::ColonEq;
 }
 
+bool Parser::var_is_inferred() const {
+    return check(TokenKind::KwVar) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq;
+}
+
 VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern) {
     VarDecl var;
     var.loc = peek().loc;
@@ -1654,7 +1736,7 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern) {
     if (check(TokenKind::Eq) || check(TokenKind::ColonEq) || check(TokenKind::Comma)) {
         error_here("expected a type");
     }
-    const PlacedType type = parse_placed_type(false, true);
+    const PlacedType type = parse_go_type();
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc, "not supported yet");
     }
@@ -1690,11 +1772,14 @@ std::unique_ptr<Stmt> Parser::parse_var_or_bind() {
     return parse_bind(check(TokenKind::KwVar));
 }
 
-void Parser::parse_inferred_global(TranslationUnit &unit, bool is_static) {
+void Parser::parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var) {
     VarDecl var;
     var.loc = peek().loc;
     var.inferred = true;
     var.is_static = is_static;
+    if (from_var) {
+        expect(TokenKind::KwVar, "expected 'var'");
+    }
     if (check(TokenKind::Identifier)) {
         var.name = peek().text;
         var.loc = peek().loc;
@@ -1702,7 +1787,11 @@ void Parser::parse_inferred_global(TranslationUnit &unit, bool is_static) {
     } else {
         error_here("expected an identifier");
     }
-    expect(TokenKind::ColonEq, "expected ':='");
+    if (from_var) {
+        expect(TokenKind::Eq, "expected '='");
+    } else {
+        expect(TokenKind::ColonEq, "expected ':='");
+    }
     var.init = parse_expr();
     expect(TokenKind::Semicolon, "expected ';'");
     TopDecl top;

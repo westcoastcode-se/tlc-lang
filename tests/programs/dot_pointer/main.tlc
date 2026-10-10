@@ -14,7 +14,7 @@ func Point::add(this self Point *, dx int, dy int) void {
 
 func main() int {
     var p Point;
-    var q Point *;
+    var q *Point;
     p.x = 0;
     p.y = 0;
     q = &p;

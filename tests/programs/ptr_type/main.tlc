@@ -4,7 +4,7 @@ func identity(p int *) int {
 
 func main() int {
     var n int = 1;
-    var p int * = &n;
-    var pp int ** = &p;
+    var p *int = &n;
+    var pp **int = &p;
     return identity(pp);
 }

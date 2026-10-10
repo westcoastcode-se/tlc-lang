@@ -104,6 +104,8 @@ class Parser {
     void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern);
     ArrayMark parse_array_suffix(bool allow_unsized);
     PlacedType parse_placed_type(bool allow_const, bool allow_array);
+    // `var` types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
+    PlacedType parse_go_type();
     std::vector<Param> parse_params(bool allow_const, bool &variadic, bool method = false);
     void take_result(FunctionDecl &fn, const PlacedType &type);
     void parse_results(FunctionDecl &fn);
@@ -121,9 +123,10 @@ class Parser {
     std::unique_ptr<Stmt> parse_return();
     std::unique_ptr<Stmt> parse_bind(bool is_var);
     bool var_is_bind() const;
+    bool var_is_inferred() const;
     std::unique_ptr<Stmt> parse_var_or_bind();
     VarDecl parse_typed_var(bool exported, bool is_static, bool is_extern);
-    void parse_inferred_global(TranslationUnit &unit, bool is_static);
+    void parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var);
     void reject_c_var(SourceLoc loc);
 
     std::unique_ptr<Expr> parse_expr();
