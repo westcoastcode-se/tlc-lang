@@ -1,0 +1,17 @@
+package gl;
+
+// OpenGL 1.x entry points exported by libGL. Core-profile functions are not
+// in that library; they are loaded at run time, which this binding does not do.
+
+export enum Gl {
+    GL_TRIANGLES = 0x0004,
+    GL_COLOR_BUFFER_BIT = 0x00004000,
+};
+
+export extern func glViewport(x int, y int, width int, height int) void;
+export extern func glClearColor(red f32, green f32, blue f32, alpha f32) void;
+export extern func glClear(mask u32) void;
+export extern func glBegin(mode u32) void;
+export extern func glEnd() void;
+export extern func glColor3f(red f32, green f32, blue f32) void;
+export extern func glVertex2f(x f32, y f32) void;

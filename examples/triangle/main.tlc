@@ -1,0 +1,96 @@
+import {
+    SDL_Init,
+    SDL_Quit,
+    SDL_GetError,
+    SDL_CreateWindow,
+    SDL_DestroyWindow,
+    SDL_GL_SetAttribute,
+    SDL_GL_CreateContext,
+    SDL_GL_MakeCurrent,
+    SDL_GL_SwapWindow,
+    SDL_PollEvent,
+    SDL_Delay,
+    SDL_Window,
+    SDL_GLContextState,
+    SDL_INIT_VIDEO,
+    SDL_WINDOW_OPENGL,
+    SDL_EVENT_QUIT,
+    SDL_EVENT_WINDOW_CLOSE_REQUESTED,
+    SDL_GL_CONTEXT_MAJOR_VERSION,
+    SDL_GL_CONTEXT_MINOR_VERSION,
+    SDL_GL_CONTEXT_PROFILE_MASK,
+    SDL_GL_CONTEXT_PROFILE_COMPATIBILITY,
+} from "sdl3";
+
+import {
+    glViewport,
+    glClearColor,
+    glClear,
+    glBegin,
+    glEnd,
+    glColor3f,
+    glVertex2f,
+    GL_TRIANGLES,
+    GL_COLOR_BUFFER_BIT,
+} from "gl";
+
+extern func printf(fmt const char *, ...) int;
+
+func draw_triangle() void {
+    glClear(GL_COLOR_BUFFER_BIT);
+    glBegin(GL_TRIANGLES);
+    glColor3f(0.95f, 0.35f, 0.30f);
+    glVertex2f(-0.6f, -0.5f);
+    glColor3f(0.30f, 0.85f, 0.45f);
+    glVertex2f(0.6f, -0.5f);
+    glColor3f(0.30f, 0.55f, 0.95f);
+    glVertex2f(0.0f, 0.6f);
+    glEnd();
+}
+
+func main() int {
+    if (SDL_Init(SDL_INIT_VIDEO) == 0) {
+        printf("SDL_Init failed: %s\n", SDL_GetError());
+        return 1;
+    }
+    // Compatibility profile so glBegin is a real libGL entry point.
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+
+    SDL_Window *window = SDL_CreateWindow("Triangle", 960, 540, SDL_WINDOW_OPENGL);
+    if (window == nullptr) {
+        printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
+        SDL_Quit();
+        return 1;
+    }
+    SDL_GLContextState *context = SDL_GL_CreateContext(window);
+    if (context == nullptr) {
+        printf("SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+    SDL_GL_MakeCurrent(window, context);
+    glViewport(0, 0, 960, 540);
+    glClearColor(0.08f, 0.09f, 0.12f, 1.0f);
+
+    int running = 1;
+    while (running != 0) {
+        // SDL_Event is 128 bytes and 8-aligned. The first field is the type.
+        u64 event[16];
+        while (SDL_PollEvent((void *)event) != 0) {
+            u32 kind = *(u32 *)event;
+            if (kind == SDL_EVENT_QUIT || kind == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+                running = 0;
+            }
+        }
+        draw_triangle();
+        SDL_GL_SwapWindow(window);
+        SDL_Delay(16);
+    }
+
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return 0;
+}

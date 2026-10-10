@@ -24,3 +24,9 @@ build/tlc --check main.tlc
 With no mode flag, `tlc` writes an executable. The default name is `a.out`. `cc` links it. `--run` compiles, links, and runs. The exit status is the program's. `-l` and `-L` link shared or static libraries. `-Bstatic` and `-Bdynamic` choose which kind each `-l` uses. A library path, such as `libfoo.a`, `libfoo.so`, or `libfoo.so.1`, is passed to the linker as well.
 
 `import "sdl3"` also searches `lib/tlc` next to the compiler prefix, or the directory in `TLC_LIB`. A package there is `.tlc` bindings plus the static and shared libraries beside them. Those libraries are linked when the package is imported. See [docs/language.md](docs/language.md).
+
+`examples/triangle` draws a triangle with SDL3 and OpenGL:
+
+```sh
+build/tlc --run examples/triangle/main.tlc
+```

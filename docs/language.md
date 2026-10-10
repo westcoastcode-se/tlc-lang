@@ -93,6 +93,8 @@ lib/tlc/sdl3/
     link
 ```
 
+`examples/triangle` is a program that imports `sdl3` and `gl` from this directory. Each of those packages names a system library in its `link` file.
+
 Every `.tlc` file in that package is compiled with the program. A static archive (`.a`) and a shared library (`.so`, `.dylib`, or a versioned name such as `libfoo.so.1`) in the same directory is linked into the executable. When one library name has both an archive and a shared library, the archive is linked. Shared libraries are found through an rpath that points at the package directory. The same package imported from several files is linked once.
 
 A file named `link` in the package adds more linker arguments after those libraries. Each line holds the same flags as the command line: `-l`, `-L`, `-Bstatic`, `-Bdynamic`, `-static`, `-Wl`, and library paths. `#` comments out the rest of the line. A relative path is resolved from the package directory. `$ORIGIN` in an rpath is left as written. `--check`, `--emit-llvm`, and `--emit-obj` load the package and do not link.
