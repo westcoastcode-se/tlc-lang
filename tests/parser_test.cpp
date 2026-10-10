@@ -800,5 +800,16 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(var ps int*[2]");
     }
 
+    {
+        const Parsed parsed = parse_source("func main() int { var arr *[4]i32 = 0; return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var arr i32[4] ptrarr");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { var arr **[4]i32; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
     return check.failed;
 }

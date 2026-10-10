@@ -200,6 +200,8 @@ struct VarDecl {
     int indirections = 0;
     bool is_array = false;
     int array_len = 0;
+    // The value is a pointer to the array, as in `*[4]i32`.
+    bool ptr_to_array = false;
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     std::vector<FnParam> fn_params;

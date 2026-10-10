@@ -72,6 +72,9 @@ struct Binding {
     bool elem_char = false;
     bool is_array = false;
     int array_len = 0;
+    // The loaded value is a pointer to an array (`*[4]i32`).
+    bool ptr_to_array = false;
+    int ptr_array_len = 0;
     int struct_id = -1;
     bool elem_void = false;
     bool elem_bool = false;
@@ -116,6 +119,9 @@ struct TypedValue {
     int fn_ret_struct = -1;
     std::vector<FnParam> fn_results{};
     int enum_id = -1;
+    // Set when this value is a pointer to an array (`*[4]i32`).
+    bool ptr_to_array = false;
+    int ptr_array_len = 0;
 };
 
 // How an extern function passes one struct on x86-64 System V.
@@ -258,6 +264,8 @@ class CodeGen {
         bool elem_char = false;
         bool is_array = false;
         int array_len = 0;
+        bool ptr_to_array = false;
+        int ptr_array_len = 0;
         int struct_id = -1;
         bool elem_void = false;
         bool elem_bool = false;
@@ -575,6 +583,8 @@ class CodeGen {
         }
         TypedValue loaded = load_object(binding.value, binding.depth, binding.elem_char, binding.struct_id, binding.elem_void,
                                         binding.elem_bool, binding.elem_bits, binding.elem_unsigned, binding.elem_float);
+        loaded.ptr_to_array = binding.ptr_to_array;
+        loaded.ptr_array_len = binding.ptr_array_len;
         loaded.fn_ty = binding.fn_ty;
         loaded.fn_ret_depth = binding.fn_ret_depth;
         loaded.fn_ret_float = binding.fn_ret_float;
@@ -635,6 +645,7 @@ class CodeGen {
     bool alias_base_ready(uint32_t file, const TypedefDecl &item) const;
     Lowered lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct, int indirections,
                   bool is_array, int array_len, bool parameter) const;
+    Lowered lower_declared(uint32_t file, const VarDecl &var) const;
     Lowered lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package, bool ret_struct,
                         bool ret_enum, int ret_indirections, int fn_depth, const std::vector<FnParam> &params,
                         bool variadic, const std::vector<FnParam> &results) const;
@@ -1570,6 +1581,25 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     return out;
 }
 
+CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) const {
+    if (var.is_fn_ptr) {
+        return lower_fnptr(file, var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
+                           var.indirections, var.fn_params, var.fn_variadic, var.fn_results);
+    }
+    Lowered low = lower(file, var.type_name, var.type_package, var.is_struct, var.indirections, var.is_array,
+                        var.array_len, false);
+    if (!var.ptr_to_array) {
+        return low;
+    }
+    low.ptr_to_array = true;
+    low.ptr_array_len = low.array_len;
+    low.depth += 1;
+    low.is_array = false;
+    low.array_len = 0;
+    low.type = ptr_type();
+    return low;
+}
+
 CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package,
                                       bool ret_struct, bool ret_enum, int ret_indirections, int fn_depth,
                                       const std::vector<FnParam> &params, bool variadic,
@@ -1642,6 +1672,8 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.fn_ret_struct = low.fn_ret_struct;
     binding.fn_results = low.fn_results;
     binding.enum_id = low.enum_id;
+    binding.ptr_to_array = low.ptr_to_array;
+    binding.ptr_array_len = low.ptr_array_len;
 }
 
 const CodeGen::FieldLayout *CodeGen::find_field(int struct_id, const std::string &name, int &index) const {
@@ -2556,12 +2588,8 @@ void CodeGen::declare_file(const PackageNode &node) {
                 error(var->loc, "type mismatch");
                 low = lower(node.file_id, "int", "", false, 0, false, 0, false);
             }
-        } else if (var->is_fn_ptr) {
-            low = lower_fnptr(node.file_id, var->type_name, var->type_package, var->is_struct, var->is_enum,
-                              var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic, var->fn_results);
         } else {
-            low = lower(node.file_id, var->type_name, var->type_package, var->is_struct, var->indirections, var->is_array,
-                        var->array_len, false);
+            low = lower_declared(node.file_id, *var);
         }
         llvm::Type *ty = stored_type(low);
         llvm::GlobalVariable *existing = var->is_extern ? module_.getGlobalVariable(form.name) : nullptr;
@@ -2595,6 +2623,8 @@ void CodeGen::declare_file(const PackageNode &node) {
         binding.elem_char = low.elem_char;
         binding.is_array = low.is_array;
         binding.array_len = low.array_len;
+        binding.ptr_to_array = low.ptr_to_array;
+        binding.ptr_array_len = low.ptr_array_len;
         binding.struct_id = low.struct_id;
         binding.elem_void = low.elem_void;
         binding.elem_bool = low.elem_bool;
@@ -3722,8 +3752,18 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             error(index->loc, "not an lvalue");
             return {};
         }
-        const int depth = base.depth - 1;
         llvm::Value *offset = subscript.value;
+        if (base.ptr_to_array) {
+            const int depth = base.depth - 1;
+            llvm::Type *element =
+                leaf_type(depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
+            llvm::Type *array = llvm::ArrayType::get(element, static_cast<uint64_t>(base.ptr_array_len));
+            llvm::Value *slot = builder_.CreateInBoundsGEP(
+                array, base.value, llvm::ArrayRef<llvm::Value *>{const_i32(0), offset});
+            return {slot, depth, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool, base.elem_bits,
+                    base.elem_unsigned};
+        }
+        const int depth = base.depth - 1;
         llvm::Value *slot = builder_.CreateInBoundsGEP(
             leaf_type(depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits), base.value,
             llvm::ArrayRef<llvm::Value *>{offset});
@@ -4096,10 +4136,34 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
                     }
+                    // `*arr` on a pointer to an array is the array, which decays to a pointer to its element.
+                    if (inner.ptr_to_array) {
+                        TypedValue decayed = inner;
+                        decayed.ptr_to_array = false;
+                        decayed.ptr_array_len = 0;
+                        return decayed;
+                    }
                     return load_object(inner.value, inner.depth - 1, inner.elem_char, inner.struct_id, inner.elem_void,
                                        inner.elem_bool, inner.elem_bits, inner.elem_unsigned, inner.elem_float);
                 }
                 if (node.op == TokenKind::Amp) {
+                    if (const auto *named = std::get_if<Expr::Name>(&node.expr->data)) {
+                        if (const Binding *binding = lookup(named->text); binding != nullptr && binding->is_array) {
+                            TypedValue pointer;
+                            pointer.value = binding->value;
+                            pointer.depth = binding->depth + 1;
+                            pointer.elem_char = binding->elem_char;
+                            pointer.struct_id = binding->struct_id;
+                            pointer.elem_void = binding->elem_void;
+                            pointer.elem_bool = binding->elem_bool;
+                            pointer.elem_bits = binding->elem_bits;
+                            pointer.elem_unsigned = binding->elem_unsigned;
+                            pointer.elem_float = binding->elem_float;
+                            pointer.ptr_to_array = true;
+                            pointer.ptr_array_len = binding->array_len;
+                            return pointer;
+                        }
+                    }
                     const TypedValue addr = emit_addr(*node.expr);
                     if (addr.value == nullptr) {
                         return {zero(), 0};
@@ -4637,6 +4701,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.elem_bool = got.elem_bool;
             binding.elem_bits = got.elem_bits;
             binding.elem_unsigned = got.elem_unsigned;
+            binding.elem_float = got.elem_float;
+            binding.ptr_to_array = got.ptr_to_array;
+            binding.ptr_array_len = got.ptr_array_len;
         } else if (got.struct_id >= 0 && got.struct_id < static_cast<int>(structs_.size()) &&
                    structs_[static_cast<std::size_t>(got.struct_id)].type != nullptr) {
             ty = structs_[static_cast<std::size_t>(got.struct_id)].type;
@@ -5066,13 +5133,8 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     if (var.name.empty()) {
                         continue;
                     }
-                    const Lowered low = var.is_fn_ptr
-                                            ? lower_fnptr(current_file_, var.type_name, var.type_package, var.is_struct,
-                                                          var.is_enum, var.ret_indirections, var.indirections, var.fn_params,
-                                                          var.fn_variadic, var.fn_results)
-                                            : lower(current_file_, var.type_name, var.type_package, var.is_struct,
-                                                    var.indirections, var.is_array, var.array_len, false);
-                    if (var.is_array || low.is_array) {
+                    const Lowered low = lower_declared(current_file_, var);
+                    if (!var.ptr_to_array && (var.is_array || low.is_array)) {
                         if (!low.is_array || low.array_len <= 0) {
                             error(var.loc, "not supported yet");
                             continue;

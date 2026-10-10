@@ -102,6 +102,9 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
     } else {
         out += type_text(var.type_name, var.type_package, var.is_struct, var.is_enum, var.indirections, var.is_array,
                          var.array_len);
+        if (var.ptr_to_array) {
+            out += " ptrarr";
+        }
         if (var.is_fn_ptr) {
             out += " fnptr";
             append_many_results(out, var.fn_results);

@@ -785,9 +785,11 @@ Parser::PlacedType Parser::parse_go_type() {
         type.indirections = outer;
         return type;
     }
-    // A star outside the brackets is a pointer to an array.
-    if (outer > 0) {
+    // One star outside the brackets is a pointer to the array: `*[4]i32`.
+    if (outer > 1) {
         diags_.error(type.loc, "not supported yet");
+    } else if (outer == 1) {
+        type.ptr_to_array = true;
     }
     const ArrayMark array = parse_array_suffix(true);
     type.is_array = array.is_array;
@@ -1747,6 +1749,7 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern) {
     var.indirections = type.indirections;
     var.is_array = type.is_array;
     var.array_len = type.array_len;
+    var.ptr_to_array = type.ptr_to_array;
     var.is_fn_ptr = type.is_fn_ptr;
     var.ret_indirections = type.ret_indirections;
     var.fn_params = type.fn_params;

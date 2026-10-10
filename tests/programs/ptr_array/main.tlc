@@ -1,0 +1,15 @@
+func main() int {
+    var data [4]i32;
+    data[0] = 22;
+    data[1] = 1;
+    var arr *[4]i32 = &data;
+    var inferred = &data;
+    if (arr[1] != (*arr)[1] || inferred[0] != data[0]) {
+        return 1;
+    }
+    arr[1] = 20;
+    if (data[1] != 20 || inferred[1] != 20) {
+        return 2;
+    }
+    return arr[0] + arr[1];
+}

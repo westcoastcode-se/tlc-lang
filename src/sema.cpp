@@ -162,6 +162,8 @@ class Checker {
                         int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
                         const std::vector<FnParam> &results, SourceLoc loc);
     Type type_of_param(const Param &param);
+    Type type_of_var(const VarDecl &var);
+    bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
     Type type_of_result(const ResultSlot &slot, SourceLoc loc);
     std::string type_desc(const Type &type) const;
     void mismatch(SourceLoc loc, const Type &want, const Type &got);
@@ -706,6 +708,48 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
         pointer = type_pointer(std::move(pointer));
     }
     return pointer;
+}
+
+Type Checker::type_of_var(const VarDecl &var) {
+    Type type = var.is_fn_ptr
+                    ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
+                                     var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc)
+                    : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
+                                  var.type_package, var.is_struct, var.is_enum);
+    if (!var.ptr_to_array || type.kind == TypeKind::Invalid) {
+        return type;
+    }
+    if (type.kind != TypeKind::Array) {
+        error(var.loc, "type mismatch");
+        return type_invalid();
+    }
+    return type_pointer(std::move(type));
+}
+
+bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) const {
+    pointee_void = false;
+    if (base.kind != TypeKind::Pointer || base.pointee == nullptr) {
+        return false;
+    }
+    const Type &pointee = *base.pointee;
+    if (pointee.kind == TypeKind::Void) {
+        pointee_void = true;
+        return false;
+    }
+    // `arr[1]` on a pointer to an array is `(*arr)[1]`.
+    if (pointee.kind == TypeKind::Array) {
+        if (pointee.element == nullptr) {
+            return false;
+        }
+        if (pointee.element->kind == TypeKind::Void) {
+            pointee_void = true;
+            return false;
+        }
+        out = *pointee.element;
+        return true;
+    }
+    out = pointee;
+    return true;
 }
 
 Type Checker::type_of_param(const Param &param) {
@@ -2147,10 +2191,6 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (inner.kind == TypeKind::Function) {
                         return type_pointer(inner);
                     }
-                    if (inner.kind == TypeKind::Array) {
-                        error(node.loc, "not supported yet");
-                        return type_invalid();
-                    }
                     return type_pointer(inner);
                 }
                 const Type inner = check_expr(*node.expr, true);
@@ -2277,18 +2317,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     const Type subscript = check_expr(*index->index, true);
                     expect(subscript, type_int(), expr_loc(*index->index));
                     const Type rhs = check_expr(*node.rhs, true);
-                    if (base.kind != TypeKind::Pointer || !base.pointee) {
+                    Type element;
+                    bool pointee_void = false;
+                    if (!indexed_type(base, element, pointee_void)) {
                         if (base.kind != TypeKind::Invalid) {
-                            error(node.loc, "not an lvalue");
+                            error(node.loc, pointee_void ? "type mismatch" : "not an lvalue");
                         }
                         return type_invalid();
                     }
-                    if (base.pointee->kind == TypeKind::Void) {
-                        error(node.loc, "type mismatch");
-                        return type_invalid();
-                    }
-                    expect_value(rhs, *base.pointee, *node.rhs, expr_loc(*node.rhs));
-                    return *base.pointee;
+                    expect_value(rhs, element, *node.rhs, expr_loc(*node.rhs));
+                    return element;
                 }
                 if (const auto *selector = std::get_if<Expr::Selector>(&node.lhs->data)) {
                     if (selector->base != nullptr && enum_designator(*selector->base) >= 0) {
@@ -2594,17 +2632,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 const Type base = check_expr(*node.base, true);
                 const Type subscript = check_expr(*node.index, true);
                 expect(subscript, type_int(), expr_loc(*node.index));
-                if (base.kind != TypeKind::Pointer || !base.pointee) {
+                Type element;
+                bool pointee_void = false;
+                if (!indexed_type(base, element, pointee_void)) {
                     if (base.kind != TypeKind::Invalid) {
                         error(node.loc, "type mismatch");
                     }
                     return type_invalid();
                 }
-                if (base.pointee->kind == TypeKind::Void) {
-                    error(node.loc, "type mismatch");
-                    return type_invalid();
-                }
-                return *base.pointee;
+                return element;
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 (void)used;
                 return type_bool();
@@ -3066,19 +3102,14 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 for (const VarDecl &var : node.vars) {
-                    Type type = var.is_fn_ptr
-                                    ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum,
-                                                     var.ret_indirections, var.indirections, var.fn_params, var.fn_variadic,
-                                                     var.fn_results, var.loc)
-                                    : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc,
-                                                  false, var.type_package, var.is_struct, var.is_enum);
+                    Type type = type_of_var(var);
                     Symbol symbol;
                     symbol.name = var.name;
                     symbol.type = type;
                     symbol.is_auto = true;
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     declare(std::move(symbol), var.loc);
-                    if (var.is_array && var.init) {
+                    if (var.is_array && !var.ptr_to_array && var.init) {
                         error(var.loc, "not supported yet");
                     } else if (var.init) {
                         expect_value(check_expr(*var.init, true), type, *var.init, expr_loc(*var.init));
@@ -3273,12 +3304,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     }
                 }
             } else {
-                type = var->is_fn_ptr
-                           ? type_of_fn_ptr(var->type_name, var->type_package, var->is_struct, var->is_enum,
-                                            var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic,
-                                            var->fn_results, var->loc)
-                           : object_type(var->type_name, var->indirections, var->is_array, var->array_len, var->loc, false,
-                                         var->type_package, var->is_struct, var->is_enum);
+                type = type_of_var(*var);
             }
             Symbol symbol;
             symbol.name = var->name;
@@ -3298,7 +3324,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
             check_function(*fn);
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
-            if (var->is_array && var->init) {
+            if (var->is_array && !var->ptr_to_array && var->init) {
                 error(var->loc, "not supported yet");
             } else if (var->init) {
                 const Symbol *symbol = lookup(var->name);
