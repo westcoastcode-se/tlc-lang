@@ -1,6 +1,6 @@
 # The language
 
-`tlc` compiles a C dialect. The syntax is close to C. A function is written `func name(arg type) type`. You compile one entry file, import names a directory of source files, and types can have methods and traits. The dialect is a subset of ISO C with these additions.
+`tlc` compiles a C dialect. The syntax is close to C, and the grammar is in [grammar.md](grammar.md). A function is written `func name(arg type) type`. You compile one entry file, import names a directory of source files, and types can have methods and traits. The dialect is a subset of ISO C with these additions.
 
 Diagnostics look like `file:line:column: error: message`.
 

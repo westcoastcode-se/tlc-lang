@@ -2,7 +2,7 @@
 
 `tlc` 0.1.0 is a compiler for a C dialect. You compile one entry file. `import` names a directory of `.tlc` files, and only `export` is visible outside that package.
 
-The language is described in [docs/language.md](docs/language.md).
+The language is described in [docs/language.md](docs/language.md). The syntax is in [docs/grammar.md](docs/grammar.md).
 
 ## Build
 

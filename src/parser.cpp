@@ -1972,7 +1972,7 @@ std::unique_ptr<Expr> Parser::parse_and() {
         const TokenKind op = peek().kind;
         const SourceLoc loc = peek().loc;
         ++pos_;
-        auto rhs = parse_equality();
+        auto rhs = parse_bit_or();
         Expr::Binary node;
         node.loc = loc;
         node.op = op;

@@ -679,6 +679,12 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source("func main() int { return a && b | c && d; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(&& (&& (name a) (| (name b) (name c))) (name d))");
+    }
+
+    {
         const Parsed parsed = parse_source(
             "struct Point { int x; };\n"
             "func Point::method(this self Point, a int, b int, c int) void {\n"
