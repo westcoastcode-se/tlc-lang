@@ -37,8 +37,15 @@ Type type_bool();
 Type type_nullptr();
 Type type_pointer(Type pointee);
 Type type_array(Type element, int length);
+Type type_struct(int id);
+Type type_enum(int id);
+Type type_trait(int id);
 Type type_function(Type result, std::vector<Type> params, bool variadic = false);
 Type type_tuple(std::vector<Type> results);
+Type type_rank(int rank, bool is_unsigned);
+Type type_float(int bits);
+bool uses_many_results(const Type &type);
+bool mentions_trait(const Type &type);
 bool same_type(const Type &lhs, const Type &rhs);
 
 void analyze(const TranslationUnit &unit, DiagnosticEngine &diags);

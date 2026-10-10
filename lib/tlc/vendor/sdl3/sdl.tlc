@@ -6,12 +6,38 @@ package sdl3;
 export extern struct SDL_Window {}
 export extern struct SDL_GLContextState {}
 
-// SDL_Event is a 128-byte union, aligned to 8. `type` is the first field.
-// The u64 array starts at offset 8 and fills the rest, so the layout matches.
-export extern struct SDL_Event {
+// SDL_Event is the C union. Every member starts at offset 0, `type` included.
+// The included structs are the ones this binding names. `padding` is the
+// 128-byte member from SDL_events.h, so the union stays 128 bytes. The u64
+// timestamp in the structs makes the alignment 8, matching SDL.
+export extern struct SDL_CommonEvent {
     u32 type;
-    u64 rest[15];
-};
+    u32 reserved;
+    u64 timestamp;
+}
+
+export extern struct SDL_WindowEvent {
+    u32 type;
+    u32 reserved;
+    u64 timestamp;
+    u32 windowID;
+    i32 data1;
+    i32 data2;
+}
+
+export extern struct SDL_QuitEvent {
+    u32 type;
+    u32 reserved;
+    u64 timestamp;
+}
+
+export extern union SDL_Event {
+    u32 type;
+    SDL_CommonEvent common;
+    SDL_WindowEvent window;
+    SDL_QuitEvent quit;
+    u8 padding[128];
+}
 
 export extern enum SdlInit {
     SDL_INIT_VIDEO = 0x20,

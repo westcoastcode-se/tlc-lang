@@ -1,0 +1,628 @@
+// Expressions, casts, and anonymous functions.
+#include "parser.hpp"
+#include "parse_util.hpp"
+
+#include <utility>
+
+namespace tlc {
+
+std::unique_ptr<Expr> Parser::parse_expr() { return parse_assignment(); }
+
+std::unique_ptr<Expr> Parser::parse_assignment() {
+    auto lhs = parse_conditional();
+    if (eat(TokenKind::Eq)) {
+        auto rhs = parse_assignment();
+        Expr::Assign node;
+        node.loc = expr_loc(*lhs);
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        return make_expr(std::move(node));
+    }
+    const TokenKind kind = peek().kind;
+    if (kind == TokenKind::PlusEq || kind == TokenKind::MinusEq || kind == TokenKind::StarEq ||
+        kind == TokenKind::SlashEq || kind == TokenKind::PercentEq || kind == TokenKind::AmpEq ||
+        kind == TokenKind::PipeEq || kind == TokenKind::CaretEq || kind == TokenKind::LtLtEq ||
+        kind == TokenKind::GtGtEq) {
+        error_here("not supported yet");
+        ++pos_;
+        parse_assignment();
+        return unsupported_expr(expr_loc(*lhs));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_conditional() {
+    auto cond = parse_or();
+    if (eat(TokenKind::Question)) {
+        error_here("not supported yet");
+        parse_expr();
+        expect(TokenKind::Colon, "expected ':'");
+        parse_conditional();
+        return unsupported_expr(expr_loc(*cond));
+    }
+    return cond;
+}
+
+std::unique_ptr<Expr> Parser::parse_or() {
+    auto lhs = parse_and();
+    while (check(TokenKind::PipePipe)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_and();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_and() {
+    auto lhs = parse_bit_or();
+    while (check(TokenKind::AmpAmp)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_bit_or();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_bit_or() {
+    auto lhs = parse_bit_xor();
+    while (check(TokenKind::Pipe)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_bit_xor();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_bit_xor() {
+    auto lhs = parse_bit_and();
+    while (check(TokenKind::Caret)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_bit_and();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_bit_and() {
+    auto lhs = parse_equality();
+    while (check(TokenKind::Amp)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_equality();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_equality() {
+    auto lhs = parse_relational();
+    while (check(TokenKind::EqEq) || check(TokenKind::BangEq)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_relational();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_relational() {
+    auto lhs = parse_shift();
+    while (check(TokenKind::Lt) || check(TokenKind::Gt) || check(TokenKind::Le) || check(TokenKind::Ge)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_shift();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_shift() {
+    auto lhs = parse_additive();
+    while (check(TokenKind::LtLt) || check(TokenKind::GtGt)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_additive();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_additive() {
+    auto lhs = parse_multiplicative();
+    while (check(TokenKind::Plus) || check(TokenKind::Minus)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_multiplicative();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+std::unique_ptr<Expr> Parser::parse_multiplicative() {
+    auto lhs = parse_unary();
+    while (check(TokenKind::Star) || check(TokenKind::Slash) || check(TokenKind::Percent)) {
+        const TokenKind op = peek().kind;
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_unary();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = op;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        lhs = make_expr(std::move(node));
+    }
+    return lhs;
+}
+
+bool Parser::starts_type_paren() const {
+    if (peek().kind != TokenKind::LParen) {
+        return false;
+    }
+    std::size_t index = 1;
+    const TokenKind kind = peek(index).kind;
+    if (is_int_spec(kind)) {
+        while (is_int_spec(peek(index).kind)) {
+            ++index;
+        }
+    } else if (kind == TokenKind::KwVoid || kind == TokenKind::KwBool || kind == TokenKind::KwFloat ||
+               kind == TokenKind::KwDouble) {
+        ++index;
+    } else if (kind == TokenKind::Identifier && is_type_alias(peek(index).text) &&
+               (peek(index + 1).kind == TokenKind::RParen || peek(index + 1).kind == TokenKind::Star)) {
+        ++index;
+    } else if (kind == TokenKind::KwStruct || kind == TokenKind::KwEnum) {
+        if (peek(index + 1).kind != TokenKind::Identifier) {
+            return false;
+        }
+        index += 2;
+    } else if (kind == TokenKind::Identifier && peek(index + 1).kind == TokenKind::Dot &&
+               peek(index + 2).kind == TokenKind::Identifier) {
+        index += 3;
+    } else if (kind == TokenKind::Identifier && peek(index + 1).kind == TokenKind::Star) {
+        ++index;
+    } else {
+        return false;
+    }
+    while (peek(index).kind == TokenKind::Star) {
+        ++index;
+    }
+    return peek(index).kind == TokenKind::RParen;
+}
+
+bool Parser::starts_cast_type() const {
+    std::size_t index = 0;
+    const TokenKind kind = peek(index).kind;
+    if (is_int_spec(kind)) {
+        while (is_int_spec(peek(index).kind)) {
+            ++index;
+        }
+    } else if (kind == TokenKind::KwVoid || kind == TokenKind::KwBool || kind == TokenKind::KwFloat ||
+               kind == TokenKind::KwDouble) {
+        ++index;
+    } else if (kind == TokenKind::Identifier && is_type_alias(peek(index).text)) {
+        ++index;
+    } else if (kind == TokenKind::KwStruct || kind == TokenKind::KwEnum) {
+        if (peek(index + 1).kind != TokenKind::Identifier) {
+            return false;
+        }
+        index += 2;
+    } else if (kind == TokenKind::Identifier && peek(index + 1).kind == TokenKind::Star) {
+        ++index;
+    } else {
+        return false;
+    }
+    while (peek(index).kind == TokenKind::Star) {
+        ++index;
+    }
+    return peek(index).kind == TokenKind::LParen;
+}
+
+Parser::ParenType Parser::parse_cast_type() {
+    ParenType type;
+    type.loc = peek().loc;
+    if (is_int_spec(peek().kind)) {
+        IntSpecs ints;
+        while (is_int_spec(peek().kind)) {
+            take_int_spec(ints, peek().kind);
+            ++pos_;
+        }
+        if (ints.bad) {
+            diags_.error(type.loc, "type mismatch");
+            type.name = "invalid";
+        } else {
+            type.name = canonical_int(ints);
+            if (type.name == "invalid") {
+                diags_.error(type.loc, "type mismatch");
+            }
+        }
+    } else if (eat(TokenKind::KwVoid)) {
+        type.name = "void";
+    } else if (eat(TokenKind::KwBool)) {
+        type.name = "bool";
+    } else if (eat(TokenKind::KwFloat)) {
+        type.name = "float";
+    } else if (eat(TokenKind::KwDouble)) {
+        type.name = "double";
+    } else if (eat(TokenKind::KwStruct)) {
+        type.is_struct = true;
+        if (check(TokenKind::Identifier)) {
+            type.name = peek().text;
+            type.loc = peek().loc;
+            ++pos_;
+        } else {
+            error_here("expected an identifier");
+            type.name = "invalid";
+        }
+    } else if (eat(TokenKind::KwEnum)) {
+        type.is_enum = true;
+        if (check(TokenKind::Identifier)) {
+            type.name = peek().text;
+            type.loc = peek().loc;
+            ++pos_;
+        } else {
+            error_here("expected an identifier");
+            type.name = "invalid";
+        }
+    } else if (check(TokenKind::Identifier) && peek(1).kind == TokenKind::Dot &&
+               peek(2).kind == TokenKind::Identifier) {
+        type.package = peek().text;
+        type.name = peek(2).text;
+        pos_ += 3;
+    } else if (check(TokenKind::Identifier)) {
+        type.name = peek().text;
+        ++pos_;
+    }
+    while (eat(TokenKind::Star)) {
+        ++type.indirections;
+    }
+    return type;
+}
+
+Parser::ParenType Parser::parse_paren_type() {
+    eat(TokenKind::LParen);
+    ParenType type = parse_cast_type();
+    expect(TokenKind::RParen, "expected ')'");
+    return type;
+}
+
+std::unique_ptr<Expr> Parser::parse_cast_expr() {
+    Expr::Cast node;
+    node.loc = peek().loc;
+    const ParenType type = parse_cast_type();
+    node.type_name = type.name;
+    node.type_package = type.package;
+    node.is_struct = type.is_struct;
+    node.is_enum = type.is_enum;
+    node.indirections = type.indirections;
+    expect(TokenKind::LParen, "expected '('");
+    if (check(TokenKind::RParen)) {
+        error_here("expected an expression");
+    } else {
+        node.expr = parse_assignment();
+        if (check(TokenKind::Comma)) {
+            error_here("expected ')'");
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    return make_expr(std::move(node));
+}
+
+std::unique_ptr<Expr> Parser::parse_unary() {
+    const TokenKind kind = peek().kind;
+    if (kind == TokenKind::KwSizeof) {
+        Expr::Sizeof node;
+        node.loc = peek().loc;
+        ++pos_;
+        if (starts_type_paren()) {
+            const ParenType type = parse_paren_type();
+            node.on_type = true;
+            node.type_name = type.name;
+            node.type_package = type.package;
+            node.is_struct = type.is_struct;
+            node.is_enum = type.is_enum;
+            node.indirections = type.indirections;
+        } else {
+            node.expr = parse_unary();
+        }
+        return make_expr(std::move(node));
+    }
+    if (kind == TokenKind::Plus || kind == TokenKind::Minus || kind == TokenKind::Bang || kind == TokenKind::Tilde ||
+        kind == TokenKind::Amp || kind == TokenKind::Star) {
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto expr = parse_unary();
+        Expr::Unary node;
+        node.loc = loc;
+        node.op = kind;
+        node.expr = std::move(expr);
+        return make_expr(std::move(node));
+    }
+    if (kind == TokenKind::PlusPlus || kind == TokenKind::MinusMinus) {
+        const SourceLoc loc = peek().loc;
+        error_here("not supported yet");
+        ++pos_;
+        parse_unary();
+        return unsupported_expr(loc);
+    }
+    return parse_postfix();
+}
+
+std::unique_ptr<Expr> Parser::parse_postfix() {
+    auto expr = starts_cast_type() ? parse_cast_expr() : parse_primary();
+    while (true) {
+        if (eat(TokenKind::LParen)) {
+            Expr::Call call;
+            call.loc = expr_loc(*expr);
+            call.callee = std::move(expr);
+            if (!check(TokenKind::RParen)) {
+                while (!check(TokenKind::RParen) && !eof()) {
+                    call.args.push_back(parse_assignment());
+                    if (!eat(TokenKind::Comma)) {
+                        break;
+                    }
+                }
+            }
+            expect(TokenKind::RParen, "expected ')'");
+            expr = make_expr(std::move(call));
+            continue;
+        }
+        if (eat(TokenKind::Dot)) {
+            Expr::Selector selector;
+            selector.loc = expr_loc(*expr);
+            selector.base = std::move(expr);
+            if (check(TokenKind::Identifier)) {
+                selector.field = peek().text;
+                ++pos_;
+            } else {
+                error_here("expected an identifier");
+            }
+            expr = make_expr(std::move(selector));
+            continue;
+        }
+        if (eat(TokenKind::LBracket)) {
+            Expr::Index index;
+            index.loc = expr_loc(*expr);
+            index.base = std::move(expr);
+            index.index = parse_expr();
+            expect(TokenKind::RBracket, "expected ']'");
+            expr = make_expr(std::move(index));
+            continue;
+        }
+        if (check(TokenKind::Arrow) || check(TokenKind::PlusPlus) || check(TokenKind::MinusMinus)) {
+            error_here("not supported yet");
+            ++pos_;
+            expr = unsupported_expr(expr_loc(*expr));
+            continue;
+        }
+        break;
+    }
+    return expr;
+}
+
+std::unique_ptr<Expr> Parser::parse_primary() {
+    if (check(TokenKind::Identifier)) {
+        Expr::Name name;
+        name.loc = peek().loc;
+        name.text = peek().text;
+        ++pos_;
+        return make_expr(std::move(name));
+    }
+    if (check(TokenKind::IntLiteral)) {
+        Expr::Int literal;
+        literal.loc = peek().loc;
+        literal.value = peek().int_value;
+        literal.suffix = peek().suffix;
+        ++pos_;
+        return make_expr(std::move(literal));
+    }
+    if (check(TokenKind::StringLiteral)) {
+        Expr::String literal;
+        literal.loc = peek().loc;
+        literal.text = peek().text;
+        ++pos_;
+        return make_expr(std::move(literal));
+    }
+    if (check(TokenKind::KwTrue) || check(TokenKind::KwFalse)) {
+        Expr::Bool literal;
+        literal.loc = peek().loc;
+        literal.value = peek().kind == TokenKind::KwTrue;
+        ++pos_;
+        return make_expr(std::move(literal));
+    }
+    if (check(TokenKind::KwNullptr)) {
+        Expr::Nullptr literal;
+        literal.loc = peek().loc;
+        ++pos_;
+        return make_expr(std::move(literal));
+    }
+    if (check(TokenKind::CharLiteral)) {
+        Expr::Char literal;
+        literal.loc = peek().loc;
+        literal.value = peek().int_value;
+        ++pos_;
+        return make_expr(std::move(literal));
+    }
+    if (check(TokenKind::FloatLiteral)) {
+        Expr::Float literal;
+        literal.loc = peek().loc;
+        literal.text = peek().text;
+        if (!literal.text.empty() && (literal.text.back() == 'l' || literal.text.back() == 'L')) {
+            error_here("not supported yet");
+        }
+        literal.is_f32 = !literal.text.empty() && (literal.text.back() == 'f' || literal.text.back() == 'F');
+        ++pos_;
+        return make_expr(std::move(literal));
+    }
+    if (starts_short_function()) {
+        return parse_short_function();
+    }
+    if (eat(TokenKind::LParen)) {
+        auto expr = parse_expr();
+        expect(TokenKind::RParen, "expected ')'");
+        return expr;
+    }
+    if (check(TokenKind::KwFunc)) {
+        return parse_anon_function();
+    }
+    const SourceLoc loc = peek().loc;
+    error_here("expected an expression");
+    if (!eof() && !check(TokenKind::Semicolon) && !check(TokenKind::RParen) && !check(TokenKind::RBrace) &&
+        !check(TokenKind::Comma)) {
+        ++pos_;
+    }
+    return unsupported_expr(loc);
+}
+
+std::unique_ptr<Expr> Parser::parse_anon_function() {
+    FunctionDecl fn;
+    fn.loc = peek().loc;
+    expect(TokenKind::KwFunc, "expected 'func'");
+    if (!check(TokenKind::LParen)) {
+        error_here("expected '('");
+    }
+    fn.params = parse_params(false, fn.variadic, false);
+    if (check(TokenKind::LBrace)) {
+        fn.return_type = "void";
+        ResultSlot slot;
+        slot.type_name = "void";
+        fn.results.push_back(std::move(slot));
+        fn.body = parse_block();
+    } else {
+        parse_results(fn);
+        if (check(TokenKind::LBrace)) {
+            fn.body = parse_block();
+        } else {
+            error_here("expected '{'");
+        }
+    }
+    if (fn.variadic) {
+        diags_.error(fn.loc, "not supported yet");
+    }
+    for (const Param &param : fn.params) {
+        if (param.is_const) {
+            diags_.error(param.loc, "not supported yet");
+        }
+    }
+    Expr::Func node;
+    node.loc = fn.loc;
+    node.decl = std::make_unique<FunctionDecl>(std::move(fn));
+    return make_expr(std::move(node));
+}
+
+bool Parser::starts_short_function() const {
+    if (peek().kind != TokenKind::LParen) {
+        return false;
+    }
+    std::size_t index = 1;
+    if (peek(index).kind == TokenKind::RParen) {
+        return peek(index + 1).kind == TokenKind::LBrace;
+    }
+    while (peek(index).kind == TokenKind::Identifier) {
+        ++index;
+        if (peek(index).kind == TokenKind::Comma) {
+            ++index;
+            if (peek(index).kind != TokenKind::Identifier) {
+                return false;
+            }
+            continue;
+        }
+        return peek(index).kind == TokenKind::RParen && peek(index + 1).kind == TokenKind::LBrace;
+    }
+    return false;
+}
+
+std::unique_ptr<Expr> Parser::parse_short_function() {
+    FunctionDecl fn;
+    fn.loc = peek().loc;
+    fn.inferred = true;
+    expect(TokenKind::LParen, "expected '('");
+    if (!check(TokenKind::RParen)) {
+        while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+            Param param;
+            param.loc = peek().loc;
+            if (check(TokenKind::Identifier)) {
+                param.name = peek().text;
+                param.loc = peek().loc;
+                ++pos_;
+            } else {
+                error_here("expected an identifier");
+                break;
+            }
+            fn.params.push_back(std::move(param));
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    if (check(TokenKind::LBrace)) {
+        fn.body = parse_block();
+    } else {
+        error_here("expected '{'");
+    }
+    Expr::Func node;
+    node.loc = fn.loc;
+    node.decl = std::make_unique<FunctionDecl>(std::move(fn));
+    return make_expr(std::move(node));
+}
+
+} // namespace tlc

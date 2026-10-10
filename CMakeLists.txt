@@ -25,8 +25,18 @@ add_library(tlc_lib
     src/lexer.cpp
     src/ast.cpp
     src/parser.cpp
+    src/parser_type.cpp
+    src/parser_decl.cpp
+    src/parser_stmt.cpp
+    src/parser_expr.cpp
     src/sema.cpp
+    src/sema_lookup.cpp
+    src/sema_expr.cpp
+    src/sema_unit.cpp
     src/codegen.cpp
+    src/codegen_abi.cpp
+    src/codegen_lower.cpp
+    src/codegen_emit.cpp
     src/pkg.cpp
 )
 target_include_directories(tlc_lib PUBLIC "${CMAKE_SOURCE_DIR}/src" ${LLVM_INCLUDE_DIRS})
