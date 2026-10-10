@@ -610,8 +610,7 @@ int run_parser_tests() {
             "func main() int {\n"
             "  var x = id(1);\n"
             "  y := 2;\n"
-            "  var a, = 1;\n"
-            "  return x, y, a;\n"
+            "  return x + y;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump,
@@ -623,8 +622,7 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(fn pair (params (n int)) (int, int)");
         EXPECT_HAS(check, parsed.dump, "(bind var x (call (name id) (int 1)))");
         EXPECT_HAS(check, parsed.dump, "(bind def y (int 2))");
-        EXPECT_HAS(check, parsed.dump, "(bind var a (int 1))");
-        EXPECT_HAS(check, parsed.dump, "(return (name x) (name y) (name a))");
+        EXPECT_HAS(check, parsed.dump, "(return (+ (name x) (name y)))");
     }
 
     {
@@ -648,13 +646,24 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source("func main() int { var a, = 1; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "expected an identifier");
+    }
+
+    {
         const Parsed parsed = parse_source(
+            "func f() (int, int) { return 1, 2; }\n"
             "func main() int {\n"
             "  for (a, b := f(); ;) {\n"
-            "    return 0;\n"
+            "    return a;\n"
+            "  }\n"
+            "  for (var x, y = f(); x; x = x + 1) {\n"
+            "    return x;\n"
             "  }\n"
             "}\n");
-        EXPECT_HAS(check, parsed.errors, "expected ';'");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(bind def a b (call (name f)))");
+        EXPECT_HAS(check, parsed.dump, "(bind var x y (call (name f)))");
     }
 
     return check.failed;

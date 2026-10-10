@@ -147,6 +147,8 @@ class Checker {
                      bool receiver = false);
     Type spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
                       int indirections, SourceLoc loc);
+    std::string type_desc(const Type &type) const;
+    void mismatch(SourceLoc loc, const Type &want, const Type &got);
     Type lookup_tag(const std::string &name, SourceLoc loc, bool allow_incomplete);
     Type lookup_qualified_type(const std::string &package, const std::string &name, SourceLoc loc);
     bool lookup_field(const Type &object, const std::string &name, Type &out) const;
@@ -1546,12 +1548,91 @@ bool Checker::is_null_constant(const Expr &expr) const {
 
 bool Checker::is_lvalue_form(const Expr &expr) const { return lvalue_form(expr); }
 
+std::string Checker::type_desc(const Type &type) const {
+    switch (type.kind) {
+    case TypeKind::Invalid:
+        return "invalid";
+    case TypeKind::Void:
+        return "void";
+    case TypeKind::Bool:
+        return "bool";
+    case TypeKind::Nullptr:
+        return "nullptr";
+    case TypeKind::Char:
+        if (type.plain_char) {
+            return "char";
+        }
+        return type.is_unsigned ? "unsigned char" : "signed char";
+    case TypeKind::Int: {
+        const int rank = type.rank == 0 ? 3 : type.rank;
+        if (rank <= 1) {
+            return type.is_unsigned ? "unsigned char" : "signed char";
+        }
+        if (rank == 2) {
+            return type.is_unsigned ? "unsigned short" : "short";
+        }
+        if (rank == 4) {
+            return type.is_unsigned ? "unsigned long" : "long";
+        }
+        if (rank >= 5) {
+            return type.is_unsigned ? "unsigned long long" : "long long";
+        }
+        return type.is_unsigned ? "unsigned int" : "int";
+    }
+    case TypeKind::Pointer:
+        return type_desc(type.pointee ? *type.pointee : type_invalid()) + "*";
+    case TypeKind::Array:
+        return type_desc(type.element ? *type.element : type_invalid()) + "[" + std::to_string(type.length) + "]";
+    case TypeKind::Struct:
+        if (type.struct_id >= 0 && type.struct_id < static_cast<int>(structs_.size())) {
+            return structs_[static_cast<std::size_t>(type.struct_id)].name;
+        }
+        return "struct";
+    case TypeKind::Trait:
+        if (type.trait_id >= 0 && type.trait_id < static_cast<int>(traits_.size())) {
+            return traits_[static_cast<std::size_t>(type.trait_id)].name;
+        }
+        return "trait";
+    case TypeKind::Tuple: {
+        std::string text = "(";
+        for (std::size_t i = 0; i < type.results.size(); ++i) {
+            if (i != 0) {
+                text += ", ";
+            }
+            text += type_desc(type.results[i]);
+        }
+        text += ")";
+        return text;
+    }
+    case TypeKind::Function: {
+        std::string text = "func(";
+        for (std::size_t i = 0; i < type.params.size(); ++i) {
+            if (i != 0) {
+                text += ", ";
+            }
+            text += type_desc(type.params[i]);
+        }
+        if (type.variadic) {
+            text += type.params.empty() ? "..." : ", ...";
+        }
+        text += ") ";
+        text += type.result ? type_desc(*type.result) : "void";
+        return text;
+    }
+    }
+    return "invalid";
+}
+
+void Checker::mismatch(SourceLoc loc, const Type &want, const Type &got) {
+    error(loc, "type mismatch: expected " + type_desc(want) + ", found " + type_desc(got));
+}
+
 void Checker::expect(const Type &got, const Type &want, SourceLoc loc) {
     if (got.kind == TypeKind::Invalid || want.kind == TypeKind::Invalid) {
         return;
     }
     if (!same_type(got, want)) {
-        error(loc, "type mismatch");
+        mismatch(loc, want, got);
     }
 }
 
@@ -1565,7 +1646,7 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &expr, 
             require_satisfies(got.struct_id, want.trait_id, false, loc);
             return;
         }
-        error(loc, "type mismatch");
+        mismatch(loc, want, got);
         return;
     }
     if (want.kind == TypeKind::Pointer && want.pointee && want.pointee->kind == TypeKind::Trait &&
@@ -1578,7 +1659,7 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &expr, 
             require_satisfies(got.pointee->struct_id, want.pointee->trait_id, true, loc);
             return;
         }
-        error(loc, "type mismatch");
+        mismatch(loc, want, got);
         return;
     }
     if (want.kind == TypeKind::Pointer && got.kind == TypeKind::Nullptr) {
@@ -1597,7 +1678,7 @@ void Checker::expect_integer(const Type &got, SourceLoc loc) {
     if (got.kind == TypeKind::Invalid || is_integer(got)) {
         return;
     }
-    error(loc, "type mismatch");
+    error(loc, "type mismatch: expected an integer, found " + type_desc(got));
 }
 
 Type Checker::check_expr(const Expr &expr, bool used) {
@@ -2244,7 +2325,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (!null_pointer && !scalar &&
                         (want.kind == TypeKind::Void ||
                          (got.kind != TypeKind::Invalid && want.kind != TypeKind::Invalid && !same_type(got, want)))) {
-                        error(node.loc, "return type");
+                        error(node.loc, "return type: expected " + type_desc(want) + ", found " + type_desc(got));
                     }
                 };
                 std::vector<const Expr *> exprs;
@@ -2258,7 +2339,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 if (return_type_.kind == TypeKind::Tuple) {
                     if (exprs.size() != return_type_.results.size()) {
-                        error(node.loc, "return type");
+                        error(node.loc, "return type: expected " + std::to_string(return_type_.results.size()) +
+                                            " results, found " + std::to_string(exprs.size()));
                     }
                     for (std::size_t i = 0; i < exprs.size(); ++i) {
                         const Type got = check_expr(*exprs[i], true);
@@ -2267,13 +2349,14 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     }
                 } else if (!node.extra.empty()) {
-                    error(node.loc, "return type");
+                    error(node.loc, "return type: expected " + type_desc(return_type_) + ", found " +
+                                        std::to_string(exprs.size()) + " results");
                     for (const Expr *expr : exprs) {
                         check_expr(*expr, true);
                     }
                 } else if (!node.value) {
                     if (return_type_.kind != TypeKind::Void && return_type_.kind != TypeKind::Invalid) {
-                        error(node.loc, "return type");
+                        error(node.loc, "return type: expected " + type_desc(return_type_) + ", found void");
                     }
                 } else {
                     match_return(check_expr(*node.value, true), return_type_, *node.value);
@@ -2397,12 +2480,17 @@ void Checker::check_stmt(const Stmt &stmt) {
                 std::vector<Type> parts;
                 if (node.names.size() == 1) {
                     if (rhs.kind == TypeKind::Tuple) {
-                        error(node.loc, "type mismatch");
+                        error(node.loc, "type mismatch: expected 1 result, found " + std::to_string(rhs.results.size()) +
+                                            " results");
                         return;
                     }
                     parts.push_back(rhs);
                 } else if (rhs.kind != TypeKind::Tuple || rhs.results.size() != node.names.size()) {
-                    error(node.loc, "type mismatch");
+                    const std::string found = rhs.kind == TypeKind::Tuple
+                                                  ? std::to_string(rhs.results.size()) + " results"
+                                                  : type_desc(rhs);
+                    error(node.loc, "type mismatch: expected " + std::to_string(node.names.size()) + " results, found " +
+                                        found);
                     return;
                 } else {
                     parts = rhs.results;
@@ -2566,7 +2654,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 }
             }
             if (fn->is_extern && fn->results.size() > 1) {
-                error(fn->loc, "not supported yet");
+                error(fn->loc, "extern function cannot return several results");
             }
             if (generic && signature.result != nullptr && signature.result->kind == TypeKind::Tuple) {
                 error(fn->loc, "not supported yet");

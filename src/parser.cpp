@@ -1090,6 +1090,10 @@ std::unique_ptr<Stmt> Parser::parse_for() {
     expect(TokenKind::LParen, "expected '('");
     if (eat(TokenKind::Semicolon)) {
         stmt.init = nullptr;
+    } else if (check(TokenKind::KwVar) ||
+               (check(TokenKind::Identifier) &&
+                (peek(1).kind == TokenKind::Comma || peek(1).kind == TokenKind::ColonEq))) {
+        stmt.init = parse_bind(check(TokenKind::KwVar));
     } else if (starts_declaration()) {
         stmt.init = parse_decl_stmt(false);
         // A declaration consumes its ';'. A function body does not, so the for-loop
@@ -1177,6 +1181,10 @@ std::unique_ptr<Stmt> Parser::parse_bind(bool is_var) {
         stmt.loc = stmt.names.size() == 1 ? peek().loc : stmt.loc;
         ++pos_;
         if (!eat(TokenKind::Comma)) {
+            break;
+        }
+        if (!check(TokenKind::Identifier)) {
+            error_here("expected an identifier");
             break;
         }
     }

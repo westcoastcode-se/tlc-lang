@@ -1919,7 +1919,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("extern func pair() (int, int);\nfunc main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "extern function cannot return several results");
     }
 
     {
@@ -1931,7 +1931,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func bad() (int *, int) { return 1, 2; }\n"
             "func main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "return type");
+        EXPECT_HAS(check, errors, "return type: expected int*, found int");
     }
 
     {
@@ -1962,7 +1962,6 @@ int run_sema_tests() {
             "func main() int {\n"
             "  var x = id(1);\n"
             "  y := trail(x);\n"
-            "  var a, = 1;\n"
             "  int kept = 1;\n"
             "  kept, fresh := add(kept, 2);\n"
             "  {\n"
@@ -1986,7 +1985,10 @@ int run_sema_tests() {
             "  int h2;\n"
             "  h1, h2 = hidden();\n"
             "  add(1, 2);\n"
-            "  return x + y + a + fresh + take(1) + keep(1) + n + s + c + flag + inner() + outer + h1 + h2;\n"
+            "  for (i, k := add(1, 2); i < 2; i = i + 1) {\n"
+            "    y = k;\n"
+            "  }\n"
+            "  return x + y + fresh + take(1) + keep(1) + n + s + c + flag + inner() + outer + h1 + h2;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -1998,7 +2000,7 @@ int run_sema_tests() {
             "  a := add(1, 2);\n"
             "  return a;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "type mismatch: expected 1 result, found 2 results");
     }
 
     {
@@ -2066,7 +2068,7 @@ int run_sema_tests() {
             "  p, n = add(1, 2);\n"
             "  return n;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "type mismatch: expected int*, found int");
     }
 
     {

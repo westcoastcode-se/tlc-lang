@@ -151,6 +151,7 @@ class CodeGen {
         bool elem_bool = false;
         int elem_bits = 0;
         bool elem_unsigned = false;
+        const FunctionDecl *decl = nullptr;
     };
     struct FieldLayout {
         std::string name;
@@ -440,7 +441,7 @@ class CodeGen {
     llvm::AllocaInst *alloca_typed(llvm::Type *type, const std::string &name);
     llvm::FunctionType *function_type(const FunctionDecl &fn, uint32_t file) const;
     llvm::Type *aggregate_return(const FunctionDecl &fn, uint32_t file) const;
-    const FunctionDecl *call_decl(const Expr &expr) const;
+    const FunctionDecl *callee_decl(const Expr &callee) const;
     SymbolForm symbol_form(const PackageNode &node, const std::string &name, bool is_extern, bool is_static,
                            bool exported, bool entry_main) const;
     const PackageNode *find_node(uint32_t file_id) const;
@@ -2012,9 +2013,11 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             }
             remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
                      method->elem_bool, method->elem_bits, method->elem_unsigned);
+            prepared.decl = method->decl;
             return prepared;
         }
     }
+    prepared.decl = node.callee == nullptr ? nullptr : callee_decl(*node.callee);
     const TypedValue callee = emit_rvalue(*node.callee);
     auto *function = llvm::dyn_cast_or_null<llvm::Function>(callee.value);
     if (function == nullptr) {
@@ -3027,12 +3030,7 @@ void CodeGen::emit_switch(const Stmt::Switch &node) {
     builder_.SetInsertPoint(end_block);
 }
 
-const FunctionDecl *CodeGen::call_decl(const Expr &expr) const {
-    const auto *call = std::get_if<Expr::Call>(&expr.data);
-    if (call == nullptr || call->callee == nullptr) {
-        return nullptr;
-    }
-    const Expr &callee = *call->callee;
+const FunctionDecl *CodeGen::callee_decl(const Expr &callee) const {
     if (const auto *fn = std::get_if<Expr::Func>(&callee.data)) {
         return fn->decl.get();
     }
@@ -3046,25 +3044,6 @@ const FunctionDecl *CodeGen::call_decl(const Expr &expr) const {
             if (package != packages_.end()) {
                 const Binding *binding = visible(package->second, selector->field, true);
                 return binding == nullptr ? nullptr : binding->decl;
-            }
-            const Binding *object = lookup(base->text);
-            if (object == nullptr || object->struct_id < 0 || object->struct_id >= static_cast<int>(structs_.size())) {
-                return nullptr;
-            }
-            const std::string key = structs_[static_cast<std::size_t>(object->struct_id)].name + "." + selector->field;
-            for (const uint32_t id : package_files(current_file_)) {
-                const auto file = files_.find(id);
-                if (file == files_.end()) {
-                    continue;
-                }
-                const auto found = file->second.functions.find(key);
-                if (found == file->second.functions.end() || found->second.decl == nullptr) {
-                    continue;
-                }
-                if (found->second.is_static && id != current_file_) {
-                    continue;
-                }
-                return found->second.decl;
             }
         }
     }
@@ -3140,8 +3119,17 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         }
         return;
     }
-    const FunctionDecl *decl = call_decl(*node.value);
-    const TypedValue value = emit_rvalue(*node.value);
+    // The component types live on the function declaration. prepare_call resolves
+    // the same callee the call itself uses, including a field, subscript, or temporary.
+    const FunctionDecl *decl = nullptr;
+    TypedValue value;
+    if (const auto *call = std::get_if<Expr::Call>(&node.value->data)) {
+        const PreparedCall prepared = prepare_call(*call);
+        decl = prepared.decl;
+        value = emit_prepared(prepared);
+    } else {
+        value = emit_rvalue(*node.value);
+    }
     if (terminated()) {
         return;
     }

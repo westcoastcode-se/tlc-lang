@@ -1,0 +1,76 @@
+struct Inner {
+    int v;
+};
+
+struct Outer {
+    Inner in;
+};
+
+func Inner::split(this self Inner) (int, int) {
+    return self.v, self.v + 1;
+}
+
+func make() Inner {
+    Inner value;
+    value.v = 4;
+    return value;
+}
+
+func step(n int) (int, int) {
+    return n + 1, n;
+}
+
+func main() int {
+    Outer o;
+    o.in.v = 10;
+    a, b := o.in.split();
+    if (a != 10) {
+        return 1;
+    }
+    if (b != 11) {
+        return 2;
+    }
+    c, d := make().split();
+    if (c != 4) {
+        return 3;
+    }
+    if (d != 5) {
+        return 4;
+    }
+    Inner boxes[1];
+    boxes[0].v = 1;
+    e, f := boxes[0].split();
+    if (e != 1) {
+        return 5;
+    }
+    if (f != 2) {
+        return 6;
+    }
+    Inner *p;
+    p = &boxes[0];
+    g, h := (*p).split();
+    if (g != 1) {
+        return 7;
+    }
+    if (h != 2) {
+        return 8;
+    }
+    int acc = 0;
+    for (k, n := step(2); k < 6; k = k + 1) {
+        acc = acc + n;
+    }
+    if (acc != 6) {
+        return 9;
+    }
+    int seen = 0;
+    for (var x, y = step(0); x < 2; x = x + 1) {
+        seen = seen + 1;
+        if (y != 0) {
+            return 10;
+        }
+    }
+    if (seen != 1) {
+        return 11;
+    }
+    return a + b + c + d + e + f + g + h + acc;
+}

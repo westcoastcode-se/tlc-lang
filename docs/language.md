@@ -99,7 +99,7 @@ export func add(a int, b int) int {
 
 File-scope `static` keeps the symbol private to that file. A `static` local is rejected.
 
-`extern` keeps the C name and the C calling convention. That is how a program calls a library:
+`extern` keeps the C name and the C calling convention. It returns one result, the same as a C function. That is how a program calls a library:
 
 ```c
 extern func printf(fmt const char *, ...) int;
@@ -206,7 +206,7 @@ Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
 Blocks, `if`/`else`, `while`, `do`/`while`, `for`, `switch`, `break`, `continue`, `return`, and empty statements are accepted. `goto` is rejected.
 
-`for` has C's three clauses. A declaration in the first clause is visible only inside the loop.
+`for` has C's three clauses. A declaration in the first clause is visible only inside the loop. That clause may also bind several results with `var`, `:=`, or `=`. A comma in the name list must be followed by another name.
 
 ```c
 func main() int {
@@ -289,7 +289,7 @@ func main() int {
 }
 ```
 
-`var` defines every name in the current block. `:=` defines a name that is new in the current block and assigns a name that already exists there. At least one name must be new. A name from an outer block is shadowed. A call used as a statement, or as the call in `defer`, discards every result. `extern` functions and trait methods cannot return several results.
+`var` defines every name in the current block. `:=` defines a name that is new in the current block and assigns a name that already exists there. At least one name must be new. A name from an outer block is shadowed. The same bind may be the first clause of `for`. A call used as a statement, or as the call in `defer`, discards every result. The call may be a function, a method on a field, a subscript, a dereference, or a temporary value. An `extern` function cannot return several results. A trait method cannot either. A type error names the expected type and the found type.
 
 A function may be declared first and defined later, with the same type. Two bodies for the same function are `redefinition`.
 
