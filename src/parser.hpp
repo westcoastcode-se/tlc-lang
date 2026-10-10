@@ -24,6 +24,7 @@ class Parser {
         std::vector<FieldDecl> fields;
         bool is_enum = false;
         bool enum_definition = false;
+        std::string underlying;
         std::vector<Enumerator> enumerators;
         bool is_typedef = false;
         bool exported = false;
@@ -91,6 +92,7 @@ class Parser {
     bool is_type_keyword(TokenKind kind) const;
 
     Specifiers parse_specifiers(bool file_scope, bool allow_const = false, bool type_only = false);
+    bool take_enum_underlying(std::string &out);
     std::vector<Enumerator> parse_enumerators();
     std::vector<FieldDecl> parse_fields();
     Declarator parse_declarator();

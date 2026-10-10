@@ -338,10 +338,12 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
                 specs.loc = peek().loc;
                 ++pos_;
             }
-            if (eat(TokenKind::LBrace)) {
-                specs.enum_definition = true;
-                specs.enumerators = parse_enumerators();
-                expect(TokenKind::RBrace, "expected '}'");
+            if (take_enum_underlying(specs.underlying) || check(TokenKind::LBrace)) {
+                if (eat(TokenKind::LBrace)) {
+                    specs.enum_definition = true;
+                    specs.enumerators = parse_enumerators();
+                    expect(TokenKind::RBrace, "expected '}'");
+                }
             }
             break;
         }
@@ -390,6 +392,67 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
         diags_.error(specs.loc, "export static");
     }
     return specs;
+}
+
+bool Parser::take_enum_underlying(std::string &out) {
+    if (check(TokenKind::LBrace) || check(TokenKind::Semicolon) || eof()) {
+        return false;
+    }
+    auto brace_after = [&](std::size_t begin) {
+        for (std::size_t ahead = begin; ahead < 6; ++ahead) {
+            const TokenKind kind = peek(ahead).kind;
+            if (kind == TokenKind::LBrace) {
+                return true;
+            }
+            if (kind == TokenKind::Semicolon || kind == TokenKind::Comma || kind == TokenKind::RBrace ||
+                kind == TokenKind::End || kind == TokenKind::Eq) {
+                return false;
+            }
+        }
+        return false;
+    };
+    if (!brace_after(0)) {
+        return false;
+    }
+    const auto alias = [&](const std::string &name) {
+        return name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" ||
+               name == "i64" || name == "u64";
+    };
+    if (check(TokenKind::Identifier) && alias(peek().text) && peek(1).kind == TokenKind::LBrace) {
+        out = peek().text;
+        ++pos_;
+        return true;
+    }
+    if (check(TokenKind::KwBool) && peek(1).kind == TokenKind::LBrace) {
+        out = "bool";
+        ++pos_;
+        return true;
+    }
+    if (check(TokenKind::KwFloat) || check(TokenKind::KwDouble)) {
+        error_here("type mismatch");
+        ++pos_;
+        return true;
+    }
+    if (is_int_spec(peek().kind)) {
+        IntSpecs ints;
+        while (is_int_spec(peek().kind)) {
+            take_int_spec(ints, peek().kind);
+            ++pos_;
+        }
+        if (!check(TokenKind::LBrace) || ints.bad) {
+            error_here("type mismatch");
+            out = "invalid";
+            return true;
+        }
+        out = canonical_int(ints);
+        return true;
+    }
+    if (check(TokenKind::Identifier) && peek(1).kind == TokenKind::LBrace) {
+        error_here("type mismatch");
+        ++pos_;
+        return true;
+    }
+    return false;
 }
 
 std::vector<Enumerator> Parser::parse_enumerators() {
@@ -1159,6 +1222,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         EnumDecl item;
         item.loc = specs.loc;
         item.name = specs.type_name;
+        item.underlying = specs.underlying;
         item.enumerators = specs.enumerators;
         item.exported = specs.exported;
         TopDecl top;

@@ -499,6 +499,10 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
                 out += ' ';
                 out += item->name;
             }
+            if (!item->underlying.empty()) {
+                out += ' ';
+                out += item->underlying;
+            }
             if (item->exported) {
                 out += " export";
             }

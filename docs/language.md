@@ -473,7 +473,7 @@ Inside the package the type is written `Point`. `import { Point } from "geom"` m
 
 ## Methods
 
-A method belongs to a struct in the same package. The first parameter is the receiver. It is written with `this`, then the name, then the type. `this` is an ordinary identifier in every other position.
+A method belongs to a struct or an enum in the same package. The first parameter is the receiver. It is written with `this`, then the name, then the type. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value.
 
 The call omits the receiver. This program returns 42.
 
@@ -571,6 +571,8 @@ The function is monomorphized. Each struct that is passed in gets its own copy, 
 
 ## Enums and typedefs
 
+An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `int`, and it does not convert to its representation.
+
 ```c
 enum Color {
     Red,
@@ -578,18 +580,49 @@ enum Color {
     Blue,
 };
 
-enum Color value = Blue;
-```
-
-`Red` is 0, `Green` is 40, and `Blue` is 41. The values are signed `int`. Without an explicit value, the next constant is one higher than the previous one. An empty enum is rejected. An exported enum exports the type name and the constants:
-
-```c
-import { Blue } from "geom";
-
 func main() int {
-    return Blue;
+    value := Color.Blue;
+    if (value == Color.Blue) {
+        return 1;
+    }
+    return 0;
 }
 ```
+
+`Red` is 0, `Green` is 40, and `Blue` is 41. Without an explicit value, the next constant is one higher than the previous one. The representation is `int` when the definition does not name a primitive. A primitive is written between the name and the body:
+
+```c
+enum Tiny i8 {
+    A,
+    B,
+};
+```
+
+`sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `char`. A value that does not fit is `type mismatch`. An empty enum is rejected. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `int`. Other operators are `type mismatch`.
+
+An exported enum exports the type. The enumerators come with it:
+
+```c
+import { Color } from "geom";
+
+func main() int {
+    value := Color.Blue;
+    return 0;
+}
+```
+
+A method uses the same form as a struct method. `this` is the enum value.
+
+```c
+func Color::code(this self Color) int {
+    if (self == Color.Blue) {
+        return 41;
+    }
+    return 0;
+}
+```
+
+`value.code()` passes `value`. The method is visible in the package and is not exported.
 
 ```c
 typedef Point *Ptr;

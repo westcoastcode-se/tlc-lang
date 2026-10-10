@@ -13,25 +13,14 @@ export extern struct SDL_Event {
     u64 rest[15];
 };
 
-export enum SdlInit {
-    SDL_INIT_VIDEO = 0x20,
-};
-
-export enum SdlWindow {
-    SDL_WINDOW_OPENGL = 2,
-};
-
-export enum SdlEventKind {
-    SDL_EVENT_QUIT = 0x100,
-    SDL_EVENT_WINDOW_CLOSE_REQUESTED = 0x210,
-};
-
-export enum SdlGlAttr {
-    SDL_GL_CONTEXT_MAJOR_VERSION = 17,
-    SDL_GL_CONTEXT_MINOR_VERSION = 18,
-    SDL_GL_CONTEXT_PROFILE_MASK = 20,
-    SDL_GL_CONTEXT_PROFILE_COMPATIBILITY = 2,
-};
+export u32 SDL_INIT_VIDEO = 0x20;
+export u64 SDL_WINDOW_OPENGL = 2;
+export u32 SDL_EVENT_QUIT = 0x100;
+export u32 SDL_EVENT_WINDOW_CLOSE_REQUESTED = 0x210;
+export int SDL_GL_CONTEXT_MAJOR_VERSION = 17;
+export int SDL_GL_CONTEXT_MINOR_VERSION = 18;
+export int SDL_GL_CONTEXT_PROFILE_MASK = 20;
+export int SDL_GL_CONTEXT_PROFILE_COMPATIBILITY = 2;
 
 export extern func SDL_Init(flags u32) bool;
 export extern func SDL_Quit() void;

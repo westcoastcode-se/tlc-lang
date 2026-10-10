@@ -10,7 +10,7 @@
 
 namespace tlc {
 
-enum class TypeKind { Invalid, Void, Int, Char, Bool, Float, Nullptr, Pointer, Array, Struct, Function, Trait, Tuple };
+enum class TypeKind { Invalid, Void, Int, Char, Bool, Float, Nullptr, Pointer, Array, Struct, Enum, Function, Trait, Tuple };
 
 struct Type {
     TypeKind kind = TypeKind::Invalid;
@@ -19,6 +19,7 @@ struct Type {
     std::shared_ptr<Type> element;
     int length = 0;
     int struct_id = -1;
+    int enum_id = -1;
     int trait_id = -1;
     bool variadic = false;
     std::vector<Type> params;

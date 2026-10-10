@@ -4,8 +4,30 @@ enum Color {
     Blue,
 };
 
-enum Color value = Blue;
+enum Tiny i8 {
+    A,
+    B,
+};
+
+func Color::code(this self Color) int {
+    if (self == Color.Blue) {
+        return 40;
+    }
+    return 0;
+}
+
+func Tiny::id(this self Tiny) int {
+    if (self == Tiny.B) {
+        return 2;
+    }
+    return 0;
+}
 
 func main() int {
-    return value;
+    value := Color.Blue;
+    small := Tiny.B;
+    if (value.code() == 40 && small.id() == 2 && sizeof(Tiny) == 1 && sizeof(Color) == 4) {
+        return 42;
+    }
+    return 0;
 }

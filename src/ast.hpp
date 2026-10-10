@@ -165,6 +165,8 @@ struct Enumerator {
 struct EnumDecl {
     SourceLoc loc{};
     std::string name;
+    // Empty means the representation is int. The type is still the enum.
+    std::string underlying;
     std::vector<Enumerator> enumerators;
     bool exported = false;
 };

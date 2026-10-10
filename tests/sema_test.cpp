@@ -564,8 +564,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "enum Color { Red, Green = 40, Blue };\n"
-            "enum Color value = Blue;\n"
-            "func main() int { return value; }\n");
+            "enum Color value = Color.Blue;\n"
+            "func main() int { return 0; }\n");
         EXPECT_EQ(check, errors, "");
     }
 
@@ -573,7 +573,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "enum Color { Red, Green = 40, Blue };\n"
             "func main() int {\n"
-            "  Blue = 1;\n"
+            "  Color.Blue = 1;\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "not an lvalue");
@@ -584,7 +584,7 @@ int run_sema_tests() {
             "enum Color { Red, Green = 40, Blue };\n"
             "func main() int {\n"
             "  int *p;\n"
-            "  p = &Blue;\n"
+            "  p = &Color.Blue;\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "not an lvalue");
@@ -601,7 +601,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "typedef enum { Red } Red;\n"
             "func main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -622,6 +622,34 @@ int run_sema_tests() {
             "enum Color { A = 2147483647, B };\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "enum Color { Red = 1 };\n"
+            "func main() int {\n"
+            "  int n = Color.Red;\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "enum Tiny i8 { A = 200 };\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "enum One { Val };\n"
+            "enum Two { Val };\n"
+            "func main() int {\n"
+            "  value := Two.Val;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
     }
 
     {
@@ -670,8 +698,11 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.tlc", "import { Blue } from \"geom\";\n"
-                       "func main() int { return Blue; }\n"},
+            {"main.tlc", "import { Color } from \"geom\";\n"
+                       "func main() int {\n"
+                       "  value := Color.Blue;\n"
+                       "  return 0;\n"
+                       "}\n"},
             {"geom.tlc", "package geom;\n"
                        "export enum Color { Red, Green = 40, Blue };\n"},
         });
@@ -2113,7 +2144,7 @@ int run_sema_tests() {
             "  Red, n = add(1, 2);\n"
             "  return n;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not an lvalue");
+        EXPECT_HAS(check, errors, "undeclared identifier");
     }
 
     {

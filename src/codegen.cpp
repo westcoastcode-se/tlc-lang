@@ -90,6 +90,7 @@ struct Binding {
     bool fn_ret_bool = false;
     int fn_ret_struct = -1;
     std::vector<FnParam> fn_results{};
+    int enum_id = -1;
 };
 
 struct TypedValue {
@@ -113,6 +114,7 @@ struct TypedValue {
     bool fn_ret_bool = false;
     int fn_ret_struct = -1;
     std::vector<FnParam> fn_results{};
+    int enum_id = -1;
 };
 
 // How an extern function passes one struct on x86-64 System V.
@@ -216,6 +218,7 @@ class CodeGen {
         bool elem_unsigned = false;
         const FunctionDecl *decl = nullptr;
         bool elem_float = false;
+        int enum_id = -1;
         llvm::Value *indirect = nullptr;
         llvm::FunctionType *fn_ty = nullptr;
         std::vector<FnParam> fn_results{};
@@ -270,6 +273,15 @@ class CodeGen {
         bool fn_ret_bool = false;
         int fn_ret_struct = -1;
         std::vector<FnParam> fn_results{};
+        int enum_id = -1;
+    };
+    struct EnumLayout {
+        std::string name;
+        int bits = 32;
+        bool is_unsigned = false;
+        bool is_bool = false;
+        bool is_char = false;
+        std::unordered_map<std::string, int64_t> values;
     };
     struct Alias {
         int depth = 0;
@@ -292,6 +304,7 @@ class CodeGen {
         bool fn_ret_bool = false;
         int fn_ret_struct = -1;
         std::vector<FnParam> fn_results{};
+        int enum_id = -1;
     };
     struct Shape {
         llvm::Type *type = nullptr;
@@ -319,6 +332,8 @@ class CodeGen {
     std::vector<DeferFrame> defers_;
     std::vector<std::unordered_map<const Stmt::Case *, llvm::BasicBlock *>> case_blocks_;
     std::vector<StructLayout> structs_;
+    std::vector<EnumLayout> enums_;
+    std::unordered_map<uint32_t, std::unordered_map<std::string, int>> enum_ids_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> trait_names_;
     std::unordered_map<std::string, llvm::Function *> specs_;
     std::unordered_set<std::string> emitting_specs_;
@@ -548,8 +563,10 @@ class CodeGen {
     }
     TypedValue value_of_binding(const Binding &binding) {
         if (binding.is_function) {
-            return {binding.value, binding.depth, binding.elem_char, binding.struct_id, false, binding.elem_void,
-                    binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};
+            TypedValue value{binding.value, binding.depth, binding.elem_char, binding.struct_id, false, binding.elem_void,
+                             binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};
+            value.enum_id = binding.enum_id;
+            return value;
         }
         if (binding.is_array) {
             return {binding.value, binding.depth + 1, binding.elem_char, binding.struct_id, false, binding.elem_void,
@@ -566,6 +583,7 @@ class CodeGen {
         loaded.fn_ret_bool = binding.fn_ret_bool;
         loaded.fn_ret_struct = binding.fn_ret_struct;
         loaded.fn_results = binding.fn_results;
+        loaded.enum_id = binding.enum_id;
         return loaded;
     }
     llvm::Type *object_type(llvm::Value *addr) const {
@@ -634,7 +652,14 @@ class CodeGen {
     void emit_function_body(const FunctionDecl &fn, llvm::Function *function, int return_depth);
     TypedValue emit_generic_call(const Binding &binding, const Expr::Call &node);
     void prepare_aliases();
-    void declare_enumerators(const PackageNode &node);
+    void prepare_enums();
+    int enum_named(uint32_t file, const std::string &name) const;
+    int selective_enum(uint32_t file, const std::string &name) const;
+    int enum_type_designator(const Expr &expr) const;
+    int enum_value_id(const Expr &expr) const;
+    llvm::Constant *enum_constant(int enum_id, int64_t value) const;
+    void describe_enum(const std::string &underlying, EnumLayout &layout) const;
+    void note_enum(Alias &base, int id) const;
     void declare_file(const PackageNode &node);
     std::optional<int32_t> fold_global(uint32_t file, const std::string &name, bool allow_local_static = true) const;
     void bind_imports(const PackageNode &node);
@@ -1385,6 +1410,9 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         } else if (tag >= 0) {
             base.struct_id = tag;
             have = true;
+        } else if (const int eid = target == 0 ? -1 : enum_named(target, name); eid >= 0) {
+            note_enum(base, eid);
+            have = true;
         }
     } else if (is_struct) {
         int sid = tag_id(file, name);
@@ -1393,6 +1421,12 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         }
         if (sid >= 0) {
             base.struct_id = sid;
+            have = true;
+        } else if (const int eid = enum_named(file, name); eid >= 0) {
+            note_enum(base, eid);
+            have = true;
+        } else if (const int imported = selective_enum(file, name); imported >= 0) {
+            note_enum(base, imported);
             have = true;
         }
     } else if (name == "char" || name == "signed char" || name == "unsigned char" || name == "short" ||
@@ -1440,6 +1474,12 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
             if (sid >= 0) {
                 base.struct_id = sid;
                 have = true;
+            } else if (const int eid = enum_named(file, name); eid >= 0) {
+                note_enum(base, eid);
+                have = true;
+            } else if (const int imported = selective_enum(file, name); imported >= 0) {
+                note_enum(base, imported);
+                have = true;
             } else if (const int tid = trait_named(file, name); tid >= 0) {
                 base.trait_id = tid;
                 have = true;
@@ -1468,6 +1508,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.elem_unsigned = elem_unsigned;
         out.elem_float = elem_float;
         out.struct_id = sid;
+        out.enum_id = have ? base.enum_id : -1;
         out.type = ptr_type();
         return out;
     }
@@ -1482,6 +1523,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.elem_unsigned = elem_unsigned;
         out.elem_float = elem_float;
         out.struct_id = sid;
+        out.enum_id = have ? base.enum_id : -1;
         out.type = llvm::ArrayType::get(leaf_type(out.depth, elem_char, sid, elem_bool, elem_bits, elem_float),
                                         static_cast<uint64_t>(array_len));
         return out;
@@ -1497,6 +1539,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.elem_unsigned = elem_unsigned;
         out.elem_float = elem_float;
         out.struct_id = sid;
+        out.enum_id = have ? base.enum_id : -1;
         out.type = llvm::ArrayType::get(leaf_type(base_depth, elem_char, sid, elem_bool, elem_bits, elem_float),
                                         static_cast<uint64_t>(base.array_len));
         return out;
@@ -1509,6 +1552,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     out.elem_unsigned = elem_unsigned;
     out.elem_float = elem_float;
     out.struct_id = sid;
+    out.enum_id = have ? base.enum_id : -1;
     if (indirections == 0 && !is_array) {
         out.fn_ty = have ? base.fn_ty : nullptr;
         out.fn_ret_depth = have ? base.fn_ret_depth : 0;
@@ -1595,6 +1639,7 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.fn_ret_bool = low.fn_ret_bool;
     binding.fn_ret_struct = low.fn_ret_struct;
     binding.fn_results = low.fn_results;
+    binding.enum_id = low.enum_id;
 }
 
 const CodeGen::FieldLayout *CodeGen::find_field(int struct_id, const std::string &name, int &index) const {
@@ -1887,39 +1932,194 @@ void CodeGen::prepare_aliases() {
     }
 }
 
-void CodeGen::declare_enumerators(const PackageNode &node) {
-    FileSymbols &file = files_[node.file_id];
-    for (const TopDecl &decl : node.unit.decls) {
-        const auto *item = std::get_if<EnumDecl>(&decl.data);
-        if (item == nullptr) {
+void CodeGen::describe_enum(const std::string &underlying, EnumLayout &layout) const {
+    const std::string &name = underlying.empty() ? std::string("int") : underlying;
+    layout.is_bool = name == "bool";
+    layout.is_char = name == "char";
+    layout.is_unsigned = name == "unsigned" || name == "unsigned int" || name == "unsigned char" ||
+                         name == "unsigned short" || name == "unsigned long" || name == "unsigned long long" ||
+                         name == "u8" || name == "u16" || name == "u32" || name == "u64";
+    if (layout.is_bool) {
+        layout.bits = 1;
+    } else if (name == "char" || name == "signed char" || name == "unsigned char" || name == "i8" || name == "u8") {
+        layout.bits = 8;
+    } else if (name == "short" || name == "signed short" || name == "unsigned short" || name == "i16" || name == "u16") {
+        layout.bits = 16;
+    } else if (name == "long" || name == "signed long" || name == "long long" || name == "signed long long" ||
+               name == "unsigned long" || name == "unsigned long long" || name == "i64" || name == "u64") {
+        layout.bits = 64;
+    } else {
+        layout.bits = 32;
+    }
+}
+
+void CodeGen::note_enum(Alias &base, int id) const {
+    if (id < 0 || id >= static_cast<int>(enums_.size())) {
+        return;
+    }
+    const EnumLayout &layout = enums_[static_cast<std::size_t>(id)];
+    base.enum_id = id;
+    base.elem_bool = layout.is_bool;
+    base.elem_char = layout.is_char;
+    base.elem_unsigned = layout.is_unsigned;
+    base.elem_bits = layout.is_bool ? 0 : layout.bits;
+}
+
+int CodeGen::enum_named(uint32_t file, const std::string &name) const {
+    for (const uint32_t id : package_files(file)) {
+        const auto found = enum_ids_.find(id);
+        if (found == enum_ids_.end()) {
             continue;
         }
-        int next = 0;
-        bool next_ok = true;
-        for (const Enumerator &enumerator : item->enumerators) {
-            int value = 0;
-            if (enumerator.has_value) {
-                value = enumerator.value;
-            } else if (next_ok) {
-                value = next;
-            }
-            if (value == 2147483647) {
-                next_ok = false;
-            } else {
-                next = value + 1;
-                next_ok = true;
-            }
-            if (enumerator.name.empty() || file.globals.contains(enumerator.name)) {
-                continue;
-            }
-            const SymbolForm form = symbol_form(node, enumerator.name, false, false, item->exported, false);
-            auto *global = new llvm::GlobalVariable(module_, i32(), true, form.linkage, const_i32(value), form.name);
-            Binding binding;
-            binding.value = global;
-            file.globals.emplace(enumerator.name, binding);
-            file.folded.insert(enumerator.name);
+        const auto tag = found->second.find(name);
+        if (tag != found->second.end()) {
+            return tag->second;
         }
     }
+    return -1;
+}
+
+int CodeGen::selective_enum(uint32_t file, const std::string &name) const {
+    const PackageNode *node = find_node(file);
+    if (node == nullptr || graph_ == nullptr) {
+        return -1;
+    }
+    for (const ImportDecl &import : node->unit.imports) {
+        if (import.form != ImportDecl::Form::Selective) {
+            continue;
+        }
+        bool wanted = false;
+        for (const std::string &item : import.names) {
+            if (item == name) {
+                wanted = true;
+            }
+        }
+        if (!wanted) {
+            continue;
+        }
+        for (const ImportEdge &edge : graph_->edges) {
+            if (edge.from_file != file || edge.spec != import.path || edge.loc.file != import.loc.file ||
+                edge.loc.offset != import.loc.offset) {
+                continue;
+            }
+            const int id = enum_named(edge.to_file, name);
+            if (id >= 0) {
+                return id;
+            }
+        }
+    }
+    return -1;
+}
+
+void CodeGen::prepare_enums() {
+    if (graph_ == nullptr) {
+        return;
+    }
+    for (const PackageNode &node : graph_->nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            const auto *item = std::get_if<EnumDecl>(&decl.data);
+            if (item == nullptr || item->name.empty() || enum_named(node.file_id, item->name) >= 0) {
+                continue;
+            }
+            EnumLayout layout;
+            layout.name = item->name;
+            describe_enum(item->underlying, layout);
+            int64_t next = 0;
+            bool next_ok = true;
+            const bool wide = layout.bits >= 63 && !layout.is_bool;
+            for (const Enumerator &enumerator : item->enumerators) {
+                int64_t value = 0;
+                if (enumerator.has_value) {
+                    value = enumerator.value;
+                } else if (next_ok) {
+                    value = next;
+                }
+                if (!enumerator.name.empty() && !layout.values.contains(enumerator.name)) {
+                    layout.values.emplace(enumerator.name, value);
+                }
+                bool full = false;
+                if (layout.is_bool) {
+                    full = value >= 1;
+                } else if (layout.is_unsigned || layout.is_char) {
+                    full = !wide && value >= ((1LL << layout.bits) - 1);
+                } else if (wide) {
+                    full = value == INT64_MAX;
+                } else {
+                    full = value >= ((1LL << (layout.bits - 1)) - 1);
+                }
+                if (full) {
+                    next_ok = false;
+                } else {
+                    next = value + 1;
+                    next_ok = true;
+                }
+            }
+            enum_ids_[node.file_id][item->name] = static_cast<int>(enums_.size());
+            enums_.push_back(std::move(layout));
+        }
+    }
+}
+
+int CodeGen::enum_type_designator(const Expr &expr) const {
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        if (lookup(named->text) != nullptr) {
+            return -1;
+        }
+        const int local = enum_named(current_file_, named->text);
+        return local >= 0 ? local : selective_enum(current_file_, named->text);
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        if (selector->base == nullptr) {
+            return -1;
+        }
+        if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
+            if (packages_.contains(base->text)) {
+                const uint32_t target = package_file(current_file_, base->text);
+                return target == 0 ? -1 : enum_named(target, selector->field);
+            }
+        }
+    }
+    return -1;
+}
+
+int CodeGen::enum_value_id(const Expr &expr) const {
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        const Binding *binding = lookup(named->text);
+        return binding == nullptr ? -1 : binding->enum_id;
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        if (selector->base == nullptr) {
+            return -1;
+        }
+        const int id = enum_type_designator(*selector->base);
+        if (id < 0 || id >= static_cast<int>(enums_.size())) {
+            return -1;
+        }
+        if (enums_[static_cast<std::size_t>(id)].values.contains(selector->field)) {
+            return id;
+        }
+    }
+    return -1;
+}
+
+llvm::Constant *CodeGen::enum_constant(int enum_id, int64_t value) const {
+    if (enum_id < 0 || enum_id >= static_cast<int>(enums_.size())) {
+        return const_i32(0);
+    }
+    const EnumLayout &layout = enums_[static_cast<std::size_t>(enum_id)];
+    if (layout.is_bool) {
+        return llvm::ConstantInt::get(i1(), value == 0 ? 0 : 1, false);
+    }
+    if (layout.bits == 8) {
+        return llvm::ConstantInt::get(i8(), static_cast<uint64_t>(value) & 0xFFULL, false);
+    }
+    if (layout.bits == 16) {
+        return llvm::ConstantInt::get(i16(), static_cast<uint64_t>(value) & 0xFFFFULL, false);
+    }
+    if (layout.bits == 64) {
+        return llvm::ConstantInt::get(i64(), static_cast<uint64_t>(value), true);
+    }
+    return const_i32(static_cast<int32_t>(value));
 }
 
 CodeGen::SymbolForm CodeGen::symbol_form(const PackageNode &node, const std::string &name, bool is_extern,
@@ -1964,7 +2164,6 @@ std::string function_key(const FunctionDecl &fn) {
 }
 
 void CodeGen::declare_file(const PackageNode &node) {
-    declare_enumerators(node);
     struct Acc {
         const FunctionDecl *fn = nullptr;
         bool exported = false;
@@ -2053,6 +2252,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         binding.elem_unsigned = !returns_void && ret.elem_unsigned;
         binding.elem_float = !returns_void && ret.elem_float;
         binding.trait_id = returns_void ? -1 : ret.trait_id;
+        binding.enum_id = returns_void ? -1 : ret.enum_id;
         binding.is_static = acc.is_static;
         binding.decl = acc.fn;
         file.functions.emplace(name, binding);
@@ -2117,6 +2317,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         binding.fn_ret_bool = low.fn_ret_bool;
         binding.fn_ret_struct = low.fn_ret_struct;
         binding.fn_results = low.fn_results;
+        binding.enum_id = low.enum_id;
         binding.is_static = var->is_static;
         file.globals.emplace(var->name, binding);
     }
@@ -2610,6 +2811,7 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
         binding.elem_unsigned = !returns_void && ret.elem_unsigned;
         binding.elem_float = !returns_void && ret.elem_float;
         binding.trait_id = returns_void ? -1 : ret.trait_id;
+        binding.enum_id = returns_void ? -1 : ret.enum_id;
         binding.decl = &fn;
         scopes_.back()[fn.name] = binding;
     }
@@ -2715,6 +2917,70 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         const auto *base_name = std::get_if<Expr::Name>(&selector->base->data);
         const bool package_call = base_name != nullptr && packages_.contains(base_name->text);
         if (!package_call) {
+            const int receiver_enum = enum_value_id(*selector->base);
+            if (receiver_enum >= 0 && receiver_enum < static_cast<int>(enums_.size())) {
+                const std::string key = enums_[static_cast<std::size_t>(receiver_enum)].name + "." + selector->field;
+                const Binding *method = nullptr;
+                for (const uint32_t id : package_files(current_file_)) {
+                    const auto file = files_.find(id);
+                    if (file == files_.end()) {
+                        continue;
+                    }
+                    const auto found = file->second.functions.find(key);
+                    if (found == file->second.functions.end() || !found->second.is_function) {
+                        continue;
+                    }
+                    if (found->second.is_static && id != current_file_) {
+                        continue;
+                    }
+                    method = &found->second;
+                    break;
+                }
+                auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
+                if (function == nullptr) {
+                    error(node.loc, "type mismatch");
+                    return prepared;
+                }
+                const bool receiver_pointer = function->getFunctionType()->getNumParams() > 0 &&
+                                              function->getFunctionType()->getParamType(0)->isPointerTy();
+                llvm::Value *receiver_arg = nullptr;
+                if (receiver_pointer) {
+                    if (!addressable(*selector->base)) {
+                        error(node.loc, "not an lvalue");
+                        return prepared;
+                    }
+                    const TypedValue addr = emit_addr(*selector->base);
+                    receiver_arg = addr.value;
+                } else {
+                    const TypedValue value = emit_rvalue(*selector->base);
+                    llvm::Type *param = function->getFunctionType()->getNumParams() > 0
+                                            ? function->getFunctionType()->getParamType(0)
+                                            : nullptr;
+                    receiver_arg = as_stored(value.value, value.depth, param, value.elem_unsigned || value.elem_char);
+                }
+                if (receiver_arg == nullptr) {
+                    error(node.loc, "type mismatch");
+                    return prepared;
+                }
+                std::vector<llvm::Value *> args;
+                args.reserve(node.args.size() + 1);
+                args.push_back(receiver_arg);
+                unsigned index = 1;
+                for (const auto &arg : node.args) {
+                    const TypedValue value = emit_rvalue(*arg);
+                    llvm::Type *param = index < function->getFunctionType()->getNumParams()
+                                            ? function->getFunctionType()->getParamType(index)
+                                            : nullptr;
+                    args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+                    ++index;
+                }
+                remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
+                         method->elem_bool, method->elem_bits, method->elem_unsigned);
+                prepared.decl = method->decl;
+                prepared.elem_float = method->elem_float;
+                prepared.enum_id = method->enum_id;
+                return prepared;
+            }
             int struct_id = -1;
             llvm::Value *struct_ptr = nullptr;
             llvm::Value *struct_value = nullptr;
@@ -2807,6 +3073,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
     }
     prepared.decl = node.callee == nullptr ? nullptr : callee_decl(*node.callee);
     const TypedValue callee = emit_rvalue(*node.callee);
+    prepared.enum_id = callee.enum_id;
     if (callee.fn_ty != nullptr && callee.value != nullptr && !llvm::isa<llvm::Function>(callee.value)) {
         std::vector<llvm::Value *> args;
         args.reserve(node.args.size());
@@ -2942,16 +3209,20 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
     if (inst->getType()->isVoidTy()) {
         return {zero(), 0};
     }
+    auto tagged = [&](TypedValue value) {
+        value.enum_id = call.enum_id;
+        return value;
+    };
     if (call.depth == 0 && call.elem_bool) {
-        return {builder_.CreateZExt(inst, i32()), 0};
+        return tagged({builder_.CreateZExt(inst, i32()), 0});
     }
     if (call.depth == 0 && (call.elem_char || call.elem_bits == 8 || call.elem_bits == 16)) {
         const bool zero_extend = call.elem_unsigned || call.elem_char;
         llvm::Value *wide = zero_extend ? builder_.CreateZExt(inst, i32()) : builder_.CreateSExt(inst, i32());
-        return {wide, 0};
+        return tagged({wide, 0});
     }
-    return {inst, call.depth, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool, call.elem_bits,
-            call.elem_unsigned};
+    return tagged({inst, call.depth, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool, call.elem_bits,
+                   call.elem_unsigned});
 }
 
 llvm::AllocaInst *CodeGen::defer_flag() {
@@ -3138,7 +3409,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                 binding->elem_bool, binding->elem_bits, binding->elem_unsigned, binding->trait_id, binding->elem_float,
                 binding->fn_ty, binding->fn_ret_depth, binding->fn_ret_float, binding->fn_ret_bits,
                 binding->fn_ret_unsigned, binding->fn_ret_char, binding->fn_ret_bool, binding->fn_ret_struct,
-                binding->fn_results};
+                binding->fn_results, binding->enum_id};
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {
         const TypedValue inner = emit_rvalue(*star->expr);
@@ -3307,7 +3578,21 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     sid = selective_tag(current_file_, node.text);
                 }
                 if (sid < 0) {
-                    return {};
+                    int eid = enum_named(current_file_, node.text);
+                    if (eid < 0) {
+                        eid = selective_enum(current_file_, node.text);
+                    }
+                    if (eid < 0 || eid >= static_cast<int>(enums_.size())) {
+                        return {};
+                    }
+                    const EnumLayout &layout = enums_[static_cast<std::size_t>(eid)];
+                    Shape shape;
+                    shape.elem_bool = layout.is_bool;
+                    shape.elem_char = layout.is_char;
+                    shape.elem_unsigned = layout.is_unsigned;
+                    shape.elem_bits = layout.is_bool ? 0 : layout.bits;
+                    shape.type = shape_type(shape);
+                    return shape;
                 }
                 Shape shape;
                 shape.struct_id = sid;
@@ -3676,6 +3961,25 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return emit_prepared(prepare_call(node));
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.base != nullptr) {
+                    const int enum_id = enum_type_designator(*node.base);
+                    if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size())) {
+                        const EnumLayout &layout = enums_[static_cast<std::size_t>(enum_id)];
+                        const auto member = layout.values.find(node.field);
+                        if (member == layout.values.end()) {
+                            error(node.loc, "undeclared identifier");
+                            return {zero(), 0};
+                        }
+                        TypedValue value;
+                        value.value = enum_constant(enum_id, member->second);
+                        value.enum_id = enum_id;
+                        value.elem_bool = layout.is_bool;
+                        value.elem_char = layout.is_char;
+                        value.elem_unsigned = layout.is_unsigned;
+                        value.elem_bits = layout.is_bool ? 0 : layout.bits;
+                        return value;
+                    }
+                }
                 const auto *base_name = node.base == nullptr ? nullptr : std::get_if<Expr::Name>(&node.base->data);
                 const auto package = base_name == nullptr ? packages_.end() : packages_.find(base_name->text);
                 if (base_name != nullptr && package != packages_.end()) {
@@ -4019,7 +4323,15 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
     auto create_scalar = [&](const std::string &name, const TypedValue &got) {
         llvm::Type *ty = i32();
         Binding binding;
-        if (got.depth > 0) {
+        if (got.enum_id >= 0 && got.enum_id < static_cast<int>(enums_.size())) {
+            const EnumLayout &layout = enums_[static_cast<std::size_t>(got.enum_id)];
+            binding.enum_id = got.enum_id;
+            binding.elem_bool = layout.is_bool;
+            binding.elem_char = layout.is_char;
+            binding.elem_unsigned = layout.is_unsigned;
+            binding.elem_bits = layout.is_bool ? 0 : layout.bits;
+            ty = leaf_type(0, binding.elem_char, -1, binding.elem_bool, binding.elem_bits, false);
+        } else if (got.depth > 0) {
             ty = ptr_type();
             binding.depth = got.depth;
             binding.elem_char = got.elem_char;
@@ -4534,6 +4846,7 @@ void CodeGen::emit(const PackageGraph &graph) {
     entry_file_ = graph.nodes.front().file_id;
     prepare_structs();
     prepare_traits();
+    prepare_enums();
     for (const PackageNode &node : graph.nodes) {
         declare_file(node);
     }

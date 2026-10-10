@@ -370,6 +370,13 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source("enum Tiny i8 { A, B = 2 };\nfunc main() int { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(enum Tiny i8\n");
+        EXPECT_HAS(check, parsed.dump, "(enumerator B 2)\n");
+    }
+
+    {
         const Parsed parsed = parse_source("enum Color { Green = -1 };\nfunc main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }

@@ -63,11 +63,6 @@ class Checker {
         bool is_extern = false;
     };
 
-    struct EnumConst {
-        int value = 0;
-        SourceLoc loc{};
-    };
-
     struct MethodInfo {
         Type type;
         bool has_body = false;
@@ -90,8 +85,18 @@ class Checker {
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> tags_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> trait_names_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, Type>> typedefs_;
-    std::unordered_map<uint32_t, std::unordered_set<std::string>> enums_;
-    std::unordered_map<uint32_t, std::unordered_map<std::string, EnumConst>> enum_consts_;
+    struct EnumInfo {
+        std::string name;
+        Type underlying;
+        struct Member {
+            std::string name;
+            int64_t value = 0;
+            SourceLoc loc{};
+        };
+        std::vector<Member> members;
+    };
+    std::vector<EnumInfo> enum_types_;
+    std::unordered_map<uint32_t, std::unordered_map<std::string, int>> enum_ids_;
     struct PendingStruct {
         uint32_t file_id = 0;
         const StructDecl *decl = nullptr;
@@ -127,8 +132,10 @@ class Checker {
     bool shared_has(const std::string &name) const;
     std::vector<uint32_t> files_in_package(uint32_t file_id) const;
     int find_tag(uint32_t file, const std::string &name) const;
+    int find_enum(uint32_t file, const std::string &name) const;
     bool package_has_enum(uint32_t file, const std::string &name) const;
-    bool package_enum_const(uint32_t file, const std::string &name) const;
+    const EnumInfo::Member *find_enum_member(int enum_id, const std::string &name) const;
+    int enum_designator(const Expr &expr);
     int package_trait(uint32_t file, const std::string &name) const;
     bool package_typedef(uint32_t file, const std::string &name, Type &out) const;
     bool exported_elsewhere(const std::string &name) const;
@@ -161,6 +168,7 @@ class Checker {
     bool lookup_field(const Type &object, const std::string &name, Type &out) const;
     bool dot_object(const Type &base, Type &object, bool &through_pointer) const;
     const MethodInfo *find_method(int struct_id, const std::string &name) const;
+    const MethodInfo *find_named_method(const std::string &type_name, const std::string &name) const;
     const TraitInfo::Method *find_trait_method(int trait_id, const std::string &name) const;
     bool trait_method_matches(const Type &trait_fn, const Type &concrete) const;
     void require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc);
@@ -169,7 +177,6 @@ class Checker {
     void register_enums(const TranslationUnit &unit, uint32_t file_id);
     void register_traits(const TranslationUnit &unit, uint32_t file_id);
     void register_typedefs(const TranslationUnit &unit, uint32_t file_id);
-    void inject_enum_consts();
     bool name_taken(const std::string &name) const;
     Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum);
@@ -271,6 +278,13 @@ Type type_struct(int id) {
     return type;
 }
 
+Type type_enum(int id) {
+    Type type;
+    type.kind = TypeKind::Enum;
+    type.enum_id = id;
+    return type;
+}
+
 Type type_trait(int id) {
     Type type;
     type.kind = TypeKind::Trait;
@@ -348,6 +362,9 @@ bool same_type(const Type &lhs, const Type &rhs) {
     }
     if (lhs.kind == TypeKind::Struct) {
         return lhs.struct_id >= 0 && lhs.struct_id == rhs.struct_id;
+    }
+    if (lhs.kind == TypeKind::Enum) {
+        return lhs.enum_id >= 0 && lhs.enum_id == rhs.enum_id;
     }
     if (lhs.kind == TypeKind::Trait) {
         return lhs.trait_id >= 0 && lhs.trait_id == rhs.trait_id;
@@ -908,14 +925,49 @@ int Checker::find_tag(uint32_t file, const std::string &name) const {
     return -1;
 }
 
-bool Checker::package_has_enum(uint32_t file, const std::string &name) const {
+int Checker::find_enum(uint32_t file, const std::string &name) const {
     for (const uint32_t id : files_in_package(file)) {
-        const auto found = enums_.find(id);
-        if (found != enums_.end() && found->second.contains(name)) {
-            return true;
+        const auto found = enum_ids_.find(id);
+        if (found == enum_ids_.end()) {
+            continue;
+        }
+        const auto tag = found->second.find(name);
+        if (tag != found->second.end()) {
+            return tag->second;
         }
     }
-    return false;
+    return -1;
+}
+
+bool Checker::package_has_enum(uint32_t file, const std::string &name) const { return find_enum(file, name) >= 0; }
+
+const Checker::EnumInfo::Member *Checker::find_enum_member(int enum_id, const std::string &name) const {
+    if (enum_id < 0 || enum_id >= static_cast<int>(enum_types_.size())) {
+        return nullptr;
+    }
+    for (const EnumInfo::Member &member : enum_types_[static_cast<std::size_t>(enum_id)].members) {
+        if (member.name == name) {
+            return &member;
+        }
+    }
+    return nullptr;
+}
+
+int Checker::enum_designator(const Expr &expr) {
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        if (lookup(named->text) != nullptr) {
+            return -1;
+        }
+        return find_enum(file_id_, named->text);
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        const SelectorTarget target = resolve_selector(*selector);
+        if (target.kind == SelectorTarget::Kind::Package && target.symbol != nullptr && target.symbol->is_type &&
+            target.symbol->type.kind == TypeKind::Enum) {
+            return target.symbol->type.enum_id;
+        }
+    }
+    return -1;
 }
 
 int Checker::package_trait(uint32_t file, const std::string &name) const {
@@ -932,15 +984,7 @@ int Checker::package_trait(uint32_t file, const std::string &name) const {
     return -1;
 }
 
-bool Checker::package_enum_const(uint32_t file, const std::string &name) const {
-    for (const uint32_t id : files_in_package(file)) {
-        const auto found = enum_consts_.find(id);
-        if (found != enum_consts_.end() && found->second.contains(name)) {
-            return true;
-        }
-    }
-    return false;
-}
+
 
 bool Checker::package_typedef(uint32_t file, const std::string &name, Type &out) const {
     for (const uint32_t id : files_in_package(file)) {
@@ -998,6 +1042,9 @@ Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_in
     if (find_tag(file_id_, name) >= 0) {
         return lookup_tag(name, loc, allow_incomplete);
     }
+    if (const int enum_id = find_enum(file_id_, name); enum_id >= 0) {
+        return type_enum(enum_id);
+    }
     if (const int trait = package_trait(file_id_, name); trait >= 0) {
         return type_trait(trait);
     }
@@ -1022,7 +1069,7 @@ Type Checker::with_indirections(Type type, int count, SourceLoc loc) {
         }
         if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool &&
             type.kind != TypeKind::Float && type.kind != TypeKind::Pointer && type.kind != TypeKind::Struct &&
-            type.kind != TypeKind::Void) {
+            type.kind != TypeKind::Enum && type.kind != TypeKind::Void) {
             error(loc, "not supported yet");
             return type_invalid();
         }
@@ -1094,17 +1141,16 @@ bool Checker::dot_object(const Type &base, Type &object, bool &through_pointer) 
     return false;
 }
 
-const Checker::MethodInfo *Checker::find_method(int struct_id, const std::string &name) const {
-    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+const Checker::MethodInfo *Checker::find_named_method(const std::string &type_name, const std::string &name) const {
+    if (type_name.empty()) {
         return nullptr;
     }
-    const std::string &struct_name = structs_[static_cast<std::size_t>(struct_id)].name;
     for (const uint32_t file : files_in_package(file_id_)) {
         const auto methods = methods_.find(file);
         if (methods == methods_.end()) {
             continue;
         }
-        const auto group = methods->second.find(struct_name);
+        const auto group = methods->second.find(type_name);
         if (group == methods->second.end()) {
             continue;
         }
@@ -1114,6 +1160,13 @@ const Checker::MethodInfo *Checker::find_method(int struct_id, const std::string
         }
     }
     return nullptr;
+}
+
+const Checker::MethodInfo *Checker::find_method(int struct_id, const std::string &name) const {
+    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+        return nullptr;
+    }
+    return find_named_method(structs_[static_cast<std::size_t>(struct_id)].name, name);
 }
 
 const Checker::TraitInfo::Method *Checker::find_trait_method(int trait_id, const std::string &name) const {
@@ -1163,7 +1216,7 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
         if (item == nullptr || item->name.empty()) {
             continue;
         }
-        if (package_trait(file_id, item->name) >= 0 || package_enum_const(file_id, item->name) ||
+        if (package_trait(file_id, item->name) >= 0 || package_has_enum(file_id, item->name) ||
             find_tag(file_id, item->name) >= 0) {
             error(item->loc, "redefinition");
             continue;
@@ -1455,79 +1508,133 @@ void Checker::register_structs(const TranslationUnit &unit, uint32_t file_id) {
 
 void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
     file_id_ = file_id;
+    auto unsigned_rep = [](const Type &type) {
+        return type.is_unsigned || (type.kind == TypeKind::Char && (type.plain_char || type.is_unsigned));
+    };
+    auto fits = [&](const Type &type, int64_t value) {
+        if (type.kind == TypeKind::Bool) {
+            return value == 0 || value == 1;
+        }
+        if (type.kind != TypeKind::Int && type.kind != TypeKind::Char) {
+            return false;
+        }
+        const int bits = width_of(type);
+        if (bits <= 0) {
+            return false;
+        }
+        if (unsigned_rep(type)) {
+            if (value < 0) {
+                return false;
+            }
+            if (bits >= 63) {
+                return true;
+            }
+            return static_cast<uint64_t>(value) <= ((1ULL << bits) - 1ULL);
+        }
+        if (bits >= 63) {
+            return true;
+        }
+        const int64_t max = (1LL << (bits - 1)) - 1;
+        const int64_t min = -(1LL << (bits - 1));
+        return value >= min && value <= max;
+    };
+    auto at_max = [&](const Type &type, int64_t value) {
+        if (type.kind == TypeKind::Bool) {
+            return value >= 1;
+        }
+        const int bits = width_of(type);
+        if (unsigned_rep(type)) {
+            if (bits >= 63) {
+                return false;
+            }
+            return value >= static_cast<int64_t>((1ULL << bits) - 1ULL);
+        }
+        if (bits >= 63) {
+            return value == INT64_MAX;
+        }
+        return value >= ((1LL << (bits - 1)) - 1);
+    };
     for (const TopDecl &decl : unit.decls) {
         const auto *item = std::get_if<EnumDecl>(&decl.data);
         if (item == nullptr) {
             continue;
         }
+        if (item->name.empty()) {
+            error(item->loc, "not supported yet");
+            continue;
+        }
         if (item->enumerators.empty()) {
             error(item->loc, "not supported yet");
         }
-        if (!item->name.empty()) {
-            if (package_has_enum(file_id, item->name)) {
-                error(item->loc, "redefinition");
-            } else {
-                enums_[file_id].insert(item->name);
-            }
+        Type existing;
+        if (package_has_enum(file_id, item->name) || find_tag(file_id, item->name) >= 0 ||
+            package_trait(file_id, item->name) >= 0 || package_typedef(file_id, item->name, existing)) {
+            error(item->loc, "redefinition");
+            continue;
         }
-        int next = 0;
+        Type underlying = type_int();
+        if (!item->underlying.empty()) {
+            Type parsed;
+            if (!fill_builtin(item->underlying, parsed) ||
+                (parsed.kind != TypeKind::Int && parsed.kind != TypeKind::Char && parsed.kind != TypeKind::Bool)) {
+                error(item->loc, "type mismatch");
+                continue;
+            }
+            underlying = parsed;
+        }
+        const int id = static_cast<int>(enum_types_.size());
+        EnumInfo info;
+        info.name = item->name;
+        info.underlying = underlying;
+        int64_t next = 0;
         bool next_ok = true;
         for (const Enumerator &enumerator : item->enumerators) {
-            int value = 0;
+            int64_t value = 0;
             if (enumerator.has_value) {
                 value = enumerator.value;
+                if (!fits(underlying, value)) {
+                    error(enumerator.loc, "type mismatch");
+                }
             } else if (!next_ok) {
                 error(enumerator.loc, "not supported yet");
             } else {
                 value = next;
             }
-            if (enumerator.name.empty()) {
-                continue;
+            if (!enumerator.name.empty()) {
+                bool duplicate = false;
+                for (const EnumInfo::Member &member : info.members) {
+                    if (member.name == enumerator.name) {
+                        duplicate = true;
+                    }
+                }
+                if (duplicate) {
+                    error(enumerator.loc, "redefinition");
+                } else {
+                    info.members.push_back(EnumInfo::Member{enumerator.name, value, enumerator.loc});
+                }
             }
-            if (package_enum_const(file_id, enumerator.name)) {
-                error(enumerator.loc, "redefinition");
-            } else {
-                enum_consts_[file_id].emplace(enumerator.name, EnumConst{value, enumerator.loc});
-            }
-            if (value == 2147483647) {
+            if (at_max(underlying, value)) {
                 next_ok = false;
             } else {
                 next = value + 1;
                 next_ok = true;
             }
         }
-        if (item->exported && !item->name.empty()) {
-            if (exports_[file_id].contains(item->name) || exported_elsewhere(item->name)) {
-                error(item->loc, "redefinition");
-            } else {
-                Symbol symbol;
-                symbol.name = item->name;
-                symbol.is_type = true;
-                symbol.is_enum = true;
-                symbol.type = type_int();
-                exports_[file_id].emplace(item->name, std::move(symbol));
-            }
-        }
+        enum_types_.push_back(std::move(info));
+        enum_ids_[file_id][item->name] = id;
         if (!item->exported) {
             continue;
         }
-        for (const Enumerator &enumerator : item->enumerators) {
-            const auto constants = enum_consts_.find(file_id);
-            if (enumerator.name.empty() || constants == enum_consts_.end() ||
-                !constants->second.contains(enumerator.name)) {
-                continue;
-            }
-            if (exports_[file_id].contains(enumerator.name) || exported_elsewhere(enumerator.name)) {
-                error(enumerator.loc, "redefinition");
-                continue;
-            }
-            Symbol symbol;
-            symbol.name = enumerator.name;
-            symbol.type = type_int();
-            symbol.is_constant = true;
-            symbol.const_value = constants->second.at(enumerator.name).value;
-            exports_[file_id].emplace(enumerator.name, std::move(symbol));
+        if (exports_[file_id].contains(item->name) || exported_elsewhere(item->name)) {
+            error(item->loc, "redefinition");
+            continue;
         }
+        Symbol symbol;
+        symbol.name = item->name;
+        symbol.is_type = true;
+        symbol.is_enum = true;
+        symbol.type = type_enum(id);
+        exports_[file_id].emplace(item->name, std::move(symbol));
     }
 }
 
@@ -1556,7 +1663,7 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         return;
     }
     Type existing;
-    if (package_enum_const(file_id_, item.name) || package_typedef(file_id_, item.name, existing)) {
+    if (package_has_enum(file_id_, item.name) || package_typedef(file_id_, item.name, existing)) {
         error(item.loc, "redefinition");
         return;
     }
@@ -1615,29 +1722,12 @@ void Checker::register_typedefs(const TranslationUnit &unit, uint32_t file_id) {
     }
 }
 
-void Checker::inject_enum_consts() {
-    const auto file = enum_consts_.find(file_id_);
-    if (file == enum_consts_.end()) {
-        return;
-    }
-    for (const auto &[name, info] : file->second) {
-        Symbol symbol;
-        symbol.name = name;
-        symbol.type = type_int();
-        symbol.is_constant = true;
-        symbol.const_value = info.value;
-        if (remember_shared(symbol, info.loc)) {
-            declare(symbol, info.loc);
-        }
-    }
-}
-
 bool Checker::name_taken(const std::string &name) const {
     Type alias;
     if (package_typedef(file_id_, name, alias)) {
         return true;
     }
-    return package_enum_const(file_id_, name);
+    return package_has_enum(file_id_, name);
 }
 
 Type Checker::published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
@@ -1685,11 +1775,16 @@ Type Checker::spelled_type(const std::string &name, const std::string &package, 
         return with_indirections(lookup_tag(name, loc, indirections > 0), indirections, loc);
     }
     if (is_enum) {
-        if (name.empty() || package_has_enum(file_id_, name)) {
-            return with_indirections(type_int(), indirections, loc);
+        if (name.empty()) {
+            error(loc, "not supported yet");
+            return type_invalid();
         }
-        error(loc, "undeclared identifier");
-        return type_invalid();
+        const int enum_id = find_enum(file_id_, name);
+        if (enum_id < 0) {
+            error(loc, "undeclared identifier");
+            return type_invalid();
+        }
+        return with_indirections(type_enum(enum_id), indirections, loc);
     }
     return with_indirections(type_of_name(name, loc, indirections > 0), indirections, loc);
 }
@@ -1703,10 +1798,17 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     if (!package.empty()) {
         type = with_indirections(lookup_qualified_type(package, name, loc), indirections, loc);
     } else if (is_struct) {
-        type = with_indirections(lookup_tag(name, loc, indirections > 0), indirections, loc);
+        if (find_tag(file_id_, name) < 0 && find_enum(file_id_, name) >= 0) {
+            type = with_indirections(type_enum(find_enum(file_id_, name)), indirections, loc);
+        } else {
+            type = with_indirections(lookup_tag(name, loc, indirections > 0), indirections, loc);
+        }
     } else if (is_enum) {
-        if (name.empty() || package_has_enum(file_id_, name)) {
-            type = with_indirections(type_int(), indirections, loc);
+        if (name.empty()) {
+            error(loc, "not supported yet");
+            type = type_invalid();
+        } else if (const int enum_id = find_enum(file_id_, name); enum_id >= 0) {
+            type = with_indirections(type_enum(enum_id), indirections, loc);
         } else {
             error(loc, "undeclared identifier");
             type = type_invalid();
@@ -1794,6 +1896,11 @@ std::string Checker::type_desc(const Type &type) const {
             return structs_[static_cast<std::size_t>(type.struct_id)].name;
         }
         return "struct";
+    case TypeKind::Enum:
+        if (type.enum_id >= 0 && type.enum_id < static_cast<int>(enum_types_.size())) {
+            return enum_types_[static_cast<std::size_t>(type.enum_id)].name;
+        }
+        return "enum";
     case TypeKind::Trait:
         if (type.trait_id >= 0 && type.trait_id < static_cast<int>(traits_.size())) {
             return traits_[static_cast<std::size_t>(type.trait_id)].name;
@@ -1978,6 +2085,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                     }
                     if (const auto *selector = std::get_if<Expr::Selector>(&node.expr->data)) {
+                        if (selector->base != nullptr && enum_designator(*selector->base) >= 0) {
+                            error(node.loc, "not an lvalue");
+                            return type_invalid();
+                        }
                         if (selector->base != nullptr) {
                             if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
                                 if (const Symbol *symbol = lookup(base->text); symbol != nullptr && symbol->is_package) {
@@ -2042,6 +2153,17 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return type_int();
                     }
+                }
+                if (lhs.kind == TypeKind::Enum || rhs.kind == TypeKind::Enum) {
+                    if (lhs.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
+                        return type_invalid();
+                    }
+                    if (lhs.kind == TypeKind::Enum && rhs.kind == TypeKind::Enum && same_type(lhs, rhs) &&
+                        (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq)) {
+                        return type_int();
+                    }
+                    error(node.loc, "type mismatch");
+                    return type_invalid();
                 }
                 if (is_float(lhs) || is_float(rhs)) {
                     if (lhs.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
@@ -2125,6 +2247,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return *base.pointee;
                 }
                 if (const auto *selector = std::get_if<Expr::Selector>(&node.lhs->data)) {
+                    if (selector->base != nullptr && enum_designator(*selector->base) >= 0) {
+                        error(node.loc, "not an lvalue");
+                        check_expr(*node.rhs, true);
+                        return type_invalid();
+                    }
                     const SelectorTarget target = resolve_selector(*selector);
                     if (target.kind == SelectorTarget::Kind::Failed) {
                         check_expr(*node.rhs, true);
@@ -2244,6 +2371,54 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                             return *method->type.result;
                         }
+                        if (base.kind == TypeKind::Enum ||
+                            (base.kind == TypeKind::Pointer && base.pointee && base.pointee->kind == TypeKind::Enum)) {
+                            const bool through_pointer = base.kind != TypeKind::Enum;
+                            const int enum_id = through_pointer ? base.pointee->enum_id : base.enum_id;
+                            const std::string enum_name =
+                                enum_id >= 0 && enum_id < static_cast<int>(enum_types_.size())
+                                    ? enum_types_[static_cast<std::size_t>(enum_id)].name
+                                    : std::string{};
+                            if (const MethodInfo *method = find_named_method(enum_name, selector->field)) {
+                                if (deferring && method->type.variadic) {
+                                    error(node.loc, "not supported yet");
+                                }
+                                const std::size_t arity = method->type.params.size();
+                                const bool count_ok = method->type.variadic ? node.args.size() + 1 >= arity
+                                                                            : node.args.size() + 1 == arity;
+                                if (!count_ok) {
+                                    error(node.loc, "argument count");
+                                }
+                                if (!method->type.params.empty()) {
+                                    const Type &receiver = method->type.params[0];
+                                    const Type object = through_pointer ? *base.pointee : base;
+                                    const auto *as_selector = std::get_if<Expr::Selector>(&selector->base->data);
+                                    const bool enumerator =
+                                        as_selector != nullptr && as_selector->base != nullptr &&
+                                        enum_designator(*as_selector->base) >= 0;
+                                    if (receiver.kind == TypeKind::Pointer) {
+                                        if (!through_pointer && (!is_lvalue_form(*selector->base) || enumerator)) {
+                                            error(node.loc, "not an lvalue");
+                                        } else {
+                                            const Type pointer = through_pointer ? base : type_pointer(object);
+                                            expect(pointer, receiver, expr_loc(*selector->base));
+                                        }
+                                    } else {
+                                        expect(object, receiver, expr_loc(*selector->base));
+                                    }
+                                }
+                                for (std::size_t i = 0; i < node.args.size(); ++i) {
+                                    const Type arg = check_expr(*node.args[i], true);
+                                    if (count_ok && i + 1 < arity) {
+                                        expect_value(arg, method->type.params[i + 1], *node.args[i], expr_loc(*node.args[i]));
+                                    }
+                                }
+                                if (method->type.result == nullptr) {
+                                    return type_invalid();
+                                }
+                                return *method->type.result;
+                            }
+                        }
                         Type object;
                         bool through_pointer = false;
                         if (dot_object(base, object, through_pointer)) {
@@ -2326,6 +2501,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 return *signature->result;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.base != nullptr) {
+                    const int enum_id = enum_designator(*node.base);
+                    if (enum_id >= 0) {
+                        if (find_enum_member(enum_id, node.field) == nullptr) {
+                            error(node.loc, "undeclared identifier");
+                            return type_invalid();
+                        }
+                        return type_enum(enum_id);
+                    }
+                }
                 const SelectorTarget target = resolve_selector(node);
                 if (target.kind == SelectorTarget::Kind::Failed) {
                     return type_invalid();
@@ -2393,7 +2578,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     Type ignored;
                     const bool alias = named != nullptr && package_typedef(file_id_, named->text, ignored);
                     const bool tag = named != nullptr && find_tag(file_id_, named->text) >= 0;
-                    if (named != nullptr && lookup(named->text) == nullptr && (alias || tag)) {
+                    const bool enumeration = named != nullptr && find_enum(file_id_, named->text) >= 0;
+                    if (named != nullptr && lookup(named->text) == nullptr && (alias || tag || enumeration)) {
                         type = type_of_name(named->text, node.loc, false);
                     } else {
                         type = check_raw(*node.expr, true);
@@ -2951,10 +3137,12 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     error(fn->loc, "type mismatch");
                 }
                 const int receiver_refs = fn->params.empty() ? -1 : fn->params.front().indirections;
-                const bool receiver_ok = !fn->params.empty() && fn->params.front().is_receiver &&
-                                         fn->params.front().is_struct && (receiver_refs == 0 || receiver_refs == 1) &&
-                                         !fn->params.front().is_array && fn->params.front().type_package.empty() &&
-                                         fn->params.front().type_name == fn->method_struct;
+                const bool receiver_shape = !fn->params.empty() && fn->params.front().is_receiver &&
+                                            (receiver_refs == 0 || receiver_refs == 1) && !fn->params.front().is_array &&
+                                            fn->params.front().type_package.empty() &&
+                                            fn->params.front().type_name == fn->method_struct;
+                const bool receiver_ok =
+                    receiver_shape && (fn->params.front().is_struct || package_has_enum(file_id_, fn->method_struct));
                 if (!receiver_ok) {
                     error(fn->loc, "type mismatch");
                 }
@@ -3213,15 +3401,15 @@ void Checker::bind_imports(const PackageNode &node) {
                     continue;
                 }
                 if (exported->is_type) {
-                    if (exported->is_enum) {
-                        if (enums_[file_id_].contains(name) && typedefs_[file_id_].contains(name)) {
+                    if (exported->is_enum && exported->type.kind == TypeKind::Enum) {
+                        const int have = find_enum(file_id_, name);
+                        if (have == exported->type.enum_id) {
                             continue;
                         }
-                        if (name_taken(name) || enums_[file_id_].contains(name) || typedefs_[file_id_].contains(name)) {
+                        if (name_taken(name) || have >= 0 || find_tag(file_id_, name) >= 0) {
                             error(import.loc, "redefinition");
                         } else {
-                            enums_[file_id_].insert(name);
-                            typedefs_[file_id_][name] = type_int();
+                            enum_ids_[file_id_][name] = exported->type.enum_id;
                         }
                         continue;
                     }
@@ -3310,7 +3498,6 @@ void Checker::analyze_unit(const TranslationUnit &unit, uint32_t file_id, const 
     if (node != nullptr) {
         bind_imports(*node);
     }
-    inject_enum_consts();
     declare_globals(unit);
     check_globals(unit);
     pop();
@@ -3322,7 +3509,6 @@ void Checker::prepare_unit(const TranslationUnit &unit, uint32_t file_id, const 
     if (node != nullptr) {
         bind_imports(*node);
     }
-    inject_enum_consts();
     declare_globals(unit);
     pop();
 }
@@ -3333,7 +3519,6 @@ void Checker::check_unit(const TranslationUnit &unit, uint32_t file_id, const Pa
     if (node != nullptr) {
         bind_imports(*node);
     }
-    inject_enum_consts();
     const auto locals = statics_.find(file_id_);
     if (locals != statics_.end()) {
         for (const auto &[name, symbol] : locals->second) {
