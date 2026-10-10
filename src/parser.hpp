@@ -139,6 +139,7 @@ class Parser {
     std::unique_ptr<Expr> parse_primary();
     std::unique_ptr<Expr> parse_anon_function();
     bool starts_type_paren() const;
+    bool starts_cast_type() const;
     struct ParenType {
         SourceLoc loc{};
         std::string name;
@@ -148,6 +149,8 @@ class Parser {
         int indirections = 0;
     };
     ParenType parse_paren_type();
+    ParenType parse_cast_type();
+    std::unique_ptr<Expr> parse_cast_expr();
 
     void parse_import(TranslationUnit &unit);
     void parse_trait(TranslationUnit &unit);

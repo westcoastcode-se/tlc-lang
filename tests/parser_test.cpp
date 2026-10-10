@@ -457,7 +457,7 @@ int run_parser_tests() {
             "func main() int {\n"
             "  int n;\n"
             "  n = sizeof(int) + sizeof(int *) + sizeof n + sizeof(n);\n"
-            "  n = (int)(char *)(void *)n;\n"
+            "  n = int(char*(void*(n)));\n"
             "  return (n);\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
@@ -496,8 +496,8 @@ int run_parser_tests() {
             "  char c;\n"
             "  c = 'A';\n"
             "  c = '\\n';\n"
-            "  n = 1ull;\n"
-            "  return (int)c + (long)s;\n"
+            "  n = 1u64;\n"
+            "  return int(c) + long(s);\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(var n unsigned long long");
@@ -507,7 +507,7 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(var sc signed char");
         EXPECT_HAS(check, parsed.dump, "(char 65)");
         EXPECT_HAS(check, parsed.dump, "(char 10)");
-        EXPECT_HAS(check, parsed.dump, "(int 1 u ll)");
+        EXPECT_HAS(check, parsed.dump, "(int 1 u64)");
         EXPECT_HAS(check, parsed.dump, "(cast int (name c))");
         EXPECT_HAS(check, parsed.dump, "(cast long (name s))");
     }

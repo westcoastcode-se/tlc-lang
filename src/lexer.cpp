@@ -463,7 +463,7 @@ Token Lexer::lex_float(uint32_t start) {
             }
         }
     }
-    if (peek() == 'f' || peek() == 'F' || peek() == 'l' || peek() == 'L') {
+    if (peek() == 'f' || peek() == 'F') {
         get();
     }
     Token token = finish(TokenKind::FloatLiteral, start);
@@ -539,34 +539,42 @@ Token Lexer::lex_number_or_float(uint32_t start) {
 
     IntSuffix suffix;
     bool bad_suffix = false;
-    while (!eof_at() && (peek() == 'u' || peek() == 'U' || peek() == 'l' || peek() == 'L')) {
-        if (peek() == 'u' || peek() == 'U') {
-            if (suffix.is_unsigned) {
-                bad_suffix = true;
+    struct Suffix {
+        const char *text;
+        int bits;
+        bool is_unsigned;
+    };
+    static constexpr Suffix kSuffixes[] = {
+        {"i8", 8, false},  {"u8", 8, true},  {"i16", 16, false}, {"u16", 16, true},
+        {"i32", 32, false}, {"u32", 32, true}, {"i64", 64, false}, {"u64", 64, true},
+    };
+    bool matched = false;
+    if (!eof_at() && is_ident_start(peek())) {
+        for (const Suffix &candidate : kSuffixes) {
+            uint32_t index = 0;
+            bool same = true;
+            for (; candidate.text[index] != '\0'; ++index) {
+                if (eof_at(index) || peek(index) != candidate.text[index]) {
+                    same = false;
+                    break;
+                }
             }
-            suffix.is_unsigned = true;
-            get();
-            continue;
+            if (!same || (!eof_at(index) && is_ident_continue(peek(index)))) {
+                continue;
+            }
+            for (uint32_t step = 0; step < index; ++step) {
+                get();
+            }
+            suffix.bits = candidate.bits;
+            suffix.is_unsigned = candidate.is_unsigned;
+            matched = true;
+            break;
         }
-        const char mark = get();
-        int count = 1;
-        if (peek() == mark) {
-            get();
-            count = 2;
-        } else if (peek() == 'l' || peek() == 'L') {
-            get();
-            count = 2;
+        if (!matched) {
             bad_suffix = true;
-        }
-        if (suffix.long_count != 0) {
-            bad_suffix = true;
-        }
-        suffix.long_count = count;
-    }
-    if (!eof_at() && is_ident_continue(peek())) {
-        bad_suffix = true;
-        while (!eof_at() && is_ident_continue(peek())) {
-            get();
+            while (!eof_at() && is_ident_continue(peek())) {
+                get();
+            }
         }
     }
     if (bad_suffix) {

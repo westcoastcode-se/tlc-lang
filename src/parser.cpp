@@ -25,6 +25,11 @@ std::unique_ptr<Expr> unsupported_expr(SourceLoc loc) {
     return make_expr(std::move(node));
 }
 
+bool is_type_alias(std::string_view text) {
+    return text == "i8" || text == "i16" || text == "i32" || text == "i64" || text == "u8" || text == "u16" ||
+           text == "u32" || text == "u64" || text == "f32" || text == "f64";
+}
+
 bool is_int_spec(TokenKind kind) {
     switch (kind) {
     case TokenKind::KwInt:
@@ -473,8 +478,8 @@ std::vector<Enumerator> Parser::parse_enumerators() {
             break;
         }
         if (eat(TokenKind::Eq)) {
-            if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.long_count == 0 &&
-                peek().int_value <= 2147483647ULL) {
+            if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&
+                peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value <= 2147483647ULL) {
                 enumerator.has_value = true;
                 enumerator.value = static_cast<int>(peek().int_value);
                 ++pos_;
@@ -1091,8 +1096,9 @@ Parser::ArrayMark Parser::parse_array_suffix(bool allow_unsized) {
         if (!allow_unsized) {
             diags_.error(loc, "not supported yet");
         }
-    } else if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.long_count == 0 &&
-               peek().int_value > 0 && peek().int_value <= 2147483647ULL) {
+    } else if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&
+               peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value > 0 &&
+               peek().int_value <= 2147483647ULL) {
         mark.length = static_cast<int>(peek().int_value);
         ++pos_;
         expect(TokenKind::RBracket, "expected ']'");
@@ -1946,11 +1952,7 @@ bool Parser::starts_type_paren() const {
     } else if (kind == TokenKind::KwVoid || kind == TokenKind::KwBool || kind == TokenKind::KwFloat ||
                kind == TokenKind::KwDouble) {
         ++index;
-    } else if (kind == TokenKind::Identifier &&
-               (peek(index).text == "f32" || peek(index).text == "f64" || peek(index).text == "i8" ||
-                peek(index).text == "i16" || peek(index).text == "i32" || peek(index).text == "i64" ||
-                peek(index).text == "u8" || peek(index).text == "u16" || peek(index).text == "u32" ||
-                peek(index).text == "u64") &&
+    } else if (kind == TokenKind::Identifier && is_type_alias(peek(index).text) &&
                (peek(index + 1).kind == TokenKind::RParen || peek(index + 1).kind == TokenKind::Star)) {
         ++index;
     } else if (kind == TokenKind::KwStruct || kind == TokenKind::KwEnum) {
@@ -1972,9 +1974,36 @@ bool Parser::starts_type_paren() const {
     return peek(index).kind == TokenKind::RParen;
 }
 
-Parser::ParenType Parser::parse_paren_type() {
+bool Parser::starts_cast_type() const {
+    std::size_t index = 0;
+    const TokenKind kind = peek(index).kind;
+    if (is_int_spec(kind)) {
+        while (is_int_spec(peek(index).kind)) {
+            ++index;
+        }
+    } else if (kind == TokenKind::KwVoid || kind == TokenKind::KwBool || kind == TokenKind::KwFloat ||
+               kind == TokenKind::KwDouble) {
+        ++index;
+    } else if (kind == TokenKind::Identifier && is_type_alias(peek(index).text)) {
+        ++index;
+    } else if (kind == TokenKind::KwStruct || kind == TokenKind::KwEnum) {
+        if (peek(index + 1).kind != TokenKind::Identifier) {
+            return false;
+        }
+        index += 2;
+    } else if (kind == TokenKind::Identifier && peek(index + 1).kind == TokenKind::Star) {
+        ++index;
+    } else {
+        return false;
+    }
+    while (peek(index).kind == TokenKind::Star) {
+        ++index;
+    }
+    return peek(index).kind == TokenKind::LParen;
+}
+
+Parser::ParenType Parser::parse_cast_type() {
     ParenType type;
-    eat(TokenKind::LParen);
     type.loc = peek().loc;
     if (is_int_spec(peek().kind)) {
         IntSpecs ints;
@@ -2028,8 +2057,36 @@ Parser::ParenType Parser::parse_paren_type() {
     while (eat(TokenKind::Star)) {
         ++type.indirections;
     }
+    return type;
+}
+
+Parser::ParenType Parser::parse_paren_type() {
+    eat(TokenKind::LParen);
+    ParenType type = parse_cast_type();
     expect(TokenKind::RParen, "expected ')'");
     return type;
+}
+
+std::unique_ptr<Expr> Parser::parse_cast_expr() {
+    Expr::Cast node;
+    node.loc = peek().loc;
+    const ParenType type = parse_cast_type();
+    node.type_name = type.name;
+    node.type_package = type.package;
+    node.is_struct = type.is_struct;
+    node.is_enum = type.is_enum;
+    node.indirections = type.indirections;
+    expect(TokenKind::LParen, "expected '('");
+    if (check(TokenKind::RParen)) {
+        error_here("expected an expression");
+    } else {
+        node.expr = parse_assignment();
+        if (check(TokenKind::Comma)) {
+            error_here("expected ')'");
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    return make_expr(std::move(node));
 }
 
 std::unique_ptr<Expr> Parser::parse_unary() {
@@ -2049,18 +2106,6 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         } else {
             node.expr = parse_unary();
         }
-        return make_expr(std::move(node));
-    }
-    if (kind == TokenKind::LParen && starts_type_paren()) {
-        Expr::Cast node;
-        node.loc = peek().loc;
-        const ParenType type = parse_paren_type();
-        node.type_name = type.name;
-        node.type_package = type.package;
-        node.is_struct = type.is_struct;
-        node.is_enum = type.is_enum;
-        node.indirections = type.indirections;
-        node.expr = parse_unary();
         return make_expr(std::move(node));
     }
     if (kind == TokenKind::Plus || kind == TokenKind::Minus || kind == TokenKind::Bang || kind == TokenKind::Tilde ||
@@ -2085,7 +2130,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
 }
 
 std::unique_ptr<Expr> Parser::parse_postfix() {
-    auto expr = parse_primary();
+    auto expr = starts_cast_type() ? parse_cast_expr() : parse_primary();
     while (true) {
         if (eat(TokenKind::LParen)) {
             Expr::Call call;

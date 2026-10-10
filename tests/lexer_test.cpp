@@ -21,11 +21,9 @@ std::string dump_tokens(const std::vector<tlc::Token> &tokens) {
         } else if (token.kind == tlc::TokenKind::IntLiteral) {
             out.push_back('(');
             out += std::to_string(token.int_value);
-            if (token.suffix.is_unsigned) {
-                out.push_back('u');
-            }
-            for (int i = 0; i < token.suffix.long_count; ++i) {
-                out.push_back('l');
+            if (token.suffix.bits != 0) {
+                out.push_back(token.suffix.is_unsigned ? 'u' : 'i');
+                out += std::to_string(token.suffix.bits);
             }
             out.push_back(')');
         } else if (token.kind == tlc::TokenKind::CharLiteral) {
@@ -71,9 +69,15 @@ int run_lexer_tests() {
     }
 
     {
-        const LexResult result = lex("0b1010 1'000 0xFFu 010");
+        const LexResult result = lex("0b1010 1'000 0xFFu32 010 20i8 400u16");
         EXPECT(check, result.errors.empty());
-        EXPECT_EQ(check, result.dump, "int-lit(10) int-lit(1000) int-lit(255u) int-lit(8) eof");
+        EXPECT_EQ(check, result.dump,
+                  "int-lit(10) int-lit(1000) int-lit(255u32) int-lit(8) int-lit(20i8) int-lit(400u16) eof");
+    }
+
+    {
+        const LexResult result = lex("1u 1l 1i 1i80");
+        EXPECT_HAS(check, result.errors, "invalid integer suffix");
     }
 
     {

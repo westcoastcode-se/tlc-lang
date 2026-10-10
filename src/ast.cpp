@@ -348,13 +348,9 @@ std::string dump_expr(const Expr &expr) {
                 return "(name " + node.text + ")";
             } else if constexpr (std::is_same_v<T, Expr::Int>) {
                 std::string text = "(int " + std::to_string(node.value);
-                if (node.suffix.is_unsigned) {
-                    text += " u";
-                }
-                if (node.suffix.long_count == 1) {
-                    text += " l";
-                } else if (node.suffix.long_count >= 2) {
-                    text += " ll";
+                if (node.suffix.bits != 0) {
+                    text += node.suffix.is_unsigned ? " u" : " i";
+                    text += std::to_string(node.suffix.bits);
                 }
                 text += ')';
                 return text;

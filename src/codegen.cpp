@@ -3782,13 +3782,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 return {llvm::ConstantFP::get(ty, parsed), 0, false, -1, false, false, false, node.is_f32 ? 32 : 64, false,
                         -1, true};
             } else if constexpr (std::is_same_v<T, Expr::Int>) {
-                if (node.suffix.long_count > 0) {
-                    return {llvm::ConstantInt::get(i64(), node.value, false), 0, false, -1, false, false, false, 64,
-                            node.suffix.is_unsigned};
+                const int bits = node.suffix.bits;
+                const bool uns = node.suffix.is_unsigned;
+                if (bits >= 64) {
+                    return {llvm::ConstantInt::get(i64(), node.value, false), 0, false, -1, false, false, false, 64, uns};
                 }
-                if (node.suffix.is_unsigned) {
+                if (uns && bits == 32) {
                     return {const_i32(static_cast<int32_t>(node.value)), 0, false, -1, false, false, false, 32, true};
                 }
+                // A narrower suffix promotes to int when it is used as a value.
                 return {const_i32(static_cast<int32_t>(node.value)), 0};
             } else if constexpr (std::is_same_v<T, Expr::Char>) {
                 return {const_i32(static_cast<int32_t>(node.value & 0xFFULL)), 0};

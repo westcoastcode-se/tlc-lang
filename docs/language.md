@@ -163,7 +163,7 @@ A type whose rank is below `int` widens to signed `int` when it is used as a val
 
 Unsigned arithmetic wraps. An `unsigned int` that is 0 and then decreased by 1 becomes `4294967295`, so `n < 1` is false.
 
-A mixed comparison converts the signed operand. `1u < -1` is true, because `-1` becomes the largest unsigned value.
+A mixed comparison converts the signed operand. `1u32 < -1` is true, because `-1` becomes the largest unsigned value.
 
 Assignment is allowed among the integer ranks, `char`, and `bool`. A store into `bool` becomes 0 or 1. A store into a narrower integer keeps the low bits.
 
@@ -178,17 +178,17 @@ A `bool` value is 0 or 1.
 | Literal | Type |
 | --- | --- |
 | `42` | `int` |
-| `42u`, `42U` | `unsigned int`, when the value fits |
-| `42l`, `42L` | `long`, when the value fits in signed 64 bits |
-| `42ll`, `42LL` | `long long`, with the same limit |
-| `42ul`, `42ull` | `unsigned long` and `unsigned long long` |
+| `42i8`, `42u8` | `i8` and `u8`, when the value fits |
+| `42i16`, `42u16` | `i16` and `u16`, when the value fits |
+| `42i32`, `42u32` | `int` and `unsigned int`, when the value fits |
+| `42i64`, `42u64` | `long long` and `unsigned long long`, when the value fits |
 | `'A'` | `char` |
 | `"hi"` | array of `char`, including the terminating null |
 | `` `hi` `` | the same array type; the text may span lines |
 | `true`, `false` | `bool` |
 | `nullptr` | null pointer |
 
-An unsuffixed number greater than `2147483647` is `type mismatch`. It does not become `long`. A suffix selects the type in the table above. More than two `l` letters is `type mismatch`.
+An unsuffixed number greater than `2147483647` is `type mismatch`. It does not become `long long`. A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `1u` and `1l` are `invalid integer suffix`. A value that does not fit in the suffix is `type mismatch`.
 
 A character literal has type `char`. `'A'` is 65 and `'\n'` is 10. A value above 255 is `type mismatch`. The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
 
@@ -232,7 +232,7 @@ An integer literal `0` may be assigned to a pointer, and the pointer becomes nul
 
 A condition in `if`, `while`, `do`, and `for` is an integer after promotion. A pointer used as a condition is `type mismatch`. `switch` requires exactly signed `int`.
 
-A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `nullptr` can be cast to a pointer. `(long)p`, `(unsigned int)p`, and `(int)nullptr` are `type mismatch`. A cast to `void` is rejected.
+A cast is the type name followed by the value in parentheses: `i32(n)`, `int(n)`, `char*(bits)`, `void*(p)`. A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `nullptr` can be cast to a pointer. `long(p)`, `unsigned int(p)`, and `int(nullptr)` are `type mismatch`. A cast to `void` is rejected.
 
 Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
@@ -254,7 +254,7 @@ func main() int {
 }
 ```
 
-`switch` falls through until `break`. A `case` label is a constant signed `int`. `case 1u` is `type mismatch`. Each value appears once, and `default` appears once.
+`switch` falls through until `break`. A `case` label is a constant signed `int`. `case 1u32` is `type mismatch`. Each value appears once, and `default` appears once.
 
 ```c
 func main() int {

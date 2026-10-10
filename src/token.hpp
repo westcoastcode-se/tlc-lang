@@ -133,8 +133,9 @@ enum class TokenKind {
 };
 
 struct IntSuffix {
+    // 0 means the literal has no suffix and its type is int.
+    int bits = 0;
     bool is_unsigned = false;
-    int long_count = 0;
 };
 
 struct Token {

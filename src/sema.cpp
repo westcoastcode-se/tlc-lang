@@ -2040,31 +2040,47 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 return symbol->type;
             } else if constexpr (std::is_same_v<T, Expr::Int>) {
-                const int longs = node.suffix.long_count;
+                const int bits = node.suffix.bits;
                 const bool uns = node.suffix.is_unsigned;
-                if (longs > 2) {
-                    error(node.loc, "type mismatch");
-                    return type_invalid();
-                }
-                if (longs == 0 && !uns) {
-                    if (node.value > 2147483647ULL) {
+                const auto fits = [&](uint64_t limit) {
+                    if (node.value > limit) {
                         error(node.loc, "type mismatch");
+                        return false;
+                    }
+                    return true;
+                };
+                if (bits == 0) {
+                    if (!fits(2147483647ULL)) {
                         return type_invalid();
                     }
                     return type_int();
                 }
-                if (longs == 0 && uns) {
-                    if (node.value > 4294967295ULL) {
-                        error(node.loc, "type mismatch");
+                if (bits == 8) {
+                    if (!fits(uns ? 255ULL : 127ULL)) {
                         return type_invalid();
                     }
-                    return type_rank(3, true);
+                    return type_rank(1, uns);
                 }
-                if (!uns && node.value > 9223372036854775807ULL) {
-                    error(node.loc, "type mismatch");
-                    return type_invalid();
+                if (bits == 16) {
+                    if (!fits(uns ? 65535ULL : 32767ULL)) {
+                        return type_invalid();
+                    }
+                    return type_rank(2, uns);
                 }
-                return type_rank(longs >= 2 ? 5 : 4, uns);
+                if (bits == 32) {
+                    if (!fits(uns ? 4294967295ULL : 2147483647ULL)) {
+                        return type_invalid();
+                    }
+                    return uns ? type_rank(3, true) : type_int();
+                }
+                if (bits == 64) {
+                    if (!uns && !fits(9223372036854775807ULL)) {
+                        return type_invalid();
+                    }
+                    return type_rank(5, uns);
+                }
+                error(node.loc, "type mismatch");
+                return type_invalid();
             } else if constexpr (std::is_same_v<T, Expr::Char>) {
                 (void)used;
                 if (node.value > 255ULL) {
@@ -2691,7 +2707,8 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
         [&](const auto &node) -> std::optional<int> {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Expr::Int>) {
-                if (node.suffix.is_unsigned || node.suffix.long_count != 0 || node.value > 2147483647ULL) {
+                const bool plain = !node.suffix.is_unsigned && (node.suffix.bits == 0 || node.suffix.bits == 32);
+                if (!plain || node.value > 2147483647ULL) {
                     return std::nullopt;
                 }
                 return static_cast<int>(node.value);

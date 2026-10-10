@@ -892,13 +892,13 @@ int run_sema_tests() {
             "  void *v;\n"
             "  int *p;\n"
             "  n = 42;\n"
-            "  c = (char *)n;\n"
-            "  v = (void *)c;\n"
-            "  n = (int)v;\n"
+            "  c = char*(n);\n"
+            "  v = void*(c);\n"
+            "  n = int(v);\n"
             "  p = &n;\n"
-            "  c = (char *)p;\n"
-            "  v = (void *)c;\n"
-            "  p = (int *)v;\n"
+            "  c = char*(p);\n"
+            "  v = void*(c);\n"
+            "  p = int*(v);\n"
             "  return *p;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -922,7 +922,7 @@ int run_sema_tests() {
             "  int *p;\n"
             "  void *v;\n"
             "  v = 0;\n"
-            "  p = (int *)v;\n"
+            "  p = int*(v);\n"
             "  return 0;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -939,7 +939,7 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("func main() int { (void)1; return 0; }\n");
+        const std::string errors = diagnose("func main() int { void(1); return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
@@ -1007,11 +1007,11 @@ int run_sema_tests() {
             "  c = 'A';\n"
             "  s = 1;\n"
             "  n = c + s;\n"
-            "  u = 0u;\n"
-            "  u = u - 1u;\n"
+            "  u = 0u32;\n"
+            "  u = u - 1u32;\n"
             "  a = 100000;\n"
             "  a = a * 100000;\n"
-            "  return n + (int)u + (int)a;\n"
+            "  return n + int(u) + int(a);\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -1021,10 +1021,15 @@ int run_sema_tests() {
             "typedef unsigned int u32;\n"
             "func main() int {\n"
             "  u32 n;\n"
-            "  n = 1u;\n"
+            "  n = 1u32;\n"
             "  return n;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose("func main() int { i8 n = 200i8; return n; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
@@ -1033,7 +1038,7 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("func main() int { return 5000000000u; }\n");
+        const std::string errors = diagnose("func main() int { return 5000000000u32; }\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
@@ -1043,8 +1048,8 @@ int run_sema_tests() {
             "  int *p;\n"
             "  int n;\n"
             "  n = 1;\n"
-            "  p = (long *)n;\n"
-            "  return (long)p;\n"
+            "  p = long*(n);\n"
+            "  return long(p);\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
@@ -1053,7 +1058,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() int {\n"
             "  switch (1) {\n"
-            "  case 1u: return 0;\n"
+            "  case 1u32: return 0;\n"
             "  }\n"
             "  return 1;\n"
             "}\n");
