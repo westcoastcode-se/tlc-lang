@@ -413,7 +413,7 @@ bool same_type(const Type &lhs, const Type &rhs) {
 namespace {
 
 bool fill_builtin(const std::string &name, Type &out) {
-    if (name == "int" || name == "signed") {
+    if (name == "int") {
         out = type_int();
         return true;
     }
@@ -421,39 +421,23 @@ bool fill_builtin(const std::string &name, Type &out) {
         out = type_char();
         return true;
     }
-    if (name == "signed char") {
-        out = type_rank(1, false);
-        return true;
-    }
-    if (name == "unsigned char") {
-        out = type_rank(1, true);
-        return true;
-    }
-    if (name == "short" || name == "signed short") {
+    if (name == "short") {
         out = type_rank(2, false);
         return true;
     }
-    if (name == "unsigned short") {
-        out = type_rank(2, true);
-        return true;
-    }
-    if (name == "unsigned" || name == "unsigned int") {
+    if (name == "uint" || name == "u32") {
         out = type_rank(3, true);
         return true;
     }
-    if (name == "long" || name == "signed long") {
+    if (name == "long") {
         out = type_rank(4, false);
         return true;
     }
-    if (name == "unsigned long") {
+    if (name == "ulong") {
         out = type_rank(4, true);
         return true;
     }
-    if (name == "long long" || name == "signed long long") {
-        out = type_rank(5, false);
-        return true;
-    }
-    if (name == "unsigned long long" || name == "u64") {
+    if (name == "u64") {
         out = type_rank(5, true);
         return true;
     }
@@ -475,10 +459,6 @@ bool fill_builtin(const std::string &name, Type &out) {
     }
     if (name == "i32") {
         out = type_int();
-        return true;
-    }
-    if (name == "u32") {
-        out = type_rank(3, true);
         return true;
     }
     if (name == "i64") {
@@ -1925,22 +1905,22 @@ std::string Checker::type_desc(const Type &type) const {
         if (type.plain_char) {
             return "char";
         }
-        return type.is_unsigned ? "unsigned char" : "signed char";
+        return type.is_unsigned ? "u8" : "i8";
     case TypeKind::Int: {
         const int rank = type.rank == 0 ? 3 : type.rank;
         if (rank <= 1) {
-            return type.is_unsigned ? "unsigned char" : "signed char";
+            return type.is_unsigned ? "u8" : "i8";
         }
         if (rank == 2) {
-            return type.is_unsigned ? "unsigned short" : "short";
+            return type.is_unsigned ? "u16" : "short";
         }
         if (rank == 4) {
-            return type.is_unsigned ? "unsigned long" : "long";
+            return type.is_unsigned ? "ulong" : "long";
         }
         if (rank >= 5) {
-            return type.is_unsigned ? "unsigned long long" : "long long";
+            return type.is_unsigned ? "u64" : "i64";
         }
-        return type.is_unsigned ? "unsigned int" : "int";
+        return type.is_unsigned ? "uint" : "int";
     }
     case TypeKind::Pointer:
         return type_desc(type.pointee ? *type.pointee : type_invalid()) + "*";

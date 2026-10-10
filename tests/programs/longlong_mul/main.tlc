@@ -1,5 +1,5 @@
 func main() int {
-    var a long long;
+    var a i64;
     a = 100000;
     a = a * 100000;
     a = a / 100000;

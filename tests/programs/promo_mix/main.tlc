@@ -2,8 +2,8 @@ func main() int {
     var c char;
     var s short;
     var n int;
-    var u unsigned int;
-    var u2 unsigned int;
+    var u uint;
+    var u2 uint;
     var s2 int;
     c = 20;
     s = 20;

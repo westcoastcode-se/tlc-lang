@@ -140,28 +140,29 @@ func main() int {
 
 ## Types
 
-Integers on `x86_64-pc-linux-gnu` follow LP64. `long` and `long long` are both 64 bits. They are different types.
+Integers on `x86_64-pc-linux-gnu` follow LP64. `long` and `i64` are both 64 bits. They are different types.
 
 | Type | Bits |
 | --- | --- |
-| `char`, `signed char`, `unsigned char`, `i8`, `u8` | 8 |
-| `short`, `unsigned short`, `i16`, `u16` | 16 |
-| `int`, `unsigned int`, `i32`, `u32` | 32 |
-| `long`, `unsigned long` | 64 |
-| `long long`, `unsigned long long`, `i64`, `u64` | 64 |
+| `char` | 8 |
+| `i8`, `u8` | 8 |
+| `short`, `i16`, `u16` | 16 |
+| `int`, `uint`, `i32`, `u32` | 32 |
+| `long`, `ulong` | 64 |
+| `i64`, `u64` | 64 |
 | pointer | 64 |
 
-Specifiers may appear in any order. `signed int` and `signed` are `int`. `short int` is `short`. `long int` is `long`. `long long int` is `long long`. `unsigned` is `unsigned int`. Contradictory specifiers are `type mismatch`.
+`signed` and `unsigned` are not keywords. `long long` is `type mismatch`. Write `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `short int` is `short`. `long int` is `long`. Contradictory specifiers are `type mismatch`.
 
-`char`, `signed char`, and `unsigned char` are three types. They are assignment-compatible. `int *` and `unsigned int *` are different types.
+`char`, `i8`, and `u8` are three types. They are assignment-compatible. `int *` and `uint *` are different types.
 
-`i8` is `signed char` and `u8` is `unsigned char`. `i16` is `short` and `u16` is `unsigned short`. `i32` is `int` and `u32` is `unsigned int`. `i64` is `long long` and `u64` is `unsigned long long`. `long` stays a different 64-bit type from `i64`. `char` stays different from `i8`.
+`i8` and `u8` are the 8-bit integers. `i16` is `short` and `u16` is its unsigned counterpart. `i32` is `int` and `u32` is `uint`. `i64` and `u64` are the other 64-bit integers. `ulong` is 64 bits and a different type from `u64`. `long` stays a different 64-bit type from `i64`. `char` stays different from `i8`.
 
-The rank order is `bool`, then `char` and its signed variants, then `short`, `int`, `long`, and `long long`. An unsigned type has the same rank as its signed counterpart.
+The rank order is `bool`, then `char`, `i8`, and `u8`, then `short` and `u16`, then `int`, `long`, and `i64`. An unsigned type has the same rank as its signed counterpart.
 
-A type whose rank is below `int` widens to signed `int` when it is used as a value. `signed char` is sign-extended. `char` and `unsigned char` are zero-extended. The usual arithmetic conversions apply after that. `+`, `-`, `*`, `/`, `%`, and the bitwise operators produce the common type. Comparisons and `!` produce `int`, either 0 or 1.
+A type whose rank is below `int` widens to `int` when it is used as a value. `i8` is sign-extended. `char` and `u8` are zero-extended. The usual arithmetic conversions apply after that. `+`, `-`, `*`, `/`, `%`, and the bitwise operators produce the common type. Comparisons and `!` produce `int`, either 0 or 1.
 
-Unsigned arithmetic wraps. An `unsigned int` that is 0 and then decreased by 1 becomes `4294967295`, so `n < 1` is false.
+Unsigned arithmetic wraps. A `uint` that is 0 and then decreased by 1 becomes `4294967295`, so `n < 1` is false.
 
 A mixed comparison converts the signed operand. `1u32 < -1` is true, because `-1` becomes the largest unsigned value.
 
@@ -180,15 +181,15 @@ A `bool` value is 0 or 1.
 | `42` | `int` |
 | `42i8`, `42u8` | `i8` and `u8`, when the value fits |
 | `42i16`, `42u16` | `i16` and `u16`, when the value fits |
-| `42i32`, `42u32` | `int` and `unsigned int`, when the value fits |
-| `42i64`, `42u64` | `long long` and `unsigned long long`, when the value fits |
+| `42i32`, `42u32` | `int` and `uint`, when the value fits |
+| `42i64`, `42u64` | `i64` and `u64`, when the value fits |
 | `'A'` | `char` |
 | `"hi"` | array of `char`, including the terminating null |
 | `` `hi` `` | the same array type; the text may span lines |
 | `true`, `false` | `bool` |
 | `nullptr` | null pointer |
 
-An unsuffixed number greater than `2147483647` is `type mismatch`. It does not become `long long`. A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `1u` and `1l` are `invalid integer suffix`. A value that does not fit in the suffix is `type mismatch`.
+An unsuffixed number greater than `2147483647` is `type mismatch`. It does not become `i64`. A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `1u` and `1l` are `invalid integer suffix`. A value that does not fit in the suffix is `type mismatch`.
 
 A character literal has type `char`. `'A'` is 65 and `'\n'` is 10. A value above 255 is `type mismatch`. The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
 
@@ -199,7 +200,7 @@ var text *char = `hello
 world`;
 ```
 
-`sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(long long)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted.
+`sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(i64)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted.
 
 ## Expressions
 
@@ -230,9 +231,9 @@ Pointers of the same type can be compared with `==` and `!=`. A pointer can be c
 
 An integer literal `0` may be assigned to a pointer, and the pointer becomes null. `nullptr` may be assigned to any pointer. Assigning `nullptr` to `int` or `bool` is `type mismatch`. `true` and `false` do not convert to pointers.
 
-A condition in `if`, `while`, `do`, and `for` is an integer after promotion. A pointer used as a condition is `type mismatch`. `switch` requires exactly signed `int`.
+A condition in `if`, `while`, `do`, and `for` is an integer after promotion. A pointer used as a condition is `type mismatch`. `switch` requires exactly `int`.
 
-A cast is the type name followed by the value in parentheses: `i32(n)`, `int(n)`, `char*(bits)`, `void*(p)`. A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `nullptr` can be cast to a pointer. `long(p)`, `unsigned int(p)`, and `int(nullptr)` are `type mismatch`. A cast to `void` is rejected.
+A cast is the type name followed by the value in parentheses: `i32(n)`, `int(n)`, `char*(bits)`, `void*(p)`. A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `nullptr` can be cast to a pointer. `long(p)`, `uint(p)`, and `int(nullptr)` are `type mismatch`. A cast to `void` is rejected.
 
 Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
@@ -254,7 +255,7 @@ func main() int {
 }
 ```
 
-`switch` falls through until `break`. A `case` label is a constant signed `int`. `case 1u32` is `type mismatch`. Each value appears once, and `default` appears once.
+`switch` falls through until `break`. A `case` label is a constant `int`. `case 1u32` is `type mismatch`. Each value appears once, and `default` appears once.
 
 ```c
 func main() int {

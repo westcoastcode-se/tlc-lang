@@ -27,7 +27,7 @@ std::unique_ptr<Expr> unsupported_expr(SourceLoc loc) {
 
 bool is_type_alias(std::string_view text) {
     return text == "i8" || text == "i16" || text == "i32" || text == "i64" || text == "u8" || text == "u16" ||
-           text == "u32" || text == "u64" || text == "f32" || text == "f64";
+           text == "u32" || text == "u64" || text == "uint" || text == "ulong" || text == "f32" || text == "f64";
 }
 
 bool is_int_spec(TokenKind kind) {
@@ -36,8 +36,6 @@ bool is_int_spec(TokenKind kind) {
     case TokenKind::KwChar:
     case TokenKind::KwShort:
     case TokenKind::KwLong:
-    case TokenKind::KwSigned:
-    case TokenKind::KwUnsigned:
         return true;
     default:
         return false;
@@ -45,8 +43,6 @@ bool is_int_spec(TokenKind kind) {
 }
 
 struct IntSpecs {
-    bool saw_signed = false;
-    bool saw_unsigned = false;
     bool saw_short = false;
     bool saw_char = false;
     bool saw_int = false;
@@ -58,18 +54,6 @@ struct IntSpecs {
 void take_int_spec(IntSpecs &specs, TokenKind kind) {
     specs.any = true;
     switch (kind) {
-    case TokenKind::KwSigned:
-        if (specs.saw_signed || specs.saw_unsigned) {
-            specs.bad = true;
-        }
-        specs.saw_signed = true;
-        break;
-    case TokenKind::KwUnsigned:
-        if (specs.saw_signed || specs.saw_unsigned) {
-            specs.bad = true;
-        }
-        specs.saw_unsigned = true;
-        break;
     case TokenKind::KwShort:
         if (specs.saw_short || specs.saw_char || specs.longs != 0) {
             specs.bad = true;
@@ -105,34 +89,17 @@ std::string canonical_int(const IntSpecs &specs) {
         return "invalid";
     }
     if (specs.saw_char) {
-        if (specs.saw_unsigned) {
-            return "unsigned char";
-        }
-        if (specs.saw_signed) {
-            return "signed char";
-        }
         return "char";
     }
     if (specs.saw_short) {
-        if (specs.saw_unsigned) {
-            return "unsigned short";
-        }
         return "short";
     }
+    // `long long` is written `i64` or `u64`.
     if (specs.longs >= 2) {
-        if (specs.saw_unsigned) {
-            return "unsigned long long";
-        }
-        return "long long";
+        return "invalid";
     }
     if (specs.longs == 1) {
-        if (specs.saw_unsigned) {
-            return "unsigned long";
-        }
         return "long";
-    }
-    if (specs.saw_unsigned) {
-        return "unsigned int";
     }
     return "int";
 }
@@ -196,8 +163,6 @@ bool Parser::is_type_keyword(TokenKind kind) const {
     case TokenKind::KwChar:
     case TokenKind::KwShort:
     case TokenKind::KwLong:
-    case TokenKind::KwSigned:
-    case TokenKind::KwUnsigned:
     case TokenKind::KwFloat:
     case TokenKind::KwDouble:
     case TokenKind::KwBool:
@@ -367,7 +332,13 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
         }
         if (!specs.saw_type && token.kind == TokenKind::Identifier && peek(1).kind != TokenKind::Dot &&
             (type_only || peek(1).kind == TokenKind::Star || peek(1).kind == TokenKind::Identifier)) {
-            specs.type_name = token.text;
+            // `signed` and `unsigned` are not keywords. The names are `i` and `u` types.
+            if (token.text == "signed" || token.text == "unsigned") {
+                diags_.error(token.loc, "type mismatch");
+                specs.type_name = "invalid";
+            } else {
+                specs.type_name = token.text;
+            }
             specs.saw_type = true;
             ++pos_;
             break;
@@ -392,6 +363,9 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             specs.type_name = "invalid";
         } else {
             specs.type_name = canonical_int(ints);
+            if (specs.type_name == "invalid") {
+                diags_.error(specs.loc, "type mismatch");
+            }
         }
     }
     if (!specs.saw_type) {
@@ -426,7 +400,7 @@ bool Parser::take_enum_underlying(std::string &out) {
     }
     const auto alias = [&](const std::string &name) {
         return name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" ||
-               name == "i64" || name == "u64";
+               name == "i64" || name == "u64" || name == "uint" || name == "ulong";
     };
     if (check(TokenKind::Identifier) && alias(peek().text) && peek(1).kind == TokenKind::LBrace) {
         out = peek().text;
@@ -455,6 +429,9 @@ bool Parser::take_enum_underlying(std::string &out) {
             return true;
         }
         out = canonical_int(ints);
+        if (out == "invalid") {
+            error_here("type mismatch");
+        }
         return true;
     }
     if (check(TokenKind::Identifier) && peek(1).kind == TokenKind::LBrace) {
@@ -568,9 +545,8 @@ namespace {
 
 bool is_builtin_type_name(const std::string &name) {
     return name.empty() || name == "invalid" || name == "void" || name == "bool" || name == "char" ||
-           name == "signed char" || name == "unsigned char" || name == "short" || name == "unsigned short" ||
-           name == "int" || name == "unsigned int" || name == "long" || name == "unsigned long" ||
-           name == "long long" || name == "unsigned long long" || name == "float" || name == "double" || name == "f32" ||
+           name == "short" || name == "int" || name == "uint" || name == "long" || name == "ulong" ||
+           name == "float" || name == "double" || name == "f32" ||
            name == "f64" || name == "i8" || name == "i16" || name == "i32" || name == "i64" || name == "u8" ||
            name == "u16" || name == "u32" || name == "u64";
 }
@@ -2222,6 +2198,9 @@ Parser::ParenType Parser::parse_cast_type() {
             type.name = "invalid";
         } else {
             type.name = canonical_int(ints);
+            if (type.name == "invalid") {
+                diags_.error(type.loc, "type mismatch");
+            }
         }
     } else if (eat(TokenKind::KwVoid)) {
         type.name = "void";

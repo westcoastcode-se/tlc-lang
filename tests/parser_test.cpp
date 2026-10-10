@@ -490,11 +490,11 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "func main() int {\n"
-            "  var n unsigned long long;\n"
-            "  var w long long;\n"
-            "  var u unsigned;\n"
+            "  var n u64;\n"
+            "  var w i64;\n"
+            "  var u uint;\n"
             "  var s short;\n"
-            "  var sc signed char;\n"
+            "  var sc i8;\n"
             "  var c char;\n"
             "  c = 'A';\n"
             "  c = '\\n';\n"
@@ -502,16 +502,33 @@ int run_parser_tests() {
             "  return int(c) + long(s);\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(var n unsigned long long");
-        EXPECT_HAS(check, parsed.dump, "(var w long long");
-        EXPECT_HAS(check, parsed.dump, "(var u unsigned int");
+        EXPECT_HAS(check, parsed.dump, "(var n u64");
+        EXPECT_HAS(check, parsed.dump, "(var w i64");
+        EXPECT_HAS(check, parsed.dump, "(var u uint");
         EXPECT_HAS(check, parsed.dump, "(var s short");
-        EXPECT_HAS(check, parsed.dump, "(var sc signed char");
+        EXPECT_HAS(check, parsed.dump, "(var sc i8");
         EXPECT_HAS(check, parsed.dump, "(char 65)");
         EXPECT_HAS(check, parsed.dump, "(char 10)");
         EXPECT_HAS(check, parsed.dump, "(int 1 u64)");
         EXPECT_HAS(check, parsed.dump, "(cast int (name c))");
         EXPECT_HAS(check, parsed.dump, "(cast long (name s))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { var n unsigned; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { var n signed; var m long long; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { var n uint; var m ulong; return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var n uint");
+        EXPECT_HAS(check, parsed.dump, "(var m ulong");
     }
 
     {
@@ -693,7 +710,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "struct Box { int v; };\n"
-            "func Box::both(this self Box *, p math.Point *) (int, Box*, math.Point, unsigned long) {\n"
+            "func Box::both(this self Box *, p math.Point *) (int, Box*, math.Point, ulong) {\n"
             "  return self.v, self, p, 1;\n"
             "}\n"
             "func id(n int) (int) { return n; }\n"
@@ -707,7 +724,7 @@ int run_parser_tests() {
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump,
                    "(fn Box::both (params (self struct Box* receiver) (p math.Point*)) "
-                   "(int, Box*, math.Point, unsigned long)");
+                   "(int, Box*, math.Point, ulong)");
         EXPECT_HAS(check, parsed.dump, "(return (. (name self) v) (name self) (name p) (int 1))");
         EXPECT_HAS(check, parsed.dump, "(fn id (params (n int)) int");
         EXPECT_HAS(check, parsed.dump, "(fn trail (params (n int)) int");

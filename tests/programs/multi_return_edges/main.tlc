@@ -43,15 +43,15 @@ func id(n int) (int) {
     return n;
 }
 
-func wrap() (unsigned int, int) {
-    var n unsigned int;
+func wrap() (uint, int) {
+    var n uint;
     n = 0;
     n = n - 1;
     return n, 1;
 }
 
-func big() (long long, int) {
-    var a long long;
+func big() (i64, int) {
+    var a i64;
     a = 100000;
     a = a * 100000;
     return a, 2;
@@ -140,7 +140,7 @@ func main() int {
     var n int;
     var np *int;
     var nn int;
-    var wide long long;
+    var wide i64;
     var wk int;
     var s short;
     var ch char;

@@ -1003,8 +1003,8 @@ int run_sema_tests() {
             "  var c char;\n"
             "  var s short;\n"
             "  var n int;\n"
-            "  var u unsigned int;\n"
-            "  var a long long;\n"
+            "  var u uint;\n"
+            "  var a i64;\n"
             "  c = 'A';\n"
             "  s = 1;\n"
             "  n = c + s;\n"
@@ -1019,9 +1019,9 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "typedef unsigned int u32;\n"
+            "typedef uint Word;\n"
             "func main() int {\n"
-            "  var n u32;\n"
+            "  var n Word;\n"
             "  n = 1u32;\n"
             "  return n;\n"
             "}\n");
@@ -2480,11 +2480,11 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "func take(p long long *) int { return *p != 0; }\n"
+            "func take(p i64 *) int { return *p != 0; }\n"
             "func main() int {\n"
             "  var n i64 = 1;\n"
             "  var b u8 = 1;\n"
-            "  var p *unsigned char = &b;\n"
+            "  var p *u8 = &b;\n"
             "  return take(&n) + *p;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");

@@ -1350,10 +1350,8 @@ bool CodeGen::has_typedef(uint32_t file, const std::string &name) const {
 
 bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
     if (item.is_struct || item.is_enum || item.type_name.empty() || item.type_name == "int" || item.type_name == "char" ||
-        item.type_name == "signed char" || item.type_name == "unsigned char" || item.type_name == "short" ||
-        item.type_name == "unsigned short" || item.type_name == "unsigned" || item.type_name == "unsigned int" ||
-        item.type_name == "long" || item.type_name == "unsigned long" || item.type_name == "long long" ||
-        item.type_name == "unsigned long long" || item.type_name == "void" || item.type_name == "bool" ||
+        item.type_name == "short" || item.type_name == "uint" || item.type_name == "long" || item.type_name == "ulong" ||
+        item.type_name == "void" || item.type_name == "bool" ||
         item.type_name == "invalid" || item.type_name == "i8" || item.type_name == "i16" || item.type_name == "i32" ||
         item.type_name == "i64" || item.type_name == "u8" || item.type_name == "u16" || item.type_name == "u32" ||
         item.type_name == "u64" || item.type_name == "f32" || item.type_name == "f64" || item.type_name == "float" ||
@@ -1442,19 +1440,17 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
             note_enum(base, imported);
             have = true;
         }
-    } else if (name == "char" || name == "signed char" || name == "unsigned char" || name == "short" ||
-               name == "unsigned short" || name == "int" || name == "unsigned" || name == "unsigned int" || name == "long" ||
-               name == "unsigned long" || name == "long long" || name == "unsigned long long" || name == "i8" ||
+    } else if (name == "char" || name == "short" || name == "int" || name == "uint" || name == "long" ||
+               name == "ulong" || name == "i8" ||
                name == "i16" || name == "i32" || name == "i64" || name == "u8" || name == "u16" || name == "u32" ||
                name == "u64") {
         base.elem_char = name == "char";
-        base.elem_unsigned = name.starts_with("unsigned") || name.starts_with("u");
-        if (name == "char" || name == "signed char" || name == "unsigned char" || name == "i8" || name == "u8") {
+        base.elem_unsigned = name.starts_with("u");
+        if (name == "char" || name == "i8" || name == "u8") {
             base.elem_bits = 8;
-        } else if (name == "short" || name == "unsigned short" || name == "i16" || name == "u16") {
+        } else if (name == "short" || name == "i16" || name == "u16") {
             base.elem_bits = 16;
-        } else if (name == "long" || name == "unsigned long" || name == "long long" || name == "unsigned long long" ||
-                   name == "i64" || name == "u64") {
+        } else if (name == "long" || name == "ulong" || name == "i64" || name == "u64") {
             base.elem_bits = 64;
         } else {
             base.elem_bits = 32;
@@ -1970,17 +1966,15 @@ void CodeGen::describe_enum(const std::string &underlying, EnumLayout &layout) c
     const std::string &name = underlying.empty() ? std::string("int") : underlying;
     layout.is_bool = name == "bool";
     layout.is_char = name == "char";
-    layout.is_unsigned = name == "unsigned" || name == "unsigned int" || name == "unsigned char" ||
-                         name == "unsigned short" || name == "unsigned long" || name == "unsigned long long" ||
-                         name == "u8" || name == "u16" || name == "u32" || name == "u64";
+    layout.is_unsigned = name == "uint" || name == "ulong" || name == "u8" || name == "u16" || name == "u32" ||
+                         name == "u64";
     if (layout.is_bool) {
         layout.bits = 1;
-    } else if (name == "char" || name == "signed char" || name == "unsigned char" || name == "i8" || name == "u8") {
+    } else if (name == "char" || name == "i8" || name == "u8") {
         layout.bits = 8;
-    } else if (name == "short" || name == "signed short" || name == "unsigned short" || name == "i16" || name == "u16") {
+    } else if (name == "short" || name == "i16" || name == "u16") {
         layout.bits = 16;
-    } else if (name == "long" || name == "signed long" || name == "long long" || name == "signed long long" ||
-               name == "unsigned long" || name == "unsigned long long" || name == "i64" || name == "u64") {
+    } else if (name == "long" || name == "ulong" || name == "i64" || name == "u64") {
         layout.bits = 64;
     } else {
         layout.bits = 32;
