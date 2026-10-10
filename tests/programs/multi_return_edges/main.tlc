@@ -86,7 +86,7 @@ struct Box {
     w int;
 };
 
-func Box::both(self this *) (int, int) {
+func Box::both(self *this) (int, int) {
     return self.v, self.w;
 }
 

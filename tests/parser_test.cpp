@@ -621,7 +621,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "func Point::add(self this *, dx int) void {\n"
+            "func Point::add(self *this, dx int) void {\n"
             "  return;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
@@ -629,7 +629,7 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("func Point::add(self this **) void { return; }\n");
+        const Parsed parsed = parse_source("func Point::add(self **this) void { return; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -661,7 +661,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "trait Shape {\n"
-            "  func grow(self this **) void;\n"
+            "  func grow(self **this) void;\n"
             "};\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
@@ -778,7 +778,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "struct Box { v int; };\n"
-            "func Box::both(self this *, p math.Point *) (int, Box*, math.Point, ulong) {\n"
+            "func Box::both(self *this, p math.Point *) (int, Box*, math.Point, ulong) {\n"
             "  return self.v, self, p, 1;\n"
             "}\n"
             "func id(n int) (int) { return n; }\n"

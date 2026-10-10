@@ -20,7 +20,7 @@ func Rect::area(self this) int {
     return self.w * self.h;
 }
 
-func Rect::grow(self this *, n int) void {
+func Rect::grow(self *this, n int) void {
     self.w = self.w + n;
     self.h = self.h + n;
 }
@@ -29,7 +29,7 @@ func Box::area(self this) int {
     return self.n;
 }
 
-func Box::grow(self this *, n int) void {
+func Box::grow(self *this, n int) void {
     self.n = self.n + n;
 }
 

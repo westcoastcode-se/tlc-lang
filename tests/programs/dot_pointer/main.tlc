@@ -7,7 +7,7 @@ func Point::sum(self this) int {
     return self.x + self.y;
 }
 
-func Point::add(self this *, dx int, dy int) void {
+func Point::add(self *this, dx int, dy int) void {
     self.x = self.x + dx;
     self.y = self.y + dy;
 }

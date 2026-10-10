@@ -13,7 +13,7 @@ func Box::put(self this, n int) void {
     acc = acc * 3 + self.v + n;
 }
 
-func Box::touch(self this *) void {
+func Box::touch(self *this) void {
     acc = acc + self.w;
 }
 

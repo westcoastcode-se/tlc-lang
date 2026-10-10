@@ -41,7 +41,7 @@ declaration = function
 ```ebnf
 function    = "func" identifier "(" [ parameters ] ")" result ( block | ";" ) ;
 method      = "func" identifier "::" identifier "(" receiver [ "," parameters ] ")" result ( block | ";" ) ;
-receiver    = identifier "this" [ "*" ] ;
+receiver    = identifier [ "*" ] "this" ;
 
 parameters  = parameter { "," parameter } [ "," "..." ] ;
 parameter   = identifier placed-type ;
@@ -52,7 +52,7 @@ result      = placed-type
 
 A function with no body is a prototype and ends with `;`. A body replaces that semicolon. `...` is allowed only on an `extern(abi="c")` declaration. One parenthesized result is the same type as the bare result. `()` as a result list is an error.
 
-A method's first parameter is the receiver, written `name this` or `name this *`. The type is the method's struct or enum. `self this **` is `not supported yet`. `this` is an ordinary identifier everywhere else.
+A method's first parameter is the receiver, written `name this` or `name *this`. `this` stands for the method's struct or enum, so a pointer is `*this`. `self **this` is `not supported yet`. `this` is an ordinary identifier everywhere else.
 
 An inner function uses the same `function` form inside a block. It has a body, and it is not `export`, `static`, `extern`, or a method.
 

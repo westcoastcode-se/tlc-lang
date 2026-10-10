@@ -701,14 +701,17 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
     expect(TokenKind::LParen, "expected '('");
     const bool method = !method_struct.empty();
     auto receiver_form = [&]() {
-        if (!check(TokenKind::Identifier) || peek(1).kind != TokenKind::Identifier || peek(1).text != "this") {
+        if (!check(TokenKind::Identifier)) {
             return false;
         }
-        std::size_t ahead = 2;
+        std::size_t ahead = 1;
         while (peek(ahead).kind == TokenKind::Star) {
             ++ahead;
         }
-        const TokenKind after = peek(ahead).kind;
+        if (peek(ahead).kind != TokenKind::Identifier || peek(ahead).text != "this") {
+            return false;
+        }
+        const TokenKind after = peek(ahead + 1).kind;
         return after == TokenKind::Comma || after == TokenKind::RParen || after == TokenKind::Ellipsis;
     };
     auto take_receiver = [&](bool as_receiver) {
@@ -716,11 +719,10 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
         param.loc = peek().loc;
         param.name = peek().text;
         ++pos_;
-        param.loc = peek().loc;
-        ++pos_;
         while (eat(TokenKind::Star)) {
             ++param.indirections;
         }
+        ++pos_;
         param.type_name = method_struct;
         param.is_struct = true;
         param.is_receiver = as_receiver;
