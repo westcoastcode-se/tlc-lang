@@ -487,7 +487,7 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             dump_var(*var, out, 1);
         } else if (const auto *item = std::get_if<StructDecl>(&decl.data)) {
             append_indent(out, 1);
-            out += "(struct ";
+            out += item->is_union ? "(union " : "(struct ";
             out += item->name;
             if (item->exported) {
                 out += " export";

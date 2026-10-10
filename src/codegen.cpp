@@ -237,6 +237,11 @@ class CodeGen {
         CAbi abi_ret{};
         std::vector<AbiMark> abi_attrs;
     };
+    struct AbiLeaf {
+        uint64_t offset = 0;
+        uint64_t bytes = 0;
+        llvm::Type *type = nullptr;
+    };
     struct FieldLayout {
         std::string name;
         llvm::Type *type = nullptr;
@@ -257,6 +262,7 @@ class CodeGen {
         std::vector<FieldLayout> fields;
         bool ready = false;
         bool is_extern = false;
+        bool is_union = false;
     };
     struct Lowered {
         llvm::Type *type = nullptr;
@@ -619,6 +625,9 @@ class CodeGen {
     llvm::FunctionType *function_type(const FunctionDecl &fn, uint32_t file) const;
     bool is_struct_value(const Lowered &low) const;
     CAbi c_abi(llvm::StructType *type) const;
+    CAbi c_abi_union(int struct_id) const;
+    CAbi classify_abi(uint64_t size, unsigned natural, const std::vector<AbiLeaf> &leaves) const;
+    void collect_abi_leaves(llvm::Type *type, uint64_t offset, std::vector<AbiLeaf> &leaves) const;
     ExternLayout extern_layout(const FunctionDecl &fn, uint32_t file) const;
     void apply_extern_attrs(llvm::Function *function, const ExternLayout &layout) const;
     void annotate_call(llvm::CallInst *inst, const std::vector<AbiMark> &marks) const;
@@ -800,6 +809,35 @@ bool CodeGen::is_struct_value(const Lowered &low) const {
     return low.struct_id >= 0 && low.depth == 0 && !low.is_array && low.type != nullptr && low.type->isStructTy();
 }
 
+void CodeGen::collect_abi_leaves(llvm::Type *type, uint64_t offset, std::vector<AbiLeaf> &leaves) const {
+    if (type == nullptr) {
+        return;
+    }
+    const llvm::DataLayout &layout = module_.getDataLayout();
+    if (auto *aggregate = llvm::dyn_cast<llvm::StructType>(type)) {
+        if (!aggregate->isSized()) {
+            return;
+        }
+        const llvm::StructLayout *slots = layout.getStructLayout(aggregate);
+        for (unsigned index = 0; index < aggregate->getNumElements(); ++index) {
+            collect_abi_leaves(aggregate->getElementType(index), offset + slots->getElementOffset(index), leaves);
+        }
+        return;
+    }
+    if (auto *array = llvm::dyn_cast<llvm::ArrayType>(type)) {
+        const uint64_t step = layout.getTypeAllocSize(array->getElementType());
+        for (uint64_t index = 0; index < array->getNumElements(); ++index) {
+            collect_abi_leaves(array->getElementType(), offset + index * step, leaves);
+        }
+        return;
+    }
+    AbiLeaf leaf;
+    leaf.offset = offset;
+    leaf.bytes = type->isIntegerTy(1) ? 1 : layout.getTypeAllocSize(type);
+    leaf.type = type;
+    leaves.push_back(leaf);
+}
+
 CAbi CodeGen::c_abi(llvm::StructType *type) const {
     CAbi abi;
     if (type == nullptr || !type->isSized()) {
@@ -809,6 +847,34 @@ CAbi CodeGen::c_abi(llvm::StructType *type) const {
     const llvm::DataLayout &layout = module_.getDataLayout();
     const uint64_t size = layout.getTypeAllocSize(type);
     const unsigned natural = static_cast<unsigned>(layout.getABITypeAlign(type).value());
+    std::vector<AbiLeaf> leaves;
+    collect_abi_leaves(type, 0, leaves);
+    return classify_abi(size, natural == 0 ? 1 : natural, leaves);
+}
+
+CAbi CodeGen::c_abi_union(int struct_id) const {
+    CAbi abi;
+    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size()) ||
+        structs_[static_cast<std::size_t>(struct_id)].type == nullptr ||
+        !structs_[static_cast<std::size_t>(struct_id)].type->isSized()) {
+        abi.memory = true;
+        return abi;
+    }
+    const StructLayout &union_layout = structs_[static_cast<std::size_t>(struct_id)];
+    const llvm::DataLayout &layout = module_.getDataLayout();
+    const uint64_t size = layout.getTypeAllocSize(union_layout.type);
+    const unsigned natural = static_cast<unsigned>(layout.getABITypeAlign(union_layout.type).value());
+    // Each field occupies the start of the union. The merge is the x86-64 rule for overlapping classes.
+    std::vector<AbiLeaf> leaves;
+    for (const FieldLayout &field : union_layout.fields) {
+        collect_abi_leaves(field.type, 0, leaves);
+    }
+    return classify_abi(size, natural == 0 ? 1 : natural, leaves);
+}
+
+CAbi CodeGen::classify_abi(uint64_t size, unsigned natural, const std::vector<AbiLeaf> &leaves) const {
+    CAbi abi;
+    const llvm::DataLayout &layout = module_.getDataLayout();
     abi.natural_align = natural == 0 ? 1 : natural;
     abi.indirect_align = std::max(abi.natural_align, 8u);
     if (size == 0 || size > 16) {
@@ -816,36 +882,7 @@ CAbi CodeGen::c_abi(llvm::StructType *type) const {
         return abi;
     }
 
-    struct Leaf {
-        uint64_t offset = 0;
-        uint64_t bytes = 0;
-        llvm::Type *type = nullptr;
-    };
-    std::vector<Leaf> leaves;
-    auto append = [&](auto &&self, llvm::Type *ty, uint64_t offset) -> void {
-        if (auto *aggregate = llvm::dyn_cast<llvm::StructType>(ty)) {
-            const llvm::StructLayout *slots = layout.getStructLayout(aggregate);
-            for (unsigned index = 0; index < aggregate->getNumElements(); ++index) {
-                self(self, aggregate->getElementType(index), offset + slots->getElementOffset(index));
-            }
-            return;
-        }
-        if (auto *array = llvm::dyn_cast<llvm::ArrayType>(ty)) {
-            const uint64_t step = layout.getTypeAllocSize(array->getElementType());
-            for (uint64_t index = 0; index < array->getNumElements(); ++index) {
-                self(self, array->getElementType(), offset + index * step);
-            }
-            return;
-        }
-        Leaf leaf;
-        leaf.offset = offset;
-        leaf.bytes = ty->isIntegerTy(1) ? 1 : layout.getTypeAllocSize(ty);
-        leaf.type = ty;
-        leaves.push_back(leaf);
-    };
-    append(append, type, 0);
-
-    auto aligned = [&](const Leaf &leaf) {
+    auto aligned = [&](const AbiLeaf &leaf) {
         unsigned align = 1;
         if (leaf.type->isIntegerTy(1)) {
             align = 1;
@@ -854,7 +891,7 @@ CAbi CodeGen::c_abi(llvm::StructType *type) const {
         }
         return align == 0 || leaf.offset % align == 0;
     };
-    for (const Leaf &leaf : leaves) {
+    for (const AbiLeaf &leaf : leaves) {
         if (!aligned(leaf)) {
             abi.memory = true;
             return abi;
@@ -882,7 +919,7 @@ CAbi CodeGen::c_abi(llvm::StructType *type) const {
         if (bit1 <= bit0) {
             return true;
         }
-        for (const Leaf &leaf : leaves) {
+        for (const AbiLeaf &leaf : leaves) {
             const uint64_t start = leaf.offset * 8;
             const uint64_t end = start + leaf.bytes * 8;
             if (overlaps(start, end, bit0, bit1)) {
@@ -902,7 +939,7 @@ CAbi CodeGen::c_abi(llvm::StructType *type) const {
     };
     Kind lo = Kind::None;
     Kind hi = Kind::None;
-    for (const Leaf &leaf : leaves) {
+    for (const AbiLeaf &leaf : leaves) {
         const uint64_t start = leaf.offset;
         const uint64_t end = leaf.offset + std::max<uint64_t>(leaf.bytes, 1);
         const Kind kind = kind_of(leaf.type);
@@ -926,8 +963,8 @@ CAbi CodeGen::c_abi(llvm::StructType *type) const {
     }
 
     auto integer_at = [&](uint64_t eight) -> llvm::Type * {
-        const Leaf *field = nullptr;
-        for (const Leaf &leaf : leaves) {
+        const AbiLeaf *field = nullptr;
+        for (const AbiLeaf &leaf : leaves) {
             if (leaf.offset <= eight && eight < leaf.offset + leaf.bytes) {
                 field = &leaf;
                 break;
@@ -955,12 +992,20 @@ CAbi CodeGen::c_abi(llvm::StructType *type) const {
         return llvm::IntegerType::get(context_, width);
     };
     auto fp_at = [&](uint64_t offset) -> llvm::Type * {
-        for (const Leaf &leaf : leaves) {
-            if (leaf.offset == offset && leaf.type->isFloatingPointTy()) {
+        llvm::Type *found = nullptr;
+        for (const AbiLeaf &leaf : leaves) {
+            if (leaf.offset != offset || leaf.type == nullptr || !leaf.type->isFloatingPointTy()) {
+                continue;
+            }
+            // A double at this offset covers the eightbyte, even when a float is listed first.
+            if (leaf.type->isDoubleTy()) {
                 return leaf.type;
             }
+            if (found == nullptr) {
+                found = leaf.type;
+            }
         }
-        return nullptr;
+        return found;
     };
     auto sse_at = [&](uint64_t eight) -> llvm::Type * {
         llvm::Type *first = fp_at(eight);
@@ -1028,7 +1073,9 @@ ExternLayout CodeGen::extern_layout(const FunctionDecl &fn, uint32_t file) const
         layout.args[index].is_struct = true;
         layout.args[index].struct_id = low.struct_id;
         layout.args[index].struct_type = low.type;
-        layout.args[index].abi = c_abi(llvm::cast<llvm::StructType>(low.type));
+        layout.args[index].abi = structs_[static_cast<std::size_t>(low.struct_id)].is_union
+                                     ? c_abi_union(low.struct_id)
+                                     : c_abi(llvm::cast<llvm::StructType>(low.type));
     }
     if (!any) {
         return layout;
@@ -1037,7 +1084,9 @@ ExternLayout CodeGen::extern_layout(const FunctionDecl &fn, uint32_t file) const
     if (ret_struct) {
         layout.ret_struct = ret.type;
         layout.ret_struct_id = ret.struct_id;
-        layout.ret = c_abi(llvm::cast<llvm::StructType>(ret.type));
+        layout.ret = structs_[static_cast<std::size_t>(ret.struct_id)].is_union
+                         ? c_abi_union(ret.struct_id)
+                         : c_abi(llvm::cast<llvm::StructType>(ret.type));
         layout.sret = layout.ret.memory;
     }
     std::vector<llvm::Type *> params;
@@ -1696,6 +1745,11 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
         error(loc, slot == nullptr ? "undeclared identifier" : "type mismatch");
         return {};
     }
+    // Every union field starts at the same address. The storage type is only the size and alignment.
+    if (structs_[static_cast<std::size_t>(struct_id)].is_union) {
+        return {pointer, slot->depth, slot->elem_char, slot->struct_id, slot->is_array, slot->elem_void, slot->elem_bool,
+                slot->elem_bits, slot->elem_unsigned, -1, slot->elem_float};
+    }
     llvm::Value *zero_index = const_i32(0);
     llvm::Value *member = const_i32(field_index);
     llvm::Value *gep = builder_.CreateInBoundsGEP(structs_[static_cast<std::size_t>(struct_id)].type, pointer,
@@ -1825,6 +1879,7 @@ void CodeGen::prepare_structs() {
                 continue;
             }
             structs_[static_cast<std::size_t>(id)].is_extern = item->is_extern;
+            structs_[static_cast<std::size_t>(id)].is_union = item->is_union;
             auto c_memory = [&](auto &&self, llvm::Type *ty) -> llvm::Type * {
                 if (ty == nullptr) {
                     return ty;
@@ -1873,6 +1928,37 @@ void CodeGen::prepare_structs() {
                 }
                 body.push_back(slot.type);
                 fields.push_back(std::move(slot));
+            }
+            if (item->is_union && !fields.empty()) {
+                const llvm::DataLayout &data_layout = module_.getDataLayout();
+                int prefix = 0;
+                uint64_t prefix_size = 0;
+                unsigned best_align = 1;
+                uint64_t union_size = 0;
+                for (int index = 0; index < static_cast<int>(fields.size()); ++index) {
+                    llvm::Type *field_type = fields[static_cast<std::size_t>(index)].type;
+                    if (field_type == nullptr || !field_type->isSized()) {
+                        continue;
+                    }
+                    const uint64_t field_size = data_layout.getTypeAllocSize(field_type).getFixedValue();
+                    unsigned field_align = static_cast<unsigned>(data_layout.getABITypeAlign(field_type).value());
+                    if (field_align == 0) {
+                        field_align = 1;
+                    }
+                    union_size = std::max(union_size, field_size);
+                    if (index == 0 || field_align > best_align ||
+                        (field_align == best_align && field_size > prefix_size)) {
+                        prefix = index;
+                        prefix_size = field_size;
+                        best_align = field_align;
+                    }
+                }
+                const uint64_t rounded = (union_size + best_align - 1) / best_align * best_align;
+                body.clear();
+                body.push_back(fields[static_cast<std::size_t>(prefix)].type);
+                if (prefix_size < rounded) {
+                    body.push_back(llvm::ArrayType::get(i8(), rounded - prefix_size));
+                }
             }
             if (body.empty()) {
                 body.push_back(i8());
@@ -4384,6 +4470,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (field->is_array) {
                     error(node.loc, "not supported yet");
                     return {zero(), 0};
+                }
+                if (structs_[static_cast<std::size_t>(base.struct_id)].is_union) {
+                    llvm::AllocaInst *slot =
+                        alloca_typed(structs_[static_cast<std::size_t>(base.struct_id)].type, "uval");
+                    if (base.value != nullptr) {
+                        builder_.CreateStore(base.value, slot);
+                    }
+                    return load_object(slot, field->depth, field->elem_char, field->struct_id, field->elem_void,
+                                       field->elem_bool, field->elem_bits, field->elem_unsigned, field->elem_float);
                 }
                 llvm::Value *extracted = builder_.CreateExtractValue(base.value, static_cast<unsigned>(field_index));
                 if (field->depth == 0 && field->elem_bool) {

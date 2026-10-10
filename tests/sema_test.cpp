@@ -2024,6 +2024,24 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "union Num { int n; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern union Num { int n; int m; }\n"
+            "struct Inner { int n; };\n"
+            "extern union Bad { Inner item; int n; }\n"
+            "extern union Empty {}\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "struct must be extern");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
             "extern struct Pair;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "expected '{'");

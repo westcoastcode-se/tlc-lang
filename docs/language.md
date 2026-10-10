@@ -438,6 +438,22 @@ extern func SDL_DestroyWindow(window SDL_Window *) void;
 
 A plain struct in an `extern` function is `struct must be extern`.
 
+`extern union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A union without `extern` is `not supported yet`; a tagged union waits. An empty union is `not supported yet`. A struct or a union nested inside it must be `extern`, or the error is `struct must be extern`.
+
+```c
+extern union Num {
+    int n;
+    int m;
+};
+
+extern union Word {
+    int n;
+    char raw[8];
+};
+```
+
+`Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory.
+
 Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `Point **` and `int *` are left as they are, and the access is `type mismatch`. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
 
 An array length is a positive decimal `int` literal.

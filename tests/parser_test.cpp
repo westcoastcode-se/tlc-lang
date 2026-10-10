@@ -383,6 +383,17 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "extern union Num { int n; int m; }\n"
+            "union Plain { int n; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.dump, "(union Num extern\n");
+        EXPECT_HAS(check, parsed.dump, "(field n int)\n");
+        EXPECT(check, parsed.dump.find("(union Plain") == std::string::npos);
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "struct Point { int x; }\n"
             "enum Color { Red, Blue = 2 }\n"
             "func main() int { return 0; }\n");

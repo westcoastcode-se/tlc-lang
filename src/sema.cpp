@@ -1428,8 +1428,8 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         structs_.push_back(std::move(created));
         tags_[file_id][item->name] = id;
         if (item->fields.empty()) {
-            // An empty extern struct is an opaque C handle. Any other empty struct has no fields to store.
-            if (!item->is_extern) {
+            // An empty extern struct is an opaque C handle. A union needs a field. Any other empty struct has no fields to store.
+            if (!item->is_extern || item->is_union) {
                 error(item->loc, "not supported yet");
             }
             structs_.back().complete = true;

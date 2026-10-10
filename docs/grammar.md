@@ -28,6 +28,7 @@ declaration = function
             | var-decl
             | fn-var
             | struct-decl
+            | union-decl
             | enum-decl
             | typedef-decl
             | trait-decl ;
@@ -85,6 +86,7 @@ fn-var      = func-type identifier { "," identifier } ";" ;
 
 ```ebnf
 struct-decl = "struct" identifier "{" { field } "}" [ ";" ] ;
+union-decl  = "extern" "union" identifier "{" field { field } "}" [ ";" ] ;
 field       = placed-type declarator ";"
             | func-type identifier ";" ;
 declarator  = { "*" } identifier [ array ]
@@ -102,7 +104,9 @@ typedef-decl = "typedef" placed-type declarator { "," declarator } ";"
             | "typedef" func-type identifier { "," identifier } ";" ;
 ```
 
-The semicolon after `}` of a struct or an enum is optional. A field still ends with `;`. `struct Name;` and `enum Name;` are not declarations. An empty `extern struct` is `extern struct Name "{" "}"`.
+The semicolon after `}` of a struct, a union, or an enum is optional. A field still ends with `;`. `struct Name;`, `union Name;`, and `enum Name;` are not declarations. An empty `extern struct` is `extern struct Name "{" "}"`.
+
+`extern union` is a C union: every field starts at offset 0, the size is the largest field, and the alignment is the strictest field. A union without `extern` is `not supported yet`. An empty union is `not supported yet`.
 
 `extern enum` has no underlying type. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
 

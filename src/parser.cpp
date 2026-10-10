@@ -285,9 +285,9 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             ++pos_;
             continue;
         }
-        if (token.kind == TokenKind::KwStruct) {
+        if (token.kind == TokenKind::KwStruct || token.kind == TokenKind::KwUnion) {
+            const bool as_union = token.kind == TokenKind::KwUnion;
             ++pos_;
-            specs.is_struct = true;
             specs.saw_type = true;
             if (check(TokenKind::Identifier)) {
                 specs.type_name = peek().text;
@@ -298,9 +298,19 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
                 specs.type_name = "invalid";
             }
             if (eat(TokenKind::LBrace)) {
-                specs.struct_definition = true;
+                if (as_union) {
+                    specs.is_union = true;
+                    specs.union_definition = true;
+                } else {
+                    specs.is_struct = true;
+                    specs.struct_definition = true;
+                }
                 specs.fields = parse_fields();
                 expect(TokenKind::RBrace, "expected '}'");
+            } else {
+                // `union Name` outside a definition is the same mistake as `struct Name`.
+                specs.is_struct = true;
+                specs.is_union = as_union;
             }
             break;
         }
@@ -514,7 +524,7 @@ std::vector<FieldDecl> Parser::parse_fields() {
             continue;
         }
         const Specifiers specs = parse_specifiers(false);
-        if (specs.struct_definition) {
+        if (specs.struct_definition || specs.union_definition) {
             diags_.error(specs.loc, "not supported yet");
         }
         const Declarator decl = parse_declarator();
@@ -1296,6 +1306,27 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     }
     pos_ = marker;
     const Specifiers specs = parse_specifiers(true);
+    if (specs.union_definition) {
+        if (!specs.is_extern) {
+            // Tagged unions wait. C layout is `extern union`.
+            diags_.error(specs.loc, "not supported yet");
+        } else {
+            StructDecl item;
+            item.loc = specs.loc;
+            item.name = specs.type_name;
+            item.fields = specs.fields;
+            item.exported = specs.exported;
+            item.is_extern = true;
+            item.is_union = true;
+            TopDecl top;
+            top.data = std::move(item);
+            unit.decls.push_back(std::move(top));
+        }
+        if (eat(TokenKind::Semicolon) || !continues_declarator()) {
+            saw_decl_ = true;
+            return;
+        }
+    }
     if (specs.struct_definition) {
         StructDecl item;
         item.loc = specs.loc;
@@ -1473,7 +1504,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
     }
     pos_ = marker;
     const Specifiers specs = parse_specifiers(file_scope);
-    if (specs.struct_definition || specs.enum_definition) {
+    if (specs.struct_definition || specs.enum_definition || specs.union_definition) {
         diags_.error(specs.loc, "not supported yet");
         eat(TokenKind::Semicolon);
         return make_stmt(Stmt::Expression{});

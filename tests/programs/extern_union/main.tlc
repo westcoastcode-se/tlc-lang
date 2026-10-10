@@ -1,0 +1,21 @@
+extern union Num {
+    int n;
+    int m;
+}
+
+extern union Word {
+    int n;
+    char raw[8];
+}
+
+func Num::value(this self Num) int {
+    return self.m;
+}
+
+func main() int {
+    var u Num;
+    u.n = 34;
+    var wide Word;
+    wide.n = 1;
+    return u.value() + sizeof(Word);
+}

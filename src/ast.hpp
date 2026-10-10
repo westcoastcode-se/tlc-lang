@@ -152,6 +152,8 @@ struct StructDecl {
     std::vector<FieldDecl> fields;
     bool exported = false;
     bool is_extern = false;
+    // An `extern union` overlays its fields. A plain union waits for tagged unions.
+    bool is_union = false;
 };
 
 struct Enumerator {

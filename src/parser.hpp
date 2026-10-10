@@ -21,6 +21,8 @@ class Parser {
         std::string type_package;
         bool is_struct = false;
         bool struct_definition = false;
+        bool is_union = false;
+        bool union_definition = false;
         std::vector<FieldDecl> fields;
         bool is_enum = false;
         bool enum_definition = false;
