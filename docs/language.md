@@ -166,12 +166,20 @@ A `bool` value is 0 or 1.
 | `42ul`, `42ull` | `unsigned long` and `unsigned long long` |
 | `'A'` | `char` |
 | `"hi"` | array of `char`, including the terminating null |
+| `` `hi` `` | the same array type; the text may span lines |
 | `true`, `false` | `bool` |
 | `nullptr` | null pointer |
 
 An unsuffixed number greater than `2147483647` is `type mismatch`. It does not become `long`. A suffix selects the type in the table above. More than two `l` letters is `type mismatch`.
 
 A character literal has type `char`. `'A'` is 65 and `'\n'` is 10. A value above 255 is `type mismatch`. The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
+
+A string between backticks may span lines. It is an array of `char`, like a quoted string. The characters are copied as written: a backslash is not an escape, and a newline in the source is a newline in the string. The next backtick ends the string.
+
+```c
+char *text = `hello
+world`;
+```
 
 `sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(long long)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted.
 

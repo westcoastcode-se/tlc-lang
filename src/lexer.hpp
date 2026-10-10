@@ -34,6 +34,7 @@ class Lexer {
     Token lex_number_or_float(uint32_t start);
     Token lex_float(uint32_t start);
     Token lex_string(uint32_t start);
+    Token lex_raw_string(uint32_t start);
     Token lex_char(uint32_t start);
     bool looks_like_float(uint32_t start) const;
 };

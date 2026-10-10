@@ -95,6 +95,17 @@ int run_lexer_tests() {
     }
 
     {
+        const LexResult result = lex("`ab\ncd` `a\\n\"`");
+        EXPECT(check, result.errors.empty());
+        EXPECT_EQ(check, result.dump, "string(ab\ncd) string(a\\n\") eof");
+    }
+
+    {
+        const LexResult result = lex("`abc");
+        EXPECT_HAS(check, result.errors, "unterminated string");
+    }
+
+    {
         const LexResult result = lex("/* hello");
         EXPECT_HAS(check, result.errors, "unterminated comment");
         EXPECT_EQ(check, result.dump, "eof");

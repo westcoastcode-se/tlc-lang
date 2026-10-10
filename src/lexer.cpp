@@ -661,6 +661,30 @@ Token Lexer::lex_string(uint32_t start) {
     return token;
 }
 
+Token Lexer::lex_raw_string(uint32_t start) {
+    get();
+    std::string decoded;
+    bool closed = false;
+    while (!eof_at()) {
+        const char c = get();
+        if (c == '`') {
+            closed = true;
+            break;
+        }
+        // A CRLF line break is one newline in the string.
+        if (c == '\r' && !eof_at() && peek() == '\n') {
+            continue;
+        }
+        decoded.push_back(c);
+    }
+    if (!closed) {
+        error_at(start, "unterminated string");
+    }
+    Token token = finish(TokenKind::StringLiteral, start);
+    token.text = std::move(decoded);
+    return token;
+}
+
 Token Lexer::lex_char(uint32_t start) {
     get();
     uint64_t value = 0;
@@ -761,6 +785,9 @@ Token Lexer::lex_token() {
     }
     if (c == '"') {
         return lex_string(start);
+    }
+    if (c == '`') {
+        return lex_raw_string(start);
     }
     if (c == '\'') {
         return lex_char(start);
