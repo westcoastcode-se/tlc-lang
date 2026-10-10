@@ -1,0 +1,26 @@
+struct Point {
+    int x;
+    int y;
+};
+
+func Point::sum(this self Point) int {
+    return self.x + self.y;
+}
+
+func Point::add(this self Point *, dx int, dy int) void {
+    self.x = self.x + dx;
+    self.y = self.y + dy;
+}
+
+func main() int {
+    Point p;
+    Point *q;
+    p.x = 0;
+    p.y = 0;
+    q = &p;
+    q.x = 1;
+    q.y = 1;
+    q.add(10, 10);
+    p.add(10, 10);
+    return q.sum();
+}

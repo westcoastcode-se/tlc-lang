@@ -1,0 +1,661 @@
+#include "harness.hpp"
+#include "lexer.hpp"
+#include "parser.hpp"
+
+#include <string>
+
+namespace {
+
+struct Parsed {
+    std::string dump;
+    std::string errors;
+};
+
+Parsed parse_source(const std::string &source) {
+    tlc::SourceSet sources;
+    tlc::SourceFile &file = sources.add("mem.c", source);
+    tlc::DiagnosticEngine diags(sources);
+    tlc::Lexer lexer(file, diags);
+    tlc::Parser parser(lexer.tokenize(), diags);
+    const tlc::TranslationUnit unit = parser.parse();
+    return Parsed{tlc::dump_translation_unit(unit), diags.render()};
+}
+
+} // namespace
+
+int run_parser_tests() {
+    tlc::test::Check check;
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  return 1 + 2 * 3;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_EQ(check, parsed.dump,
+                  "(tu\n"
+                  "  (fn main (params) int\n"
+                  "    (block\n"
+                  "      (return (+ (int 1) (* (int 2) (int 3))))\n"
+                  "    )\n"
+                  "  )\n"
+                  ")\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  return 1 | 2 & 3 ^ 4;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(return (| (int 1) (^ (& (int 2) (int 3)) (int 4))))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  return a = b = 1;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(return (= (name a) (= (name b) (int 1))))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main(n int) int {\n"
+            "  if (n) return -n; else return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_EQ(check, parsed.dump,
+                  "(tu\n"
+                  "  (fn main (params (n int)) int\n"
+                  "    (block\n"
+                  "      (if (name n)\n"
+                  "        (return (- (name n)))\n"
+                  "        (return (int 0))\n"
+                  "      )\n"
+                  "    )\n"
+                  "  )\n"
+                  ")\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main(n int) int {\n"
+            "  while (n) n = n - 1;\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(while (name n)\n");
+        EXPECT_HAS(check, parsed.dump, "(expr (= (name n) (- (name n) (int 1))))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  int s = 0;\n"
+            "  for (int i = 0; i < 10; i = i + 1) s = s + i;\n"
+            "  for (;;) break;\n"
+            "  return s;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_EQ(check, parsed.dump,
+                  "(tu\n"
+                  "  (fn main (params) int\n"
+                  "    (block\n"
+                  "      (decl\n"
+                  "        (var s int (int 0))\n"
+                  "      )\n"
+                  "      (for\n"
+                  "        (decl\n"
+                  "          (var i int (int 0))\n"
+                  "        )\n"
+                  "        (< (name i) (int 10))\n"
+                  "        (= (name i) (+ (name i) (int 1)))\n"
+                  "        (expr (= (name s) (+ (name s) (name i))))\n"
+                  "      )\n"
+                  "      (for\n"
+                  "        (empty)\n"
+                  "        (empty)\n"
+                  "        (empty)\n"
+                  "        (break)\n"
+                  "      )\n"
+                  "      (return (name s))\n"
+                  "    )\n"
+                  "  )\n"
+                  ")\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  continue;\n"
+            "  math.add(1, 2);\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(continue)");
+        EXPECT_HAS(check, parsed.dump, "(expr (call (. (name math) add) (int 1) (int 2)))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "package math;\n"
+            "import \"a\";\n"
+            "import \"lib/vec\" as v;\n"
+            "import { add, Point } from \"math\";\n"
+            "export func add(a int, b int) int {\n"
+            "  return a + b;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_EQ(check, parsed.dump,
+                  "(tu\n"
+                  "  (package math)\n"
+                  "  (import \"a\")\n"
+                  "  (import-as \"lib/vec\" v)\n"
+                  "  (import-from \"math\" add Point)\n"
+                  "  (fn add (params (a int) (b int)) int export\n"
+                  "    (block\n"
+                  "      (return (+ (name a) (name b)))\n"
+                  "    )\n"
+                  "  )\n"
+                  ")\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int { return 0; }\n"
+            "import \"math\";\n");
+        EXPECT_HAS(check, parsed.errors, "import must appear before declarations");
+    }
+
+    {
+        const Parsed parsed = parse_source("double x;\nfunc main() int { return 1.5; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.find("not supported yet") != parsed.errors.rfind("not supported yet"));
+    }
+
+    {
+        const Parsed parsed = parse_source("func main( {\n  return 1\n}\n");
+        EXPECT_HAS(check, parsed.errors, "expected ')'");
+        EXPECT_HAS(check, parsed.errors, "expected ';'");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "int *p;\n"
+            "int **q;\n"
+            "func f(a int *) int *;\n"
+            "func main() int {\n"
+            "  p = &q;\n"
+            "  return *p;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var p int*");
+        EXPECT_HAS(check, parsed.dump, "(var q int**");
+        EXPECT_HAS(check, parsed.dump, "(fn f (params (a int*)) int*");
+        EXPECT_HAS(check, parsed.dump, "(expr (= (name p) (& (name q))))");
+        EXPECT_HAS(check, parsed.dump, "(return (* (name p)))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "int a[4];\n"
+            "int *b[2];\n"
+            "char s[3];\n"
+            "func f(xs int[4], t char *) int;\n"
+            "func main() int {\n"
+            "  return \"hi\"[0];\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var a int[4]");
+        EXPECT_HAS(check, parsed.dump, "(var b int*[2]");
+        EXPECT_HAS(check, parsed.dump, "(var s char[3]");
+        EXPECT_HAS(check, parsed.dump, "(fn f (params (xs int[4]) (t char*)) int");
+        EXPECT_HAS(check, parsed.dump, "(return ([] (string \"hi\") (int 0)))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { int a[n]; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source("int a[];\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "export struct Point {\n"
+            "  int x;\n"
+            "  int *y;\n"
+            "};\n"
+            "struct Point p;\n"
+            "geom.Point q;\n"
+            "func sum(p struct Point) int {\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(struct Point export\n");
+        EXPECT_HAS(check, parsed.dump, "(field x int)\n");
+        EXPECT_HAS(check, parsed.dump, "(field y int*)\n");
+        EXPECT_HAS(check, parsed.dump, "(var p struct Point)\n");
+        EXPECT_HAS(check, parsed.dump, "(var q geom.Point)\n");
+        EXPECT_HAS(check, parsed.dump, "(fn sum (params (p struct Point)) int\n");
+        EXPECT_HAS(check, parsed.dump, "(return (. (name p) x))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { struct Point { int x; }; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "extern func printf(fmt const char *, ...) int;\n"
+            "func main() int {\n"
+            "  printf(\"hi\\n\");\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn printf (params (fmt char*) ...) int extern\n");
+        EXPECT_HAS(check, parsed.dump, "(expr (call (name printf) (string \"hi\\n\")))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("const int x;\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source("func f(x const int) int { return x; }\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source("extern func f(x const int) int { return x; }\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "export enum Color {\n"
+            "  Red,\n"
+            "  Green = 40,\n"
+            "  Blue,\n"
+            "};\n"
+            "typedef struct Point Point;\n"
+            "typedef int *Ptr;\n"
+            "typedef int Pair[2];\n"
+            "enum Color c;\n"
+            "func main() int { return Blue; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(enum Color export\n");
+        EXPECT_HAS(check, parsed.dump, "(enumerator Red)\n");
+        EXPECT_HAS(check, parsed.dump, "(enumerator Green 40)\n");
+        EXPECT_HAS(check, parsed.dump, "(enumerator Blue)\n");
+        EXPECT_HAS(check, parsed.dump, "(typedef Point struct Point)\n");
+        EXPECT_HAS(check, parsed.dump, "(typedef Ptr int*)\n");
+        EXPECT_HAS(check, parsed.dump, "(typedef Pair int[2])\n");
+        EXPECT_HAS(check, parsed.dump, "(var c enum Color)\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "typedef struct Node;\n"
+            "struct Node;\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "struct outside definition");
+        EXPECT_HAS(check, parsed.dump, "(struct Node forward\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("enum Color { Green = -1 };\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { typedef int T; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { enum E { A }; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source("typedef int F(int);\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  int n;\n"
+            "  n = 1;\n"
+            "  switch (n) {\n"
+            "  case 1:\n"
+            "    n = 2;\n"
+            "  case 2:\n"
+            "    break;\n"
+            "  default:\n"
+            "    n = 0;\n"
+            "    break;\n"
+            "  }\n"
+            "  do {\n"
+            "    n = n + 1;\n"
+            "  } while (n < 3);\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(switch (name n)\n");
+        EXPECT_HAS(check, parsed.dump, "(case (int 1)\n");
+        EXPECT_HAS(check, parsed.dump, "(case (int 2)\n");
+        EXPECT_HAS(check, parsed.dump, "(default\n");
+        EXPECT_HAS(check, parsed.dump, "(do\n");
+        EXPECT_HAS(check, parsed.dump, "(< (name n) (int 3))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { goto end; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  int n;\n"
+            "  n = sizeof(int) + sizeof(int *) + sizeof n + sizeof(n);\n"
+            "  n = (int)(char *)(void *)n;\n"
+            "  return (n);\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(sizeof int)");
+        EXPECT_HAS(check, parsed.dump, "(sizeof int*)");
+        EXPECT_HAS(check, parsed.dump, "(sizeof (name n))");
+        EXPECT_HAS(check, parsed.dump, "(cast int (cast char* (cast void* (name n))))");
+        EXPECT_HAS(check, parsed.dump, "(return (name n))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  bool b;\n"
+            "  int *p;\n"
+            "  b = true;\n"
+            "  b = false;\n"
+            "  p = nullptr;\n"
+            "  return b;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var b bool");
+        EXPECT_HAS(check, parsed.dump, "(= (name b) (true))");
+        EXPECT_HAS(check, parsed.dump, "(= (name b) (false))");
+        EXPECT_HAS(check, parsed.dump, "(= (name p) (nullptr))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  unsigned long long n;\n"
+            "  long long w;\n"
+            "  unsigned u;\n"
+            "  short s;\n"
+            "  signed char sc;\n"
+            "  char c;\n"
+            "  c = 'A';\n"
+            "  c = '\\n';\n"
+            "  n = 1ull;\n"
+            "  return (int)c + (long)s;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var n unsigned long long");
+        EXPECT_HAS(check, parsed.dump, "(var w long long");
+        EXPECT_HAS(check, parsed.dump, "(var u unsigned int");
+        EXPECT_HAS(check, parsed.dump, "(var s short");
+        EXPECT_HAS(check, parsed.dump, "(var sc signed char");
+        EXPECT_HAS(check, parsed.dump, "(char 65)");
+        EXPECT_HAS(check, parsed.dump, "(char 10)");
+        EXPECT_HAS(check, parsed.dump, "(int 1 u ll)");
+        EXPECT_HAS(check, parsed.dump, "(cast int (name c))");
+        EXPECT_HAS(check, parsed.dump, "(cast long (name s))");
+    }
+
+    {
+        const Parsed parsed = parse_source("short long x;\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source("long long long x;\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "struct Point {\n"
+            "  int x;\n"
+            "};\n"
+            "func Point::sum(this self Point, extra int) int {\n"
+            "  return self.x + extra;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn Point::sum (params (self struct Point receiver) (extra int)) int");
+        EXPECT_HAS(check, parsed.dump, "(return (+ (. (name self) x) (name extra)))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func f(this self Point) int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source("func Point::sum(x int) int { return x; }\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source("int Point::x;\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func Point::add(this self Point *, dx int) void {\n"
+            "  return;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn Point::add (params (self struct Point* receiver) (dx int)) void");
+    }
+
+    {
+        const Parsed parsed = parse_source("func Point::add(this self Point **) void { return; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { p->x; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "trait Shape {\n"
+            "  func area() int;\n"
+            "  func grow(n int) void;\n"
+            "};\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(trait Shape\n");
+        EXPECT_HAS(check, parsed.dump, "(fn area (params) int");
+        EXPECT_HAS(check, parsed.dump, "(fn grow (params (n int)) void");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "trait Shape {\n"
+            "  func area(this self Shape) int { return 1; }\n"
+            "};\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "trait Shape {\n"
+            "  func grow(this self Shape **) void;\n"
+            "};\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  func id(p int *) int * {\n"
+            "    return p;\n"
+            "  }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn main (params) int");
+        EXPECT_HAS(check, parsed.dump, "(fn id (params (p int*)) int*");
+        EXPECT_HAS(check, parsed.dump, "(return (name p))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { int f(); return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "nested functions are not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { export func f() int { return 1; } return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  defer func(value int) {\n"
+            "  }(10);\n"
+            "  defer func() {\n"
+            "  }();\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(defer ");
+        EXPECT_HAS(check, parsed.dump, "(anon (params (value int)) void");
+        EXPECT_HAS(check, parsed.dump, "(int 10)");
+        EXPECT_HAS(check, parsed.dump, "(anon (params) void");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "struct Point { int x; };\n"
+            "func Point::method(this self Point, a int, b int, c int) void {\n"
+            "}\n"
+            "func main() int {\n"
+            "  Point myval;\n"
+            "  defer myval.method(1, 2, 3);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(defer (call (. (name myval) method) (int 1) (int 2) (int 3)))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func add(x int, y int) (int, int) {\n"
+            "  return x + y, x;\n"
+            "}\n"
+            "func id(n int) (int) { return n; }\n"
+            "func main() int {\n"
+            "  sum, orig := add(20, 22);\n"
+            "  var extra, base = add(1, 1);\n"
+            "  extra, base = add(0, 0);\n"
+            "  return sum;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn add (params (x int) (y int)) (int, int)");
+        EXPECT_HAS(check, parsed.dump, "(return (+ (name x) (name y)) (name x))");
+        EXPECT_HAS(check, parsed.dump, "(fn id (params (n int)) int");
+        EXPECT_HAS(check, parsed.dump, "(bind def sum orig (call (name add) (int 20) (int 22)))");
+        EXPECT_HAS(check, parsed.dump, "(bind var extra base (call (name add) (int 1) (int 1)))");
+        EXPECT_HAS(check, parsed.dump, "(bind set extra base (call (name add) (int 0) (int 0)))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func f() () { return; }\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  var z, w = func() (int, int) { return 0, 0; }();\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(anon (params) (int, int)");
+        EXPECT_HAS(check, parsed.dump, "(bind var z w");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "struct Box { int v; };\n"
+            "func Box::both(this self Box *, p math.Point *) (int, Box*, math.Point, unsigned long) {\n"
+            "  return self.v, self, p, 1;\n"
+            "}\n"
+            "func id(n int) (int) { return n; }\n"
+            "func trail(n int) (int,) { return n; }\n"
+            "func pair(n int) (int, int,) { return n, n; }\n"
+            "func main() int {\n"
+            "  var x = id(1);\n"
+            "  y := 2;\n"
+            "  var a, = 1;\n"
+            "  return x, y, a;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump,
+                   "(fn Box::both (params (self struct Box* receiver) (p math.Point*)) "
+                   "(int, Box*, math.Point, unsigned long)");
+        EXPECT_HAS(check, parsed.dump, "(return (. (name self) v) (name self) (name p) (int 1))");
+        EXPECT_HAS(check, parsed.dump, "(fn id (params (n int)) int");
+        EXPECT_HAS(check, parsed.dump, "(fn trail (params (n int)) int");
+        EXPECT_HAS(check, parsed.dump, "(fn pair (params (n int)) (int, int)");
+        EXPECT_HAS(check, parsed.dump, "(bind var x (call (name id) (int 1)))");
+        EXPECT_HAS(check, parsed.dump, "(bind def y (int 2))");
+        EXPECT_HAS(check, parsed.dump, "(bind var a (int 1))");
+        EXPECT_HAS(check, parsed.dump, "(return (name x) (name y) (name a))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { var a := 1; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source("var a, b = 1;\n");
+        EXPECT_HAS(check, parsed.errors, "expected a declaration");
+    }
+
+    {
+        const Parsed parsed = parse_source("a, b := 1;\n");
+        EXPECT_HAS(check, parsed.errors, "expected a declaration");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() int { var = 1; return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "expected an identifier");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  for (a, b := f(); ;) {\n"
+            "    return 0;\n"
+            "  }\n"
+            "}\n");
+        EXPECT_HAS(check, parsed.errors, "expected ';'");
+    }
+
+    return check.failed;
+}

@@ -1,0 +1,22 @@
+func main() int {
+    int *p;
+    int x;
+    int n;
+    x = 7;
+    p = nullptr;
+    n = 0;
+    if (p == nullptr) {
+        n = 1;
+    }
+    if (p != nullptr) {
+        return 0;
+    }
+    p = &x;
+    if (p == nullptr) {
+        return 0;
+    }
+    if (p != nullptr) {
+        n = n + 41;
+    }
+    return n;
+}

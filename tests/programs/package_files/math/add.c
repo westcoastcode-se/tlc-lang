@@ -1,0 +1,11 @@
+package math;
+
+func secret() int {
+    return 2 + extra();
+}
+
+export func add(a int, b int) int {
+    return a + b + secret();
+}
+
+export int bias;

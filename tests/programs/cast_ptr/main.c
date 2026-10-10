@@ -1,0 +1,20 @@
+func main() int {
+    int n;
+    int bits;
+    char *c;
+    void *v;
+    int *p;
+    bits = 42;
+    c = (char *)bits;
+    v = (void *)c;
+    bits = (int)v;
+    n = 300;
+    p = &n;
+    c = (char *)p;
+    v = (void *)c;
+    p = (int *)v;
+    if (*p != 300) {
+        return 1;
+    }
+    return bits;
+}

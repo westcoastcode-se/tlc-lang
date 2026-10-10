@@ -1,0 +1,35 @@
+struct Point {
+    int x;
+    int y;
+};
+
+struct Pair {
+    int a;
+    int b;
+};
+
+func make(x int, y int) Point {
+    Point p;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+func Point::sum(this self Point, extra int) int {
+    return self.x + self.y + extra;
+}
+
+func Pair::sum(this self Pair, extra int) int {
+    return self.a + self.b + extra;
+}
+
+func sum(n int) int {
+    return n;
+}
+
+func main() int {
+    Pair q;
+    q.a = 1;
+    q.b = 1;
+    return make(10, 10).sum(2) + q.sum(0) + sum(18);
+}

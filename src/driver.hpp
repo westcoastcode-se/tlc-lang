@@ -1,0 +1,45 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+namespace tlc {
+
+inline constexpr const char *kVersion = "0.1.0";
+
+enum class Mode {
+    HelpStdout,
+    HelpStderr,
+    Version,
+    Check,
+    EmitLlvm,
+    EmitObj,
+    Compile,
+    Run,
+    Error,
+};
+
+struct Options {
+    Mode mode = Mode::HelpStderr;
+    std::string input;
+    std::string output;
+    std::vector<std::string> package_paths;
+    std::string error;
+};
+
+struct CompileOutput {
+    int status = 1;
+    bool compiled = false;
+    std::string ir;
+    std::string compiler_stderr;
+    std::string program_stdout;
+    std::string program_stderr;
+};
+
+std::string version_text();
+std::string help_text();
+Options parse_args(int argc, char **argv);
+CompileOutput compile_source(const Options &opt);
+int execute(const Options &opt);
+
+} // namespace tlc

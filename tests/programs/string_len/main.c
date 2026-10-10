@@ -1,0 +1,14 @@
+func len(s char *) int {
+    int n = 0;
+    while (s[n] != 0) {
+        n = n + 1;
+        if (n > 3) {
+            return 99;
+        }
+    }
+    return n;
+}
+
+func main() int {
+    return len("hi");
+}

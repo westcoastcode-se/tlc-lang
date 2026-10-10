@@ -1,0 +1,59 @@
+trait Shape {
+    func area() int;
+    func grow(n int) void;
+};
+
+trait Meas {
+    func area() int;
+};
+
+struct Rect {
+    int w;
+    int h;
+};
+
+struct Box {
+    int n;
+};
+
+func Rect::area(this self Rect) int {
+    return self.w * self.h;
+}
+
+func Rect::grow(this self Rect *, n int) void {
+    self.w = self.w + n;
+    self.h = self.h + n;
+}
+
+func Box::area(this self Box) int {
+    return self.n;
+}
+
+func Box::grow(this self Box *, n int) void {
+    self.n = self.n + n;
+}
+
+func measure(s Shape *) int {
+    return s.area();
+}
+
+func apply(s Shape *, n int) int {
+    s.grow(n);
+    return measure(s);
+}
+
+func take(m Meas) int {
+    return m.area();
+}
+
+func main() int {
+    Rect r;
+    Box b;
+    r.w = 5;
+    r.h = 6;
+    b.n = 0;
+    int a = apply(&r, 1);
+    int d = take(r);
+    int c = apply(&b, 21);
+    return a + c + d - 63;
+}

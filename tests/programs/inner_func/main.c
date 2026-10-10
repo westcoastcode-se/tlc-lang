@@ -1,0 +1,32 @@
+int bias;
+
+func add(n int) int {
+    return 0;
+}
+
+func other() int {
+    func add(n int) int {
+        return n;
+    }
+    return add(0);
+}
+
+func main() int {
+    bias = 1;
+    func add(n int) int;
+    func add(n int) int {
+        func step(m int) int {
+            switch (m) {
+            case 0:
+                return bias;
+            default:
+                return m + bias;
+            }
+        }
+        if (n == 0) {
+            return step(0);
+        }
+        return add(n - 1) + 1;
+    }
+    return add(41) + other();
+}
