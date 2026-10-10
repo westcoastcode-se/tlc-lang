@@ -2418,6 +2418,9 @@ std::unique_ptr<Expr> Parser::parse_primary() {
         ++pos_;
         return make_expr(std::move(literal));
     }
+    if (starts_short_function()) {
+        return parse_short_function();
+    }
     if (eat(TokenKind::LParen)) {
         auto expr = parse_expr();
         expect(TokenKind::RParen, "expected ')'");
@@ -2464,6 +2467,63 @@ std::unique_ptr<Expr> Parser::parse_anon_function() {
         if (param.is_const) {
             diags_.error(param.loc, "not supported yet");
         }
+    }
+    Expr::Func node;
+    node.loc = fn.loc;
+    node.decl = std::make_unique<FunctionDecl>(std::move(fn));
+    return make_expr(std::move(node));
+}
+
+bool Parser::starts_short_function() const {
+    if (peek().kind != TokenKind::LParen) {
+        return false;
+    }
+    std::size_t index = 1;
+    if (peek(index).kind == TokenKind::RParen) {
+        return peek(index + 1).kind == TokenKind::LBrace;
+    }
+    while (peek(index).kind == TokenKind::Identifier) {
+        ++index;
+        if (peek(index).kind == TokenKind::Comma) {
+            ++index;
+            if (peek(index).kind != TokenKind::Identifier) {
+                return false;
+            }
+            continue;
+        }
+        return peek(index).kind == TokenKind::RParen && peek(index + 1).kind == TokenKind::LBrace;
+    }
+    return false;
+}
+
+std::unique_ptr<Expr> Parser::parse_short_function() {
+    FunctionDecl fn;
+    fn.loc = peek().loc;
+    fn.inferred = true;
+    expect(TokenKind::LParen, "expected '('");
+    if (!check(TokenKind::RParen)) {
+        while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+            Param param;
+            param.loc = peek().loc;
+            if (check(TokenKind::Identifier)) {
+                param.name = peek().text;
+                param.loc = peek().loc;
+                ++pos_;
+            } else {
+                error_here("expected an identifier");
+                break;
+            }
+            fn.params.push_back(std::move(param));
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    if (check(TokenKind::LBrace)) {
+        fn.body = parse_block();
+    } else {
+        error_here("expected '{'");
     }
     Expr::Func node;
     node.loc = fn.loc;

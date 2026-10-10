@@ -2437,6 +2437,52 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func dosomething(op func (int, int) int) int { return op(20, 22); }\n"
+            "struct Box { int n; };\n"
+            "func Box::map(this self Box, op func (int) int) int { return op(self.n); }\n"
+            "func note(p func (int) void) int { p(1); return 1; }\n"
+            "func main() int {\n"
+            "  var full = dosomething(func (a int, b int) int { return a + b; });\n"
+            "  var brief = dosomething((a, b) { return a + b; });\n"
+            "  var fp func (int, int) int;\n"
+            "  fp = (a, b) { return a + b; };\n"
+            "  var box Box;\n"
+            "  box.n = 40;\n"
+            "  var extra = box.map((n) { return n; });\n"
+            "  var quiet = note((n) { });\n"
+            "  return full + brief + fp(1, 1) + extra + quiet;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var n = (a, b) { return a + b; };\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(op func (int) int) int { return op(1); }\n"
+            "func main() int { return take((a, b) { return a; }); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(op func (int) int) int {\n"
+            "  var x = 1;\n"
+            "  return take((n) { return n + x; });\n"
+            "}\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
             "func f() (func (i32) i32, i32) { return 0, 0; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");

@@ -349,6 +349,9 @@ struct FunctionDecl {
     bool is_extern = false;
     bool variadic = false;
     std::string method_struct;
+    // `(a, b) { ... }` takes its parameter and result types from the expected function pointer.
+    bool inferred = false;
+    bool elaborated = false;
 };
 
 struct TraitDecl {

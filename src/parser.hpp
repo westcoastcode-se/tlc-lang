@@ -148,6 +148,8 @@ class Parser {
     std::unique_ptr<Expr> parse_postfix();
     std::unique_ptr<Expr> parse_primary();
     std::unique_ptr<Expr> parse_anon_function();
+    bool starts_short_function() const;
+    std::unique_ptr<Expr> parse_short_function();
     bool starts_type_paren() const;
     bool starts_cast_type() const;
     struct ParenType {

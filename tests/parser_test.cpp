@@ -668,6 +668,18 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "func dosomething(op func (int, int) int) int { return op(1, 2); }\n"
+            "func main() int {\n"
+            "  return dosomething(func (arg1 int, arg2 int) int { return arg1 + arg2; })\n"
+            "      + dosomething((arg1, arg2) { return arg1 + arg2; });\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(anon (params (arg1 int) (arg2 int)) int");
+        EXPECT_HAS(check, parsed.dump, "(anon inferred (params (arg1) (arg2))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "struct Point { int x; };\n"
             "func Point::method(this self Point, a int, b int, c int) void {\n"
             "}\n"

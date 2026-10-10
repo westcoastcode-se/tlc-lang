@@ -281,6 +281,21 @@ void dump_stmt(const Stmt &stmt, std::string &out, int indent) {
 void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
     append_indent(out, indent);
     const bool anon = fn.name.empty() && fn.method_struct.empty();
+    if (anon && fn.inferred) {
+        out += "(anon inferred (params";
+        for (const Param &param : fn.params) {
+            out += " (";
+            out += param.name.empty() ? "_" : param.name;
+            out += ')';
+        }
+        out += ")\n";
+        if (fn.body) {
+            dump_stmt(*fn.body, out, indent + 1);
+        }
+        append_indent(out, indent);
+        out += ")\n";
+        return;
+    }
     if (anon) {
         out += "(anon (params";
     } else {

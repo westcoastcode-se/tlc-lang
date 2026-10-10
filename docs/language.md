@@ -363,6 +363,26 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 
 A variable names the pointer first: `var fp func (i32, i32) i32;` or `var fp func (i32) (i32, i32);`. A field or a typedef still writes the type, then the name: `func (i32, i32) i32 op;` inside a struct, and `typedef func (i32, i32) i32 BinOp;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern` function's parameters and result cannot include a function pointer that returns several results.
 
+A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
+
+```c
+func dosomething(op func (int, int) int) int {
+    return op(40, 2);
+}
+
+func main() int {
+    return dosomething(func (arg1 int, arg2 int) int { return arg1 + arg2; });
+}
+```
+
+The short form writes only the parameter names. Their types, and the result type, come from the function pointer:
+
+```c
+return dosomething((arg1, arg2) { return arg1 + arg2; });
+```
+
+`() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer, including an assignment and the initializer of a typed variable. Used where no function pointer is expected, it is `type mismatch`. A short form whose parameter count does not match that function pointer is `type mismatch`. It follows the same capture rule as any other anonymous function.
+
 ## Structs, pointers, and arrays
 
 A struct definition uses the `struct` keyword. Variables, parameters, return types, and fields then use the bare tag. The semicolon after `}` may be omitted.

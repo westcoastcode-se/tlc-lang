@@ -1,0 +1,20 @@
+func combine(op func (int, int) int) int {
+    return op(4, 6);
+}
+
+struct Box {
+    int n;
+}
+
+func Box::map(this self Box, op func (int) int) int {
+    return op(self.n);
+}
+
+func main() int {
+    var full = combine(func (a int, b int) int { return a + b; });
+    var brief = combine((a, b) { return a * b - 2; });
+    var box Box;
+    box.n = 40;
+    var extra = box.map((n) { return n / 4; });
+    return full + brief + extra;
+}
