@@ -3,8 +3,15 @@ package sdl3;
 // The subset of SDL3 used by examples/triangle. The real library is the
 // system libSDL3 named in the link file.
 
-export typedef struct SDL_Window;
-export typedef struct SDL_GLContextState;
+export extern struct SDL_Window;
+export extern struct SDL_GLContextState;
+
+// SDL_Event is a 128-byte union, aligned to 8. `type` is the first field.
+// The u64 array starts at offset 8 and fills the rest, so the layout matches.
+export extern struct SDL_Event {
+    u32 type;
+    u64 rest[15];
+};
 
 export enum SdlInit {
     SDL_INIT_VIDEO = 0x20,
@@ -35,5 +42,5 @@ export extern func SDL_GL_SetAttribute(attr int, value int) bool;
 export extern func SDL_GL_CreateContext(window SDL_Window *) SDL_GLContextState *;
 export extern func SDL_GL_MakeCurrent(window SDL_Window *, context SDL_GLContextState *) bool;
 export extern func SDL_GL_SwapWindow(window SDL_Window *) bool;
-export extern func SDL_PollEvent(event void *) bool;
+export extern func SDL_PollEvent(event SDL_Event *) bool;
 export extern func SDL_Delay(ms u32) void;

@@ -7,6 +7,7 @@ int run_parser_tests();
 int run_sema_tests();
 int run_pkg_tests();
 int run_program_tests();
+int run_abi_tests();
 
 int main() {
     int failed = 0;
@@ -17,6 +18,7 @@ int main() {
     failed += run_sema_tests();
     failed += run_pkg_tests();
     failed += run_program_tests();
+    failed += run_abi_tests();
     if (failed != 0) {
         std::cerr << failed << " check(s) failed\n";
         return 1;

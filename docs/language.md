@@ -125,7 +125,7 @@ export func add(a int, b int) int {
 
 File-scope `static` keeps the symbol private to that file. A `static` local is rejected.
 
-`extern` keeps the C name and the C calling convention. It returns one result, the same as a C function. Its parameters and its result cannot include a function pointer that returns several results. That is how a program calls a library:
+`extern` keeps the C name and the C calling convention. It returns one result, the same as a C function. Its parameters and its result cannot include a function pointer that returns several results. A struct used by an `extern` function, by value or through a pointer, must itself be `extern`. That includes a struct nested inside it. An `extern struct` uses the platform C memory layout, so its fields line up with a static or shared library. `bool` in that struct is one byte. On this host a struct of at most 16 bytes is passed in registers, and a larger struct is passed as a pointer. A function that is not `extern` keeps the compiler's own convention for struct values. That is how a program calls a library:
 
 ```c
 extern func printf(fmt const char *, ...) int;
@@ -396,6 +396,22 @@ struct Node {
 ```
 
 An incomplete struct is introduced with `typedef struct Node;`. A later `struct Node { ... }` completes that name. `struct Node;` does not declare a type. A pointer to the incomplete name is allowed. Using the incomplete name by value is `not supported yet`.
+
+An `extern struct` is the same shape, marked so it can be used with an `extern` function:
+
+```c
+extern struct Pair {
+    int a;
+    int b;
+};
+
+extern struct SDL_Window;
+
+extern func make_pair(a int, b int) Pair;
+extern func SDL_DestroyWindow(window SDL_Window *) void;
+```
+
+`extern typedef struct SDL_Window;` is the same incomplete struct. A plain struct in that position is `struct must be extern`. A forward declaration and its definition must agree, or the error is `extern struct`.
 
 ```c
 typedef struct Node;

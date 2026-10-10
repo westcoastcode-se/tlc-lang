@@ -60,6 +60,7 @@ class Checker {
         };
         std::vector<Field> fields;
         bool forward = false;
+        bool is_extern = false;
     };
 
     struct EnumConst {
@@ -164,6 +165,7 @@ class Checker {
     bool trait_method_matches(const Type &trait_fn, const Type &concrete) const;
     void require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc);
     void register_structs(const TranslationUnit &unit, uint32_t file_id);
+    void require_extern_struct(const Type &type, SourceLoc loc);
     void register_enums(const TranslationUnit &unit, uint32_t file_id);
     void register_traits(const TranslationUnit &unit, uint32_t file_id);
     void register_typedefs(const TranslationUnit &unit, uint32_t file_id);
@@ -1250,6 +1252,39 @@ bool Checker::field_waits(const FieldDecl &field) const {
     return !structs_[static_cast<std::size_t>(id)].complete;
 }
 
+void Checker::require_extern_struct(const Type &type, SourceLoc loc) {
+    if (type.kind == TypeKind::Pointer && type.pointee) {
+        require_extern_struct(*type.pointee, loc);
+        return;
+    }
+    if (type.kind == TypeKind::Array && type.element) {
+        require_extern_struct(*type.element, loc);
+        return;
+    }
+    if (type.kind == TypeKind::Function) {
+        if (type.result) {
+            require_extern_struct(*type.result, loc);
+        }
+        for (const Type &param : type.params) {
+            require_extern_struct(param, loc);
+        }
+        return;
+    }
+    if (type.kind == TypeKind::Tuple) {
+        for (const Type &part : type.results) {
+            require_extern_struct(part, loc);
+        }
+        return;
+    }
+    if (type.kind != TypeKind::Struct || type.struct_id < 0 ||
+        type.struct_id >= static_cast<int>(structs_.size())) {
+        return;
+    }
+    if (!structs_[static_cast<std::size_t>(type.struct_id)].is_extern) {
+        error(loc, "struct must be extern");
+    }
+}
+
 void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id) {
     file_id_ = file_id;
     auto publish_tag = [&](const StructDecl &item, int id) {
@@ -1298,6 +1333,10 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         const int existing = find_tag(file_id, item->name);
         if (item->forward) {
             if (existing >= 0) {
+                StructInfo &info = structs_[static_cast<std::size_t>(existing)];
+                if (info.is_extern != item->is_extern) {
+                    error(item->loc, "extern struct");
+                }
                 publish_tag(*item, existing);
                 continue;
             }
@@ -1305,6 +1344,7 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
             StructInfo info;
             info.name = item->name;
             info.forward = true;
+            info.is_extern = item->is_extern;
             structs_.push_back(std::move(info));
             tags_[file_id][item->name] = id;
             publish_tag(*item, id);
@@ -1316,6 +1356,10 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
                 error(item->loc, "redefinition");
                 continue;
             }
+            if (info.is_extern != item->is_extern) {
+                error(item->loc, "extern struct");
+            }
+            info.is_extern = item->is_extern;
             info.forward = false;
             if (item->fields.empty()) {
                 error(item->loc, "not supported yet");
@@ -1327,7 +1371,10 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
             continue;
         }
         const int id = static_cast<int>(structs_.size());
-        structs_.push_back(StructInfo{item->name, false, {}});
+        StructInfo created;
+        created.name = item->name;
+        created.is_extern = item->is_extern;
+        structs_.push_back(std::move(created));
         tags_[file_id][item->name] = id;
         if (item->fields.empty()) {
             error(item->loc, "not supported yet");
@@ -1363,6 +1410,9 @@ void Checker::define_struct_fields() {
                                                  field.fn_variadic, field.fn_results, field.loc)
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum);
+            if (info.is_extern) {
+                require_extern_struct(field_type, field.loc);
+            }
             info.fields.push_back(StructInfo::Field{field.name, std::move(field_type)});
         }
         info.complete = true;
@@ -2868,6 +2918,12 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (fn->is_extern && fn->results.size() > 1) {
                 error(fn->loc, "extern function cannot return several results");
             } else if (fn->is_extern) {
+                if (signature.result != nullptr) {
+                    require_extern_struct(*signature.result, fn->loc);
+                }
+                for (std::size_t index = 0; index < signature.params.size() && index < fn->params.size(); ++index) {
+                    require_extern_struct(signature.params[index], fn->params[index].loc);
+                }
                 bool many = signature.result != nullptr && uses_many_results(*signature.result);
                 if (!many) {
                     for (const Type &param : signature.params) {

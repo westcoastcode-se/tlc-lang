@@ -14,6 +14,7 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Host.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <optional>
@@ -114,6 +115,41 @@ struct TypedValue {
     std::vector<FnParam> fn_results{};
 };
 
+// How an extern function passes one struct on x86-64 System V.
+// Clang lowers that ABI in the frontend. A plain LLVM struct in the
+// signature does not match gcc.
+struct CAbi {
+    bool memory = false;
+    unsigned natural_align = 1;
+    unsigned indirect_align = 8;
+    llvm::Type *direct = nullptr;
+    std::vector<llvm::Type *> parts;
+    std::vector<uint64_t> offsets;
+};
+
+struct AbiMark {
+    unsigned index = 0;
+    bool sret = false;
+    llvm::Type *type = nullptr;
+    unsigned align = 1;
+};
+
+struct ExternLayout {
+    bool active = false;
+    bool sret = false;
+    CAbi ret;
+    llvm::Type *ret_struct = nullptr;
+    int ret_struct_id = -1;
+    struct Arg {
+        bool is_struct = false;
+        CAbi abi;
+        llvm::Type *struct_type = nullptr;
+        int struct_id = -1;
+    };
+    std::vector<Arg> args;
+    llvm::FunctionType *type = nullptr;
+};
+
 class CodeGen {
   public:
     CodeGen(llvm::LLVMContext &context, llvm::Module &module, DiagnosticEngine &diags)
@@ -141,7 +177,13 @@ class CodeGen {
     llvm::Type *return_type_ = nullptr;
     int return_depth_ = 0;
     bool return_many_ = false;
+    bool extern_struct_ret_ = false;
+    bool extern_sret_ = false;
+    llvm::Value *extern_sret_ptr_ = nullptr;
+    CAbi extern_ret_abi_{};
+    llvm::Type *extern_ret_struct_ = nullptr;
     bool share_function_scope_ = false;
+    std::unordered_map<const llvm::Function *, ExternLayout> extern_abis_;
     int local_seq_ = 0;
     uint32_t entry_file_ = 0;
     uint32_t current_file_ = 0;
@@ -177,6 +219,13 @@ class CodeGen {
         llvm::Value *indirect = nullptr;
         llvm::FunctionType *fn_ty = nullptr;
         std::vector<FnParam> fn_results{};
+        bool abi_return = false;
+        bool abi_sret = false;
+        llvm::AllocaInst *abi_slot = nullptr;
+        llvm::Type *abi_struct = nullptr;
+        int abi_struct_id = -1;
+        CAbi abi_ret{};
+        std::vector<AbiMark> abi_attrs;
     };
     struct FieldLayout {
         std::string name;
@@ -197,6 +246,7 @@ class CodeGen {
         llvm::StructType *type = nullptr;
         std::vector<FieldLayout> fields;
         bool ready = false;
+        bool is_extern = false;
     };
     struct Lowered {
         llvm::Type *type = nullptr;
@@ -538,6 +588,17 @@ class CodeGen {
     const Binding *lookup(const std::string &name) const;
     llvm::AllocaInst *alloca_typed(llvm::Type *type, const std::string &name);
     llvm::FunctionType *function_type(const FunctionDecl &fn, uint32_t file) const;
+    bool is_struct_value(const Lowered &low) const;
+    CAbi c_abi(llvm::StructType *type) const;
+    ExternLayout extern_layout(const FunctionDecl &fn, uint32_t file) const;
+    void apply_extern_attrs(llvm::Function *function, const ExternLayout &layout) const;
+    void annotate_call(llvm::CallInst *inst, const std::vector<AbiMark> &marks) const;
+    llvm::AllocaInst *aligned_slot(llvm::Type *type, unsigned align, const std::string &name);
+    llvm::Value *addr_at(llvm::Value *base, uint64_t offset);
+    llvm::Value *load_at(llvm::Value *base, llvm::Type *type, uint64_t offset);
+    void store_at(llvm::Value *base, llvm::Value *value, uint64_t offset);
+    llvm::Value *pack_return(llvm::Value *slot, const CAbi &abi);
+    void unpack_return(llvm::Value *returned, llvm::Value *slot, const CAbi &abi);
     llvm::Type *aggregate_return(const FunctionDecl &fn, uint32_t file) const;
     const FunctionDecl *callee_decl(const Expr &callee) const;
     SymbolForm symbol_form(const PackageNode &node, const std::string &name, bool is_extern, bool is_static,
@@ -695,6 +756,374 @@ void CodeGen::bind_package_globals() {
 llvm::AllocaInst *CodeGen::alloca_typed(llvm::Type *type, const std::string &name) {
     llvm::IRBuilder<> allocas(&function_->getEntryBlock(), function_->getEntryBlock().begin());
     return allocas.CreateAlloca(type, nullptr, name);
+}
+
+bool CodeGen::is_struct_value(const Lowered &low) const {
+    return low.struct_id >= 0 && low.depth == 0 && !low.is_array && low.type != nullptr && low.type->isStructTy();
+}
+
+CAbi CodeGen::c_abi(llvm::StructType *type) const {
+    CAbi abi;
+    if (type == nullptr || !type->isSized()) {
+        abi.memory = true;
+        return abi;
+    }
+    const llvm::DataLayout &layout = module_.getDataLayout();
+    const uint64_t size = layout.getTypeAllocSize(type);
+    const unsigned natural = static_cast<unsigned>(layout.getABITypeAlign(type).value());
+    abi.natural_align = natural == 0 ? 1 : natural;
+    abi.indirect_align = std::max(abi.natural_align, 8u);
+    if (size == 0 || size > 16) {
+        abi.memory = true;
+        return abi;
+    }
+
+    struct Leaf {
+        uint64_t offset = 0;
+        uint64_t bytes = 0;
+        llvm::Type *type = nullptr;
+    };
+    std::vector<Leaf> leaves;
+    auto append = [&](auto &&self, llvm::Type *ty, uint64_t offset) -> void {
+        if (auto *aggregate = llvm::dyn_cast<llvm::StructType>(ty)) {
+            const llvm::StructLayout *slots = layout.getStructLayout(aggregate);
+            for (unsigned index = 0; index < aggregate->getNumElements(); ++index) {
+                self(self, aggregate->getElementType(index), offset + slots->getElementOffset(index));
+            }
+            return;
+        }
+        if (auto *array = llvm::dyn_cast<llvm::ArrayType>(ty)) {
+            const uint64_t step = layout.getTypeAllocSize(array->getElementType());
+            for (uint64_t index = 0; index < array->getNumElements(); ++index) {
+                self(self, array->getElementType(), offset + index * step);
+            }
+            return;
+        }
+        Leaf leaf;
+        leaf.offset = offset;
+        leaf.bytes = ty->isIntegerTy(1) ? 1 : layout.getTypeAllocSize(ty);
+        leaf.type = ty;
+        leaves.push_back(leaf);
+    };
+    append(append, type, 0);
+
+    auto aligned = [&](const Leaf &leaf) {
+        unsigned align = 1;
+        if (leaf.type->isIntegerTy(1)) {
+            align = 1;
+        } else {
+            align = static_cast<unsigned>(layout.getABITypeAlign(leaf.type).value());
+        }
+        return align == 0 || leaf.offset % align == 0;
+    };
+    for (const Leaf &leaf : leaves) {
+        if (!aligned(leaf)) {
+            abi.memory = true;
+            return abi;
+        }
+    }
+
+    enum class Kind { None, Integer, Sse, Memory };
+    auto merge = [](Kind acc, Kind field) {
+        if (acc == Kind::Memory || field == Kind::Memory) {
+            return Kind::Memory;
+        }
+        if (acc == Kind::None || acc == field) {
+            return field;
+        }
+        if (field == Kind::None) {
+            return acc;
+        }
+        if (acc == Kind::Integer || field == Kind::Integer) {
+            return Kind::Integer;
+        }
+        return Kind::Sse;
+    };
+    auto overlaps = [](uint64_t a0, uint64_t a1, uint64_t b0, uint64_t b1) { return a0 < b1 && b0 < a1; };
+    auto no_user = [&](uint64_t bit0, uint64_t bit1) {
+        if (bit1 <= bit0) {
+            return true;
+        }
+        for (const Leaf &leaf : leaves) {
+            const uint64_t start = leaf.offset * 8;
+            const uint64_t end = start + leaf.bytes * 8;
+            if (overlaps(start, end, bit0, bit1)) {
+                return false;
+            }
+        }
+        return true;
+    };
+    auto kind_of = [](llvm::Type *ty) {
+        if (ty->isFloatingPointTy()) {
+            return Kind::Sse;
+        }
+        if (ty->isIntegerTy() || ty->isPointerTy()) {
+            return Kind::Integer;
+        }
+        return Kind::Memory;
+    };
+    Kind lo = Kind::None;
+    Kind hi = Kind::None;
+    for (const Leaf &leaf : leaves) {
+        const uint64_t start = leaf.offset;
+        const uint64_t end = leaf.offset + std::max<uint64_t>(leaf.bytes, 1);
+        const Kind kind = kind_of(leaf.type);
+        if (kind == Kind::Memory) {
+            abi.memory = true;
+            return abi;
+        }
+        if (start < 8) {
+            lo = merge(lo, kind);
+        }
+        if (end > 8) {
+            hi = merge(hi, kind);
+        }
+    }
+    if (lo == Kind::Memory || hi == Kind::Memory || lo == Kind::None) {
+        abi.memory = true;
+        return abi;
+    }
+    if (size <= 8) {
+        hi = Kind::None;
+    }
+
+    auto integer_at = [&](uint64_t eight) -> llvm::Type * {
+        const Leaf *field = nullptr;
+        for (const Leaf &leaf : leaves) {
+            if (leaf.offset <= eight && eight < leaf.offset + leaf.bytes) {
+                field = &leaf;
+                break;
+            }
+        }
+        if (field != nullptr && field->offset == eight &&
+            (field->type->isPointerTy() || field->type->isIntegerTy(64)) && field->bytes >= 8) {
+            return field->type;
+        }
+        if (field != nullptr && field->offset == eight && field->type->isIntegerTy()) {
+            unsigned bits = field->type->getIntegerBitWidth();
+            if (bits == 1) {
+                bits = 8;
+            }
+            if (bits == 8 || bits == 16 || bits == 32) {
+                if (no_user(eight * 8 + bits, eight * 8 + 64)) {
+                    return llvm::IntegerType::get(context_, bits);
+                }
+            }
+        }
+        unsigned width = static_cast<unsigned>(std::min<uint64_t>(size - eight, 8) * 8);
+        if (width == 0) {
+            width = 8;
+        }
+        return llvm::IntegerType::get(context_, width);
+    };
+    auto fp_at = [&](uint64_t offset) -> llvm::Type * {
+        for (const Leaf &leaf : leaves) {
+            if (leaf.offset == offset && leaf.type->isFloatingPointTy()) {
+                return leaf.type;
+            }
+        }
+        return nullptr;
+    };
+    auto sse_at = [&](uint64_t eight) -> llvm::Type * {
+        llvm::Type *first = fp_at(eight);
+        if (first == nullptr || first->isDoubleTy()) {
+            return f64_ty();
+        }
+        const uint64_t first_size = layout.getTypeAllocSize(first);
+        llvm::Type *second = size > eight + first_size ? fp_at(eight + first_size) : nullptr;
+        if (first->isFloatTy() && second != nullptr && second->isFloatTy()) {
+            return llvm::FixedVectorType::get(f32_ty(), 2);
+        }
+        if (second == nullptr) {
+            return first;
+        }
+        return f64_ty();
+    };
+    auto piece = [&](Kind kind, uint64_t eight) {
+        return kind == Kind::Sse ? sse_at(eight) : integer_at(eight);
+    };
+
+    llvm::Type *low = piece(lo, 0);
+    if (hi == Kind::None) {
+        abi.direct = low;
+        abi.parts.push_back(low);
+        abi.offsets.push_back(0);
+        return abi;
+    }
+    llvm::Type *high = piece(hi, 8);
+    const uint64_t low_size = layout.getTypeAllocSize(low);
+    const uint64_t high_align = layout.getABITypeAlign(high).value();
+    const uint64_t high_start = (low_size + high_align - 1) / high_align * high_align;
+    if (high_start != 8) {
+        low = low->isFloatTy() ? static_cast<llvm::Type *>(f64_ty()) : static_cast<llvm::Type *>(i64());
+    }
+    abi.direct = llvm::StructType::get(context_, {low, high});
+    abi.parts.push_back(low);
+    abi.parts.push_back(high);
+    abi.offsets.push_back(0);
+    abi.offsets.push_back(8);
+    return abi;
+}
+
+ExternLayout CodeGen::extern_layout(const FunctionDecl &fn, uint32_t file) const {
+    ExternLayout layout;
+    if (!fn.is_extern) {
+        return layout;
+    }
+    const bool many = fn.results.size() > 1;
+    const bool returns_void =
+        !many && fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty();
+    const bool ret_fnptr = !many && fn.results.size() == 1 && fn.results.front().is_fn_ptr;
+    Lowered ret;
+    if (!returns_void && !many && !ret_fnptr) {
+        ret = lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false);
+    }
+    const bool ret_struct = is_struct_value(ret);
+    bool any = ret_struct;
+    layout.args.resize(fn.params.size());
+    for (std::size_t index = 0; index < fn.params.size(); ++index) {
+        const Lowered low = lower_param_type(file, fn.params[index]);
+        if (!is_struct_value(low)) {
+            continue;
+        }
+        any = true;
+        layout.args[index].is_struct = true;
+        layout.args[index].struct_id = low.struct_id;
+        layout.args[index].struct_type = low.type;
+        layout.args[index].abi = c_abi(llvm::cast<llvm::StructType>(low.type));
+    }
+    if (!any) {
+        return layout;
+    }
+    layout.active = true;
+    if (ret_struct) {
+        layout.ret_struct = ret.type;
+        layout.ret_struct_id = ret.struct_id;
+        layout.ret = c_abi(llvm::cast<llvm::StructType>(ret.type));
+        layout.sret = layout.ret.memory;
+    }
+    std::vector<llvm::Type *> params;
+    llvm::Type *result = returns_void || many ? llvm::Type::getVoidTy(context_)
+                                              : (ret_fnptr ? stored_type(lower_fnptr(file, fn.results.front().type_name,
+                                                                                     fn.results.front().type_package,
+                                                                                     fn.results.front().is_struct,
+                                                                                     fn.results.front().is_enum,
+                                                                                     fn.results.front().ret_indirections,
+                                                                                     fn.results.front().indirections,
+                                                                                     fn.results.front().fn_params,
+                                                                                     fn.results.front().fn_variadic,
+                                                                                     fn.results.front().fn_results))
+                                                           : stored_type(ret));
+    if (layout.sret) {
+        params.push_back(ptr_type());
+        result = llvm::Type::getVoidTy(context_);
+    } else if (ret_struct) {
+        result = layout.ret.direct;
+    }
+    for (std::size_t index = 0; index < fn.params.size(); ++index) {
+        const ExternLayout::Arg &arg = layout.args[index];
+        if (arg.is_struct && arg.abi.memory) {
+            params.push_back(ptr_type());
+        } else if (arg.is_struct) {
+            params.insert(params.end(), arg.abi.parts.begin(), arg.abi.parts.end());
+        } else {
+            params.push_back(stored_type(lower_param_type(file, fn.params[index])));
+        }
+    }
+    layout.type = llvm::FunctionType::get(result, params, fn.variadic);
+    return layout;
+}
+
+void CodeGen::apply_extern_attrs(llvm::Function *function, const ExternLayout &layout) const {
+    unsigned index = 0;
+    if (layout.sret) {
+        function->addParamAttr(index, llvm::Attribute::getWithStructRetType(context_, layout.ret_struct));
+        function->addParamAttr(index, llvm::Attribute::getWithAlignment(context_, llvm::Align(layout.ret.natural_align)));
+        function->addParamAttr(index, llvm::Attribute::Writable);
+        function->addParamAttr(index, llvm::Attribute::DeadOnUnwind);
+        ++index;
+    }
+    for (const ExternLayout::Arg &arg : layout.args) {
+        if (arg.is_struct && arg.abi.memory) {
+            function->addParamAttr(index, llvm::Attribute::getWithByValType(context_, arg.struct_type));
+            function->addParamAttr(index,
+                                   llvm::Attribute::getWithAlignment(context_, llvm::Align(arg.abi.indirect_align)));
+            ++index;
+        } else if (arg.is_struct) {
+            index += static_cast<unsigned>(arg.abi.parts.size());
+        } else {
+            ++index;
+        }
+    }
+}
+
+void CodeGen::annotate_call(llvm::CallInst *inst, const std::vector<AbiMark> &marks) const {
+    for (const AbiMark &mark : marks) {
+        if (mark.sret) {
+            inst->addParamAttr(mark.index, llvm::Attribute::getWithStructRetType(context_, mark.type));
+            inst->addParamAttr(mark.index, llvm::Attribute::getWithAlignment(context_, llvm::Align(mark.align)));
+            inst->addParamAttr(mark.index, llvm::Attribute::Writable);
+            inst->addParamAttr(mark.index, llvm::Attribute::DeadOnUnwind);
+        } else {
+            inst->addParamAttr(mark.index, llvm::Attribute::getWithByValType(context_, mark.type));
+            inst->addParamAttr(mark.index, llvm::Attribute::getWithAlignment(context_, llvm::Align(mark.align)));
+        }
+    }
+}
+
+llvm::AllocaInst *CodeGen::aligned_slot(llvm::Type *type, unsigned align, const std::string &name) {
+    llvm::AllocaInst *slot = alloca_typed(type, name);
+    if (align > 0) {
+        slot->setAlignment(llvm::Align(align));
+    }
+    return slot;
+}
+
+llvm::Value *CodeGen::addr_at(llvm::Value *base, uint64_t offset) {
+    if (offset == 0) {
+        return base;
+    }
+    return builder_.CreateInBoundsGEP(i8(), base, builder_.getInt64(offset));
+}
+
+llvm::Value *CodeGen::load_at(llvm::Value *base, llvm::Type *type, uint64_t offset) {
+    llvm::LoadInst *load = builder_.CreateLoad(type, addr_at(base, offset));
+    load->setAlignment(module_.getDataLayout().getABITypeAlign(type));
+    return load;
+}
+
+void CodeGen::store_at(llvm::Value *base, llvm::Value *value, uint64_t offset) {
+    if (value == nullptr) {
+        return;
+    }
+    llvm::StoreInst *store = builder_.CreateStore(value, addr_at(base, offset));
+    store->setAlignment(module_.getDataLayout().getABITypeAlign(value->getType()));
+}
+
+llvm::Value *CodeGen::pack_return(llvm::Value *slot, const CAbi &abi) {
+    if (abi.parts.size() == 1) {
+        return load_at(slot, abi.parts[0], abi.offsets.empty() ? 0 : abi.offsets[0]);
+    }
+    llvm::Value *aggregate = llvm::PoisonValue::get(abi.direct);
+    for (unsigned index = 0; index < abi.parts.size(); ++index) {
+        const uint64_t offset = index < abi.offsets.size() ? abi.offsets[index] : 0;
+        aggregate = builder_.CreateInsertValue(aggregate, load_at(slot, abi.parts[index], offset), index);
+    }
+    return aggregate;
+}
+
+void CodeGen::unpack_return(llvm::Value *returned, llvm::Value *slot, const CAbi &abi) {
+    if (returned == nullptr || abi.parts.empty()) {
+        return;
+    }
+    if (abi.parts.size() == 1) {
+        store_at(slot, returned, abi.offsets.empty() ? 0 : abi.offsets[0]);
+        return;
+    }
+    for (unsigned index = 0; index < abi.parts.size(); ++index) {
+        const uint64_t offset = index < abi.offsets.size() ? abi.offsets[index] : 0;
+        store_at(slot, builder_.CreateExtractValue(returned, index), offset);
+    }
 }
 
 llvm::Type *CodeGen::aggregate_return(const FunctionDecl &fn, uint32_t file) const {
@@ -1321,6 +1750,22 @@ void CodeGen::prepare_structs() {
             if (waiting) {
                 continue;
             }
+            structs_[static_cast<std::size_t>(id)].is_extern = item->is_extern;
+            auto c_memory = [&](auto &&self, llvm::Type *ty) -> llvm::Type * {
+                if (ty == nullptr) {
+                    return ty;
+                }
+                if (ty->isIntegerTy(1)) {
+                    return i8();
+                }
+                if (auto *array = llvm::dyn_cast<llvm::ArrayType>(ty)) {
+                    llvm::Type *elem = self(self, array->getElementType());
+                    if (elem != array->getElementType()) {
+                        return llvm::ArrayType::get(elem, array->getNumElements());
+                    }
+                }
+                return ty;
+            };
             std::vector<llvm::Type *> body;
             std::vector<FieldLayout> fields;
             body.reserve(item->fields.size());
@@ -1344,6 +1789,14 @@ void CodeGen::prepare_structs() {
                 slot.elem_bits = low.elem_bits;
                 slot.elem_unsigned = low.elem_unsigned;
                 slot.elem_float = low.elem_float;
+                // C _Bool is one byte. An extern struct keeps that layout.
+                if (item->is_extern && low.elem_bool && low.depth == 0) {
+                    slot.type = c_memory(c_memory, slot.type);
+                    slot.elem_bool = false;
+                    slot.elem_bits = 8;
+                    slot.elem_unsigned = true;
+                    slot.elem_char = false;
+                }
                 body.push_back(slot.type);
                 fields.push_back(std::move(slot));
             }
@@ -1566,16 +2019,27 @@ void CodeGen::declare_file(const PackageNode &node) {
         }
         const SymbolForm form = symbol_form(node, name, acc.is_extern, acc.is_static, acc.exported, entry && name == "main");
         llvm::Function *function = acc.is_extern ? module_.getFunction(form.name) : nullptr;
+        const ExternLayout layout = acc.is_extern ? extern_layout(*acc.fn, node.file_id) : ExternLayout{};
         if (function == nullptr) {
-            function = llvm::Function::Create(function_type(*acc.fn, node.file_id), form.linkage, form.name, module_);
+            llvm::FunctionType *ftype = layout.active ? layout.type : function_type(*acc.fn, node.file_id);
+            function = llvm::Function::Create(ftype, form.linkage, form.name, module_);
             function->setCallingConv(llvm::CallingConv::C);
-            unsigned index = 0;
-            for (auto &arg : function->args()) {
-                if (index < acc.fn->params.size() && !acc.fn->params[index].name.empty()) {
-                    arg.setName(acc.fn->params[index].name);
-                }
-                ++index;
+            if (layout.active) {
+                apply_extern_attrs(function, layout);
+                extern_abis_.emplace(function, layout);
             }
+            if (!layout.active) {
+                unsigned index = 0;
+                for (auto &arg : function->args()) {
+                    if (index < acc.fn->params.size() && !acc.fn->params[index].name.empty()) {
+                        arg.setName(acc.fn->params[index].name);
+                    }
+                    ++index;
+                }
+            }
+        } else if (layout.active && !extern_abis_.contains(function)) {
+            apply_extern_attrs(function, layout);
+            extern_abis_.emplace(function, layout);
         }
         Binding binding;
         binding.value = function;
@@ -1909,7 +2373,10 @@ void CodeGen::finish_function() {
             continue;
         }
         llvm::IRBuilder<> fix(&block);
-        if (returns_void) {
+        if (extern_sret_ && extern_sret_ptr_ != nullptr && extern_ret_struct_ != nullptr) {
+            fix.CreateStore(llvm::ConstantAggregateZero::get(extern_ret_struct_), extern_sret_ptr_);
+            fix.CreateRetVoid();
+        } else if (returns_void) {
             fix.CreateRetVoid();
         } else if (return_depth_ > 0) {
             fix.CreateRet(null_ptr());
@@ -1984,27 +2451,91 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
     }
     const bool saved_many = return_many_;
     const bool saved_share = share_function_scope_;
+    const bool saved_extern = extern_struct_ret_;
+    const bool saved_sret = extern_sret_;
+    llvm::Value *saved_sret_ptr = extern_sret_ptr_;
+    const CAbi saved_abi = extern_ret_abi_;
+    llvm::Type *saved_struct = extern_ret_struct_;
     function_ = function;
     return_type_ = function->getReturnType();
     return_depth_ = return_depth;
     return_many_ = fn.results.size() > 1;
     share_function_scope_ = true;
+    extern_struct_ret_ = false;
+    extern_sret_ = false;
+    extern_sret_ptr_ = nullptr;
+    extern_ret_abi_ = {};
+    extern_ret_struct_ = nullptr;
+    const auto abi_found = extern_abis_.find(function);
+    const bool abi_body = abi_found != extern_abis_.end() && abi_found->second.active;
+    const ExternLayout abi_layout = abi_body ? abi_found->second : ExternLayout{};
+    if (abi_body && abi_layout.ret_struct != nullptr) {
+        extern_struct_ret_ = true;
+        extern_sret_ = abi_layout.sret;
+        extern_ret_abi_ = abi_layout.ret;
+        extern_ret_struct_ = abi_layout.ret_struct;
+    }
     llvm::BasicBlock *entry = llvm::BasicBlock::Create(context_, "entry", function);
     builder_.SetInsertPoint(entry);
     push();
-    unsigned index = 0;
-    for (auto &arg : function->args()) {
-        const std::string name = index < fn.params.size() ? fn.params[index].name : "";
-        if (!name.empty()) {
-            const Lowered low = lower_param(fn, index);
-            llvm::AllocaInst *slot = alloca_typed(stored_type(low), name);
-            builder_.CreateStore(&arg, slot);
-            Binding binding;
-            binding.value = slot;
-            apply_low(binding, low);
-            scopes_.back()[name] = binding;
+    if (abi_body) {
+        const ExternLayout &layout = abi_layout;
+        unsigned abi = 0;
+        if (layout.sret && abi < function->arg_size()) {
+            extern_sret_ptr_ = function->getArg(abi++);
         }
-        ++index;
+        for (std::size_t index = 0; index < fn.params.size(); ++index) {
+            const std::string name = fn.params[index].name;
+            const ExternLayout::Arg &info = layout.args[index];
+            const Lowered low = lower_param(fn, index);
+            if (info.is_struct && info.abi.memory) {
+                llvm::Argument *arg = function->getArg(abi++);
+                if (!name.empty()) {
+                    Binding binding;
+                    binding.value = arg;
+                    apply_low(binding, low);
+                    scopes_.back()[name] = binding;
+                }
+            } else if (info.is_struct) {
+                const unsigned align = std::max(info.abi.natural_align, 8u);
+                llvm::AllocaInst *slot = aligned_slot(info.struct_type, align, name.empty() ? "arg" : name);
+                for (std::size_t part = 0; part < info.abi.parts.size() && abi < function->arg_size(); ++part) {
+                    const uint64_t offset = part < info.abi.offsets.size() ? info.abi.offsets[part] : 0;
+                    store_at(slot, function->getArg(abi++), offset);
+                }
+                if (!name.empty()) {
+                    Binding binding;
+                    binding.value = slot;
+                    apply_low(binding, low);
+                    scopes_.back()[name] = binding;
+                }
+            } else if (abi < function->arg_size()) {
+                llvm::Argument *arg = function->getArg(abi++);
+                if (!name.empty()) {
+                    llvm::AllocaInst *slot = alloca_typed(stored_type(low), name);
+                    builder_.CreateStore(arg, slot);
+                    Binding binding;
+                    binding.value = slot;
+                    apply_low(binding, low);
+                    scopes_.back()[name] = binding;
+                }
+            }
+        }
+    } else {
+        unsigned index = 0;
+        for (auto &arg : function->args()) {
+            const std::string name = index < fn.params.size() ? fn.params[index].name : "";
+            if (!name.empty()) {
+                const Lowered low = lower_param(fn, index);
+                llvm::AllocaInst *slot = alloca_typed(stored_type(low), name);
+                builder_.CreateStore(&arg, slot);
+                Binding binding;
+                binding.value = slot;
+                apply_low(binding, low);
+                scopes_.back()[name] = binding;
+            }
+            ++index;
+        }
     }
     emit_stmt(*fn.body);
     finish_function();
@@ -2014,6 +2545,11 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
     return_depth_ = 0;
     return_many_ = saved_many;
     share_function_scope_ = saved_share;
+    extern_struct_ret_ = saved_extern;
+    extern_sret_ = saved_sret;
+    extern_sret_ptr_ = saved_sret_ptr;
+    extern_ret_abi_ = saved_abi;
+    extern_ret_struct_ = saved_struct;
 }
 
 void CodeGen::emit_function(const FunctionDecl &fn) {
@@ -2299,6 +2835,74 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         error(node.loc, "type mismatch");
         return prepared;
     }
+    const auto abi = extern_abis_.find(function);
+    if (abi != extern_abis_.end() && abi->second.active) {
+        const ExternLayout layout = abi->second;
+        std::vector<llvm::Value *> args;
+        unsigned attr_index = 0;
+        if (layout.sret && layout.ret_struct != nullptr) {
+            llvm::AllocaInst *slot = aligned_slot(layout.ret_struct, std::max(layout.ret.natural_align, 1u), "sret");
+            args.push_back(slot);
+            prepared.abi_return = true;
+            prepared.abi_sret = true;
+            prepared.abi_slot = slot;
+            prepared.abi_struct = layout.ret_struct;
+            prepared.abi_struct_id = layout.ret_struct_id;
+            prepared.abi_ret = layout.ret;
+            AbiMark mark;
+            mark.index = attr_index++;
+            mark.sret = true;
+            mark.type = layout.ret_struct;
+            mark.align = layout.ret.natural_align == 0 ? 1 : layout.ret.natural_align;
+            prepared.abi_attrs.push_back(mark);
+        } else if (layout.ret_struct != nullptr) {
+            llvm::AllocaInst *slot = aligned_slot(layout.ret_struct, std::max(layout.ret.natural_align, 8u), "cret");
+            prepared.abi_return = true;
+            prepared.abi_slot = slot;
+            prepared.abi_struct = layout.ret_struct;
+            prepared.abi_struct_id = layout.ret_struct_id;
+            prepared.abi_ret = layout.ret;
+        }
+        std::size_t source = 0;
+        for (const auto &arg : node.args) {
+            const TypedValue value = emit_rvalue(*arg);
+            if (source < layout.args.size() && layout.args[source].is_struct) {
+                const ExternLayout::Arg &info = layout.args[source];
+                llvm::AllocaInst *slot =
+                    aligned_slot(info.struct_type, std::max(info.abi.natural_align, 8u), "carg");
+                if (value.value != nullptr && value.value->getType() == info.struct_type) {
+                    builder_.CreateStore(value.value, slot);
+                } else if (info.struct_type != nullptr) {
+                    builder_.CreateStore(llvm::ConstantAggregateZero::get(info.struct_type), slot);
+                }
+                if (info.abi.memory) {
+                    args.push_back(slot);
+                    AbiMark mark;
+                    mark.index = attr_index++;
+                    mark.type = info.struct_type;
+                    mark.align = info.abi.indirect_align == 0 ? 8 : info.abi.indirect_align;
+                    prepared.abi_attrs.push_back(mark);
+                } else {
+                    for (std::size_t part = 0; part < info.abi.parts.size(); ++part) {
+                        const uint64_t offset = part < info.abi.offsets.size() ? info.abi.offsets[part] : 0;
+                        args.push_back(load_at(slot, info.abi.parts[part], offset));
+                        ++attr_index;
+                    }
+                }
+            } else {
+                llvm::Type *param = attr_index < function->getFunctionType()->getNumParams()
+                                        ? function->getFunctionType()->getParamType(attr_index)
+                                        : nullptr;
+                args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+                ++attr_index;
+            }
+            ++source;
+        }
+        remember(function, std::move(args), callee.depth, callee.elem_char, callee.struct_id, callee.elem_void,
+                 callee.elem_bool, callee.elem_bits, callee.elem_unsigned);
+        prepared.elem_float = callee.elem_float;
+        return prepared;
+    }
     std::vector<llvm::Value *> args;
     args.reserve(node.args.size());
     unsigned index = 0;
@@ -2323,6 +2927,15 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
     llvm::CallInst *inst = call.indirect != nullptr ? builder_.CreateCall(call.fn_ty, call.indirect, call.args)
                                                     : builder_.CreateCall(call.function, call.args);
     inst->setCallingConv(llvm::CallingConv::C);
+    if (!call.abi_attrs.empty()) {
+        annotate_call(inst, call.abi_attrs);
+    }
+    if (call.abi_return && call.abi_slot != nullptr && call.abi_struct != nullptr) {
+        if (!call.abi_sret) {
+            unpack_return(inst, call.abi_slot, call.abi_ret);
+        }
+        return load_object(call.abi_slot, 0, false, call.abi_struct_id, false, false, 0, false, false);
+    }
     if (call.elem_float) {
         return {inst, 0, false, -1, false, false, false, call.elem_bits >= 64 ? 64 : 32, false, -1, true};
     }
@@ -3572,6 +4185,32 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
             } else if (terminated()) {
                 return;
             } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                if (extern_struct_ret_ && extern_ret_struct_ != nullptr) {
+                    llvm::Value *value = nullptr;
+                    if (node.value) {
+                        const TypedValue got = emit_rvalue(*node.value);
+                        value = got.value;
+                    }
+                    if (value == nullptr || value->getType() != extern_ret_struct_) {
+                        value = llvm::ConstantAggregateZero::get(extern_ret_struct_);
+                    }
+                    if (!terminated()) {
+                        emit_defers_from(0);
+                    }
+                    if (terminated()) {
+                        return;
+                    }
+                    if (extern_sret_ && extern_sret_ptr_ != nullptr) {
+                        builder_.CreateStore(value, extern_sret_ptr_);
+                        builder_.CreateRetVoid();
+                        return;
+                    }
+                    const unsigned align = std::max(extern_ret_abi_.natural_align, 8u);
+                    llvm::AllocaInst *slot = aligned_slot(extern_ret_struct_, align, "ret");
+                    builder_.CreateStore(value, slot);
+                    builder_.CreateRet(pack_return(slot, extern_ret_abi_));
+                    return;
+                }
                 if (return_many_ && return_type_ != nullptr && return_type_->isStructTy()) {
                     std::vector<const Expr *> exprs;
                     if (node.value) {

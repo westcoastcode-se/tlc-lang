@@ -152,6 +152,7 @@ struct StructDecl {
     std::vector<FieldDecl> fields;
     bool exported = false;
     bool forward = false;
+    bool is_extern = false;
 };
 
 struct Enumerator {

@@ -12,6 +12,7 @@ import {
     SDL_Delay,
     SDL_Window,
     SDL_GLContextState,
+    SDL_Event,
     SDL_INIT_VIDEO,
     SDL_WINDOW_OPENGL,
     SDL_EVENT_QUIT,
@@ -77,11 +78,9 @@ func main() int {
 
     int running = 1;
     while (running != 0) {
-        // SDL_Event is 128 bytes and 8-aligned. The first field is the type.
-        u64 event[16];
-        while (SDL_PollEvent((void *)event) != 0) {
-            u32 kind = *(u32 *)event;
-            if (kind == SDL_EVENT_QUIT || kind == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event) != 0) {
+            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 running = 0;
             }
         }

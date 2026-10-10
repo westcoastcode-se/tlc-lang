@@ -1145,6 +1145,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         item.name = specs.type_name;
         item.fields = specs.fields;
         item.exported = specs.exported;
+        item.is_extern = specs.is_extern;
         TopDecl top;
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));
@@ -1170,12 +1171,13 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         }
     }
     if (specs.is_struct && !specs.struct_definition && check(TokenKind::Semicolon)) {
-        if (specs.is_typedef && !specs.type_name.empty() && specs.type_name != "invalid") {
+        if ((specs.is_typedef || specs.is_extern) && !specs.type_name.empty() && specs.type_name != "invalid") {
             StructDecl item;
             item.loc = specs.loc;
             item.name = specs.type_name;
             item.exported = specs.exported;
             item.forward = true;
+            item.is_extern = specs.is_extern;
             TopDecl top;
             top.data = std::move(item);
             unit.decls.push_back(std::move(top));

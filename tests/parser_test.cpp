@@ -360,6 +360,16 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "extern struct Pair { int a; int b; };\n"
+            "export extern struct Node;\n"
+            "func main() int { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(struct Pair extern\n");
+        EXPECT_HAS(check, parsed.dump, "(struct Node forward export extern\n");
+    }
+
+    {
         const Parsed parsed = parse_source("enum Color { Green = -1 };\nfunc main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }

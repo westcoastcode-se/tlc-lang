@@ -46,6 +46,7 @@ add_executable(tlc_tests
     tests/sema_test.cpp
     tests/pkg_test.cpp
     tests/programs_test.cpp
+    tests/abi_test.cpp
 )
 target_link_libraries(tlc_tests PRIVATE tlc_lib)
 target_compile_definitions(tlc_tests PRIVATE

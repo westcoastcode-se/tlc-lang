@@ -1923,6 +1923,39 @@ int run_sema_tests() {
     }
 
     {
+        const std::string errors = diagnose(
+            "struct Pair { int a; int b; };\n"
+            "extern func sum(p Pair) int;\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "struct must be extern");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern struct Pair { int a; int b; };\n"
+            "extern func sum(p Pair) int;\n"
+            "extern func make() Pair;\n"
+            "func main() int { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Inner { int n; };\n"
+            "extern struct Outer { Inner item; };\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "struct must be extern");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "typedef struct Pair;\n"
+            "extern struct Pair { int a; int b; };\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern struct");
+    }
+
+    {
         const std::string errors = diagnose("trait Pair { func both() (int, int); };\nfunc main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }

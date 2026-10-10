@@ -473,6 +473,9 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             if (item->exported) {
                 out += " export";
             }
+            if (item->is_extern) {
+                out += " extern";
+            }
             out += "\n";
             for (const FieldDecl &field : item->fields) {
                 append_indent(out, 2);
