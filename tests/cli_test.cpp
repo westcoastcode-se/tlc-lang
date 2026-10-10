@@ -165,7 +165,7 @@ int run_cli_tests() {
         std::error_code ec;
         const std::filesystem::path exe = std::filesystem::read_symlink("/proc/self/exe", ec);
         EXPECT(check, !ec);
-        const std::string expect = (exe.parent_path().parent_path() / "lib" / "tlc").string();
+        const std::string expect = (exe.parent_path().parent_path() / "lib" / "tlc" / "vendor").string();
         EXPECT_EQ(check, tlc::vendor_library_root(), expect);
     }
     {
@@ -214,11 +214,11 @@ int run_cli_tests() {
     TempDir progs;
     progs.path = std::filesystem::temp_directory_path() / ("tlc-vendor-prog-" + std::to_string(getpid()));
     std::filesystem::create_directories(progs.path);
-    write_at(progs.path / "answer.tlc", "import \"answer\";\nfunc main() int { return answer.answer(); }\n");
-    write_at(progs.path / "onlyso.tlc", "import \"onlyso\";\nfunc main() int { return onlyso.onlyso(); }\n");
+    write_at(progs.path / "answer.tlc", "import \"vendor/answer\";\nfunc main() int { return answer.answer(); }\n");
+    write_at(progs.path / "onlyso.tlc", "import \"vendor/onlyso\";\nfunc main() int { return onlyso.onlyso(); }\n");
     write_at(progs.path / "combo.tlc",
-             "import \"combo\";\nfunc main() int { return combo.base() + combo.bonus(); }\n");
-    write_at(progs.path / "check.tlc", "import \"answer\";\nfunc main() int { return 0; }\n");
+             "import \"vendor/combo\";\nfunc main() int { return combo.base() + combo.bonus(); }\n");
+    write_at(progs.path / "check.tlc", "import \"vendor/answer\";\nfunc main() int { return 0; }\n");
     const std::vector<std::pair<std::string, std::string>> env = {{"TLC_LIB", vendor_text}};
 
     const tlc::test::Proc answer_run =
@@ -241,9 +241,9 @@ int run_cli_tests() {
 
     TempDir shadow;
     shadow.path = std::filesystem::temp_directory_path() / ("tlc-vendor-shadow-" + std::to_string(getpid()));
-    std::filesystem::create_directories(shadow.path / "answer");
-    write_at(shadow.path / "answer/answer.tlc", "export func answer() int { return 5; }\n");
-    write_at(shadow.path / "main.tlc", "import \"answer\";\nfunc main() int { return answer.answer(); }\n");
+    std::filesystem::create_directories(shadow.path / "vendor" / "answer");
+    write_at(shadow.path / "vendor/answer/answer.tlc", "export func answer() int { return 5; }\n");
+    write_at(shadow.path / "main.tlc", "import \"vendor/answer\";\nfunc main() int { return answer.answer(); }\n");
     const tlc::test::Proc shadow_run = tlc::test::spawn({bin, "--run", (shadow.path / "main.tlc").string()}, env);
     EXPECT(check, shadow_run.code == 5);
     EXPECT(check, shadow_run.err.empty());

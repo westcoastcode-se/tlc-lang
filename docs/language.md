@@ -29,7 +29,7 @@ tlc --help
 
 `-l`, `-L`, `-Bstatic`, `-Bdynamic`, `-static`, and `-Wl` are passed to `cc` after the object file, in the order written. A path that ends in `.a`, `.so`, or `.dylib`, and a versioned shared library such as `libfoo.so.1`, is a library file and is passed through the same way. `-Bstatic` stays in effect until `-Bdynamic`, so put `-Bdynamic` after the static libraries when the C library should stay shared. `--check`, `--emit-llvm`, and `--emit-obj` accept the flags and do not link.
 
-A vendor library directory is searched after the entry directory and every `-P` root. Set `TLC_LIB` to choose it. When that variable is unset, the directory is `lib/tlc` next to the compiler prefix: `bin/tlc` and `build/tlc` both use `<prefix>/lib/tlc`.
+Vendor packages are imported as `vendor/<name>`. Set `TLC_LIB` to choose their directory. When that variable is unset, the directory is `lib/tlc/vendor` next to the compiler prefix: `bin/tlc` and `build/tlc` both use `<prefix>/lib/tlc/vendor`. The entry directory and each `-P` root are searched first, using the full path `vendor/<name>`.
 
 The file on the command line is the entry. Its `main` is the program's `main`. A symbol is named `qualifier.name`. In a package with more than one file, a `static` symbol is named `qualifier.filename.name`, where `filename` is the source file without `.tlc`. `extern` keeps the C name.
 
@@ -80,20 +80,20 @@ The first form binds the package qualifier as a name, so the call is `math.add(4
 The path is a string and names a directory. An empty path and an absolute path are rejected. A path that is not a directory, including one that ends in `.tlc`, produces `unknown package`.
 
 - `./` and `../` are resolved relative to the importing file and must name a directory.
-- Every other path is searched in the entry file's directory, then in each `-P` root, then in the vendor library directory. The first directory that contains a `.tlc` file wins.
+- Every other path is searched in the entry file's directory, then in each `-P` root. A path `vendor/<name>` that is not found there is then loaded from the vendor directory. The first directory that contains a `.tlc` file wins.
 - A directory with no `.tlc` file produces `unknown package`.
 
-The vendor directory holds packages that ship with the compiler, such as a binding to a C library. `import "sdl3"` loads `<vendor>/sdl3` when no earlier root has that package.
+The vendor directory holds packages that ship with the compiler, such as a binding to a C library. `import "vendor/sdl3"` loads `<vendor>/sdl3`.
 
 ```text
-lib/tlc/sdl3/
+lib/tlc/vendor/sdl3/
     video.tlc
     libSDL3.a
     libextra.so
     link
 ```
 
-`examples/triangle` is a program that imports `sdl3` and `gl` from this directory. Each of those packages names a system library in its `link` file.
+`examples/triangle` is a program that imports `vendor/sdl3` and `vendor/gl`. Each of those packages names a system library in its `link` file.
 
 Every `.tlc` file in that package is compiled with the program. A static archive (`.a`) and a shared library (`.so`, `.dylib`, or a versioned name such as `libfoo.so.1`) in the same directory is linked into the executable. When one library name has both an archive and a shared library, the archive is linked. Shared libraries are found through an rpath that points at the package directory. The same package imported from several files is linked once.
 

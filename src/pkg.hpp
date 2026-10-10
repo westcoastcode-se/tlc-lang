@@ -40,8 +40,9 @@ struct PackageGraph {
 struct ResolveRequest {
     std::string entry;
     std::vector<std::string> package_paths;
-    // Searched after `package_paths`. A package loaded from this directory
-    // contributes its libraries to `PackageGraph::link_args`.
+    // Directory of vendor packages. An import `vendor/<name>` loads
+    // `<vendor_root>/<name>`. A package loaded from here contributes its
+    // libraries to `PackageGraph::link_args`.
     std::string vendor_root;
 };
 

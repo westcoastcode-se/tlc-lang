@@ -45,9 +45,9 @@ std::string help_text() {
         "  -static         link all libraries statically\n"
         "  -Wl,<opt>       pass <opt> to the linker\n"
         "\n"
-        "Vendor packages are searched in lib/tlc next to the compiler prefix, or in TLC_LIB.\n"
-        "import \"name\" loads that package. Static and shared libraries beside its .tlc files\n"
-        "are linked. A file named link in the package adds further linker arguments.\n";
+        "Vendor packages live in lib/tlc/vendor next to the compiler prefix, or in TLC_LIB.\n"
+        "import \"vendor/name\" loads that package. Static and shared libraries beside its\n"
+        ".tlc files are linked. A file named link in the package adds further linker arguments.\n";
 }
 
 std::string vendor_library_root() {
@@ -61,7 +61,7 @@ std::string vendor_library_root() {
     if (ec) {
         return {};
     }
-    return (exe.parent_path().parent_path() / "lib" / "tlc").string();
+    return (exe.parent_path().parent_path() / "lib" / "tlc" / "vendor").string();
 }
 
 namespace {

@@ -293,6 +293,23 @@ class Resolver {
             }
             return hit;
         }
+        if (!vendor_root_.empty() && (spec == "vendor" || spec.starts_with("vendor/"))) {
+            Hit hit;
+            if (spec == "vendor") {
+                if (!source_files(vendor_root_).empty()) {
+                    hit = {HitKind::Found, vendor_root_};
+                }
+            } else {
+                const std::string_view inner = spec.substr(std::string_view("vendor/").size());
+                hit = find_in_base(vendor_root_, inner);
+                if (hit.kind == HitKind::Found && !is_under(hit.path, vendor_root_)) {
+                    hit = {};
+                }
+            }
+            if (hit.kind == HitKind::Found) {
+                return hit;
+            }
+        }
         diags_.error(import.loc, "unknown package");
         return {HitKind::Failed, {}};
     }
@@ -374,7 +391,6 @@ class Resolver {
             return;
         }
         vendor_root_ = std::move(canonical);
-        roots_.push_back(vendor_root_);
     }
 
     void append_token(const fs::path &dir, const std::string &token) {

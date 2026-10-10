@@ -21,7 +21,7 @@ import {
     SDL_GL_CONTEXT_MINOR_VERSION,
     SDL_GL_CONTEXT_PROFILE_MASK,
     SDL_GL_CONTEXT_PROFILE_COMPATIBILITY,
-} from "sdl3";
+} from "vendor/sdl3";
 
 import {
     glViewport,
@@ -33,7 +33,7 @@ import {
     glVertex2f,
     GL_TRIANGLES,
     GL_COLOR_BUFFER_BIT,
-} from "gl";
+} from "vendor/gl";
 
 extern func printf(fmt const char *, ...) int;
 

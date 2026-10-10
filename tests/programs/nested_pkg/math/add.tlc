@@ -1,0 +1,7 @@
+package math;
+
+import { width } from "./geom";
+
+export func add(a int, b int) int {
+    return a + b + width();
+}

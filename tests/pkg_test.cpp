@@ -323,7 +323,7 @@ int run_pkg_tests() {
         TempTree vendor;
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"answer\";\nimport \"onlyso\";\nfunc main() int { return 0; }\n");
+        entry.write("main.tlc", "import \"vendor/answer\";\nimport \"vendor/onlyso\";\nfunc main() int { return 0; }\n");
         vendor.write("answer/answer.tlc", "export extern func answer() int;\n");
         vendor.write("answer/libanswer.so", "");
         vendor.write("answer/libanswer.a", "");
@@ -351,7 +351,20 @@ int run_pkg_tests() {
         TempTree vendor;
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"listed\";\nfunc main() int { return 0; }\n");
+        entry.write("main.tlc", "import \"answer\";\nfunc main() int { return 0; }\n");
+        vendor.write("answer/answer.tlc", "export func answer() int { return 1; }\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
+        EXPECT(check, !resolved.ok);
+        EXPECT_HAS(check, resolved.errors, "unknown package");
+        EXPECT(check, resolved.graph.link_args.empty());
+    }
+
+    {
+        TempTree entry;
+        TempTree vendor;
+        EXPECT(check, entry.ok());
+        EXPECT(check, vendor.ok());
+        entry.write("main.tlc", "import \"vendor/listed\";\nfunc main() int { return 0; }\n");
         vendor.write("listed/listed.tlc", "export extern func listed() int;\n");
         vendor.write("listed/liblisted.a", "");
         vendor.write("listed/link", "# extra\n-lpthread\n../outside.a\n-L libs\n-Bstatic\n-Wl,-rpath,run\n");
@@ -373,9 +386,9 @@ int run_pkg_tests() {
         TempTree vendor;
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
-        entry.write("math/add.tlc", "export func add(a int, b int) int { return a + b; }\n");
-        entry.write("math/libmath.a", "");
+        entry.write("main.tlc", "import \"vendor/math\";\nfunc main() int { return 0; }\n");
+        entry.write("vendor/math/add.tlc", "export func add(a int, b int) int { return a + b; }\n");
+        entry.write("vendor/math/libmath.a", "");
         vendor.write("math/add.tlc", "export extern func add(a int, b int) int;\n");
         vendor.write("math/libmath.a", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
@@ -395,8 +408,8 @@ int run_pkg_tests() {
         EXPECT(check, entry.ok());
         EXPECT(check, extra.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
-        extra.write("math/add.tlc", "export func add(a int, b int) int { return 1; }\n");
+        entry.write("main.tlc", "import \"vendor/math\";\nfunc main() int { return 0; }\n");
+        extra.write("vendor/math/add.tlc", "export func add(a int, b int) int { return 1; }\n");
         vendor.write("math/add.tlc", "export extern func add(a int, b int) int;\n");
         vendor.write("math/libmath.a", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {extra.directory()}, vendor.directory());
@@ -415,8 +428,8 @@ int run_pkg_tests() {
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
         entry.write("main.tlc", "import \"a\";\nimport \"b\";\nfunc main() int { return 0; }\n");
-        entry.write("a/a.tlc", "import \"answer\";\nint from_a;\n");
-        entry.write("b/b.tlc", "import \"answer\";\nint from_b;\n");
+        entry.write("a/a.tlc", "import \"vendor/answer\";\nint from_a;\n");
+        entry.write("b/b.tlc", "import \"vendor/answer\";\nint from_b;\n");
         vendor.write("answer/answer.tlc", "export extern func answer() int;\n");
         vendor.write("answer/libanswer.a", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
@@ -428,7 +441,7 @@ int run_pkg_tests() {
     {
         TempTree entry;
         EXPECT(check, entry.ok());
-        entry.write("main.tlc", "import \"missing\";\nfunc main() int { return 0; }\n");
+        entry.write("main.tlc", "import \"vendor/missing\";\nfunc main() int { return 0; }\n");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, entry.file("no-such-vendor"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "unknown package");

@@ -1,0 +1,9 @@
+import "math";
+import { width } from "math/geom";
+
+func main() int {
+    if (width() != 2) {
+        return 1;
+    }
+    return math.add(20, 20);
+}

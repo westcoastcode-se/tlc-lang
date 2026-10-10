@@ -41,8 +41,9 @@ struct CompileOutput {
 std::string version_text();
 std::string help_text();
 // Vendor package directory. `TLC_LIB` when that variable is set. Otherwise
-// `<prefix>/lib/tlc`, where prefix is the parent of the directory that holds
-// this binary (`bin/tlc` and `build/tlc` both land on `<prefix>/lib/tlc`).
+// `<prefix>/lib/tlc/vendor`, where prefix is the parent of the directory that
+// holds this binary (`bin/tlc` and `build/tlc` both land on `<prefix>/lib/tlc/vendor`).
+// Import a package there as `vendor/<name>`.
 std::string vendor_library_root();
 Options parse_args(int argc, char **argv);
 CompileOutput compile_source(const Options &opt);
