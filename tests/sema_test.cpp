@@ -676,7 +676,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "extern(abi=\"c\") enum Flag { On = 1 }\n"
             "func take(x u32) int { return 0; }\n"
-            "func Flag::on(this self Flag) int { return 1; }\n"
+            "func Flag::on(self this) int { return 1; }\n"
             "func main() int {\n"
             "  n := take(Flag.On);\n"
             "  return n + Flag.On.on();\n"
@@ -1071,10 +1071,10 @@ int run_sema_tests() {
             "struct Point { x int; y int; };\n"
             "struct Pair { a int; b int; };\n"
             "func sum(n int) int { return n; }\n"
-            "func Point::sum(this self Point, extra int) int { return self.x + self.y + extra; }\n"
-            "func Pair::sum(this self Pair, extra int) int { return self.a + self.b + extra; }\n"
-            "func Point::value(this self Point) int;\n"
-            "func Point::value(this self Point) int { return self.x; }\n"
+            "func Point::sum(self this, extra int) int { return self.x + self.y + extra; }\n"
+            "func Pair::sum(self this, extra int) int { return self.a + self.b + extra; }\n"
+            "func Point::value(self this) int;\n"
+            "func Point::value(self this) int { return self.x; }\n"
             "func main() int {\n"
             "  var p Point;\n"
             "  var q Pair;\n"
@@ -1090,7 +1090,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
-            "func Point::sum(this self Point, extra int) int { return self.x + extra; }\n"
+            "func Point::sum(self this, extra int) int { return self.x + extra; }\n"
             "func main() int {\n"
             "  var p Point;\n"
             "  p.x = 1;\n"
@@ -1102,7 +1102,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
-            "func Point::sum(this self Point, extra int) int { return self.x + extra; }\n"
+            "func Point::sum(self this, extra int) int { return self.x + extra; }\n"
             "func main() int {\n"
             "  var p Point;\n"
             "  p.x = 1;\n"
@@ -1114,7 +1114,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
-            "func Point::sum(this self Point, extra int) int { return self.x + extra; }\n"
+            "func Point::sum(self this, extra int) int { return self.x + extra; }\n"
             "func main() int {\n"
             "  var p Point;\n"
             "  p.x = 1;\n"
@@ -1126,8 +1126,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
-            "func Point::sum(this self Point) int { return self.x; }\n"
-            "func Point::sum(this self Point) int { return self.x; }\n"
+            "func Point::sum(self this) int { return self.x; }\n"
+            "func Point::sum(self this) int { return self.x; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "redefinition");
     }
@@ -1136,14 +1136,14 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
             "struct Pair { a int; };\n"
-            "func Point::sum(this self Pair) int { return 0; }\n"
+            "func Point::sum(self Pair) int { return 0; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
         const std::string errors = diagnose(
-            "func Missing::get(this self Missing) int { return 0; }\n"
+            "func Missing::get(self this) int { return 0; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "undeclared identifier");
     }
@@ -1151,7 +1151,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
-            "func Point::sum(this self Point) int { return self.x; }\n"
+            "func Point::sum(self this) int { return self.x; }\n"
             "func main() int {\n"
             "  var p Point;\n"
             "  p.x = 1;\n"
@@ -1163,8 +1163,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; y int; };\n"
-            "func Point::sum(this self Point) int { return self.x + self.y; }\n"
-            "func Point::add(this self Point *, dx int, dy int) void {\n"
+            "func Point::sum(self this) int { return self.x + self.y; }\n"
+            "func Point::add(self this *, dx int, dy int) void {\n"
             "  self.x = self.x + dx;\n"
             "  self.y = self.y + dy;\n"
             "}\n"
@@ -1191,7 +1191,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
-            "func Point::add(this self Point *, dx int) void { self.x = self.x + dx; }\n"
+            "func Point::add(self this *, dx int) void { self.x = self.x + dx; }\n"
             "func make() Point {\n"
             "  var p Point;\n"
             "  p.x = 1;\n"
@@ -1243,13 +1243,13 @@ int run_sema_tests() {
             "};\n"
             "struct Rect { w int; h int; };\n"
             "struct Box { n int; };\n"
-            "func Rect::area(this self Rect) int { return self.w * self.h; }\n"
-            "func Rect::grow(this self Rect *, n int) void {\n"
+            "func Rect::area(self this) int { return self.w * self.h; }\n"
+            "func Rect::grow(self this *, n int) void {\n"
             "  self.w = self.w + n;\n"
             "  self.h = self.h + n;\n"
             "}\n"
-            "func Box::area(this self Box) int { return self.n; }\n"
-            "func Box::grow(this self Box *, n int) void { self.n = self.n + n; }\n"
+            "func Box::area(self this) int { return self.n; }\n"
+            "func Box::grow(self this *, n int) void { self.n = self.n + n; }\n"
             "func measure(s Shape *) int { return s.area(); }\n"
             "func apply(s Shape *, n int) int {\n"
             "  s.grow(n);\n"
@@ -1294,7 +1294,7 @@ int run_sema_tests() {
             "  func area() int;\n"
             "};\n"
             "struct Rect { w int; };\n"
-            "func Rect::area(this self Rect *) void { self.w = 1; }\n"
+            "func Rect::area(self this *) void { self.w = 1; }\n"
             "func use(s Shape) int { return 0; }\n"
             "func main() int {\n"
             "  var r Rect;\n"
@@ -1310,7 +1310,7 @@ int run_sema_tests() {
             "  func grow(n int) void;\n"
             "};\n"
             "struct Rect { w int; };\n"
-            "func Rect::grow(this self Rect *, n int) void { self.w = self.w + n; }\n"
+            "func Rect::grow(self this *, n int) void { self.w = self.w + n; }\n"
             "func use(s Shape) void { s.grow(1); }\n"
             "func main() int {\n"
             "  var r Rect;\n"
@@ -1363,7 +1363,7 @@ int run_sema_tests() {
             "  func area() int;\n"
             "};\n"
             "struct Rect { w int; };\n"
-            "func Rect::area(this self Rect) int { return self.w; }\n"
+            "func Rect::area(self this) int { return self.w; }\n"
             "func use(s Shape) int { return s.area; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "undeclared identifier");
@@ -1375,7 +1375,7 @@ int run_sema_tests() {
             "  func area() int;\n"
             "};\n"
             "struct Rect { w int; };\n"
-            "func Rect::area(this self Rect) int { return self.w; }\n"
+            "func Rect::area(self this) int { return self.w; }\n"
             "func apply(s Shape *) int { return s.area(); }\n"
             "func main() int {\n"
             "  var r Rect;\n"
@@ -1391,7 +1391,7 @@ int run_sema_tests() {
             "  func area() int;\n"
             "};\n"
             "struct Rect { w int; };\n"
-            "func Rect::area(this self Rect) int { return self.w; }\n"
+            "func Rect::area(self this) int { return self.w; }\n"
             "export func use(s Shape) int;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
@@ -1835,7 +1835,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
             "func main() int {\n"
-            "  func Point::get(this self Point) int { return self.x; }\n"
+            "  func Point::get(self this) int { return self.x; }\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "not supported yet");
@@ -1845,8 +1845,8 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func note(n int) void { }\n"
             "struct Box { v int; };\n"
-            "func Box::put(this self Box, n int) void { }\n"
-            "func Box::touch(this self Box *) void { }\n"
+            "func Box::put(self this, n int) void { }\n"
+            "func Box::touch(self this *) void { }\n"
             "func main() int {\n"
             "  func inner(n int) void { }\n"
             "  var box Box;\n"
@@ -1904,7 +1904,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "trait Shape { func area() int; };\n"
             "struct Rect { w int; };\n"
-            "func Rect::area(this self Rect) int { return self.w; }\n"
+            "func Rect::area(self this) int { return self.w; }\n"
             "func use(s Shape) int {\n"
             "  defer s.area();\n"
             "  return 0;\n"
@@ -1920,7 +1920,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Box { v int; };\n"
-            "func Box::split(this self Box) (int, int) { return self.v, self.v + 1; }\n"
+            "func Box::split(self this) (int, int) { return self.v, self.v + 1; }\n"
             "func add(x int, y int) (int, int) { return x + y, x; }\n"
             "func main() int {\n"
             "  func pair(n int) (int, int) { return n + 2, n; }\n"
@@ -2495,7 +2495,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func dosomething(op func (int, int) int) int { return op(20, 22); }\n"
             "struct Box { n int; };\n"
-            "func Box::map(this self Box, op func (int) int) int { return op(self.n); }\n"
+            "func Box::map(self this, op func (int) int) int { return op(self.n); }\n"
             "func note(p func (int) void) int { p(1); return 1; }\n"
             "func main() int {\n"
             "  var full = dosomething(func (a int, b int) int { return a + b; });\n"

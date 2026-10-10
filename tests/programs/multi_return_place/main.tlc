@@ -6,7 +6,7 @@ struct Outer {
     in Inner;
 };
 
-func Inner::split(this self Inner) (int, int) {
+func Inner::split(self this) (int, int) {
     return self.v, self.v + 1;
 }
 

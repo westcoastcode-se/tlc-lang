@@ -14,7 +14,7 @@ func take_wide(x u64) int {
     return 0;
 }
 
-func Flag::bias(this self Flag) int {
+func Flag::bias(self this) int {
     if (self == Flag.B) {
         return 1;
     }

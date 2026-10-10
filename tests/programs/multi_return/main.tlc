@@ -2,7 +2,7 @@ struct Box {
     v int;
 };
 
-func Box::split(this self Box) (int, int) {
+func Box::split(self this) (int, int) {
     return self.v, self.v + 1;
 }
 

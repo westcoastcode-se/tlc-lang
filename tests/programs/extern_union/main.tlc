@@ -8,7 +8,7 @@ extern(abi="c") union Word {
     raw [8]char;
 }
 
-func Num::value(this self Num) int {
+func Num::value(self this) int {
     return self.m;
 }
 

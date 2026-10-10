@@ -116,7 +116,8 @@ class Parser {
     PlacedType parse_placed_type(bool allow_const, bool allow_array);
     // `var` and field types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
     PlacedType parse_go_type();
-    std::vector<Param> parse_params(bool allow_const, bool &variadic, bool method = false);
+    // `method_struct` is empty for a free function. A method receiver is `name this` or `name this *`.
+    std::vector<Param> parse_params(bool allow_const, bool &variadic, const std::string &method_struct = {});
     void take_result(FunctionDecl &fn, const PlacedType &type);
     void parse_results(FunctionDecl &fn);
     FunctionDecl parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body);

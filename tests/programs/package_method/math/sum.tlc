@@ -1,5 +1,5 @@
 package math;
 
-func Point::sum(this self Point) int {
+func Point::sum(self this) int {
     return self.x + self.y;
 }

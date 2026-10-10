@@ -9,14 +9,14 @@ enum Tiny i8 {
     B,
 };
 
-func Color::code(this self Color) int {
+func Color::code(self this) int {
     if (self == Color.Blue) {
         return 40;
     }
     return 0;
 }
 
-func Tiny::id(this self Tiny) int {
+func Tiny::id(self this) int {
     if (self == Tiny.B) {
         return 2;
     }

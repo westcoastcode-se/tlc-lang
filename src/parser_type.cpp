@@ -695,53 +695,35 @@ Parser::PlacedType Parser::parse_go_type() {
     return type;
 }
 
-std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, bool method) {
+std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const std::string &method_struct) {
     std::vector<Param> params;
     variadic = false;
     expect(TokenKind::LParen, "expected '('");
-    auto type_starts = [&](TokenKind kind) {
-        return kind == TokenKind::Identifier || is_type_keyword(kind);
-    };
+    const bool method = !method_struct.empty();
     auto receiver_form = [&]() {
-        if (!check(TokenKind::Identifier) || peek().text != "this" || peek(1).kind != TokenKind::Identifier) {
+        if (!check(TokenKind::Identifier) || peek(1).kind != TokenKind::Identifier || peek(1).text != "this") {
             return false;
         }
-        return type_starts(peek(2).kind);
+        std::size_t ahead = 2;
+        while (peek(ahead).kind == TokenKind::Star) {
+            ++ahead;
+        }
+        const TokenKind after = peek(ahead).kind;
+        return after == TokenKind::Comma || after == TokenKind::RParen || after == TokenKind::Ellipsis;
     };
     auto take_receiver = [&](bool as_receiver) {
         Param param;
         param.loc = peek().loc;
+        param.name = peek().text;
         ++pos_;
-        if (check(TokenKind::Identifier)) {
-            param.name = peek().text;
-            param.loc = peek().loc;
-            ++pos_;
-        } else {
-            error_here("expected an identifier");
+        param.loc = peek().loc;
+        ++pos_;
+        while (eat(TokenKind::Star)) {
+            ++param.indirections;
         }
-        const PlacedType type = parse_placed_type(allow_const, false);
-        param.type_name = type.type_name;
-        param.type_package = type.type_package;
-        param.is_enum = type.is_enum;
-        param.is_const = type.is_const;
-        param.indirections = type.indirections;
-        param.is_array = type.is_array;
-        param.array_len = type.array_len;
-        param.is_fn_ptr = type.is_fn_ptr;
-        param.ret_indirections = type.ret_indirections;
-        param.fn_params = type.fn_params;
-        param.fn_variadic = type.fn_variadic;
-        param.fn_results = type.fn_results;
+        param.type_name = method_struct;
+        param.is_struct = true;
         param.is_receiver = as_receiver;
-        // The receiver names the struct tag. The signature does not write `struct`.
-        if (!type.is_enum && type.type_package.empty() && !is_builtin_type_name(type.type_name)) {
-            param.is_struct = true;
-        } else {
-            param.is_struct = type.is_struct;
-        }
-        if (type.struct_definition || type.enum_definition) {
-            diags_.error(type.loc, "not supported yet");
-        }
         if (param.indirections > 1) {
             diags_.error(param.loc, "not supported yet");
         }
@@ -888,7 +870,7 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     } else {
         error_here("expected an identifier");
     }
-    fn.params = parse_params(extern_c, fn.variadic, !fn.method_struct.empty());
+    fn.params = parse_params(extern_c, fn.variadic, fn.method_struct);
     parse_results(fn);
     if (check(TokenKind::LBrace)) {
         if (!allow_body) {

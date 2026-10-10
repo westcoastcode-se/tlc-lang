@@ -9,11 +9,11 @@ struct Box {
     w int;
 };
 
-func Box::put(this self Box, n int) void {
+func Box::put(self this, n int) void {
     acc = acc * 3 + self.v + n;
 }
 
-func Box::touch(this self Box *) void {
+func Box::touch(self this *) void {
     acc = acc + self.w;
 }
 

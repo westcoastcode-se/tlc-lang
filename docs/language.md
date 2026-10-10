@@ -513,7 +513,7 @@ Inside the package the type is written `Point`. `import { Point } from "geom"` m
 
 ## Methods
 
-A method belongs to a struct or an enum in the same package. The first parameter is the receiver. It is written with `this`, then the name, then the type. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value.
+A method belongs to a struct or an enum in the same package. The first parameter is the receiver. It is the name, then `this`: `self this`. A pointer receiver is `self this *`. The type is the method's struct or enum, so the name is not written again. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value.
 
 The call omits the receiver. This program returns 42.
 
@@ -523,11 +523,11 @@ struct Point {
     y int;
 };
 
-func Point::sum(this self Point, extra int) int {
+func Point::sum(self this, extra int) int {
     return self.x + self.y + extra;
 }
 
-func Point::add(this self Point *, dx int, dy int) void {
+func Point::add(self this *, dx int, dy int) void {
     self.x = self.x + dx;
     self.y = self.y + dy;
 }
@@ -543,7 +543,7 @@ func main() int {
 
 `add` takes a pointer, so `p` must be an lvalue. The compiler passes `&p`. `sum` takes a value. A call on a `Point *` loads the struct. A pointer method on a temporary struct value is `not an lvalue`.
 
-The receiver may have one star. `this self Point **` is rejected.
+The receiver may have one star. `self this **` is rejected.
 
 The same method name may exist on different structs and as a free function. The call `p.sum(...)` selects the struct's method. A free call `sum(...)` selects the function.
 
@@ -564,11 +564,11 @@ struct Rect {
     h int;
 };
 
-func Rect::area(this self Rect) int {
+func Rect::area(self this) int {
     return self.w * self.h;
 }
 
-func Rect::grow(this self Rect *, n int) void {
+func Rect::grow(self this *, n int) void {
     self.w = self.w + n;
     self.h = self.h + n;
 }
@@ -648,7 +648,7 @@ extern(abi="c") enum Flag {
     On = 1,
 }
 
-func Flag::enabled(this self Flag) int {
+func Flag::enabled(self this) int {
     if (self == Flag.On) {
         return 1;
     }
@@ -670,7 +670,7 @@ func main() int {
 A method uses the same form as a struct method. `this` is the enum value.
 
 ```c
-func Color::code(this self Color) int {
+func Color::code(self this) int {
     if (self == Color.Blue) {
         return 41;
     }

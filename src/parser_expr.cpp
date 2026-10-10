@@ -539,7 +539,7 @@ std::unique_ptr<Expr> Parser::parse_anon_function() {
     if (!check(TokenKind::LParen)) {
         error_here("expected '('");
     }
-    fn.params = parse_params(false, fn.variadic, false);
+    fn.params = parse_params(false, fn.variadic);
     if (check(TokenKind::LBrace)) {
         fn.return_type = "void";
         ResultSlot slot;

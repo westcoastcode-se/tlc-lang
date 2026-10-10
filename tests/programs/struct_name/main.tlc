@@ -15,7 +15,7 @@ func make(a Point) Point {
     return p;
 }
 
-func Point::sum(this self Point, extra int) int {
+func Point::sum(self this, extra int) int {
     return self.x + self.y + extra;
 }
 

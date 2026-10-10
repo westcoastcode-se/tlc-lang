@@ -596,7 +596,7 @@ int run_parser_tests() {
             "struct Point {\n"
             "  x int;\n"
             "};\n"
-            "func Point::sum(this self Point, extra int) int {\n"
+            "func Point::sum(self this, extra int) int {\n"
             "  return self.x + extra;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
@@ -605,7 +605,7 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("func f(this self Point) int { return 0; }\n");
+        const Parsed parsed = parse_source("func f(self this) int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "type mismatch");
     }
 
@@ -621,7 +621,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "func Point::add(this self Point *, dx int) void {\n"
+            "func Point::add(self this *, dx int) void {\n"
             "  return;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
@@ -629,7 +629,7 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("func Point::add(this self Point **) void { return; }\n");
+        const Parsed parsed = parse_source("func Point::add(self this **) void { return; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -653,7 +653,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "trait Shape {\n"
-            "  func area(this self Shape) int { return 1; }\n"
+            "  func area(self this) int { return 1; }\n"
             "};\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
@@ -661,7 +661,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "trait Shape {\n"
-            "  func grow(this self Shape **) void;\n"
+            "  func grow(self this **) void;\n"
             "};\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
@@ -727,7 +727,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "struct Point { x int; };\n"
-            "func Point::method(this self Point, a int, b int, c int) void {\n"
+            "func Point::method(self this, a int, b int, c int) void {\n"
             "}\n"
             "func main() int {\n"
             "  var myval Point;\n"
@@ -778,7 +778,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "struct Box { v int; };\n"
-            "func Box::both(this self Box *, p math.Point *) (int, Box*, math.Point, ulong) {\n"
+            "func Box::both(self this *, p math.Point *) (int, Box*, math.Point, ulong) {\n"
             "  return self.v, self, p, 1;\n"
             "}\n"
             "func id(n int) (int) { return n; }\n"
