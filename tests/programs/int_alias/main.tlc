@@ -15,29 +15,29 @@ func main() int {
     if (sizeof(i64) != 8 || sizeof(u64) != 8) {
         return 4;
     }
-    i8 s8 = -1;
+    var s8 i8 = -1;
     if (s8 != -1) {
         return 5;
     }
-    u8 u = 200;
+    var u u8 = 200;
     if (u != 200) {
         return 6;
     }
-    i16 s16 = -2;
+    var s16 i16 = -2;
     if (s16 != -2) {
         return 7;
     }
-    u32 n = 0;
+    var n u32 = 0;
     n = n - 1;
     if (n < 1) {
         return 8;
     }
-    i64 wide = 100000;
+    var wide i64 = 100000;
     wide = wide * 100000;
     if (wide / 100000 / 100000 != 1) {
         return 9;
     }
-    int x = 40;
-    u64 extra = 2;
+    var x int = 40;
+    var extra u64 = 2;
     return read32(&x) + extra;
 }

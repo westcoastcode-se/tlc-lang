@@ -1,10 +1,10 @@
 func main() int {
-    char c;
-    short s;
-    int n;
-    unsigned int u;
-    unsigned int u2;
-    int s2;
+    var c char;
+    var s short;
+    var n int;
+    var u unsigned int;
+    var u2 unsigned int;
+    var s2 int;
     c = 20;
     s = 20;
     n = 2;

@@ -6,8 +6,8 @@ struct Node {
 };
 
 func main() int {
-    Node tail;
-    Node head;
+    var tail Node;
+    var head Node;
     tail.n = 2;
     tail.next = 0;
     head.n = 40;

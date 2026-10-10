@@ -9,7 +9,7 @@ struct Pair {
 };
 
 func make(x int, y int) Point {
-    Point p;
+    var p Point;
     p.x = x;
     p.y = y;
     return p;
@@ -28,7 +28,7 @@ func sum(n int) int {
 }
 
 func main() int {
-    Pair q;
+    var q Pair;
     q.a = 1;
     q.b = 1;
     return make(10, 10).sum(2) + q.sum(0) + sum(18);

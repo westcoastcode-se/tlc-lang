@@ -120,6 +120,11 @@ class Parser {
     std::unique_ptr<Stmt> parse_case();
     std::unique_ptr<Stmt> parse_return();
     std::unique_ptr<Stmt> parse_bind(bool is_var);
+    bool var_is_bind() const;
+    std::unique_ptr<Stmt> parse_var_or_bind();
+    VarDecl parse_typed_var(bool exported, bool is_static, bool is_extern);
+    void parse_inferred_global(TranslationUnit &unit, bool is_static);
+    void reject_c_var(SourceLoc loc);
 
     std::unique_ptr<Expr> parse_expr();
     std::unique_ptr<Expr> parse_assignment();

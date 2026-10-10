@@ -28,13 +28,13 @@ func apply(p func (func (i32) i32) i32, f func (i32) i32) i32 {
 
 typedef func (i32, i32) i32 BinOp;
 
-func (i32, i32) i32 saved;
+var saved func (i32, i32) i32;
 
 func main() i32 {
-    func (i32, i32) i32 fp;
+    var fp func (i32, i32) i32;
     fp = add;
     saved = fp;
-    BinOp op = saved;
+    var op BinOp = saved;
     if (op(1, 1) != 2) {
         return 1;
     }

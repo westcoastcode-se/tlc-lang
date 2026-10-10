@@ -3,11 +3,11 @@ func add4(p int *) int {
 }
 
 func main() int {
-    int a[4];
+    var a int[4];
     a[0] = 10;
     a[1] = 20;
     a[2] = 7;
     a[3] = 5;
-    int *q = a;
+    var q int * = a;
     return add4(a) + q[0] - a[0];
 }

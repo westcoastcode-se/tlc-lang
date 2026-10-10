@@ -11,7 +11,7 @@ func Inner::split(this self Inner) (int, int) {
 }
 
 func make() Inner {
-    Inner value;
+    var value Inner;
     value.v = 4;
     return value;
 }
@@ -21,7 +21,7 @@ func step(n int) (int, int) {
 }
 
 func main() int {
-    Outer o;
+    var o Outer;
     o.in.v = 10;
     a, b := o.in.split();
     if (a != 10) {
@@ -37,7 +37,7 @@ func main() int {
     if (d != 5) {
         return 4;
     }
-    Inner boxes[1];
+    var boxes Inner[1];
     boxes[0].v = 1;
     e, f := boxes[0].split();
     if (e != 1) {
@@ -46,7 +46,7 @@ func main() int {
     if (f != 2) {
         return 6;
     }
-    Inner *p;
+    var p Inner *;
     p = &boxes[0];
     g, h := (*p).split();
     if (g != 1) {
@@ -55,14 +55,14 @@ func main() int {
     if (h != 2) {
         return 8;
     }
-    int acc = 0;
+    var acc int = 0;
     for (k, n := step(2); k < 6; k = k + 1) {
         acc = acc + n;
     }
     if (acc != 6) {
         return 9;
     }
-    int seen = 0;
+    var seen int = 0;
     for (var x, y = step(0); x < 2; x = x + 1) {
         seen = seen + 1;
         if (y != 0) {

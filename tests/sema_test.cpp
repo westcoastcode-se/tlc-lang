@@ -115,10 +115,10 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "int acc;\n"
+            "var acc int;\n"
             "func add(a int, b int) int;\n"
             "func main() int {\n"
-            "  int n = add(1, 2);\n"
+            "  var n int = add(1, 2);\n"
             "  while (n) {\n"
             "    acc = acc + n;\n"
             "    n = n - 1;\n"
@@ -145,7 +145,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() int {\n"
             "  return x;\n"
-            "  int x;\n"
+            "  var x int;\n"
             "  return x;\n"
             "}\n");
         EXPECT_HAS(check, errors, "undeclared identifier");
@@ -154,8 +154,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int x;\n"
-            "  int x;\n"
+            "  var x int;\n"
+            "  var x int;\n"
             "  return x;\n"
             "}\n");
         EXPECT_HAS(check, errors, "redefinition");
@@ -189,7 +189,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  for (int i = 0; i < 1; i = i + 1) {}\n"
+            "  for (var i int = 0; i < 1; i = i + 1) {}\n"
             "  return i;\n"
             "}\n");
         EXPECT_HAS(check, errors, "undeclared identifier");
@@ -198,7 +198,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main(n int) int {\n"
-            "  int n;\n"
+            "  var n int;\n"
             "  return n;\n"
             "}\n");
         EXPECT_HAS(check, errors, "redefinition");
@@ -218,7 +218,7 @@ int run_sema_tests() {
              "  return math.add(math.base, 2);\n"
              "}\n"},
             {"math.tlc",
-             "export int base;\n"
+             "export var base int;\n"
              "export func add(a int, b int) int { return a + b; }\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -314,7 +314,7 @@ int run_sema_tests() {
         const std::string errors = diagnose_files({
             {"main.tlc",
              "import { add } from \"math\";\n"
-             "int add;\n"
+             "var add int;\n"
              "func main() int { return add; }\n"},
             {"math.tlc", "export func add(a int, b int) int { return a + b; }\n"},
         });
@@ -324,9 +324,9 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int n = 7;\n"
-            "  int *p = 0;\n"
-            "  int **pp = &p;\n"
+            "  var n int = 7;\n"
+            "  var p int * = 0;\n"
+            "  var pp int ** = &p;\n"
             "  p = &n;\n"
             "  pp = &p;\n"
             "  **pp = 42;\n"
@@ -338,7 +338,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int *p = 0;\n"
+            "  var p int * = 0;\n"
             "  p = 1;\n"
             "  return 0;\n"
             "}\n");
@@ -348,7 +348,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int n = 1;\n"
+            "  var n int = 1;\n"
             "  return *n;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -362,14 +362,15 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int *p = 0;\n"
+            "  var p int * = 0;\n"
             "  return p + 1;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
-        const std::string errors = diagnose("void *p;\nfunc main() int { return 0; }\n");
+        const std::string errors = diagnose("var p void *;\n"
+"func main() int { return 0; }\n");
         EXPECT_EQ(check, errors, "");
     }
 
@@ -379,14 +380,14 @@ int run_sema_tests() {
             "  return p[0] + p[1] + p[2] + p[3];\n"
             "}\n"
             "func main() int {\n"
-            "  int a[4];\n"
+            "  var a int[4];\n"
             "  a[0] = 10;\n"
             "  a[1] = 20;\n"
             "  a[2] = 7;\n"
             "  a[3] = 5;\n"
-            "  int *q = a;\n"
-            "  char *s = \"hi\";\n"
-            "  int n = 0;\n"
+            "  var q int * = a;\n"
+            "  var s char * = \"hi\";\n"
+            "  var n int = 0;\n"
             "  while (s[n] != 0) {\n"
             "    n = n + 1;\n"
             "  }\n"
@@ -398,8 +399,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int a[1];\n"
-            "  int *p = 0;\n"
+            "  var a int[1];\n"
+            "  var p int * = 0;\n"
             "  return a[p];\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -408,7 +409,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int *p = \"hi\";\n"
+            "  var p int * = \"hi\";\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -418,7 +419,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { int x; int y; };\n"
             "func make(x int, y int) Point {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = x;\n"
             "  p.y = y;\n"
             "  return p;\n"
@@ -427,12 +428,12 @@ int run_sema_tests() {
             "  return p.x + p.y;\n"
             "}\n"
             "func main() int {\n"
-            "  Point p;\n"
-            "  Point *q;\n"
+            "  var p Point;\n"
+            "  var q Point *;\n"
             "  p = make(40, 2);\n"
             "  q = &p;\n"
             "  (*q).y = 2;\n"
-            "  Point r;\n"
+            "  var r Point;\n"
             "  r = *q;\n"
             "  return sum(r) + make(0, 0).x;\n"
             "}\n");
@@ -443,7 +444,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { int x; };\n"
             "func main() int {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  return p.z;\n"
             "}\n");
         EXPECT_HAS(check, errors, "undeclared identifier");
@@ -453,7 +454,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { int x; };\n"
             "func make() Point {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  return p;\n"
             "}\n"
             "func main() int {\n"
@@ -478,10 +479,10 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose_files({
             {"main.tlc", "import \"geom\";\n"
-                       "func main() int {\n"
-                       "  geom.Point p;\n"
-                       "  return 0;\n"
-                       "}\n"},
+"func main() int {\n"
+"  var p geom.Point;\n"
+"  return 0;\n"
+"}\n"},
             {"geom.tlc", "package geom;\n"
                        "struct Point { int x; int y; };\n"},
         });
@@ -491,12 +492,12 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose_files({
             {"main.tlc", "import \"geom\";\n"
-                       "func main() int {\n"
-                       "  geom.Point p;\n"
-                       "  p.x = 40;\n"
-                       "  p.y = 2;\n"
-                       "  return geom.sum(p);\n"
-                       "}\n"},
+"func main() int {\n"
+"  var p geom.Point;\n"
+"  p.x = 40;\n"
+"  p.y = 2;\n"
+"  return geom.sum(p);\n"
+"}\n"},
             {"geom.tlc", "package geom;\n"
                        "export struct Point { int x; int y; };\n"
                        "export func sum(p Point) int { return p.x + p.y; }\n"},
@@ -507,7 +508,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "extern func printf(fmt const char *, ...) int;\n"
-            "extern int slot;\n"
+            "extern var slot int;\n"
             "func main() int {\n"
             "  slot = 1;\n"
             "  printf(\"hi\\n\");\n"
@@ -529,7 +530,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern int slot;\n"
+            "extern var slot int;\n"
             "func main() int { return slot; }\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -541,17 +542,17 @@ int run_sema_tests() {
             "typedef int Integer;\n"
             "typedef int Pair[2];\n"
             "func make(x int, y int) Point {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = x;\n"
             "  p.y = y;\n"
             "  return p;\n"
             "}\n"
             "func sum(p Point) int { return p.x + p.y; }\n"
             "func main() int {\n"
-            "  Point p;\n"
-            "  Ptr q;\n"
-            "  Integer bias;\n"
-            "  Pair extra;\n"
+            "  var p Point;\n"
+            "  var q Ptr;\n"
+            "  var bias Integer;\n"
+            "  var extra Pair;\n"
             "  p = make(40, 2);\n"
             "  q = &p;\n"
             "  bias = 0;\n"
@@ -564,7 +565,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "enum Color { Red, Green = 40, Blue };\n"
-            "enum Color value = Color.Blue;\n"
+            "var value enum Color = Color.Blue;\n"
             "func main() int { return 0; }\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -583,7 +584,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "enum Color { Red, Green = 40, Blue };\n"
             "func main() int {\n"
-            "  int *p;\n"
+            "  var p int *;\n"
             "  p = &Color.Blue;\n"
             "  return 0;\n"
             "}\n");
@@ -607,7 +608,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "typedef int Point;\n"
-            "int Point;\n"
+            "var Point int;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "redefinition");
     }
@@ -628,7 +629,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "enum Color { Red = 1 };\n"
             "func main() int {\n"
-            "  int n = Color.Red;\n"
+            "  var n int = Color.Red;\n"
             "  return n;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -646,7 +647,7 @@ int run_sema_tests() {
             "struct Point { int x; }\n"
             "enum Color { Red }\n"
             "func main() int {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = 1;\n"
             "  if (Color.Red == Color.Red) {\n"
             "    return p.x;\n"
@@ -707,12 +708,12 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose_files({
             {"main.tlc", "import \"geom\";\n"
-                       "func main() int {\n"
-                       "  geom.Alias p;\n"
-                       "  p.x = 40;\n"
-                       "  p.y = 2;\n"
-                       "  return geom.sum(p);\n"
-                       "}\n"},
+"func main() int {\n"
+"  var p geom.Alias;\n"
+"  p.x = 40;\n"
+"  p.y = 2;\n"
+"  return geom.sum(p);\n"
+"}\n"},
             {"geom.tlc", "package geom;\n"
                        "struct Point { int x; int y; };\n"
                        "export typedef Point Alias;\n"
@@ -724,12 +725,12 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose_files({
             {"main.tlc", "import { Alias, sum } from \"geom\";\n"
-                       "func main() int {\n"
-                       "  Alias p;\n"
-                       "  p.x = 40;\n"
-                       "  p.y = 2;\n"
-                       "  return sum(p);\n"
-                       "}\n"},
+"func main() int {\n"
+"  var p Alias;\n"
+"  p.x = 40;\n"
+"  p.y = 2;\n"
+"  return sum(p);\n"
+"}\n"},
             {"geom.tlc", "package geom;\n"
                        "struct Point { int x; int y; };\n"
                        "export typedef Point Alias;\n"
@@ -754,8 +755,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int n;\n"
-            "  int x;\n"
+            "  var n int;\n"
+            "  var x int;\n"
             "  n = 1;\n"
             "  x = 0;\n"
             "  switch (n) {\n"
@@ -792,7 +793,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int *p;\n"
+            "  var p int *;\n"
             "  p = 0;\n"
             "  switch (p) {\n"
             "  case 0: return 0;\n"
@@ -805,7 +806,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int n;\n"
+            "  var n int;\n"
             "  n = 1;\n"
             "  switch (n) {\n"
             "  case 1: return 1;\n"
@@ -820,7 +821,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int n;\n"
+            "  var n int;\n"
             "  n = 1;\n"
             "  switch (n) {\n"
             "  case n: return 0;\n"
@@ -833,8 +834,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int n;\n"
-            "  int *p;\n"
+            "  var n int;\n"
+            "  var p int *;\n"
             "  n = 0;\n"
             "  p = 0;\n"
             "  do {\n"
@@ -859,8 +860,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int n;\n"
-            "  char c;\n"
+            "  var n int;\n"
+            "  var c char;\n"
             "  n = sizeof(int);\n"
             "  n = sizeof n;\n"
             "  n = sizeof(n);\n"
@@ -887,10 +888,10 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int n;\n"
-            "  char *c;\n"
-            "  void *v;\n"
-            "  int *p;\n"
+            "  var n int;\n"
+            "  var c char *;\n"
+            "  var v void *;\n"
+            "  var p int *;\n"
             "  n = 42;\n"
             "  c = char*(n);\n"
             "  v = void*(c);\n"
@@ -907,8 +908,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int *p;\n"
-            "  void *v;\n"
+            "  var p int *;\n"
+            "  var v void *;\n"
             "  v = 0;\n"
             "  p = v;\n"
             "  return 0;\n"
@@ -919,8 +920,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int *p;\n"
-            "  void *v;\n"
+            "  var p int *;\n"
+            "  var v void *;\n"
             "  v = 0;\n"
             "  p = int*(v);\n"
             "  return 0;\n"
@@ -931,7 +932,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  void *v;\n"
+            "  var v void *;\n"
             "  v = 0;\n"
             "  return *v;\n"
             "}\n");
@@ -947,7 +948,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func id(p void *) void * { return p; }\n"
             "func main() int {\n"
-            "  void *v;\n"
+            "  var v void *;\n"
             "  v = 0;\n"
             "  v = id(v);\n"
             "  return 0;\n"
@@ -958,8 +959,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  bool a;\n"
-            "  bool b;\n"
+            "  var a bool;\n"
+            "  var b bool;\n"
             "  a = true;\n"
             "  b = false;\n"
             "  b = 8;\n"
@@ -974,8 +975,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int *p;\n"
-            "  int x;\n"
+            "  var p int *;\n"
+            "  var x int;\n"
             "  x = 0;\n"
             "  p = nullptr;\n"
             "  if (p == nullptr) {\n"
@@ -990,7 +991,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int x = nullptr;\n"
+            "  var x int = nullptr;\n"
             "  return x;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -999,11 +1000,11 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  char c;\n"
-            "  short s;\n"
-            "  int n;\n"
-            "  unsigned int u;\n"
-            "  long long a;\n"
+            "  var c char;\n"
+            "  var s short;\n"
+            "  var n int;\n"
+            "  var u unsigned int;\n"
+            "  var a long long;\n"
             "  c = 'A';\n"
             "  s = 1;\n"
             "  n = c + s;\n"
@@ -1020,7 +1021,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "typedef unsigned int u32;\n"
             "func main() int {\n"
-            "  u32 n;\n"
+            "  var n u32;\n"
             "  n = 1u32;\n"
             "  return n;\n"
             "}\n");
@@ -1028,7 +1029,7 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("func main() int { i8 n = 200i8; return n; }\n");
+        const std::string errors = diagnose("func main() int { var n i8 = 200i8; return n; }\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
@@ -1045,8 +1046,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int *p;\n"
-            "  int n;\n"
+            "  var p int *;\n"
+            "  var n int;\n"
             "  n = 1;\n"
             "  p = long*(n);\n"
             "  return long(p);\n"
@@ -1075,8 +1076,8 @@ int run_sema_tests() {
             "func Point::value(this self Point) int;\n"
             "func Point::value(this self Point) int { return self.x; }\n"
             "func main() int {\n"
-            "  Point p;\n"
-            "  Pair q;\n"
+            "  var p Point;\n"
+            "  var q Pair;\n"
             "  p.x = 20;\n"
             "  p.y = 20;\n"
             "  q.a = 1;\n"
@@ -1091,7 +1092,7 @@ int run_sema_tests() {
             "struct Point { int x; };\n"
             "func Point::sum(this self Point, extra int) int { return self.x + extra; }\n"
             "func main() int {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = 1;\n"
             "  return p.nope(1);\n"
             "}\n");
@@ -1103,7 +1104,7 @@ int run_sema_tests() {
             "struct Point { int x; };\n"
             "func Point::sum(this self Point, extra int) int { return self.x + extra; }\n"
             "func main() int {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = 1;\n"
             "  return p.sum();\n"
             "}\n");
@@ -1115,7 +1116,7 @@ int run_sema_tests() {
             "struct Point { int x; };\n"
             "func Point::sum(this self Point, extra int) int { return self.x + extra; }\n"
             "func main() int {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = 1;\n"
             "  return p.sum(p);\n"
             "}\n");
@@ -1152,7 +1153,7 @@ int run_sema_tests() {
             "struct Point { int x; };\n"
             "func Point::sum(this self Point) int { return self.x; }\n"
             "func main() int {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = 1;\n"
             "  return p.sum;\n"
             "}\n");
@@ -1168,14 +1169,14 @@ int run_sema_tests() {
             "  self.y = self.y + dy;\n"
             "}\n"
             "func make() Point {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = 1;\n"
             "  p.y = 2;\n"
             "  return p;\n"
             "}\n"
             "func main() int {\n"
-            "  Point p;\n"
-            "  Point *q;\n"
+            "  var p Point;\n"
+            "  var q Point *;\n"
             "  p.x = 1;\n"
             "  p.y = 1;\n"
             "  q = &p;\n"
@@ -1192,7 +1193,7 @@ int run_sema_tests() {
             "struct Point { int x; };\n"
             "func Point::add(this self Point *, dx int) void { self.x = self.x + dx; }\n"
             "func make() Point {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = 1;\n"
             "  return p;\n"
             "}\n"
@@ -1207,9 +1208,9 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { int x; };\n"
             "func main() int {\n"
-            "  Point p;\n"
-            "  Point *q;\n"
-            "  Point **pp;\n"
+            "  var p Point;\n"
+            "  var q Point *;\n"
+            "  var pp Point **;\n"
             "  p.x = 1;\n"
             "  q = &p;\n"
             "  pp = &q;\n"
@@ -1222,8 +1223,8 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { int x; };\n"
             "func main() int {\n"
-            "  int n;\n"
-            "  int *p;\n"
+            "  var n int;\n"
+            "  var p int *;\n"
             "  n = 1;\n"
             "  p = &n;\n"
             "  return p.x;\n"
@@ -1256,14 +1257,14 @@ int run_sema_tests() {
             "}\n"
             "func take(m Meas) int { return m.area(); }\n"
             "func make() Rect {\n"
-            "  Rect r;\n"
+            "  var r Rect;\n"
             "  r.w = 1;\n"
             "  r.h = 1;\n"
             "  return r;\n"
             "}\n"
             "func main() int {\n"
-            "  Rect r;\n"
-            "  Box b;\n"
+            "  var r Rect;\n"
+            "  var b Box;\n"
             "  r.w = 1;\n"
             "  r.h = 1;\n"
             "  b.n = 1;\n"
@@ -1280,7 +1281,7 @@ int run_sema_tests() {
             "struct Rect { int w; };\n"
             "func use(s Shape) int { return s.area(); }\n"
             "func main() int {\n"
-            "  Rect r;\n"
+            "  var r Rect;\n"
             "  r.w = 1;\n"
             "  return use(r);\n"
             "}\n");
@@ -1296,7 +1297,7 @@ int run_sema_tests() {
             "func Rect::area(this self Rect *) void { self.w = 1; }\n"
             "func use(s Shape) int { return 0; }\n"
             "func main() int {\n"
-            "  Rect r;\n"
+            "  var r Rect;\n"
             "  r.w = 1;\n"
             "  return use(r);\n"
             "}\n");
@@ -1312,7 +1313,7 @@ int run_sema_tests() {
             "func Rect::grow(this self Rect *, n int) void { self.w = self.w + n; }\n"
             "func use(s Shape) void { s.grow(1); }\n"
             "func main() int {\n"
-            "  Rect r;\n"
+            "  var r Rect;\n"
             "  r.w = 1;\n"
             "  use(r);\n"
             "  return 0;\n"
@@ -1338,7 +1339,7 @@ int run_sema_tests() {
             "  func area() int;\n"
             "};\n"
             "func main() int {\n"
-            "  Shape s;\n"
+            "  var s Shape;\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "not supported yet");
@@ -1350,7 +1351,7 @@ int run_sema_tests() {
             "  func area() int;\n"
             "};\n"
             "func main() int {\n"
-            "  Shape *s;\n"
+            "  var s Shape *;\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "not supported yet");
@@ -1377,7 +1378,7 @@ int run_sema_tests() {
             "func Rect::area(this self Rect) int { return self.w; }\n"
             "func apply(s Shape *) int { return s.area(); }\n"
             "func main() int {\n"
-            "  Rect r;\n"
+            "  var r Rect;\n"
             "  r.w = 1;\n"
             "  return apply(r);\n"
             "}\n");
@@ -1401,16 +1402,16 @@ int run_sema_tests() {
             "struct Point { int x; int y; };\n"
             "struct Holder { Point value; Point *link; };\n"
             "func make(a Point) Point {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = a.x;\n"
             "  p.y = a.y;\n"
             "  return p;\n"
             "}\n"
-            "Point origin;\n"
+            "var origin Point;\n"
             "func main() int {\n"
-            "  Point p;\n"
-            "  Point *q;\n"
-            "  Holder box;\n"
+            "  var p Point;\n"
+            "  var q Point *;\n"
+            "  var box Holder;\n"
             "  p.x = 40;\n"
             "  p.y = 2;\n"
             "  q = &p;\n"
@@ -1426,7 +1427,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Node { int n; Node *next; };\n"
             "func main() int {\n"
-            "  Node head;\n"
+            "  var head Node;\n"
             "  head.n = 42;\n"
             "  head.next = &head;\n"
             "  return head.next.n;\n"
@@ -1459,8 +1460,8 @@ int run_sema_tests() {
             "typedef struct Node;\n"
             "struct Node { int n; Node *next; };\n"
             "func main() int {\n"
-            "  Node tail;\n"
-            "  Node head;\n"
+            "  var tail Node;\n"
+            "  var head Node;\n"
             "  tail.n = 2;\n"
             "  tail.next = 0;\n"
             "  head.n = 40;\n"
@@ -1474,7 +1475,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "typedef struct Node;\n"
             "func main() int {\n"
-            "  Node n;\n"
+            "  var n Node;\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "not supported yet");
@@ -1484,7 +1485,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "typedef struct Node;\n"
             "func main() int {\n"
-            "  Node *p;\n"
+            "  var p Node *;\n"
             "  p = 0;\n"
             "  return 0;\n"
             "}\n");
@@ -1494,13 +1495,13 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose_files({
             {"math/fwd.tlc", "typedef struct B;\n"
-                           "struct A { B *b; int n; };\n"
-                           "func take(b B *) int {\n"
-                           "  A a;\n"
-                           "  a.n = 2;\n"
-                           "  a.b = b;\n"
-                           "  return a.n + a.b.x;\n"
-                           "}\n"},
+"struct A { B *b; int n; };\n"
+"func take(b B *) int {\n"
+"  var a A;\n"
+"  a.n = 2;\n"
+"  a.b = b;\n"
+"  return a.n + a.b.x;\n"
+"}\n"},
             {"math/def.tlc", "struct B { int x; };\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -1517,7 +1518,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { int x; };\n"
             "func main() int {\n"
-            "  struct Point p;\n"
+            "  var p struct Point;\n"
             "  p.x = 1;\n"
             "  return p.x;\n"
             "}\n");
@@ -1536,8 +1537,8 @@ int run_sema_tests() {
             "struct Point { int x; };\n"
             "typedef int Point;\n"
             "func main() int {\n"
-            "  Point n;\n"
-            "  struct Point p;\n"
+            "  var n Point;\n"
+            "  var p struct Point;\n"
             "  n = 42;\n"
             "  p.x = n;\n"
             "  return p.x;\n"
@@ -1549,7 +1550,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { int x; int y; };\n"
             "func main() int {\n"
-            "  int Point;\n"
+            "  var Point int;\n"
             "  Point = sizeof(Point);\n"
             "  return Point;\n"
             "}\n");
@@ -1567,12 +1568,12 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose_files({
             {"main.tlc", "import { Point, sum } from \"geom\";\n"
-                       "func main() int {\n"
-                       "  Point p;\n"
-                       "  p.x = 40;\n"
-                       "  p.y = 2;\n"
-                       "  return sum(p);\n"
-                       "}\n"},
+"func main() int {\n"
+"  var p Point;\n"
+"  p.x = 40;\n"
+"  p.y = 2;\n"
+"  return sum(p);\n"
+"}\n"},
             {"geom.tlc", "package geom;\n"
                        "export struct Point { int x; int y; };\n"
                        "export func sum(p Point) int { return p.x + p.y; }\n"},
@@ -1585,7 +1586,7 @@ int run_sema_tests() {
             "struct A { B b; };\n"
             "struct B { int x; };\n"
             "func main() int {\n"
-            "  A a;\n"
+            "  var a A;\n"
             "  a.b.x = 42;\n"
             "  return a.b.x;\n"
             "}\n");
@@ -1626,8 +1627,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose_files({
             {"main.tlc", "import \"math\";\nfunc main() int { return 0; }\n"},
-            {"math/a.tlc", "int value;\n"},
-            {"math/b.tlc", "int value;\n"},
+            {"math/a.tlc", "var value int;\n"},
+            {"math/b.tlc", "var value int;\n"},
         });
         EXPECT_HAS(check, errors, "redefinition");
     }
@@ -1647,11 +1648,11 @@ int run_sema_tests() {
         const std::string errors = diagnose_files({
             {"main.tlc", "import { use } from \"math\";\nfunc main() int { return use(); }\n"},
             {"math/a.tlc", "struct A { B b; };\n"
-                         "export func use() int {\n"
-                         "  A a;\n"
-                         "  a.b.x = 42;\n"
-                         "  return a.b.x;\n"
-                         "}\n"},
+"export func use() int {\n"
+"  var a A;\n"
+"  a.b.x = 42;\n"
+"  return a.b.x;\n"
+"}\n"},
             {"math/b.tlc", "struct B { int x; };\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -1668,7 +1669,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "int bias;\n"
+            "var bias int;\n"
             "func inc(n int) int { return n + 1; }\n"
             "func main() int {\n"
             "  bias = 1;\n"
@@ -1683,7 +1684,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int x = 1;\n"
+            "  var x int = 1;\n"
             "  func f(x int) int { return x; }\n"
             "  return f(2);\n"
             "}\n");
@@ -1710,7 +1711,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int n = 0;\n"
+            "  var n int = 0;\n"
             "  for (func f() int { return 42; }; n < 1; n = n + 1) {\n"
             "    return f();\n"
             "  }\n"
@@ -1747,7 +1748,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int x = f();\n"
+            "  var x int = f();\n"
             "  func f() int { return 1; }\n"
             "  return x;\n"
             "}\n");
@@ -1786,7 +1787,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int x = 40;\n"
+            "  var x int = 40;\n"
             "  func f() int { return x; }\n"
             "  return f();\n"
             "}\n");
@@ -1796,7 +1797,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int x = 1;\n"
+            "  var x int = 1;\n"
             "  func f() int { x = 2; return x; }\n"
             "  return f();\n"
             "}\n");
@@ -1852,8 +1853,8 @@ int run_sema_tests() {
             "func Box::touch(this self Box *) void { }\n"
             "func main() int {\n"
             "  func inner(n int) void { }\n"
-            "  Box box;\n"
-            "  Box *p = &box;\n"
+            "  var box Box;\n"
+            "  var p Box * = &box;\n"
             "  defer note(1);\n"
             "  defer inner(2);\n"
             "  defer func(v int) { }(3);\n"
@@ -1876,7 +1877,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  int x = 1;\n"
+            "  var x int = 1;\n"
             "  defer func() int { return x; }();\n"
             "  return 0;\n"
             "}\n");
@@ -1913,7 +1914,7 @@ int run_sema_tests() {
             "  return 0;\n"
             "}\n"
             "func main() int {\n"
-            "  Rect r;\n"
+            "  var r Rect;\n"
             "  r.w = 1;\n"
             "  return use(r);\n"
             "}\n");
@@ -1930,14 +1931,14 @@ int run_sema_tests() {
             "  sum, orig := add(20, 22);\n"
             "  var extra, base = add(1, 1);\n"
             "  extra, base = add(0, 0);\n"
-            "  Box box;\n"
+            "  var box Box;\n"
             "  box.v = 3;\n"
             "  var left, right = box.split();\n"
             "  var z, w = func() (int, int) { return 0, 0; }();\n"
             "  p, q := pair(0);\n"
             "  add(1, 2);\n"
             "  defer add(0, 1);\n"
-            "  int n = 1;\n"
+            "  var n int = 1;\n"
             "  {\n"
             "    n, m := add(4, 5);\n"
             "    return n + m;\n"
@@ -1950,7 +1951,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func add(x int, y int) (int, int) { return x + y, x; }\n"
             "func main() int {\n"
-            "  int x = add(1, 2);\n"
+            "  var x int = add(1, 2);\n"
             "  return x;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -2051,7 +2052,7 @@ int run_sema_tests() {
             "func id(n int) (int) { return n; }\n"
             "func trail(n int) (int,) { return n; }\n"
             "func tri(n int) (int, int *, Point) {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = n;\n"
             "  p.y = n;\n"
             "  return n, nullptr, p;\n"
@@ -2073,27 +2074,27 @@ int run_sema_tests() {
             "func main() int {\n"
             "  var x = id(1);\n"
             "  y := trail(x);\n"
-            "  int kept = 1;\n"
+            "  var kept int = 1;\n"
             "  kept, fresh := add(kept, 2);\n"
             "  {\n"
             "    var kept, other = add(4, 5);\n"
             "    y = kept + other;\n"
             "  }\n"
-            "  int *p;\n"
-            "  int n;\n"
-            "  Point point;\n"
+            "  var p int *;\n"
+            "  var n int;\n"
+            "  var point Point;\n"
             "  n, p, point = tri(1);\n"
-            "  short s;\n"
-            "  char c;\n"
-            "  bool flag;\n"
+            "  var s short;\n"
+            "  var c char;\n"
+            "  var flag bool;\n"
             "  s, c, flag = narrow();\n"
-            "  int outer = 1;\n"
+            "  var outer int = 1;\n"
             "  func inner() int {\n"
             "    outer, m := add(1, 2);\n"
             "    return outer + m;\n"
             "  }\n"
-            "  int h1;\n"
-            "  int h2;\n"
+            "  var h1 int;\n"
+            "  var h2 int;\n"
             "  h1, h2 = hidden();\n"
             "  add(1, 2);\n"
             "  for (i, k := add(1, 2); i < 2; i = i + 1) {\n"
@@ -2173,8 +2174,8 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func add(x int, y int) (int, int) { return x, y; }\n"
             "func main() int {\n"
-            "  int *p;\n"
-            "  int n;\n"
+            "  var p int *;\n"
+            "  var n int;\n"
             "  p = nullptr;\n"
             "  p, n = add(1, 2);\n"
             "  return n;\n"
@@ -2187,7 +2188,7 @@ int run_sema_tests() {
             "enum Color { Red = 1 };\n"
             "func add(x int, y int) (int, int) { return x, y; }\n"
             "func main() int {\n"
-            "  int n = 0;\n"
+            "  var n int = 0;\n"
             "  Red, n = add(1, 2);\n"
             "  return n;\n"
             "}\n");
@@ -2198,8 +2199,8 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func add(x int, y int) (int, int) { return x, y; }\n"
             "func main() int {\n"
-            "  int xs[2];\n"
-            "  int n = 0;\n"
+            "  var xs int[2];\n"
+            "  var n int = 0;\n"
             "  xs, n = add(1, 2);\n"
             "  return n;\n"
             "}\n");
@@ -2210,7 +2211,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func add(x int, y int) (int, int) { return x, y; }\n"
             "func main() int {\n"
-            "  int n = 0;\n"
+            "  var n int = 0;\n"
             "  add, n = add(1, 2);\n"
             "  return n;\n"
             "}\n");
@@ -2221,9 +2222,9 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func add(x int, y int) (int, int) { return x, y; }\n"
             "func main() int {\n"
-            "  int outer = 1;\n"
+            "  var outer int = 1;\n"
             "  func inner() int {\n"
-            "    int n = 0;\n"
+            "    var n int = 0;\n"
             "    outer, n = add(1, 2);\n"
             "    return n;\n"
             "  }\n"
@@ -2279,7 +2280,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func add(x int, y int) (int, int) { return x, y; }\n"
             "func main() int {\n"
-            "  int n = sizeof(add(1, 2));\n"
+            "  var n int = sizeof(add(1, 2));\n"
             "  return n;\n"
             "}\n");
         EXPECT_HAS(check, errors, "not supported yet");
@@ -2339,13 +2340,13 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { int x; };\n"
             "func make() (Point, int) {\n"
-            "  Point p;\n"
+            "  var p Point;\n"
             "  p.x = 1;\n"
             "  return p, 2;\n"
             "}\n"
             "func main() int {\n"
-            "  int a;\n"
-            "  int b;\n"
+            "  var a int;\n"
+            "  var b int;\n"
             "  a, b = make();\n"
             "  return b;\n"
             "}\n");
@@ -2394,7 +2395,8 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("export extern int value;\nfunc main() int { return 0; }\n");
+        const std::string errors = diagnose("export extern var value int;\n"
+"func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "export extern");
     }
 
@@ -2411,11 +2413,11 @@ int run_sema_tests() {
             "func inc(n int) int { return n + 1; }\n"
             "func apply(fp int (*)(int), n int) int { return fp(n); }\n"
             "func main() int {\n"
-            "  int (*fp)(int);\n"
+            "  var fp int (*)(int);\n"
             "  fp = inc;\n"
-            "  f64 x = 20.5;\n"
-            "  f32 y = 1.5f;\n"
-            "  double z = x + y;\n"
+            "  var x f64 = 20.5;\n"
+            "  var y f32 = 1.5f;\n"
+            "  var z double = x + y;\n"
             "  if (z != 22.0) {\n"
             "    return 0;\n"
             "  }\n"
@@ -2432,7 +2434,7 @@ int run_sema_tests() {
             "func take(p func (i32) (i32)) i32 { return p(1); }\n"
             "func pick() func (i32, i32) i32 { return add; }\n"
             "func main() i32 {\n"
-            "  func (i32, i32) i32 fp = pick();\n"
+            "  var fp func (i32, i32) i32 = pick();\n"
             "  return myfunc(add) + take(id) + fp(1, 1);\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -2455,7 +2457,7 @@ int run_sema_tests() {
             "}\n"
             "func pick() func (i32) (i32, i32) { return pair; }\n"
             "func main() i32 {\n"
-            "  func (i32) (i32, i32) fp = pick();\n"
+            "  var fp func (i32) (i32, i32) = pick();\n"
             "  x, y := fp(10);\n"
             "  return apply(fp) + x + y;\n"
             "}\n");
@@ -2480,9 +2482,9 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func take(p long long *) int { return *p != 0; }\n"
             "func main() int {\n"
-            "  i64 n = 1;\n"
-            "  u8 b = 1;\n"
-            "  unsigned char *p = &b;\n"
+            "  var n i64 = 1;\n"
+            "  var b u8 = 1;\n"
+            "  var p unsigned char * = &b;\n"
             "  return take(&n) + *p;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -2492,7 +2494,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func take(p long *) int { return 0; }\n"
             "func main() int {\n"
-            "  i64 n = 1;\n"
+            "  var n i64 = 1;\n"
             "  return take(&n);\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");

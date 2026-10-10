@@ -3261,12 +3261,25 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 error(var->loc, "redefinition");
                 continue;
             }
-            Type type = var->is_fn_ptr
-                            ? type_of_fn_ptr(var->type_name, var->type_package, var->is_struct, var->is_enum,
-                                             var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic,
-                                             var->fn_results, var->loc)
-                            : object_type(var->type_name, var->indirections, var->is_array, var->array_len, var->loc, false,
-                                          var->type_package, var->is_struct, var->is_enum);
+            Type type = type_invalid();
+            if (var->inferred) {
+                if (var->init == nullptr) {
+                    error(var->loc, "type mismatch");
+                } else {
+                    type = check_expr(*var->init, true);
+                    if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void) {
+                        error(var->loc, "type mismatch");
+                        type = type_invalid();
+                    }
+                }
+            } else {
+                type = var->is_fn_ptr
+                           ? type_of_fn_ptr(var->type_name, var->type_package, var->is_struct, var->is_enum,
+                                            var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic,
+                                            var->fn_results, var->loc)
+                           : object_type(var->type_name, var->indirections, var->is_array, var->array_len, var->loc, false,
+                                         var->type_package, var->is_struct, var->is_enum);
+            }
             Symbol symbol;
             symbol.name = var->name;
             symbol.type = std::move(type);

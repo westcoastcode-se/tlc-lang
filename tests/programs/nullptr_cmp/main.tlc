@@ -1,7 +1,7 @@
 func main() int {
-    int *p;
-    int x;
-    int n;
+    var p int *;
+    var x int;
+    var n int;
     x = 7;
     p = nullptr;
     n = 0;

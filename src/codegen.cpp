@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <optional>
 #include <type_traits>
 #include <unordered_map>
@@ -638,6 +639,7 @@ class CodeGen {
                         bool ret_enum, int ret_indirections, int fn_depth, const std::vector<FnParam> &params,
                         bool variadic, const std::vector<FnParam> &results) const;
     Lowered lower_param_type(uint32_t file, const Param &param) const;
+    bool infer_global(uint32_t file, const Expr &expr, Lowered &out) const;
     void apply_low(Binding &binding, const Lowered &low) const;
     const FieldLayout *find_field(int struct_id, const std::string &name, int &index) const;
     TypedValue field_addr(int struct_id, llvm::Value *pointer, const std::string &field, SourceLoc loc);
@@ -2163,6 +2165,291 @@ std::string function_key(const FunctionDecl &fn) {
     return fn.method_struct + "." + fn.name;
 }
 
+bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const {
+    const auto stored = [&](const Binding &binding) {
+        Lowered low;
+        low.depth = binding.depth;
+        low.elem_char = binding.elem_char;
+        low.is_array = binding.is_array;
+        low.array_len = binding.array_len;
+        low.struct_id = binding.struct_id;
+        low.elem_void = binding.elem_void;
+        low.elem_bool = binding.elem_bool;
+        low.elem_bits = binding.elem_bits;
+        low.elem_unsigned = binding.elem_unsigned;
+        low.trait_id = binding.trait_id;
+        low.elem_float = binding.elem_float;
+        low.fn_ty = binding.fn_ty;
+        low.fn_ret_depth = binding.fn_ret_depth;
+        low.fn_ret_float = binding.fn_ret_float;
+        low.fn_ret_bits = binding.fn_ret_bits;
+        low.fn_ret_unsigned = binding.fn_ret_unsigned;
+        low.fn_ret_char = binding.fn_ret_char;
+        low.fn_ret_bool = binding.fn_ret_bool;
+        low.fn_ret_struct = binding.fn_ret_struct;
+        low.fn_results = binding.fn_results;
+        low.enum_id = binding.enum_id;
+        if (const auto *global = llvm::dyn_cast<llvm::GlobalVariable>(binding.value)) {
+            low.type = global->getValueType();
+        } else {
+            low.type = leaf_type(low.depth, low.elem_char, low.struct_id, low.elem_bool, low.elem_bits, low.elem_float);
+        }
+        return low;
+    };
+    const auto find_global = [&](const std::string &name) -> const Binding * {
+        const auto own = files_.find(file);
+        if (own != files_.end()) {
+            const auto it = own->second.globals.find(name);
+            if (it != own->second.globals.end()) {
+                return &it->second;
+            }
+        }
+        return visible(file, name, false);
+    };
+    const auto find_function = [&](const std::string &name) -> const Binding * {
+        const auto own = files_.find(file);
+        if (own != files_.end()) {
+            const auto it = own->second.functions.find(name);
+            if (it != own->second.functions.end()) {
+                return &it->second;
+            }
+        }
+        return visible(file, name, true);
+    };
+    const auto as_int = [&](int bits, bool uns) {
+        Lowered low;
+        low.elem_bits = bits;
+        low.elem_unsigned = uns;
+        low.type = leaf_type(0, false, -1, false, bits, false);
+        return low;
+    };
+    const auto as_float = [&](int bits) {
+        Lowered low;
+        low.elem_float = true;
+        low.elem_bits = bits;
+        low.type = leaf_type(0, false, -1, false, bits, true);
+        return low;
+    };
+    const auto scalar = [](const Lowered &low) {
+        return low.depth == 0 && !low.is_array && low.struct_id < 0 && low.trait_id < 0 && low.enum_id < 0 &&
+               low.fn_ty == nullptr && !low.elem_void;
+    };
+    const auto promote = [&](Lowered low) {
+        if (low.is_array) {
+            low.depth += 1;
+            low.is_array = false;
+            low.array_len = 0;
+            low.type = ptr_type();
+            return low;
+        }
+        if (!scalar(low) || low.elem_float) {
+            return low;
+        }
+        if (low.elem_bool || low.elem_char || low.elem_bits == 8 || low.elem_bits == 16) {
+            return as_int(32, false);
+        }
+        if (low.elem_bits == 0) {
+            return as_int(32, false);
+        }
+        return low;
+    };
+    const auto rank_of = [](const Lowered &low) { return low.elem_bits >= 64 ? 5 : 3; };
+    const auto usual = [&](const Lowered &lhs, const Lowered &rhs) -> std::optional<Lowered> {
+        if (!scalar(lhs) || !scalar(rhs) || lhs.elem_float || rhs.elem_float || lhs.elem_bool || rhs.elem_bool) {
+            return std::nullopt;
+        }
+        if (lhs.elem_unsigned == rhs.elem_unsigned && lhs.elem_bits == rhs.elem_bits) {
+            return lhs;
+        }
+        if (lhs.elem_unsigned == rhs.elem_unsigned) {
+            return lhs.elem_bits >= rhs.elem_bits ? lhs : rhs;
+        }
+        const Lowered &signed_type = lhs.elem_unsigned ? rhs : lhs;
+        const Lowered &unsigned_type = lhs.elem_unsigned ? lhs : rhs;
+        if (rank_of(unsigned_type) >= rank_of(signed_type)) {
+            return unsigned_type;
+        }
+        if (signed_type.elem_bits > unsigned_type.elem_bits) {
+            return signed_type;
+        }
+        return as_int(signed_type.elem_bits, true);
+    };
+    const auto function_result = [&](const Binding &binding) -> std::optional<Lowered> {
+        if (binding.decl == nullptr || binding.decl->results.size() > 1 || binding.is_generic) {
+            return std::nullopt;
+        }
+        const FunctionDecl &fn = *binding.decl;
+        if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
+            return std::nullopt;
+        }
+        if (fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty()) {
+            return std::nullopt;
+        }
+        return promote(lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false));
+    };
+
+    std::function<std::optional<Lowered>(const Expr &)> value;
+    std::function<std::optional<Lowered>(const Expr &)> raw;
+    raw = [&](const Expr &node) -> std::optional<Lowered> {
+        return std::visit(
+            [&](const auto &item) -> std::optional<Lowered> {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Expr::Int>) {
+                    const int bits = item.suffix.bits;
+                    const bool uns = item.suffix.is_unsigned;
+                    if (bits == 64) {
+                        return as_int(64, uns);
+                    }
+                    if (bits == 32 && uns) {
+                        return as_int(32, true);
+                    }
+                    if (bits == 8) {
+                        return as_int(8, uns);
+                    }
+                    if (bits == 16) {
+                        return as_int(16, uns);
+                    }
+                    return as_int(32, false);
+                } else if constexpr (std::is_same_v<T, Expr::Char>) {
+                    Lowered low = as_int(8, false);
+                    low.elem_char = true;
+                    low.type = i8();
+                    return low;
+                } else if constexpr (std::is_same_v<T, Expr::Bool>) {
+                    Lowered low;
+                    low.elem_bool = true;
+                    low.type = i1();
+                    return low;
+                } else if constexpr (std::is_same_v<T, Expr::Float>) {
+                    return as_float(item.is_f32 ? 32 : 64);
+                } else if constexpr (std::is_same_v<T, Expr::String>) {
+                    Lowered low;
+                    low.depth = 1;
+                    low.elem_char = true;
+                    low.elem_bits = 8;
+                    low.type = ptr_type();
+                    return low;
+                } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                    return as_int(32, false);
+                } else if constexpr (std::is_same_v<T, Expr::Name>) {
+                    if (const Binding *global = find_global(item.text)) {
+                        return stored(*global);
+                    }
+                    return std::nullopt;
+                } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                    if (item.expr == nullptr) {
+                        return std::nullopt;
+                    }
+                    if (item.op == TokenKind::Amp) {
+                        const auto inner = raw(*item.expr);
+                        if (!inner || inner->is_array || inner->fn_ty != nullptr) {
+                            return std::nullopt;
+                        }
+                        Lowered low = *inner;
+                        low.depth += 1;
+                        low.type = ptr_type();
+                        return low;
+                    }
+                    return value(*item.expr);
+                } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                    return lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, false, 0,
+                                 false);
+                } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    const auto *name = item.callee == nullptr ? nullptr : std::get_if<Expr::Name>(&item.callee->data);
+                    if (name == nullptr) {
+                        return std::nullopt;
+                    }
+                    const Binding *fn = find_function(name->text);
+                    if (fn == nullptr) {
+                        return std::nullopt;
+                    }
+                    return function_result(*fn);
+                } else {
+                    return std::nullopt;
+                }
+            },
+            node.data);
+    };
+    value = [&](const Expr &node) -> std::optional<Lowered> {
+        if (const auto *unary = std::get_if<Expr::Unary>(&node.data)) {
+            if (unary->expr == nullptr) {
+                return std::nullopt;
+            }
+            if (unary->op == TokenKind::Amp || unary->op == TokenKind::Star) {
+                if (unary->op == TokenKind::Amp) {
+                    return raw(node);
+                }
+                const auto inner = value(*unary->expr);
+                if (!inner || inner->depth < 1) {
+                    return std::nullopt;
+                }
+                Lowered low = *inner;
+                low.depth -= 1;
+                low.type = leaf_type(low.depth, low.elem_char, low.struct_id, low.elem_bool, low.elem_bits, low.elem_float);
+                return promote(low);
+            }
+            const auto inner = value(*unary->expr);
+            if (!inner) {
+                return std::nullopt;
+            }
+            if (unary->op == TokenKind::Bang) {
+                return as_int(32, false);
+            }
+            if (inner->elem_float && (unary->op == TokenKind::Plus || unary->op == TokenKind::Minus)) {
+                return inner;
+            }
+            if (!scalar(*inner) || inner->elem_float) {
+                return std::nullopt;
+            }
+            return inner;
+        }
+        if (const auto *binary = std::get_if<Expr::Binary>(&node.data)) {
+            if (binary->lhs == nullptr || binary->rhs == nullptr) {
+                return std::nullopt;
+            }
+            const auto lhs = value(*binary->lhs);
+            const auto rhs = value(*binary->rhs);
+            if (!lhs || !rhs) {
+                return std::nullopt;
+            }
+            const bool compare = binary->op == TokenKind::EqEq || binary->op == TokenKind::BangEq ||
+                                 binary->op == TokenKind::Lt || binary->op == TokenKind::Gt ||
+                                 binary->op == TokenKind::Le || binary->op == TokenKind::Ge;
+            if (lhs->elem_float || rhs->elem_float) {
+                if (compare) {
+                    return as_int(32, false);
+                }
+                if (binary->op == TokenKind::Percent || binary->op == TokenKind::Amp || binary->op == TokenKind::Pipe ||
+                    binary->op == TokenKind::Caret || binary->op == TokenKind::LtLt || binary->op == TokenKind::GtGt) {
+                    return std::nullopt;
+                }
+                const bool wide = (lhs->elem_float && lhs->elem_bits >= 64) || (rhs->elem_float && rhs->elem_bits >= 64);
+                return as_float(wide ? 64 : 32);
+            }
+            if (compare) {
+                return as_int(32, false);
+            }
+            const auto common = usual(*lhs, *rhs);
+            if (!common) {
+                return std::nullopt;
+            }
+            return common;
+        }
+        const auto got = raw(node);
+        if (!got) {
+            return std::nullopt;
+        }
+        return promote(*got);
+    };
+
+    const auto got = value(expr);
+    if (!got || got->type == nullptr || got->elem_void) {
+        return false;
+    }
+    out = *got;
+    return true;
+}
+
 void CodeGen::declare_file(const PackageNode &node) {
     struct Acc {
         const FunctionDecl *fn = nullptr;
@@ -2263,12 +2550,19 @@ void CodeGen::declare_file(const PackageNode &node) {
             continue;
         }
         const SymbolForm form = symbol_form(node, var->name, var->is_extern, var->is_static, var->exported, false);
-        const Lowered low = var->is_fn_ptr
-                                ? lower_fnptr(node.file_id, var->type_name, var->type_package, var->is_struct, var->is_enum,
-                                              var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic,
-                                              var->fn_results)
-                                : lower(node.file_id, var->type_name, var->type_package, var->is_struct, var->indirections,
-                                        var->is_array, var->array_len, false);
+        Lowered low;
+        if (var->inferred) {
+            if (var->init == nullptr || !infer_global(node.file_id, *var->init, low)) {
+                error(var->loc, "type mismatch");
+                low = lower(node.file_id, "int", "", false, 0, false, 0, false);
+            }
+        } else if (var->is_fn_ptr) {
+            low = lower_fnptr(node.file_id, var->type_name, var->type_package, var->is_struct, var->is_enum,
+                              var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic, var->fn_results);
+        } else {
+            low = lower(node.file_id, var->type_name, var->type_package, var->is_struct, var->indirections, var->is_array,
+                        var->array_len, false);
+        }
         llvm::Type *ty = stored_type(low);
         llvm::GlobalVariable *existing = var->is_extern ? module_.getGlobalVariable(form.name) : nullptr;
         llvm::GlobalVariable *global = existing;
@@ -2543,7 +2837,8 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         error(var.loc, "not supported yet");
         return;
     }
-    if (var.is_struct || !var.type_package.empty()) {
+    if (var.is_struct || !var.type_package.empty() || found->second.struct_id >= 0 || found->second.trait_id >= 0 ||
+        found->second.elem_float) {
         error(var.loc, "global initializer is not a constant");
         return;
     }

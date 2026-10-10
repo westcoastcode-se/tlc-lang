@@ -195,7 +195,7 @@ A character literal has type `char`. `'A'` is 65 and `'\n'` is 10. A value above
 A string between backticks may span lines. It is an array of `char`, like a quoted string. The characters are copied as written: a backslash is not an escape, and a newline in the source is a newline in the string. The next backtick ends the string.
 
 ```c
-char *text = `hello
+var text char * = `hello
 world`;
 ```
 
@@ -208,7 +208,7 @@ The operators are `+ - * / %`, `& | ^ ~ << >>`, `&& || !`, the comparisons, unar
 `&&` and `||` short-circuit. In the program below, `bump` is called twice and `main` returns 2.
 
 ```c
-int calls = 0;
+var calls int = 0;
 
 func bump() int {
     calls = calls + 1;
@@ -246,8 +246,8 @@ Blocks, `if`/`else`, `while`, `do`/`while`, `for`, `switch`, `break`, `continue`
 
 ```c
 func main() int {
-    int s = 0;
-    for (int i = 1; i <= 4; i = i + 1) {
+    var s int = 0;
+    for (var i int = 1; i <= 4; i = i + 1) {
         s = s + i;
     }
     return s;
@@ -258,8 +258,8 @@ func main() int {
 
 ```c
 func main() int {
-    int n = 1;
-    int x = 0;
+    var n int = 1;
+    var x int = 0;
     switch (n) {
     case 1:
         x = 2;
@@ -288,7 +288,11 @@ func main() int {
 
 An anonymous function is an expression, `func (parameters) { body }`. The return type may be omitted, and then it is `void`. A return type is written after the parameters when it is present: `func () int { return 1; }`. Several results use the same parenthesized list as a named function: `func () (int, int) { return 1, 2; }`. The call is the argument list after the body. It does not capture a local or a parameter from an enclosing function.
 
-A local variable may be declared wherever a statement may appear. Several names may share one declaration, as in `int a, b;`. A local struct, enum, or typedef is rejected.
+A variable is `var name type`, or `name := expr` when the type comes from the initializer. `int value = 1` is `expected var`. The type is written the same way as a parameter type, after the name: `var value i32 = 1`, `var p int * = &value`, `var a int[4]`. One `var` names one variable. A variable with no initializer is `var value i32;`. `name := expr` defines a new name and can also assign a name that already exists. `var name := expr` is `type mismatch`.
+
+At file scope, `name := expr` infers the type from the initializer. `var name = expr` and `var a, b = expr` at file scope are `not supported yet`. `export`, `static`, and `extern` go on `var`: `export var n int = 1`, `extern var slot int`. `export` on `name := expr` is `not supported yet`.
+
+Several results are still bound together: `var a, b = call`. A local struct, enum, or typedef is rejected. Fields, parameters, typedefs, and return types keep their own syntax.
 
 A global with no initializer is zero. An array cannot be initialized with `=`.
 
@@ -356,7 +360,7 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 }
 ```
 
-A variable, a field, or a typedef uses the same type, then the name: `func (i32, i32) i32 fp;` or `func (i32) (i32, i32) fp;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern` function's parameters and result cannot include a function pointer that returns several results.
+A variable names the pointer first: `var fp func (i32, i32) i32;` or `var fp func (i32) (i32, i32);`. A field or a typedef still writes the type, then the name: `func (i32, i32) i32 op;` inside a struct, and `typedef func (i32, i32) i32 BinOp;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern` function's parameters and result cannot include a function pointer that returns several results.
 
 ## Structs, pointers, and arrays
 
@@ -369,15 +373,15 @@ struct Point {
 };
 
 func make(x int, y int) Point {
-    Point p;
+    var p Point;
     p.x = x;
     p.y = y;
     return p;
 }
 
 func main() int {
-    Point p;
-    Point *q;
+    var p Point;
+    var q Point *;
     p = make(40, 2);
     q = &p;
     return (*q).x + q.y;
@@ -432,7 +436,7 @@ func add4(p int *) int {
 }
 
 func main() int {
-    int a[4];
+    var a int[4];
     a[0] = 10;
     a[1] = 20;
     a[2] = 7;
@@ -449,7 +453,7 @@ An exported struct is named with the package and without the `struct` keyword:
 import "geom";
 
 func main() int {
-    geom.Point p;
+    var p geom.Point;
     p.x = 40;
     p.y = 2;
     return geom.sum(p);
@@ -493,7 +497,7 @@ func Point::add(this self Point *, dx int, dy int) void {
 }
 
 func main() int {
-    Point p;
+    var p Point;
     p.x = 10;
     p.y = 10;
     p.add(1, 1);
@@ -543,7 +547,7 @@ func apply(s Shape *, n int) int {
 }
 
 func main() int {
-    Rect r;
+    var r Rect;
     r.w = 5;
     r.h = 6;
     return apply(&r, 1);

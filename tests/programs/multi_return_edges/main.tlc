@@ -1,6 +1,6 @@
-int acc;
-int slot;
-int global_slot;
+var acc int;
+var slot int;
+var global_slot int;
 
 func put(n int) void {
     acc = acc * 10 + n;
@@ -36,7 +36,7 @@ func touch() (int, int) {
 }
 
 func blank() (int, int) {
-    int unused = 1;
+    var unused int = 1;
 }
 
 func id(n int) (int) {
@@ -44,14 +44,14 @@ func id(n int) (int) {
 }
 
 func wrap() (unsigned int, int) {
-    unsigned int n;
+    var n unsigned int;
     n = 0;
     n = n - 1;
     return n, 1;
 }
 
 func big() (long long, int) {
-    long long a;
+    var a long long;
     a = 100000;
     a = a * 100000;
     return a, 2;
@@ -75,7 +75,7 @@ struct Point {
 };
 
 func make(n int) (Point, int) {
-    Point p;
+    var p Point;
     p.x = n;
     p.y = n + 1;
     return p, 2;
@@ -95,13 +95,13 @@ static func hidden() (int, int) {
 }
 
 func adjust(n int) int {
-    int *p = &n;
+    var p int * = &n;
     n, extra := add(n, 1);
     return *p + extra;
 }
 
 func shadow(n int) int {
-    int *p = &n;
+    var p int * = &n;
     {
         n, extra := add(1, 2);
     }
@@ -109,8 +109,8 @@ func shadow(n int) int {
 }
 
 func set_outer(n int) int {
-    int extra = 0;
-    int *p = &n;
+    var extra int = 0;
+    var p int * = &n;
     {
         n, extra = add(4, 1);
     }
@@ -118,7 +118,7 @@ func set_outer(n int) int {
 }
 
 func mix(keep int) int {
-    int *p = &keep;
+    var p int * = &keep;
     keep, fresh := add(keep, 2);
     return *p + fresh;
 }
@@ -136,22 +136,22 @@ func hide(outer int) int {
 }
 
 func main() int {
-    int *q;
-    int n;
-    int *np;
-    int nn;
-    long long wide;
-    int wk;
-    short s;
-    char ch;
-    bool flag;
-    Point point;
-    int pk;
-    Box box;
-    int left;
-    int right;
-    int h1;
-    int h2;
+    var q int *;
+    var n int;
+    var np int *;
+    var nn int;
+    var wide long long;
+    var wk int;
+    var s short;
+    var ch char;
+    var flag bool;
+    var point Point;
+    var pk int;
+    var box Box;
+    var left int;
+    var right int;
+    var h1 int;
+    var h2 int;
 
     slot = 0;
     a, b := ordered();
@@ -227,7 +227,7 @@ func main() int {
         return 18;
     }
 
-    int x = 5;
+    var x int = 5;
     q, n = pick(&x);
     if (q == nullptr) {
         return 19;

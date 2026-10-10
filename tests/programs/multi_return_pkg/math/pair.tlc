@@ -10,7 +10,7 @@ func pair(n int) (int, int) {
 }
 
 export func make(n int) (Point, int) {
-    Point p;
+    var p Point;
     p.x = n;
     p.y = 1;
     return p, n;

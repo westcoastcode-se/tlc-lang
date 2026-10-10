@@ -54,13 +54,13 @@ func main() int {
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_PROFILE_MASK, SdlGlAttr.SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
 
-    SDL_Window *window = SDL_CreateWindow("Triangle", 960, 540, SdlWindow.SDL_WINDOW_OPENGL);
+    var window SDL_Window * = SDL_CreateWindow("Triangle", 960, 540, SdlWindow.SDL_WINDOW_OPENGL);
     if (window == nullptr) {
         printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
-    SDL_GLContextState *context = SDL_GL_CreateContext(window);
+    var context SDL_GLContextState * = SDL_GL_CreateContext(window);
     if (context == nullptr) {
         printf("SDL_GL_CreateContext failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
@@ -71,9 +71,9 @@ func main() int {
     glViewport(0, 0, 960, 540);
     glClearColor(0.08f, 0.09f, 0.12f, 1.0f);
 
-    int running = 1;
+    var running int = 1;
     while (running != 0) {
-        SDL_Event event;
+        var event SDL_Event;
         while (SDL_PollEvent(&event) != 0) {
             if (event.type == SdlEventKind.SDL_EVENT_QUIT ||
                 event.type == SdlEventKind.SDL_EVENT_WINDOW_CLOSE_REQUESTED) {

@@ -1,7 +1,7 @@
 import { Alias, sum } from "geom";
 
 func main() int {
-    Alias p;
+    var p Alias;
     p.x = 40;
     p.y = 2;
     return sum(p);

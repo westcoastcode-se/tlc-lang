@@ -4,7 +4,7 @@ struct Point {
 };
 
 func make(x int, y int) Point {
-    Point p;
+    var p Point;
     p.x = x;
     p.y = y;
     return p;
@@ -15,7 +15,7 @@ func sum(p Point) int {
 }
 
 func main() int {
-    Point p;
+    var p Point;
     p = make(40, 2);
     return sum(p);
 }

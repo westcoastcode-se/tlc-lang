@@ -8,7 +8,7 @@ typedef int Integer;
 typedef int Pair[2];
 
 func make(x int, y int) Point {
-    Point p;
+    var p Point;
     p.x = x;
     p.y = y;
     return p;
@@ -19,10 +19,10 @@ func sum(p Point) int {
 }
 
 func main() int {
-    Point p;
-    Ptr q;
-    Integer bias;
-    Pair extra;
+    var p Point;
+    var q Ptr;
+    var bias Integer;
+    var extra Pair;
     p = make(40, 2);
     q = &p;
     bias = 0;

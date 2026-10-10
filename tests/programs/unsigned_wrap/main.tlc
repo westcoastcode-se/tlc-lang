@@ -1,5 +1,5 @@
 func main() int {
-    unsigned int n;
+    var n unsigned int;
     n = 0;
     n = n - 1;
     if (n < 1) {

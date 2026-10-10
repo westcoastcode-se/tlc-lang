@@ -22,7 +22,7 @@ func Flag::bias(this self Flag) int {
 }
 
 func main() int {
-    u32 kind = 20;
+    var kind u32 = 20;
     if (take(Flag.A) == 20 && take_wide(Flag.B) == 1 && Flag.B.bias() == 1 && kind == Flag.A) {
         return 42;
     }

@@ -3,9 +3,9 @@ func add(a f64, b f32) double {
 }
 
 func main() int {
-    f64 x = 20.5;
-    float y = 1.5f;
-    f64 z = add(x, y);
+    var x f64 = 20.5;
+    var y float = 1.5f;
+    var z f64 = add(x, y);
     if (z != 22.0) {
         return 1;
     }

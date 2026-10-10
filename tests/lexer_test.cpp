@@ -121,18 +121,20 @@ int run_lexer_tests() {
     }
 
     {
-        const LexResult result = lex("#include <stdio.h>\n#define X 1\nint x;\n");
+        const LexResult result = lex("#include <stdio.h>\n#define X 1\nvar x int;\n");
         EXPECT_HAS(check, result.errors, "preprocessor directives are not supported");
         EXPECT(check, result.errors.find("preprocessor directives are not supported") !=
                           result.errors.rfind("preprocessor directives are not supported"));
-        EXPECT_EQ(check, result.dump, "int ident(x) ; eof");
+        EXPECT_EQ(check, result.dump, "var ident(x) int ; eof");
     }
 
     {
-        const LexResult result = lex("int as = 1;\nint from = 2;\nimport export package\n");
+        const LexResult result = lex("var as int = 1;\n"
+"var from int = 2;\n"
+"import export package\n");
         EXPECT(check, result.errors.empty());
         EXPECT_EQ(check, result.dump,
-                  "int ident(as) = int-lit(1) ; int ident(from) = int-lit(2) ; import export package eof");
+                  "var ident(as) int = int-lit(1) ; var ident(from) int = int-lit(2) ; import export package eof");
     }
 
     {

@@ -1,7 +1,7 @@
 import "geom";
 
 func main() int {
-    geom.Point p;
+    var p geom.Point;
     p.x = 40;
     p.y = 2;
     return geom.sum(p);

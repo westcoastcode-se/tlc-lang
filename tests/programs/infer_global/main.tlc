@@ -1,0 +1,6 @@
+base := 20;
+
+func main() int {
+    var extra i32 = 22;
+    return base + extra;
+}

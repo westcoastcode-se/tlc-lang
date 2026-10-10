@@ -1,6 +1,6 @@
 func main() int {
-    int n;
-    int x;
+    var n int;
+    var x int;
     n = 1;
     x = 0;
     switch (n) {

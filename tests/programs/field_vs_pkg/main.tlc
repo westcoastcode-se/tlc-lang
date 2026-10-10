@@ -5,7 +5,7 @@ struct Pair {
 };
 
 func main() int {
-    Pair p;
+    var p Pair;
     p.n = 40;
     return math.add(p.n, 2);
 }

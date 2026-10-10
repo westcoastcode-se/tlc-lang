@@ -1,4 +1,4 @@
-int bias;
+var bias int;
 
 func add(n int) int {
     return 0;

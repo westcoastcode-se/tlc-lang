@@ -9,7 +9,7 @@ struct Node {
 };
 
 func make(a Point) Point {
-    Point p;
+    var p Point;
     p.x = a.x;
     p.y = a.y;
     return p;
@@ -20,15 +20,15 @@ func Point::sum(this self Point, extra int) int {
 }
 
 func main() int {
-    Point p;
+    var p Point;
     p.x = 20;
     p.y = 10;
-    Point *q;
+    var q Point *;
     q = &p;
-    Node head;
+    var head Node;
     head.n = 4;
     head.next = &head;
-    Point made;
+    var made Point;
     made = make(*q);
     return made.sum(0) + head.next.n + sizeof(Point);
 }

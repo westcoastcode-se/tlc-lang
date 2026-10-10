@@ -1,5 +1,5 @@
 extern func printf(fmt const char *, ...) int;
-extern int slot;
+extern var slot int;
 
 func main() int {
     printf("hi\n");

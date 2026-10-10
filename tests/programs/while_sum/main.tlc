@@ -1,6 +1,6 @@
 func main() int {
-    int i = 1;
-    int s = 0;
+    var i int = 1;
+    var s int = 0;
     while (i <= 4) {
         s = s + i;
         i = i + 1;

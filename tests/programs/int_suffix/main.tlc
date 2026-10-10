@@ -1,8 +1,8 @@
 func main() int {
-    i8 a = 20i8;
-    u16 b = 400u16;
-    i32 c = 2i32;
-    u64 d = 20u64;
+    var a i8 = 20i8;
+    var b u16 = 400u16;
+    var c i32 = 2i32;
+    var d u64 = 20u64;
     if (a + c == 22 && b / 20u16 == 20 && d == 20u64) {
         return 42;
     }

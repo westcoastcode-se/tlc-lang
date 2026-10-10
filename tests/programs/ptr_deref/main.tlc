@@ -1,7 +1,7 @@
 func main() int {
-    int n = 7;
-    int *p = 0;
-    int **pp = &p;
+    var n int = 7;
+    var p int * = 0;
+    var pp int ** = &p;
     p = &n;
     **pp = 42;
     return n;

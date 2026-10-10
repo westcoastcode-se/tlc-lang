@@ -1,4 +1,4 @@
-int acc;
+var acc int;
 
 func put(n int) void {
     acc = acc * 3 + n;
@@ -27,12 +27,12 @@ func main() int {
     {
         defer func() {
         }();
-        int arg = 1;
+        var arg int = 1;
         defer func(v int) {
             acc = acc * 3 + v;
         }(arg);
         arg = 4;
-        Box box;
+        var box Box;
         box.v = 1;
         box.w = 3;
         defer box.put(0);
@@ -43,11 +43,11 @@ func main() int {
         if (0) {
             defer put(2);
         }
-        for (int k = 0; k < 1; k = k + 1) {
+        for (var k int = 0; k < 1; k = k + 1) {
             defer put(1);
             continue;
         }
-        int i = 0;
+        var i int = 0;
         while (i < 1) {
             defer put(2);
             i = 1;

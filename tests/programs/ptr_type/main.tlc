@@ -3,8 +3,8 @@ func identity(p int *) int {
 }
 
 func main() int {
-    int n = 1;
-    int *p = &n;
-    int **pp = &p;
+    var n int = 1;
+    var p int * = &n;
+    var pp int ** = &p;
     return identity(pp);
 }

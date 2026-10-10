@@ -17,7 +17,7 @@ func main() int {
     sum, orig := add(20, 22);
     var extra, base = add(1, 1);
     extra, base = add(0, 0);
-    Box box;
+    var box Box;
     box.v = 3;
     var left, right = box.split();
     var z, w = func() (int, int) {

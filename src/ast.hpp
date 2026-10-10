@@ -209,6 +209,8 @@ struct VarDecl {
     bool exported = false;
     bool is_static = false;
     bool is_extern = false;
+    // `name := expr` at file scope. The type comes from the initializer.
+    bool inferred = false;
 };
 
 struct Stmt {

@@ -47,13 +47,13 @@ func take(m Meas) int {
 }
 
 func main() int {
-    Rect r;
-    Box b;
+    var r Rect;
+    var b Box;
     r.w = 5;
     r.h = 6;
     b.n = 0;
-    int a = apply(&r, 1);
-    int d = take(r);
-    int c = apply(&b, 21);
+    var a int = apply(&r, 1);
+    var d int = take(r);
+    var c int = apply(&b, 21);
     return a + c + d - 63;
 }

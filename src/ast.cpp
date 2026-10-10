@@ -93,15 +93,23 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
     out += "(var ";
     out += var.name;
     out += ' ';
-    out += type_text(var.type_name, var.type_package, var.is_struct, var.is_enum, var.indirections, var.is_array,
-                     var.array_len);
-    if (var.is_fn_ptr) {
-        out += " fnptr";
-        append_many_results(out, var.fn_results);
-    }
-    if (var.init) {
-        out += ' ';
-        out += dump_expr(*var.init);
+    if (var.inferred) {
+        out += ":=";
+        if (var.init) {
+            out += ' ';
+            out += dump_expr(*var.init);
+        }
+    } else {
+        out += type_text(var.type_name, var.type_package, var.is_struct, var.is_enum, var.indirections, var.is_array,
+                         var.array_len);
+        if (var.is_fn_ptr) {
+            out += " fnptr";
+            append_many_results(out, var.fn_results);
+        }
+        if (var.init) {
+            out += ' ';
+            out += dump_expr(*var.init);
+        }
     }
     if (var.exported) {
         out += " export";

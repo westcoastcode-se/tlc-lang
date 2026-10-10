@@ -1,5 +1,5 @@
 func main() int {
-    long long a;
+    var a long long;
     a = 100000;
     a = a * 100000;
     a = a / 100000;
