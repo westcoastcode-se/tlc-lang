@@ -658,6 +658,33 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "extern enum Flag i8 { On = 1 }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern enum");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "enum Color { Red = 1 }\n"
+            "func take(x int) int { return x; }\n"
+            "func main() int { return take(Color.Red); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern enum Flag { On = 1 }\n"
+            "func take(x u32) int { return 0; }\n"
+            "func Flag::on(this self Flag) int { return 1; }\n"
+            "func main() int {\n"
+            "  n := take(Flag.On);\n"
+            "  return n + Flag.On.on();\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
             "enum One { Val };\n"
             "enum Two { Val };\n"
             "func main() int {\n"

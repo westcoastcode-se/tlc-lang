@@ -600,6 +600,22 @@ enum Tiny i8 {
 
 `sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `char`. A value that does not fit is `type mismatch`. An empty enum is rejected. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `int`. Other operators are `type mismatch`.
 
+`extern enum` is the C form. It has no underlying type of its own; the representation is `int`, and a value may be passed or compared where an integer is expected. `extern enum Name i8` is `extern enum`. Methods are still allowed:
+
+```c
+extern enum Flag {
+    Off,
+    On = 1,
+}
+
+func Flag::enabled(this self Flag) int {
+    if (self == Flag.On) {
+        return 1;
+    }
+    return 0;
+}
+```
+
 An exported enum exports the type. The enumerators come with it:
 
 ```c

@@ -169,6 +169,7 @@ struct EnumDecl {
     std::string underlying;
     std::vector<Enumerator> enumerators;
     bool exported = false;
+    bool is_extern = false;
 };
 
 struct TypedefDecl {

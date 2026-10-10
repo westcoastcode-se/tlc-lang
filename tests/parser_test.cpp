@@ -388,6 +388,18 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "export extern enum Color {\n"
+            "  Red,\n"
+            "  Blue = 2,\n"
+            "}\n"
+            "func main() int { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(enum Color export extern\n");
+        EXPECT_HAS(check, parsed.dump, "(enumerator Blue 2)\n");
+    }
+
+    {
         const Parsed parsed = parse_source("enum Color { Green = -1 };\nfunc main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }

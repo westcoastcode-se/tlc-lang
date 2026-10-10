@@ -1,0 +1,30 @@
+extern enum Flag {
+    A = 20,
+    B = 22,
+}
+
+func take(x int) int {
+    return x;
+}
+
+func take_wide(x u64) int {
+    if (x == 22) {
+        return 1;
+    }
+    return 0;
+}
+
+func Flag::bias(this self Flag) int {
+    if (self == Flag.B) {
+        return 1;
+    }
+    return 0;
+}
+
+func main() int {
+    u32 kind = 20;
+    if (take(Flag.A) == 20 && take_wide(Flag.B) == 1 && Flag.B.bias() == 1 && kind == Flag.A) {
+        return 42;
+    }
+    return 0;
+}

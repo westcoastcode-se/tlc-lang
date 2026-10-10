@@ -13,14 +13,10 @@ import {
     SDL_Window,
     SDL_GLContextState,
     SDL_Event,
-    SDL_INIT_VIDEO,
-    SDL_WINDOW_OPENGL,
-    SDL_EVENT_QUIT,
-    SDL_EVENT_WINDOW_CLOSE_REQUESTED,
-    SDL_GL_CONTEXT_MAJOR_VERSION,
-    SDL_GL_CONTEXT_MINOR_VERSION,
-    SDL_GL_CONTEXT_PROFILE_MASK,
-    SDL_GL_CONTEXT_PROFILE_COMPATIBILITY,
+    SdlInit,
+    SdlWindow,
+    SdlEventKind,
+    SdlGlAttr,
 } from "vendor/sdl3";
 
 import {
@@ -31,15 +27,14 @@ import {
     glEnd,
     glColor3f,
     glVertex2f,
-    GL_TRIANGLES,
-    GL_COLOR_BUFFER_BIT,
+    Gl,
 } from "vendor/gl";
 
 extern func printf(fmt const char *, ...) int;
 
 func draw_triangle() void {
-    glClear(GL_COLOR_BUFFER_BIT);
-    glBegin(GL_TRIANGLES);
+    glClear(Gl.GL_COLOR_BUFFER_BIT);
+    glBegin(Gl.GL_TRIANGLES);
     glColor3f(0.95f, 0.35f, 0.30f);
     glVertex2f(-0.6f, -0.5f);
     glColor3f(0.30f, 0.85f, 0.45f);
@@ -50,16 +45,16 @@ func draw_triangle() void {
 }
 
 func main() int {
-    if (SDL_Init(SDL_INIT_VIDEO) == 0) {
+    if (SDL_Init(SdlInit.SDL_INIT_VIDEO) == 0) {
         printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
     // Compatibility profile so glBegin is a real libGL entry point.
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MINOR_VERSION, 1);
+    SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_PROFILE_MASK, SdlGlAttr.SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
 
-    SDL_Window *window = SDL_CreateWindow("Triangle", 960, 540, SDL_WINDOW_OPENGL);
+    SDL_Window *window = SDL_CreateWindow("Triangle", 960, 540, SdlWindow.SDL_WINDOW_OPENGL);
     if (window == nullptr) {
         printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
@@ -80,7 +75,8 @@ func main() int {
     while (running != 0) {
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
-            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            if (event.type == SdlEventKind.SDL_EVENT_QUIT ||
+                event.type == SdlEventKind.SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 running = 0;
             }
         }

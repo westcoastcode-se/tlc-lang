@@ -88,6 +88,7 @@ class Checker {
     struct EnumInfo {
         std::string name;
         Type underlying;
+        bool is_extern = false;
         struct Member {
             std::string name;
             int64_t value = 0;
@@ -134,6 +135,7 @@ class Checker {
     int find_tag(uint32_t file, const std::string &name) const;
     int find_enum(uint32_t file, const std::string &name) const;
     bool package_has_enum(uint32_t file, const std::string &name) const;
+    bool is_c_enum(const Type &type) const;
     const EnumInfo::Member *find_enum_member(int enum_id, const std::string &name) const;
     int enum_designator(const Expr &expr);
     int package_trait(uint32_t file, const std::string &name) const;
@@ -941,6 +943,11 @@ int Checker::find_enum(uint32_t file, const std::string &name) const {
 
 bool Checker::package_has_enum(uint32_t file, const std::string &name) const { return find_enum(file, name) >= 0; }
 
+bool Checker::is_c_enum(const Type &type) const {
+    return type.kind == TypeKind::Enum && type.enum_id >= 0 && type.enum_id < static_cast<int>(enum_types_.size()) &&
+           enum_types_[static_cast<std::size_t>(type.enum_id)].is_extern;
+}
+
 const Checker::EnumInfo::Member *Checker::find_enum_member(int enum_id, const std::string &name) const {
     if (enum_id < 0 || enum_id >= static_cast<int>(enum_types_.size())) {
         return nullptr;
@@ -1572,8 +1579,11 @@ void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
             error(item->loc, "redefinition");
             continue;
         }
+        if (item->is_extern && !item->underlying.empty()) {
+            error(item->loc, "extern enum");
+        }
         Type underlying = type_int();
-        if (!item->underlying.empty()) {
+        if (!item->is_extern && !item->underlying.empty()) {
             Type parsed;
             if (!fill_builtin(item->underlying, parsed) ||
                 (parsed.kind != TypeKind::Int && parsed.kind != TypeKind::Char && parsed.kind != TypeKind::Bool)) {
@@ -1586,6 +1596,7 @@ void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
         EnumInfo info;
         info.name = item->name;
         info.underlying = underlying;
+        info.is_extern = item->is_extern;
         int64_t next = 0;
         bool next_ok = true;
         for (const Enumerator &enumerator : item->enumerators) {
@@ -1981,6 +1992,9 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &expr, 
     if (want.kind == TypeKind::Pointer && got.kind == TypeKind::Int && is_null_constant(expr)) {
         return;
     }
+    if (is_c_enum(got) && is_integer(want)) {
+        return;
+    }
     if (is_numeric(got) && is_numeric(want)) {
         return;
     }
@@ -1988,7 +2002,7 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &expr, 
 }
 
 void Checker::expect_integer(const Type &got, SourceLoc loc) {
-    if (got.kind == TypeKind::Invalid || is_integer(got)) {
+    if (got.kind == TypeKind::Invalid || is_integer(got) || is_c_enum(got)) {
         return;
     }
     error(loc, "type mismatch: expected an integer, found " + type_desc(got));
@@ -2135,10 +2149,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return inner;
                 }
                 expect_integer(inner, node.loc);
-                return inner.kind == TypeKind::Invalid || !is_integer(inner) ? type_invalid() : inner;
+                if (inner.kind == TypeKind::Invalid) {
+                    return type_invalid();
+                }
+                if (is_c_enum(inner) || is_integer(inner)) {
+                    return is_c_enum(inner) ? type_int() : inner;
+                }
+                return type_invalid();
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
-                const Type lhs = check_expr(*node.lhs, true);
-                const Type rhs = check_expr(*node.rhs, true);
+                Type lhs = check_expr(*node.lhs, true);
+                Type rhs = check_expr(*node.rhs, true);
                 if (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) {
                     const bool lhs_ptr = lhs.kind == TypeKind::Pointer || lhs.kind == TypeKind::Nullptr;
                     const bool rhs_ptr = rhs.kind == TypeKind::Pointer || rhs.kind == TypeKind::Nullptr;
@@ -2162,8 +2182,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq)) {
                         return type_int();
                     }
-                    error(node.loc, "type mismatch");
-                    return type_invalid();
+                    if (is_c_enum(lhs)) {
+                        lhs = type_int();
+                    }
+                    if (is_c_enum(rhs)) {
+                        rhs = type_int();
+                    }
+                    if (lhs.kind == TypeKind::Enum || rhs.kind == TypeKind::Enum) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
                 }
                 if (is_float(lhs) || is_float(rhs)) {
                     if (lhs.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
@@ -2605,6 +2633,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (target.kind == TypeKind::Void) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
+                }
+                if ((is_c_enum(source) && is_integer(target)) || (is_c_enum(target) && is_integer(source))) {
+                    return target;
                 }
                 const bool source_scalar = is_numeric(source);
                 const bool target_scalar = is_numeric(target);

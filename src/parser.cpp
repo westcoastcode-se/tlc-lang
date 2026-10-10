@@ -1231,6 +1231,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         item.underlying = specs.underlying;
         item.enumerators = specs.enumerators;
         item.exported = specs.exported;
+        item.is_extern = specs.is_extern;
         TopDecl top;
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));
