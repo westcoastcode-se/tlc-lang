@@ -44,7 +44,7 @@ struct LexResult {
 
 LexResult lex(const std::string &source) {
     tlc::SourceSet sources;
-    tlc::SourceFile &file = sources.add("mem.c", source);
+    tlc::SourceFile &file = sources.add("mem.tlc", source);
     tlc::DiagnosticEngine diags(sources);
     tlc::Lexer lexer(file, diags);
     LexResult result;

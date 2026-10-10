@@ -7,7 +7,7 @@ Diagnostics look like `file:line:column: error: message`.
 ## The compiler
 
 ```text
-tlc [options] <entry.c>
+tlc [options] <entry.tlc>
 tlc --version
 tlc --help
 ```
@@ -21,7 +21,7 @@ tlc --help
 | `-o <file>` | Output path |
 | `-P <dir>` | Extra package search root, after the entry file's directory |
 
-The file on the command line is the entry. Its `main` is the program's `main`. A symbol is named `qualifier.name`. In a package with more than one file, a `static` symbol is named `qualifier.filename.name`, where `filename` is the source file without `.c`. `extern` keeps the C name.
+The file on the command line is the entry. Its `main` is the program's `main`. A symbol is named `qualifier.name`. In a package with more than one file, a `static` symbol is named `qualifier.filename.name`, where `filename` is the source file without `.tlc`. `extern` keeps the C name.
 
 ## A program
 
@@ -32,7 +32,7 @@ func main() int {
 ```
 
 ```sh
-tlc --run main.c
+tlc --run main.tlc
 ```
 
 The exit status is 42.
@@ -41,9 +41,9 @@ Comments are `//` to the end of the line and `/* ... */`. The language has no pr
 
 ## Packages
 
-The file on the command line is its own package. Other `.c` files next to it are not compiled with it. An import names a directory. Every `.c` file directly in that directory is one package, and a subdirectory is a different package.
+The file on the command line is its own package. Other `.tlc` files next to it are not compiled with it. An import names a directory. Every `.tlc` file directly in that directory is one package, and a subdirectory is a different package.
 
-The qualifier is the `package` name when every file in the directory agrees. When no file has a `package` clause, the qualifier is the directory's name. Clauses that disagree produce `package mismatch`. The entry file's qualifier is its `package` name, or the file name without `.c`.
+The qualifier is the `package` name when every file in the directory agrees. When no file has a `package` clause, the qualifier is the directory's name. Clauses that disagree produce `package mismatch`. The entry file's qualifier is its `package` name, or the file name without `.tlc`.
 
 ```c
 package math;
@@ -67,11 +67,11 @@ import { add, Point } from "math";
 
 The first form binds the package qualifier as a name, so the call is `math.add(40, 2)`. The alias makes it `m.add(40, 2)`. The selective form brings the named exports into the file, so the call is `add(40, 2)`. An import is private to the file that wrote it.
 
-The path is a string and names a directory. An empty path and an absolute path are rejected. A path that is not a directory, including one that ends in `.c`, produces `unknown package`.
+The path is a string and names a directory. An empty path and an absolute path are rejected. A path that is not a directory, including one that ends in `.tlc`, produces `unknown package`.
 
 - `./` and `../` are resolved relative to the importing file and must name a directory.
-- Every other path is searched in the entry file's directory, then in each `-P` root. The first directory that contains a `.c` file wins.
-- A directory with no `.c` file produces `unknown package`.
+- Every other path is searched in the entry file's directory, then in each `-P` root. The first directory that contains a `.tlc` file wins.
+- A directory with no `.tlc` file produces `unknown package`.
 
 An import cycle produces `circular import` followed by the qualifiers, for example `a -> b -> a`. The same package may be imported from several files and is loaded once.
 

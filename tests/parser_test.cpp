@@ -13,7 +13,7 @@ struct Parsed {
 
 Parsed parse_source(const std::string &source) {
     tlc::SourceSet sources;
-    tlc::SourceFile &file = sources.add("mem.c", source);
+    tlc::SourceFile &file = sources.add("mem.tlc", source);
     tlc::DiagnosticEngine diags(sources);
     tlc::Lexer lexer(file, diags);
     tlc::Parser parser(lexer.tokenize(), diags);

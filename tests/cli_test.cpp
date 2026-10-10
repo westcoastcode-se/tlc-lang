@@ -32,7 +32,7 @@ int run_cli_tests() {
 #ifndef TLC_ROOT
 #error "TLC_ROOT must point at the project root"
 #endif
-    const std::string ret_const = std::string(TLC_ROOT) + "/tests/programs/ret_const/main.c";
+    const std::string ret_const = std::string(TLC_ROOT) + "/tests/programs/ret_const/main.tlc";
     const tlc::test::Proc ran = tlc::test::spawn({bin, "--run", ret_const});
     EXPECT(check, ran.code == 42);
     EXPECT(check, ran.err.empty());
@@ -41,13 +41,13 @@ int run_cli_tests() {
     EXPECT(check, ir.code == 0);
     EXPECT_HAS(check, ir.out, "define i32 @main");
 
-    const std::string import_qual = std::string(TLC_ROOT) + "/tests/programs/import_qual/main.c";
+    const std::string import_qual = std::string(TLC_ROOT) + "/tests/programs/import_qual/main.tlc";
     const tlc::test::Proc pkg_ir = tlc::test::spawn({bin, "--emit-llvm", import_qual});
     EXPECT(check, pkg_ir.code == 0);
     EXPECT_HAS(check, pkg_ir.out, "define i32 @main");
     EXPECT_HAS(check, pkg_ir.out, "math.add");
 
-    const std::string hello = std::string(TLC_ROOT) + "/tests/programs/hello_printf/main.c";
+    const std::string hello = std::string(TLC_ROOT) + "/tests/programs/hello_printf/main.tlc";
     const tlc::test::Proc hello_ir = tlc::test::spawn({bin, "--emit-llvm", hello});
     EXPECT(check, hello_ir.code == 0);
     EXPECT_HAS(check, hello_ir.out, "declare i32 @printf(ptr, ...)");

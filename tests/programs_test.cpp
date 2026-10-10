@@ -88,9 +88,9 @@ int run_program_tests() {
         }
         const std::string name = entry.path().filename().string();
         const auto expect_path = entry.path() / "expect.txt";
-        const auto main_path = entry.path() / "main.c";
+        const auto main_path = entry.path() / "main.tlc";
         if (!std::filesystem::is_regular_file(expect_path) || !std::filesystem::is_regular_file(main_path)) {
-            check.fail(name + ": missing main.c or expect.txt");
+            check.fail(name + ": missing main.tlc or expect.txt");
             continue;
         }
         const Expectation expect = parse_expect(read_all(expect_path));

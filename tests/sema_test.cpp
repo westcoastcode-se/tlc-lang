@@ -11,7 +11,7 @@ namespace {
 
 std::string diagnose(const std::string &source) {
     tlc::SourceSet sources;
-    tlc::SourceFile &file = sources.add("mem.c", source);
+    tlc::SourceFile &file = sources.add("mem.tlc", source);
     tlc::DiagnosticEngine diags(sources);
     tlc::Lexer lexer(file, diags);
     tlc::Parser parser(lexer.tokenize(), diags);
@@ -87,8 +87,8 @@ std::string diagnose_files(const std::vector<std::pair<std::string, std::string>
                 }
             }
             if (target == nullptr) {
-                const std::string direct = import.path.ends_with(".c") ? import.path : import.path + ".c";
-                const std::string mod = import.path.ends_with(".c") ? std::string{} : import.path + "/mod.c";
+                const std::string direct = import.path.ends_with(".tlc") ? import.path : import.path + ".tlc";
+                const std::string mod = import.path.ends_with(".tlc") ? std::string{} : import.path + "/mod.tlc";
                 target = find_path(graph, direct);
                 const tlc::PackageNode *other = mod.empty() ? nullptr : find_path(graph, mod);
                 if (target != nullptr && other != nullptr) {
@@ -211,13 +211,13 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c",
+            {"main.tlc",
              "import \"math\";\n"
              "func main() int {\n"
              "  math.base = 40;\n"
              "  return math.add(math.base, 2);\n"
              "}\n"},
-            {"math.c",
+            {"math.tlc",
              "export int base;\n"
              "export func add(a int, b int) int { return a + b; }\n"},
         });
@@ -226,44 +226,44 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c",
+            {"main.tlc",
              "import { add } from \"math\";\n"
              "func main() int { return add(40, 2); }\n"},
-            {"math.c", "export func add(a int, b int) int { return a + b; }\n"},
+            {"math.tlc", "export func add(a int, b int) int { return a + b; }\n"},
         });
         EXPECT_EQ(check, errors, "");
     }
 
     {
         const std::string errors = diagnose_files({
-            {"main.c",
+            {"main.tlc",
              "import \"math\" as m;\n"
              "func main() int { return m.add(40, 2); }\n"},
-            {"math.c", "export func add(a int, b int) int { return a + b; }\n"},
+            {"math.tlc", "export func add(a int, b int) int { return a + b; }\n"},
         });
         EXPECT_EQ(check, errors, "");
     }
 
     {
         const std::string errors = diagnose_files({
-            {"main.c",
+            {"main.tlc",
              "import \"math\" as m;\n"
              "func main() int { return math.add(1, 2); }\n"},
-            {"math.c", "export func add(a int, b int) int { return a + b; }\n"},
+            {"math.tlc", "export func add(a int, b int) int { return a + b; }\n"},
         });
         EXPECT_HAS(check, errors, "undeclared identifier");
     }
 
     {
         const std::string errors = diagnose_files({
-            {"main.c",
+            {"main.tlc",
              "import \"math\" as a;\n"
              "import \"also\" as b;\n"
              "func main() int { return a.add(20, 20) + b.sub(3, 1); }\n"},
-            {"math.c",
+            {"math.tlc",
              "package math;\n"
              "export func add(a int, b int) int { return a + b; }\n"},
-            {"also.c",
+            {"also.tlc",
              "package math;\n"
              "export func sub(a int, b int) int { return a - b; }\n"},
         });
@@ -272,8 +272,8 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import \"math\";\nfunc main() int { return math.secret(); }\n"},
-            {"math.c",
+            {"main.tlc", "import \"math\";\nfunc main() int { return math.secret(); }\n"},
+            {"math.tlc",
              "func secret() int { return 1; }\n"
              "export func add(a int, b int) int { return a + b + secret(); }\n"},
         });
@@ -283,28 +283,28 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import \"math\";\nfunc main() int { return secret(); }\n"},
-            {"math.c", "func secret() int { return 1; }\n"},
+            {"main.tlc", "import \"math\";\nfunc main() int { return secret(); }\n"},
+            {"math.tlc", "func secret() int { return 1; }\n"},
         });
         EXPECT_HAS(check, errors, "undeclared identifier");
     }
 
     {
         const std::string errors = diagnose_files({
-            {"main.c",
+            {"main.tlc",
              "import \"math\";\n"
              "import \"also\";\n"
              "func main() int { return 0; }\n"},
-            {"math.c", "package math;\nexport func add(a int, b int) int { return a + b; }\n"},
-            {"also.c", "package math;\nexport func sub(a int, b int) int { return a - b; }\n"},
+            {"math.tlc", "package math;\nexport func add(a int, b int) int { return a + b; }\n"},
+            {"also.tlc", "package math;\nexport func sub(a int, b int) int { return a - b; }\n"},
         });
         EXPECT_HAS(check, errors, "duplicate package name");
     }
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { missing, secret } from \"math\";\nfunc main() int { return 0; }\n"},
-            {"math.c", "func secret() int { return 1; }\nexport func add(a int, b int) int { return a + b; }\n"},
+            {"main.tlc", "import { missing, secret } from \"math\";\nfunc main() int { return 0; }\n"},
+            {"math.tlc", "func secret() int { return 1; }\nexport func add(a int, b int) int { return a + b; }\n"},
         });
         EXPECT_HAS(check, errors, "missing is not exported");
         EXPECT_HAS(check, errors, "secret is not exported");
@@ -312,11 +312,11 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c",
+            {"main.tlc",
              "import { add } from \"math\";\n"
              "int add;\n"
              "func main() int { return add; }\n"},
-            {"math.c", "export func add(a int, b int) int { return a + b; }\n"},
+            {"math.tlc", "export func add(a int, b int) int { return a + b; }\n"},
         });
         EXPECT_HAS(check, errors, "redefinition");
     }
@@ -477,12 +477,12 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import \"geom\";\n"
+            {"main.tlc", "import \"geom\";\n"
                        "func main() int {\n"
                        "  geom.Point p;\n"
                        "  return 0;\n"
                        "}\n"},
-            {"geom.c", "package geom;\n"
+            {"geom.tlc", "package geom;\n"
                        "struct Point { int x; int y; };\n"},
         });
         EXPECT_HAS(check, errors, "is not exported");
@@ -490,14 +490,14 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import \"geom\";\n"
+            {"main.tlc", "import \"geom\";\n"
                        "func main() int {\n"
                        "  geom.Point p;\n"
                        "  p.x = 40;\n"
                        "  p.y = 2;\n"
                        "  return geom.sum(p);\n"
                        "}\n"},
-            {"geom.c", "package geom;\n"
+            {"geom.tlc", "package geom;\n"
                        "export struct Point { int x; int y; };\n"
                        "export func sum(p Point) int { return p.x + p.y; }\n"},
         });
@@ -626,9 +626,9 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { Point } from \"geom\";\n"
+            {"main.tlc", "import { Point } from \"geom\";\n"
                        "func main() int { return 0; }\n"},
-            {"geom.c", "package geom;\n"
+            {"geom.tlc", "package geom;\n"
                        "typedef int Point;\n"},
         });
         EXPECT_HAS(check, errors, "is not exported");
@@ -636,14 +636,14 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import \"geom\";\n"
+            {"main.tlc", "import \"geom\";\n"
                        "func main() int {\n"
                        "  geom.Alias p;\n"
                        "  p.x = 40;\n"
                        "  p.y = 2;\n"
                        "  return geom.sum(p);\n"
                        "}\n"},
-            {"geom.c", "package geom;\n"
+            {"geom.tlc", "package geom;\n"
                        "struct Point { int x; int y; };\n"
                        "export typedef Point Alias;\n"
                        "export func sum(p Alias) int { return p.x + p.y; }\n"},
@@ -653,14 +653,14 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { Alias, sum } from \"geom\";\n"
+            {"main.tlc", "import { Alias, sum } from \"geom\";\n"
                        "func main() int {\n"
                        "  Alias p;\n"
                        "  p.x = 40;\n"
                        "  p.y = 2;\n"
                        "  return sum(p);\n"
                        "}\n"},
-            {"geom.c", "package geom;\n"
+            {"geom.tlc", "package geom;\n"
                        "struct Point { int x; int y; };\n"
                        "export typedef Point Alias;\n"
                        "export func sum(p Alias) int { return p.x + p.y; }\n"},
@@ -670,9 +670,9 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { Blue } from \"geom\";\n"
+            {"main.tlc", "import { Blue } from \"geom\";\n"
                        "func main() int { return Blue; }\n"},
-            {"geom.c", "package geom;\n"
+            {"geom.tlc", "package geom;\n"
                        "export enum Color { Red, Green = 40, Blue };\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -1415,7 +1415,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"math/fwd.c", "typedef struct B;\n"
+            {"math/fwd.tlc", "typedef struct B;\n"
                            "struct A { B *b; int n; };\n"
                            "func take(b B *) int {\n"
                            "  A a;\n"
@@ -1423,7 +1423,7 @@ int run_sema_tests() {
                            "  a.b = b;\n"
                            "  return a.n + a.b.x;\n"
                            "}\n"},
-            {"math/def.c", "struct B { int x; };\n"},
+            {"math/def.tlc", "struct B { int x; };\n"},
         });
         EXPECT_EQ(check, errors, "");
     }
@@ -1488,14 +1488,14 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { Point, sum } from \"geom\";\n"
+            {"main.tlc", "import { Point, sum } from \"geom\";\n"
                        "func main() int {\n"
                        "  Point p;\n"
                        "  p.x = 40;\n"
                        "  p.y = 2;\n"
                        "  return sum(p);\n"
                        "}\n"},
-            {"geom.c", "package geom;\n"
+            {"geom.tlc", "package geom;\n"
                        "export struct Point { int x; int y; };\n"
                        "export func sum(p Point) int { return p.x + p.y; }\n"},
         });
@@ -1516,50 +1516,50 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { add } from \"math\";\n"
+            {"main.tlc", "import { add } from \"math\";\n"
                        "func main() int { return add(20, 2); }\n"},
-            {"math/add.c", "func secret() int { return extra(); }\n"
+            {"math/add.tlc", "func secret() int { return extra(); }\n"
                            "export func add(a int, b int) int { return a + b + secret(); }\n"},
-            {"math/more.c", "func extra() int { return 20; }\n"},
+            {"math/more.tlc", "func extra() int { return 20; }\n"},
         });
         EXPECT_EQ(check, errors, "");
     }
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import \"math\";\nfunc main() int { return math.secret(); }\n"},
-            {"math/add.c", "func secret() int { return 1; }\n"
+            {"main.tlc", "import \"math\";\nfunc main() int { return math.secret(); }\n"},
+            {"math/add.tlc", "func secret() int { return 1; }\n"
                            "export func add(a int, b int) int { return a + b; }\n"},
-            {"math/more.c", "func extra() int { return 2; }\n"},
+            {"math/more.tlc", "func extra() int { return 2; }\n"},
         });
         EXPECT_HAS(check, errors, "is not exported");
     }
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import \"math\";\nfunc main() int { return 0; }\n"},
-            {"math/a.c", "static func hidden() int { return 1; }\n"
+            {"main.tlc", "import \"math\";\nfunc main() int { return 0; }\n"},
+            {"math/a.tlc", "static func hidden() int { return 1; }\n"
                          "export func add() int { return hidden(); }\n"},
-            {"math/b.c", "func use() int { return hidden(); }\n"},
+            {"math/b.tlc", "func use() int { return hidden(); }\n"},
         });
         EXPECT_HAS(check, errors, "undeclared identifier");
     }
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import \"math\";\nfunc main() int { return 0; }\n"},
-            {"math/a.c", "int value;\n"},
-            {"math/b.c", "int value;\n"},
+            {"main.tlc", "import \"math\";\nfunc main() int { return 0; }\n"},
+            {"math/a.tlc", "int value;\n"},
+            {"math/b.tlc", "int value;\n"},
         });
         EXPECT_HAS(check, errors, "redefinition");
     }
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { a, b } from \"math\";\nfunc main() int { return a() + b(); }\n"},
-            {"math/a.c", "static func hidden() int { return 1; }\n"
+            {"main.tlc", "import { a, b } from \"math\";\nfunc main() int { return a() + b(); }\n"},
+            {"math/a.tlc", "static func hidden() int { return 1; }\n"
                          "export func a() int { return hidden(); }\n"},
-            {"math/b.c", "static func hidden() int { return 2; }\n"
+            {"math/b.tlc", "static func hidden() int { return 2; }\n"
                          "export func b() int { return hidden(); }\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -1567,14 +1567,14 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { use } from \"math\";\nfunc main() int { return use(); }\n"},
-            {"math/a.c", "struct A { B b; };\n"
+            {"main.tlc", "import { use } from \"math\";\nfunc main() int { return use(); }\n"},
+            {"math/a.tlc", "struct A { B b; };\n"
                          "export func use() int {\n"
                          "  A a;\n"
                          "  a.b.x = 42;\n"
                          "  return a.b.x;\n"
                          "}\n"},
-            {"math/b.c", "struct B { int x; };\n"},
+            {"math/b.tlc", "struct B { int x; };\n"},
         });
         EXPECT_EQ(check, errors, "");
     }
@@ -2243,12 +2243,12 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import \"math\";\n"
+            {"main.tlc", "import \"math\";\n"
                        "func main() int {\n"
                        "  a, b := math.pair(20);\n"
                        "  return a + b;\n"
                        "}\n"},
-            {"math/pair.c", "package math;\n"
+            {"math/pair.tlc", "package math;\n"
                             "export func pair(n int) (int, int) { return n + 1, n; }\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -2256,12 +2256,12 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { pair } from \"math\";\n"
+            {"main.tlc", "import { pair } from \"math\";\n"
                        "func main() int {\n"
                        "  a, b := pair(1);\n"
                        "  return a;\n"
                        "}\n"},
-            {"math/pair.c", "package math;\n"
+            {"math/pair.tlc", "package math;\n"
                             "func pair(n int) (int, int) { return n, n; }\n"},
         });
         EXPECT_HAS(check, errors, "is not exported");
@@ -2269,11 +2269,11 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.c", "import { twice } from \"math\";\n"
+            {"main.tlc", "import { twice } from \"math\";\n"
                        "func main() int { return twice(1); }\n"},
-            {"math/pair.c", "package math;\n"
+            {"math/pair.tlc", "package math;\n"
                             "func pair(n int) (int, int) { return n + 1, n; }\n"},
-            {"math/use.c", "package math;\n"
+            {"math/use.tlc", "package math;\n"
                            "export func twice(n int) int {\n"
                            "  a, b := pair(n);\n"
                            "  return a + b;\n"

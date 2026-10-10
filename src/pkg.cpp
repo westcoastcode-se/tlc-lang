@@ -34,7 +34,7 @@ std::vector<fs::path> source_files(const fs::path &dir) {
         if (!it->is_regular_file(file_ec) || file_ec) {
             continue;
         }
-        if (it->path().extension() == ".c") {
+        if (it->path().extension() == ".tlc") {
             files.push_back(it->path());
         }
     }

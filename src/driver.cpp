@@ -26,7 +26,7 @@ std::string version_text() {
 
 std::string help_text() {
     return
-        "usage: tlc [options] <entry.c>\n"
+        "usage: tlc [options] <entry.tlc>\n"
         "       tlc --version\n"
         "       tlc --help\n"
         "\n"

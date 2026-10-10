@@ -101,9 +101,9 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "func main() int { return 0; }\n");
-        tree.write("sibling.c", "int side;\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "func main() int { return 0; }\n");
+        tree.write("sibling.tlc", "int side;\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
         EXPECT(check, resolved.graph.nodes.size() == 1);
         EXPECT(check, resolved.graph.edges.empty());
@@ -113,16 +113,16 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "import \"math\";\nfunc main() int { return 0; }\n");
-        tree.write("math/add.c", "func add(a int, b int) int { return a + b; }\n");
-        tree.write("math/more.c", "func extra() int { return 1; }\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
+        tree.write("math/add.tlc", "func add(a int, b int) int { return a + b; }\n");
+        tree.write("math/more.tlc", "func extra() int { return 1; }\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
         EXPECT_EQ(check, resolved.errors, "");
         EXPECT(check, resolved.graph.nodes.size() == 3);
         EXPECT(check, resolved.graph.edges.size() == 1);
-        const tlc::PackageNode *add = find_suffix(resolved.graph, "/math/add.c");
-        const tlc::PackageNode *more = find_suffix(resolved.graph, "/math/more.c");
+        const tlc::PackageNode *add = find_suffix(resolved.graph, "/math/add.tlc");
+        const tlc::PackageNode *more = find_suffix(resolved.graph, "/math/more.tlc");
         EXPECT(check, add != nullptr && more != nullptr);
         if (add != nullptr && more != nullptr) {
             EXPECT_EQ(check, add->qualifier, "math");
@@ -139,11 +139,11 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "import \"lib/vec\";\nfunc main() int { return 0; }\n");
-        tree.write("lib/vec/len.c", "int len;\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "import \"lib/vec\";\nfunc main() int { return 0; }\n");
+        tree.write("lib/vec/len.tlc", "int len;\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
-        const tlc::PackageNode *vec = find_suffix(resolved.graph, "/lib/vec/len.c");
+        const tlc::PackageNode *vec = find_suffix(resolved.graph, "/lib/vec/len.tlc");
         EXPECT(check, vec != nullptr);
         if (vec != nullptr) {
             EXPECT_EQ(check, vec->qualifier, "vec");
@@ -154,9 +154,9 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "import \"math.c\";\nfunc main() int { return 0; }\n");
-        tree.write("math.c", "func add(a int, b int) int { return a + b; }\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "import \"math.tlc\";\nfunc main() int { return 0; }\n");
+        tree.write("math.tlc", "func add(a int, b int) int { return a + b; }\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "unknown package");
         EXPECT(check, resolved.graph.nodes.size() == 1);
@@ -165,10 +165,10 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "import \"math\";\nfunc main() int { return 0; }\n");
-        tree.write("math/a.c", "package math;\nint a;\n");
-        tree.write("math/b.c", "package other;\nint b;\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
+        tree.write("math/a.tlc", "package math;\nint a;\n");
+        tree.write("math/b.tlc", "package other;\nint b;\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "package mismatch");
     }
@@ -176,14 +176,14 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "import \"nested/a\";\nfunc main() int { return 0; }\n");
-        tree.write("nested/a/a.c", "import \"./sib\";\nint value;\n");
-        tree.write("nested/a/sib/sib.c", "int sib;\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "import \"nested/a\";\nfunc main() int { return 0; }\n");
+        tree.write("nested/a/a.tlc", "import \"./sib\";\nint value;\n");
+        tree.write("nested/a/sib/sib.tlc", "int sib;\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
         EXPECT_EQ(check, resolved.errors, "");
-        const tlc::PackageNode *nested = find_suffix(resolved.graph, "/nested/a/a.c");
-        const tlc::PackageNode *sib = find_suffix(resolved.graph, "/nested/a/sib/sib.c");
+        const tlc::PackageNode *nested = find_suffix(resolved.graph, "/nested/a/a.tlc");
+        const tlc::PackageNode *sib = find_suffix(resolved.graph, "/nested/a/sib/sib.tlc");
         EXPECT(check, nested != nullptr && sib != nullptr);
         if (nested != nullptr && sib != nullptr) {
             EXPECT_EQ(check, sib->qualifier, "sib");
@@ -196,14 +196,14 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("sub/main.c", "import \"../sib\";\nfunc main() int { return 0; }\n");
-        tree.write("sib/sib.c", "int sib;\n");
-        const Resolved resolved = resolve_at(tree.file("sub/main.c"));
+        tree.write("sub/main.tlc", "import \"../sib\";\nfunc main() int { return 0; }\n");
+        tree.write("sib/sib.tlc", "int sib;\n");
+        const Resolved resolved = resolve_at(tree.file("sub/main.tlc"));
         EXPECT(check, resolved.ok);
-        const tlc::PackageNode *sib = find_suffix(resolved.graph, "/sib/sib.c");
+        const tlc::PackageNode *sib = find_suffix(resolved.graph, "/sib/sib.tlc");
         EXPECT(check, sib != nullptr);
         if (sib != nullptr) {
-            EXPECT(check, !sib->path.ends_with("/sub/sib/sib.c"));
+            EXPECT(check, !sib->path.ends_with("/sub/sib/sib.tlc"));
             EXPECT_EQ(check, sib->import_spec, "../sib");
             EXPECT_EQ(check, sib->qualifier, "sib");
         }
@@ -214,11 +214,11 @@ int run_pkg_tests() {
         TempTree extra;
         EXPECT(check, entry.ok());
         EXPECT(check, extra.ok());
-        entry.write("main.c", "import \"math\";\nfunc main() int { return 0; }\n");
-        extra.write("math/add.c", "package math;\nfunc add(a int, b int) int { return a + b; }\n");
-        const Resolved resolved = resolve_at(entry.file("main.c"), {extra.directory()});
+        entry.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
+        extra.write("math/add.tlc", "package math;\nfunc add(a int, b int) int { return a + b; }\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {extra.directory()});
         EXPECT(check, resolved.ok);
-        const tlc::PackageNode *math = find_suffix(resolved.graph, "/math/add.c");
+        const tlc::PackageNode *math = find_suffix(resolved.graph, "/math/add.tlc");
         EXPECT(check, math != nullptr);
         if (math != nullptr) {
             EXPECT(check, math->path.starts_with(extra.directory()));
@@ -231,12 +231,12 @@ int run_pkg_tests() {
         TempTree extra;
         EXPECT(check, entry.ok());
         EXPECT(check, extra.ok());
-        entry.write("main.c", "import \"math\";\nfunc main() int { return 0; }\n");
-        entry.write("math/add.c", "int from_entry;\n");
-        extra.write("math/add.c", "int from_extra;\n");
-        const Resolved resolved = resolve_at(entry.file("main.c"), {extra.directory()});
+        entry.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
+        entry.write("math/add.tlc", "int from_entry;\n");
+        extra.write("math/add.tlc", "int from_extra;\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {extra.directory()});
         EXPECT(check, resolved.ok);
-        const tlc::PackageNode *math = find_suffix(resolved.graph, "/math/add.c");
+        const tlc::PackageNode *math = find_suffix(resolved.graph, "/math/add.tlc");
         EXPECT(check, math != nullptr);
         if (math != nullptr) {
             EXPECT(check, math->path.starts_with(entry.directory()));
@@ -246,8 +246,8 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "import \"missing\";\nfunc main() int { return 0; }\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "import \"missing\";\nfunc main() int { return 0; }\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "unknown package");
         EXPECT(check, resolved.graph.nodes.size() == 1);
@@ -257,8 +257,8 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "import \"\";\nimport \"/abs\";\nfunc main() int { return 0; }\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "import \"\";\nimport \"/abs\";\nfunc main() int { return 0; }\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "empty package path");
         EXPECT_HAS(check, resolved.errors, "absolute package path");
@@ -268,34 +268,34 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "import \"a\";\nfunc main() int { return 0; }\n");
-        tree.write("a/a.c", "import \"b\";\nint from_a;\n");
-        tree.write("b/b.c", "import \"a\";\nint from_b;\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "import \"a\";\nfunc main() int { return 0; }\n");
+        tree.write("a/a.tlc", "import \"b\";\nint from_a;\n");
+        tree.write("b/b.tlc", "import \"a\";\nint from_b;\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "circular import a -> b -> a");
-        EXPECT(check, find_suffix(resolved.graph, "/a/a.c") != nullptr);
-        EXPECT(check, find_suffix(resolved.graph, "/b/b.c") != nullptr);
+        EXPECT(check, find_suffix(resolved.graph, "/a/a.tlc") != nullptr);
+        EXPECT(check, find_suffix(resolved.graph, "/b/b.tlc") != nullptr);
     }
 
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.c", "import \"a\";\nimport \"b\";\nfunc main() int { return 0; }\n");
-        tree.write("a/a.c", "import \"c\";\nint from_a;\n");
-        tree.write("b/b.c", "import \"c\";\nint from_b;\n");
-        tree.write("c/c.c", "int shared;\n");
-        const Resolved resolved = resolve_at(tree.file("main.c"));
+        tree.write("main.tlc", "import \"a\";\nimport \"b\";\nfunc main() int { return 0; }\n");
+        tree.write("a/a.tlc", "import \"c\";\nint from_a;\n");
+        tree.write("b/b.tlc", "import \"c\";\nint from_b;\n");
+        tree.write("c/c.tlc", "int shared;\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
         EXPECT_EQ(check, resolved.errors, "");
-        const tlc::PackageNode *shared = find_suffix(resolved.graph, "/c/c.c");
-        const tlc::PackageNode *a = find_suffix(resolved.graph, "/a/a.c");
-        const tlc::PackageNode *b = find_suffix(resolved.graph, "/b/b.c");
+        const tlc::PackageNode *shared = find_suffix(resolved.graph, "/c/c.tlc");
+        const tlc::PackageNode *a = find_suffix(resolved.graph, "/a/a.tlc");
+        const tlc::PackageNode *b = find_suffix(resolved.graph, "/b/b.tlc");
         EXPECT(check, shared != nullptr && a != nullptr && b != nullptr);
         if (shared != nullptr && a != nullptr && b != nullptr) {
             int copies = 0;
             for (const tlc::PackageNode &node : resolved.graph.nodes) {
-                if (node.path.ends_with("/c/c.c")) {
+                if (node.path.ends_with("/c/c.tlc")) {
                     ++copies;
                 }
             }
