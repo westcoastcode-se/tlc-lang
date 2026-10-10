@@ -150,7 +150,7 @@ class Checker {
     Type type_of_fn_param(const FnParam &param, SourceLoc loc);
     Type type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
                         int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
-                        SourceLoc loc);
+                        const std::vector<FnParam> &results, SourceLoc loc);
     Type type_of_param(const Param &param);
     Type type_of_result(const ResultSlot &slot, SourceLoc loc);
     std::string type_desc(const Type &type) const;
@@ -274,6 +274,31 @@ Type type_trait(int id) {
     type.kind = TypeKind::Trait;
     type.trait_id = id;
     return type;
+}
+
+bool uses_many_results(const Type &type) {
+    if (type.kind == TypeKind::Pointer && type.pointee != nullptr) {
+        return uses_many_results(*type.pointee);
+    }
+    if (type.kind == TypeKind::Function) {
+        if (type.result != nullptr && type.result->kind == TypeKind::Tuple) {
+            return true;
+        }
+        for (const Type &param : type.params) {
+            if (uses_many_results(param)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (type.kind == TypeKind::Tuple) {
+        for (const Type &part : type.results) {
+            if (uses_many_results(part)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool mentions_trait(const Type &type) {
@@ -618,7 +643,7 @@ bool Checker::captured(const Symbol &symbol) const {
 Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
     if (param.is_fn_ptr) {
         return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
-                              param.indirections, param.params, param.variadic, loc);
+                              param.indirections, param.params, param.variadic, param.results, loc);
     }
     return object_type(param.type_name, param.indirections, false, 0, loc, true, param.type_package, param.is_struct,
                        param.is_enum);
@@ -626,8 +651,29 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
 
 Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
                              int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
-                             SourceLoc loc) {
-    Type result = object_type(ret_name, ret_indirections, false, 0, loc, false, ret_package, ret_struct, ret_enum);
+                             const std::vector<FnParam> &results, SourceLoc loc) {
+    Type result;
+    if (results.size() > 1) {
+        std::vector<Type> parts;
+        parts.reserve(results.size());
+        for (const FnParam &part : results) {
+            Type one = part.is_struct || part.is_enum || !part.type_package.empty()
+                           ? object_type(part.type_name, part.indirections, false, 0, loc, false, part.type_package,
+                                         part.is_struct, part.is_enum)
+                           : with_indirections(type_of_name(part.type_name, loc, part.indirections > 0), part.indirections,
+                                               loc);
+            if (one.kind == TypeKind::Void) {
+                error(loc, "type mismatch");
+            }
+            parts.push_back(std::move(one));
+        }
+        result = type_tuple(std::move(parts));
+    } else {
+        // Same result spelling as a function result, so `void` and a bare struct tag stay valid.
+        result = ret_struct || ret_enum || !ret_package.empty()
+                     ? object_type(ret_name, ret_indirections, false, 0, loc, false, ret_package, ret_struct, ret_enum)
+                     : with_indirections(type_of_name(ret_name, loc, ret_indirections > 0), ret_indirections, loc);
+    }
     std::vector<Type> args;
     args.reserve(params.size());
     for (const FnParam &param : params) {
@@ -644,7 +690,7 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
 Type Checker::type_of_param(const Param &param) {
     if (param.is_fn_ptr) {
         return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
-                              param.indirections, param.fn_params, param.fn_variadic, param.loc);
+                              param.indirections, param.fn_params, param.fn_variadic, param.fn_results, param.loc);
     }
     return object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
                        param.type_package, param.is_struct, param.is_enum, param.is_receiver);
@@ -653,7 +699,7 @@ Type Checker::type_of_param(const Param &param) {
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
     if (slot.is_fn_ptr) {
         return type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
-                              slot.indirections, slot.fn_params, slot.fn_variadic, loc);
+                              slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results, loc);
     }
     return slot.is_struct || slot.is_enum || !slot.type_package.empty()
                ? object_type(slot.type_name, slot.indirections, false, 0, loc, false, slot.type_package, slot.is_struct,
@@ -1314,7 +1360,7 @@ void Checker::define_struct_fields() {
             Type field_type =
                 field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                  field.ret_indirections, field.indirections, field.fn_params,
-                                                 field.fn_variadic, field.loc)
+                                                 field.fn_variadic, field.fn_results, field.loc)
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum);
             info.fields.push_back(StructInfo::Field{field.name, std::move(field_type)});
@@ -1472,7 +1518,7 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
     const Type type = item.is_fn_ptr
                           ? type_of_fn_ptr(item.type_name, item.type_package, item.is_struct, item.is_enum,
                                            item.ret_indirections, item.indirections, item.fn_params, item.fn_variadic,
-                                           item.loc)
+                                           item.fn_results, item.loc)
                           : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
                                         item.type_package, item.is_struct, item.is_enum);
     if (type.kind == TypeKind::Invalid) {
@@ -2739,7 +2785,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     Type type = var.is_fn_ptr
                                     ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum,
                                                      var.ret_indirections, var.indirections, var.fn_params, var.fn_variadic,
-                                                     var.loc)
+                                                     var.fn_results, var.loc)
                                     : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc,
                                                   false, var.type_package, var.is_struct, var.is_enum);
                     Symbol symbol;
@@ -2760,6 +2806,14 @@ void Checker::check_stmt(const Stmt &stmt) {
 }
 
 void Checker::check_function(const FunctionDecl &fn) {
+    if (fn.results.size() > 1) {
+        for (const ResultSlot &slot : fn.results) {
+            if (slot.is_fn_ptr) {
+                error(fn.loc, "not supported yet");
+                break;
+            }
+        }
+    }
     push_function();
     const Type saved = return_type_;
     const int saved_loops = loop_depth_;
@@ -2813,6 +2867,19 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             }
             if (fn->is_extern && fn->results.size() > 1) {
                 error(fn->loc, "extern function cannot return several results");
+            } else if (fn->is_extern) {
+                bool many = signature.result != nullptr && uses_many_results(*signature.result);
+                if (!many) {
+                    for (const Type &param : signature.params) {
+                        if (uses_many_results(param)) {
+                            many = true;
+                            break;
+                        }
+                    }
+                }
+                if (many) {
+                    error(fn->loc, "extern function cannot use several results");
+                }
             }
             if (generic && signature.result != nullptr && signature.result->kind == TypeKind::Tuple) {
                 error(fn->loc, "not supported yet");
@@ -2905,7 +2972,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             Type type = var->is_fn_ptr
                             ? type_of_fn_ptr(var->type_name, var->type_package, var->is_struct, var->is_enum,
                                              var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic,
-                                             var->loc)
+                                             var->fn_results, var->loc)
                             : object_type(var->type_name, var->indirections, var->is_array, var->array_len, var->loc, false,
                                           var->type_package, var->is_struct, var->is_enum);
             Symbol symbol;

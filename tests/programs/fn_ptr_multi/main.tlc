@@ -1,0 +1,20 @@
+func pair(n i32) (i32, i32) {
+    return n, n + 2;
+}
+
+typedef func (i32) (i32, i32) PairFn;
+
+func apply(p PairFn) i32 {
+    a, b := p(20);
+    return a + b;
+}
+
+func main() i32 {
+    func (i32) (i32, i32) fp;
+    fp = pair;
+    var lo, hi = fp(10);
+    if (lo != 10 || hi != 12) {
+        return 1;
+    }
+    return apply(fp);
+}

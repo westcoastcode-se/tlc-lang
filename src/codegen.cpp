@@ -88,6 +88,7 @@ struct Binding {
     bool fn_ret_char = false;
     bool fn_ret_bool = false;
     int fn_ret_struct = -1;
+    std::vector<FnParam> fn_results{};
 };
 
 struct TypedValue {
@@ -110,6 +111,7 @@ struct TypedValue {
     bool fn_ret_char = false;
     bool fn_ret_bool = false;
     int fn_ret_struct = -1;
+    std::vector<FnParam> fn_results{};
 };
 
 class CodeGen {
@@ -174,6 +176,7 @@ class CodeGen {
         bool elem_float = false;
         llvm::Value *indirect = nullptr;
         llvm::FunctionType *fn_ty = nullptr;
+        std::vector<FnParam> fn_results{};
     };
     struct FieldLayout {
         std::string name;
@@ -216,6 +219,7 @@ class CodeGen {
         bool fn_ret_char = false;
         bool fn_ret_bool = false;
         int fn_ret_struct = -1;
+        std::vector<FnParam> fn_results{};
     };
     struct Alias {
         int depth = 0;
@@ -237,6 +241,7 @@ class CodeGen {
         bool fn_ret_char = false;
         bool fn_ret_bool = false;
         int fn_ret_struct = -1;
+        std::vector<FnParam> fn_results{};
     };
     struct Shape {
         llvm::Type *type = nullptr;
@@ -390,6 +395,10 @@ class CodeGen {
             return zero();
         }
         if (slot_type != nullptr && slot_type->isPointerTy() && from_depth == 0) {
+            // A function designator is already a pointer. Its depth is the return depth, which is 0 for a scalar.
+            if (value->getType()->isPointerTy()) {
+                return value;
+            }
             return null_ptr();
         }
         if (slot_type != nullptr && slot_type->isFloatingPointTy() && from_depth == 0) {
@@ -506,6 +515,7 @@ class CodeGen {
         loaded.fn_ret_char = binding.fn_ret_char;
         loaded.fn_ret_bool = binding.fn_ret_bool;
         loaded.fn_ret_struct = binding.fn_ret_struct;
+        loaded.fn_results = binding.fn_results;
         return loaded;
     }
     llvm::Type *object_type(llvm::Value *addr) const {
@@ -547,7 +557,7 @@ class CodeGen {
                   bool is_array, int array_len, bool parameter) const;
     Lowered lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package, bool ret_struct,
                         bool ret_enum, int ret_indirections, int fn_depth, const std::vector<FnParam> &params,
-                        bool variadic) const;
+                        bool variadic, const std::vector<FnParam> &results) const;
     Lowered lower_param_type(uint32_t file, const Param &param) const;
     void apply_low(Binding &binding, const Lowered &low) const;
     const FieldLayout *find_field(int struct_id, const std::string &name, int &index) const;
@@ -714,7 +724,8 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
                                                                           fn.results.front().ret_indirections,
                                                                           fn.results.front().indirections,
                                                                           fn.results.front().fn_params,
-                                                                          fn.results.front().fn_variadic)
+                                                                          fn.results.front().fn_variadic,
+                                                                          fn.results.front().fn_results)
                                                             : lower(file, fn.return_type, fn.type_package, fn.is_struct,
                                                                     fn.indirections, false, 0, false)));
     std::vector<llvm::Type *> params;
@@ -1078,6 +1089,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.fn_ret_char = have && base.fn_ret_char;
         out.fn_ret_bool = have && base.fn_ret_bool;
         out.fn_ret_struct = have ? base.fn_ret_struct : -1;
+        out.fn_results = have ? base.fn_results : std::vector<FnParam>{};
     }
     out.type = leaf_type(out.depth, elem_char, sid, elem_bool, elem_bits, elem_float);
     return out;
@@ -1085,24 +1097,37 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
 
 CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package,
                                       bool ret_struct, bool ret_enum, int ret_indirections, int fn_depth,
-                                      const std::vector<FnParam> &params, bool variadic) const {
+                                      const std::vector<FnParam> &params, bool variadic,
+                                      const std::vector<FnParam> &results) const {
     (void)ret_enum;
-    const Lowered ret = lower(file, ret_name, ret_package, ret_struct, ret_indirections, false, 0, false);
     std::vector<llvm::Type *> args;
     args.reserve(params.size());
     for (const FnParam &param : params) {
         const Lowered arg = param.is_fn_ptr
                                 ? lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum,
-                                              param.ret_indirections, param.indirections, param.params, param.variadic)
+                                              param.ret_indirections, param.indirections, param.params, param.variadic,
+                                              param.results)
                                 : lower(file, param.type_name, param.type_package, param.is_struct, param.indirections, false,
                                         0, true);
         args.push_back(stored_type(arg));
     }
-    llvm::Type *ret_ty = ret.depth == 0 && ret.elem_void ? llvm::Type::getVoidTy(context_) : stored_type(ret);
     Lowered out;
-    out.fn_ty = llvm::FunctionType::get(ret_ty, args, variadic);
     out.depth = fn_depth < 1 ? 1 : fn_depth;
     out.type = ptr_type();
+    if (results.size() > 1) {
+        std::vector<llvm::Type *> fields;
+        fields.reserve(results.size());
+        for (const FnParam &part : results) {
+            fields.push_back(stored_type(
+                lower(file, part.type_name, part.type_package, part.is_struct, part.indirections, false, 0, false)));
+        }
+        out.fn_ty = llvm::FunctionType::get(llvm::StructType::get(context_, fields), args, variadic);
+        out.fn_results = results;
+        return out;
+    }
+    const Lowered ret = lower(file, ret_name, ret_package, ret_struct, ret_indirections, false, 0, false);
+    llvm::Type *ret_ty = ret.depth == 0 && ret.elem_void ? llvm::Type::getVoidTy(context_) : stored_type(ret);
+    out.fn_ty = llvm::FunctionType::get(ret_ty, args, variadic);
     out.fn_ret_depth = ret.depth;
     out.fn_ret_float = ret.elem_float;
     out.fn_ret_bits = ret.elem_bits;
@@ -1116,7 +1141,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
 CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) const {
     if (param.is_fn_ptr) {
         return lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
-                           param.indirections, param.fn_params, param.fn_variadic);
+                           param.indirections, param.fn_params, param.fn_variadic, param.fn_results);
     }
     return lower(file, param.type_name, param.type_package, param.is_struct, param.indirections, param.is_array,
                  param.array_len, true);
@@ -1140,6 +1165,7 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.fn_ret_char = low.fn_ret_char;
     binding.fn_ret_bool = low.fn_ret_bool;
     binding.fn_ret_struct = low.fn_ret_struct;
+    binding.fn_results = low.fn_results;
 }
 
 const CodeGen::FieldLayout *CodeGen::find_field(int struct_id, const std::string &name, int &index) const {
@@ -1302,7 +1328,7 @@ void CodeGen::prepare_structs() {
                 const Lowered low =
                     field.is_fn_ptr ? lower_fnptr(file, field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                   field.ret_indirections, field.indirections, field.fn_params,
-                                                  field.fn_variadic)
+                                                  field.fn_variadic, field.fn_results)
                                    : lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
                                            field.is_array, field.array_len, false);
                 FieldLayout slot;
@@ -1372,7 +1398,7 @@ void CodeGen::prepare_aliases() {
                 item.item->is_fn_ptr
                     ? lower_fnptr(item.file, item.item->type_name, item.item->type_package, item.item->is_struct,
                                   item.item->is_enum, item.item->ret_indirections, item.item->indirections,
-                                  item.item->fn_params, item.item->fn_variadic)
+                                  item.item->fn_params, item.item->fn_variadic, item.item->fn_results)
                     : lower(item.file, item.item->type_name, item.item->type_package, item.item->is_struct,
                             item.item->indirections, item.item->is_array, item.item->array_len, false);
             Alias alias;
@@ -1394,6 +1420,7 @@ void CodeGen::prepare_aliases() {
             alias.fn_ret_char = low.fn_ret_char;
             alias.fn_ret_bool = low.fn_ret_bool;
             alias.fn_ret_struct = low.fn_ret_struct;
+            alias.fn_results = low.fn_results;
             aliases_[item.file].emplace(item.item->name, alias);
             progress = true;
         }
@@ -1517,7 +1544,8 @@ void CodeGen::declare_file(const PackageNode &node) {
                                 ? Lowered{}
                                 : (ret_fnptr ? lower_fnptr(node.file_id, ret_slot->type_name, ret_slot->type_package,
                                                           ret_slot->is_struct, ret_slot->is_enum, ret_slot->ret_indirections,
-                                                          ret_slot->indirections, ret_slot->fn_params, ret_slot->fn_variadic)
+                                                          ret_slot->indirections, ret_slot->fn_params, ret_slot->fn_variadic,
+                                                          ret_slot->fn_results)
                                              : lower(node.file_id, acc.fn->return_type, acc.fn->type_package, acc.fn->is_struct,
                                                      acc.fn->indirections, false, 0, false));
         if (function_is_generic(node.file_id, *acc.fn)) {
@@ -1573,7 +1601,8 @@ void CodeGen::declare_file(const PackageNode &node) {
         const SymbolForm form = symbol_form(node, var->name, var->is_extern, var->is_static, var->exported, false);
         const Lowered low = var->is_fn_ptr
                                 ? lower_fnptr(node.file_id, var->type_name, var->type_package, var->is_struct, var->is_enum,
-                                              var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic)
+                                              var->ret_indirections, var->indirections, var->fn_params, var->fn_variadic,
+                                              var->fn_results)
                                 : lower(node.file_id, var->type_name, var->type_package, var->is_struct, var->indirections,
                                         var->is_array, var->array_len, false);
         llvm::Type *ty = stored_type(low);
@@ -1623,6 +1652,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         binding.fn_ret_char = low.fn_ret_char;
         binding.fn_ret_bool = low.fn_ret_bool;
         binding.fn_ret_struct = low.fn_ret_struct;
+        binding.fn_results = low.fn_results;
         binding.is_static = var->is_static;
         file.globals.emplace(var->name, binding);
     }
@@ -2261,6 +2291,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         prepared.elem_char = callee.fn_ret_char;
         prepared.elem_bool = callee.fn_ret_bool;
         prepared.struct_id = callee.fn_ret_struct;
+        prepared.fn_results = callee.fn_results;
         return prepared;
     }
     auto *function = llvm::dyn_cast_or_null<llvm::Function>(callee.value);
@@ -2493,7 +2524,8 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
         return {binding->value, binding->depth, binding->elem_char, binding->struct_id, false, binding->elem_void,
                 binding->elem_bool, binding->elem_bits, binding->elem_unsigned, binding->trait_id, binding->elem_float,
                 binding->fn_ty, binding->fn_ret_depth, binding->fn_ret_float, binding->fn_ret_bits,
-                binding->fn_ret_unsigned, binding->fn_ret_char, binding->fn_ret_bool, binding->fn_ret_struct};
+                binding->fn_ret_unsigned, binding->fn_ret_char, binding->fn_ret_bool, binding->fn_ret_struct,
+                binding->fn_results};
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {
         const TypedValue inner = emit_rvalue(*star->expr);
@@ -3435,13 +3467,15 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         }
         return;
     }
-    // The component types live on the function declaration. prepare_call resolves
-    // the same callee the call itself uses, including a field, subscript, or temporary.
+    // The component types live on the function declaration, or on the function-pointer
+    // type when the call is indirect. prepare_call resolves the same callee the call uses.
     const FunctionDecl *decl = nullptr;
+    std::vector<FnParam> fn_results;
     TypedValue value;
     if (const auto *call = std::get_if<Expr::Call>(&node.value->data)) {
         const PreparedCall prepared = prepare_call(*call);
         decl = prepared.decl;
+        fn_results = prepared.fn_results;
         value = emit_prepared(prepared);
     } else {
         value = emit_rvalue(*node.value);
@@ -3449,15 +3483,27 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
     if (terminated()) {
         return;
     }
-    if (decl == nullptr || value.value == nullptr || decl->results.size() != node.names.size() ||
-        !value.value->getType()->isStructTy()) {
+    std::vector<Lowered> parts;
+    if (decl != nullptr && value.value != nullptr && decl->results.size() == node.names.size() &&
+        value.value->getType()->isStructTy()) {
+        parts.reserve(decl->results.size());
+        for (const ResultSlot &slot : decl->results) {
+            parts.push_back(lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
+                                  false, 0, false));
+        }
+    } else if (decl == nullptr && value.value != nullptr && fn_results.size() == node.names.size() &&
+               value.value->getType()->isStructTy()) {
+        parts.reserve(fn_results.size());
+        for (const FnParam &part : fn_results) {
+            parts.push_back(lower(current_file_, part.type_name, part.type_package, part.is_struct, part.indirections,
+                                  false, 0, false));
+        }
+    } else {
         error(node.loc, "type mismatch");
         return;
     }
     for (std::size_t index = 0; index < node.names.size(); ++index) {
-        const ResultSlot &slot = decl->results[index];
-        const Lowered low = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, false,
-                                  0, false);
+        const Lowered &low = parts[index];
         llvm::Value *field = builder_.CreateExtractValue(value.value, static_cast<unsigned>(index));
         bool create = false;
         llvm::Value *dest = destination(node.names[index], create);
@@ -3775,7 +3821,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     const Lowered low = var.is_fn_ptr
                                             ? lower_fnptr(current_file_, var.type_name, var.type_package, var.is_struct,
                                                           var.is_enum, var.ret_indirections, var.indirections, var.fn_params,
-                                                          var.fn_variadic)
+                                                          var.fn_variadic, var.fn_results)
                                             : lower(current_file_, var.type_name, var.type_package, var.is_struct,
                                                     var.indirections, var.is_array, var.array_len, false);
                     if (var.is_array || low.is_array) {

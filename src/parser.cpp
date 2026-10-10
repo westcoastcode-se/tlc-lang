@@ -428,6 +428,41 @@ std::vector<Enumerator> Parser::parse_enumerators() {
 std::vector<FieldDecl> Parser::parse_fields() {
     std::vector<FieldDecl> fields;
     while (!check(TokenKind::RBrace) && !eof()) {
+        if (at_func_type()) {
+            const PlacedType type = parse_func_type();
+            FieldDecl field;
+            field.loc = type.loc;
+            if (check(TokenKind::Identifier)) {
+                field.name = peek().text;
+                field.loc = peek().loc;
+                ++pos_;
+            } else {
+                error_here("expected an identifier");
+            }
+            field.type_name = type.type_name;
+            field.type_package = type.type_package;
+            field.is_struct = type.is_struct;
+            field.is_enum = type.is_enum;
+            field.indirections = type.indirections;
+            field.is_fn_ptr = type.is_fn_ptr;
+            field.ret_indirections = type.ret_indirections;
+            field.fn_params = type.fn_params;
+            field.fn_variadic = type.fn_variadic;
+            field.fn_results = type.fn_results;
+            if (check(TokenKind::LBracket)) {
+                diags_.error(peek().loc, "not supported yet");
+                while (eat(TokenKind::LBracket)) {
+                    while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::RBrace) &&
+                           !eof()) {
+                        ++pos_;
+                    }
+                    eat(TokenKind::RBracket);
+                }
+            }
+            fields.push_back(std::move(field));
+            expect(TokenKind::Semicolon, "expected ';'");
+            continue;
+        }
         const Specifiers specs = parse_specifiers(false);
         if (specs.struct_definition) {
             diags_.error(specs.loc, "not supported yet");
@@ -469,7 +504,131 @@ bool is_builtin_type_name(const std::string &name) {
 
 } // namespace
 
+bool Parser::at_func_type(std::size_t ahead) const {
+    return peek(ahead).kind == TokenKind::KwFunc && peek(ahead + 1).kind == TokenKind::LParen;
+}
+
+Parser::PlacedType Parser::parse_func_type() {
+    PlacedType type;
+    type.loc = peek().loc;
+    type.is_fn_ptr = true;
+    // The value is the function pointer. Stars on the result stay in ret_indirections.
+    type.indirections = 1;
+    expect(TokenKind::KwFunc, "expected 'func'");
+    expect(TokenKind::LParen, "expected '('");
+    while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !check(TokenKind::Semicolon) && !eof()) {
+        if (check(TokenKind::Ellipsis)) {
+            diags_.error(peek().loc, "not supported yet");
+            ++pos_;
+            break;
+        }
+        const std::size_t before = pos_;
+        type.fn_params.push_back(fn_param_from(parse_placed_type(false, false)));
+        if (pos_ == before) {
+            ++pos_;
+        }
+        if (!eat(TokenKind::Comma)) {
+            break;
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+
+    std::vector<PlacedType> results;
+    if (check(TokenKind::LParen)) {
+        const SourceLoc list_loc = peek().loc;
+        ++pos_;
+        if (check(TokenKind::RParen)) {
+            diags_.error(list_loc, "type mismatch");
+            ++pos_;
+            type.type_name = "invalid";
+            type.fn_params.clear();
+            return type;
+        }
+        while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !check(TokenKind::Semicolon) && !eof()) {
+            const std::size_t before = pos_;
+            results.push_back(parse_placed_type(false, false));
+            if (pos_ == before) {
+                ++pos_;
+            }
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+        }
+        expect(TokenKind::RParen, "expected ')'");
+    } else {
+        results.push_back(parse_placed_type(false, false));
+    }
+    bool reject = false;
+    SourceLoc reject_loc = type.loc;
+    for (const PlacedType &result : results) {
+        if (result.is_fn_ptr || result.struct_definition || result.enum_definition) {
+            reject = true;
+            reject_loc = result.loc.valid() ? result.loc : reject_loc;
+        }
+    }
+    if (reject || results.empty()) {
+        if (reject) {
+            diags_.error(reject_loc, "not supported yet");
+        }
+        type.type_name = "invalid";
+        type.fn_params.clear();
+        return type;
+    }
+    const PlacedType &first = results.front();
+    type.type_name = first.type_name;
+    type.type_package = first.type_package;
+    type.is_struct = first.is_struct;
+    type.is_enum = first.is_enum;
+    type.ret_indirections = first.indirections;
+    if (results.size() > 1) {
+        type.fn_results.reserve(results.size());
+        for (const PlacedType &result : results) {
+            type.fn_results.push_back(fn_param_from(result));
+        }
+    }
+    return type;
+}
+
+void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern) {
+    const PlacedType type = parse_func_type();
+    while (true) {
+        VarDecl var;
+        var.loc = peek().loc;
+        if (check(TokenKind::Identifier)) {
+            var.name = peek().text;
+            var.loc = peek().loc;
+            ++pos_;
+        } else {
+            error_here("expected an identifier");
+        }
+        var.type_name = type.type_name;
+        var.type_package = type.type_package;
+        var.is_struct = type.is_struct;
+        var.is_enum = type.is_enum;
+        var.indirections = type.indirections;
+        var.is_fn_ptr = type.is_fn_ptr;
+        var.ret_indirections = type.ret_indirections;
+        var.fn_params = type.fn_params;
+        var.fn_variadic = type.fn_variadic;
+        var.fn_results = type.fn_results;
+        var.exported = exported;
+        var.is_static = is_static;
+        var.is_extern = is_extern;
+        if (eat(TokenKind::Eq)) {
+            var.init = parse_assignment();
+        }
+        vars.push_back(std::move(var));
+        if (!eat(TokenKind::Comma)) {
+            expect(TokenKind::Semicolon, "expected ';'");
+            break;
+        }
+    }
+}
+
 Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array) {
+    if (at_func_type()) {
+        return parse_func_type();
+    }
     PlacedType type;
     const Specifiers specs = parse_specifiers(false, allow_const, true);
     type.loc = specs.loc;
@@ -552,6 +711,7 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, bool m
         param.ret_indirections = type.ret_indirections;
         param.fn_params = type.fn_params;
         param.fn_variadic = type.fn_variadic;
+        param.fn_results = type.fn_results;
         param.is_receiver = as_receiver;
         // The receiver names the struct tag. The signature does not write `struct`.
         if (!type.is_enum && type.type_package.empty() && !is_builtin_type_name(type.type_name)) {
@@ -618,6 +778,7 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, bool m
             param.ret_indirections = type.ret_indirections;
             param.fn_params = type.fn_params;
             param.fn_variadic = type.fn_variadic;
+        param.fn_results = type.fn_results;
             params.push_back(std::move(param));
             if (!eat(TokenKind::Comma)) {
                 break;
@@ -645,6 +806,7 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
     slot.ret_indirections = type.ret_indirections;
     slot.fn_params = type.fn_params;
     slot.fn_variadic = type.fn_variadic;
+    slot.fn_results = type.fn_results;
     fn.results.push_back(std::move(slot));
 }
 
@@ -746,6 +908,7 @@ FnParam Parser::fn_param_from(const PlacedType &type) const {
     param.ret_indirections = type.ret_indirections;
     param.params = type.fn_params;
     param.variadic = type.fn_variadic;
+    param.results = type.fn_results;
     return param;
 }
 
@@ -911,6 +1074,58 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         }
         break;
     }
+    if (at_func_type()) {
+        if (exported && is_static) {
+            diags_.error(storage_loc, "export static");
+        }
+        std::vector<VarDecl> vars;
+        parse_func_vars(vars, exported, is_static, is_extern);
+        for (VarDecl &var : vars) {
+            TopDecl top;
+            top.data = std::move(var);
+            unit.decls.push_back(std::move(top));
+        }
+        saw_decl_ = true;
+        return;
+    }
+    if (check(TokenKind::KwTypedef) && at_func_type(1)) {
+        if (exported && is_static) {
+            diags_.error(storage_loc, "export static");
+        }
+        ++pos_;
+        const PlacedType type = parse_func_type();
+        while (true) {
+            TypedefDecl item;
+            item.loc = peek().loc;
+            if (check(TokenKind::Identifier)) {
+                item.name = peek().text;
+                item.loc = peek().loc;
+                ++pos_;
+            } else {
+                error_here("expected an identifier");
+            }
+            item.type_name = type.type_name;
+            item.type_package = type.type_package;
+            item.is_struct = type.is_struct;
+            item.is_enum = type.is_enum;
+            item.indirections = type.indirections;
+            item.is_fn_ptr = type.is_fn_ptr;
+            item.ret_indirections = type.ret_indirections;
+            item.fn_params = type.fn_params;
+            item.fn_variadic = type.fn_variadic;
+            item.fn_results = type.fn_results;
+            item.exported = exported;
+            TopDecl top;
+            top.data = std::move(item);
+            unit.decls.push_back(std::move(top));
+            if (!eat(TokenKind::Comma)) {
+                expect(TokenKind::Semicolon, "expected ';'");
+                break;
+            }
+        }
+        saw_decl_ = true;
+        return;
+    }
     if (check(TokenKind::KwFunc)) {
         if (exported && is_static) {
             diags_.error(storage_loc, "export static");
@@ -1054,6 +1269,22 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
     const std::size_t marker = pos_;
     while (check(TokenKind::KwExport) || check(TokenKind::KwStatic) || check(TokenKind::KwExtern)) {
         ++pos_;
+    }
+    if (at_func_type()) {
+        pos_ = marker;
+        bool storage = false;
+        const SourceLoc storage_loc = peek().loc;
+        while (check(TokenKind::KwExport) || check(TokenKind::KwStatic) || check(TokenKind::KwExtern)) {
+            storage = true;
+            ++pos_;
+        }
+        if (storage) {
+            diags_.error(storage_loc, "not supported yet");
+        }
+        Stmt::Decl decl;
+        decl.loc = peek().loc;
+        parse_func_vars(decl.vars, false, false, false);
+        return make_stmt(std::move(decl));
     }
     if (check(TokenKind::KwFunc)) {
         pos_ = marker;

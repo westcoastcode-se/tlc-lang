@@ -83,6 +83,7 @@ class Parser {
         int ret_indirections = 0;
         std::vector<FnParam> fn_params;
         bool fn_variadic = false;
+        std::vector<FnParam> fn_results;
     };
 
     bool starts_declaration() const;
@@ -95,6 +96,9 @@ class Parser {
     Declarator parse_declarator();
     void parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, std::vector<FnParam> &params, bool &variadic);
     FnParam fn_param_from(const PlacedType &type) const;
+    bool at_func_type(std::size_t ahead = 0) const;
+    PlacedType parse_func_type();
+    void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern);
     ArrayMark parse_array_suffix(bool allow_unsized);
     PlacedType parse_placed_type(bool allow_const, bool allow_array);
     std::vector<Param> parse_params(bool allow_const, bool &variadic, bool method = false);

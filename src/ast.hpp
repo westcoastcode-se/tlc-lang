@@ -125,6 +125,8 @@ struct FnParam {
     int ret_indirections = 0;
     std::vector<FnParam> params;
     bool variadic = false;
+    // Set when this function pointer returns more than one result.
+    std::vector<FnParam> results;
 };
 
 struct FieldDecl {
@@ -141,6 +143,7 @@ struct FieldDecl {
     int ret_indirections = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
+    std::vector<FnParam> fn_results;
 };
 
 struct StructDecl {
@@ -180,6 +183,7 @@ struct TypedefDecl {
     int ret_indirections = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
+    std::vector<FnParam> fn_results;
 };
 
 struct VarDecl {
@@ -196,6 +200,7 @@ struct VarDecl {
     int ret_indirections = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
+    std::vector<FnParam> fn_results;
     std::unique_ptr<Expr> init;
     bool exported = false;
     bool is_static = false;
@@ -305,6 +310,7 @@ struct Param {
     int ret_indirections = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
+    std::vector<FnParam> fn_results;
 };
 
 struct ResultSlot {
@@ -317,6 +323,7 @@ struct ResultSlot {
     int ret_indirections = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
+    std::vector<FnParam> fn_results;
 };
 
 struct FunctionDecl {

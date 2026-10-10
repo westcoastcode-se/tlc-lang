@@ -184,6 +184,47 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "typedef func (i32, i32) i32 BinOp;\n"
+            "func (i32) i32 saved;\n"
+            "struct Box {\n"
+            "  func (i32, i32) i32 op;\n"
+            "};\n"
+            "func myfunc(ptr func (i32, i32) i32) i32 {\n"
+            "  return ptr(10, 20);\n"
+            "}\n"
+            "func pick() func (i32) i32;\n"
+            "func main() i32 {\n"
+            "  func (i32, i32) i32 fp = saved;\n"
+            "  return myfunc(fp);\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(typedef BinOp i32* fnptr");
+        EXPECT_HAS(check, parsed.dump, "(var saved i32* fnptr");
+        EXPECT_HAS(check, parsed.dump, "(field op i32* fnptr");
+        EXPECT_HAS(check, parsed.dump, "(fn myfunc (params (ptr i32* fnptr)) i32");
+        EXPECT_HAS(check, parsed.dump, "(fn pick (params) i32* fnptr");
+        EXPECT_HAS(check, parsed.dump, "(var fp i32* fnptr");
+        EXPECT_HAS(check, parsed.dump, "(return (call (name ptr) (int 10) (int 20)))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func f(p func (x i32) i32) i32 { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "expected ')'");
+    }
+
+    {
+        const Parsed parsed = parse_source("func f(p func (i32) (i32, i32)) i32 { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(p i32* fnptr (i32, i32))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func f(p func (i32) func (i32) i32) i32 { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
         const Parsed parsed = parse_source("func main( {\n  return 1\n}\n");
         EXPECT_HAS(check, parsed.errors, "expected ')'");
         EXPECT_HAS(check, parsed.errors, "expected ';'");

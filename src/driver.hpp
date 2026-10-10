@@ -24,6 +24,8 @@ struct Options {
     std::string input;
     std::string output;
     std::vector<std::string> package_paths;
+    // Passed to cc after the object file, in the order given. Used when linking.
+    std::vector<std::string> link_args;
     std::string error;
 };
 

@@ -1,13 +1,48 @@
-func inc(n int) int {
-    return n + 1;
+func add(a i32, b i32) i32 {
+    return a + b;
 }
 
-func apply(fp int (*)(int), n int) int {
-    return fp(n);
+func myfunc(ptr func (i32, i32) i32) i32 {
+    return ptr(20, 22);
 }
 
-func main() int {
-    int (*fp)(int);
-    fp = inc;
-    return apply(fp, 41);
+func ignore(n i32) void {
+}
+
+func note(p func (i32) void, n i32) i32 {
+    p(n);
+    return n;
+}
+
+func id(n i32) i32 {
+    return n;
+}
+
+func call(f func (i32) i32) i32 {
+    return f(40);
+}
+
+func apply(p func (func (i32) i32) i32, f func (i32) i32) i32 {
+    return p(f);
+}
+
+typedef func (i32, i32) i32 BinOp;
+
+func (i32, i32) i32 saved;
+
+func main() i32 {
+    func (i32, i32) i32 fp;
+    fp = add;
+    saved = fp;
+    BinOp op = saved;
+    if (op(1, 1) != 2) {
+        return 1;
+    }
+    if (note(ignore, 7) != 7) {
+        return 3;
+    }
+    if (apply(call, id) != 40) {
+        return 4;
+    }
+    return myfunc(add);
 }

@@ -52,6 +52,21 @@ std::string type_text(const std::string &name, const std::string &package, bool 
     return text;
 }
 
+void append_many_results(std::string &out, const std::vector<FnParam> &results) {
+    if (results.size() < 2) {
+        return;
+    }
+    out += " (";
+    for (std::size_t i = 0; i < results.size(); ++i) {
+        if (i != 0) {
+            out += ", ";
+        }
+        const FnParam &part = results[i];
+        out += type_text(part.type_name, part.type_package, part.is_struct, part.is_enum, part.indirections, false, 0);
+    }
+    out += ')';
+}
+
 std::string quote_string(const std::string &text) {
     std::string out = "\"";
     for (unsigned char c : text) {
@@ -82,6 +97,7 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
                      var.array_len);
     if (var.is_fn_ptr) {
         out += " fnptr";
+        append_many_results(out, var.fn_results);
     }
     if (var.init) {
         out += ' ';
@@ -271,6 +287,10 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
         out += ' ';
         out += type_text(param.type_name, param.type_package, param.is_struct, param.is_enum, param.indirections,
                          param.is_array, param.array_len);
+        if (param.is_fn_ptr) {
+            out += " fnptr";
+            append_many_results(out, param.fn_results);
+        }
         if (param.is_receiver) {
             out += " receiver";
         }
@@ -288,10 +308,18 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
             }
             const ResultSlot &slot = fn.results[i];
             out += type_text(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections, false, 0);
+            if (slot.is_fn_ptr) {
+                out += " fnptr";
+                append_many_results(out, slot.fn_results);
+            }
         }
         out += ')';
     } else {
         out += type_text(fn.return_type, fn.type_package, fn.is_struct, fn.is_enum, fn.indirections, false, 0);
+        if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
+            out += " fnptr";
+            append_many_results(out, fn.results.front().fn_results);
+        }
     }
     if (fn.exported) {
         out += " export";
@@ -453,6 +481,10 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
                 out += ' ';
                 out += type_text(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                                  field.is_array, field.array_len);
+                if (field.is_fn_ptr) {
+                    out += " fnptr";
+                    append_many_results(out, field.fn_results);
+                }
                 out += ")\n";
             }
             append_indent(out, 1);
@@ -487,6 +519,10 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             out += ' ';
             out += type_text(item->type_name, item->type_package, item->is_struct, item->is_enum, item->indirections,
                              item->is_array, item->array_len);
+            if (item->is_fn_ptr) {
+                out += " fnptr";
+                append_many_results(out, item->fn_results);
+            }
             if (item->exported) {
                 out += " export";
             }

@@ -20,6 +20,14 @@ tlc --help
 | `--run` | Compile, link, and run |
 | `-o <file>` | Output path |
 | `-P <dir>` | Extra package search root, after the entry file's directory |
+| `-l <lib>` | Link `lib<lib>` when producing an executable |
+| `-L <dir>` | Directory searched for libraries |
+| `-Bstatic` | Link later `-l` libraries from static archives (`.a`) |
+| `-Bdynamic` | Link later `-l` libraries from shared libraries (`.so`) |
+| `-static` | Link all libraries statically |
+| `-Wl,<opt>` | Pass `<opt>` through to the linker |
+
+`-l`, `-L`, `-Bstatic`, `-Bdynamic`, `-static`, and `-Wl` are passed to `cc` after the object file, in the order written. A path that ends in `.a`, `.so`, or `.dylib`, and a versioned shared library such as `libfoo.so.1`, is a library file and is passed through the same way. `-Bstatic` stays in effect until `-Bdynamic`, so put `-Bdynamic` after the static libraries when the C library should stay shared. `--check`, `--emit-llvm`, and `--emit-obj` accept the flags and do not link.
 
 The file on the command line is the entry. Its `main` is the program's `main`. A symbol is named `qualifier.name`. In a package with more than one file, a `static` symbol is named `qualifier.filename.name`, where `filename` is the source file without `.tlc`. `extern` keeps the C name.
 
@@ -99,7 +107,7 @@ export func add(a int, b int) int {
 
 File-scope `static` keeps the symbol private to that file. A `static` local is rejected.
 
-`extern` keeps the C name and the C calling convention. It returns one result, the same as a C function. That is how a program calls a library:
+`extern` keeps the C name and the C calling convention. It returns one result, the same as a C function. Its parameters and its result cannot include a function pointer that returns several results. That is how a program calls a library:
 
 ```c
 extern func printf(fmt const char *, ...) int;
@@ -161,7 +169,7 @@ A `bool` value is 0 or 1.
 | `true`, `false` | `bool` |
 | `nullptr` | null pointer |
 
-An unsuffixed number greater than `2147483647` is `type mismatch`. The suffix does not promote the type to a wider rank on its own. More than two `l` letters is `type mismatch`.
+An unsuffixed number greater than `2147483647` is `type mismatch`. It does not become `long`. A suffix selects the type in the table above. More than two `l` letters is `type mismatch`.
 
 A character literal has type `char`. `'A'` is 65 and `'\n'` is 10. A value above 255 is `type mismatch`. The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
 
@@ -310,17 +318,19 @@ Structs are passed and returned by value. An array parameter becomes a pointer, 
 
 A function cannot return an array. There is one `main`.
 
-A function pointer is written with a C declarator. The parameter list uses types, and a name there is optional. A function name used as a value is a pointer to that function.
+A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types. A function name used as a value is a pointer to that function.
 
 ```c
-func inc(n int) int {
-    return n + 1;
+func add(a i32, b i32) i32 {
+    return a + b;
 }
 
-func apply(fp int (*)(int), n int) int {
-    return fp(n);
+func myfunc(ptr func (i32, i32) i32) i32 {
+    return ptr(20, 22);
 }
 ```
+
+A variable, a field, or a typedef uses the same type, then the name: `func (i32, i32) i32 fp;` or `func (i32) (i32, i32) fp;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern` function's parameters and result cannot include a function pointer that returns several results.
 
 ## Structs, pointers, and arrays
 
@@ -455,7 +465,7 @@ The receiver may have one star. `this self Point **` is rejected.
 
 The same method name may exist on different structs and as a free function. The call `p.sum(...)` selects the struct's method. A free call `sum(...)` selects the function.
 
-Methods are not exported, and they are visible only in the file that defines them. `Point::sum(p, 1)` is not a call.
+A method is visible from every file in its package. It is not exported, so another package cannot call it. `export` on a method is `not supported yet`. `Point::sum(p, 1)` is not a call.
 
 ## Traits
 

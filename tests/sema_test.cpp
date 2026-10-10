@@ -2315,6 +2315,58 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func add(a i32, b i32) i32 { return a + b; }\n"
+            "func myfunc(ptr func (i32, i32) i32) i32 { return ptr(10, 20); }\n"
+            "func id(n i32) i32 { return n; }\n"
+            "func take(p func (i32) (i32)) i32 { return p(1); }\n"
+            "func pick() func (i32, i32) i32 { return add; }\n"
+            "func main() i32 {\n"
+            "  func (i32, i32) i32 fp = pick();\n"
+            "  return myfunc(add) + take(id) + fp(1, 1);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func f() (func (i32) i32, i32) { return 0, 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func pair(n i32) (i32, i32) { return n, n + 2; }\n"
+            "typedef func (i32) (i32, i32) PairFn;\n"
+            "func apply(p PairFn) i32 {\n"
+            "  a, b := p(20);\n"
+            "  return a + b;\n"
+            "}\n"
+            "func pick() func (i32) (i32, i32) { return pair; }\n"
+            "func main() i32 {\n"
+            "  func (i32) (i32, i32) fp = pick();\n"
+            "  x, y := fp(10);\n"
+            "  return apply(fp) + x + y;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern func take(p func (i32) (i32, i32)) i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern function cannot use several results");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern func get() func (i32) (i32, i32);\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern function cannot use several results");
+    }
+
+    {
+        const std::string errors = diagnose(
             "func take(p long long *) int { return *p != 0; }\n"
             "func main() int {\n"
             "  i64 n = 1;\n"

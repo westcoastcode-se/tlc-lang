@@ -36,8 +36,28 @@ std::string help_text() {
         "  --emit-obj      write an object file\n"
         "  --run           compile, link, and run\n"
         "  -o <file>       output path\n"
-        "  -P <dir>        package search root, after the entry directory\n";
+        "  -P <dir>        package search root, after the entry directory\n"
+        "  -l <lib>        link lib<lib> when producing an executable\n"
+        "  -L <dir>        library search directory\n"
+        "  -Bstatic        link later -l libraries from static archives\n"
+        "  -Bdynamic       link later -l libraries from shared libraries\n"
+        "  -static         link all libraries statically\n"
+        "  -Wl,<opt>       pass <opt> to the linker\n";
 }
+
+namespace {
+
+bool is_library_file(const std::string &path) {
+    auto ends_with = [&](const std::string &suffix) {
+        return path.size() >= suffix.size() && path.compare(path.size() - suffix.size(), suffix.size(), suffix) == 0;
+    };
+    if (ends_with(".a") || ends_with(".so") || ends_with(".dylib")) {
+        return true;
+    }
+    return path.find(".so.") != std::string::npos;
+}
+
+} // namespace
 
 Options parse_args(int argc, char **argv) {
     Options opt;
@@ -84,10 +104,29 @@ Options parse_args(int argc, char **argv) {
                 break;
             }
             opt.package_paths.emplace_back(argv[++i]);
+        } else if (arg == "-l" || arg == "-L") {
+            if (i + 1 >= argc) {
+                opt.mode = Mode::Error;
+                opt.error = arg == "-l" ? "missing library after -l" : "missing directory after -L";
+                break;
+            }
+            opt.link_args.push_back(arg);
+            opt.link_args.push_back(argv[++i]);
+        } else if ((arg.starts_with("-l") || arg.starts_with("-L")) && arg.size() > 2) {
+            opt.link_args.push_back(arg);
+        } else if (arg.starts_with("-Wl,")) {
+            opt.link_args.push_back(arg);
+        } else if (arg == "-Bstatic" || arg == "-Bdynamic") {
+            // cc does not accept -Bstatic itself. The linker option is passed through -Wl.
+            opt.link_args.push_back("-Wl," + arg);
+        } else if (arg == "-static") {
+            opt.link_args.push_back(arg);
         } else if (arg.starts_with('-')) {
             opt.mode = Mode::Error;
             opt.error = "unknown option: " + arg;
             break;
+        } else if (is_library_file(arg)) {
+            opt.link_args.push_back(arg);
         } else if (saw_input) {
             opt.mode = Mode::Error;
             opt.error = "multiple input files";
@@ -297,7 +336,9 @@ CompileOutput compile_source(const Options &opt) {
             return output;
         }
     }
-    const ProcessOutput linked = run_process({"cc", "-o", exe_path, object_path});
+    std::vector<std::string> link_cmd = {"cc", "-o", exe_path, object_path};
+    link_cmd.insert(link_cmd.end(), opt.link_args.begin(), opt.link_args.end());
+    const ProcessOutput linked = run_process(link_cmd);
     if (linked.code != 0) {
         output.compiler_stderr = linked.err.empty() ? linked.out : linked.err;
         if (output.compiler_stderr.empty()) {
