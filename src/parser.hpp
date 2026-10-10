@@ -32,6 +32,9 @@ class Parser {
         bool exported = false;
         bool is_static = false;
         bool is_extern = false;
+        bool extern_c = false;
+        // `struct(align=N)`. Zero means the natural alignment.
+        int align = 0;
         bool is_const = false;
         bool saw_type = false;
     };
@@ -97,6 +100,9 @@ class Parser {
     bool is_type_keyword(TokenKind kind) const;
 
     Specifiers parse_specifiers(bool file_scope, bool allow_const = false, bool type_only = false);
+    // `extern` is `abi="tlc"`. `extern(abi="c")` is a C library. Other values are rejected.
+    bool take_extern(bool &is_extern, bool &extern_c);
+    int parse_struct_align();
     bool take_enum_underlying(std::string &out);
     std::vector<Enumerator> parse_enumerators();
     std::vector<FieldDecl> parse_fields();
@@ -105,7 +111,7 @@ class Parser {
     FnParam fn_param_from(const PlacedType &type) const;
     bool at_func_type(std::size_t ahead = 0) const;
     PlacedType parse_func_type();
-    void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern);
+    void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern, bool extern_c);
     ArrayMark parse_array_suffix(bool allow_unsized);
     PlacedType parse_placed_type(bool allow_const, bool allow_array);
     // `var` and field types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
@@ -113,7 +119,7 @@ class Parser {
     std::vector<Param> parse_params(bool allow_const, bool &variadic, bool method = false);
     void take_result(FunctionDecl &fn, const PlacedType &type);
     void parse_results(FunctionDecl &fn);
-    FunctionDecl parse_function(bool exported, bool is_static, bool is_extern, bool allow_body);
+    FunctionDecl parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body);
     void parse_top_declaration(TranslationUnit &unit, bool file_scope_export_ok);
     std::unique_ptr<Stmt> parse_decl_stmt(bool file_scope);
     std::unique_ptr<Stmt> parse_statement();
@@ -129,7 +135,7 @@ class Parser {
     bool var_is_bind() const;
     bool var_is_inferred() const;
     std::unique_ptr<Stmt> parse_var_or_bind();
-    VarDecl parse_typed_var(bool exported, bool is_static, bool is_extern);
+    VarDecl parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c);
     void parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var);
     void reject_c_var(SourceLoc loc);
 

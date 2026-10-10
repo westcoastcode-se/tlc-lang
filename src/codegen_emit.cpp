@@ -22,6 +22,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         bool exported = false;
         bool is_static = false;
         bool is_extern = false;
+        bool extern_c = false;
     };
     std::unordered_map<std::string, Acc> functions;
     for (const TopDecl &decl : node.unit.decls) {
@@ -36,6 +37,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         acc.exported = acc.exported || fn->exported;
         acc.is_static = acc.is_static || fn->is_static;
         acc.is_extern = acc.is_extern || fn->is_extern;
+        acc.extern_c = acc.extern_c || fn->extern_c;
     }
     FileSymbols &file = files_[node.file_id];
     const bool entry = node.file_id == entry_file_;
@@ -69,9 +71,10 @@ void CodeGen::declare_file(const PackageNode &node) {
             file.functions.emplace(name, binding);
             continue;
         }
-        const SymbolForm form = symbol_form(node, name, acc.is_extern, acc.is_static, acc.exported, entry && name == "main");
+        const SymbolForm form =
+            symbol_form(node, name, acc.is_extern, acc.extern_c, acc.is_static, acc.exported, entry && name == "main");
         llvm::Function *function = acc.is_extern ? module_.getFunction(form.name) : nullptr;
-        const ExternLayout layout = acc.is_extern ? extern_layout(*acc.fn, node.file_id) : ExternLayout{};
+        const ExternLayout layout = acc.extern_c ? extern_layout(*acc.fn, node.file_id) : ExternLayout{};
         if (function == nullptr) {
             llvm::FunctionType *ftype = layout.active ? layout.type : function_type(*acc.fn, node.file_id);
             function = llvm::Function::Create(ftype, form.linkage, form.name, module_);
@@ -115,7 +118,8 @@ void CodeGen::declare_file(const PackageNode &node) {
         if (var == nullptr || var->name.empty() || file.globals.contains(var->name)) {
             continue;
         }
-        const SymbolForm form = symbol_form(node, var->name, var->is_extern, var->is_static, var->exported, false);
+        const SymbolForm form =
+            symbol_form(node, var->name, var->is_extern, var->extern_c, var->is_static, var->exported, false);
         Lowered low;
         if (var->inferred) {
             if (var->init == nullptr || !infer_global(node.file_id, *var->init, low)) {

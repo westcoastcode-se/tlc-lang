@@ -24,6 +24,13 @@ void append_indent(std::string &out, int indent) {
     out.append(static_cast<std::size_t>(indent) * 2, ' ');
 }
 
+void append_extern(std::string &out, bool is_extern, bool extern_c) {
+    if (!is_extern) {
+        return;
+    }
+    out += extern_c ? " extern(abi=\"c\")" : " extern";
+}
+
 void dump_stmt(const Stmt &stmt, std::string &out, int indent);
 void dump_function(const FunctionDecl &fn, std::string &out, int indent);
 
@@ -120,9 +127,7 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
     if (var.is_static) {
         out += " static";
     }
-    if (var.is_extern) {
-        out += " extern";
-    }
+    append_extern(out, var.is_extern, var.extern_c);
     out += ")\n";
 }
 
@@ -353,9 +358,7 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
     if (fn.is_static) {
         out += " static";
     }
-    if (fn.is_extern) {
-        out += " extern";
-    }
+    append_extern(out, fn.is_extern, fn.extern_c);
     out += "\n";
     if (fn.body) {
         dump_stmt(*fn.body, out, indent + 1);
@@ -489,12 +492,14 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             append_indent(out, 1);
             out += item->is_union ? "(union " : "(struct ";
             out += item->name;
+            if (item->align > 0) {
+                out += " align ";
+                out += std::to_string(item->align);
+            }
             if (item->exported) {
                 out += " export";
             }
-            if (item->is_extern) {
-                out += " extern";
-            }
+            append_extern(out, item->is_extern, item->extern_c);
             out += "\n";
             for (const FieldDecl &field : item->fields) {
                 append_indent(out, 2);
@@ -525,9 +530,7 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             if (item->exported) {
                 out += " export";
             }
-            if (item->is_extern) {
-                out += " extern";
-            }
+            append_extern(out, item->is_extern, item->extern_c);
             out += "\n";
             for (const Enumerator &enumerator : item->enumerators) {
                 append_indent(out, 2);

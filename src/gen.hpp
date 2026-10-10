@@ -231,6 +231,7 @@ class CodeGen {
         std::vector<FieldLayout> fields;
         bool ready = false;
         bool is_extern = false;
+        bool extern_c = false;
         bool is_union = false;
     };
     struct Lowered {
@@ -608,8 +609,8 @@ class CodeGen {
     void unpack_return(llvm::Value *returned, llvm::Value *slot, const CAbi &abi);
     llvm::Type *aggregate_return(const FunctionDecl &fn, uint32_t file) const;
     const FunctionDecl *callee_decl(const Expr &callee) const;
-    SymbolForm symbol_form(const PackageNode &node, const std::string &name, bool is_extern, bool is_static,
-                           bool exported, bool entry_main) const;
+    SymbolForm symbol_form(const PackageNode &node, const std::string &name, bool is_extern, bool extern_c,
+                           bool is_static, bool exported, bool entry_main) const;
     const PackageNode *find_node(uint32_t file_id) const;
     std::vector<uint32_t> package_files(uint32_t file) const;
     const Binding *visible(uint32_t file, const std::string &name, bool function) const;

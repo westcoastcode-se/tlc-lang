@@ -1,0 +1,16 @@
+struct(align=16) Pair {
+    a int;
+    b int;
+}
+
+struct Holder {
+    a Pair;
+    b int;
+}
+
+func main() int {
+    if (sizeof(Pair) != 16 || sizeof(Holder) != 32) {
+        return 1;
+    }
+    return 42;
+}

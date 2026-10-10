@@ -122,7 +122,7 @@ void Parser::parse_trait(TranslationUnit &unit) {
             ++pos_;
             continue;
         }
-        FunctionDecl method = parse_function(false, false, false, false);
+        FunctionDecl method = parse_function(false, false, false, false, false);
         if (!method.method_struct.empty()) {
             diags_.error(method.loc, "type mismatch");
         }

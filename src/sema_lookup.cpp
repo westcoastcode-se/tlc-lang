@@ -2,6 +2,7 @@
 #include "check.hpp"
 #include "check_util.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <type_traits>
@@ -764,8 +765,8 @@ void Checker::require_extern_struct(const Type &type, SourceLoc loc) {
         type.struct_id >= static_cast<int>(structs_.size())) {
         return;
     }
-    if (!structs_[static_cast<std::size_t>(type.struct_id)].is_extern) {
-        error(loc, "struct must be extern");
+    if (!structs_[static_cast<std::size_t>(type.struct_id)].extern_c) {
+        error(loc, "struct must be extern(abi=\"c\")");
     }
 }
 
@@ -823,11 +824,13 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         StructInfo created;
         created.name = item->name;
         created.is_extern = item->is_extern;
+        created.extern_c = item->extern_c;
+        created.align = item->align;
         structs_.push_back(std::move(created));
         tags_[file_id][item->name] = id;
         if (item->fields.empty()) {
-            // An empty extern struct is an opaque C handle. A union needs a field. Any other empty struct has no fields to store.
-            if (!item->is_extern || item->is_union) {
+            // An empty extern(abi="c") struct is an opaque C handle. A union needs a field. Any other empty struct has no fields to store.
+            if (!item->extern_c || item->is_union) {
                 error(item->loc, "not supported yet");
             }
             structs_.back().complete = true;
@@ -836,6 +839,52 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         }
         publish_tag(*item, id);
     }
+}
+
+int Checker::min_align_of(const Type &type) const {
+    if (type.kind == TypeKind::Pointer || type.kind == TypeKind::Function) {
+        return 8;
+    }
+    if (type.kind == TypeKind::Array) {
+        return type.element == nullptr ? 1 : min_align_of(*type.element);
+    }
+    if (type.kind == TypeKind::Float) {
+        return type.rank >= 64 ? 8 : 4;
+    }
+    if (type.kind == TypeKind::Enum) {
+        if (type.enum_id < 0 || type.enum_id >= static_cast<int>(enum_types_.size())) {
+            return 4;
+        }
+        return min_align_of(enum_types_[static_cast<std::size_t>(type.enum_id)].underlying);
+    }
+    if (type.kind == TypeKind::Struct) {
+        if (type.struct_id < 0 || type.struct_id >= static_cast<int>(structs_.size())) {
+            return 1;
+        }
+        const StructInfo &info = structs_[static_cast<std::size_t>(type.struct_id)];
+        int align = 1;
+        for (const StructInfo::Field &field : info.fields) {
+            align = std::max(align, min_align_of(field.type));
+        }
+        return std::max(align, info.align);
+    }
+    if (type.kind == TypeKind::Bool || type.kind == TypeKind::Char) {
+        return 1;
+    }
+    const int bits = width_of(type);
+    if (bits <= 8) {
+        return 1;
+    }
+    if (bits <= 16) {
+        return 2;
+    }
+    if (bits <= 32) {
+        return 4;
+    }
+    if (bits <= 64) {
+        return 8;
+    }
+    return 1;
 }
 
 void Checker::define_struct_fields() {
@@ -862,10 +911,19 @@ void Checker::define_struct_fields() {
                                                  field.fn_variadic, field.fn_results, field.loc)
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum);
-            if (info.is_extern) {
+            if (info.extern_c) {
                 require_extern_struct(field_type, field.loc);
             }
             info.fields.push_back(StructInfo::Field{field.name, std::move(field_type)});
+        }
+        if (pending.decl->align > 0) {
+            int natural = 1;
+            for (const StructInfo::Field &field : info.fields) {
+                natural = std::max(natural, min_align_of(field.type));
+            }
+            if (pending.decl->align < natural) {
+                error(pending.decl->loc, "type mismatch");
+            }
         }
         info.complete = true;
     };
@@ -971,11 +1029,11 @@ void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
             error(item->loc, "redefinition");
             continue;
         }
-        if (item->is_extern && !item->underlying.empty()) {
+        if (item->extern_c && !item->underlying.empty()) {
             error(item->loc, "extern enum");
         }
         Type underlying = type_int();
-        if (!item->is_extern && !item->underlying.empty()) {
+        if (!item->extern_c && !item->underlying.empty()) {
             Type parsed;
             if (!fill_builtin(item->underlying, parsed) ||
                 (parsed.kind != TypeKind::Int && parsed.kind != TypeKind::Char && parsed.kind != TypeKind::Bool)) {
@@ -988,7 +1046,7 @@ void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
         EnumInfo info;
         info.name = item->name;
         info.underlying = underlying;
-        info.is_extern = item->is_extern;
+        info.is_extern = item->extern_c;
         int64_t next = 0;
         bool next_ok = true;
         for (const Enumerator &enumerator : item->enumerators) {

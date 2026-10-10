@@ -205,7 +205,7 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("export extern func printf() int;\nfunc main() int { return 0; }\n");
+        const std::string errors = diagnose("export extern(abi=\"c\") func printf() int;\nfunc main() int { return 0; }\n");
         EXPECT_EQ(check, errors, "");
     }
 
@@ -507,8 +507,8 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern func printf(fmt const char *, ...) int;\n"
-            "extern var slot int;\n"
+            "extern(abi=\"c\") func printf(fmt const char *, ...) int;\n"
+            "extern(abi=\"c\") var slot int;\n"
             "func main() int {\n"
             "  slot = 1;\n"
             "  printf(\"hi\\n\");\n"
@@ -520,7 +520,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern func printf(fmt const char *, ...) int;\n"
+            "extern(abi=\"c\") func printf(fmt const char *, ...) int;\n"
             "func main() int {\n"
             "  printf();\n"
             "  return 0;\n"
@@ -530,7 +530,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern var slot int;\n"
+            "extern(abi=\"c\") var slot int;\n"
             "func main() int { return slot; }\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -659,7 +659,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern enum Flag i8 { On = 1 }\n"
+            "extern(abi=\"c\") enum Flag i8 { On = 1 }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "extern enum");
     }
@@ -674,7 +674,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern enum Flag { On = 1 }\n"
+            "extern(abi=\"c\") enum Flag { On = 1 }\n"
             "func take(x u32) int { return 0; }\n"
             "func Flag::on(this self Flag) int { return 1; }\n"
             "func main() int {\n"
@@ -1480,7 +1480,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern struct Handle {}\n"
+            "extern(abi=\"c\") struct Handle {}\n"
             "func main() int {\n"
             "  var p *Handle;\n"
             "  p = 0;\n"
@@ -1892,7 +1892,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern func printf(fmt const char *, ...) int;\n"
+            "extern(abi=\"c\") func printf(fmt const char *, ...) int;\n"
             "func main() int {\n"
             "  defer printf(\"hi\");\n"
             "  return 0;\n"
@@ -1993,23 +1993,61 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("extern func pair() (int, int);\nfunc main() int { return 0; }\n");
+        const std::string errors = diagnose("extern(abi=\"c\") func pair() (int, int);\nfunc main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "extern function cannot return several results");
     }
 
     {
         const std::string errors = diagnose(
+            "struct Point { x int; y int; };\n"
+            "extern func parts(p Point) (int, int) { return p.x, p.y; }\n"
+            "func main() int {\n"
+            "  var p Point;\n"
+            "  p.x = 20;\n"
+            "  p.y = 22;\n"
+            "  a, b := parts(p);\n"
+            "  return a + b;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose("extern func printf(fmt char *, ...) int;\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"tlc\") func parts() (int, int) { return 20, 22; }\n"
+            "extern(abi=\"nope\") func missing() int;\n"
+            "func main() int { a, b := parts(); return a + b; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.find("several results") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose("extern struct Handle {}\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose("extern union Num { n int; }\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
             "struct Pair { a int; b int; };\n"
-            "extern func sum(p Pair) int;\n"
+            "extern(abi=\"c\") func sum(p Pair) int;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "struct must be extern");
     }
 
     {
         const std::string errors = diagnose(
-            "extern struct Pair { a int; b int; };\n"
-            "extern func sum(p Pair) int;\n"
-            "extern func make() Pair;\n"
+            "extern(abi=\"c\") struct Pair { a int; b int; };\n"
+            "extern(abi=\"c\") func sum(p Pair) int;\n"
+            "extern(abi=\"c\") func make() Pair;\n"
             "func main() int { return 0; }\n");
         EXPECT(check, errors.empty());
     }
@@ -2017,7 +2055,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Inner { n int; };\n"
-            "extern struct Outer { item Inner; };\n"
+            "extern(abi=\"c\") struct Outer { item Inner; };\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "struct must be extern");
     }
@@ -2031,10 +2069,10 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern union Num { n int; m int; }\n"
+            "extern(abi=\"c\") union Num { n int; m int; }\n"
             "struct Inner { n int; };\n"
-            "extern union Bad { item Inner; n int; }\n"
-            "extern union Empty {}\n"
+            "extern(abi=\"c\") union Bad { item Inner; n int; }\n"
+            "extern(abi=\"c\") union Empty {}\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "struct must be extern");
         EXPECT_HAS(check, errors, "not supported yet");
@@ -2042,7 +2080,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern struct Pair;\n"
+            "extern(abi=\"c\") struct Pair;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "expected '{'");
     }
@@ -2408,7 +2446,7 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("export extern var value int;\n"
+        const std::string errors = diagnose("export extern(abi=\"c\") var value int;\n"
 "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "export extern");
     }
@@ -2416,7 +2454,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose_files({
             {"main.tlc", "import { add } from \"math\";\nfunc main() int { return add(20, 22); }\n"},
-            {"math/add.tlc", "package math;\nexport extern func add(a int, b int) int;\n"},
+            {"math/add.tlc", "package math;\nexport extern(abi=\"c\") func add(a int, b int) int;\n"},
         });
         EXPECT_EQ(check, errors, "");
     }
@@ -2525,14 +2563,14 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern func take(p func (i32) (i32, i32)) i32;\n"
+            "extern(abi=\"c\") func take(p func (i32) (i32, i32)) i32;\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "extern function cannot use several results");
     }
 
     {
         const std::string errors = diagnose(
-            "extern func get() func (i32) (i32, i32);\n"
+            "extern(abi=\"c\") func get() func (i32) (i32, i32);\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "extern function cannot use several results");
     }

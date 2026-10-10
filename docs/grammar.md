@@ -34,7 +34,7 @@ declaration = function
             | trait-decl ;
 ```
 
-`export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, struct, enum, or typedef. `export static` is an error. `export` and `extern` on an inferred variable are rejected.
+`export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, struct, enum, or typedef. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` is `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. Another abi is `not supported yet`. `export static` is an error. `export` and `extern` on an inferred variable are rejected.
 
 ## Functions and methods
 
@@ -50,7 +50,7 @@ result      = placed-type
             | "(" placed-type { "," placed-type } ")" ;
 ```
 
-A function with no body is a prototype and ends with `;`. A body replaces that semicolon. `...` is allowed only on an `extern` declaration. One parenthesized result is the same type as the bare result. `()` as a result list is an error.
+A function with no body is a prototype and ends with `;`. A body replaces that semicolon. `...` is allowed only on an `extern(abi="c")` declaration. One parenthesized result is the same type as the bare result. `()` as a result list is an error.
 
 A method's first parameter is the receiver. `this` is an ordinary identifier everywhere else.
 
@@ -85,8 +85,9 @@ fn-var      = func-type identifier { "," identifier } ";" ;
 ## Structs, enums, traits, and typedefs
 
 ```ebnf
-struct-decl = "struct" identifier "{" { field } "}" [ ";" ] ;
-union-decl  = "extern" "union" identifier "{" field { field } "}" [ ";" ] ;
+struct-decl = "struct" [ align ] identifier "{" { field } "}" [ ";" ] ;
+align       = "(" "align" "=" integer-literal ")" ;
+union-decl  = "extern" "(" "abi" "=" "\"c\"" ")" "union" identifier "{" field { field } "}" [ ";" ] ;
 field       = identifier go-type ";" ;
 declarator  = { "*" } identifier [ array ]
             | { "*" } "(" "*" { "*" } identifier ")" "(" [ func-args ] ")" ;
@@ -103,11 +104,11 @@ typedef-decl = "typedef" placed-type declarator { "," declarator } ";"
             | "typedef" func-type identifier { "," identifier } ";" ;
 ```
 
-The semicolon after `}` of a struct, a union, or an enum is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `struct Name;`, `union Name;`, and `enum Name;` are not declarations. An empty `extern struct` is `extern struct Name "{" "}"`.
+The semicolon after `}` of a struct, a union, or an enum is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `struct Name;`, `union Name;`, and `enum Name;` are not declarations. An empty `extern(abi="c") struct` is `extern(abi="c") struct Name "{" "}"`.
 
-`extern union` is a C union: every field starts at offset 0, the size is the largest field, and the alignment is the strictest field. A union without `extern` is `not supported yet`. An empty union is `not supported yet`.
+`extern(abi="c") union` is a C union: every field starts at offset 0, the size is the largest field, and the alignment is the strictest field. A union without `extern(abi="c")`, including `extern union`, is `not supported yet`. An empty union is `not supported yet`.
 
-`extern enum` has no underlying type. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
+`extern(abi="c") enum` has no underlying type. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
 
 A trait method has no body and no receiver.
 
@@ -147,7 +148,7 @@ integer-name = "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64"
 float-name   = "f32" | "f64" ;
 ```
 
-One `*` before `[` is a pointer to an array, as in `*[4]i32`. Two stars there, and a nested array, are rejected. An unsized `[]` is allowed on a parameter and rejected on a `var`. `const` is allowed on an `extern` parameter.
+One `*` before `[` is a pointer to an array, as in `*[4]i32`. Two stars there, and a nested array, are rejected. An unsized `[]` is allowed on a parameter and rejected on a `var`. `const` is allowed on an `extern(abi="c")` parameter.
 
 `signed`, `unsigned`, and `long long` are not type names.
 

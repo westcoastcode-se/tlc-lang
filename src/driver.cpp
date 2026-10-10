@@ -76,6 +76,72 @@ bool is_library_file(const std::string &path) {
     return path.find(".so.") != std::string::npos;
 }
 
+bool links_c_library(const std::vector<std::string> &args) {
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        const std::string &arg = args[i];
+        if (arg == "-l") {
+            return true;
+        }
+        if (arg.starts_with("-l")) {
+            return true;
+        }
+        if (is_library_file(arg)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool is_c_abi_decl(const TopDecl &decl) {
+    if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+        return fn->extern_c;
+    }
+    if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+        return var->extern_c;
+    }
+    if (const auto *item = std::get_if<StructDecl>(&decl.data)) {
+        return item->extern_c;
+    }
+    if (const auto *item = std::get_if<EnumDecl>(&decl.data)) {
+        return item->extern_c;
+    }
+    return false;
+}
+
+bool uses_c_abi(const PackageGraph &graph) {
+    for (const PackageNode &node : graph.nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            if (is_c_abi_decl(decl)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+SourceLoc first_c_abi(const PackageGraph &graph) {
+    for (const PackageNode &node : graph.nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            if (!is_c_abi_decl(decl)) {
+                continue;
+            }
+            if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+                return fn->loc;
+            }
+            if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+                return var->loc;
+            }
+            if (const auto *item = std::get_if<StructDecl>(&decl.data)) {
+                return item->loc;
+            }
+            if (const auto *item = std::get_if<EnumDecl>(&decl.data)) {
+                return item->loc;
+            }
+        }
+    }
+    return {};
+}
+
 } // namespace
 
 Options parse_args(int argc, char **argv) {
@@ -359,6 +425,12 @@ CompileOutput compile_source(const Options &opt) {
     std::vector<std::string> link_cmd = {"cc", "-o", exe_path, object_path};
     link_cmd.insert(link_cmd.end(), opt.link_args.begin(), opt.link_args.end());
     link_cmd.insert(link_cmd.end(), graph.link_args.begin(), graph.link_args.end());
+    if (uses_c_abi(graph) && !links_c_library(opt.link_args) && !links_c_library(graph.link_args)) {
+        SourceLoc loc = first_c_abi(graph);
+        diags.error(loc, "extern(abi=\"c\") requires a C library");
+        output.compiler_stderr = diags.render();
+        return output;
+    }
     const ProcessOutput linked = run_process(link_cmd);
     if (linked.code != 0) {
         output.compiler_stderr = linked.err.empty() ? linked.out : linked.err;

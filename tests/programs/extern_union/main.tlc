@@ -1,9 +1,9 @@
-extern union Num {
+extern(abi="c") union Num {
     n int;
     m int;
 }
 
-extern union Word {
+extern(abi="c") union Word {
     n int;
     raw [8]char;
 }

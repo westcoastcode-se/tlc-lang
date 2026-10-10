@@ -9,6 +9,20 @@ namespace tlc {
 std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
     const std::size_t marker = pos_;
     while (check(TokenKind::KwExport) || check(TokenKind::KwStatic) || check(TokenKind::KwExtern)) {
+        if (eat(TokenKind::KwExtern)) {
+            if (eat(TokenKind::LParen)) {
+                int depth = 1;
+                while (depth > 0 && !eof()) {
+                    if (check(TokenKind::LParen)) {
+                        ++depth;
+                    } else if (check(TokenKind::RParen)) {
+                        --depth;
+                    }
+                    ++pos_;
+                }
+            }
+            continue;
+        }
         ++pos_;
     }
     if (at_func_type()) {
@@ -17,6 +31,12 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         const SourceLoc storage_loc = peek().loc;
         while (check(TokenKind::KwExport) || check(TokenKind::KwStatic) || check(TokenKind::KwExtern)) {
             storage = true;
+            if (check(TokenKind::KwExtern)) {
+                bool ignored_extern = false;
+                bool ignored_c = false;
+                take_extern(ignored_extern, ignored_c);
+                continue;
+            }
             ++pos_;
         }
         if (storage) {
@@ -24,7 +44,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         }
         Stmt::Decl decl;
         decl.loc = peek().loc;
-        parse_func_vars(decl.vars, false, false, false);
+        parse_func_vars(decl.vars, false, false, false, false);
         return make_stmt(std::move(decl));
     }
     if (check(TokenKind::KwFunc)) {
@@ -32,6 +52,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         bool exported = false;
         bool is_static = false;
         bool is_extern = false;
+        bool extern_c = false;
         const SourceLoc storage_loc = peek().loc;
         while (true) {
             if (eat(TokenKind::KwExport)) {
@@ -42,8 +63,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
                 is_static = true;
                 continue;
             }
-            if (eat(TokenKind::KwExtern)) {
-                is_extern = true;
+            if (take_extern(is_extern, extern_c)) {
                 continue;
             }
             break;
@@ -51,7 +71,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         if (exported || is_static || is_extern) {
             diags_.error(storage_loc, "not supported yet");
         }
-        FunctionDecl fn = parse_function(exported, is_static, is_extern, true);
+        FunctionDecl fn = parse_function(exported, is_static, is_extern, extern_c, true);
         if (!fn.method_struct.empty()) {
             diags_.error(fn.loc, "not supported yet");
         }
@@ -117,6 +137,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         var.exported = specs.exported;
         var.is_static = specs.is_static;
         var.is_extern = specs.is_extern;
+        var.extern_c = specs.extern_c;
         if (eat(TokenKind::Eq)) {
             var.init = parse_assignment();
         }
@@ -283,12 +304,13 @@ bool Parser::var_is_inferred() const {
     return check(TokenKind::KwVar) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq;
 }
 
-VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern) {
+VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c) {
     VarDecl var;
     var.loc = peek().loc;
     var.exported = exported;
     var.is_static = is_static;
     var.is_extern = is_extern;
+    var.extern_c = extern_c;
     expect(TokenKind::KwVar, "expected 'var'");
     if (check(TokenKind::Identifier)) {
         var.name = peek().text;
@@ -331,7 +353,7 @@ std::unique_ptr<Stmt> Parser::parse_var_or_bind() {
     if (check(TokenKind::KwVar) && !var_is_bind()) {
         Stmt::Decl decl;
         decl.loc = peek().loc;
-        decl.vars.push_back(parse_typed_var(false, false, false));
+        decl.vars.push_back(parse_typed_var(false, false, false, false));
         return make_stmt(std::move(decl));
     }
     return parse_bind(check(TokenKind::KwVar));

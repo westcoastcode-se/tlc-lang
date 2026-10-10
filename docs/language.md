@@ -31,7 +31,7 @@ tlc --help
 
 Vendor packages are imported as `vendor/<name>`. Set `TLC_LIB` to choose their directory. When that variable is unset, the directory is `lib/tlc/vendor` next to the compiler prefix: `bin/tlc` and `build/tlc` both use `<prefix>/lib/tlc/vendor`. The entry directory and each `-P` root are searched first, using the full path `vendor/<name>`.
 
-The file on the command line is the entry. Its `main` is the program's `main`. A symbol is named `qualifier.name`. In a package with more than one file, a `static` symbol is named `qualifier.filename.name`, where `filename` is the source file without `.tlc`. `extern` keeps the C name.
+The file on the command line is the entry. Its `main` is the program's `main`. A symbol is named `qualifier.name`. In a package with more than one file, a `static` symbol is named `qualifier.filename.name`, where `filename` is the source file without `.tlc`. `extern` and `extern(abi="tlc")` use that same name and are linked from a tlc library. `extern(abi="c")` keeps the C name.
 
 ## A program
 
@@ -121,14 +121,14 @@ export func add(a int, b int) int {
 
 `secret` can be called from any file in the package. An importer sees `add`.
 
-`export` applies to functions, variables, structs, enums, and typedefs. `export static` is an error. `export extern` is allowed on a function, and the symbol keeps its C name. `export extern` on a variable is an error.
+`export` applies to functions, variables, structs, enums, and typedefs. `export static` is an error. `export extern(abi="c")` is allowed on a function, and the symbol keeps its C name. `export` together with `extern` on a variable is an error.
 
 File-scope `static` keeps the symbol private to that file. A `static` local is rejected.
 
-`extern` keeps the C name and the C calling convention. It returns one result, the same as a C function. Its parameters and its result cannot include a function pointer that returns several results. A struct used by an `extern` function, by value or through a pointer, must itself be `extern`. That includes a struct nested inside it. An `extern struct` uses the platform C memory layout, so its fields line up with a static or shared library. `bool` in that struct is one byte. On this host a struct of at most 16 bytes is passed in registers, and a larger struct is passed as a pointer. A function that is not `extern` keeps the compiler's own convention for struct values. That is how a program calls a library:
+`extern` and `extern(abi="tlc")` name a symbol from a tlc library. The symbol is `qualifier.name`, and the calling convention is the compiler's own, so the function may return several results. `extern(abi="c")` names a symbol from a C library, and only then. It keeps the C name and the C calling convention. It returns one result, the same as a C function. Linking a program that uses `extern(abi="c")` requires a C library on the link line: `-l`, or a library file such as `libfoo.a`. `--check` and `--emit-*` do not link, so they accept the declaration. Without that library the link step reports `extern(abi="c") requires a C library`. Its parameters and its result cannot include a function pointer that returns several results. A struct used by an `extern(abi="c")` function, by value or through a pointer, must itself be `extern(abi="c")`. That includes a struct nested inside it. An `extern(abi="c") struct` uses the platform C memory layout, so its fields line up with a static or shared library. `bool` in that struct is one byte. On this host a struct of at most 16 bytes is passed in registers, and a larger struct is passed as a pointer. A function that is not `extern(abi="c")` keeps the compiler's own convention for struct values. That is how a program calls a C library:
 
 ```c
-extern func printf(fmt const char *, ...) int;
+extern(abi="c") func printf(fmt const char *, ...) int;
 
 func main() int {
     printf("hi\n");
@@ -136,7 +136,7 @@ func main() int {
 }
 ```
 
-`const` is accepted on parameters of an `extern` declaration. A variadic function may be declared with `extern` and without a body. A definition that uses `...` is rejected.
+`const` is accepted on parameters of an `extern(abi="c")` declaration. A variadic function may be declared with `extern(abi="c")` and without a body. A definition that uses `...` is rejected. `extern` does not accept `...`.
 
 ## Types
 
@@ -291,7 +291,7 @@ An anonymous function is an expression, `func (parameters) { body }`. The return
 
 A variable is `var name type`, `var name = expr`, or `name := expr`. `int value = 1` is `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *int`, `var buf [32]u8`, `var ps [2]*int`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`. `name := expr` defines a new name and can also assign a name that already exists. `var name := expr` is `type mismatch`. `*[4]i32` is a pointer to an array. `arr[1]` reads and writes the same element as `(*arr)[1]`. `&` of an array has that pointer type. Two stars outside the array, as in `**[4]i32`, are `not supported yet`.
 
-At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `var a, b = expr` at file scope is `not supported yet`. `export`, `static`, and `extern` go on a typed `var`: `export var n int = 1`, `static var n = 1`, `extern var slot int`. `export` or `extern` on an inferred `var name = expr` or `name := expr` is `not supported yet`.
+At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `var a, b = expr` at file scope is `not supported yet`. `export`, `static`, `extern`, and `extern(abi="c")` go on a typed `var`: `export var n int = 1`, `static var n = 1`, `extern var slot int`, `extern(abi="c") var slot int`. `export` or `extern` on an inferred `var name = expr` or `name := expr` is `not supported yet`.
 
 Several results are still bound together: `var a, b = call`. A local struct, enum, or typedef is rejected. Fields, parameters, typedefs, and return types keep their own syntax.
 
@@ -330,7 +330,7 @@ func main() int {
 }
 ```
 
-`var` defines every name in the current block. `:=` defines a name that is new in the current block and assigns a name that already exists there. At least one name must be new. A name from an outer block is shadowed. The same bind may be the first clause of `for`. A call used as a statement, or as the call in `defer`, discards every result. The call may be a function, a method on a field, a subscript, a dereference, or a temporary value. An `extern` function cannot return several results. A trait method cannot either. A type error names the expected type and the found type.
+`var` defines every name in the current block. `:=` defines a name that is new in the current block and assigns a name that already exists there. At least one name must be new. A name from an outer block is shadowed. The same bind may be the first clause of `for`. A call used as a statement, or as the call in `defer`, discards every result. The call may be a function, a method on a field, a subscript, a dereference, or a temporary value. An `extern(abi="c")` function cannot return several results. A trait method cannot either. A type error names the expected type and the found type.
 
 A function may be declared first and defined later, with the same type. Two bodies for the same function are `redefinition`.
 
@@ -361,7 +361,7 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 }
 ```
 
-A variable or a field names the value, then the type: `var fp func (i32, i32) i32;`, `var fp func (i32) (i32, i32);`, and, inside a struct, `op func (i32, i32) i32`. A typedef still writes the type, then the name: `typedef func (i32, i32) i32 BinOp;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern` function's parameters and result cannot include a function pointer that returns several results.
+A variable or a field names the value, then the type: `var fp func (i32, i32) i32;`, `var fp func (i32) (i32, i32);`, and, inside a struct, `op func (i32, i32) i32`. A typedef still writes the type, then the name: `typedef func (i32, i32) i32 BinOp;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
 A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
 
@@ -411,7 +411,15 @@ func main() int {
 
 This program returns 42.
 
-A struct may contain a pointer to itself. A by-value field of the struct that is being defined is rejected.
+A struct may contain a pointer to itself. A by-value field of the struct that is being defined is rejected. `struct(align=16)` sets the alignment. The value is a positive power of two, at most 4096. The size is rounded up to that alignment. An alignment weaker than a field requires is `type mismatch`.
+
+```c
+struct(align=16) Wide {
+    n int;
+}
+```
+
+`sizeof(Wide)` is 16.
 
 ```c
 struct Node {
@@ -420,33 +428,33 @@ struct Node {
 };
 ```
 
-A struct or an enum is defined by its body. `struct Node;`, `typedef struct Node;`, `extern struct Node;`, `enum Color;`, and `extern enum Color;` are `expected '{'`. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
+A struct or an enum is defined by its body. `struct Node;`, `typedef struct Node;`, `extern(abi="c") struct Node;`, `enum Color;`, and `extern(abi="c") enum Color;` are `expected '{'`. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
 
-An `extern struct` is marked so it can be used with an `extern` function. An empty body is an opaque handle: the type has no fields and occupies one byte, and a library uses it through a pointer. An empty struct that is not `extern` is `not supported yet`. An empty enum is `not supported yet`.
+An `extern(abi="c") struct` is marked so it can be used with an `extern(abi="c")` function. An empty body is an opaque handle: the type has no fields and occupies one byte, and a library uses it through a pointer. An empty struct that is not `extern(abi="c")`, including an empty `extern struct`, is `not supported yet`. An empty enum is `not supported yet`. `extern struct` uses the compiler's own layout.
 
 ```c
-extern struct Pair {
+extern(abi="c") struct Pair {
     a int;
     b int;
 };
 
-extern struct SDL_Window {}
+extern(abi="c") struct SDL_Window {}
 
-extern func make_pair(a int, b int) Pair;
-extern func SDL_DestroyWindow(window SDL_Window *) void;
+extern(abi="c") func make_pair(a int, b int) Pair;
+extern(abi="c") func SDL_DestroyWindow(window SDL_Window *) void;
 ```
 
-A plain struct in an `extern` function is `struct must be extern`.
+A plain struct in an `extern(abi="c")` function is `struct must be extern(abi="c")`.
 
-`extern union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A union without `extern` is `not supported yet`; a tagged union waits. An empty union is `not supported yet`. A struct or a union nested inside it must be `extern`, or the error is `struct must be extern`.
+`extern(abi="c") union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A union without `extern(abi="c")`, including `extern union`, is `not supported yet`; a tagged union waits. An empty union is `not supported yet`. A struct or a union nested inside it must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
 
 ```c
-extern union Num {
+extern(abi="c") union Num {
     n int;
     m int;
 };
 
-extern union Word {
+extern(abi="c") union Word {
     n int;
     raw [8]char;
 };
@@ -632,10 +640,10 @@ enum Tiny i8 {
 
 `sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `char`. A value that does not fit is `type mismatch`. An empty enum is rejected. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `int`. Other operators are `type mismatch`.
 
-`extern enum` is the C form. It has no underlying type of its own; the representation is `int`, and a value may be passed or compared where an integer is expected. `extern enum Name i8` is `extern enum`. Methods are still allowed:
+`extern(abi="c") enum` is the C form. It has no underlying type of its own; the representation is `int`, and a value may be passed or compared where an integer is expected. `extern(abi="c") enum Name i8` is `extern(abi="c") enum`. Methods are still allowed:
 
 ```c
-extern enum Flag {
+extern(abi="c") enum Flag {
     Off,
     On = 1,
 }

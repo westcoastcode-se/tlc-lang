@@ -29,9 +29,12 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     generic = true;
                 }
             }
-            if (fn->is_extern && fn->results.size() > 1) {
+            if (fn->variadic && !fn->extern_c) {
+                error(fn->loc, "not supported yet");
+            }
+            if (fn->extern_c && fn->results.size() > 1) {
                 error(fn->loc, "extern function cannot return several results");
-            } else if (fn->is_extern) {
+            } else if (fn->extern_c) {
                 if (signature.result != nullptr) {
                     require_extern_struct(*signature.result, fn->loc);
                 }

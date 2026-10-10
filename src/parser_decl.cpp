@@ -12,6 +12,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     bool exported = false;
     bool is_static = false;
     bool is_extern = false;
+    bool extern_c = false;
     const SourceLoc storage_loc = peek().loc;
     while (true) {
         if (check(TokenKind::KwExport)) {
@@ -24,9 +25,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             ++pos_;
             continue;
         }
-        if (check(TokenKind::KwExtern)) {
-            is_extern = true;
-            ++pos_;
+        if (take_extern(is_extern, extern_c)) {
             continue;
         }
         break;
@@ -36,7 +35,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             diags_.error(storage_loc, "export static");
         }
         std::vector<VarDecl> vars;
-        parse_func_vars(vars, exported, is_static, is_extern);
+        parse_func_vars(vars, exported, is_static, is_extern, extern_c);
         for (VarDecl &var : vars) {
             TopDecl top;
             top.data = std::move(var);
@@ -98,7 +97,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             diags_.error(peek().loc, "not supported yet");
             parse_bind(true);
         } else {
-            VarDecl var = parse_typed_var(exported, is_static, is_extern);
+            VarDecl var = parse_typed_var(exported, is_static, is_extern, extern_c);
             TopDecl top;
             top.data = std::move(var);
             unit.decls.push_back(std::move(top));
@@ -120,7 +119,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         if (exported && is_static) {
             diags_.error(storage_loc, "export static");
         }
-        FunctionDecl fn = parse_function(exported, is_static, is_extern, true);
+        FunctionDecl fn = parse_function(exported, is_static, is_extern, extern_c, true);
         TopDecl top;
         top.data = std::move(fn);
         unit.decls.push_back(std::move(top));
@@ -130,8 +129,8 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     pos_ = marker;
     const Specifiers specs = parse_specifiers(true);
     if (specs.union_definition) {
-        if (!specs.is_extern) {
-            // Tagged unions wait. C layout is `extern union`.
+        if (!specs.extern_c) {
+            // Tagged unions wait. C layout is `extern(abi="c") union`.
             diags_.error(specs.loc, "not supported yet");
         } else {
             StructDecl item;
@@ -140,6 +139,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             item.fields = specs.fields;
             item.exported = specs.exported;
             item.is_extern = true;
+            item.extern_c = true;
             item.is_union = true;
             TopDecl top;
             top.data = std::move(item);
@@ -157,6 +157,8 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         item.fields = specs.fields;
         item.exported = specs.exported;
         item.is_extern = specs.is_extern;
+        item.extern_c = specs.extern_c;
+        item.align = specs.align;
         TopDecl top;
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));
@@ -175,6 +177,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         item.enumerators = specs.enumerators;
         item.exported = specs.exported;
         item.is_extern = specs.is_extern;
+        item.extern_c = specs.extern_c;
         TopDecl top;
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));
@@ -258,6 +261,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         var.exported = specs.exported;
         var.is_static = specs.is_static;
         var.is_extern = specs.is_extern;
+        var.extern_c = specs.extern_c;
         if (eat(TokenKind::Eq)) {
             var.init = parse_assignment();
         }

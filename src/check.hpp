@@ -62,6 +62,8 @@ class Checker {
         };
         std::vector<Field> fields;
         bool is_extern = false;
+        bool extern_c = false;
+        int align = 0;
     };
 
     struct MethodInfo {
@@ -145,6 +147,7 @@ class Checker {
     bool typedef_target_ready(const TypedefDecl &item) const;
     void register_one_typedef(const TypedefDecl &item);
     bool field_waits(const FieldDecl &field) const;
+    int min_align_of(const Type &type) const;
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);
     void define_struct_fields();
     void prepare_unit(const TranslationUnit &unit, uint32_t file_id, const PackageNode *node);

@@ -1,0 +1,7 @@
+extern(abi="c") func answer() int {
+    return 42;
+}
+
+func main() int {
+    return answer();
+}

@@ -60,6 +60,12 @@ int run_cli_tests() {
     EXPECT_HAS(check, pkg_ir.out, "define i32 @main");
     EXPECT_HAS(check, pkg_ir.out, "math.add");
 
+    const std::string tlc_extern = std::string(TLC_ROOT) + "/tests/programs/extern_tlc/main.tlc";
+    const tlc::test::Proc tlc_ir = tlc::test::spawn({bin, "--emit-llvm", tlc_extern});
+    EXPECT(check, tlc_ir.code == 0);
+    EXPECT_HAS(check, tlc_ir.out, "@main.parts");
+    EXPECT(check, tlc_ir.out.find("@parts(") == std::string::npos);
+
     const std::string hello = std::string(TLC_ROOT) + "/tests/programs/hello_printf/main.tlc";
     const tlc::test::Proc hello_ir = tlc::test::spawn({bin, "--emit-llvm", hello});
     EXPECT(check, hello_ir.code == 0);
@@ -101,10 +107,10 @@ int run_cli_tests() {
     write_file("pick_a.c", "int pick(void) { return 7; }\n");
     write_file("pick_so.c", "int pick(void) { return 9; }\n");
     write_file("main.tlc",
-               "extern func from_a() int;\n"
-               "extern func from_so() int;\n"
+               "extern(abi=\"c\") func from_a() int;\n"
+               "extern(abi=\"c\") func from_so() int;\n"
                "func main() int { return from_a() + from_so(); }\n");
-    write_file("pick.tlc", "extern func pick() int;\nfunc main() int { return pick(); }\n");
+    write_file("pick.tlc", "extern(abi=\"c\") func pick() int;\nfunc main() int { return pick(); }\n");
 
     const std::string dir_text = dir.path.string();
     auto cc = [&](const std::vector<std::string> &args) {
@@ -186,12 +192,12 @@ int run_cli_tests() {
     };
     write_at(vendor_root.path / "answer/answer.c", "int answer(void) { return 20; }\n");
     write_at(vendor_root.path / "answer/answer_so.c", "int answer(void) { return 22; }\n");
-    write_at(vendor_root.path / "answer/answer.tlc", "export extern func answer() int;\n");
+    write_at(vendor_root.path / "answer/answer.tlc", "export extern(abi=\"c\") func answer() int;\n");
     write_at(vendor_root.path / "onlyso/onlyso.c", "int onlyso(void) { return 22; }\n");
-    write_at(vendor_root.path / "onlyso/onlyso.tlc", "export extern func onlyso() int;\n");
+    write_at(vendor_root.path / "onlyso/onlyso.tlc", "export extern(abi=\"c\") func onlyso() int;\n");
     write_at(vendor_root.path / "combo/base.c", "int base(void) { return 20; }\n");
     write_at(vendor_root.path / "combo/combo.tlc",
-             "export extern func base() int;\nexport extern func bonus() int;\n");
+             "export extern(abi=\"c\") func base() int;\nexport extern(abi=\"c\") func bonus() int;\n");
     write_at(vendor_root.path / "combo/link", "../bonus/libbonus.a\n");
     write_at(vendor_root.path / "bonus/bonus.c", "int bonus(void) { return 22; }\n");
 
@@ -252,7 +258,7 @@ int run_cli_tests() {
     plain.path = std::filesystem::temp_directory_path() / ("tlc-vendor-plain-" + std::to_string(getpid()));
     std::filesystem::create_directories(plain.path / "side");
     write_at(plain.path / "side/side.c", "int side(void) { return 3; }\n");
-    write_at(plain.path / "side/side.tlc", "export extern func side() int;\n");
+    write_at(plain.path / "side/side.tlc", "export extern(abi=\"c\") func side() int;\n");
     write_at(plain.path / "main.tlc", "import \"side\";\nfunc main() int { return side.side(); }\n");
     EXPECT(check, built({"cc", "-c", (plain.path / "side/side.c").string(), "-o", (plain.path / "side/side.o").string()}));
     EXPECT(check, built({"ar", "rcs", (plain.path / "side/libside.a").string(), (plain.path / "side/side.o").string()}));

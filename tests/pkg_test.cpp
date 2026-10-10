@@ -331,11 +331,11 @@ int run_pkg_tests() {
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
         entry.write("main.tlc", "import \"vendor/answer\";\nimport \"vendor/onlyso\";\nfunc main() int { return 0; }\n");
-        vendor.write("answer/answer.tlc", "export extern func answer() int;\n");
+        vendor.write("answer/answer.tlc", "export extern(abi=\"c\") func answer() int;\n");
         vendor.write("answer/libanswer.so", "");
         vendor.write("answer/libanswer.a", "");
         vendor.write("answer/libother.so.1", "");
-        vendor.write("onlyso/onlyso.tlc", "export extern func onlyso() int;\n");
+        vendor.write("onlyso/onlyso.tlc", "export extern(abi=\"c\") func onlyso() int;\n");
         vendor.write("onlyso/libonly.so.1.2", "");
         vendor.write("onlyso/libonly.so.1", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
@@ -372,7 +372,7 @@ int run_pkg_tests() {
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
         entry.write("main.tlc", "import \"vendor/listed\";\nfunc main() int { return 0; }\n");
-        vendor.write("listed/listed.tlc", "export extern func listed() int;\n");
+        vendor.write("listed/listed.tlc", "export extern(abi=\"c\") func listed() int;\n");
         vendor.write("listed/liblisted.a", "");
         vendor.write("listed/link", "# extra\n-lpthread\n../outside.a\n-L libs\n-Bstatic\n-Wl,-rpath,run\n");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
@@ -396,7 +396,7 @@ int run_pkg_tests() {
         entry.write("main.tlc", "import \"vendor/math\";\nfunc main() int { return 0; }\n");
         entry.write("vendor/math/add.tlc", "export func add(a int, b int) int { return a + b; }\n");
         entry.write("vendor/math/libmath.a", "");
-        vendor.write("math/add.tlc", "export extern func add(a int, b int) int;\n");
+        vendor.write("math/add.tlc", "export extern(abi=\"c\") func add(a int, b int) int;\n");
         vendor.write("math/libmath.a", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
         EXPECT(check, resolved.ok);
@@ -417,7 +417,7 @@ int run_pkg_tests() {
         EXPECT(check, vendor.ok());
         entry.write("main.tlc", "import \"vendor/math\";\nfunc main() int { return 0; }\n");
         extra.write("vendor/math/add.tlc", "export func add(a int, b int) int { return 1; }\n");
-        vendor.write("math/add.tlc", "export extern func add(a int, b int) int;\n");
+        vendor.write("math/add.tlc", "export extern(abi=\"c\") func add(a int, b int) int;\n");
         vendor.write("math/libmath.a", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {extra.directory()}, vendor.directory());
         EXPECT(check, resolved.ok);
@@ -439,7 +439,7 @@ int run_pkg_tests() {
 "var from_a int;\n");
         entry.write("b/b.tlc", "import \"vendor/answer\";\n"
 "var from_b int;\n");
-        vendor.write("answer/answer.tlc", "export extern func answer() int;\n");
+        vendor.write("answer/answer.tlc", "export extern(abi=\"c\") func answer() int;\n");
         vendor.write("answer/libanswer.a", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
         EXPECT(check, resolved.ok);

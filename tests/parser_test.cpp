@@ -303,14 +303,34 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "extern func printf(fmt const char *, ...) int;\n"
+            "extern(abi=\"c\") func printf(fmt const char *, ...) int;\n"
             "func main() int {\n"
             "  printf(\"hi\\n\");\n"
             "  return 0;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(fn printf (params (fmt char*) ...) int extern\n");
+        EXPECT_HAS(check, parsed.dump, "(fn printf (params (fmt char*) ...) int extern(abi=\"c\")\n");
         EXPECT_HAS(check, parsed.dump, "(expr (call (name printf) (string \"hi\\n\")))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "extern func add(a int, b int) int;\n"
+            "extern(other) func nope() int;\n");
+        EXPECT_HAS(check, parsed.dump, "(fn add (params (a int) (b int)) int extern\n");
+        EXPECT(check, parsed.dump.find("extern(abi=\"c\")") == std::string::npos);
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "extern(abi=\"tlc\") func add(a int, b int) int;\n"
+            "struct(align=16) Pair { a int; b int; }\n"
+            "struct(align=3) Bad { n int; }\n");
+        EXPECT(check, parsed.errors.find("type mismatch") != std::string::npos);
+        EXPECT_HAS(check, parsed.dump, "(fn add (params (a int) (b int)) int extern\n");
+        EXPECT(check, parsed.dump.find("abi=") == std::string::npos);
+        EXPECT_HAS(check, parsed.dump, "(struct Pair align 16\n");
     }
 
     {
@@ -325,7 +345,7 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("extern func f(x const int) int { return x; }\nfunc main() int { return 0; }\n");
+        const Parsed parsed = parse_source("extern(abi=\"c\") func f(x const int) int { return x; }\nfunc main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -357,7 +377,7 @@ int run_parser_tests() {
             "typedef struct Node;\n"
             "struct Node;\n"
             "enum Color;\n"
-            "extern enum Flag;\n"
+            "extern(abi=\"c\") enum Flag;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "expected '{'");
         EXPECT(check, parsed.dump.find("forward") == std::string::npos);
@@ -365,31 +385,33 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "extern struct Pair { a int; b int; };\n"
-            "export extern struct Node;\n"
+            "extern(abi=\"c\") struct Pair { a int; b int; };\n"
+            "export extern(abi=\"c\") struct Node;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "expected '{'");
-        EXPECT_HAS(check, parsed.dump, "(struct Pair extern\n");
+        EXPECT_HAS(check, parsed.dump, "(struct Pair extern(abi=\"c\")\n");
         EXPECT(check, parsed.dump.find("(struct Node") == std::string::npos);
     }
 
     {
         const Parsed parsed = parse_source(
-            "export extern struct Handle {}\n"
+            "export extern(abi=\"c\") struct Handle {}\n"
             "func main() int { return 0; }\n");
         EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(struct Handle export extern\n");
+        EXPECT_HAS(check, parsed.dump, "(struct Handle export extern(abi=\"c\")\n");
     }
 
     {
         const Parsed parsed = parse_source(
-            "extern union Num { n int; m int; }\n"
+            "extern(abi=\"c\") union Num { n int; m int; }\n"
             "union Plain { n int; }\n"
+            "extern union Tlc { n int; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
-        EXPECT_HAS(check, parsed.dump, "(union Num extern\n");
+        EXPECT_HAS(check, parsed.dump, "(union Num extern(abi=\"c\")\n");
         EXPECT_HAS(check, parsed.dump, "(field n int)\n");
         EXPECT(check, parsed.dump.find("(union Plain") == std::string::npos);
+        EXPECT(check, parsed.dump.find("(union Tlc") == std::string::npos);
     }
 
     {
@@ -419,13 +441,13 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "export extern enum Color {\n"
+            "export extern(abi=\"c\") enum Color {\n"
             "  Red,\n"
             "  Blue = 2,\n"
             "}\n"
             "func main() int { return 0; }\n");
         EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(enum Color export extern\n");
+        EXPECT_HAS(check, parsed.dump, "(enum Color export extern(abi=\"c\")\n");
         EXPECT_HAS(check, parsed.dump, "(enumerator Blue 2)\n");
     }
 

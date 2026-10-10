@@ -257,7 +257,7 @@ CAbi CodeGen::classify_abi(uint64_t size, unsigned natural, const std::vector<Ab
 
 ExternLayout CodeGen::extern_layout(const FunctionDecl &fn, uint32_t file) const {
     ExternLayout layout;
-    if (!fn.is_extern) {
+    if (!fn.extern_c) {
         return layout;
     }
     const bool many = fn.results.size() > 1;

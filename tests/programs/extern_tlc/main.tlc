@@ -1,0 +1,16 @@
+struct Point {
+    x int;
+    y int;
+}
+
+extern func parts(p Point) (int, int) {
+    return p.x, p.y + 2;
+}
+
+func main() int {
+    var p Point;
+    p.x = 20;
+    p.y = 20;
+    a, b := parts(p);
+    return a + b;
+}

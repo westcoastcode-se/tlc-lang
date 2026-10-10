@@ -152,7 +152,11 @@ struct StructDecl {
     std::vector<FieldDecl> fields;
     bool exported = false;
     bool is_extern = false;
-    // An `extern union` overlays its fields. A plain union waits for tagged unions.
+    // `extern(abi="c")` uses C layout. Plain `extern` is abi "tlc".
+    bool extern_c = false;
+    // `struct(align=N)`. Zero means the natural alignment.
+    int align = 0;
+    // An `extern(abi="c") union` overlays its fields. A plain union waits for tagged unions.
     bool is_union = false;
 };
 
@@ -171,6 +175,8 @@ struct EnumDecl {
     std::vector<Enumerator> enumerators;
     bool exported = false;
     bool is_extern = false;
+    // `extern(abi="c")` is a C enum. Plain `extern` keeps the tlc enum rules.
+    bool extern_c = false;
 };
 
 struct TypedefDecl {
@@ -212,6 +218,8 @@ struct VarDecl {
     bool exported = false;
     bool is_static = false;
     bool is_extern = false;
+    // `extern(abi="c")` is a C symbol. Plain `extern` is a tlc library symbol.
+    bool extern_c = false;
     // `name := expr` at file scope. The type comes from the initializer.
     bool inferred = false;
 };
@@ -349,6 +357,8 @@ struct FunctionDecl {
     bool exported = false;
     bool is_static = false;
     bool is_extern = false;
+    // `extern(abi="c")` uses the C ABI and the C symbol name.
+    bool extern_c = false;
     bool variadic = false;
     std::string method_struct;
     // `(a, b) { ... }` takes its parameter and result types from the expected function pointer.

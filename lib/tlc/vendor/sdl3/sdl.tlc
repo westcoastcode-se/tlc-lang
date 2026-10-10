@@ -3,20 +3,20 @@ package sdl3;
 // The subset of SDL3 used by examples/triangle. The real library is the
 // system libSDL3 named in the link file.
 
-export extern struct SDL_Window {}
-export extern struct SDL_GLContextState {}
+export extern(abi="c") struct SDL_Window {}
+export extern(abi="c") struct SDL_GLContextState {}
 
 // SDL_Event is the C union. Every member starts at offset 0, `type` included.
 // The included structs are the ones this binding names. `padding` is the
 // 128-byte member from SDL_events.h, so the union stays 128 bytes. The u64
 // timestamp in the structs makes the alignment 8, matching SDL.
-export extern struct SDL_CommonEvent {
+export extern(abi="c") struct SDL_CommonEvent {
     type u32;
     reserved u32;
     timestamp u64;
 }
 
-export extern struct SDL_WindowEvent {
+export extern(abi="c") struct SDL_WindowEvent {
     type u32;
     reserved u32;
     timestamp u64;
@@ -25,13 +25,13 @@ export extern struct SDL_WindowEvent {
     data2 i32;
 }
 
-export extern struct SDL_QuitEvent {
+export extern(abi="c") struct SDL_QuitEvent {
     type u32;
     reserved u32;
     timestamp u64;
 }
 
-export extern union SDL_Event {
+export extern(abi="c") union SDL_Event {
     type u32;
     common SDL_CommonEvent;
     window SDL_WindowEvent;
@@ -39,34 +39,34 @@ export extern union SDL_Event {
     padding [128]u8;
 }
 
-export extern enum SdlInit {
+export extern(abi="c") enum SdlInit {
     SDL_INIT_VIDEO = 0x20,
 }
 
-export extern enum SdlWindow {
+export extern(abi="c") enum SdlWindow {
     SDL_WINDOW_OPENGL = 2,
 }
 
-export extern enum SdlEventKind {
+export extern(abi="c") enum SdlEventKind {
     SDL_EVENT_QUIT = 0x100,
     SDL_EVENT_WINDOW_CLOSE_REQUESTED = 0x210,
 }
 
-export extern enum SdlGlAttr {
+export extern(abi="c") enum SdlGlAttr {
     SDL_GL_CONTEXT_MAJOR_VERSION = 17,
     SDL_GL_CONTEXT_MINOR_VERSION = 18,
     SDL_GL_CONTEXT_PROFILE_MASK = 20,
     SDL_GL_CONTEXT_PROFILE_COMPATIBILITY = 2,
 }
 
-export extern func SDL_Init(flags u32) bool;
-export extern func SDL_Quit() void;
-export extern func SDL_GetError() char *;
-export extern func SDL_CreateWindow(title const char *, w int, h int, flags u64) SDL_Window *;
-export extern func SDL_DestroyWindow(window SDL_Window *) void;
-export extern func SDL_GL_SetAttribute(attr int, value int) bool;
-export extern func SDL_GL_CreateContext(window SDL_Window *) SDL_GLContextState *;
-export extern func SDL_GL_MakeCurrent(window SDL_Window *, context SDL_GLContextState *) bool;
-export extern func SDL_GL_SwapWindow(window SDL_Window *) bool;
-export extern func SDL_PollEvent(event SDL_Event *) bool;
-export extern func SDL_Delay(ms u32) void;
+export extern(abi="c") func SDL_Init(flags u32) bool;
+export extern(abi="c") func SDL_Quit() void;
+export extern(abi="c") func SDL_GetError() char *;
+export extern(abi="c") func SDL_CreateWindow(title const char *, w int, h int, flags u64) SDL_Window *;
+export extern(abi="c") func SDL_DestroyWindow(window SDL_Window *) void;
+export extern(abi="c") func SDL_GL_SetAttribute(attr int, value int) bool;
+export extern(abi="c") func SDL_GL_CreateContext(window SDL_Window *) SDL_GLContextState *;
+export extern(abi="c") func SDL_GL_MakeCurrent(window SDL_Window *, context SDL_GLContextState *) bool;
+export extern(abi="c") func SDL_GL_SwapWindow(window SDL_Window *) bool;
+export extern(abi="c") func SDL_PollEvent(event SDL_Event *) bool;
+export extern(abi="c") func SDL_Delay(ms u32) void;

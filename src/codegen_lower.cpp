@@ -1,6 +1,7 @@
 // Symbol tables, type lowering, and struct, union, and enum layout.
 #include "gen.hpp"
 
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -778,6 +779,7 @@ void CodeGen::prepare_structs() {
                 continue;
             }
             structs_[static_cast<std::size_t>(id)].is_extern = item->is_extern;
+            structs_[static_cast<std::size_t>(id)].extern_c = item->extern_c;
             structs_[static_cast<std::size_t>(id)].is_union = item->is_union;
             auto c_memory = [&](auto &&self, llvm::Type *ty) -> llvm::Type * {
                 if (ty == nullptr) {
@@ -817,8 +819,8 @@ void CodeGen::prepare_structs() {
                 slot.elem_bits = low.elem_bits;
                 slot.elem_unsigned = low.elem_unsigned;
                 slot.elem_float = low.elem_float;
-                // C _Bool is one byte. An extern struct keeps that layout.
-                if (item->is_extern && low.elem_bool && low.depth == 0) {
+                // C _Bool is one byte. An extern(abi="c") struct keeps that layout.
+                if (item->extern_c && low.elem_bool && low.depth == 0) {
                     slot.type = c_memory(c_memory, slot.type);
                     slot.elem_bool = false;
                     slot.elem_bits = 8;
@@ -861,6 +863,53 @@ void CodeGen::prepare_structs() {
             }
             if (body.empty()) {
                 body.push_back(i8());
+            }
+            if (item->align > 0) {
+                const llvm::DataLayout &data_layout = module_.getDataLayout();
+                llvm::StructType *probe = llvm::StructType::get(context_, body);
+                if (probe->isSized()) {
+                    const uint64_t size = data_layout.getTypeAllocSize(probe).getFixedValue();
+                    unsigned natural = static_cast<unsigned>(data_layout.getABITypeAlign(probe).value());
+                    if (natural == 0) {
+                        natural = 1;
+                    }
+                    const unsigned want = static_cast<unsigned>(item->align);
+                    if (want < natural) {
+                        error(item->loc, "type mismatch");
+                    } else {
+                        const uint64_t rounded = (size + want - 1) / want * want;
+                        if (rounded > size) {
+                            body.push_back(llvm::ArrayType::get(i8(), rounded - size));
+                        }
+                        if (natural < want) {
+                            llvm::Type *carrier = nullptr;
+                            for (unsigned bits = 8; bits <= 65536 && carrier == nullptr; bits *= 2) {
+                                llvm::IntegerType *ty = llvm::IntegerType::get(context_, bits);
+                                if (static_cast<unsigned>(data_layout.getABITypeAlign(ty).value()) == want) {
+                                    carrier = ty;
+                                }
+                            }
+                            for (unsigned count = 1; count <= 64 && carrier == nullptr; count *= 2) {
+                                llvm::Type *ty = llvm::FixedVectorType::get(i8(), count);
+                                if (static_cast<unsigned>(data_layout.getABITypeAlign(ty).value()) == want) {
+                                    carrier = ty;
+                                }
+                            }
+                            for (unsigned count = 1; count <= 16 && carrier == nullptr; count *= 2) {
+                                llvm::Type *ty =
+                                    llvm::FixedVectorType::get(llvm::Type::getInt64Ty(context_), count);
+                                if (static_cast<unsigned>(data_layout.getABITypeAlign(ty).value()) == want) {
+                                    carrier = ty;
+                                }
+                            }
+                            if (carrier == nullptr) {
+                                error(item->loc, "not supported yet");
+                            } else {
+                                body.push_back(llvm::ArrayType::get(carrier, 0));
+                            }
+                        }
+                    }
+                }
             }
             structs_[static_cast<std::size_t>(id)].type->setBody(body);
             structs_[static_cast<std::size_t>(id)].fields = std::move(fields);
@@ -1135,9 +1184,10 @@ llvm::Constant *CodeGen::enum_constant(int enum_id, int64_t value) const {
 }
 
 CodeGen::SymbolForm CodeGen::symbol_form(const PackageNode &node, const std::string &name, bool is_extern,
-                                          bool is_static, bool exported, bool entry_main) const {
+                                          bool extern_c, bool is_static, bool exported, bool entry_main) const {
     SymbolForm form;
-    if (is_extern) {
+    // A C library symbol keeps the name the C object file exports.
+    if (extern_c) {
         form.name = name;
         form.linkage = llvm::GlobalValue::ExternalLinkage;
         return form;
@@ -1151,6 +1201,11 @@ CodeGen::SymbolForm CodeGen::symbol_form(const PackageNode &node, const std::str
         form.name = node.qualifier + "." + source_stem(node.path) + "." + name;
     } else {
         form.name = node.qualifier + "." + name;
+    }
+    // A tlc library symbol uses the same name as an exported tlc function.
+    if (is_extern) {
+        form.linkage = llvm::GlobalValue::ExternalLinkage;
+        return form;
     }
     form.linkage = exported && !is_static ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::InternalLinkage;
     return form;

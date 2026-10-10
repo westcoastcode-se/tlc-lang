@@ -6,6 +6,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #ifndef TLC_ROOT
 #error "TLC_ROOT must point at the project root"
@@ -23,6 +24,9 @@ std::string read_all(const std::filesystem::path &path) {
 struct Expectation {
     bool compile_error = false;
     std::string error_text;
+    bool link_error = false;
+    std::string link_error_text;
+    std::vector<std::string> link_args;
     bool has_exit = false;
     int exit_code = 0;
     bool has_stdout = false;
@@ -42,6 +46,8 @@ Expectation parse_expect(const std::string &text) {
         }
         constexpr std::string_view kExit = "exit:";
         constexpr std::string_view kError = "compile-error:";
+        constexpr std::string_view kLinkError = "link-error:";
+        constexpr std::string_view kLink = "link:";
         constexpr std::string_view kStdout = "stdout:";
         if (line.starts_with(kExit)) {
             expect.has_exit = true;
@@ -52,6 +58,22 @@ Expectation parse_expect(const std::string &text) {
             const auto first = expect.error_text.find_first_not_of(' ');
             if (first != std::string::npos) {
                 expect.error_text.erase(0, first);
+            }
+        } else if (line.starts_with(kLinkError)) {
+            expect.link_error = true;
+            expect.link_error_text = line.substr(kLinkError.size());
+            const auto first = expect.link_error_text.find_first_not_of(' ');
+            if (first != std::string::npos) {
+                expect.link_error_text.erase(0, first);
+            }
+        } else if (line.starts_with(kLink)) {
+            std::string arg = line.substr(kLink.size());
+            const auto first = arg.find_first_not_of(' ');
+            if (first != std::string::npos) {
+                arg.erase(0, first);
+            }
+            if (!arg.empty()) {
+                expect.link_args.push_back(std::move(arg));
             }
         } else if (line.starts_with(kStdout)) {
             expect.has_stdout = true;
@@ -96,8 +118,15 @@ int run_program_tests() {
         const Expectation expect = parse_expect(read_all(expect_path));
         tlc::Options opt;
         opt.input = main_path.string();
+        opt.link_args = expect.link_args;
         opt.mode = expect.compile_error ? tlc::Mode::Check : tlc::Mode::Run;
         const tlc::CompileOutput output = tlc::compile_source(opt);
+        if (expect.link_error) {
+            if (output.compiler_stderr.find(expect.link_error_text) == std::string::npos) {
+                check.fail(name + ": missing [" + expect.link_error_text + "] in [" + output.compiler_stderr + "]");
+            }
+            continue;
+        }
         if (expect.compile_error) {
             if (output.compiled || output.status == 0) {
                 check.fail(name + ": expected a compile error\n" + output.compiler_stderr);

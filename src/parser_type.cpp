@@ -33,8 +33,7 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             continue;
         }
         if (token.kind == TokenKind::KwExtern) {
-            specs.is_extern = true;
-            ++pos_;
+            take_extern(specs.is_extern, specs.extern_c);
             continue;
         }
         if (token.kind == TokenKind::KwTypedef) {
@@ -93,6 +92,22 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             const bool as_union = token.kind == TokenKind::KwUnion;
             ++pos_;
             specs.saw_type = true;
+            if (check(TokenKind::LParen)) {
+                if (as_union) {
+                    diags_.error(peek().loc, "not supported yet");
+                    int depth = 0;
+                    do {
+                        if (check(TokenKind::LParen)) {
+                            ++depth;
+                        } else if (check(TokenKind::RParen)) {
+                            --depth;
+                        }
+                        ++pos_;
+                    } while (depth > 0 && !eof());
+                } else {
+                    specs.align = parse_struct_align();
+                }
+            }
             if (check(TokenKind::Identifier)) {
                 specs.type_name = peek().text;
                 specs.loc = peek().loc;
@@ -256,6 +271,107 @@ bool Parser::take_enum_underlying(std::string &out) {
     return false;
 }
 
+bool Parser::take_extern(bool &is_extern, bool &extern_c) {
+    if (!eat(TokenKind::KwExtern)) {
+        return false;
+    }
+    is_extern = true;
+    if (!eat(TokenKind::LParen)) {
+        return true;
+    }
+    auto finish = [&]() {
+        if (check(TokenKind::Comma)) {
+            diags_.error(peek().loc, "not supported yet");
+            while (!check(TokenKind::RParen) && !eof()) {
+                ++pos_;
+            }
+        }
+        expect(TokenKind::RParen, "expected ')'");
+    };
+    if (!check(TokenKind::Identifier) || peek().text != "abi") {
+        if (check(TokenKind::Identifier)) {
+            diags_.error(peek().loc, "not supported yet");
+            ++pos_;
+        } else {
+            error_here("expected 'abi'");
+        }
+        while (!check(TokenKind::RParen) && !check(TokenKind::Comma) && !eof()) {
+            ++pos_;
+        }
+        finish();
+        return true;
+    }
+    ++pos_;
+    if (!eat(TokenKind::Eq)) {
+        error_here("expected '='");
+        while (!check(TokenKind::RParen) && !eof()) {
+            ++pos_;
+        }
+        expect(TokenKind::RParen, "expected ')'");
+        return true;
+    }
+    if (!check(TokenKind::StringLiteral)) {
+        error_here("expected a string");
+        while (!check(TokenKind::RParen) && !check(TokenKind::Comma) && !eof()) {
+            ++pos_;
+        }
+        finish();
+        return true;
+    }
+    if (peek().text == "c") {
+        extern_c = true;
+    } else if (peek().text == "tlc") {
+        extern_c = false;
+    } else {
+        diags_.error(peek().loc, "not supported yet");
+    }
+    ++pos_;
+    finish();
+    return true;
+}
+
+int Parser::parse_struct_align() {
+    expect(TokenKind::LParen, "expected '('");
+    int value = 0;
+    if (!check(TokenKind::Identifier) || peek().text != "align") {
+        if (check(TokenKind::Identifier)) {
+            diags_.error(peek().loc, "not supported yet");
+            ++pos_;
+        } else {
+            error_here("expected 'align'");
+        }
+        while (!check(TokenKind::RParen) && !eof()) {
+            ++pos_;
+        }
+        expect(TokenKind::RParen, "expected ')'");
+        return 0;
+    }
+    ++pos_;
+    if (!eat(TokenKind::Eq)) {
+        error_here("expected '='");
+    }
+    const bool plain = check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits == 0;
+    const uint64_t raw = plain ? peek().int_value : 0;
+    const bool power = raw >= 1 && raw <= 4096 && (raw & (raw - 1)) == 0;
+    if (!plain || !power) {
+        error_here("type mismatch");
+        if (check(TokenKind::IntLiteral) || check(TokenKind::Identifier)) {
+            ++pos_;
+        }
+    } else {
+        value = static_cast<int>(raw);
+        ++pos_;
+    }
+    if (check(TokenKind::Comma)) {
+        diags_.error(peek().loc, "not supported yet");
+        while (!check(TokenKind::RParen) && !eof()) {
+            ++pos_;
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    return value;
+}
+
 std::vector<Enumerator> Parser::parse_enumerators() {
     std::vector<Enumerator> enumerators;
     while (!check(TokenKind::RBrace) && !eof()) {
@@ -417,7 +533,8 @@ Parser::PlacedType Parser::parse_func_type() {
     return type;
 }
 
-void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern) {
+void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern,
+                             bool extern_c) {
     reject_c_var(peek().loc);
     const PlacedType type = parse_func_type();
     while (true) {
@@ -443,6 +560,7 @@ void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_
         var.exported = exported;
         var.is_static = is_static;
         var.is_extern = is_extern;
+        var.extern_c = extern_c;
         if (eat(TokenKind::Eq)) {
             var.init = parse_assignment();
         }
@@ -743,11 +861,12 @@ void Parser::parse_results(FunctionDecl &fn) {
     fn.indirections = first.indirections;
 }
 
-FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_extern, bool allow_body) {
+FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body) {
     FunctionDecl fn;
     fn.exported = exported;
     fn.is_static = is_static;
     fn.is_extern = is_extern;
+    fn.extern_c = extern_c;
     fn.loc = peek().loc;
     expect(TokenKind::KwFunc, "expected 'func'");
     if (check(TokenKind::Identifier)) {
@@ -769,7 +888,7 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     } else {
         error_here("expected an identifier");
     }
-    fn.params = parse_params(is_extern, fn.variadic, !fn.method_struct.empty());
+    fn.params = parse_params(extern_c, fn.variadic, !fn.method_struct.empty());
     parse_results(fn);
     if (check(TokenKind::LBrace)) {
         if (!allow_body) {

@@ -1,3 +1,4 @@
+link: -lc
 exit: 0
 stdout:
 hi

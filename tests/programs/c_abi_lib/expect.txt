@@ -1,0 +1,1 @@
+link-error: extern(abi="c") requires a C library

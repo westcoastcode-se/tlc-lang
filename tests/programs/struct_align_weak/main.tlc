@@ -1,0 +1,7 @@
+struct(align=1) Bad {
+    n int;
+}
+
+func main() int {
+    return sizeof(Bad);
+}
