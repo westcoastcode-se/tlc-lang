@@ -370,6 +370,17 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "struct Point { int x; }\n"
+            "enum Color { Red, Blue = 2 }\n"
+            "func main() int { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(struct Point\n");
+        EXPECT_HAS(check, parsed.dump, "(enum Color\n");
+        EXPECT_HAS(check, parsed.dump, "(enumerator Blue 2)\n");
+    }
+
+    {
         const Parsed parsed = parse_source("enum Tiny i8 { A, B = 2 };\nfunc main() int { return 0; }\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(enum Tiny i8\n");

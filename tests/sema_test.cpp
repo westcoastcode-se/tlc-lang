@@ -643,6 +643,21 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "struct Point { int x; }\n"
+            "enum Color { Red }\n"
+            "func main() int {\n"
+            "  Point p;\n"
+            "  p.x = 1;\n"
+            "  if (Color.Red == Color.Red) {\n"
+            "    return p.x;\n"
+            "  }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
             "enum One { Val };\n"
             "enum Two { Val };\n"
             "func main() int {\n"

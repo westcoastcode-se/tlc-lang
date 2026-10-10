@@ -88,6 +88,7 @@ class Parser {
     };
 
     bool starts_declaration() const;
+    bool continues_declarator() const;
     bool starts_qualified_type() const;
     bool is_type_keyword(TokenKind kind) const;
 

@@ -360,7 +360,7 @@ A variable, a field, or a typedef uses the same type, then the name: `func (i32,
 
 ## Structs, pointers, and arrays
 
-A struct definition uses the `struct` keyword. Variables, parameters, return types, and fields then use the bare tag.
+A struct definition uses the `struct` keyword. Variables, parameters, return types, and fields then use the bare tag. The semicolon after `}` may be omitted.
 
 ```c
 struct Point {
@@ -571,7 +571,7 @@ The function is monomorphized. Each struct that is passed in gets its own copy, 
 
 ## Enums and typedefs
 
-An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `int`, and it does not convert to its representation.
+An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `int`, and it does not convert to its representation. The semicolon after `}` may be omitted.
 
 ```c
 enum Color {

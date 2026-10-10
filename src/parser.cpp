@@ -219,6 +219,11 @@ bool Parser::starts_qualified_type() const {
            (peek(3).kind == TokenKind::Star || peek(3).kind == TokenKind::Identifier);
 }
 
+bool Parser::continues_declarator() const {
+    return check(TokenKind::Identifier) || check(TokenKind::Star) ||
+           (check(TokenKind::LParen) && peek(1).kind == TokenKind::Star);
+}
+
 bool Parser::starts_declaration() const {
     const TokenKind kind = peek().kind;
     const bool typedef_name = kind == TokenKind::Identifier && peek(1).kind != TokenKind::Dot &&
@@ -1212,8 +1217,9 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         TopDecl top;
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));
-        if (check(TokenKind::Semicolon)) {
-            ++pos_;
+        // `}` ends the definition. `;` is optional. A following declarator is
+        // `struct Point { int x; } p` or `typedef struct Point { int x; } Alias`.
+        if (eat(TokenKind::Semicolon) || !continues_declarator()) {
             saw_decl_ = true;
             return;
         }
@@ -1228,8 +1234,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         TopDecl top;
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));
-        if (check(TokenKind::Semicolon)) {
-            ++pos_;
+        if (eat(TokenKind::Semicolon) || !continues_declarator()) {
             saw_decl_ = true;
             return;
         }
@@ -1386,7 +1391,12 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
     }
     pos_ = marker;
     const Specifiers specs = parse_specifiers(file_scope);
-    if (specs.struct_definition || specs.enum_definition || specs.is_typedef) {
+    if (specs.struct_definition || specs.enum_definition) {
+        diags_.error(specs.loc, "not supported yet");
+        eat(TokenKind::Semicolon);
+        return make_stmt(Stmt::Expression{});
+    }
+    if (specs.is_typedef) {
         diags_.error(specs.loc, "not supported yet");
         if (check(TokenKind::Semicolon)) {
             ++pos_;
