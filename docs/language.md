@@ -400,9 +400,9 @@ struct Node {
 };
 ```
 
-An incomplete struct is introduced with `typedef struct Node;`. A later `struct Node { ... }` completes that name. `struct Node;` does not declare a type. A pointer to the incomplete name is allowed. Using the incomplete name by value is `not supported yet`.
+A struct or an enum is defined by its body. `struct Node;`, `typedef struct Node;`, `extern struct Node;`, `enum Color;`, and `extern enum Color;` are `expected '{'`. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
 
-An `extern struct` is the same shape, marked so it can be used with an `extern` function:
+An `extern struct` is marked so it can be used with an `extern` function. An empty body is an opaque handle: the type has no fields and occupies one byte, and a library uses it through a pointer. An empty struct that is not `extern` is `not supported yet`. An empty enum is `not supported yet`.
 
 ```c
 extern struct Pair {
@@ -410,22 +410,13 @@ extern struct Pair {
     int b;
 };
 
-extern struct SDL_Window;
+extern struct SDL_Window {}
 
 extern func make_pair(a int, b int) Pair;
 extern func SDL_DestroyWindow(window SDL_Window *) void;
 ```
 
-`extern typedef struct SDL_Window;` is the same incomplete struct. A plain struct in that position is `struct must be extern`. A forward declaration and its definition must agree, or the error is `extern struct`.
-
-```c
-typedef struct Node;
-
-struct Node {
-    int n;
-    Node *next;
-};
-```
+A plain struct in an `extern` function is `struct must be extern`.
 
 Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `Point **` and `int *` are left as they are, and the access is `type mismatch`. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
 

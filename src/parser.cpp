@@ -1329,21 +1329,12 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             return;
         }
     }
-    if (specs.is_struct && !specs.struct_definition && check(TokenKind::Semicolon)) {
-        if ((specs.is_typedef || specs.is_extern) && !specs.type_name.empty() && specs.type_name != "invalid") {
-            StructDecl item;
-            item.loc = specs.loc;
-            item.name = specs.type_name;
-            item.exported = specs.exported;
-            item.forward = true;
-            item.is_extern = specs.is_extern;
-            TopDecl top;
-            top.data = std::move(item);
-            unit.decls.push_back(std::move(top));
-        } else if (!specs.is_typedef) {
-            diags_.error(specs.loc, "struct outside definition");
-        }
-        ++pos_;
+    // `struct Name;`, `typedef struct Name;`, `extern struct Name;`, and `enum Name;`
+    // are not declarations. A body is required. A following declarator is still a C variable.
+    if (((specs.is_struct && !specs.struct_definition) || (specs.is_enum && !specs.enum_definition)) &&
+        (check(TokenKind::Semicolon) || !continues_declarator())) {
+        diags_.error(specs.loc, "expected '{'");
+        eat(TokenKind::Semicolon);
         saw_decl_ = true;
         return;
     }
@@ -1484,6 +1475,13 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
     const Specifiers specs = parse_specifiers(file_scope);
     if (specs.struct_definition || specs.enum_definition) {
         diags_.error(specs.loc, "not supported yet");
+        eat(TokenKind::Semicolon);
+        return make_stmt(Stmt::Expression{});
+    }
+    // `struct Name;` and `enum Name;` are not declarations. The body is the declaration.
+    if (((specs.is_struct && !specs.struct_definition) || (specs.is_enum && !specs.enum_definition)) &&
+        (check(TokenKind::Semicolon) || !continues_declarator())) {
+        diags_.error(specs.loc, "expected '{'");
         eat(TokenKind::Semicolon);
         return make_stmt(Stmt::Expression{});
     }

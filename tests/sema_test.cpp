@@ -1452,12 +1452,11 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("struct Point;\nfunc main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "struct outside definition");
+        EXPECT_HAS(check, errors, "expected '{'");
     }
 
     {
         const std::string errors = diagnose(
-            "typedef struct Node;\n"
             "struct Node { int n; Node *next; };\n"
             "func main() int {\n"
             "  var tail Node;\n"
@@ -1474,18 +1473,16 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "typedef struct Node;\n"
-            "func main() int {\n"
-            "  var n Node;\n"
-            "  return 0;\n"
-            "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+            "enum Color;\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "expected '{'");
     }
 
     {
         const std::string errors = diagnose(
-            "typedef struct Node;\n"
+            "extern struct Handle {}\n"
             "func main() int {\n"
-            "  var p *Node;\n"
+            "  var p *Handle;\n"
             "  p = 0;\n"
             "  return 0;\n"
             "}\n");
@@ -1494,15 +1491,14 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"math/fwd.tlc", "typedef struct B;\n"
-"struct A { B *b; int n; };\n"
+            {"math/a.tlc", "struct A { B *b; int n; };\n"
 "func take(b B *) int {\n"
 "  var a A;\n"
 "  a.n = 2;\n"
 "  a.b = b;\n"
 "  return a.n + a.b.x;\n"
 "}\n"},
-            {"math/def.tlc", "struct B { int x; };\n"},
+            {"math/b.tlc", "struct B { int x; };\n"},
         });
         EXPECT_EQ(check, errors, "");
     }
@@ -2028,10 +2024,9 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "typedef struct Pair;\n"
-            "extern struct Pair { int a; int b; };\n"
+            "extern struct Pair;\n"
             "func main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "extern struct");
+        EXPECT_HAS(check, errors, "expected '{'");
     }
 
     {

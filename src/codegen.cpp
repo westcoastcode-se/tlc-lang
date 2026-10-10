@@ -1789,8 +1789,7 @@ void CodeGen::prepare_structs() {
                 continue;
             }
             const int id = tag_id(node.file_id, item->name);
-            if (id >= 0 && (decls[static_cast<std::size_t>(id)] == nullptr ||
-                            (decls[static_cast<std::size_t>(id)]->forward && !item->forward))) {
+            if (id >= 0 && decls[static_cast<std::size_t>(id)] == nullptr) {
                 decls[static_cast<std::size_t>(id)] = item;
                 owners[static_cast<std::size_t>(id)] = node.file_id;
             }

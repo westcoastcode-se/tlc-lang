@@ -151,7 +151,6 @@ struct StructDecl {
     std::string name;
     std::vector<FieldDecl> fields;
     bool exported = false;
-    bool forward = false;
     bool is_extern = false;
 };
 

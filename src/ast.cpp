@@ -474,9 +474,6 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             append_indent(out, 1);
             out += "(struct ";
             out += item->name;
-            if (item->forward) {
-                out += " forward";
-            }
             if (item->exported) {
                 out += " export";
             }

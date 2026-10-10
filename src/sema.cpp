@@ -59,7 +59,6 @@ class Checker {
             Type type;
         };
         std::vector<Field> fields;
-        bool forward = false;
         bool is_extern = false;
     };
 
@@ -1415,43 +1414,8 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
             continue;
         }
         const int existing = find_tag(file_id, item->name);
-        if (item->forward) {
-            if (existing >= 0) {
-                StructInfo &info = structs_[static_cast<std::size_t>(existing)];
-                if (info.is_extern != item->is_extern) {
-                    error(item->loc, "extern struct");
-                }
-                publish_tag(*item, existing);
-                continue;
-            }
-            const int id = static_cast<int>(structs_.size());
-            StructInfo info;
-            info.name = item->name;
-            info.forward = true;
-            info.is_extern = item->is_extern;
-            structs_.push_back(std::move(info));
-            tags_[file_id][item->name] = id;
-            publish_tag(*item, id);
-            continue;
-        }
         if (existing >= 0) {
-            StructInfo &info = structs_[static_cast<std::size_t>(existing)];
-            if (!info.forward) {
-                error(item->loc, "redefinition");
-                continue;
-            }
-            if (info.is_extern != item->is_extern) {
-                error(item->loc, "extern struct");
-            }
-            info.is_extern = item->is_extern;
-            info.forward = false;
-            if (item->fields.empty()) {
-                error(item->loc, "not supported yet");
-                info.complete = true;
-            } else {
-                pending_structs_.push_back(PendingStruct{file_id, item, existing});
-            }
-            publish_tag(*item, existing);
+            error(item->loc, "redefinition");
             continue;
         }
         const int id = static_cast<int>(structs_.size());
@@ -1461,7 +1425,10 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         structs_.push_back(std::move(created));
         tags_[file_id][item->name] = id;
         if (item->fields.empty()) {
-            error(item->loc, "not supported yet");
+            // An empty extern struct is an opaque C handle. Any other empty struct has no fields to store.
+            if (!item->is_extern) {
+                error(item->loc, "not supported yet");
+            }
             structs_.back().complete = true;
         } else {
             pending_structs_.push_back(PendingStruct{file_id, item, id});

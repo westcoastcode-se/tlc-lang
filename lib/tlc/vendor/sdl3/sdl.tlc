@@ -3,8 +3,8 @@ package sdl3;
 // The subset of SDL3 used by examples/triangle. The real library is the
 // system libSDL3 named in the link file.
 
-export extern struct SDL_Window;
-export extern struct SDL_GLContextState;
+export extern struct SDL_Window {}
+export extern struct SDL_GLContextState {}
 
 // SDL_Event is a 128-byte union, aligned to 8. `type` is the first field.
 // The u64 array starts at offset 8 and fills the rest, so the layout matches.

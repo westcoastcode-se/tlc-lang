@@ -356,9 +356,11 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "typedef struct Node;\n"
             "struct Node;\n"
+            "enum Color;\n"
+            "extern enum Flag;\n"
             "func main() int { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "struct outside definition");
-        EXPECT_HAS(check, parsed.dump, "(struct Node forward\n");
+        EXPECT_HAS(check, parsed.errors, "expected '{'");
+        EXPECT(check, parsed.dump.find("forward") == std::string::npos);
     }
 
     {
@@ -366,9 +368,17 @@ int run_parser_tests() {
             "extern struct Pair { int a; int b; };\n"
             "export extern struct Node;\n"
             "func main() int { return 0; }\n");
-        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.errors, "expected '{'");
         EXPECT_HAS(check, parsed.dump, "(struct Pair extern\n");
-        EXPECT_HAS(check, parsed.dump, "(struct Node forward export extern\n");
+        EXPECT(check, parsed.dump.find("(struct Node") == std::string::npos);
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "export extern struct Handle {}\n"
+            "func main() int { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(struct Handle export extern\n");
     }
 
     {
