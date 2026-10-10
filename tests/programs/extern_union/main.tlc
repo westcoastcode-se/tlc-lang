@@ -1,11 +1,11 @@
 extern union Num {
-    int n;
-    int m;
+    n int;
+    m int;
 }
 
 extern union Word {
-    int n;
-    char raw[8];
+    n int;
+    raw [8]char;
 }
 
 func Num::value(this self Num) int {

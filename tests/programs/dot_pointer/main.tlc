@@ -1,6 +1,6 @@
 struct Point {
-    int x;
-    int y;
+    x int;
+    y int;
 };
 
 func Point::sum(this self Point) int {

@@ -1,11 +1,11 @@
 struct Point {
-    int x;
-    int y;
+    x int;
+    y int;
 };
 
 struct Node {
-    int n;
-    Node *next;
+    n int;
+    next *Node;
 };
 
 func make(a Point) Point {

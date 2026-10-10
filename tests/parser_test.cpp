@@ -188,7 +188,7 @@ int run_parser_tests() {
             "typedef func (i32, i32) i32 BinOp;\n"
             "var saved func (i32) i32;\n"
             "struct Box {\n"
-            "  func (i32, i32) i32 op;\n"
+            "  op func (i32, i32) i32;\n"
             "};\n"
             "func myfunc(ptr func (i32, i32) i32) i32 {\n"
             "  return ptr(10, 20);\n"
@@ -278,8 +278,8 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "export struct Point {\n"
-            "  int x;\n"
-            "  int *y;\n"
+            "  x int;\n"
+            "  y *int;\n"
             "};\n"
             "var p struct Point;\n"
             "var q geom.Point;\n"
@@ -297,7 +297,7 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("func main() int { struct Point { int x; }; return 0; }\n");
+        const Parsed parsed = parse_source("func main() int { struct Point { x int; }; return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -365,7 +365,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "extern struct Pair { int a; int b; };\n"
+            "extern struct Pair { a int; b int; };\n"
             "export extern struct Node;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "expected '{'");
@@ -383,8 +383,8 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "extern union Num { int n; int m; }\n"
-            "union Plain { int n; }\n"
+            "extern union Num { n int; m int; }\n"
+            "union Plain { n int; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
         EXPECT_HAS(check, parsed.dump, "(union Num extern\n");
@@ -394,7 +394,14 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "struct Point { int x; }\n"
+            "struct Box { p *[4]int; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "struct Point { x int; }\n"
             "enum Color { Red, Blue = 2 }\n"
             "func main() int { return 0; }\n");
         EXPECT(check, parsed.errors.empty());
@@ -565,7 +572,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "struct Point {\n"
-            "  int x;\n"
+            "  x int;\n"
             "};\n"
             "func Point::sum(this self Point, extra int) int {\n"
             "  return self.x + extra;\n"
@@ -697,7 +704,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "struct Point { int x; };\n"
+            "struct Point { x int; };\n"
             "func Point::method(this self Point, a int, b int, c int) void {\n"
             "}\n"
             "func main() int {\n"
@@ -748,7 +755,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "struct Box { int v; };\n"
+            "struct Box { v int; };\n"
             "func Box::both(this self Box *, p math.Point *) (int, Box*, math.Point, ulong) {\n"
             "  return self.v, self, p, 1;\n"
             "}\n"

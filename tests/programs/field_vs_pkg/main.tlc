@@ -1,7 +1,7 @@
 import "math";
 
 struct Pair {
-    int n;
+    n int;
 };
 
 func main() int {

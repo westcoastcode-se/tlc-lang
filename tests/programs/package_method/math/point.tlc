@@ -1,6 +1,6 @@
 package math;
 
-struct Point { int x; int y; };
+struct Point { x int; y int; };
 
 export func total() int {
     var p Point;

@@ -11,32 +11,32 @@ export extern struct SDL_GLContextState {}
 // 128-byte member from SDL_events.h, so the union stays 128 bytes. The u64
 // timestamp in the structs makes the alignment 8, matching SDL.
 export extern struct SDL_CommonEvent {
-    u32 type;
-    u32 reserved;
-    u64 timestamp;
+    type u32;
+    reserved u32;
+    timestamp u64;
 }
 
 export extern struct SDL_WindowEvent {
-    u32 type;
-    u32 reserved;
-    u64 timestamp;
-    u32 windowID;
-    i32 data1;
-    i32 data2;
+    type u32;
+    reserved u32;
+    timestamp u64;
+    windowID u32;
+    data1 i32;
+    data2 i32;
 }
 
 export extern struct SDL_QuitEvent {
-    u32 type;
-    u32 reserved;
-    u64 timestamp;
+    type u32;
+    reserved u32;
+    timestamp u64;
 }
 
 export extern union SDL_Event {
-    u32 type;
-    SDL_CommonEvent common;
-    SDL_WindowEvent window;
-    SDL_QuitEvent quit;
-    u8 padding[128];
+    type u32;
+    common SDL_CommonEvent;
+    window SDL_WindowEvent;
+    quit SDL_QuitEvent;
+    padding [128]u8;
 }
 
 export extern enum SdlInit {

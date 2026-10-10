@@ -161,7 +161,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));
         // `}` ends the definition. `;` is optional. A following declarator is
-        // `struct Point { int x; } p` or `typedef struct Point { int x; } Alias`.
+        // `struct Point { x int; } p` or `typedef struct Point { x int; } Alias`.
         if (eat(TokenKind::Semicolon) || !continues_declarator()) {
             saw_decl_ = true;
             return;

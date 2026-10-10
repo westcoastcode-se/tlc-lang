@@ -290,65 +290,41 @@ std::vector<Enumerator> Parser::parse_enumerators() {
 }
 
 std::vector<FieldDecl> Parser::parse_fields() {
+    // A field is `name type`, and the type uses the same Go order as `var`.
     std::vector<FieldDecl> fields;
     while (!check(TokenKind::RBrace) && !eof()) {
-        if (at_func_type()) {
-            const PlacedType type = parse_func_type();
-            FieldDecl field;
-            field.loc = type.loc;
-            if (check(TokenKind::Identifier)) {
-                field.name = peek().text;
-                field.loc = peek().loc;
+        FieldDecl field;
+        field.loc = peek().loc;
+        if (!check(TokenKind::Identifier)) {
+            error_here("expected an identifier");
+            while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
                 ++pos_;
-            } else {
-                error_here("expected an identifier");
             }
-            field.type_name = type.type_name;
-            field.type_package = type.type_package;
-            field.is_struct = type.is_struct;
-            field.is_enum = type.is_enum;
-            field.indirections = type.indirections;
-            field.is_fn_ptr = type.is_fn_ptr;
-            field.ret_indirections = type.ret_indirections;
-            field.fn_params = type.fn_params;
-            field.fn_variadic = type.fn_variadic;
-            field.fn_results = type.fn_results;
-            if (check(TokenKind::LBracket)) {
-                diags_.error(peek().loc, "not supported yet");
-                while (eat(TokenKind::LBracket)) {
-                    while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::RBrace) &&
-                           !eof()) {
-                        ++pos_;
-                    }
-                    eat(TokenKind::RBracket);
-                }
-            }
-            fields.push_back(std::move(field));
-            expect(TokenKind::Semicolon, "expected ';'");
+            eat(TokenKind::Semicolon);
             continue;
         }
-        const Specifiers specs = parse_specifiers(false);
-        if (specs.struct_definition || specs.union_definition) {
-            diags_.error(specs.loc, "not supported yet");
+        field.name = peek().text;
+        field.loc = peek().loc;
+        ++pos_;
+        const PlacedType type = parse_go_type();
+        if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
+            diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
         }
-        const Declarator decl = parse_declarator();
-        if (decl.is_function || !decl.method_struct.empty()) {
-            diags_.error(decl.loc, "not supported yet");
+        field.type_name = type.type_name;
+        field.type_package = type.type_package;
+        field.is_struct = type.is_struct;
+        field.is_enum = type.is_enum;
+        field.indirections = type.indirections;
+        field.is_array = type.is_array;
+        field.array_len = type.array_len;
+        field.is_fn_ptr = type.is_fn_ptr;
+        field.ret_indirections = type.ret_indirections;
+        field.fn_params = type.fn_params;
+        field.fn_variadic = type.fn_variadic;
+        field.fn_results = type.fn_results;
+        if (field.is_array && field.array_len < 0) {
+            diags_.error(field.loc, "not supported yet");
         }
-        FieldDecl field;
-        field.loc = decl.loc.valid() ? decl.loc : specs.loc;
-        field.name = decl.name;
-        field.type_name = specs.type_name;
-        field.type_package = specs.type_package;
-        field.is_struct = specs.is_struct;
-        field.is_enum = specs.is_enum;
-        field.indirections = decl.indirections;
-        field.is_array = decl.is_array;
-        field.array_len = decl.array_len;
-        field.is_fn_ptr = decl.is_fn_ptr;
-        field.ret_indirections = decl.ret_indirections;
-        field.fn_params = decl.fn_params;
-        field.fn_variadic = decl.fn_variadic;
         fields.push_back(std::move(field));
         expect(TokenKind::Semicolon, "expected ';'");
     }

@@ -1,8 +1,8 @@
 package geom;
 
 export struct Point {
-    int x;
-    int y;
+    x int;
+    y int;
 };
 
 export func sum(p Point) int {

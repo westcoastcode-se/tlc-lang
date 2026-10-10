@@ -108,7 +108,7 @@ class Parser {
     void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern);
     ArrayMark parse_array_suffix(bool allow_unsized);
     PlacedType parse_placed_type(bool allow_const, bool allow_array);
-    // `var` types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
+    // `var` and field types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
     PlacedType parse_go_type();
     std::vector<Param> parse_params(bool allow_const, bool &variadic, bool method = false);
     void take_result(FunctionDecl &fn, const PlacedType &type);

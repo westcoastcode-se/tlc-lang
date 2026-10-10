@@ -70,8 +70,8 @@ func none() (int *, int) {
 }
 
 struct Point {
-    int x;
-    int y;
+    x int;
+    y int;
 };
 
 func make(n int) (Point, int) {
@@ -82,8 +82,8 @@ func make(n int) (Point, int) {
 }
 
 struct Box {
-    int v;
-    int w;
+    v int;
+    w int;
 };
 
 func Box::both(this self Box *) (int, int) {

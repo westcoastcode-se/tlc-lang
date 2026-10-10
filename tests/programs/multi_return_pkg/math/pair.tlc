@@ -1,8 +1,8 @@
 package math;
 
 export struct Point {
-    int x;
-    int y;
+    x int;
+    y int;
 };
 
 func pair(n int) (int, int) {

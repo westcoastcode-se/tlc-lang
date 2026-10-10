@@ -1,8 +1,8 @@
 package geom;
 
 struct Point {
-    int x;
-    int y;
+    x int;
+    y int;
 };
 
 export typedef Point Alias;

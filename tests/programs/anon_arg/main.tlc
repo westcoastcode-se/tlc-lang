@@ -3,7 +3,7 @@ func combine(op func (int, int) int) int {
 }
 
 struct Box {
-    int n;
+    n int;
 }
 
 func Box::map(this self Box, op func (int) int) int {

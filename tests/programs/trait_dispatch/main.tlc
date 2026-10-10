@@ -8,12 +8,12 @@ trait Meas {
 };
 
 struct Rect {
-    int w;
-    int h;
+    w int;
+    h int;
 };
 
 struct Box {
-    int n;
+    n int;
 };
 
 func Rect::area(this self Rect) int {

@@ -361,7 +361,7 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 }
 ```
 
-A variable names the pointer first: `var fp func (i32, i32) i32;` or `var fp func (i32) (i32, i32);`. A field or a typedef still writes the type, then the name: `func (i32, i32) i32 op;` inside a struct, and `typedef func (i32, i32) i32 BinOp;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern` function's parameters and result cannot include a function pointer that returns several results.
+A variable or a field names the value, then the type: `var fp func (i32, i32) i32;`, `var fp func (i32) (i32, i32);`, and, inside a struct, `op func (i32, i32) i32`. A typedef still writes the type, then the name: `typedef func (i32, i32) i32 BinOp;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern` function's parameters and result cannot include a function pointer that returns several results.
 
 A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
 
@@ -385,12 +385,12 @@ return dosomething((arg1, arg2) { return arg1 + arg2; });
 
 ## Structs, pointers, and arrays
 
-A struct definition uses the `struct` keyword. Variables, parameters, return types, and fields then use the bare tag. The semicolon after `}` may be omitted.
+A struct definition uses the `struct` keyword. Variables, parameters, return types, and fields then use the bare tag. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next *Node`, `raw [8]char`. A pointer to an array is `not supported yet` as a field. The semicolon after `}` may be omitted. A field still ends with `;`.
 
 ```c
 struct Point {
-    int x;
-    int y;
+    x int;
+    y int;
 };
 
 func make(x int, y int) Point {
@@ -415,8 +415,8 @@ A struct may contain a pointer to itself. A by-value field of the struct that is
 
 ```c
 struct Node {
-    int n;
-    Node *next;
+    n int;
+    next *Node;
 };
 ```
 
@@ -426,8 +426,8 @@ An `extern struct` is marked so it can be used with an `extern` function. An emp
 
 ```c
 extern struct Pair {
-    int a;
-    int b;
+    a int;
+    b int;
 };
 
 extern struct SDL_Window {}
@@ -442,13 +442,13 @@ A plain struct in an `extern` function is `struct must be extern`.
 
 ```c
 extern union Num {
-    int n;
-    int m;
+    n int;
+    m int;
 };
 
 extern union Word {
-    int n;
-    char raw[8];
+    n int;
+    raw [8]char;
 };
 ```
 
@@ -492,8 +492,8 @@ func main() int {
 package geom;
 
 export struct Point {
-    int x;
-    int y;
+    x int;
+    y int;
 };
 
 export func sum(p Point) int {
@@ -501,7 +501,7 @@ export func sum(p Point) int {
 }
 ```
 
-Inside the package the type is written `Point`. `import { Point } from "geom"` makes `Point` a type name in the importing file. A struct tag is visible to every file in the package, so one file can declare `struct A { B b; }` when `struct B` is in another file of that package.
+Inside the package the type is written `Point`. `import { Point } from "geom"` makes `Point` a type name in the importing file. A struct tag is visible to every file in the package, so one file can declare `struct A { b B; }` when `struct B` is in another file of that package.
 
 ## Methods
 
@@ -511,8 +511,8 @@ The call omits the receiver. This program returns 42.
 
 ```c
 struct Point {
-    int x;
-    int y;
+    x int;
+    y int;
 };
 
 func Point::sum(this self Point, extra int) int {
@@ -552,8 +552,8 @@ trait Shape {
 };
 
 struct Rect {
-    int w;
-    int h;
+    w int;
+    h int;
 };
 
 func Rect::area(this self Rect) int {

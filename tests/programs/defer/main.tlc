@@ -5,8 +5,8 @@ func put(n int) void {
 }
 
 struct Box {
-    int v;
-    int w;
+    v int;
+    w int;
 };
 
 func Box::put(this self Box, n int) void {
