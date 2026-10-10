@@ -42,10 +42,68 @@ std::vector<fs::path> source_files(const fs::path &dir) {
     return files;
 }
 
+bool ends_with(std::string_view text, std::string_view suffix) {
+    return text.size() >= suffix.size() && text.substr(text.size() - suffix.size()) == suffix;
+}
+
+// Filename test, matching the linker's library-file rule used on the command line.
+bool is_vendor_library(const fs::path &path) {
+    const std::string name = path.filename().string();
+    if (ends_with(name, ".a") || ends_with(name, ".so") || ends_with(name, ".dylib")) {
+        return true;
+    }
+    return name.find(".so.") != std::string::npos;
+}
+
+std::string library_stem(const std::string &filename) {
+    std::string name = filename;
+    if (name.starts_with("lib")) {
+        name.erase(0, 3);
+    }
+    if (const std::size_t pos = name.find(".so"); pos != std::string::npos) {
+        name.resize(pos);
+        return name;
+    }
+    if (ends_with(name, ".dylib")) {
+        name.resize(name.size() - 6);
+        return name;
+    }
+    if (ends_with(name, ".a")) {
+        name.resize(name.size() - 2);
+    }
+    return name;
+}
+
+bool plain_shared_name(const std::string &filename) {
+    return ends_with(filename, ".so") || ends_with(filename, ".dylib");
+}
+
+std::string rooted_path(const fs::path &dir, const std::string &path) {
+    if (path.empty() || path.starts_with('$') || fs::path(path).is_absolute()) {
+        return path;
+    }
+    return (dir / path).lexically_normal().string();
+}
+
+bool is_under(const fs::path &dir, const fs::path &root) {
+    if (root.empty()) {
+        return false;
+    }
+    const std::string dir_text = dir.generic_string();
+    std::string root_text = root.generic_string();
+    if (dir_text == root_text) {
+        return false;
+    }
+    if (!root_text.ends_with('/')) {
+        root_text.push_back('/');
+    }
+    return dir_text.starts_with(root_text);
+}
+
 class Resolver {
   public:
     Resolver(const ResolveRequest &request, SourceSet &sources, DiagnosticEngine &diags, PackageGraph &graph)
-        : sources_(sources), diags_(diags), graph_(graph) {
+        : sources_(sources), diags_(diags), graph_(graph), vendor_request_(request.vendor_root) {
         for (const std::string &root : request.package_paths) {
             extra_roots_.emplace_back(root);
         }
@@ -67,6 +125,7 @@ class Resolver {
         for (const fs::path &extra : extra_roots_) {
             roots_.push_back(extra);
         }
+        add_vendor_root(vendor_request_);
         const std::size_t index = load_new(canonical);
         if (index == kMissing) {
             diags_.error({}, "cannot read file");
@@ -94,6 +153,8 @@ class Resolver {
     DiagnosticEngine &diags_;
     PackageGraph &graph_;
     fs::path entry_;
+    std::string vendor_request_;
+    fs::path vendor_root_;
     std::vector<fs::path> extra_roots_;
     std::vector<fs::path> roots_;
     std::unordered_map<std::string, std::size_t> by_path_;
@@ -297,7 +358,186 @@ class Resolver {
         }
         by_package_.emplace(key, created.front());
         add_edge(from_file, key, import);
+        if (is_under(dir, vendor_root_)) {
+            append_vendor_libraries(dir, import.loc);
+        }
         walk_package(key);
+    }
+
+    void add_vendor_root(const std::string &root) {
+        if (root.empty()) {
+            return;
+        }
+        std::error_code ec;
+        fs::path canonical = fs::canonical(root, ec);
+        if (ec || !fs::is_directory(canonical, ec)) {
+            return;
+        }
+        vendor_root_ = std::move(canonical);
+        roots_.push_back(vendor_root_);
+    }
+
+    void append_token(const fs::path &dir, const std::string &token) {
+        if (token == "-Bstatic" || token == "-Bdynamic") {
+            graph_.link_args.push_back("-Wl," + token);
+            return;
+        }
+        constexpr std::string_view kRpath = "-Wl,-rpath,";
+        if (token.starts_with(kRpath)) {
+            graph_.link_args.push_back(std::string(kRpath) + rooted_path(dir, token.substr(kRpath.size())));
+            return;
+        }
+        if (token.starts_with("-L") && token.size() > 2) {
+            graph_.link_args.push_back("-L" + rooted_path(dir, token.substr(2)));
+            return;
+        }
+        if (!token.empty() && token[0] != '-') {
+            graph_.link_args.push_back(rooted_path(dir, token));
+            return;
+        }
+        graph_.link_args.push_back(token);
+    }
+
+    void append_link_file(const fs::path &dir, const fs::path &link_file, SourceLoc loc) {
+        const std::optional<std::string> text = read_file(link_file.string());
+        if (!text) {
+            diags_.error(loc, "cannot read file");
+            return;
+        }
+        std::string line;
+        bool have_l_dir = false;
+        auto finish_line = [&]() {
+            std::string words;
+            for (std::size_t i = 0; i < line.size(); ++i) {
+                if (line[i] == '#' && (i == 0 || line[i - 1] == ' ' || line[i - 1] == '\t')) {
+                    break;
+                }
+                words.push_back(line[i]);
+            }
+            std::string token;
+            auto flush = [&]() {
+                if (token.empty()) {
+                    return;
+                }
+                if (have_l_dir) {
+                    graph_.link_args.push_back("-L" + rooted_path(dir, token));
+                    have_l_dir = false;
+                } else if (token == "-L") {
+                    have_l_dir = true;
+                } else {
+                    append_token(dir, token);
+                }
+                token.clear();
+            };
+            for (const char ch : words) {
+                if (ch == ' ' || ch == '\t' || ch == '\r') {
+                    flush();
+                } else {
+                    token.push_back(ch);
+                }
+            }
+            flush();
+            line.clear();
+        };
+        for (const char ch : *text) {
+            if (ch == '\n') {
+                finish_line();
+            } else {
+                line.push_back(ch);
+            }
+        }
+        if (!line.empty() || have_l_dir) {
+            finish_line();
+        }
+    }
+
+    // A static archive wins over a shared library of the same stem. The
+    // optional link file adds arguments after those libraries.
+    void append_vendor_libraries(const fs::path &dir, SourceLoc loc) {
+        struct Chosen {
+            std::string filename;
+            fs::path path;
+            bool archive = false;
+            bool plain_shared = false;
+        };
+        std::vector<Chosen> chosen;
+        std::error_code ec;
+        fs::directory_iterator it(dir, ec);
+        const fs::directory_iterator end;
+        for (; !ec && it != end; it.increment(ec)) {
+            std::error_code file_ec;
+            if (!it->is_regular_file(file_ec) || file_ec || !is_vendor_library(it->path())) {
+                continue;
+            }
+            const fs::path canonical = fs::canonical(it->path(), file_ec);
+            if (file_ec) {
+                diags_.error(loc, "cannot read file");
+                return;
+            }
+            const std::string filename = it->path().filename().string();
+            Chosen next;
+            next.filename = filename;
+            next.path = canonical;
+            next.archive = ends_with(filename, ".a");
+            next.plain_shared = plain_shared_name(filename);
+            const std::string stem = library_stem(filename);
+            Chosen *existing = nullptr;
+            for (Chosen &item : chosen) {
+                if (library_stem(item.filename) == stem) {
+                    existing = &item;
+                    break;
+                }
+            }
+            if (existing == nullptr) {
+                chosen.push_back(std::move(next));
+                continue;
+            }
+            if (existing->archive) {
+                continue;
+            }
+            if (next.archive) {
+                *existing = std::move(next);
+                continue;
+            }
+            if (existing->plain_shared != next.plain_shared) {
+                if (next.plain_shared) {
+                    *existing = std::move(next);
+                }
+                continue;
+            }
+            if (next.filename < existing->filename) {
+                *existing = std::move(next);
+            }
+        }
+        if (ec) {
+            diags_.error(loc, "cannot read file");
+            return;
+        }
+        std::vector<Chosen> archives;
+        std::vector<Chosen> shared;
+        for (Chosen &item : chosen) {
+            if (item.archive) {
+                archives.push_back(std::move(item));
+            } else {
+                shared.push_back(std::move(item));
+            }
+        }
+        auto by_name = [](const Chosen &left, const Chosen &right) { return left.filename < right.filename; };
+        std::sort(archives.begin(), archives.end(), by_name);
+        std::sort(shared.begin(), shared.end(), by_name);
+        for (const Chosen &item : archives) {
+            graph_.link_args.push_back(item.path.string());
+        }
+        if (!shared.empty()) {
+            graph_.link_args.push_back("-Wl,-rpath," + dir.string());
+            for (const Chosen &item : shared) {
+                graph_.link_args.push_back(item.path.string());
+            }
+        }
+        const fs::path link_file = dir / "link";
+        if (fs::is_regular_file(link_file, ec) && !ec) {
+            append_link_file(dir, link_file, loc);
+        }
     }
 
     void resolve_one(uint32_t from_file, const fs::path &importer_dir, const ImportDecl &import) {

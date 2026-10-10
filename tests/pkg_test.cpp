@@ -63,16 +63,29 @@ struct Resolved {
     bool ok = false;
 };
 
-Resolved resolve_at(const std::string &entry, const std::vector<std::string> &roots = {}) {
+Resolved resolve_at(const std::string &entry, const std::vector<std::string> &roots = {},
+                    const std::string &vendor = {}) {
     tlc::SourceSet sources;
     tlc::DiagnosticEngine diags(sources);
     tlc::ResolveRequest request;
     request.entry = entry;
     request.package_paths = roots;
+    request.vendor_root = vendor;
     Resolved result;
     result.ok = tlc::resolve_packages(request, sources, diags, result.graph);
     result.errors = diags.render();
     return result;
+}
+
+std::string join_args(const std::vector<std::string> &args) {
+    std::string out;
+    for (const std::string &arg : args) {
+        if (!out.empty()) {
+            out.push_back('\n');
+        }
+        out += arg;
+    }
+    return out;
 }
 
 const tlc::PackageNode *find_suffix(const tlc::PackageGraph &graph, std::string_view suffix) {
@@ -303,6 +316,123 @@ int run_pkg_tests() {
             EXPECT(check, has_edge(resolved.graph, a->file_id, shared->file_id, "c"));
             EXPECT(check, has_edge(resolved.graph, b->file_id, shared->file_id, "c"));
         }
+    }
+
+    {
+        TempTree entry;
+        TempTree vendor;
+        EXPECT(check, entry.ok());
+        EXPECT(check, vendor.ok());
+        entry.write("main.tlc", "import \"answer\";\nimport \"onlyso\";\nfunc main() int { return 0; }\n");
+        vendor.write("answer/answer.tlc", "export extern func answer() int;\n");
+        vendor.write("answer/libanswer.so", "");
+        vendor.write("answer/libanswer.a", "");
+        vendor.write("answer/libother.so.1", "");
+        vendor.write("onlyso/onlyso.tlc", "export extern func onlyso() int;\n");
+        vendor.write("onlyso/libonly.so.1.2", "");
+        vendor.write("onlyso/libonly.so.1", "");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
+        EXPECT(check, resolved.ok);
+        const fs::path answer_dir = fs::canonical(fs::path(vendor.file("answer")));
+        const fs::path only_dir = fs::canonical(fs::path(vendor.file("onlyso")));
+        const std::string args = join_args(resolved.graph.link_args);
+        EXPECT_HAS(check, args, (answer_dir / "libanswer.a").string());
+        EXPECT(check, args.find("libanswer.so") == std::string::npos);
+        EXPECT_HAS(check, args, "-Wl,-rpath," + answer_dir.string());
+        EXPECT_HAS(check, args, (answer_dir / "libother.so.1").string());
+        EXPECT_HAS(check, args, "-Wl,-rpath," + only_dir.string());
+        EXPECT_HAS(check, args, (only_dir / "libonly.so.1").string());
+        EXPECT(check, args.find("libonly.so.1.2") == std::string::npos);
+        EXPECT(check, resolved.graph.link_args.size() == 5);
+    }
+
+    {
+        TempTree entry;
+        TempTree vendor;
+        EXPECT(check, entry.ok());
+        EXPECT(check, vendor.ok());
+        entry.write("main.tlc", "import \"listed\";\nfunc main() int { return 0; }\n");
+        vendor.write("listed/listed.tlc", "export extern func listed() int;\n");
+        vendor.write("listed/liblisted.a", "");
+        vendor.write("listed/link", "# extra\n-lpthread\n../outside.a\n-L libs\n-Bstatic\n-Wl,-rpath,run\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
+        EXPECT(check, resolved.ok);
+        const fs::path listed = fs::canonical(fs::path(vendor.file("listed")));
+        const std::string args = join_args(resolved.graph.link_args);
+        EXPECT_HAS(check, args, (listed / "liblisted.a").string());
+        EXPECT_HAS(check, args, "-lpthread");
+        EXPECT_HAS(check, args, (listed / "../outside.a").lexically_normal().string());
+        EXPECT_HAS(check, args, "-L" + (listed / "libs").lexically_normal().string());
+        EXPECT_HAS(check, args, "-Wl,-Bstatic");
+        EXPECT_HAS(check, args, "-Wl,-rpath," + (listed / "run").lexically_normal().string());
+        EXPECT(check, args.find("\n-Bstatic") == std::string::npos);
+    }
+
+    {
+        TempTree entry;
+        TempTree vendor;
+        EXPECT(check, entry.ok());
+        EXPECT(check, vendor.ok());
+        entry.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
+        entry.write("math/add.tlc", "export func add(a int, b int) int { return a + b; }\n");
+        entry.write("math/libmath.a", "");
+        vendor.write("math/add.tlc", "export extern func add(a int, b int) int;\n");
+        vendor.write("math/libmath.a", "");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
+        EXPECT(check, resolved.ok);
+        EXPECT(check, resolved.graph.link_args.empty());
+        const tlc::PackageNode *math = find_suffix(resolved.graph, "/math/add.tlc");
+        EXPECT(check, math != nullptr);
+        if (math != nullptr) {
+            EXPECT(check, math->path.starts_with(entry.directory()));
+        }
+    }
+
+    {
+        TempTree entry;
+        TempTree extra;
+        TempTree vendor;
+        EXPECT(check, entry.ok());
+        EXPECT(check, extra.ok());
+        EXPECT(check, vendor.ok());
+        entry.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
+        extra.write("math/add.tlc", "export func add(a int, b int) int { return 1; }\n");
+        vendor.write("math/add.tlc", "export extern func add(a int, b int) int;\n");
+        vendor.write("math/libmath.a", "");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {extra.directory()}, vendor.directory());
+        EXPECT(check, resolved.ok);
+        EXPECT(check, resolved.graph.link_args.empty());
+        const tlc::PackageNode *math = find_suffix(resolved.graph, "/math/add.tlc");
+        EXPECT(check, math != nullptr);
+        if (math != nullptr) {
+            EXPECT(check, math->path.starts_with(extra.directory()));
+        }
+    }
+
+    {
+        TempTree entry;
+        TempTree vendor;
+        EXPECT(check, entry.ok());
+        EXPECT(check, vendor.ok());
+        entry.write("main.tlc", "import \"a\";\nimport \"b\";\nfunc main() int { return 0; }\n");
+        entry.write("a/a.tlc", "import \"answer\";\nint from_a;\n");
+        entry.write("b/b.tlc", "import \"answer\";\nint from_b;\n");
+        vendor.write("answer/answer.tlc", "export extern func answer() int;\n");
+        vendor.write("answer/libanswer.a", "");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
+        EXPECT(check, resolved.ok);
+        EXPECT(check, resolved.graph.link_args.size() == 1);
+        EXPECT(check, resolved.graph.link_args[0].ends_with("/libanswer.a"));
+    }
+
+    {
+        TempTree entry;
+        EXPECT(check, entry.ok());
+        entry.write("main.tlc", "import \"missing\";\nfunc main() int { return 0; }\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, entry.file("no-such-vendor"));
+        EXPECT(check, !resolved.ok);
+        EXPECT_HAS(check, resolved.errors, "unknown package");
+        EXPECT(check, resolved.graph.link_args.empty());
     }
 
     return check.failed;

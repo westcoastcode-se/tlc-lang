@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tlc::test {
@@ -19,7 +20,8 @@ struct Proc {
     std::string err;
 };
 
-Proc spawn(const std::vector<std::string> &args);
+Proc spawn(const std::vector<std::string> &args,
+          const std::vector<std::pair<std::string, std::string>> &env = {});
 
 } // namespace tlc::test
 

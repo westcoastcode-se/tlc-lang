@@ -32,16 +32,23 @@ struct ImportEdge {
 struct PackageGraph {
     std::vector<PackageNode> nodes;
     std::vector<ImportEdge> edges;
+    // Linker arguments from packages loaded out of the vendor root, in import
+    // order. Ready to pass to cc. Empty when no such package was loaded.
+    std::vector<std::string> link_args;
 };
 
 struct ResolveRequest {
     std::string entry;
     std::vector<std::string> package_paths;
+    // Searched after `package_paths`. A package loaded from this directory
+    // contributes its libraries to `PackageGraph::link_args`.
+    std::string vendor_root;
 };
 
 // Loads the import graph of `request.entry`. The entry directory is the first
-// package root, followed by each path in `package_paths`. Returns false when
-// any diagnostic was reported. `graph` still contains every file that loaded.
+// package root, followed by each path in `package_paths`, then `vendor_root`
+// when that directory exists. Returns false when any diagnostic was reported.
+// `graph` still contains every file that loaded.
 bool resolve_packages(const ResolveRequest &request, SourceSet &sources, DiagnosticEngine &diags,
                       PackageGraph &graph);
 

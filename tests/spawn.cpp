@@ -1,8 +1,10 @@
 #include "harness.hpp"
 
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 #include <fcntl.h>
@@ -53,7 +55,7 @@ void Check::expect_contains(const std::string &hay, const std::string &needle, c
     }
 }
 
-Proc spawn(const std::vector<std::string> &args) {
+Proc spawn(const std::vector<std::string> &args, const std::vector<std::pair<std::string, std::string>> &env) {
     Proc result;
     if (args.empty()) {
         result.code = 127;
@@ -82,6 +84,9 @@ Proc spawn(const std::vector<std::string> &args) {
         close(out_pipe[1]);
         close(err_pipe[0]);
         close(err_pipe[1]);
+        for (const auto &slot : env) {
+            ::setenv(slot.first.c_str(), slot.second.c_str(), 1);
+        }
         std::vector<char *> argv;
         argv.reserve(args.size() + 1);
         for (const std::string &arg : args) {

@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <filesystem>
+#include <system_error>
 #include <iostream>
 #include <utility>
 
@@ -42,7 +43,25 @@ std::string help_text() {
         "  -Bstatic        link later -l libraries from static archives\n"
         "  -Bdynamic       link later -l libraries from shared libraries\n"
         "  -static         link all libraries statically\n"
-        "  -Wl,<opt>       pass <opt> to the linker\n";
+        "  -Wl,<opt>       pass <opt> to the linker\n"
+        "\n"
+        "Vendor packages are searched in lib/tlc next to the compiler prefix, or in TLC_LIB.\n"
+        "import \"name\" loads that package. Static and shared libraries beside its .tlc files\n"
+        "are linked. A file named link in the package adds further linker arguments.\n";
+}
+
+std::string vendor_library_root() {
+    if (const char *env = std::getenv("TLC_LIB")) {
+        if (env[0] != '\0') {
+            return env;
+        }
+    }
+    std::error_code ec;
+    const std::filesystem::path exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (ec) {
+        return {};
+    }
+    return (exe.parent_path().parent_path() / "lib" / "tlc").string();
 }
 
 namespace {
@@ -282,6 +301,7 @@ CompileOutput compile_source(const Options &opt) {
     ResolveRequest request;
     request.entry = opt.input;
     request.package_paths = opt.package_paths;
+    request.vendor_root = vendor_library_root();
     PackageGraph graph;
     if (resolve_packages(request, sources, diags, graph) && diags.ok()) {
         analyze(graph, diags);
@@ -338,6 +358,7 @@ CompileOutput compile_source(const Options &opt) {
     }
     std::vector<std::string> link_cmd = {"cc", "-o", exe_path, object_path};
     link_cmd.insert(link_cmd.end(), opt.link_args.begin(), opt.link_args.end());
+    link_cmd.insert(link_cmd.end(), graph.link_args.begin(), graph.link_args.end());
     const ProcessOutput linked = run_process(link_cmd);
     if (linked.code != 0) {
         output.compiler_stderr = linked.err.empty() ? linked.out : linked.err;
