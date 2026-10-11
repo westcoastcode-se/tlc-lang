@@ -1,0 +1,67 @@
+extern(abi="c") func printf(fmt *const char, ...) int;
+
+var kind Type = typeof(int);
+
+type Point struct {
+    x int;
+};
+
+type Box[T type] struct {
+    value T;
+};
+
+func id[T type](value T) int {
+    if (typeof(T) != typeof(value)) {
+        return 1;
+    }
+    return 0;
+}
+
+func take(value Type) *char {
+    return value.name();
+}
+
+func main() int {
+    var n int = 1;
+    var t Type = typeof(n);
+    var p ?*int = null;
+    var a [4]int;
+    var box Box[int];
+    var point Point;
+    if (sizeof(Type) != 8) {
+        return 1;
+    }
+    if (typeof(int) != typeof(i32) || kind != typeof(int)) {
+        return 2;
+    }
+    if (typeof(n) != t) {
+        return 3;
+    }
+    if (typeof(Point) == typeof(int)) {
+        return 4;
+    }
+    if (typeof(char) == typeof(i8)) {
+        return 5;
+    }
+    if (id(n) != 0) {
+        return 6;
+    }
+    if (take(typeof(int)) != take(t)) {
+        return 7;
+    }
+    var through *Type = &t;
+    if (through.name() != t.name()) {
+        return 8;
+    }
+    printf("%s\n", t.name());
+    printf("%s\n", typeof(*int).name());
+    printf("%s\n", typeof(p).name());
+    printf("%s\n", typeof(a).name());
+    printf("%s\n", typeof(box).name());
+    printf("%s\n", typeof(point).name());
+    printf("%s\n", typeof("hi").name());
+    printf("%s\n", typeof(Type).name());
+    printf("%s\n", typeof(float).name());
+    printf("%s\n", typeof(f32).name());
+    return 0;
+}

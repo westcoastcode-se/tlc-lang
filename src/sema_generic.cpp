@@ -165,6 +165,7 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
     case TypeKind::Bool:
     case TypeKind::Float:
     case TypeKind::Void:
+    case TypeKind::Meta:
         out.type_name = type_desc(*cursor);
         return out.type_name != "invalid";
     case TypeKind::Struct:
@@ -515,6 +516,37 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         node.is_enum = bound->is_enum;
                         node.indirections = stars + bound->indirections;
                         node.optional = bound->optional << stars;
+                        node.expr.reset();
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                if (node.expr) {
+                    substitute_expr(params, bounds, *node.expr);
+                }
+                Expr *cursor = node.expr.get();
+                int stars = 0;
+                while (cursor != nullptr) {
+                    auto *unary = std::get_if<Expr::Unary>(&cursor->data);
+                    if (unary == nullptr || unary->postfix || unary->op != TokenKind::Star || unary->expr == nullptr) {
+                        break;
+                    }
+                    ++stars;
+                    cursor = unary->expr.get();
+                }
+                const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
+                if (named != nullptr) {
+                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value) {
+                        if (bound->is_array) {
+                            error(node.loc, "not supported yet");
+                        }
+                        node.on_type = true;
+                        node.type_name = bound->type_name;
+                        node.type_package = bound->type_package;
+                        node.is_struct = bound->is_struct;
+                        node.is_enum = bound->is_enum;
+                        node.indirections = stars + bound->indirections;
+                        node.optional = bound->optional << stars;
+                        node.canonical.clear();
                         node.expr.reset();
                     }
                 }

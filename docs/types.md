@@ -64,6 +64,12 @@ var text *char = `hello
 world`;
 ```
 
-`sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(i64)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted. `sizeof(Point)` and `sizeof(enum Color)` name a declared type. `sizeof(struct Point)` is `expected a type`.
+`sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(i64)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted. `sizeof(Point)` and `sizeof(enum Color)` name a declared type. `sizeof(struct Point)` is `expected a type`. `sizeof(Type)` is 8.
+
+`Type` is the type of a tlc type. `typeof(int)` and `typeof n` produce a `Type`. `typeof(Point)`, `typeof(*int)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)` is `expected a type`. `i32` is `int`, so `typeof(i32)` and `typeof(int)` are the same value. `typeof` does not decay an array or a function. A function, a tuple, or a trait is `not supported yet`. `var t Type` with no value is `type mismatch`.
+
+`typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*Type` uses the value `p` points at. `name` is a method of `Type`. `t.name()` returns `*char`. The text is the spelling diagnostics use: `int`, `*int`, `?*Point`, `int[4]`, `Box.spec.int`. `name` takes no arguments. Another argument is `argument count`. Another method is `undeclared identifier`. `t.name` without the call is `undeclared identifier`.
+
+`==` and `!=` compare two `Type` values and yield `int`, either 0 or 1. Other operators on `Type` are `type mismatch`.
 
 [Index](README.md) · [Previous: Packages](packages.md) · [Next: Expressions](expressions.md) · [Grammar](grammar.md)

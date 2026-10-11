@@ -1108,5 +1108,25 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(return (* (call (name f))))");
     }
 
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  return typeof(int) == typeof(n);\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(return (== (typeof int) (typeof (name n))))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  var n int;\n"
+            "  var text *char = typeof(n).name();\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(call (. (typeof (name n)) name))");
+    }
+
     return check.failed;
 }

@@ -559,7 +559,7 @@ Type Checker::with_indirections(Type type, int count, SourceLoc loc, uint32_t op
         }
         if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool &&
             type.kind != TypeKind::Float && type.kind != TypeKind::Pointer && type.kind != TypeKind::Struct &&
-            type.kind != TypeKind::Enum && type.kind != TypeKind::Void) {
+            type.kind != TypeKind::Enum && type.kind != TypeKind::Void && type.kind != TypeKind::Meta) {
             error(loc, "not supported yet");
             return type_invalid();
         }
@@ -635,6 +635,9 @@ bool Checker::accepts_pointer(const Type &got, const Type &want) const {
 bool Checker::needs_nonnull_pointer(const Type &type) const {
     std::unordered_set<int> seen;
     const auto walk = [&](const auto &self, const Type &current) -> bool {
+        if (current.kind == TypeKind::Meta) {
+            return true;
+        }
         if (current.kind == TypeKind::Pointer) {
             return !current.optional;
         }
@@ -955,7 +958,7 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
 }
 
 int Checker::min_align_of(const Type &type) const {
-    if (type.kind == TypeKind::Pointer || type.kind == TypeKind::Function) {
+    if (type.kind == TypeKind::Pointer || type.kind == TypeKind::Function || type.kind == TypeKind::Meta) {
         return 8;
     }
     if (type.kind == TypeKind::Array) {
@@ -1031,7 +1034,7 @@ std::optional<int> Checker::type_size(const Type &type) const {
     };
     std::unordered_set<int> seen;
     const auto walk = [&](const auto &self, const Type &current) -> std::optional<int> {
-        if (current.kind == TypeKind::Pointer) {
+        if (current.kind == TypeKind::Pointer || current.kind == TypeKind::Meta) {
             return 8;
         }
         if (current.kind == TypeKind::Array) {
@@ -1620,6 +1623,8 @@ std::string Checker::type_desc(const Type &type) const {
         return "invalid";
     case TypeKind::Void:
         return "void";
+    case TypeKind::Meta:
+        return "Type";
     case TypeKind::Bool:
         return "bool";
     case TypeKind::Float:

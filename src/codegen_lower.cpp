@@ -419,6 +419,9 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     } else if (name == "void") {
         base.elem_void = true;
         have = true;
+    } else if (name == "Type") {
+        base.depth = 1;
+        have = true;
     } else if (name == "bool") {
         base.elem_bool = true;
         have = true;
@@ -1431,6 +1434,11 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     return low;
                 } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                     return as_int(32, false);
+                } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                    Lowered low;
+                    low.depth = 1;
+                    low.type = ptr_type();
+                    return low;
                 } else if constexpr (std::is_same_v<T, Expr::Name>) {
                     if (const Binding *global = find_global(item.text)) {
                         return stored(*global);
@@ -1455,6 +1463,14 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     return lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, false, 0,
                                  false);
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    if (item.type_name) {
+                        Lowered low;
+                        low.depth = 1;
+                        low.elem_char = true;
+                        low.elem_bits = 8;
+                        low.type = ptr_type();
+                        return low;
+                    }
                     const auto *name = item.callee == nullptr ? nullptr : std::get_if<Expr::Name>(&item.callee->data);
                     if (name == nullptr) {
                         return std::nullopt;

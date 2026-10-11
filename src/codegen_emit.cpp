@@ -669,6 +669,17 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
     return load_object(slot, 0, false, init.struct_id);
 }
 
+llvm::Constant *CodeGen::intern_type_name(const std::string &text) {
+    const auto found = type_names_.find(text);
+    if (found != type_names_.end()) {
+        return found->second;
+    }
+    llvm::Constant *data = llvm::ConstantDataArray::getString(context_, text, true);
+    auto *global = new llvm::GlobalVariable(module_, data->getType(), true, llvm::GlobalValue::PrivateLinkage, data, ".type");
+    type_names_.emplace(text, global);
+    return global;
+}
+
 void CodeGen::apply_initializer(const VarDecl &var) {
     FileSymbols &file = files_[current_file_];
     if (var.is_const_decl) {
@@ -683,6 +694,21 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         return;
     }
     const auto found_early = file.globals.find(var.name);
+    if (const auto *kind = std::get_if<Expr::Typeof>(&var.init->data)) {
+        const bool type_slot = found_early != file.globals.end() && found_early->second.depth == 1 &&
+                               !found_early->second.elem_char && found_early->second.struct_id < 0 &&
+                               !found_early->second.elem_void && !found_early->second.elem_bool &&
+                               !found_early->second.elem_float && found_early->second.elem_bits == 0 &&
+                               found_early->second.enum_id < 0;
+        if (!type_slot || kind->canonical.empty() || found_early->second.value == nullptr) {
+            error(var.loc, "type mismatch");
+            return;
+        }
+        auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
+        global->setInitializer(intern_type_name(kind->canonical));
+        file.folded.insert(var.name);
+        return;
+    }
     if (const auto *init = std::get_if<Expr::Init>(&var.init->data)) {
         if (found_early == file.globals.end() || found_early->second.struct_id < 0) {
             error(var.loc, "type mismatch");
@@ -1802,6 +1828,11 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.struct_id = sid;
                 shape.type = shape_type(shape);
                 return shape;
+            } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                Shape shape;
+                shape.depth = 1;
+                shape.type = ptr_type();
+                return shape;
             } else if constexpr (std::is_same_v<T, Expr::Int> || std::is_same_v<T, Expr::Sizeof>) {
                 Shape shape;
                 shape.type = i32();
@@ -1887,6 +1918,14 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.type = low.depth == 0 && low.elem_void ? nullptr : low.type;
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (node.type_name) {
+                    Shape shape;
+                    shape.depth = 1;
+                    shape.elem_char = true;
+                    shape.elem_bits = 8;
+                    shape.type = ptr_type();
+                    return shape;
+                }
                 if (node.callee == nullptr) {
                     return {};
                 }
@@ -2192,6 +2231,33 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return rhs;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (node.type_name) {
+                    const auto *selector = node.callee == nullptr ? nullptr : std::get_if<Expr::Selector>(&node.callee->data);
+                    if (selector == nullptr || selector->base == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    auto name_pointer = [&](llvm::Value *value, int depth) -> TypedValue {
+                        if (value == nullptr || depth < 1 || depth > 2) {
+                            error(node.loc, "type mismatch");
+                            return {zero(), 0};
+                        }
+                        if (depth == 2) {
+                            value = builder_.CreateLoad(ptr_type(), value);
+                        }
+                        return {value, 1, true};
+                    };
+                    if (addressable(*selector->base)) {
+                        const TypedValue addr = emit_addr(*selector->base);
+                        if (addr.value == nullptr) {
+                            return {zero(), 0};
+                        }
+                        llvm::Value *loaded = builder_.CreateLoad(ptr_type(), addr.value);
+                        return name_pointer(loaded, addr.depth);
+                    }
+                    const TypedValue base = emit_rvalue(*selector->base);
+                    return name_pointer(base.value, base.depth);
+                }
                 if (node.callee != nullptr && is_std_builtin_call(*node.callee, "va")) {
                     return emit_builtin_va(node.loc);
                 }
@@ -2379,6 +2445,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return {zero(), 0};
                 }
                 return {const_i32(static_cast<int32_t>(bytes)), 0};
+            } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                if (node.canonical.empty()) {
+                    error(node.loc, "type mismatch");
+                    return {zero(), 0};
+                }
+                return {intern_type_name(node.canonical), 1};
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 return {const_i32(node.value ? 1 : 0), 0};
             } else if constexpr (std::is_same_v<T, Expr::Nullptr>) {

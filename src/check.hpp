@@ -251,6 +251,8 @@ class Checker {
     void check_test(const TestDecl &test);
     bool is_std_builtin_file(uint32_t file_id) const;
     bool is_builtin_va_call(const Expr &callee);
+    Type operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
+                      bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc);
     Type sizeof_operand(const Expr::Sizeof &node);
     std::optional<int> fold_int(const Expr &expr);
     void check_function(const FunctionDecl &fn);

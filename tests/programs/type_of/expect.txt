@@ -1,0 +1,13 @@
+link: -lc
+exit: 0
+stdout:
+int
+*int
+?*int
+int[4]
+Box.spec.int
+Point
+char[3]
+Type
+float
+float

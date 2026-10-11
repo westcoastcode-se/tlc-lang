@@ -3380,5 +3380,82 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "error: type mismatch\n");
     }
 
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var n int = 1;\n"
+            "  var t Type = typeof(n);\n"
+            "  var text *char = t.name();\n"
+            "  if (t == typeof(int) && t != typeof(char) && typeof(i32) == typeof(int)) {\n"
+            "    return 0;\n"
+            "  }\n"
+            "  return text != t.name();\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose("func main() int { var t Type; return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var t Type = typeof(int);\n"
+            "  return t < typeof(char);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var t Type = typeof(int);\n"
+            "  return t.other();\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var t Type = typeof(int);\n"
+            "  return t.name(1);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var t Type = typeof(int);\n"
+            "  var text *char = t;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected *char, found Type");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var t Type = typeof(int);\n"
+            "  return t.name;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose("func main() int { return typeof(main); }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; };\n"
+            "func main() int { return typeof(struct Point); }\n");
+        EXPECT_HAS(check, errors, "expected a type");
+    }
+
     return check.failed;
 }

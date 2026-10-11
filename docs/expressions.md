@@ -27,6 +27,8 @@ A shift is evaluated in the common type.
 
 Pointers that point at the same type can be compared with `==` and `!=`, including `*T` with `?*T`. A pointer can be compared with `null`, and `null == null` is allowed. The result is `int`. Pointers of different types cannot be compared. Relational operators on pointers are rejected. `p == 0` is `type mismatch`.
 
+`typeof(int)` and `typeof n` have type `Type`. `==` and `!=` compare two `Type` values and yield `int`. `t.name()` returns the diagnostic spelling as `*char`. Other operators on `Type` are `type mismatch`.
+
 `*T` has a value. `?*T` may be `null`. `null` may be assigned or returned only to `?*T`. `&x` has type `*T` and may be stored in `*T` or `?*T`. `var p = null` has no pointer type to take and is `type mismatch`. Write `var p ?*Point = null`. A `*T` with no initializer is `type mismatch`, and so is a struct or array that contains one, because that memory would be zero. An omitted `?*T` field may be `null`. An omitted `*T` field is `type mismatch`. `extern` storage is not checked. Assigning an integer, including `0`, to a pointer is `type mismatch`. An address that comes from an integer is a cast, `*int(n)`. Assigning `null` to `int` or `bool` is `type mismatch`. `true` and `false` do not convert to pointers.
 
 `?` before a type other than a pointer is `not supported yet`. `?int` is rejected. `?*[4]int` is `not supported yet`.

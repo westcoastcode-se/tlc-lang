@@ -76,6 +76,10 @@ inline bool fill_builtin(const std::string &name, Type &out) {
         out = type_void();
         return true;
     }
+    if (name == "Type") {
+        out = type_meta();
+        return true;
+    }
     return false;
 }
 
@@ -164,7 +168,7 @@ inline Type usual(const Type &lhs, const Type &rhs) {
 inline Type quiet_indirect(Type type, int count, uint32_t optional = 0) {
     for (int i = 0; i < count; ++i) {
         if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool &&
-            type.kind != TypeKind::Pointer && type.kind != TypeKind::Void) {
+            type.kind != TypeKind::Pointer && type.kind != TypeKind::Void && type.kind != TypeKind::Meta) {
             return type_invalid();
         }
         type = type_pointer(std::move(type));

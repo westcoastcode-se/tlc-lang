@@ -406,11 +406,14 @@ std::unique_ptr<Expr> Parser::parse_cast_expr() {
 
 std::unique_ptr<Expr> Parser::parse_unary() {
     const TokenKind kind = peek().kind;
-    if (kind == TokenKind::KwSizeof) {
-        Expr::Sizeof node;
-        node.loc = peek().loc;
+    if (kind == TokenKind::KwSizeof || kind == TokenKind::KwTypeof) {
+        const bool is_sizeof = kind == TokenKind::KwSizeof;
+        const SourceLoc loc = peek().loc;
         ++pos_;
-        // `sizeof(Point)`. `struct` is not a type spelling here.
+        // `sizeof(Point)` and `typeof(Point)`. `struct` is not a type spelling here.
+        bool on_type = false;
+        ParenType spelled;
+        std::unique_ptr<Expr> expr;
         std::size_t look = 0;
         if (peek(look).kind == TokenKind::LParen) {
             ++look;
@@ -434,18 +437,33 @@ std::unique_ptr<Expr> Parser::parse_unary() {
                 ++pos_;
             } while (depth > 0 && !eof());
         } else if (starts_type_paren()) {
-            const ParenType type = parse_paren_type();
-            node.on_type = true;
-            node.type_name = type.name;
-            node.type_package = type.package;
-            node.is_struct = type.is_struct;
-            node.is_enum = type.is_enum;
-            node.indirections = type.indirections;
-            node.optional = type.optional;
+            spelled = parse_paren_type();
+            on_type = true;
+        } else if (!is_sizeof && peek().kind == TokenKind::LParen) {
+            // `(p).name()` calls the method. The operand stops at `)`.
+            expr = parse_primary();
         } else {
-            node.expr = parse_unary();
+            expr = parse_unary();
         }
-        return make_expr(std::move(node));
+        auto fill = [&](auto &node) {
+            node.loc = loc;
+            node.on_type = on_type;
+            node.type_name = spelled.name;
+            node.type_package = spelled.package;
+            node.is_struct = spelled.is_struct;
+            node.is_enum = spelled.is_enum;
+            node.indirections = spelled.indirections;
+            node.optional = spelled.optional;
+            node.expr = std::move(expr);
+        };
+        if (is_sizeof) {
+            Expr::Sizeof node;
+            fill(node);
+            return make_expr(std::move(node));
+        }
+        Expr::Typeof node;
+        fill(node);
+        return finish_postfix(make_expr(std::move(node)));
     }
     // `*int(p)` is a cast. `*p` and `*f()` stay dereferences, so this comes before unary `*`.
     if (starts_cast_type()) {
@@ -473,7 +491,10 @@ std::unique_ptr<Expr> Parser::parse_unary() {
 }
 
 std::unique_ptr<Expr> Parser::parse_postfix() {
-    auto expr = starts_cast_type() ? parse_cast_expr() : parse_primary();
+    return finish_postfix(starts_cast_type() ? parse_cast_expr() : parse_primary());
+}
+
+std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
     while (true) {
         if (eat(TokenKind::LParen)) {
             Expr::Call call;

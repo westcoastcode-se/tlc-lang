@@ -17,6 +17,8 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - A type argument that is `sizeof(...)`.
 - An array type parameter under a pointer, or a pointer to an array, as in `*T` when `T` is `[4]int`.
 - `sizeof(T)` when `T` is an array.
+- `typeof(T)` when `T` is an array.
+- `typeof` of a function, a tuple, or a trait.
 - `const` inside a function. File scope is `const name = expr`. A local `const` is still the C qualifier.
 - A non-positive compile-time length, including `const N = 0` used as `[N]int`.
 - Returning an array from anything other than a local array name. `return out` works for `[N]T`. Another return expression does not.
@@ -34,4 +36,4 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 
 ## Constant evaluation
 
-`assert`, `const`, and a compile-time integer parameter share `fold_int`. That folds integers, names of those constants, and `sizeof`. A general constant evaluator is not in place.
+`assert`, `const`, and a compile-time integer parameter share `fold_int`. That folds integers, names of those constants, and `sizeof`. It does not fold `typeof` or a comparison of two `Type` values, so `assert(typeof(int) == typeof(i32))` is `not supported yet`. A general constant evaluator is not in place.

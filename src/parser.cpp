@@ -74,7 +74,6 @@ bool Parser::is_type_keyword(TokenKind kind) const {
     case TokenKind::KwVolatile:
     case TokenKind::KwRestrict:
     case TokenKind::KwAuto:
-    case TokenKind::KwTypeof:
     case TokenKind::KwTypeofUnqual:
         return true;
     default:

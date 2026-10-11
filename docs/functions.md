@@ -67,7 +67,7 @@ func main() int {
 }
 ```
 
-`id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` writes the type. A type that cannot be inferred is `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[int]` and `Vec[char]` for `Vec[T]`, is `type mismatch`. A generic used as a value, and `extern` on a generic, are `not supported yet`. `sizeof(T)` and `assert(N > 0, "empty")` see the concrete type and the integer.
+`id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` writes the type. A type that cannot be inferred is `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[int]` and `Vec[char]` for `Vec[T]`, is `type mismatch`. A generic used as a value, and `extern` on a generic, are `not supported yet`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
 
 Structs are passed and returned by value. An array parameter becomes a pointer, both as `a int[]` and as `a int[4]`. A generic may return an array, `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
 

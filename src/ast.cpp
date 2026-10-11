@@ -460,7 +460,8 @@ std::string dump_expr(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 return "([] " + (node.base ? dump_expr(*node.base) : "(unsupported)") + " " +
                        (node.index ? dump_expr(*node.index) : "(unsupported)") + ")";
-            } else if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Cast>) {
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof> ||
+                                 std::is_same_v<T, Expr::Cast>) {
                 std::string spelled;
                 if (!node.type_package.empty()) {
                     spelled = node.type_package + "." + node.type_name;
@@ -477,11 +478,12 @@ std::string dump_expr(const Expr &expr) {
                     }
                     spelled += '*';
                 }
-                if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof>) {
+                    const char *op = std::is_same_v<T, Expr::Sizeof> ? "sizeof" : "typeof";
                     if (!node.on_type) {
-                        return "(sizeof " + (node.expr ? dump_expr(*node.expr) : "(unsupported)") + ")";
+                        return std::string("(") + op + " " + (node.expr ? dump_expr(*node.expr) : "(unsupported)") + ")";
                     }
-                    return "(sizeof " + spelled + ")";
+                    return std::string("(") + op + " " + spelled + ")";
                 } else {
                     return "(cast " + spelled + " " + (node.expr ? dump_expr(*node.expr) : "(unsupported)") + ")";
                 }
@@ -717,6 +719,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.loc = node.loc;
                 copy.callee = node.callee ? clone_expr(*node.callee) : nullptr;
                 copy.type_args = node.type_args;
+                copy.type_name = node.type_name;
                 for (const auto &arg : node.args) {
                     copy.args.push_back(arg ? clone_expr(*arg) : nullptr);
                 }
@@ -743,6 +746,19 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.is_enum = node.is_enum;
                 copy.indirections = node.indirections;
                 copy.optional = node.optional;
+                copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                Expr::Typeof copy;
+                copy.loc = node.loc;
+                copy.on_type = node.on_type;
+                copy.type_name = node.type_name;
+                copy.type_package = node.type_package;
+                copy.is_struct = node.is_struct;
+                copy.is_enum = node.is_enum;
+                copy.indirections = node.indirections;
+                copy.optional = node.optional;
+                copy.canonical = node.canonical;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {

@@ -19,6 +19,12 @@ Type type_void() {
     return type;
 }
 
+Type type_meta() {
+    Type type;
+    type.kind = TypeKind::Meta;
+    return type;
+}
+
 Type type_int() {
     Type type;
     type.kind = TypeKind::Int;

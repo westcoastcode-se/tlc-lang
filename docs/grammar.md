@@ -65,7 +65,7 @@ The method is written in the same file as that struct or enum. A method in anoth
 
 An inner function uses the same `function` form inside a block. It has a body, and it is not `export`, `static`, `extern`, or a method.
 
-`func name[T type, N int](value T) [N]T` is a generic function. `T type` is a type. `N int`, or another integer type, is a compile-time integer. `T Shape` requires a type that has `Shape`'s methods. The call `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` and `zero[int]()` write a type. A generic used as a value is `not supported yet`. A method on a generic struct names that struct's parameters, `func Vec[T]::get(self *this) T`. `func Vec::get[T type]` is `not supported yet`. `extern` cannot be generic. After the call is specialized, `sizeof(T)` and `assert(N > 0, "empty")` use the concrete type and the integer.
+`func name[T type, N int](value T) [N]T` is a generic function. `T type` is a type. `N int`, or another integer type, is a compile-time integer. `T Shape` requires a type that has `Shape`'s methods. The call `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` and `zero[int]()` write a type. A generic used as a value is `not supported yet`. A method on a generic struct names that struct's parameters, `func Vec[T]::get(self *this) T`. `func Vec::get[T type]` is `not supported yet`. `extern` cannot be generic. After the call is specialized, `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` use the concrete type and the integer.
 
 ## Variables
 
@@ -223,7 +223,7 @@ relational  = shift { ( "<" | ">" | "<=" | ">=" ) shift } ;
 shift       = additive { ( "<<" | ">>" ) additive } ;
 additive    = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative = unary { ( "*" | "/" | "%" ) unary } ;
-unary       = ( "+" | "-" | "!" | "~" | "&" | "*" | "sizeof" ) unary
+unary       = ( "+" | "-" | "!" | "~" | "&" | "*" | "sizeof" | "typeof" ) unary
             | postfix ;
 postfix     = primary { postfix-op } ;
 postfix-op  = "(" [ argument-list ] ")"
@@ -263,7 +263,7 @@ cast        = { "*" } scalar-type "(" expression ")"
 scalar-type = integer-type | "void" | "bool" | "float" | "double" | integer-name | float-name ;
 ```
 
-An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)`, `*int(p)`, or `?*int(p)`. A builtin name such as `i32` is always that cast. A name declared as a type in this file is a cast too: `Integer(n)`, `*Point(p)`, `ShapeType(shape)`. A cast to a struct is `type mismatch`. `ShapeType(shape)` reads the tag of a tlc union, including from another file in the package. The cast has the type that was written, so `*int(p)` is `*int` and `?*int(null)` is `?*int`. `*int(null)` is `type mismatch`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof(int)`, `sizeof(*int)`, `sizeof(enum Color)`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
+An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)`, `*int(p)`, or `?*int(p)`. A builtin name such as `i32` is always that cast. A name declared as a type in this file is a cast too: `Integer(n)`, `*Point(p)`, `ShapeType(shape)`. A cast to a struct is `type mismatch`. `ShapeType(shape)` reads the tag of a tlc union, including from another file in the package. The cast has the type that was written, so `*int(p)` is `*int` and `?*int(null)` is `?*int`. `*int(null)` is `type mismatch`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof(int)`, `sizeof(*int)`, `sizeof(enum Color)`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression. `typeof` has the same shape and produces a `Type`. `typeof(int)`, `typeof(*int)`, and `typeof n` are accepted. `typeof(struct Point)` is `expected a type`.
 
 A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A positional element, such as `{10}`, is `not supported yet`. A trailing comma is allowed.
 
@@ -311,9 +311,9 @@ These words are keywords and cannot be identifiers:
 ```text
 assert bool break case char const continue default defer do double else enum
 export extern false float for func if import int long null package
-return short sizeof static struct switch test trait true type union var void while
+return short sizeof static struct switch test trait true type typeof union var void while
 ```
 
-C keywords that tlc reserves but does not use are also keywords: `alignas`, `alignof`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof`, `typeof_unqual`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).
+C keywords that tlc reserves but does not use are also keywords: `alignas`, `alignof`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof_unqual`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).
 
 `as`, `from`, `impl`, and `this` are not keywords. `signed` and `unsigned` are not keywords.

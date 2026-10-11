@@ -76,6 +76,8 @@ struct Expr {
         std::unique_ptr<Expr> callee;
         std::vector<TypeArg> type_args;
         std::vector<std::unique_ptr<Expr>> args;
+        // Set while checking when the callee is `Type.name()`.
+        mutable bool type_name = false;
     };
     struct Selector {
         SourceLoc loc{};
@@ -102,6 +104,19 @@ struct Expr {
         // Bit 0 is the outermost `*`. A set bit is `?*`.
         uint32_t optional = 0;
         std::unique_ptr<Expr> expr;
+    };
+    struct Typeof {
+        SourceLoc loc{};
+        bool on_type = false;
+        std::string type_name;
+        std::string type_package;
+        bool is_struct = false;
+        bool is_enum = false;
+        int indirections = 0;
+        uint32_t optional = 0;
+        std::unique_ptr<Expr> expr;
+        // Filled while checking. Codegen interns this spelling, so equal types share one value.
+        mutable std::string canonical;
     };
     struct Cast {
         SourceLoc loc{};
@@ -150,7 +165,7 @@ struct Expr {
         SourceLoc loc{};
     };
 
-    using Data = std::variant<Name, Int, Unary, Binary, Assign, Call, Selector, String, Index, Sizeof, Cast, Bool,
+    using Data = std::variant<Name, Int, Unary, Binary, Assign, Call, Selector, String, Index, Sizeof, Typeof, Cast, Bool,
                               Nullptr, Char, Float, Func, Init, Unsupported>;
 
     Data data;

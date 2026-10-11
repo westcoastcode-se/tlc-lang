@@ -571,6 +571,17 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return type_int();
                     }
                 }
+                if (lhs.kind == TypeKind::Meta || rhs.kind == TypeKind::Meta) {
+                    if (lhs.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
+                        return type_invalid();
+                    }
+                    if (lhs.kind == TypeKind::Meta && rhs.kind == TypeKind::Meta &&
+                        (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq)) {
+                        return type_int();
+                    }
+                    error(node.loc, "type mismatch");
+                    return type_invalid();
+                }
                 if (lhs.kind == TypeKind::Enum || rhs.kind == TypeKind::Enum) {
                     if (lhs.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
                         return type_invalid();
@@ -814,6 +825,34 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                             return type_invalid();
                         }
+                        const bool type_value = base.kind == TypeKind::Meta;
+                        const bool through_type = base.kind == TypeKind::Pointer && base.pointee &&
+                                                  base.pointee->kind == TypeKind::Meta;
+                        if (type_value || through_type) {
+                            if (through_type && base.optional) {
+                                error(node.loc, "undeclared identifier");
+                                for (const auto &arg : node.args) {
+                                    check_expr(*arg, true);
+                                }
+                                return type_invalid();
+                            }
+                            if (selector->field != "name") {
+                                error(node.loc, "undeclared identifier");
+                                for (const auto &arg : node.args) {
+                                    check_expr(*arg, true);
+                                }
+                                return type_invalid();
+                            }
+                            if (!node.args.empty()) {
+                                error(node.loc, "argument count");
+                                for (const auto &arg : node.args) {
+                                    check_expr(*arg, true);
+                                }
+                                return type_invalid();
+                            }
+                            node.type_name = true;
+                            return type_pointer(type_char());
+                        }
                         if (base.kind == TypeKind::Trait ||
                             (base.kind == TypeKind::Pointer && base.pointee && base.pointee->kind == TypeKind::Trait)) {
                             const bool through_pointer = base.kind != TypeKind::Trait;
@@ -1029,6 +1068,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
+                if (base.kind == TypeKind::Meta ||
+                    (base.kind == TypeKind::Pointer && base.pointee && base.pointee->kind == TypeKind::Meta)) {
+                    error(node.loc, "undeclared identifier");
+                    return type_invalid();
+                }
                 Type object;
                 bool through_pointer = false;
                 if (!dot_object(base, object, through_pointer)) {
@@ -1082,6 +1126,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 return type_int();
+            } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                (void)used;
+                const Type type = operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum,
+                                               node.indirections, node.optional, node.expr.get(), node.loc);
+                if (type.kind == TypeKind::Invalid) {
+                    return type_invalid();
+                }
+                if (type.kind == TypeKind::Function || type.kind == TypeKind::Tuple || mentions_trait(type)) {
+                    error(node.loc, "not supported yet");
+                    return type_invalid();
+                }
+                node.canonical = type_desc(type);
+                return type_meta();
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 (void)used;
                 const Type target = spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum,
@@ -1172,16 +1229,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
         expr.data);
 }
 
-Type Checker::sizeof_operand(const Expr::Sizeof &node) {
-    if (node.on_type) {
-        return spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections, node.loc,
-                            node.optional);
+Type Checker::operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
+                           bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc) {
+    if (on_type) {
+        return spelled_type(type_name, type_package, is_struct, is_enum, indirections, loc, optional);
     }
-    if (node.expr == nullptr) {
+    if (expr == nullptr) {
         return type_invalid();
     }
     int stars = 0;
-    const Expr *cursor = node.expr.get();
+    const Expr *cursor = expr;
     while (cursor != nullptr) {
         const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
         if (unary == nullptr || unary->op != TokenKind::Star || unary->postfix || unary->expr == nullptr) {
@@ -1196,10 +1253,15 @@ Type Checker::sizeof_operand(const Expr::Sizeof &node) {
     const bool tag = named != nullptr && find_tag(file_id_, named->text) >= 0;
     const bool enumeration = named != nullptr && find_enum(file_id_, named->text) >= 0;
     if (named != nullptr && lookup(named->text) == nullptr && (alias || tag || enumeration)) {
-        // `sizeof(Point)` and `sizeof(*Point)` when the name is a type.
-        return with_indirections(type_of_name(named->text, node.loc, stars > 0), stars, node.loc);
+        // `sizeof(Point)` and `typeof(*Point)` when the name is a type.
+        return with_indirections(type_of_name(named->text, loc, stars > 0), stars, loc);
     }
-    return check_raw(*node.expr, true);
+    return check_raw(*expr, true);
+}
+
+Type Checker::sizeof_operand(const Expr::Sizeof &node) {
+    return operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
+                        node.optional, node.expr.get(), node.loc);
 }
 
 void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &message) {

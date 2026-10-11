@@ -10,7 +10,9 @@
 
 namespace tlc {
 
-enum class TypeKind { Invalid, Void, Int, Char, Bool, Float, Nullptr, Pointer, Array, Struct, Enum, Function, Trait, Tuple };
+enum class TypeKind {
+    Invalid, Void, Int, Char, Bool, Float, Nullptr, Pointer, Array, Struct, Enum, Function, Trait, Tuple, Meta
+};
 
 struct Type {
     TypeKind kind = TypeKind::Invalid;
@@ -33,6 +35,7 @@ struct Type {
 
 Type type_invalid();
 Type type_void();
+Type type_meta();
 Type type_int();
 Type type_char();
 Type type_bool();

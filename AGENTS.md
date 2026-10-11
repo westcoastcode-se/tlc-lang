@@ -1,1 +1,4 @@
 - All changes made to the language should update the documentation.
+- Always consider TOOD.md
+  - Remove a feature that's added
+  - When adding new features, add anything skipped to be implemented in the future into TODO.md
