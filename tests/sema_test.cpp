@@ -325,7 +325,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() int {\n"
             "  var n int = 7;\n"
-            "  var p *int = 0;\n"
+            "  var p *int = null;\n"
             "  var pp **int = &p;\n"
             "  p = &n;\n"
             "  pp = &p;\n"
@@ -338,7 +338,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  var p *int = 0;\n"
+            "  var p *int = null;\n"
             "  p = 1;\n"
             "  return 0;\n"
             "}\n");
@@ -362,7 +362,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  var p *int = 0;\n"
+            "  var p *int = null;\n"
             "  return p + 1;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -400,7 +400,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() int {\n"
             "  var a [1]int;\n"
-            "  var p *int = 0;\n"
+            "  var p *int = null;\n"
             "  return a[p];\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -794,7 +794,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() int {\n"
             "  var p *int;\n"
-            "  p = 0;\n"
+            "  p = null;\n"
             "  switch (p) {\n"
             "  case 0: return 0;\n"
             "  }\n"
@@ -837,13 +837,13 @@ int run_sema_tests() {
             "  var n int;\n"
             "  var p *int;\n"
             "  n = 0;\n"
-            "  p = 0;\n"
+            "  p = null;\n"
             "  do {\n"
             "    n = 1;\n"
             "  } while (p);\n"
             "  return n;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "compare with null");
     }
 
     {
@@ -910,7 +910,7 @@ int run_sema_tests() {
             "func main() int {\n"
             "  var p *int;\n"
             "  var v *void;\n"
-            "  v = 0;\n"
+            "  v = null;\n"
             "  p = v;\n"
             "  return 0;\n"
             "}\n");
@@ -922,7 +922,7 @@ int run_sema_tests() {
             "func main() int {\n"
             "  var p *int;\n"
             "  var v *void;\n"
-            "  v = 0;\n"
+            "  v = null;\n"
             "  p = *int(v);\n"
             "  return 0;\n"
             "}\n");
@@ -933,7 +933,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() int {\n"
             "  var v *void;\n"
-            "  v = 0;\n"
+            "  v = null;\n"
             "  return *v;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -949,7 +949,7 @@ int run_sema_tests() {
             "func id(p *void) *void { return p; }\n"
             "func main() int {\n"
             "  var v *void;\n"
-            "  v = 0;\n"
+            "  v = null;\n"
             "  v = id(v);\n"
             "  return 0;\n"
             "}\n");
@@ -995,6 +995,31 @@ int run_sema_tests() {
             "  return x;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func id(p *int) *int { return p; }\n"
+            "func main() int {\n"
+            "  var p *int = 0;\n"
+            "  p = 0;\n"
+            "  var inferred = null;\n"
+            "  if (p) { return 1; }\n"
+            "  return id(0) == null;\n"
+            "}\n"
+            "func zero() *int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "compare with null");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var p *int = *int(0);\n"
+            "  if (p == null) { return 1; }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -1462,7 +1487,7 @@ int run_sema_tests() {
             "  var tail Node;\n"
             "  var head Node;\n"
             "  tail.n = 2;\n"
-            "  tail.next = 0;\n"
+            "  tail.next = null;\n"
             "  head.n = 40;\n"
             "  head.next = &tail;\n"
             "  return head.n + head.next.n;\n"
@@ -1562,7 +1587,7 @@ int run_sema_tests() {
             "type Link struct { n int; next *Link; };\n"
             "func main() int {\n"
             "  var link Link = {.n = 1, .next = null};\n"
-            "  link = {.next = 0};\n"
+            "  link = {.next = null};\n"
             "  if (link.next == null) {\n"
             "    return link.n;\n"
             "  }\n"
@@ -1603,7 +1628,7 @@ int run_sema_tests() {
             "extern(abi=\"c\") type Handle struct {}\n"
             "func main() int {\n"
             "  var p *Handle;\n"
-            "  p = 0;\n"
+            "  p = null;\n"
             "  return 0;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");

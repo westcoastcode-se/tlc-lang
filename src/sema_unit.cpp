@@ -155,7 +155,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     error(var->loc, "type mismatch");
                 } else {
                     type = check_expr(*var->init, true);
-                    if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void) {
+                    // `null` has no pointee until a pointer type is written around it.
+                    if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void || type.kind == TypeKind::Nullptr) {
                         error(var->loc, "type mismatch");
                         type = type_invalid();
                     }

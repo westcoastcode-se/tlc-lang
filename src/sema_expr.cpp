@@ -24,7 +24,7 @@ void Checker::expect(const Type &got, const Type &want, SourceLoc loc) {
     }
 }
 
-void Checker::expect_value(const Type &got, const Type &want, const Expr &expr, SourceLoc loc) {
+void Checker::expect_value(const Type &got, const Type &want, const Expr &, SourceLoc loc) {
     if (want.kind == TypeKind::Trait && got.kind != TypeKind::Invalid) {
         if (got.kind == TypeKind::Trait) {
             expect(got, want, loc);
@@ -53,9 +53,6 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &expr, 
     if (want.kind == TypeKind::Pointer && got.kind == TypeKind::Nullptr) {
         return;
     }
-    if (want.kind == TypeKind::Pointer && got.kind == TypeKind::Int && is_null_constant(expr)) {
-        return;
-    }
     if (is_c_enum(got) && is_integer(want)) {
         return;
     }
@@ -70,6 +67,14 @@ void Checker::expect_integer(const Type &got, SourceLoc loc) {
         return;
     }
     error(loc, "type mismatch: expected an integer, found " + type_desc(got));
+}
+
+void Checker::expect_condition(const Type &got, SourceLoc loc) {
+    if (got.kind == TypeKind::Pointer) {
+        error(loc, "compare with null");
+        return;
+    }
+    expect_integer(got, loc);
 }
 
 FunctionDecl *Checker::inferred_function(const Expr &expr) const {
@@ -1168,10 +1173,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 pop();
             } else if constexpr (std::is_same_v<T, Stmt::Return>) {
-                auto match_return = [&](const Type &got, const Type &want, const Expr &expr) {
-                    const bool null_pointer = want.kind == TypeKind::Pointer &&
-                                              ((got.kind == TypeKind::Int && is_null_constant(expr)) ||
-                                               got.kind == TypeKind::Nullptr);
+                auto match_return = [&](const Type &got, const Type &want) {
+                    const bool null_pointer = want.kind == TypeKind::Pointer && got.kind == TypeKind::Nullptr;
                     const bool scalar = is_scalar(got) && is_scalar(want);
                     if (!null_pointer && !scalar &&
                         (want.kind == TypeKind::Void ||
@@ -1203,7 +1206,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         const Type got = i < return_type_.results.size() ? supplied(*exprs[i], return_type_.results[i])
                                                                           : check_expr(*exprs[i], true);
                         if (i < return_type_.results.size()) {
-                            match_return(got, return_type_.results[i], *exprs[i]);
+                            match_return(got, return_type_.results[i]);
                         }
                     }
                 } else if (!node.extra.empty()) {
@@ -1217,7 +1220,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(node.loc, "return type: expected " + type_desc(return_type_) + ", found void");
                     }
                 } else {
-                    match_return(supplied(*node.value, return_type_), return_type_, *node.value);
+                    match_return(supplied(*node.value, return_type_), return_type_);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
                 if (node.expr) {
@@ -1225,7 +1228,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
             } else if constexpr (std::is_same_v<T, Stmt::If>) {
                 if (node.cond) {
-                    expect_integer(check_expr(*node.cond, true), expr_loc(*node.cond));
+                    expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
                 }
                 if (node.then_arm) {
                     check_stmt(*node.then_arm);
@@ -1235,7 +1238,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
             } else if constexpr (std::is_same_v<T, Stmt::While>) {
                 if (node.cond) {
-                    expect_integer(check_expr(*node.cond, true), expr_loc(*node.cond));
+                    expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
                 }
                 ++loop_depth_;
                 if (node.body) {
@@ -1249,7 +1252,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 --loop_depth_;
                 if (node.cond) {
-                    expect_integer(check_expr(*node.cond, true), expr_loc(*node.cond));
+                    expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
                 if (node.cond) {
@@ -1293,7 +1296,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_stmt(*node.init);
                 }
                 if (node.cond) {
-                    expect_integer(check_expr(*node.cond, true), expr_loc(*node.cond));
+                    expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
                 }
                 if (node.step) {
                     check_expr(*node.step, false);
@@ -1399,7 +1402,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (node.is_var) {
                     for (std::size_t i = 0; i < node.names.size(); ++i) {
                         const SourceLoc loc = i < node.name_locs.size() ? node.name_locs[i] : node.loc;
-                        if (in_current(node.names[i]) != nullptr) {
+                        if (parts[i].kind == TypeKind::Nullptr) {
+                            error(loc, "type mismatch");
+                        } else if (in_current(node.names[i]) != nullptr) {
                             error(loc, "redefinition");
                         } else {
                             declare_new(i);
@@ -1419,7 +1424,13 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(node.loc, "type mismatch");
                     } else {
                         for (std::size_t i = 0; i < node.names.size(); ++i) {
-                            if (in_current(node.names[i]) == nullptr) {
+                            if (in_current(node.names[i]) != nullptr) {
+                                continue;
+                            }
+                            const SourceLoc loc = i < node.name_locs.size() ? node.name_locs[i] : node.loc;
+                            if (parts[i].kind == TypeKind::Nullptr) {
+                                error(loc, "type mismatch");
+                            } else {
                                 declare_new(i);
                             }
                         }

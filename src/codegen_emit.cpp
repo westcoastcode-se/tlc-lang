@@ -401,10 +401,6 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
         if (std::holds_alternative<Expr::Nullptr>(expr.data)) {
             return null_ptr();
         }
-        const std::optional<int32_t> number = fold(expr);
-        if (number && *number == 0) {
-            return null_ptr();
-        }
         return nullptr;
     }
     if (slot.elem_float) {

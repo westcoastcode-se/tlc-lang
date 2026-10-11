@@ -203,11 +203,11 @@ class Checker {
                           bool parameter, const std::string &package, bool is_struct, bool is_enum);
     Type published_result(const std::string &name, int indirections, SourceLoc loc, const std::string &package,
                           bool is_struct, bool is_enum);
-    bool is_null_constant(const Expr &expr) const;
     void expect(const Type &got, const Type &want, SourceLoc loc);
     void expect_value(const Type &got, const Type &want, const Expr &expr, SourceLoc loc);
     Type check_init(Expr::Init &init, const Type &want);
     void expect_integer(const Type &got, SourceLoc loc);
+    void expect_condition(const Type &got, SourceLoc loc);
     bool is_lvalue_form(const Expr &expr) const;
     Type check_raw(const Expr &expr, bool used);
     Type check_expr(const Expr &expr, bool used);

@@ -1380,11 +1380,6 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     return type_array(std::move(type), array_len);
 }
 
-bool Checker::is_null_constant(const Expr &expr) const {
-    const auto *literal = std::get_if<Expr::Int>(&expr.data);
-    return literal != nullptr && literal->value == 0;
-}
-
 bool Checker::is_lvalue_form(const Expr &expr) const { return lvalue_form(expr); }
 
 std::string Checker::type_desc(const Type &type) const {

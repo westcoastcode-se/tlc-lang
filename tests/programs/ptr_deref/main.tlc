@@ -1,6 +1,6 @@
 func main() int {
     var n int = 7;
-    var p *int = 0;
+    var p *int = null;
     var pp **int = &p;
     p = &n;
     **pp = 42;

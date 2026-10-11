@@ -1,5 +1,5 @@
 func main() int {
     var a [1]int;
-    var p *int = 0;
+    var p *int = null;
     return a[p];
 }
