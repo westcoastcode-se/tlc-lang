@@ -116,7 +116,7 @@ type Named union(ShapeType) {
 };
 ```
 
-The value stores the tag and one payload. Every field starts at the same offset after the tag, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 4 for the `int` tag and 8 for the payload. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0.
+The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `int` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0.
 
 `extern(abi="c") union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A struct or a union nested inside a C union must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
 

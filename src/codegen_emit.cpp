@@ -481,11 +481,11 @@ void CodeGen::store_union_tag(int struct_id, llvm::Value *pointer, const std::st
         return;
     }
     llvm::Constant *tag = enum_constant(layout.tag_enum, member->second);
-    if (tag == nullptr || tag->getType() != layout.type->getElementType(0)) {
+    if (tag == nullptr || layout.type->getNumElements() < 3 || tag->getType() != layout.type->getElementType(2)) {
         return;
     }
     llvm::Value *addr = builder_.CreateInBoundsGEP(layout.type, pointer,
-                                                    llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(0)});
+                                                    llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(2)});
     builder_.CreateStore(tag, addr);
 }
 
@@ -567,7 +567,7 @@ llvm::Constant *CodeGen::const_struct(const Expr::Init &init, int struct_id) {
         if (layout.type->getNumElements() < 3 || layout.tag_enum >= static_cast<int>(enums_.size())) {
             return nullptr;
         }
-        const auto *bytes_type = llvm::dyn_cast<llvm::ArrayType>(layout.type->getElementType(2));
+        const auto *bytes_type = llvm::dyn_cast<llvm::ArrayType>(layout.type->getElementType(1));
         if (bytes_type == nullptr) {
             return nullptr;
         }
@@ -597,7 +597,7 @@ llvm::Constant *CodeGen::const_struct(const Expr::Init &init, int struct_id) {
             tag_value = member->second;
         }
         llvm::Constant *tag = enum_constant(layout.tag_enum, tag_value);
-        if (tag == nullptr || tag->getType() != layout.type->getElementType(0)) {
+        if (tag == nullptr || tag->getType() != layout.type->getElementType(2)) {
             return nullptr;
         }
         llvm::Constant *bytes = llvm::ConstantDataArray::get(context_, raw);
@@ -605,7 +605,7 @@ llvm::Constant *CodeGen::const_struct(const Expr::Init &init, int struct_id) {
             return nullptr;
         }
         return llvm::ConstantStruct::get(layout.type,
-                                         {tag, llvm::ConstantAggregateZero::get(layout.type->getElementType(1)), bytes});
+                                         {llvm::ConstantAggregateZero::get(layout.type->getElementType(0)), bytes, tag});
     }
     const unsigned count = layout.type->getNumElements();
     std::vector<llvm::Constant *> elements;
@@ -648,7 +648,6 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
         if (field.value == nullptr || field.field.empty()) {
             continue;
         }
-        store_union_tag(init.struct_id, slot, field.field);
         const TypedValue addr = field_addr(init.struct_id, slot, field.field, field.loc);
         if (addr.value == nullptr) {
             continue;
@@ -662,6 +661,8 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
             continue;
         }
         builder_.CreateStore(stored_value(rhs, addr), addr.value);
+        // The enum tag is stored after the payload.
+        store_union_tag(init.struct_id, slot, field.field);
     }
     if (terminated()) {
         return {zero(), 0};
@@ -2311,7 +2312,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                     source.struct_id < static_cast<int>(structs_.size()) &&
                                     source.value->getType()->isStructTy() &&
                                     structs_[static_cast<std::size_t>(source.struct_id)].tag_enum == enum_id) {
-                                    llvm::Value *tag = builder_.CreateExtractValue(source.value, 0);
+                                    llvm::Value *tag = builder_.CreateExtractValue(source.value, 2);
                                     const EnumLayout &enumeration = enums_[static_cast<std::size_t>(enum_id)];
                                     TypedValue value;
                                     value.value = tag;
@@ -2560,8 +2561,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     const StructLayout &layout = structs_[static_cast<std::size_t>(source.struct_id)];
                     if (layout.tag_enum >= 0 && target.enum_id == layout.tag_enum &&
                         layout.tag_enum < static_cast<int>(enums_.size()) && layout.type != nullptr &&
-                        layout.type->getNumElements() > 0) {
-                        llvm::Value *tag = builder_.CreateExtractValue(source.value, 0);
+                        layout.type->getNumElements() > 2) {
+                        llvm::Value *tag = builder_.CreateExtractValue(source.value, 2);
                         const EnumLayout &enumeration = enums_[static_cast<std::size_t>(layout.tag_enum)];
                         TypedValue value;
                         value.value = tag;

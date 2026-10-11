@@ -1116,8 +1116,10 @@ std::optional<int> Checker::type_size(const Type &type) const {
                 payload_align = std::max(payload_align, min_align_of(field.type));
             }
             payload = align_up(payload, payload_align);
-            const int align = std::max(min_align_of(tag), std::max(payload_align, info.align));
-            return align_up(align_up(*tag_size, payload_align) + payload, align);
+            const int tag_align = std::max(min_align_of(tag), 1);
+            const int align = std::max(tag_align, std::max(payload_align, info.align));
+            // The payload starts at offset 0. The enum tag is placed after it.
+            return align_up(align_up(payload, tag_align) + *tag_size, align);
         }
         int offset = 0;
         int align = 1;

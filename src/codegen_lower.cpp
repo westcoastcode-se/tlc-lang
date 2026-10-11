@@ -670,7 +670,7 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
         return {};
     }
     const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
-    // A C union overlays every field at offset 0. A tlc union overlays them after the tag.
+    // A C union overlays every field at offset 0. A tlc union does the same, and the enum tag sits after the payload.
     if (layout.is_union) {
         llvm::Value *addr = pointer;
         if (layout.tag_enum >= 0) {
@@ -682,7 +682,7 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
                 return {};
             }
             addr = builder_.CreateInBoundsGEP(layout.type, pointer,
-                                               llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(2)});
+                                               llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(1)});
         }
         return {addr, slot->depth, slot->elem_char, slot->struct_id, slot->is_array, slot->elem_void, slot->elem_bool,
                 slot->elem_bits, slot->elem_unsigned, -1, slot->elem_float};
@@ -899,13 +899,13 @@ void CodeGen::prepare_structs() {
                 llvm::Type *prefix_type = fields[static_cast<std::size_t>(prefix)].type;
                 if (!item->tag_name.empty() && prefix_type != nullptr &&
                     structs_[static_cast<std::size_t>(id)].tag_enum >= 0) {
-                    // Tag, a zero-length array that carries the payload alignment, then the payload bytes.
-                    // Every variant starts at the byte array. A load uses the variant's own type.
+                    // A zero-length array carries the payload alignment. The payload bytes start at offset 0.
+                    // The enum tag is stored after that payload. A load uses the variant's own type.
                     const int tag_id = structs_[static_cast<std::size_t>(id)].tag_enum;
                     body.clear();
-                    body.push_back(enum_mem_type(tag_id));
                     body.push_back(llvm::ArrayType::get(prefix_type, 0));
                     body.push_back(llvm::ArrayType::get(i8(), rounded == 0 ? 1 : rounded));
+                    body.push_back(enum_mem_type(tag_id));
                 } else {
                     body.clear();
                     body.push_back(prefix_type);
