@@ -33,11 +33,11 @@ func Box::grow(self *this, n int) void {
     self.n = self.n + n;
 }
 
-func measure(s Shape *) int {
+func measure(s *Shape) int {
     return s.area();
 }
 
-func apply(s Shape *, n int) int {
+func apply(s *Shape, n int) int {
     s.grow(n);
     return measure(s);
 }

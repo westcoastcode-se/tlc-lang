@@ -213,33 +213,64 @@ std::unique_ptr<Expr> Parser::parse_multiplicative() {
     return lhs;
 }
 
+bool Parser::skip_type_base(std::size_t &index, int leading, bool cast) const {
+    const Token &head = peek(index);
+    if (is_int_spec(head.kind)) {
+        while (is_int_spec(peek(index).kind)) {
+            ++index;
+        }
+        return true;
+    }
+    if (head.kind == TokenKind::KwVoid || head.kind == TokenKind::KwBool || head.kind == TokenKind::KwFloat ||
+        head.kind == TokenKind::KwDouble) {
+        ++index;
+        return true;
+    }
+    if (head.kind == TokenKind::KwStruct || head.kind == TokenKind::KwEnum) {
+        if (peek(index + 1).kind != TokenKind::Identifier) {
+            return false;
+        }
+        index += 2;
+        return true;
+    }
+    // `pkg.Name` is a sizeof type. `pkg.Name(x)` is a call, and `*pkg.f()` is a dereference.
+    if (!cast && head.kind == TokenKind::Identifier && peek(index + 1).kind == TokenKind::Dot &&
+        peek(index + 2).kind == TokenKind::Identifier) {
+        index += 3;
+        return true;
+    }
+    if (head.kind == TokenKind::Identifier && is_type_alias(head.text)) {
+        ++index;
+        return true;
+    }
+    if (head.kind != TokenKind::Identifier) {
+        return false;
+    }
+    // `*Point(p)` after Point is declared. `*f()` stays a dereference.
+    // `sizeof(*Point)` is an expression; sema treats a type name as a type.
+    if (cast && leading > 0 && type_names_.count(head.text) != 0) {
+        ++index;
+        return true;
+    }
+    // `Point *` is the old postfix cast. The caller reports type mismatch.
+    if (leading == 0 && peek(index + 1).kind == TokenKind::Star) {
+        ++index;
+        return true;
+    }
+    return false;
+}
+
 bool Parser::starts_type_paren() const {
     if (peek().kind != TokenKind::LParen) {
         return false;
     }
     std::size_t index = 1;
-    const TokenKind kind = peek(index).kind;
-    if (is_int_spec(kind)) {
-        while (is_int_spec(peek(index).kind)) {
-            ++index;
-        }
-    } else if (kind == TokenKind::KwVoid || kind == TokenKind::KwBool || kind == TokenKind::KwFloat ||
-               kind == TokenKind::KwDouble) {
+    int leading = 0;
+    while (peek(index).kind == TokenKind::Star) {
+        ++leading;
         ++index;
-    } else if (kind == TokenKind::Identifier && is_type_alias(peek(index).text) &&
-               (peek(index + 1).kind == TokenKind::RParen || peek(index + 1).kind == TokenKind::Star)) {
-        ++index;
-    } else if (kind == TokenKind::KwStruct || kind == TokenKind::KwEnum) {
-        if (peek(index + 1).kind != TokenKind::Identifier) {
-            return false;
-        }
-        index += 2;
-    } else if (kind == TokenKind::Identifier && peek(index + 1).kind == TokenKind::Dot &&
-               peek(index + 2).kind == TokenKind::Identifier) {
-        index += 3;
-    } else if (kind == TokenKind::Identifier && peek(index + 1).kind == TokenKind::Star) {
-        ++index;
-    } else {
+    }
+    if (!skip_type_base(index, leading, false)) {
         return false;
     }
     while (peek(index).kind == TokenKind::Star) {
@@ -250,24 +281,12 @@ bool Parser::starts_type_paren() const {
 
 bool Parser::starts_cast_type() const {
     std::size_t index = 0;
-    const TokenKind kind = peek(index).kind;
-    if (is_int_spec(kind)) {
-        while (is_int_spec(peek(index).kind)) {
-            ++index;
-        }
-    } else if (kind == TokenKind::KwVoid || kind == TokenKind::KwBool || kind == TokenKind::KwFloat ||
-               kind == TokenKind::KwDouble) {
+    int leading = 0;
+    while (peek(index).kind == TokenKind::Star) {
+        ++leading;
         ++index;
-    } else if (kind == TokenKind::Identifier && is_type_alias(peek(index).text)) {
-        ++index;
-    } else if (kind == TokenKind::KwStruct || kind == TokenKind::KwEnum) {
-        if (peek(index + 1).kind != TokenKind::Identifier) {
-            return false;
-        }
-        index += 2;
-    } else if (kind == TokenKind::Identifier && peek(index + 1).kind == TokenKind::Star) {
-        ++index;
-    } else {
+    }
+    if (!skip_type_base(index, leading, true)) {
         return false;
     }
     while (peek(index).kind == TokenKind::Star) {
@@ -279,6 +298,10 @@ bool Parser::starts_cast_type() const {
 Parser::ParenType Parser::parse_cast_type() {
     ParenType type;
     type.loc = peek().loc;
+    int leading = 0;
+    while (eat(TokenKind::Star)) {
+        ++leading;
+    }
     if (is_int_spec(peek().kind)) {
         IntSpecs ints;
         while (is_int_spec(peek().kind)) {
@@ -331,9 +354,13 @@ Parser::ParenType Parser::parse_cast_type() {
         type.name = peek().text;
         ++pos_;
     }
-    while (eat(TokenKind::Star)) {
-        ++type.indirections;
+    if (check(TokenKind::Star)) {
+        // `int*(p)` and `sizeof(int *)`. The star belongs in front of the type.
+        diags_.error(peek().loc, "type mismatch");
+        while (eat(TokenKind::Star)) {
+        }
     }
+    type.indirections = leading;
     return type;
 }
 
@@ -384,6 +411,10 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             node.expr = parse_unary();
         }
         return make_expr(std::move(node));
+    }
+    // `*int(p)` is a cast. `*p` and `*f()` stay dereferences, so this comes before unary `*`.
+    if (starts_cast_type()) {
+        return parse_cast_expr();
     }
     if (kind == TokenKind::Plus || kind == TokenKind::Minus || kind == TokenKind::Bang || kind == TokenKind::Tilde ||
         kind == TokenKind::Amp || kind == TokenKind::Star) {

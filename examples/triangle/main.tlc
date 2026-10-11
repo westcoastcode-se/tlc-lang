@@ -30,7 +30,7 @@ import {
     Gl,
 } from "vendor/gl";
 
-extern(abi="c") func printf(fmt const char *, ...) int;
+extern(abi="c") func printf(fmt *const char, ...) int;
 
 func draw_triangle() void {
     glClear(Gl.GL_COLOR_BUFFER_BIT);

@@ -1,4 +1,4 @@
-func add4(p int *) int {
+func add4(p *int) int {
     return p[0] + p[1] + p[2] + p[3];
 }
 

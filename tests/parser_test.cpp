@@ -234,7 +234,7 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "var p *int;\n"
             "var q **int;\n"
-            "func f(a int *) int *;\n"
+            "func f(a *int) *int;\n"
             "func main() int {\n"
             "  p = &q;\n"
             "  return *p;\n"
@@ -252,7 +252,7 @@ int run_parser_tests() {
             "var a [4]int;\n"
             "var b [2]*int;\n"
             "var s [3]char;\n"
-            "func f(xs int[4], t char *) int;\n"
+            "func f(xs int[4], t *char) int;\n"
             "func main() int {\n"
             "  return \"hi\"[0];\n"
             "}\n");
@@ -303,7 +303,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "extern(abi=\"c\") func printf(fmt const char *, ...) int;\n"
+            "extern(abi=\"c\") func printf(fmt *const char, ...) int;\n"
             "func main() int {\n"
             "  printf(\"hi\\n\");\n"
             "  return 0;\n"
@@ -357,7 +357,7 @@ int run_parser_tests() {
             "  Blue,\n"
             "};\n"
             "typedef struct Point Point;\n"
-            "typedef int *Ptr;\n"
+            "typedef *int Ptr;\n"
             "typedef int Pair[2];\n"
             "var c enum Color;\n"
             "func main() int { return Blue; }\n");
@@ -508,8 +508,8 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "func main() int {\n"
             "  var n int;\n"
-            "  n = sizeof(int) + sizeof(int *) + sizeof n + sizeof(n);\n"
-            "  n = int(char*(void*(n)));\n"
+            "  n = sizeof(int) + sizeof(*int) + sizeof n + sizeof(n);\n"
+            "  n = int(*char(*void(n)));\n"
             "  return (n);\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
@@ -669,7 +669,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "func main() int {\n"
-            "  func id(p int *) int * {\n"
+            "  func id(p *int) *int {\n"
             "    return p;\n"
             "  }\n"
             "  return 0;\n"
@@ -778,7 +778,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "struct Box { v int; };\n"
-            "func Box::both(self *this, p math.Point *) (int, Box*, math.Point, ulong) {\n"
+            "func Box::both(self *this, p *math.Point) (int, *Box, math.Point, ulong) {\n"
             "  return self.v, self, p, 1;\n"
             "}\n"
             "func id(n int) (int) { return n; }\n"
@@ -894,6 +894,47 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source("func main() int { var arr **[4]i32; return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func old(p int *) int { return 0; }\n"
+            "typedef int *Name;\n"
+            "func main() int { return sizeof(int *); }\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  var n int;\n"
+            "  n = int*(n);\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "struct Point { x int; };\n"
+            "func main() int {\n"
+            "  var p Point;\n"
+            "  var q *Point = *Point(&p);\n"
+            "  return q.x;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(cast Point*");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func f() *int {\n"
+            "  var n int;\n"
+            "  return &n;\n"
+            "}\n"
+            "func main() int { return *f(); }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(return (* (call (name f))))");
     }
 
     return check.failed;

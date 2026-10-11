@@ -98,7 +98,7 @@ int run_abi_tests() {
                "extern(abi=\"c\") func mix_b(m Mix) int;\n"
                "extern(abi=\"c\") func make_one(a int) One;\n"
                "extern(abi=\"c\") func one_a(o One) int;\n"
-               "extern(abi=\"c\") func fill_pair(p Pair *, a int, b int) void;\n"
+               "extern(abi=\"c\") func fill_pair(p *Pair, a int, b int) void;\n"
                "extern(abi=\"c\") func call_add() int;\n"
                "extern(abi=\"c\") func call_make() int;\n"
                "extern(abi=\"c\") func make_f2(a f32, b f32) F2;\n"

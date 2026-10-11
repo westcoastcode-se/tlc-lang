@@ -4,6 +4,7 @@
 #include "diag.hpp"
 
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace tlc {
@@ -37,6 +38,8 @@ class Parser {
         int align = 0;
         bool is_const = false;
         bool saw_type = false;
+        // Stars in front of a typedef type: `typedef *int Ptr`.
+        int pointer_depth = 0;
     };
 
     struct Declarator {
@@ -115,6 +118,7 @@ class Parser {
     ArrayMark parse_array_suffix(bool allow_unsized);
     PlacedType parse_placed_type(bool allow_const, bool allow_array);
     // `var` and field types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
+    // A pointer is prefix in every other position too: `*int`, `*const char`.
     PlacedType parse_go_type();
     // `method_struct` is empty for a free function. A method receiver is `name this` or `name *this`.
     std::vector<Param> parse_params(bool allow_const, bool &variadic, const std::string &method_struct = {});
@@ -161,6 +165,10 @@ class Parser {
     std::unique_ptr<Expr> parse_short_function();
     bool starts_type_paren() const;
     bool starts_cast_type() const;
+    // `cast` is a cast or a parenthesized sizeof type. A qualified name is a
+    // sizeof type only. A bare name is a pointer cast only after it has been
+    // declared, so `*f()` stays a dereference.
+    bool skip_type_base(std::size_t &index, int leading, bool cast) const;
     struct ParenType {
         SourceLoc loc{};
         std::string name;
@@ -176,6 +184,9 @@ class Parser {
     void parse_import(TranslationUnit &unit);
     void parse_trait(TranslationUnit &unit);
     bool at_contextual(std::string_view spelling) const;
+
+    // Struct, enum, union, and typedef names seen in this file.
+    std::unordered_set<std::string> type_names_;
 };
 
 } // namespace tlc

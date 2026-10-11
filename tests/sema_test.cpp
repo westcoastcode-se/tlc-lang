@@ -376,7 +376,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "func add4(p int *) int {\n"
+            "func add4(p *int) int {\n"
             "  return p[0] + p[1] + p[2] + p[3];\n"
             "}\n"
             "func main() int {\n"
@@ -507,7 +507,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern(abi=\"c\") func printf(fmt const char *, ...) int;\n"
+            "extern(abi=\"c\") func printf(fmt *const char, ...) int;\n"
             "extern(abi=\"c\") var slot int;\n"
             "func main() int {\n"
             "  slot = 1;\n"
@@ -520,7 +520,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern(abi=\"c\") func printf(fmt const char *, ...) int;\n"
+            "extern(abi=\"c\") func printf(fmt *const char, ...) int;\n"
             "func main() int {\n"
             "  printf();\n"
             "  return 0;\n"
@@ -538,7 +538,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; y int; };\n"
-            "typedef Point *Ptr;\n"
+            "typedef *Point Ptr;\n"
             "typedef int Integer;\n"
             "typedef int Pair[2];\n"
             "func make(x int, y int) Point {\n"
@@ -865,7 +865,7 @@ int run_sema_tests() {
             "  n = sizeof(int);\n"
             "  n = sizeof n;\n"
             "  n = sizeof(n);\n"
-            "  n = sizeof(void *);\n"
+            "  n = sizeof(*void);\n"
             "  c = 0;\n"
             "  n = sizeof c;\n"
             "  return n;\n"
@@ -893,13 +893,13 @@ int run_sema_tests() {
             "  var v *void;\n"
             "  var p *int;\n"
             "  n = 42;\n"
-            "  c = char*(n);\n"
-            "  v = void*(c);\n"
+            "  c = *char(n);\n"
+            "  v = *void(c);\n"
             "  n = int(v);\n"
             "  p = &n;\n"
-            "  c = char*(p);\n"
-            "  v = void*(c);\n"
-            "  p = int*(v);\n"
+            "  c = *char(p);\n"
+            "  v = *void(c);\n"
+            "  p = *int(v);\n"
             "  return *p;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -923,7 +923,7 @@ int run_sema_tests() {
             "  var p *int;\n"
             "  var v *void;\n"
             "  v = 0;\n"
-            "  p = int*(v);\n"
+            "  p = *int(v);\n"
             "  return 0;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -946,7 +946,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "func id(p void *) void * { return p; }\n"
+            "func id(p *void) *void { return p; }\n"
             "func main() int {\n"
             "  var v *void;\n"
             "  v = 0;\n"
@@ -1049,7 +1049,7 @@ int run_sema_tests() {
             "  var p *int;\n"
             "  var n int;\n"
             "  n = 1;\n"
-            "  p = long*(n);\n"
+            "  p = *long(n);\n"
             "  return long(p);\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -1250,8 +1250,8 @@ int run_sema_tests() {
             "}\n"
             "func Box::area(self this) int { return self.n; }\n"
             "func Box::grow(self *this, n int) void { self.n = self.n + n; }\n"
-            "func measure(s Shape *) int { return s.area(); }\n"
-            "func apply(s Shape *, n int) int {\n"
+            "func measure(s *Shape) int { return s.area(); }\n"
+            "func apply(s *Shape, n int) int {\n"
             "  s.grow(n);\n"
             "  return measure(s);\n"
             "}\n"
@@ -1376,7 +1376,7 @@ int run_sema_tests() {
             "};\n"
             "struct Rect { w int; };\n"
             "func Rect::area(self this) int { return self.w; }\n"
-            "func apply(s Shape *) int { return s.area(); }\n"
+            "func apply(s *Shape) int { return s.area(); }\n"
             "func main() int {\n"
             "  var r Rect;\n"
             "  r.w = 1;\n"
@@ -1492,7 +1492,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose_files({
             {"math/a.tlc", "struct A { b *B; n int; };\n"
-"func take(b B *) int {\n"
+"func take(b *B) int {\n"
 "  var a A;\n"
 "  a.n = 2;\n"
 "  a.b = b;\n"
@@ -1892,7 +1892,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern(abi=\"c\") func printf(fmt const char *, ...) int;\n"
+            "extern(abi=\"c\") func printf(fmt *const char, ...) int;\n"
             "func main() int {\n"
             "  defer printf(\"hi\");\n"
             "  return 0;\n"
@@ -2012,7 +2012,7 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("extern func printf(fmt char *, ...) int;\nfunc main() int { return 0; }\n");
+        const std::string errors = diagnose("extern func printf(fmt *char, ...) int;\nfunc main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
@@ -2092,9 +2092,9 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "func bad() (int *, int) { return 1, 2; }\n"
+            "func bad() (*int, int) { return 1, 2; }\n"
             "func main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "return type: expected int*, found int");
+        EXPECT_HAS(check, errors, "return type: expected *int, found int");
     }
 
     {
@@ -2102,7 +2102,7 @@ int run_sema_tests() {
             "struct Point { x int; y int; };\n"
             "func id(n int) (int) { return n; }\n"
             "func trail(n int) (int,) { return n; }\n"
-            "func tri(n int) (int, int *, Point) {\n"
+            "func tri(n int) (int, *int, Point) {\n"
             "  var p Point;\n"
             "  p.x = n;\n"
             "  p.y = n;\n"
@@ -2231,7 +2231,7 @@ int run_sema_tests() {
             "  p, n = add(1, 2);\n"
             "  return n;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch: expected int*, found int");
+        EXPECT_HAS(check, errors, "type mismatch: expected *int, found int");
     }
 
     {
@@ -2357,7 +2357,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() int {\n"
             "  func pair(n int) (int, int);\n"
-            "  func pair(n int) (int, int *) { return n, nullptr; }\n"
+            "  func pair(n int) (int, *int) { return n, nullptr; }\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "redefinition");
@@ -2577,7 +2577,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "func take(p i64 *) int { return *p != 0; }\n"
+            "func take(p *i64) int { return *p != 0; }\n"
             "func main() int {\n"
             "  var n i64 = 1;\n"
             "  var b u8 = 1;\n"
@@ -2589,7 +2589,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "func take(p long *) int { return 0; }\n"
+            "func take(p *long) int { return 0; }\n"
             "func main() int {\n"
             "  var n i64 = 1;\n"
             "  return take(&n);\n"

@@ -1,4 +1,4 @@
-func read32(p i32 *) int {
+func read32(p *i32) int {
     return *p;
 }
 

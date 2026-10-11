@@ -110,12 +110,4 @@ inline std::string canonical_int(const IntSpecs &specs) {
     return "int";
 }
 
-inline bool is_builtin_type_name(const std::string &name) {
-    return name.empty() || name == "invalid" || name == "void" || name == "bool" || name == "char" ||
-           name == "short" || name == "int" || name == "uint" || name == "long" || name == "ulong" ||
-           name == "float" || name == "double" || name == "f32" ||
-           name == "f64" || name == "i8" || name == "i16" || name == "i32" || name == "i64" || name == "u8" ||
-           name == "u16" || name == "u32" || name == "u64";
-}
-
 } // namespace tlc

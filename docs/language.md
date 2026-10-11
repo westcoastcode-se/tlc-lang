@@ -128,7 +128,7 @@ File-scope `static` keeps the symbol private to that file. A `static` local is r
 `extern` and `extern(abi="tlc")` name a symbol from a tlc library. The symbol is `qualifier.name`, and the calling convention is the compiler's own, so the function may return several results. `extern(abi="c")` names a symbol from a C library, and only then. It keeps the C name and the C calling convention. It returns one result, the same as a C function. Linking a program that uses `extern(abi="c")` requires a C library on the link line: `-l`, or a library file such as `libfoo.a`. `--check` and `--emit-*` do not link, so they accept the declaration. Without that library the link step reports `extern(abi="c") requires a C library`. Its parameters and its result cannot include a function pointer that returns several results. A struct used by an `extern(abi="c")` function, by value or through a pointer, must itself be `extern(abi="c")`. That includes a struct nested inside it. An `extern(abi="c") struct` uses the platform C memory layout, so its fields line up with a static or shared library. `bool` in that struct is one byte. On this host a struct of at most 16 bytes is passed in registers, and a larger struct is passed as a pointer. A function that is not `extern(abi="c")` keeps the compiler's own convention for struct values. That is how a program calls a C library:
 
 ```c
-extern(abi="c") func printf(fmt const char *, ...) int;
+extern(abi="c") func printf(fmt *const char, ...) int;
 
 func main() int {
     printf("hi\n");
@@ -154,7 +154,7 @@ Integers on `x86_64-pc-linux-gnu` follow LP64. `long` and `i64` are both 64 bits
 
 `signed` and `unsigned` are not keywords. `long long` is `type mismatch`. Write `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `short int` is `short`. `long int` is `long`. Contradictory specifiers are `type mismatch`.
 
-`char`, `i8`, and `u8` are three types. They are assignment-compatible. `int *` and `uint *` are different types.
+`char`, `i8`, and `u8` are three types. They are assignment-compatible. `*int` and `*uint` are different types.
 
 `i8` and `u8` are the 8-bit integers. `i16` is `short` and `u16` is its unsigned counterpart. `i32` is `int` and `u32` is `uint`. `i64` and `u64` are the other 64-bit integers. `ulong` is 64 bits and a different type from `u64`. `long` stays a different 64-bit type from `i64`. `char` stays different from `i8`.
 
@@ -233,7 +233,7 @@ An integer literal `0` may be assigned to a pointer, and the pointer becomes nul
 
 A condition in `if`, `while`, `do`, and `for` is an integer after promotion. A pointer used as a condition is `type mismatch`. `switch` requires exactly `int`.
 
-A cast is the type name followed by the value in parentheses: `i32(n)`, `int(n)`, `char*(bits)`, `void*(p)`. A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `nullptr` can be cast to a pointer. `long(p)`, `uint(p)`, and `int(nullptr)` are `type mismatch`. A cast to `void` is rejected.
+A cast is the type followed by the value in parentheses: `i32(n)`, `int(n)`, `*char(bits)`, `*void(p)`, `*Point(p)`. A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `nullptr` can be cast to a pointer. `long(p)`, `uint(p)`, and `int(nullptr)` are `type mismatch`. `int*(p)` is `type mismatch`. A cast to `void` is rejected. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type.
 
 Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
@@ -293,7 +293,7 @@ A variable is `var name type`, `var name = expr`, or `name := expr`. `int value 
 
 At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `var a, b = expr` at file scope is `not supported yet`. `export`, `static`, `extern`, and `extern(abi="c")` go on a typed `var`: `export var n int = 1`, `static var n = 1`, `extern var slot int`, `extern(abi="c") var slot int`. `export` or `extern` on an inferred `var name = expr` or `name := expr` is `not supported yet`.
 
-Several results are still bound together: `var a, b = call`. A local struct, enum, or typedef is rejected. Fields, parameters, typedefs, and return types keep their own syntax.
+Several results are still bound together: `var a, b = call`. A local struct, enum, or typedef is rejected. A pointer is a leading star in every position, including a parameter, a result, a typedef, a cast, and `sizeof`: `*int`, `*const char`, `typedef *Point Ptr`, `sizeof(*int)`, `*int(value)`. A parameter or typedef array stays after the element type: `int[4]`, `typedef int Pair[2]`.
 
 A global with no initializer is zero. An array cannot be initialized with `=`.
 
@@ -385,7 +385,7 @@ return dosomething((arg1, arg2) { return arg1 + arg2; });
 
 ## Structs, pointers, and arrays
 
-A struct definition uses the `struct` keyword. Variables, parameters, return types, and fields then use the bare tag. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next *Node`, `raw [8]char`. A pointer to an array is `not supported yet` as a field. The semicolon after `}` may be omitted. A field still ends with `;`.
+A struct definition uses the `struct` keyword. Variables, parameters, return types, and fields then use the bare tag. A pointer is written `*Point` and `*int`, not `Point *` or `int *`, in a parameter, a result, and every other type position. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next *Node`, `raw [8]char`. A pointer to an array is `not supported yet` as a field. The semicolon after `}` may be omitted. A field still ends with `;`.
 
 ```c
 struct Point {
@@ -441,7 +441,7 @@ extern(abi="c") struct Pair {
 extern(abi="c") struct SDL_Window {}
 
 extern(abi="c") func make_pair(a int, b int) Pair;
-extern(abi="c") func SDL_DestroyWindow(window SDL_Window *) void;
+extern(abi="c") func SDL_DestroyWindow(window *SDL_Window) void;
 ```
 
 A plain struct in an `extern(abi="c")` function is `struct must be extern(abi="c")`.
@@ -462,12 +462,12 @@ extern(abi="c") union Word {
 
 `Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory.
 
-Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `Point **` and `int *` are left as they are, and the access is `type mismatch`. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
+Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `**Point` and `*int` are left as they are, and the access is `type mismatch`. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
 
 An array length is a positive decimal `int` literal.
 
 ```c
-func add4(p int *) int {
+func add4(p *int) int {
     return p[0] + p[1] + p[2] + p[3];
 }
 
@@ -481,7 +481,7 @@ func main() int {
 }
 ```
 
-The array becomes a pointer when it is passed. A string is an array of `char` and can be passed to `char *`. The index has type `int`. Multidimensional arrays are rejected.
+The array becomes a pointer when it is passed. A string is an array of `char` and can be passed to `*char`. The index has type `int`. Multidimensional arrays are rejected.
 
 An exported struct is named with the package and without the `struct` keyword:
 
@@ -541,7 +541,7 @@ func main() int {
 }
 ```
 
-`add` takes a pointer, so `p` must be an lvalue. The compiler passes `&p`. `sum` takes a value. A call on a `Point *` loads the struct. A pointer method on a temporary struct value is `not an lvalue`.
+`add` takes a pointer, so `p` must be an lvalue. The compiler passes `&p`. `sum` takes a value. A call on a `*Point` loads the struct. A pointer method on a temporary struct value is `not an lvalue`.
 
 The receiver may have one star. `self **this` is rejected.
 
@@ -573,11 +573,11 @@ func Rect::grow(self *this, n int) void {
     self.h = self.h + n;
 }
 
-func measure(s Shape *) int {
+func measure(s *Shape) int {
     return s.area();
 }
 
-func apply(s Shape *, n int) int {
+func apply(s *Shape, n int) int {
     s.grow(n);
     return measure(s);
 }
@@ -595,13 +595,13 @@ func main() int {
 There is no `impl` keyword. A struct satisfies a trait by defining the methods, with the same return type and the same parameters after the receiver. The check happens where a concrete struct value or a concrete pointer is passed to a trait parameter.
 
 - `s Shape` requires every method to have a value receiver.
-- `s Shape *` accepts both value receivers and pointer receivers.
+- `s *Shape` accepts both value receivers and pointer receivers.
 - A pointer method passed as a value is `type mismatch`.
 - A missing method is `undeclared identifier`.
 - A wrong return type or wrong extra parameters are `type mismatch`.
-- The address is not taken automatically. `apply(r)` is `type mismatch` when the parameter is `Shape *`. The call is `apply(&r)`.
+- The address is not taken automatically. `apply(r)` is `type mismatch` when the parameter is `*Shape`. The call is `apply(&r)`.
 
-A trait type is allowed only as a function parameter, either `Shape` or `Shape *`. A local, a global, a return type, an array, a typedef, and `sizeof` of a trait are rejected. `Shape **` is rejected.
+A trait type is allowed only as a function parameter, either `Shape` or `*Shape`. A local, a global, a return type, an array, a typedef, and `sizeof` of a trait are rejected. `**Shape` is rejected.
 
 The function is monomorphized. Each struct that is passed in gets its own copy, and the call `s.area()` becomes a direct call of that struct's method. Passing the same trait onward, as `measure(s)` inside `apply`, is not checked again.
 
@@ -681,7 +681,7 @@ func Color::code(self this) int {
 `value.code()` passes `value`. The method is visible in the package and is not exported.
 
 ```c
-typedef Point *Ptr;
+typedef *Point Ptr;
 typedef int Integer;
 typedef int Pair[2];
 ```

@@ -867,13 +867,24 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     type = spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
                                         node.loc);
                 } else if (node.expr) {
-                    const auto *named = std::get_if<Expr::Name>(&node.expr->data);
+                    int stars = 0;
+                    const Expr *cursor = node.expr.get();
+                    while (cursor != nullptr) {
+                        const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
+                        if (unary == nullptr || unary->op != TokenKind::Star || unary->expr == nullptr) {
+                            break;
+                        }
+                        ++stars;
+                        cursor = unary->expr.get();
+                    }
+                    const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                     Type ignored;
                     const bool alias = named != nullptr && package_typedef(file_id_, named->text, ignored);
                     const bool tag = named != nullptr && find_tag(file_id_, named->text) >= 0;
                     const bool enumeration = named != nullptr && find_enum(file_id_, named->text) >= 0;
                     if (named != nullptr && lookup(named->text) == nullptr && (alias || tag || enumeration)) {
-                        type = type_of_name(named->text, node.loc, false);
+                        // `sizeof(Point)` and `sizeof(*Point)` when the name is a type.
+                        type = with_indirections(type_of_name(named->text, node.loc, stars > 0), stars, node.loc);
                     } else {
                         type = check_raw(*node.expr, true);
                     }

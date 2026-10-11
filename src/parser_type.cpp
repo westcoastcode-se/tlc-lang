@@ -44,6 +44,13 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             ++pos_;
             continue;
         }
+        // `typedef *int Ptr`. A star after the type is the old declarator form.
+        if (specs.is_typedef && !specs.saw_type && !ints.any && !saw_void && !saw_bool && !saw_float &&
+            token.kind == TokenKind::Star) {
+            ++specs.pointer_depth;
+            ++pos_;
+            continue;
+        }
         if (token.kind == TokenKind::KwVoid) {
             if (ints.any || saw_bool) {
                 ints.bad = true;
@@ -203,6 +210,9 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
     }
     if (specs.exported && specs.is_static) {
         diags_.error(specs.loc, "export static");
+    }
+    if (!specs.type_name.empty() && specs.type_name != "invalid") {
+        type_names_.insert(specs.type_name);
     }
     return specs;
 }
@@ -576,7 +586,31 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     if (at_func_type()) {
         return parse_func_type();
     }
+    // Pointers are prefix: `*int`, `*Point`, `*pkg.Point`, `*const char`, `**int`.
+    auto pointer_prefix = [&]() {
+        if (peek().kind != TokenKind::Star) {
+            return false;
+        }
+        std::size_t ahead = 0;
+        while (peek(ahead).kind == TokenKind::Star) {
+            ++ahead;
+        }
+        const Token &next = peek(ahead);
+        if (is_int_spec(next.kind) || next.kind == TokenKind::KwVoid || next.kind == TokenKind::KwBool ||
+            next.kind == TokenKind::KwFloat || next.kind == TokenKind::KwDouble || next.kind == TokenKind::KwConst ||
+            next.kind == TokenKind::KwStruct || next.kind == TokenKind::KwEnum || next.kind == TokenKind::KwUnion) {
+            return true;
+        }
+        return next.kind == TokenKind::Identifier;
+    };
     PlacedType type;
+    int leading = 0;
+    if (pointer_prefix()) {
+        type.loc = peek().loc;
+        while (eat(TokenKind::Star)) {
+            ++leading;
+        }
+    }
     const Specifiers specs = parse_specifiers(false, allow_const, true);
     type.loc = specs.loc;
     type.type_name = specs.type_name;
@@ -586,14 +620,10 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     type.is_const = specs.is_const;
     type.struct_definition = specs.struct_definition;
     type.enum_definition = specs.enum_definition;
-    int stars = 0;
-    while (check(TokenKind::Star)) {
-        ++stars;
-        ++pos_;
-    }
     if (check(TokenKind::LParen) && peek(1).kind == TokenKind::Star) {
+        // `*int (*fp)(int)`. The stars belong to the return type.
         type.is_fn_ptr = true;
-        type.ret_indirections = stars;
+        type.ret_indirections = leading;
         std::string name;
         SourceLoc name_loc;
         parse_fn_pointer(type.indirections, name, name_loc, type.fn_params, type.fn_variadic);
@@ -602,7 +632,12 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
         }
         return type;
     }
-    type.indirections = stars;
+    if (check(TokenKind::Star)) {
+        diags_.error(peek().loc, "type mismatch");
+        while (eat(TokenKind::Star)) {
+        }
+    }
+    type.indirections = leading;
     if (check(TokenKind::LBracket)) {
         if (!allow_array) {
             error_here("not supported yet");

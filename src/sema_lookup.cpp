@@ -1349,7 +1349,7 @@ std::string Checker::type_desc(const Type &type) const {
         return type.is_unsigned ? "uint" : "int";
     }
     case TypeKind::Pointer:
-        return type_desc(type.pointee ? *type.pointee : type_invalid()) + "*";
+        return "*" + type_desc(type.pointee ? *type.pointee : type_invalid());
     case TypeKind::Array:
         return type_desc(type.element ? *type.element : type_invalid()) + "[" + std::to_string(type.length) + "]";
     case TypeKind::Struct:

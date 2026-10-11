@@ -3,7 +3,7 @@ struct Point {
     y int;
 };
 
-typedef Point *Ptr;
+typedef *Point Ptr;
 typedef int Integer;
 typedef int Pair[2];
 

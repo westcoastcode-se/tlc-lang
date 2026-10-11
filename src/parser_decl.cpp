@@ -217,14 +217,25 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             item.type_package = specs.type_package;
             item.is_struct = specs.is_struct;
             item.is_enum = specs.is_enum;
-            item.indirections = decl.indirections;
+            // `typedef *int Ptr`. A star on the name is the old form.
+            if (decl.is_fn_ptr) {
+                item.indirections = decl.indirections;
+                item.ret_indirections = decl.ret_indirections + specs.pointer_depth;
+            } else {
+                if (decl.indirections > 0) {
+                    diags_.error(decl.loc.valid() ? decl.loc : specs.loc, "type mismatch");
+                }
+                item.indirections = specs.pointer_depth;
+            }
             item.is_array = decl.is_array;
             item.array_len = decl.array_len;
             item.is_fn_ptr = decl.is_fn_ptr;
-            item.ret_indirections = decl.ret_indirections;
             item.fn_params = decl.fn_params;
             item.fn_variadic = decl.fn_variadic;
             item.exported = specs.exported;
+            if (!item.name.empty()) {
+                type_names_.insert(item.name);
+            }
             TopDecl top;
             top.data = std::move(item);
             unit.decls.push_back(std::move(top));

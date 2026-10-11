@@ -1,4 +1,4 @@
-extern(abi="c") func printf(fmt const char *, ...) int;
+extern(abi="c") func printf(fmt *const char, ...) int;
 extern(abi="c") var slot int;
 
 func main() int {

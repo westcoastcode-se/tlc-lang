@@ -89,8 +89,8 @@ struct-decl = "struct" [ align ] identifier "{" { field } "}" [ ";" ] ;
 align       = "(" "align" "=" integer-literal ")" ;
 union-decl  = "extern" "(" "abi" "=" "\"c\"" ")" "union" identifier "{" field { field } "}" [ ";" ] ;
 field       = identifier go-type ";" ;
-declarator  = { "*" } identifier [ array ]
-            | { "*" } "(" "*" { "*" } identifier ")" "(" [ func-args ] ")" ;
+declarator  = identifier [ array ]
+            | "(" "*" { "*" } identifier ")" "(" [ func-args ] ")" ;
 
 enum-decl   = "enum" identifier [ underlying ] "{" [ enumerators ] "}" [ ";" ] ;
 underlying  = integer-name | "bool" | "char" | "short" | "int" | "long" ;
@@ -114,7 +114,7 @@ A trait method has no body and no receiver.
 
 ## Types
 
-Two orders are in use. A `var` type and a field type are Go order. A parameter, result, typedef, cast, and `sizeof` type is postfix.
+A pointer is a leading star in every type position: `*int`, `*Point`, `*pkg.Point`, `*const char`, `typedef *int Name`, `sizeof(*int)`, and `*int(expr)`. `int *`, `Point *`, `typedef int *Name`, `sizeof(int *)`, and `int*(expr)` are `type mismatch`. A `var` or a field writes an array in front of its element type. A parameter or a typedef keeps the array after the element type: `int[4]`, `typedef int Pair[2]`.
 
 ```ebnf
 go-type     = func-type
@@ -122,8 +122,7 @@ go-type     = func-type
             | { "*" } "[" integer-literal "]" { "*" } base-type ;
 
 placed-type = func-type
-            | base-type { "*" } [ array ]
-            | "const" base-type { "*" } ;
+            | { "*" } [ "const" ] base-type [ array ] ;
 
 array       = "[" [ integer-literal ] "]" ;
 
@@ -152,7 +151,7 @@ One `*` before `[` is a pointer to an array, as in `*[4]i32`. Two stars there, a
 
 `signed`, `unsigned`, and `long long` are not type names.
 
-A C declarator still parses in postfix position: stars before the name, `[` `]` after the name, and `(* name)(` parameters `)` for a function pointer. A new variable is not written that way. `int value = 1` is `expected var`.
+A parameter array and a typedef array stay after the element type. A star before a typedef name, as in `typedef int *Name`, is `type mismatch`. The function-pointer declarator `type (*name)(` parameters `)` still parses. A new variable is not written as a C declarator. `int value = 1` is `expected var`.
 
 ## Statements
 
@@ -222,12 +221,13 @@ primary     = identifier
 
 anonymous   = "func" "(" [ parameters ] ")" [ result ] block ;
 short-function = "(" [ name-list ] ")" block ;
-cast        = scalar-type { "*" } "(" expression ")"
-            | ( identifier | "struct" identifier | "enum" identifier ) "*" { "*" } "(" expression ")" ;
+cast        = { "*" } scalar-type "(" expression ")"
+            | { "*" } ( "struct" identifier | "enum" identifier ) "(" expression ")"
+            | "*" { "*" } identifier "(" expression ")" ;
 scalar-type = integer-type | "void" | "bool" | "float" | "double" | integer-name | float-name ;
 ```
 
-An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast is a scalar type, or a name with at least one `*`, followed by `(`, as in `i32(n)` or `int*(p)`. `Point(x)` is a call. `sizeof` of a parenthesized type is `sizeof "(" scalar-type { "*" } ")"`, or the same with `struct` or `enum` before the name. `sizeof` of a value is `sizeof` followed by a unary expression.
+An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)` or `*int(p)`. A pointer cast of a declared struct, enum, or typedef is `*Point(p)`. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof "(" { "*" } scalar-type ")"`, or the same with `struct` or `enum` before the name. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
 
 ## Tokens
 

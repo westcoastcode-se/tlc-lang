@@ -1,4 +1,4 @@
-func len(s char *) int {
+func len(s *char) int {
     var n int = 0;
     while (s[n] != 0) {
         n = n + 1;

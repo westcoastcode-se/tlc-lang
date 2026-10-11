@@ -61,11 +61,11 @@ func narrow() (short, char, bool) {
     return -2, 200, 4;
 }
 
-func pick(p int *) (int *, int) {
+func pick(p *int) (*int, int) {
     return p, 7;
 }
 
-func none() (int *, int) {
+func none() (*int, int) {
     return nullptr, 3;
 }
 
