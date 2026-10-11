@@ -368,6 +368,18 @@ int Checker::find_enum(uint32_t file, const std::string &name) const {
 
 bool Checker::package_has_enum(uint32_t file, const std::string &name) const { return find_enum(file, name) >= 0; }
 
+uint32_t Checker::defined_in(const std::string &name) const {
+    const int struct_id = find_tag(file_id_, name);
+    if (struct_id >= 0 && struct_id < static_cast<int>(structs_.size())) {
+        return structs_[static_cast<std::size_t>(struct_id)].file_id;
+    }
+    const int enum_id = find_enum(file_id_, name);
+    if (enum_id >= 0 && enum_id < static_cast<int>(enum_types_.size())) {
+        return enum_types_[static_cast<std::size_t>(enum_id)].file_id;
+    }
+    return file_id_;
+}
+
 bool Checker::is_c_enum(const Type &type) const {
     return type.kind == TypeKind::Enum && type.enum_id >= 0 && type.enum_id < static_cast<int>(enum_types_.size()) &&
            enum_types_[static_cast<std::size_t>(type.enum_id)].is_extern;
@@ -823,6 +835,7 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         const int id = static_cast<int>(structs_.size());
         StructInfo created;
         created.name = item->name;
+        created.file_id = file_id;
         created.is_extern = item->is_extern;
         created.extern_c = item->extern_c;
         created.align = item->align;
@@ -1045,6 +1058,7 @@ void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
         const int id = static_cast<int>(enum_types_.size());
         EnumInfo info;
         info.name = item->name;
+        info.file_id = file_id;
         info.underlying = underlying;
         info.is_extern = item->extern_c;
         int64_t next = 0;

@@ -77,6 +77,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 if (!receiver_ok) {
                     error(fn->loc, "type mismatch");
                 }
+                // The method is written beside its struct or enum. Other files in the package can still call it.
+                if (defined_in(fn->method_struct) != file_id_) {
+                    error(fn->loc, "method in another file");
+                    continue;
+                }
                 auto &table = methods_[file_id_][fn->method_struct];
                 const auto found = table.find(fn->name);
                 if (found != table.end()) {

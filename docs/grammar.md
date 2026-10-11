@@ -54,6 +54,8 @@ A function with no body is a prototype and ends with `;`. A body replaces that s
 
 A method's first parameter is the receiver, written `name this` or `name *this`. `this` stands for the method's struct or enum, so a pointer is `*this`. `self **this` is `not supported yet`. `this` is an ordinary identifier everywhere else.
 
+The method is written in the same file as that struct or enum. A method in another file is `method in another file`. Every file in the package can call it.
+
 An inner function uses the same `function` form inside a block. It has a body, and it is not `export`, `static`, `extern`, or a method.
 
 ## Variables

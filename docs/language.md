@@ -101,7 +101,7 @@ A file named `link` in the package adds more linker arguments after those librar
 
 An import cycle produces `circular import` followed by the qualifiers, for example `a -> b -> a`. The same package may be imported from several files and is loaded once.
 
-Inside a package, a name that is not `static` is visible from every file in the directory. The same non-static name in two files is `redefinition`. `static` stays private to its file, so two files may each declare `static` with the same name.
+Inside a package, every file can use what the other files in the directory declare. A name that is not `static` is visible from every file. The same non-static name in two files is `redefinition`. `static` stays private to its file, so two files may each declare `static` with the same name. A method is written in the file that defines its struct or enum, and the other files can call it.
 
 ## Visibility
 
@@ -513,7 +513,7 @@ Inside the package the type is written `Point`. `import { Point } from "geom"` m
 
 ## Methods
 
-A method belongs to a struct or an enum in the same package. The first parameter is the receiver. It is the name, then `this`: `self this`. `this` stands for that struct or enum. A pointer receiver is `self *this`, the same order as `*Point`. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value.
+A method belongs to a struct or an enum, and it is written in the same file as that type. A method in any other file is `method in another file`. The first parameter is the receiver. It is the name, then `this`: `self this`. `this` stands for that struct or enum. A pointer receiver is `self *this`, the same order as `*Point`. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value.
 
 The call omits the receiver. This program returns 42.
 
@@ -547,7 +547,7 @@ The receiver may have one star. `self **this` is rejected.
 
 The same method name may exist on different structs and as a free function. The call `p.sum(...)` selects the struct's method. A free call `sum(...)` selects the function.
 
-A method is visible from every file in its package. It is not exported, so another package cannot call it. `export` on a method is `not supported yet`. `Point::sum(p, 1)` is not a call.
+Every file in the package can call the method. It is not exported, so another package cannot call it. `export` on a method is `not supported yet`. `Point::sum(p, 1)` is not a call.
 
 ## Traits
 
@@ -678,7 +678,7 @@ func Color::code(self this) int {
 }
 ```
 
-`value.code()` passes `value`. The method is visible in the package and is not exported.
+`value.code()` passes `value`. The method is written in the same file as `enum Color`. Every file in the package can call it, and it is not exported.
 
 ```c
 typedef *Point Ptr;

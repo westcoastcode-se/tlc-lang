@@ -1655,6 +1655,48 @@ int run_sema_tests() {
     }
 
     {
+        const std::string errors = diagnose_files({
+            {"math/point.tlc", "package math;\n"
+                               "struct Point { x int; y int; };\n"
+                               "func Point::sum(self this) int { return self.x + self.y; }\n"},
+            {"math/use.tlc", "package math;\n"
+                             "export func total() int {\n"
+                             "  var p Point;\n"
+                             "  p.x = 40;\n"
+                             "  p.y = 2;\n"
+                             "  return p.sum();\n"
+                             "}\n"},
+        });
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"math/point.tlc", "package math;\nstruct Point { x int; };\n"},
+            {"math/sum.tlc", "package math;\nfunc Point::sum(self this) int { return self.x; }\n"},
+        });
+        EXPECT_HAS(check, errors, "method in another file");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"math/color.tlc", "package math;\nenum Color { Red, Blue, };\n"},
+            {"math/code.tlc", "package math;\nfunc Color::code(self this) int { return 0; }\n"},
+        });
+        EXPECT_HAS(check, errors, "method in another file");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import { Point } from \"geom\";\n"
+                         "func Point::sum(self this) int { return self.x; }\n"
+                         "func main() int { return 0; }\n"},
+            {"geom/point.tlc", "package geom;\nexport struct Point { x int; };\n"},
+        });
+        EXPECT_HAS(check, errors, "method in another file");
+    }
+
+    {
         const std::string errors = diagnose(
             "func main() int {\n"
             "  func f(x int) int { return x; }\n"

@@ -55,6 +55,8 @@ class Checker {
     std::unordered_map<uint32_t, std::unordered_map<std::string, Symbol>> exports_;
     struct StructInfo {
         std::string name;
+        // File that wrote the struct. A method on it belongs in this file.
+        uint32_t file_id = 0;
         bool complete = false;
         struct Field {
             std::string name;
@@ -90,6 +92,8 @@ class Checker {
     std::unordered_map<uint32_t, std::unordered_map<std::string, Type>> typedefs_;
     struct EnumInfo {
         std::string name;
+        // File that wrote the enum. A method on it belongs in this file.
+        uint32_t file_id = 0;
         Type underlying;
         bool is_extern = false;
         struct Member {
@@ -137,6 +141,8 @@ class Checker {
     std::vector<uint32_t> files_in_package(uint32_t file_id) const;
     int find_tag(uint32_t file, const std::string &name) const;
     int find_enum(uint32_t file, const std::string &name) const;
+    // File that defines this struct or enum. The current file when the type is missing.
+    uint32_t defined_in(const std::string &name) const;
     bool package_has_enum(uint32_t file, const std::string &name) const;
     bool is_c_enum(const Type &type) const;
     const EnumInfo::Member *find_enum_member(int enum_id, const std::string &name) const;

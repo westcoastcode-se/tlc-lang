@@ -2,9 +2,6 @@ package math;
 
 struct Point { x int; y int; };
 
-export func total() int {
-    var p Point;
-    p.x = 40;
-    p.y = 2;
-    return p.sum();
+func Point::sum(self this) int {
+    return self.x + self.y;
 }

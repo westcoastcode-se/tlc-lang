@@ -1,5 +1,8 @@
 package math;
 
-func Point::sum(self this) int {
-    return self.x + self.y;
+export func total() int {
+    var p Point;
+    p.x = 40;
+    p.y = 2;
+    return p.sum();
 }
