@@ -3,7 +3,7 @@ type Vec[T type] struct {
     len int;
 };
 
-func Vec::get(self *this, i int) T {
+func Vec[T]::get(self *this, i int) T {
     return self.data[i];
 }
 

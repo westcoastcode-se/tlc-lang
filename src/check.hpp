@@ -317,6 +317,8 @@ class Checker {
     void check_isolated(uint32_t file, const FunctionDecl &fn);
     void queue_spec(uint32_t file, FunctionDecl fn);
     bool generic_struct_name(uint32_t file, const std::string &name) const;
+    // `func Vec[T]::get` must name the struct's parameters. A list on a plain struct is rejected.
+    void require_method_params(const FunctionDecl &fn);
 };
 
 } // namespace tlc

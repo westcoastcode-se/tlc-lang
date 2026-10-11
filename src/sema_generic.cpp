@@ -229,6 +229,34 @@ const StructDecl *Checker::find_struct_template(const std::string &name, uint32_
     return nullptr;
 }
 
+void Checker::require_method_params(const FunctionDecl &fn) {
+    uint32_t owner = file_id_;
+    const StructDecl *templ = find_struct_template(fn.method_struct, owner);
+    if (templ == nullptr) {
+        if (!fn.method_params.empty()) {
+            error(fn.loc, "type mismatch");
+        }
+        return;
+    }
+    if (owner != file_id_) {
+        error(fn.loc, "method in another file");
+    }
+    if (fn.method_params.empty()) {
+        error(fn.loc, "type mismatch");
+        return;
+    }
+    if (fn.method_params.size() != templ->type_params.size()) {
+        error(fn.loc, "argument count");
+        return;
+    }
+    for (std::size_t i = 0; i < fn.method_params.size(); ++i) {
+        if (fn.method_params[i] != templ->type_params[i].name) {
+            error(fn.loc, "type mismatch");
+            return;
+        }
+    }
+}
+
 bool Checker::generic_struct_name(uint32_t file, const std::string &name) const {
     for (const uint32_t id : files_in_package(file)) {
         const auto found = struct_templates_.find(id);

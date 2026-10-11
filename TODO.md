@@ -10,7 +10,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 
 - A generic used as a value: `var f = id`.
 - `extern` on a generic, a generic with no body, and a variadic generic.
-- A type-parameter list on a method: `func Vec::get[T type]`. The method uses the struct's parameters.
+- A type-parameter list after the method name: `func Vec[T]::get[U type]`. `func Vec[T]::get` names the struct's parameters.
 - Type parameters on an alias, an enum, a trait, or a union. Only `type Name[T type] struct` takes the list.
 - A qualified type application: `pkg.Vec[int]`.
 - A qualified trait constraint: `T pkg.Shape`.

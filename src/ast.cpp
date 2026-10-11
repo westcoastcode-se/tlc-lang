@@ -346,6 +346,16 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
         out += "(fn ";
         if (!fn.method_struct.empty()) {
             out += fn.method_struct;
+            if (!fn.method_params.empty()) {
+                out += '[';
+                for (std::size_t i = 0; i < fn.method_params.size(); ++i) {
+                    if (i != 0) {
+                        out += ", ";
+                    }
+                    out += fn.method_params[i];
+                }
+                out += ']';
+            }
             out += "::";
         }
         out += fn.name;
@@ -898,6 +908,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.extern_c = fn.extern_c;
     copy.variadic = fn.variadic;
     copy.method_struct = fn.method_struct;
+    copy.method_params = fn.method_params;
     copy.type_params = fn.type_params;
     copy.inferred = fn.inferred;
     copy.elaborated = fn.elaborated;

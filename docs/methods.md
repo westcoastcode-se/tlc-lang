@@ -34,6 +34,8 @@ func main() int {
 
 The receiver may have one star. `self **this` is rejected.
 
+A method on a generic struct names that struct's parameters. `func Vec[T]::get(self *this, i int) T` is the method on `type Vec[T type] struct`. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. The names match the struct, in the same order. Leaving the list out is `type mismatch`. A different name is `type mismatch`. The wrong count is `argument count`. `func Vec[T type]::get` is `type mismatch`. A list after the method name, `func Vec::get[T type]`, is `not supported yet`. A struct that is not generic keeps `func Point::sum`. `func Point[T]::sum` is `type mismatch`.
+
 The same method name may exist on different structs and as a free function. The call `p.sum(...)` selects the struct's method. A free call `sum(...)` selects the function.
 
 Every file in the package can call the method. It is not exported, so another package cannot call it. `export` on a method is `not supported yet`. `Point::sum(p, 1)` is not a call.

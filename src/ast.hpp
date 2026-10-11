@@ -452,6 +452,8 @@ struct FunctionDecl {
     bool extern_c = false;
     bool variadic = false;
     std::string method_struct;
+    // Names written in `func Vec[T]::get`. Empty for `func Point::sum`.
+    std::vector<std::string> method_params;
     std::vector<TypeParam> type_params;
     // `(a, b) { ... }` takes its parameter and result types from the expected function pointer.
     bool inferred = false;

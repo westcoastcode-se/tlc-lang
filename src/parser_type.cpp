@@ -904,7 +904,19 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         fn.name = peek().text;
         fn.loc = peek().loc;
         ++pos_;
-        if (check(TokenKind::ColonColon)) {
+        if (bracket_then_colon_colon()) {
+            fn.method_params = parse_method_params();
+            fn.method_struct = fn.name;
+            expect(TokenKind::ColonColon, "expected '::'");
+            if (check(TokenKind::Identifier)) {
+                fn.name = peek().text;
+                fn.loc = peek().loc;
+                ++pos_;
+            } else {
+                fn.name.clear();
+                error_here("expected an identifier");
+            }
+        } else if (check(TokenKind::ColonColon)) {
             ++pos_;
             fn.method_struct = fn.name;
             if (check(TokenKind::Identifier)) {
@@ -1143,6 +1155,68 @@ bool Parser::looks_like_type_params() const {
         }
     }
     return false;
+}
+
+bool Parser::bracket_then_colon_colon() const {
+    if (!check(TokenKind::LBracket)) {
+        return false;
+    }
+    int depth = 0;
+    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
+        const TokenKind kind = peek(ahead).kind;
+        if (kind == TokenKind::LBracket) {
+            ++depth;
+        } else if (kind == TokenKind::RBracket) {
+            --depth;
+            if (depth == 0) {
+                return peek(ahead + 1).kind == TokenKind::ColonColon;
+            }
+        } else if (depth == 1 && (kind == TokenKind::Semicolon || kind == TokenKind::LBrace || kind == TokenKind::RBrace)) {
+            return false;
+        }
+        if (ahead > 4096) {
+            return false;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string> Parser::parse_method_params() {
+    std::vector<std::string> names;
+    const SourceLoc loc = peek().loc;
+    expect(TokenKind::LBracket, "expected '['");
+    if (check(TokenKind::RBracket)) {
+        diags_.error(loc, "type mismatch");
+        ++pos_;
+        return names;
+    }
+    while (!check(TokenKind::RBracket) && !check(TokenKind::LBrace) && !check(TokenKind::LParen) && !eof()) {
+        if (!check(TokenKind::Identifier)) {
+            error_here("expected an identifier");
+            break;
+        }
+        const std::string name = peek().text;
+        const SourceLoc name_loc = peek().loc;
+        ++pos_;
+        for (const std::string &prior : names) {
+            if (prior == name) {
+                diags_.error(name_loc, "redefinition");
+            }
+        }
+        // `Vec[T]` names the struct's parameter. `Vec[T type]` declares one, which a method does not do.
+        if (!check(TokenKind::Comma) && !check(TokenKind::RBracket)) {
+            diags_.error(peek().loc, "type mismatch");
+            if (!check(TokenKind::RBracket) && !check(TokenKind::Comma) && !eof()) {
+                ++pos_;
+            }
+        }
+        names.push_back(name);
+        if (!eat(TokenKind::Comma)) {
+            break;
+        }
+    }
+    expect(TokenKind::RBracket, "expected ']'");
+    return names;
 }
 
 bool Parser::bracket_then_paren() const {

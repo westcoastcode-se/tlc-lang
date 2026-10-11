@@ -18,6 +18,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 if (fn->is_extern || fn->extern_c || fn->variadic || !fn->method_struct.empty()) {
                     error(fn->loc, "not supported yet");
                 }
+                if (!fn->method_struct.empty()) {
+                    require_method_params(*fn);
+                }
                 FunctionDecl *stable = nullptr;
                 const auto file = fn_templates_.find(file_id_);
                 if (file != fn_templates_.end()) {
@@ -42,8 +45,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 }
                 continue;
             }
-            if (!fn->method_struct.empty() && generic_struct_name(file_id_, fn->method_struct)) {
-                continue;
+            if (!fn->method_struct.empty()) {
+                require_method_params(*fn);
+                if (generic_struct_name(file_id_, fn->method_struct)) {
+                    continue;
+                }
             }
             std::vector<Type> params;
             for (const Param &param : fn->params) {

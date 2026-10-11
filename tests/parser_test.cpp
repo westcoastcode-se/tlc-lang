@@ -718,6 +718,19 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "type Vec[T type] struct { n int; };\n"
+            "func Vec[T]::get(self *this, i int) T { return self.data[i]; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn Vec[T]::get (params (self struct Vec* receiver) (i int)) T");
+    }
+
+    {
+        const Parsed parsed = parse_source("func Vec[T type]::get(self this) int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "type Inner struct {\n"
             "  inner_value int;\n"
             "};\n"

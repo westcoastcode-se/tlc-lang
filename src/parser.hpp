@@ -127,8 +127,12 @@ class Parser {
     void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern, bool extern_c);
     ArrayMark parse_array_suffix(bool allow_unsized);
     bool bracket_then_paren() const;
+    // `func Vec[T]::get`. True when `[...]` is followed by `::`.
+    bool bracket_then_colon_colon() const;
     bool looks_like_type_params() const;
     std::vector<TypeParam> parse_type_params();
+    // `Vec[T, N]` on a method. The names refer to the struct's parameters.
+    std::vector<std::string> parse_method_params();
     std::vector<TypeArg> parse_type_args();
     TypeArg parse_one_type_arg();
     bool primitive_type_name(const std::string &name) const;

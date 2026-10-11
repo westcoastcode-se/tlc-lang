@@ -3268,9 +3268,89 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Vec[T type] struct { n int; };\n"
-            "func Vec::get[U type](self *this) int { return self.n; }\n"
+            "func Vec[T]::get[U type](self *this) int { return self.n; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "func Vec[T]::get(self this) T { return self.n; }\n"
+            "func main() int {\n"
+            "  var v Vec[int];\n"
+            "  v.n = 42;\n"
+            "  return v.get();\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Buf[N int, T type] struct { value T; };\n"
+            "func Buf[N, T]::len(self this) int { return N; }\n"
+            "func main() int {\n"
+            "  var b Buf[4, int];\n"
+            "  b.value = 1;\n"
+            "  return b.len();\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n int; };\n"
+            "func Vec::get(self this) int { return self.n; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n int; };\n"
+            "func Vec[U]::get(self this) int { return self.n; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n int; };\n"
+            "func Vec[T, U]::get(self this) int { return self.n; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Buf[N int, T type] struct { value T; };\n"
+            "func Buf[T, N]::get(self this) T { return self.value; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; };\n"
+            "func Point[T]::get(self this) int { return self.x; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n int; };\n"
+            "func Vec[T type]::get(self this) int { return self.n; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"math/vec.tlc", "package math;\ntype Vec[T type] struct { n int; };\n"},
+            {"math/get.tlc", "package math;\nfunc Vec[T]::get(self this) int { return self.n; }\n"},
+        });
+        EXPECT_HAS(check, errors, "method in another file");
     }
 
     {

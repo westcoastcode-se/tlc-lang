@@ -46,7 +46,8 @@ type-param  = identifier "type"
             | identifier integer-name
             | identifier ( "char" | "short" | "int" | "long" )
             | identifier identifier ;
-method      = "func" identifier "::" identifier "(" receiver [ "," parameters ] ")" result ( block | ";" ) ;
+method      = "func" identifier [ method-params ] "::" identifier "(" receiver [ "," parameters ] ")" result ( block | ";" ) ;
+method-params = "[" identifier { "," identifier } "]" ;
 receiver    = identifier [ "*" ] "this" ;
 
 parameters  = parameter { "," parameter } [ "," "..." ] ;
@@ -64,7 +65,7 @@ The method is written in the same file as that struct or enum. A method in anoth
 
 An inner function uses the same `function` form inside a block. It has a body, and it is not `export`, `static`, `extern`, or a method.
 
-`func name[T type, N int](value T) [N]T` is a generic function. `T type` is a type. `N int`, or another integer type, is a compile-time integer. `T Shape` requires a type that has `Shape`'s methods. The call `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` and `zero[int]()` write a type. A generic used as a value is `not supported yet`. A method does not repeat the list; `func Vec::get[T type]` is `not supported yet`. `extern` cannot be generic. After the call is specialized, `sizeof(T)` and `assert(N > 0, "empty")` use the concrete type and the integer.
+`func name[T type, N int](value T) [N]T` is a generic function. `T type` is a type. `N int`, or another integer type, is a compile-time integer. `T Shape` requires a type that has `Shape`'s methods. The call `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` and `zero[int]()` write a type. A generic used as a value is `not supported yet`. A method on a generic struct names that struct's parameters, `func Vec[T]::get(self *this) T`. `func Vec::get[T type]` is `not supported yet`. `extern` cannot be generic. After the call is specialized, `sizeof(T)` and `assert(N > 0, "empty")` use the concrete type and the integer.
 
 ## Variables
 
@@ -117,7 +118,7 @@ enumerator  = identifier [ "=" integer-literal ] ;
 trait-method = "func" identifier "(" [ parameters ] ")" result ";" ;
 ```
 
-`type Vec[T type] struct` is a generic struct. The parameter list is only allowed before `struct`. A use is `Vec[int]` or `Vec[Point]`. A method on `Vec` is `func Vec::get(self *this, i int) T` and does not repeat `[T type]`. `Vec` without arguments is `type mismatch`. `Vec[int]` and `Vec[char]` are different types. Assigning one to the other, or passing one where the parameter is the other, is `type mismatch`.
+`type Vec[T type] struct` is a generic struct. The parameter list is only allowed before `struct`. A use is `Vec[int]` or `Vec[Point]`. A method on `Vec` is `func Vec[T]::get(self *this, i int) T`. The names are the struct's parameters, in that order. Leaving them out, or writing a different name, is `type mismatch`. The wrong count is `argument count`. `func Vec[T type]::get` is `type mismatch`. `Vec` without arguments is `type mismatch`. `Vec[int]` and `Vec[char]` are different types. Assigning one to the other, or passing one where the parameter is the other, is `type mismatch`.
 
 The semicolon after `}` is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `type Name struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `type Name struct` without `{` is `expected '{'`. An empty `extern(abi="c") struct` is `extern(abi="c") type Name struct "{" "}"`.
 
