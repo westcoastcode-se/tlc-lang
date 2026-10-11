@@ -32,8 +32,9 @@ struct ImportEdge {
 struct PackageGraph {
     std::vector<PackageNode> nodes;
     std::vector<ImportEdge> edges;
-    // Linker arguments from packages loaded out of the vendor root, in import
-    // order. Ready to pass to cc. Empty when no such package was loaded.
+    // Linker arguments from packages loaded out of the vendor root or the
+    // standard library, in import order. Ready to pass to cc. Empty when no
+    // such package was loaded.
     std::vector<std::string> link_args;
 };
 
@@ -44,7 +45,14 @@ struct ResolveRequest {
     // `<vendor_root>/<name>`. A package loaded from here contributes its
     // libraries to `PackageGraph::link_args`.
     std::string vendor_root;
+    // Directory of standard packages, `<prefix>/lib/tlc`. Searched after the
+    // entry directory and each `-P` root. `import "std/testing"` loads
+    // `<std_root>/std/testing`. A `link` file there is added to `link_args`.
+    std::string std_root;
 };
+
+// `import "builtin"` is this package. The compiler supplies it. It has no source file.
+inline bool is_std_builtin_path(const std::string &path) { return path == "<builtin>"; }
 
 // Loads the import graph of `request.entry`. The entry directory is the first
 // package root, followed by each path in `package_paths`, then `vendor_root`

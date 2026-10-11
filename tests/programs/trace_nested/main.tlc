@@ -1,0 +1,9 @@
+import "std/testing";
+
+func check(value int) int {
+    return testing.error("Expected 4 but was %d", value);
+}
+
+test "bad" {
+    return check(5);
+}

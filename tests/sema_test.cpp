@@ -1,13 +1,34 @@
+#include "driver.hpp"
 #include "harness.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "sema.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 namespace {
+
+std::string check_program(const std::string &source) {
+    static int seq = 0;
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / ("tlc-check-" + std::to_string(++seq) + ".tlc");
+    {
+        std::ofstream out(path);
+        out << source;
+    }
+    tlc::Options opt;
+    opt.mode = tlc::Mode::Check;
+    opt.input = path.string();
+    const tlc::CompileOutput output = tlc::compile_source(opt);
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    return output.compiler_stderr;
+}
 
 std::string diagnose(const std::string &source) {
     tlc::SourceSet sources;
@@ -3111,7 +3132,8 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"std/testing\";\n"
             "func add(a int, b int) int { return a + b; }\n"
             "test \"add joins its arguments\" {\n"
             "  var value = add(2, 2);\n"
@@ -3120,6 +3142,14 @@ int run_sema_tests() {
             "  }\n"
             "}\n"
             "test \"string\" { return testing.error(\"%s\", \"no\"); }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = check_program(
+            "import { error } from \"std/testing\";\n"
+            "test \"string\" { return error(\"%s\", \"no\"); }\n"
             "func main() int { return 0; }\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -3134,27 +3164,47 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "test \"t\" { return testing.error(\"x\"); }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = check_program(
+            "import \"std/testing\";\n"
+            "func main() int {\n"
+            "  return testing.error(\"x\");\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = check_program(
+            "import \"std/testing\";\n"
             "test \"t\" { return testing.error(); }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "argument count");
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"std/testing\";\n"
             "test \"t\" { return testing.error(1); }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"std/testing\";\n"
             "test \"t\" { return testing.missing(\"x\"); }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "not exported");
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"std/testing\";\n"
             "type Point struct { x int; y int; }\n"
             "test \"t\" {\n"
             "  var p Point;\n"
@@ -3165,12 +3215,23 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"std/testing\";\n"
             "test \"t\" {\n"
             "  var f = testing.error;\n"
             "  return 0;\n"
             "}\n"
             "func main() int { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
+            "func main() int {\n"
+            "  var p = builtin.va();\n"
+            "  return 0;\n"
+            "}\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 

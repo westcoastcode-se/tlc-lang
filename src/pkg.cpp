@@ -103,7 +103,8 @@ bool is_under(const fs::path &dir, const fs::path &root) {
 class Resolver {
   public:
     Resolver(const ResolveRequest &request, SourceSet &sources, DiagnosticEngine &diags, PackageGraph &graph)
-        : sources_(sources), diags_(diags), graph_(graph), vendor_request_(request.vendor_root) {
+        : sources_(sources), diags_(diags), graph_(graph), vendor_request_(request.vendor_root),
+          std_request_(request.std_root) {
         for (const std::string &root : request.package_paths) {
             extra_roots_.emplace_back(root);
         }
@@ -126,6 +127,7 @@ class Resolver {
             roots_.push_back(extra);
         }
         add_vendor_root(vendor_request_);
+        add_std_root(std_request_);
         const std::size_t index = load_new(canonical);
         if (index == kMissing) {
             diags_.error({}, "cannot read file");
@@ -154,7 +156,9 @@ class Resolver {
     PackageGraph &graph_;
     fs::path entry_;
     std::string vendor_request_;
+    std::string std_request_;
     fs::path vendor_root_;
+    fs::path std_root_;
     std::vector<fs::path> extra_roots_;
     std::vector<fs::path> roots_;
     std::unordered_map<std::string, std::size_t> by_path_;
@@ -310,6 +314,15 @@ class Resolver {
                 return hit;
             }
         }
+        if (!std_root_.empty() && spec != "vendor" && !spec.starts_with("vendor/")) {
+            const Hit hit = find_in_base(std_root_, spec);
+            if (hit.kind == HitKind::Found && is_under(hit.path, std_root_)) {
+                return hit;
+            }
+        }
+        if (spec == "builtin") {
+            return {HitKind::Found, fs::path("<builtin>")};
+        }
         diags_.error(import.loc, "unknown package");
         return {HitKind::Failed, {}};
     }
@@ -375,7 +388,7 @@ class Resolver {
         }
         by_package_.emplace(key, created.front());
         add_edge(from_file, key, import);
-        if (is_under(dir, vendor_root_)) {
+        if (is_under(dir, vendor_root_) || is_under(dir, std_root_)) {
             append_vendor_libraries(dir, import.loc);
         }
         walk_package(key);
@@ -391,6 +404,18 @@ class Resolver {
             return;
         }
         vendor_root_ = std::move(canonical);
+    }
+
+    void add_std_root(const std::string &root) {
+        if (root.empty()) {
+            return;
+        }
+        std::error_code ec;
+        fs::path canonical = fs::canonical(root, ec);
+        if (ec || !fs::is_directory(canonical, ec)) {
+            return;
+        }
+        std_root_ = std::move(canonical);
     }
 
     void append_token(const fs::path &dir, const std::string &token) {
@@ -570,7 +595,56 @@ class Resolver {
             add_edge(from_file, key, import);
             return;
         }
+        if (hit.path == "<builtin>") {
+            load_builtin(from_file, import);
+            return;
+        }
         load_directory(hit.path, from_file, import);
+    }
+
+    // `trace` and `va` are compiler intrinsics. They are not read from a .tlc file.
+    void load_builtin(uint32_t from_file, const ImportDecl &import) {
+        constexpr const char *kKey = "<builtin>";
+        if (by_package_.contains(kKey)) {
+            add_edge(from_file, kKey, import);
+            return;
+        }
+        auto pointer_char = [](const std::string &name) {
+            FunctionDecl fn;
+            fn.exported = true;
+            fn.name = name;
+            fn.return_type = "char";
+            fn.indirections = 1;
+            ResultSlot slot;
+            slot.type_name = "char";
+            slot.indirections = 1;
+            fn.results.push_back(std::move(slot));
+            return fn;
+        };
+        SourceFile &file = sources_.add(kKey, "");
+        PackageNode node;
+        node.file_id = file.id();
+        node.path = kKey;
+        node.qualifier = "builtin";
+        node.package_key = kKey;
+        PackageClause clause;
+        clause.name = "builtin";
+        node.unit.package = clause;
+        TopDecl trace;
+        trace.data = pointer_char("trace");
+        TopDecl va;
+        va.data = pointer_char("va");
+        node.unit.decls.push_back(std::move(trace));
+        node.unit.decls.push_back(std::move(va));
+        node.imported_from = from_file;
+        node.import_spec = import.path;
+        node.import_loc = import.loc;
+        const std::size_t index = graph_.nodes.size();
+        by_path_.emplace(kKey, index);
+        by_package_.emplace(kKey, index);
+        graph_.nodes.push_back(std::move(node));
+        add_edge(from_file, kKey, import);
+        graph_.link_args.push_back("-lc");
     }
 
     void walk_package(const std::string &key) {

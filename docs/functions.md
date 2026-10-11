@@ -54,9 +54,13 @@ A function cannot return an array. There is one `main`.
 
 `test "name" { ... }` is a file-scope test. The body is a function that returns `int`. Reaching the end passes, and so does `return 0`. Any other `return` fails that test. `return;` is `type mismatch`. The same test name twice in one file is `redefinition`. A `test` inside a function is `not supported yet`.
 
-Inside a test, `testing.error` reports a failure and returns `1`. The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `double`. The call prints the file name, the line and column, the test name, and the message:
+`import "std/testing"` provides `testing.error`. It returns `1`. The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `double`. A struct argument is `not supported yet`.
+
+`testing.error` prints `builtin.trace()`, then the message. `builtin.trace` is the TLC calls that have not returned. Each line is `file:line:column: name`, oldest first, and the last line has no newline. `builtin.va` reads the extra arguments of the variadic function it is called from. A call outside such a function is `not supported yet`.
 
 ```c
+import "std/testing";
+
 func add(a int, b int) int {
     return a + b;
 }
@@ -69,7 +73,7 @@ test "add joins its arguments" {
 }
 ```
 
-`main.tlc:8:16: add joins its arguments: Expected 4 but was 5` is that report when `value` is 5. `testing.error` outside a test is `undeclared identifier`. Using it as a value, or passing a struct, is `not supported yet`. A name `testing` already in scope is that name.
+`main.tlc:10:16: add joins its arguments: Expected 4 but was 5` is that report when `value` is 5. `import "builtin"` is supplied by the compiler. `std/testing` is `lib/tlc/std/testing`. A directory with the same path next to the entry file is that package.
 
 `tlc --test file.tlc` compiles the program, runs every test, and skips `main`. A failing test prints `fail:` and the name. The process status is the number of failed tests. A build without `--test` typechecks the tests and does not run them.
 

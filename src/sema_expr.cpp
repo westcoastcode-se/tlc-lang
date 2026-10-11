@@ -395,6 +395,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
+                if (symbol->is_function && symbol->name == "va" && is_std_builtin_file(symbol->package_file)) {
+                    error(node.loc, "not supported yet");
+                    return type_invalid();
+                }
                 return symbol->type;
             } else if constexpr (std::is_same_v<T, Expr::Int>) {
                 const int bits = node.suffix.bits;
@@ -750,6 +754,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (deferring) {
                     checking_defer_ = false;
                 }
+                if (node.callee != nullptr && is_builtin_va_call(*node.callee)) {
+                    if (deferring || !variadic_function_) {
+                        error(node.loc, "not supported yet");
+                    }
+                    if (!node.args.empty()) {
+                        error(node.loc, "argument count");
+                        for (const auto &arg : node.args) {
+                            if (arg) {
+                                check_expr(*arg, true);
+                            }
+                        }
+                    }
+                    return type_pointer(type_char());
+                }
                 // Another file in the package does not see the enum as a cast spelling.
                 // `ShapeType(shape)` is still the tag read.
                 if (node.callee != nullptr && node.args.size() == 1 && node.args.front() != nullptr) {
@@ -778,9 +796,6 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             check_expr(*arg, true);
                         }
                         return type_invalid();
-                    }
-                    if (target.kind == SelectorTarget::Kind::Package && is_testing_error(target.symbol)) {
-                        return check_testing_error(node, deferring);
                     }
                     if (target.kind != SelectorTarget::Kind::Package && selector->base != nullptr) {
                         const Type base = check_expr(*selector->base, true);
@@ -958,7 +973,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (count_ok && i < signature->params.size()) {
                         check_against(*node.args[i], signature->params[i]);
                     } else {
-                        check_expr(*node.args[i], true);
+                        const Type arg = check_expr(*node.args[i], true);
+                        if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&
+                            arg.kind != TypeKind::Enum && arg.kind != TypeKind::Nullptr) {
+                            error(expr_loc(*node.args[i]), "not supported yet");
+                        }
                     }
                 }
                 return *signature->result;
@@ -978,7 +997,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 if (target.kind == SelectorTarget::Kind::Package) {
-                    if (is_testing_error(target.symbol)) {
+                    const auto *base = node.base == nullptr ? nullptr : std::get_if<Expr::Name>(&node.base->data);
+                    const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+                    if (node.field == "va" && package != nullptr && package->is_package &&
+                        is_std_builtin_file(package->package_file)) {
                         error(node.loc, "not supported yet");
                         return type_invalid();
                     }
@@ -1194,48 +1216,29 @@ void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &m
     }
 }
 
-Symbol *Checker::testing_error() {
-    if (testing_error_.type.kind != TypeKind::Function) {
-        testing_error_.name = "error";
-        testing_error_.is_function = true;
-        testing_error_.has_body = true;
-        testing_error_.type = type_function(type_int(), {type_pointer(type_char())}, true);
-    }
-    return &testing_error_;
+bool Checker::is_std_builtin_file(uint32_t file_id) const {
+    const PackageNode *node = find_node(file_id);
+    return node != nullptr && is_std_builtin_path(node->path);
 }
 
-bool Checker::is_testing_error(const Symbol *symbol) const {
-    return symbol == &testing_error_ && testing_error_.is_function;
-}
-
-Type Checker::check_testing_error(const Expr::Call &node, bool deferring) {
-    if (deferring) {
-        error(node.loc, "not supported yet");
-    }
-    const Symbol *fn = testing_error();
-    if (node.args.size() < fn->type.params.size()) {
-        error(node.loc, "argument count");
-        return type_int();
-    }
-    if (node.args[0] != nullptr) {
-        check_against(*node.args[0], fn->type.params[0]);
-    } else {
-        error(node.loc, "type mismatch");
-    }
-    for (std::size_t i = 1; i < node.args.size(); ++i) {
-        if (node.args[i] == nullptr) {
-            error(node.loc, "type mismatch");
-            continue;
+bool Checker::is_builtin_va_call(const Expr &callee) {
+    if (const auto *selector = std::get_if<Expr::Selector>(&callee.data)) {
+        if (selector->field != "va" || selector->base == nullptr) {
+            return false;
         }
-        const Type arg = check_expr(*node.args[i], true);
-        if (arg.kind == TypeKind::Invalid) {
-            continue;
+        const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+        if (base == nullptr) {
+            return false;
         }
-        if (!is_numeric(arg) && arg.kind != TypeKind::Pointer && arg.kind != TypeKind::Enum) {
-            error(expr_loc(*node.args[i]), "not supported yet");
-        }
+        const Symbol *symbol = lookup(base->text);
+        return symbol != nullptr && symbol->is_package && is_std_builtin_file(symbol->package_file);
     }
-    return type_int();
+    if (const auto *named = std::get_if<Expr::Name>(&callee.data)) {
+        const Symbol *symbol = lookup(named->text);
+        return symbol != nullptr && symbol->is_function && symbol->name == "va" &&
+               is_std_builtin_file(symbol->package_file);
+    }
+    return false;
 }
 
 void Checker::check_test(const TestDecl &test) {
@@ -1243,10 +1246,8 @@ void Checker::check_test(const TestDecl &test) {
     const Type saved = return_type_;
     const int saved_loops = loop_depth_;
     auto saved_switches = std::move(switches_);
-    const bool saved_test = in_test_;
     loop_depth_ = 0;
     switches_.clear();
-    in_test_ = true;
     return_type_ = type_int();
     if (test.body) {
         if (const auto *block = std::get_if<Stmt::Block>(&test.body->data)) {
@@ -1259,7 +1260,6 @@ void Checker::check_test(const TestDecl &test) {
             check_stmt(*test.body);
         }
     }
-    in_test_ = saved_test;
     switches_ = std::move(saved_switches);
     loop_depth_ = saved_loops;
     return_type_ = saved;
@@ -1824,8 +1824,10 @@ void Checker::check_function(const FunctionDecl &fn) {
     const Type saved = return_type_;
     const int saved_loops = loop_depth_;
     auto saved_switches = std::move(switches_);
+    const bool saved_variadic = variadic_function_;
     loop_depth_ = 0;
     switches_.clear();
+    variadic_function_ = fn.variadic;
     return_type_ = function_result(fn);
     for (const Param &param : fn.params) {
         Type type = type_of_param(param);
@@ -1847,6 +1849,7 @@ void Checker::check_function(const FunctionDecl &fn) {
             check_stmt(*fn.body);
         }
     }
+    variadic_function_ = saved_variadic;
     switches_ = std::move(saved_switches);
     loop_depth_ = saved_loops;
     return_type_ = saved;

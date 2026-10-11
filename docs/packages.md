@@ -31,7 +31,7 @@ The first form binds the package qualifier as a name, so the call is `math.add(4
 The path is a string and names a directory. An empty path and an absolute path are rejected. A path that is not a directory, including one that ends in `.tlc`, produces `unknown package`.
 
 - `./` and `../` are resolved relative to the importing file and must name a directory.
-- Every other path is searched in the entry file's directory, then in each `-P` root. A path `vendor/<name>` that is not found there is then loaded from the vendor directory. The first directory that contains a `.tlc` file wins.
+- Every other path is searched in the entry file's directory, then in each `-P` root. A path `vendor/<name>` that is not found there is then loaded from the vendor directory. A path that is still not found is then loaded from the standard library directory, `lib/tlc` next to the compiler prefix. `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`. `import "builtin"` is the compiler package when no directory with that name was found. The first directory that contains a `.tlc` file wins.
 - A directory with no `.tlc` file produces `unknown package`.
 
 The vendor directory holds packages that ship with the compiler, such as a binding to a C library. `import "vendor/sdl3"` loads `<vendor>/sdl3`.

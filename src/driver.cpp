@@ -48,7 +48,9 @@ std::string help_text() {
         "\n"
         "Vendor packages live in lib/tlc/vendor next to the compiler prefix, or in TLC_LIB.\n"
         "import \"vendor/name\" loads that package. Static and shared libraries beside its\n"
-        ".tlc files are linked. A file named link in the package adds further linker arguments.\n";
+        ".tlc files are linked. A file named link in the package adds further linker arguments.\n"
+        "Standard packages live in lib/tlc. import \"std/testing\" loads the testing package.\n"
+        "import \"builtin\" is the compiler package.\n";
 }
 
 std::string vendor_library_root() {
@@ -64,6 +66,27 @@ std::string vendor_library_root() {
     }
     return (exe.parent_path().parent_path() / "lib" / "tlc" / "vendor").string();
 }
+
+namespace {
+
+std::filesystem::path install_prefix() {
+    std::error_code ec;
+    const std::filesystem::path exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (ec) {
+        return {};
+    }
+    return exe.parent_path().parent_path();
+}
+
+std::string std_library_root() {
+    const std::filesystem::path prefix = install_prefix();
+    if (prefix.empty()) {
+        return {};
+    }
+    return (prefix / "lib" / "tlc").string();
+}
+
+} // namespace
 
 namespace {
 
@@ -371,6 +394,7 @@ CompileOutput compile_source(const Options &opt) {
     request.entry = opt.input;
     request.package_paths = opt.package_paths;
     request.vendor_root = vendor_library_root();
+    request.std_root = std_library_root();
     PackageGraph graph;
     if (resolve_packages(request, sources, diags, graph) && diags.ok()) {
         analyze(graph, diags);

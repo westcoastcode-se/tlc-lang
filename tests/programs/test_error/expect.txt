@@ -1,5 +1,5 @@
 mode: test
 exit: 1
 stdout:
-main.tlc:14:12: bad: Expected 4 but was 5
+main.tlc:16:12: bad: Expected 4 but was 5
 fail: bad

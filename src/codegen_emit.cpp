@@ -3,6 +3,7 @@
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 
@@ -781,6 +782,8 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
     if (function == nullptr || !fn.body || !function->empty()) {
         return;
     }
+    const std::string saved_trace = trace_name_;
+    trace_name_ = fn.name.empty() ? std::string("anon") : fn.name;
     const bool saved_many = return_many_;
     const bool saved_share = share_function_scope_;
     const bool saved_extern = extern_struct_ret_;
@@ -882,6 +885,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
     extern_sret_ptr_ = saved_sret_ptr;
     extern_ret_abi_ = saved_abi;
     extern_ret_struct_ = saved_struct;
+    trace_name_ = saved_trace;
 }
 
 void CodeGen::emit_function(const FunctionDecl &fn) {
@@ -1027,10 +1031,12 @@ TypedValue CodeGen::emit_anon_function(const FunctionDecl &fn) {
 
 CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
     PreparedCall prepared;
+    prepared.loc = node.loc;
     if (node.callee == nullptr) {
         error(node.loc, "type mismatch");
         return prepared;
     }
+    prepared.trace = !is_std_builtin_call(*node.callee, "trace") && !is_std_builtin_call(*node.callee, "va");
     auto remember = [&](llvm::Function *function, std::vector<llvm::Value *> args, int depth, bool elem_char, int struct_id,
                         bool elem_void, bool elem_bool, int elem_bits, bool elem_unsigned) {
         prepared.function = function;
@@ -1309,7 +1315,13 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         llvm::Type *param = index < function->getFunctionType()->getNumParams()
                                 ? function->getFunctionType()->getParamType(index)
                                 : nullptr;
-        args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+        llvm::Value *stored = as_stored(value.value, value.depth, param, value.elem_unsigned);
+        if (param == nullptr && function->isVarArg()) {
+            TypedValue widened = value;
+            widened.value = stored;
+            stored = variadic_arg(widened);
+        }
+        args.push_back(stored);
         ++index;
     }
     remember(function, std::move(args), callee.depth, callee.elem_char, callee.struct_id, callee.elem_void, callee.elem_bool,
@@ -1322,8 +1334,12 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
     if (terminated() || (call.function == nullptr && (call.indirect == nullptr || call.fn_ty == nullptr))) {
         return {zero(), 0};
     }
+    llvm::Value *pushed = call.trace ? push_trace(call.loc) : nullptr;
     llvm::CallInst *inst = call.indirect != nullptr ? builder_.CreateCall(call.fn_ty, call.indirect, call.args)
                                                     : builder_.CreateCall(call.function, call.args);
+    if (pushed != nullptr) {
+        pop_trace(pushed);
+    }
     inst->setCallingConv(llvm::CallingConv::C);
     if (!call.abi_attrs.empty()) {
         annotate_call(inst, call.abi_attrs);
@@ -1824,11 +1840,6 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.type = low.depth == 0 && low.elem_void ? nullptr : low.type;
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
-                if (is_testing_error_call(node)) {
-                    Shape shape;
-                    shape.type = i32();
-                    return shape;
-                }
                 if (node.callee == nullptr) {
                     return {};
                 }
@@ -2131,8 +2142,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return rhs;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
-                if (is_testing_error_call(node)) {
-                    return emit_testing_error(node);
+                if (node.callee != nullptr && is_std_builtin_call(*node.callee, "va")) {
+                    return emit_builtin_va(node.loc);
                 }
                 if (node.callee != nullptr) {
                     if (const auto *named = std::get_if<Expr::Name>(&node.callee->data)) {
@@ -3106,86 +3117,244 @@ void CodeGen::emit(const PackageGraph &graph) {
     for (const PackageNode &node : graph.nodes) {
         emit_bodies(node);
     }
+    emit_builtin_trace();
     if (testing_) {
         emit_tests();
     }
     graph_ = nullptr;
 }
 
-bool CodeGen::is_testing_error_call(const Expr::Call &node) const {
-    if (!emitting_test_ || node.callee == nullptr || packages_.contains("testing")) {
+bool CodeGen::is_std_builtin_call(const Expr &callee, const std::string &field) const {
+    if (graph_ == nullptr) {
         return false;
     }
-    const auto *selector = std::get_if<Expr::Selector>(&node.callee->data);
-    if (selector == nullptr || selector->field != "error" || selector->base == nullptr) {
-        return false;
-    }
-    const auto *base = std::get_if<Expr::Name>(&selector->base->data);
-    return base != nullptr && base->text == "testing";
-}
-
-TypedValue CodeGen::emit_testing_error(const Expr::Call &node) {
-    std::vector<llvm::Value *> args;
-    args.reserve(node.args.size());
-    for (std::size_t i = 0; i < node.args.size(); ++i) {
-        if (terminated() || node.args[i] == nullptr) {
-            break;
+    if (const auto *selector = std::get_if<Expr::Selector>(&callee.data)) {
+        if (selector->field != field || selector->base == nullptr) {
+            return false;
         }
-        const TypedValue value = emit_rvalue(*node.args[i]);
-        llvm::Value *bits = value.value;
-        if (bits == nullptr) {
-            bits = i == 0 ? static_cast<llvm::Value *>(null_ptr()) : zero();
-        } else if (bits->getType()->isAggregateType()) {
-            error(expr_loc(*node.args[i]), "not supported yet");
-            bits = zero();
-        } else if (i > 0 && bits->getType()->isIntegerTy() && bits->getType()->getIntegerBitWidth() < 32) {
-            const bool zero_extend = value.elem_unsigned || value.elem_char;
-            bits = zero_extend ? builder_.CreateZExt(bits, i32()) : builder_.CreateSExt(bits, i32());
-        } else if (i > 0 && bits->getType()->isFloatTy()) {
-            bits = builder_.CreateFPExt(bits, f64_ty());
+        const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+        if (base == nullptr) {
+            return false;
         }
-        args.push_back(bits);
+        const auto package = packages_.find(base->text);
+        if (package == packages_.end()) {
+            return false;
+        }
+        const PackageNode *node = find_node(package->second);
+        return node != nullptr && is_std_builtin_path(node->path);
     }
-    if (terminated()) {
-        return {const_i32(1), 0};
-    }
-    if (args.empty()) {
-        args.push_back(null_ptr());
-    }
-    auto *printf_type = llvm::FunctionType::get(i32(), {ptr_type()}, true);
-    llvm::FunctionCallee printf_fn = module_.getOrInsertFunction("printf", printf_type);
-    std::string file_name = "unknown";
-    int line = 1;
-    int column = 1;
-    if (const SourceFile *file = diags_.source(node.loc.file)) {
-        const LineCol at = file->line_col(node.loc.offset);
-        line = at.line;
-        column = at.column;
-        const std::string &path = file->path();
-        std::string dir;
-        if (graph_ != nullptr && !graph_->nodes.empty()) {
-            const std::string &entry = graph_->nodes.front().path;
-            const auto slash = entry.find_last_of("/\\");
-            if (slash != std::string::npos) {
-                dir = entry.substr(0, slash + 1);
+    if (const auto *named = std::get_if<Expr::Name>(&callee.data)) {
+        const Binding *binding = lookup(named->text);
+        if (binding == nullptr || binding->decl == nullptr || binding->decl->name != field) {
+            return false;
+        }
+        for (const PackageNode &file : graph_->nodes) {
+            if (!is_std_builtin_path(file.path)) {
+                continue;
+            }
+            for (const TopDecl &decl : file.unit.decls) {
+                if (const auto *fn = std::get_if<FunctionDecl>(&decl.data); fn == binding->decl) {
+                    return true;
+                }
             }
         }
-        if (!dir.empty() && path.starts_with(dir)) {
-            file_name = path.substr(dir.size());
-        } else {
-            const auto slash = path.find_last_of("/\\");
-            file_name = slash == std::string::npos ? path : path.substr(slash + 1);
+    }
+    return false;
+}
+
+void CodeGen::ensure_trace() {
+    if (trace_frame_ != nullptr) {
+        return;
+    }
+    trace_frame_ = llvm::StructType::create(context_, {ptr_type(), i32(), i32(), ptr_type()}, "tlc.frame");
+    trace_stack_type_ = llvm::ArrayType::get(trace_frame_, 32);
+    trace_depth_ = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::InternalLinkage, const_i32(0),
+                                            "tlc.trace.depth");
+    trace_stack_ = new llvm::GlobalVariable(module_, trace_stack_type_, false, llvm::GlobalValue::InternalLinkage,
+                                            llvm::ConstantAggregateZero::get(trace_stack_type_), "tlc.trace.stack");
+    auto *buffer_type = llvm::ArrayType::get(i8(), 4096);
+    trace_buffer_ = new llvm::GlobalVariable(module_, buffer_type, false, llvm::GlobalValue::InternalLinkage,
+                                             llvm::ConstantAggregateZero::get(buffer_type), "tlc.trace.buf");
+}
+
+std::string CodeGen::display_path(SourceLoc loc) const {
+    const SourceFile *file = diags_.source(loc.file);
+    if (file == nullptr) {
+        return "unknown";
+    }
+    const std::string &path = file->path();
+    std::string dir;
+    if (graph_ != nullptr && !graph_->nodes.empty()) {
+        const std::string &entry = graph_->nodes.front().path;
+        const auto slash = entry.find_last_of("/\\");
+        if (slash != std::string::npos) {
+            dir = entry.substr(0, slash + 1);
         }
     }
-    llvm::Value *header = builder_.CreateGlobalString("%s:%d:%d: %s: ");
-    llvm::Value *file_value = builder_.CreateGlobalString(file_name);
-    llvm::Value *name_value = builder_.CreateGlobalString(test_name_);
-    builder_.CreateCall(printf_type, printf_fn.getCallee(),
-                        {header, file_value, const_i32(line), const_i32(column), name_value});
-    builder_.CreateCall(printf_type, printf_fn.getCallee(), args);
-    llvm::Value *newline = builder_.CreateGlobalString("\n");
-    builder_.CreateCall(printf_type, printf_fn.getCallee(), {newline});
-    return {const_i32(1), 0};
+    if (!dir.empty() && path.starts_with(dir)) {
+        return path.substr(dir.size());
+    }
+    const auto slash = path.find_last_of("/\\");
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+llvm::Value *CodeGen::push_trace(SourceLoc loc) {
+    if (trace_name_.empty() || function_ == nullptr || terminated()) {
+        return nullptr;
+    }
+    ensure_trace();
+    int line = 1;
+    int column = 1;
+    if (const SourceFile *file = diags_.source(loc.file)) {
+        const LineCol at = file->line_col(loc.offset);
+        line = at.line;
+        column = at.column;
+    }
+    llvm::BasicBlock *from = builder_.GetInsertBlock();
+    llvm::Value *depth = builder_.CreateLoad(i32(), trace_depth_);
+    llvm::Value *can = builder_.CreateICmpULT(depth, const_i32(32));
+    auto *push_block = llvm::BasicBlock::Create(context_, "trace.push", function_);
+    auto *call_block = llvm::BasicBlock::Create(context_, "trace.call", function_);
+    builder_.CreateCondBr(can, push_block, call_block);
+    builder_.SetInsertPoint(push_block);
+    llvm::Value *frame = builder_.CreateInBoundsGEP(trace_stack_type_, trace_stack_, {const_i32(0), depth});
+    auto store_field = [&](unsigned index, llvm::Value *value) {
+        llvm::Value *slot = builder_.CreateInBoundsGEP(trace_frame_, frame, {const_i32(0), const_i32(static_cast<int>(index))});
+        builder_.CreateStore(value, slot);
+    };
+    store_field(0, builder_.CreateGlobalString(display_path(loc)));
+    store_field(1, const_i32(line));
+    store_field(2, const_i32(column));
+    store_field(3, builder_.CreateGlobalString(trace_name_));
+    builder_.CreateStore(builder_.CreateAdd(depth, const_i32(1)), trace_depth_);
+    builder_.CreateBr(call_block);
+    builder_.SetInsertPoint(call_block);
+    auto *pushed = builder_.CreatePHI(llvm::Type::getInt1Ty(context_), 2);
+    pushed->addIncoming(llvm::ConstantInt::getTrue(context_), push_block);
+    pushed->addIncoming(llvm::ConstantInt::getFalse(context_), from);
+    return pushed;
+}
+
+void CodeGen::pop_trace(llvm::Value *pushed) {
+    if (pushed == nullptr || function_ == nullptr || terminated()) {
+        return;
+    }
+    auto *pop_block = llvm::BasicBlock::Create(context_, "trace.pop", function_);
+    auto *done_block = llvm::BasicBlock::Create(context_, "trace.done", function_);
+    builder_.CreateCondBr(pushed, pop_block, done_block);
+    builder_.SetInsertPoint(pop_block);
+    llvm::Value *depth = builder_.CreateLoad(i32(), trace_depth_);
+    builder_.CreateStore(builder_.CreateSub(depth, const_i32(1)), trace_depth_);
+    builder_.CreateBr(done_block);
+    builder_.SetInsertPoint(done_block);
+}
+
+llvm::Value *CodeGen::variadic_arg(const TypedValue &value) {
+    llvm::Value *arg = value.value == nullptr ? zero() : value.value;
+    if (arg->getType()->isFloatTy()) {
+        return builder_.CreateFPExt(arg, f64_ty());
+    }
+    if (arg->getType()->isIntegerTy() && arg->getType()->getIntegerBitWidth() < 32) {
+        const bool zero_extend = value.elem_unsigned || value.elem_char;
+        return zero_extend ? builder_.CreateZExt(arg, i32()) : builder_.CreateSExt(arg, i32());
+    }
+    return arg;
+}
+
+TypedValue CodeGen::emit_builtin_va(SourceLoc loc) {
+    if (function_ == nullptr || !function_->isVarArg() || terminated()) {
+        error(loc, "not supported yet");
+        return {null_ptr(), 1, true};
+    }
+    auto *tag = llvm::StructType::get(context_, {i32(), i32(), ptr_type(), ptr_type()});
+    auto *list = llvm::ArrayType::get(tag, 1);
+    llvm::IRBuilder<> allocas(&function_->getEntryBlock(), function_->getEntryBlock().begin());
+    llvm::AllocaInst *slot = allocas.CreateAlloca(list, nullptr, "va");
+    slot->setAlignment(llvm::Align(16));
+    llvm::Value *ap = builder_.CreateInBoundsGEP(list, slot, {const_i32(0), const_i32(0)});
+    llvm::Function *start = llvm::Intrinsic::getOrInsertDeclaration(&module_, llvm::Intrinsic::vastart, {ptr_type()});
+    builder_.CreateCall(start, {ap});
+    return {ap, 1, true};
+}
+
+void CodeGen::emit_builtin_trace() {
+    if (graph_ == nullptr) {
+        return;
+    }
+    llvm::Function *function = nullptr;
+    for (const PackageNode &node : graph_->nodes) {
+        if (!is_std_builtin_path(node.path)) {
+            continue;
+        }
+        const auto file = files_.find(node.file_id);
+        if (file == files_.end()) {
+            continue;
+        }
+        const auto found = file->second.functions.find("trace");
+        if (found == file->second.functions.end()) {
+            continue;
+        }
+        function = llvm::dyn_cast<llvm::Function>(found->second.value);
+        break;
+    }
+    if (function == nullptr || !function->empty()) {
+        return;
+    }
+    ensure_trace();
+    const llvm::IRBuilderBase::InsertPoint saved = builder_.saveIP();
+    auto *entry = llvm::BasicBlock::Create(context_, "entry", function);
+    auto *head = llvm::BasicBlock::Create(context_, "head", function);
+    auto *body = llvm::BasicBlock::Create(context_, "body", function);
+    auto *write = llvm::BasicBlock::Create(context_, "write", function);
+    auto *next = llvm::BasicBlock::Create(context_, "next", function);
+    auto *done = llvm::BasicBlock::Create(context_, "done", function);
+    auto *buffer_type = llvm::cast<llvm::ArrayType>(trace_buffer_->getValueType());
+    builder_.SetInsertPoint(entry);
+    llvm::Value *first = builder_.CreateInBoundsGEP(buffer_type, trace_buffer_, {const_i32(0), const_i32(0)});
+    builder_.CreateStore(llvm::ConstantInt::get(i8(), 0), first);
+    llvm::Value *depth = builder_.CreateLoad(i32(), trace_depth_);
+    builder_.CreateBr(head);
+    builder_.SetInsertPoint(head);
+    auto *index = builder_.CreatePHI(i32(), 2);
+    auto *length = builder_.CreatePHI(i32(), 2);
+    index->addIncoming(const_i32(0), entry);
+    length->addIncoming(const_i32(0), entry);
+    builder_.CreateCondBr(builder_.CreateICmpULT(index, depth), body, done);
+    builder_.SetInsertPoint(body);
+    llvm::Value *remain = builder_.CreateSub(const_i32(4096), length);
+    builder_.CreateCondBr(builder_.CreateICmpSGT(remain, const_i32(1)), write, done);
+    builder_.SetInsertPoint(write);
+    llvm::Value *frame = builder_.CreateInBoundsGEP(trace_stack_type_, trace_stack_, {const_i32(0), index});
+    auto load_field = [&](unsigned field_index, llvm::Type *type) {
+        llvm::Value *slot =
+            builder_.CreateInBoundsGEP(trace_frame_, frame, {const_i32(0), const_i32(static_cast<int>(field_index))});
+        return builder_.CreateLoad(type, slot);
+    };
+    llvm::Value *file = load_field(0, ptr_type());
+    llvm::Value *line = load_field(1, i32());
+    llvm::Value *column = load_field(2, i32());
+    llvm::Value *name = load_field(3, ptr_type());
+    llvm::Value *last = builder_.CreateICmpEQ(builder_.CreateAdd(index, const_i32(1)), depth);
+    llvm::Value *format = builder_.CreateSelect(last, builder_.CreateGlobalString("%s:%d:%d: %s"),
+                                                builder_.CreateGlobalString("%s:%d:%d: %s\n"));
+    llvm::Value *dest = builder_.CreateInBoundsGEP(buffer_type, trace_buffer_, {const_i32(0), length});
+    auto *snprintf_type = llvm::FunctionType::get(i32(), {ptr_type(), i64(), ptr_type()}, true);
+    llvm::FunctionCallee snprintf_fn = module_.getOrInsertFunction("snprintf", snprintf_type);
+    llvm::Value *wrote = builder_.CreateCall(snprintf_type, snprintf_fn.getCallee(),
+                                             {dest, builder_.CreateZExt(remain, i64()), format, file, line, column, name});
+    llvm::Value *count = builder_.CreateSelect(builder_.CreateICmpSGT(wrote, const_i32(0)), wrote, const_i32(0));
+    llvm::Value *limit = builder_.CreateSub(remain, const_i32(1));
+    llvm::Value *fitted = builder_.CreateSelect(builder_.CreateICmpSLT(count, limit), count, limit);
+    llvm::Value *sum = builder_.CreateAdd(length, fitted);
+    llvm::Value *next_index = builder_.CreateAdd(index, const_i32(1));
+    builder_.CreateBr(next);
+    builder_.SetInsertPoint(next);
+    index->addIncoming(next_index, next);
+    length->addIncoming(sum, next);
+    builder_.CreateBr(head);
+    builder_.SetInsertPoint(done);
+    builder_.CreateRet(trace_buffer_);
+    builder_.restoreIP(saved);
 }
 
 void CodeGen::emit_tests() {
@@ -3227,10 +3396,8 @@ void CodeGen::emit_tests() {
             return_depth_ = 0;
             return_many_ = false;
             share_function_scope_ = true;
-            const bool saved_emitting = emitting_test_;
-            const std::string saved_test_name = test_name_;
-            emitting_test_ = true;
-            test_name_ = test->name;
+            const std::string saved_trace = trace_name_;
+            trace_name_ = test->name;
             extern_struct_ret_ = false;
             extern_sret_ = false;
             extern_sret_ptr_ = nullptr;
@@ -3242,8 +3409,7 @@ void CodeGen::emit_tests() {
             emit_stmt(*test->body);
             finish_function();
             pop();
-            emitting_test_ = saved_emitting;
-            test_name_ = saved_test_name;
+            trace_name_ = saved_trace;
             function_ = nullptr;
             return_type_ = nullptr;
             return_depth_ = 0;

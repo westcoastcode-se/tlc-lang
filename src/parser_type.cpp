@@ -915,9 +915,6 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         expect(TokenKind::Semicolon, "expected ';'");
     }
     if (fn.body) {
-        if (fn.variadic) {
-            diags_.error(fn.loc, "not supported yet");
-        }
         for (const Param &param : fn.params) {
             if (param.is_const) {
                 diags_.error(param.loc, "not supported yet");

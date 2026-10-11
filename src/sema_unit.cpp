@@ -29,7 +29,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     generic = true;
                 }
             }
-            if (fn->variadic && !fn->extern_c) {
+            if (fn->variadic && !fn->extern_c && (fn->is_extern || fn->body == nullptr)) {
                 error(fn->loc, "not supported yet");
             }
             if (fn->extern_c && fn->results.size() > 1) {
@@ -267,13 +267,6 @@ Checker::SelectorTarget Checker::resolve_selector(const Expr::Selector &selector
     }
     const Symbol *symbol = lookup(base->text);
     if (symbol == nullptr) {
-        if (in_test_ && base->text == "testing") {
-            if (selector.field != "error") {
-                error(selector.loc, selector.field + " is not exported");
-                return {SelectorTarget::Kind::Failed, nullptr};
-            }
-            return {SelectorTarget::Kind::Package, testing_error()};
-        }
         error(base->loc, "undeclared identifier");
         return {SelectorTarget::Kind::Failed, nullptr};
     }
@@ -318,6 +311,7 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             symbol.type = type_function(std::move(result), std::move(params), fn->variadic);
             symbol.is_function = true;
             symbol.has_body = fn->body != nullptr;
+            symbol.package_file = file_id;
             auto &table = exports_[file_id];
             const auto found = table.find(fn->name);
             if (found == table.end()) {

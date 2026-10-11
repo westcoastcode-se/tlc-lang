@@ -50,7 +50,7 @@ result      = placed-type
             | "(" placed-type { "," placed-type } ")" ;
 ```
 
-A function with no body is a prototype and ends with `;`. A body replaces that semicolon. `...` is allowed only on an `extern(abi="c")` declaration. One parenthesized result is the same type as the bare result. `()` as a result list is an error.
+A function with no body is a prototype and ends with `;`. A body replaces that semicolon. `...` is allowed on an `extern(abi="c")` declaration and on a function with a body. Inside that body, `builtin.va()` reads the extra arguments. One parenthesized result is the same type as the bare result. `()` as a result list is an error.
 
 A method's first parameter is the receiver, written `name this`, `name *this`, or `name ?*this`. `this` stands for the method's struct or enum, so a pointer is `*this` and an optional pointer is `?*this`. `self **this` is `not supported yet`. `this` is an ordinary identifier everywhere else.
 

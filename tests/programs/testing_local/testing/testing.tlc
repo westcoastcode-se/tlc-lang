@@ -1,0 +1,5 @@
+package testing;
+
+export func error(fmt *char) int {
+    return 3;
+}

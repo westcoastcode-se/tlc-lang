@@ -168,9 +168,13 @@ class CodeGen {
     int local_seq_ = 0;
     uint32_t entry_file_ = 0;
     bool testing_ = false;
-    // Set while emitting one test body. `testing.error` reads `test_name_`.
-    bool emitting_test_ = false;
-    std::string test_name_;
+    // Name recorded on the approximate call stack while a function or test is emitted.
+    std::string trace_name_;
+    llvm::StructType *trace_frame_ = nullptr;
+    llvm::ArrayType *trace_stack_type_ = nullptr;
+    llvm::GlobalVariable *trace_depth_ = nullptr;
+    llvm::GlobalVariable *trace_stack_ = nullptr;
+    llvm::GlobalVariable *trace_buffer_ = nullptr;
     uint32_t current_file_ = 0;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
     std::unordered_map<uint32_t, FileSymbols> files_;
@@ -212,6 +216,9 @@ class CodeGen {
         int abi_struct_id = -1;
         CAbi abi_ret{};
         std::vector<AbiMark> abi_attrs;
+        SourceLoc loc{};
+        // Push a call-stack frame around this call. `builtin.trace` leaves it off.
+        bool trace = false;
     };
     struct AbiLeaf {
         uint64_t offset = 0;
@@ -669,8 +676,14 @@ class CodeGen {
     void bind_imports(const PackageNode &node);
     void emit_bodies(const PackageNode &node);
     void emit_tests();
-    bool is_testing_error_call(const Expr::Call &node) const;
-    TypedValue emit_testing_error(const Expr::Call &node);
+    bool is_std_builtin_call(const Expr &callee, const std::string &field) const;
+    void ensure_trace();
+    std::string display_path(SourceLoc loc) const;
+    llvm::Value *push_trace(SourceLoc loc);
+    void pop_trace(llvm::Value *pushed);
+    TypedValue emit_builtin_va(SourceLoc loc);
+    void emit_builtin_trace();
+    llvm::Value *variadic_arg(const TypedValue &value);
     void apply_initializer(const VarDecl &var);
     llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
     llvm::Constant *const_field(const Expr &expr, const FieldLayout &slot);
