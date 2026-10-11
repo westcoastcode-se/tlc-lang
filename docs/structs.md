@@ -1,6 +1,6 @@
 # Structs, pointers, and arrays
 
-[Index](README.md) · [Previous: Functions](functions.md) · [Next: Methods](methods.md) · [Grammar](grammar.md)
+[Index](README.md) · [Previous: Builtin](builtin.md) · [Next: Methods](methods.md) · [Grammar](grammar.md)
 
 A struct definition is `type Name struct`. `type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[int]`. A method is `func Vec[T]::get(self *this, i int) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is `type mismatch`. The wrong count is `argument count`. `func Vec[T type]::get` is `type mismatch`. `Vec` with no arguments is `type mismatch`. `Vec[int]` and `Vec[char]` are different types. Assigning one to the other, or passing one where the parameter is the other, is `type mismatch`. Variables, parameters, return types, and fields then use the bare name. A pointer is written `*Point` and `*int`, not `Point *` or `int *`, in a parameter, a result, and every other type position. `?*Point` may be `null`. `*Point` may not. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next ?*Node`, `home *Address`, `raw [8]char`. A designated initializer that omits a `*T` field is `type mismatch`. An omitted `?*T` field is `null`. The semicolon after `}` may be omitted. A field still ends with `;`.
 
@@ -183,4 +183,4 @@ export func sum(p Point) int {
 
 Inside the package the type is written `Point`. `import { Point } from "geom"` makes `Point` a type name in the importing file. A struct is visible to every file in the package, so one file can declare `type A struct { b B; }` when `type B struct` is in another file of that package.
 
-[Index](README.md) · [Previous: Functions](functions.md) · [Next: Methods](methods.md) · [Grammar](grammar.md)
+[Index](README.md) · [Previous: Builtin](builtin.md) · [Next: Methods](methods.md) · [Grammar](grammar.md)

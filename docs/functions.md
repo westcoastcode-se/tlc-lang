@@ -1,6 +1,6 @@
 # Functions
 
-[Index](README.md) · [Previous: Statements](statements.md) · [Next: Structs, pointers, and arrays](structs.md) · [Grammar](grammar.md)
+[Index](README.md) · [Previous: Statements](statements.md) · [Next: Builtin](builtin.md) · [Grammar](grammar.md)
 
 A function starts with `func`, then the name, then the parameters, then the return type. A parameter is a name followed by its type. An empty parameter list means there are no parameters.
 
@@ -155,4 +155,4 @@ return dosomething((arg1, arg2) { return arg1 + arg2; });
 
 `() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer, including an assignment and the initializer of a typed variable. Used where no function pointer is expected, it is `type mismatch`. A short form whose parameter count does not match that function pointer is `type mismatch`. It follows the same capture rule as any other anonymous function.
 
-[Index](README.md) · [Previous: Statements](statements.md) · [Next: Structs, pointers, and arrays](structs.md) · [Grammar](grammar.md)
+[Index](README.md) · [Previous: Statements](statements.md) · [Next: Builtin](builtin.md) · [Grammar](grammar.md)

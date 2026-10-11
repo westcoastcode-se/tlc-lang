@@ -12,6 +12,7 @@ Diagnostics look like `file:line:column: error: message`.
 - [Expressions](expressions.md) — operators, casts, and `null`
 - [Statements](statements.md) — `if`, loops, `switch`, and `defer`
 - [Functions](functions.md) — results, function pointers, and nested functions
+- [Builtin](builtin.md) — `builtin.trace` and `builtin.va`
 - [Structs, pointers, and arrays](structs.md) — structs, unions, and layout
 - [Methods and traits](methods.md)
 - [Enums and type aliases](enums.md) — enums, `type` aliases, and keywords
