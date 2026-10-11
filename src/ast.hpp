@@ -329,9 +329,14 @@ struct Stmt {
         bool is_var = false;
         bool is_define = false;
     };
+    struct Assert {
+        SourceLoc loc{};
+        std::unique_ptr<Expr> cond;
+        std::string message;
+    };
 
     using Data = std::variant<Block, Return, Expression, If, While, For, DoWhile, Switch, Case, Break, Continue, Decl,
-                              Func, Defer, Bind>;
+                              Func, Defer, Bind, Assert>;
 
     Data data;
 
@@ -409,8 +414,15 @@ struct TraitDecl {
     std::vector<FunctionDecl> methods;
 };
 
+// `assert(condition, "message");` at file scope. The condition is checked while compiling.
+struct AssertDecl {
+    SourceLoc loc{};
+    std::unique_ptr<Expr> cond;
+    std::string message;
+};
+
 struct TopDecl {
-    std::variant<FunctionDecl, VarDecl, StructDecl, EnumDecl, TypedefDecl, TraitDecl> data;
+    std::variant<FunctionDecl, VarDecl, StructDecl, EnumDecl, TypedefDecl, TraitDecl, AssertDecl> data;
 };
 
 struct ImportDecl {

@@ -12,7 +12,12 @@
 
 namespace tlc {
 
-void Checker::error(SourceLoc loc, const std::string &message) { diags_.error(loc, message); }
+void Checker::error(SourceLoc loc, const std::string &message) {
+    if (quiet_) {
+        return;
+    }
+    diags_.error(loc, message);
+}
 
 void Checker::push() {
     const int id = scopes_.empty() ? 0 : scopes_.back().function_id;
@@ -954,6 +959,128 @@ int Checker::min_align_of(const Type &type) const {
         return 8;
     }
     return 1;
+}
+
+std::optional<int> Checker::type_size(const Type &type) const {
+    auto align_up = [](int offset, int align) {
+        if (align <= 1) {
+            return offset;
+        }
+        return (offset + align - 1) / align * align;
+    };
+    auto scalar = [](const Type &current) -> std::optional<int> {
+        if (current.kind == TypeKind::Bool || current.kind == TypeKind::Char) {
+            return 1;
+        }
+        if (current.kind == TypeKind::Float) {
+            return current.rank >= 64 ? 8 : 4;
+        }
+        if (current.kind != TypeKind::Int) {
+            return std::nullopt;
+        }
+        const int bits = width_of(current);
+        if (bits <= 8) {
+            return 1;
+        }
+        if (bits <= 16) {
+            return 2;
+        }
+        if (bits <= 32) {
+            return 4;
+        }
+        return 8;
+    };
+    std::unordered_set<int> seen;
+    const auto walk = [&](const auto &self, const Type &current) -> std::optional<int> {
+        if (current.kind == TypeKind::Pointer) {
+            return 8;
+        }
+        if (current.kind == TypeKind::Array) {
+            if (current.element == nullptr || current.length <= 0) {
+                return std::nullopt;
+            }
+            const std::optional<int> element = self(self, *current.element);
+            if (!element || *element > 2147483647 / current.length) {
+                return std::nullopt;
+            }
+            return *element * current.length;
+        }
+        if (current.kind == TypeKind::Enum) {
+            if (current.enum_id < 0 || current.enum_id >= static_cast<int>(enum_types_.size())) {
+                return std::nullopt;
+            }
+            return self(self, enum_types_[static_cast<std::size_t>(current.enum_id)].underlying);
+        }
+        if (current.kind != TypeKind::Struct) {
+            return scalar(current);
+        }
+        if (current.struct_id < 0 || current.struct_id >= static_cast<int>(structs_.size())) {
+            return std::nullopt;
+        }
+        if (!seen.insert(current.struct_id).second) {
+            return std::nullopt;
+        }
+        const StructInfo &info = structs_[static_cast<std::size_t>(current.struct_id)];
+        if (!info.complete) {
+            return std::nullopt;
+        }
+        if (info.fields.empty()) {
+            return info.is_extern && info.extern_c && !info.is_union ? std::optional<int>(1) : std::nullopt;
+        }
+        if (info.is_union && info.tag_enum < 0) {
+            int size = 0;
+            int align = 1;
+            for (const StructInfo::Field &field : info.fields) {
+                const std::optional<int> field_size = self(self, field.type);
+                if (!field_size) {
+                    return std::nullopt;
+                }
+                size = std::max(size, *field_size);
+                align = std::max(align, min_align_of(field.type));
+            }
+            return align_up(size, std::max(align, info.align));
+        }
+        if (info.is_union) {
+            if (info.tag_enum < 0 || info.tag_enum >= static_cast<int>(enum_types_.size())) {
+                return std::nullopt;
+            }
+            const Type &tag = enum_types_[static_cast<std::size_t>(info.tag_enum)].underlying;
+            const std::optional<int> tag_size = self(self, tag);
+            if (!tag_size) {
+                return std::nullopt;
+            }
+            int payload = 0;
+            int payload_align = 1;
+            for (const StructInfo::Field &field : info.fields) {
+                const std::optional<int> field_size = self(self, field.type);
+                if (!field_size) {
+                    return std::nullopt;
+                }
+                payload = std::max(payload, *field_size);
+                payload_align = std::max(payload_align, min_align_of(field.type));
+            }
+            payload = align_up(payload, payload_align);
+            const int align = std::max(min_align_of(tag), std::max(payload_align, info.align));
+            return align_up(align_up(*tag_size, payload_align) + payload, align);
+        }
+        int offset = 0;
+        int align = 1;
+        for (const StructInfo::Field &field : info.fields) {
+            const std::optional<int> field_size = self(self, field.type);
+            if (!field_size) {
+                return std::nullopt;
+            }
+            const int field_align = std::max(min_align_of(field.type), 1);
+            offset = align_up(offset, field_align);
+            if (offset > 2147483647 - *field_size) {
+                return std::nullopt;
+            }
+            offset += *field_size;
+            align = std::max(align, field_align);
+        }
+        return align_up(offset, std::max(align, info.align));
+    };
+    return walk(walk, type);
 }
 
 void Checker::define_struct_fields() {

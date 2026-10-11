@@ -1,0 +1,14 @@
+assert(sizeof(i32) == 4, "i32 must be 4 bytes");
+
+type Pair struct {
+    a char;
+    b int;
+};
+
+assert(sizeof(Pair) == 8, "pair");
+
+func main() int {
+    assert(sizeof(int) == 4, "int must be 4 bytes");
+    assert(sizeof(*int) == 8, "pointer");
+    return sizeof(i32);
+}

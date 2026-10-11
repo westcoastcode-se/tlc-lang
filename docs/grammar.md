@@ -29,7 +29,8 @@ declaration = function
             | method
             | var-decl
             | fn-var
-            | type-decl ;
+            | type-decl
+            | assert-stmt ;
 ```
 
 `export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, or `type`. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` is `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. Another abi is `not supported yet`. `export static` is an error. `export` and `extern` on an inferred variable are rejected.
@@ -171,17 +172,20 @@ statement   = block
             | "break" ";"
             | "continue" ";"
             | "defer" expression ";"
+            | assert-stmt
             | var-decl
             | binding
             | function
             | expression ";"
             | ";" ;
 
+assert-stmt = "assert" "(" expression "," string ")" ";" ;
+
 if-statement = "if" "(" expression ")" block [ "else" ( if-statement | block ) ] ;
 for-init    = ";" | var-decl | binding | expression ";" ;
 ```
 
-`if`, `while`, and `for` take a block. `else` takes a block or another `if`. A body without `{` is `expected '{'`. `defer` takes one call expression. `case` and `default` are statements, so they appear inside the switch body.
+`if`, `while`, and `for` take a block. `else` takes a block or another `if`. A body without `{` is `expected '{'`. `defer` takes one call expression. `assert` checks a constant integer at compile time. The string is the diagnostic when the condition is false. A condition that is not a constant integer is `not supported yet`. `case` and `default` are statements, so they appear inside the switch body.
 
 ## Expressions
 
@@ -282,7 +286,7 @@ A `'` between digits is a separator, not an empty gap and not a trailing mark. A
 These words are keywords and cannot be identifiers:
 
 ```text
-bool break case char const continue default defer do double else enum
+assert bool break case char const continue default defer do double else enum
 export extern false float for func if import int long null package
 return short sizeof static struct switch trait true type union var void while
 ```

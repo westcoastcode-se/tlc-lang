@@ -1034,33 +1034,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_nullptr();
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 (void)used;
-                Type type = type_invalid();
-                if (node.on_type) {
-                    type = spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
-                                        node.loc, node.optional);
-                } else if (node.expr) {
-                    int stars = 0;
-                    const Expr *cursor = node.expr.get();
-                    while (cursor != nullptr) {
-                        const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
-                        if (unary == nullptr || unary->op != TokenKind::Star || unary->expr == nullptr) {
-                            break;
-                        }
-                        ++stars;
-                        cursor = unary->expr.get();
-                    }
-                    const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
-                    Type ignored;
-                    const bool alias = named != nullptr && package_typedef(file_id_, named->text, ignored);
-                    const bool tag = named != nullptr && find_tag(file_id_, named->text) >= 0;
-                    const bool enumeration = named != nullptr && find_enum(file_id_, named->text) >= 0;
-                    if (named != nullptr && lookup(named->text) == nullptr && (alias || tag || enumeration)) {
-                        // `sizeof(Point)` and `sizeof(*Point)` when the name is a type.
-                        type = with_indirections(type_of_name(named->text, node.loc, stars > 0), stars, node.loc);
-                    } else {
-                        type = check_raw(*node.expr, true);
-                    }
-                }
+                const Type type = sizeof_operand(node);
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
@@ -1160,6 +1134,59 @@ Type Checker::check_raw(const Expr &expr, bool used) {
         expr.data);
 }
 
+Type Checker::sizeof_operand(const Expr::Sizeof &node) {
+    if (node.on_type) {
+        return spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections, node.loc,
+                            node.optional);
+    }
+    if (node.expr == nullptr) {
+        return type_invalid();
+    }
+    int stars = 0;
+    const Expr *cursor = node.expr.get();
+    while (cursor != nullptr) {
+        const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
+        if (unary == nullptr || unary->op != TokenKind::Star || unary->postfix || unary->expr == nullptr) {
+            break;
+        }
+        ++stars;
+        cursor = unary->expr.get();
+    }
+    const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
+    Type ignored;
+    const bool alias = named != nullptr && package_typedef(file_id_, named->text, ignored);
+    const bool tag = named != nullptr && find_tag(file_id_, named->text) >= 0;
+    const bool enumeration = named != nullptr && find_enum(file_id_, named->text) >= 0;
+    if (named != nullptr && lookup(named->text) == nullptr && (alias || tag || enumeration)) {
+        // `sizeof(Point)` and `sizeof(*Point)` when the name is a type.
+        return with_indirections(type_of_name(named->text, node.loc, stars > 0), stars, node.loc);
+    }
+    return check_raw(*node.expr, true);
+}
+
+void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &message) {
+    if (cond == nullptr) {
+        error(loc, "type mismatch");
+        return;
+    }
+    const Type got = check_expr(*cond, true);
+    if (got.kind == TypeKind::Invalid) {
+        return;
+    }
+    if (!is_integer(got) && !is_c_enum(got)) {
+        error(loc, "type mismatch");
+        return;
+    }
+    const std::optional<int> value = fold_int(*cond);
+    if (!value) {
+        error(loc, "not supported yet");
+        return;
+    }
+    if (*value == 0) {
+        error(loc, message.empty() ? "assert" : message);
+    }
+}
+
 std::optional<int> Checker::fold_int(const Expr &expr) {
     auto wrap = [](int64_t value) { return static_cast<int>(static_cast<uint32_t>(value)); };
     return std::visit(
@@ -1198,6 +1225,16 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 return member->const_value;
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 return node.value ? 1 : 0;
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                const bool saved = quiet_;
+                quiet_ = true;
+                const Type type = sizeof_operand(node);
+                quiet_ = saved;
+                if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Void || type.kind == TypeKind::Function ||
+                    type.kind == TypeKind::Tuple || mentions_trait(type)) {
+                    return std::nullopt;
+                }
+                return type_size(type);
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 if (node.postfix) {
                     return std::nullopt;
@@ -1671,6 +1708,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     }
                 }
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                check_assert(node.loc, node.cond.get(), node.message);
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 for (const VarDecl &var : node.vars) {
                     Type type = type_of_var(var);

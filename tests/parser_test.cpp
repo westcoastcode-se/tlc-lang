@@ -292,6 +292,18 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "assert(sizeof(i32) == 4, \"i32 must be 4 bytes\");\n"
+            "func main() int {\n"
+            "  assert(1, \"kept\");\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(assert (== (sizeof i32) (int 4)) \"i32 must be 4 bytes\")");
+        EXPECT_HAS(check, parsed.dump, "(assert (int 1) \"kept\")");
+    }
+
+    {
         const Parsed parsed = parse_source("var p ?int;\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }

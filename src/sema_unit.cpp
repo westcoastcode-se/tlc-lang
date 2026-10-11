@@ -181,6 +181,8 @@ void Checker::check_globals(const TranslationUnit &unit) {
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
             check_function(*fn);
+        } else if (const auto *item = std::get_if<AssertDecl>(&decl.data)) {
+            check_assert(item->loc, item->cond.get(), item->message);
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
             if (!var->init && !var->is_extern) {
                 const Symbol *symbol = lookup(var->name);

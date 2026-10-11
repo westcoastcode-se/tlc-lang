@@ -296,6 +296,13 @@ void dump_stmt(const Stmt &stmt, std::string &out, int indent) {
                 out += "(defer ";
                 out += node.call ? dump_expr(*node.call) : "(unsupported)";
                 out += ")\n";
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                append_indent(out, indent);
+                out += "(assert ";
+                out += node.cond ? dump_expr(*node.cond) : "(unsupported)";
+                out += ' ';
+                out += quote_string(node.message);
+                out += ")\n";
             } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
                 append_indent(out, indent);
                 out += "(bind ";
@@ -600,6 +607,13 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             if (item->exported) {
                 out += " export";
             }
+            out += ")\n";
+        } else if (const auto *item = std::get_if<AssertDecl>(&decl.data)) {
+            append_indent(out, 1);
+            out += "(assert ";
+            out += item->cond ? dump_expr(*item->cond) : "(unsupported)";
+            out += ' ';
+            out += quote_string(item->message);
             out += ")\n";
         } else if (const auto *item = std::get_if<TraitDecl>(&decl.data)) {
             append_indent(out, 1);

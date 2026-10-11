@@ -126,6 +126,8 @@ class Checker {
 
     uint32_t file_id_ = 0;
     Type return_type_ = type_invalid();
+    // Set while folding `sizeof`, so a second lookup does not repeat a diagnostic.
+    bool quiet_ = false;
     int loop_depth_ = 0;
     bool checking_defer_ = false;
     std::vector<SwitchFrame> switches_;
@@ -160,6 +162,7 @@ class Checker {
     void register_one_typedef(const TypedefDecl &item);
     bool field_waits(const FieldDecl &field) const;
     int min_align_of(const Type &type) const;
+    std::optional<int> type_size(const Type &type) const;
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);
     void define_struct_fields();
     void prepare_unit(const TranslationUnit &unit, uint32_t file_id, const PackageNode *node);
@@ -221,6 +224,8 @@ class Checker {
     Type elaborate_inferred(FunctionDecl &fn, const Type &want);
     Type check_against(const Expr &expr, const Type &want);
     void check_stmt(const Stmt &stmt);
+    void check_assert(SourceLoc loc, const Expr *cond, const std::string &message);
+    Type sizeof_operand(const Expr::Sizeof &node);
     std::optional<int> fold_int(const Expr &expr);
     void check_function(const FunctionDecl &fn);
     void declare_globals(const TranslationUnit &unit);

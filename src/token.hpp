@@ -16,6 +16,7 @@ enum class TokenKind {
     CharLiteral,
 
     KwAlignas,
+    KwAssert,
     KwAlignof,
     KwAuto,
     KwBool,

@@ -58,4 +58,10 @@ Several results are still bound together: `var a, b = call`. A local `type` is `
 
 A global with no initializer is zero. An array cannot be initialized with `=`.
 
+`assert` checks a constant integer while compiling. It may stand at file scope or inside a function. The condition is an expression such as `sizeof(i32) == 4`, and the message is a string literal. A false condition is an error, and the diagnostic is that message. A condition that is not a constant integer is `not supported yet`. A true `assert` produces no code.
+
+```c
+assert(sizeof(i32) == 4, "i32 must be 4 bytes");
+```
+
 [Index](README.md) · [Previous: Expressions](expressions.md) · [Next: Functions](functions.md) · [Grammar](grammar.md)

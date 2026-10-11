@@ -202,6 +202,12 @@ TranslationUnit Parser::parse() {
             parse_top_declaration(unit, true);
             continue;
         }
+        if (check(TokenKind::KwAssert)) {
+            TopDecl top;
+            top.data = parse_assert();
+            unit.decls.push_back(std::move(top));
+            continue;
+        }
         error_here("expected a declaration");
         ++pos_;
     }

@@ -3005,6 +3005,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                 defers_.back().calls.push_back(std::move(item));
             } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
                 emit_bind(node);
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 for (const VarDecl &var : node.vars) {
                     if (var.name.empty()) {

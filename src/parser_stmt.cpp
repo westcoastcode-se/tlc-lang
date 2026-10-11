@@ -535,6 +535,14 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         eat(TokenKind::Semicolon);
         return make_stmt(Stmt::Expression{});
     }
+    if (check(TokenKind::KwAssert)) {
+        AssertDecl item = parse_assert();
+        Stmt::Assert stmt;
+        stmt.loc = item.loc;
+        stmt.cond = std::move(item.cond);
+        stmt.message = std::move(item.message);
+        return make_stmt(std::move(stmt));
+    }
     if (check(TokenKind::KwDefer)) {
         Stmt::Defer stmt;
         stmt.loc = peek().loc;
@@ -557,6 +565,27 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
     stmt.expr = parse_expr();
     expect(TokenKind::Semicolon, "expected ';'");
     return make_stmt(std::move(stmt));
+}
+
+AssertDecl Parser::parse_assert() {
+    AssertDecl item;
+    item.loc = peek().loc;
+    ++pos_;
+    expect(TokenKind::LParen, "expected '('");
+    item.cond = parse_expr();
+    expect(TokenKind::Comma, "expected ','");
+    if (check(TokenKind::StringLiteral)) {
+        item.message = peek().text;
+        ++pos_;
+    } else {
+        error_here("type mismatch");
+        if (!check(TokenKind::RParen) && !check(TokenKind::Semicolon) && !eof()) {
+            parse_expr();
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    expect(TokenKind::Semicolon, "expected ';'");
+    return item;
 }
 
 } // namespace tlc

@@ -3033,5 +3033,47 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
+    {
+        const std::string errors = diagnose(
+            "assert(sizeof(i32) == 4, \"i32 must be 4 bytes\");\n"
+            "type Pair struct { a char; b int; };\n"
+            "assert(sizeof(Pair) == 8, \"pair\");\n"
+            "type ShapeType enum { Circle, Rectangle };\n"
+            "type Shape union(ShapeType) {\n"
+            "    Circle struct { radius f32; };\n"
+            "    Rectangle struct { width f32; height f32; };\n"
+            "};\n"
+            "assert(sizeof(Shape) == 12, \"shape\");\n"
+            "func main() int {\n"
+            "  assert(sizeof(int) == 4, \"int must be 4 bytes\");\n"
+            "  assert(sizeof(*int) == 8, \"pointer\");\n"
+            "  assert(1 + 2 == 3, \"add\");\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "assert(sizeof(i32) == 8, \"i32 must be 4 bytes\");\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "i32 must be 4 bytes");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var n int = 1;\n"
+            "  assert(n == 1, \"runtime\");\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose("assert(1, 2);\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
     return check.failed;
 }
