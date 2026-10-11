@@ -26,7 +26,7 @@ func apply(p func (func (i32) i32) i32, f func (i32) i32) i32 {
     return p(f);
 }
 
-typedef func (i32, i32) i32 BinOp;
+type BinOp func (i32, i32) i32;
 
 var saved func (i32, i32) i32;
 

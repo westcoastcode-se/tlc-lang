@@ -3,9 +3,9 @@ struct Point {
     y int;
 };
 
-typedef *Point Ptr;
-typedef int Integer;
-typedef int Pair[2];
+type Ptr *Point;
+type Integer int;
+type Pair [2]int;
 
 func make(x int, y int) Point {
     var p Point;

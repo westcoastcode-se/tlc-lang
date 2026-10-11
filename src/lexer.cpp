@@ -62,7 +62,7 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"thread_local", TokenKind::KwThreadLocal},
     {"true", TokenKind::KwTrue},
     {"trait", TokenKind::KwTrait},
-    {"typedef", TokenKind::KwTypedef},
+    {"type", TokenKind::KwType},
     {"typeof", TokenKind::KwTypeof},
     {"typeof_unqual", TokenKind::KwTypeofUnqual},
     {"union", TokenKind::KwUnion},
@@ -162,7 +162,7 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::KwThreadLocal: return "thread_local";
     case TokenKind::KwTrue: return "true";
     case TokenKind::KwTrait: return "trait";
-    case TokenKind::KwTypedef: return "typedef";
+    case TokenKind::KwType: return "type";
     case TokenKind::KwTypeof: return "typeof";
     case TokenKind::KwTypeofUnqual: return "typeof_unqual";
     case TokenKind::KwUnion: return "union";

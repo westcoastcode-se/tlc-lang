@@ -6,6 +6,43 @@
 
 namespace tlc {
 
+void Parser::parse_type_decl(TranslationUnit &unit, bool exported) {
+    TypedefDecl item;
+    item.loc = peek().loc;
+    eat(TokenKind::KwType);
+    if (check(TokenKind::Identifier)) {
+        item.name = peek().text;
+        item.loc = peek().loc;
+        ++pos_;
+    } else {
+        error_here("expected an identifier");
+    }
+    const PlacedType type = parse_go_type();
+    if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
+        diags_.error(type.loc.valid() ? type.loc : item.loc, "not supported yet");
+    }
+    item.type_name = type.type_name;
+    item.type_package = type.type_package;
+    item.is_struct = type.is_struct;
+    item.is_enum = type.is_enum;
+    item.indirections = type.indirections;
+    item.is_array = type.is_array;
+    item.array_len = type.array_len;
+    item.is_fn_ptr = type.is_fn_ptr;
+    item.ret_indirections = type.ret_indirections;
+    item.fn_params = type.fn_params;
+    item.fn_variadic = type.fn_variadic;
+    item.fn_results = type.fn_results;
+    item.exported = exported;
+    if (!item.name.empty()) {
+        type_names_.insert(item.name);
+    }
+    TopDecl top;
+    top.data = std::move(item);
+    unit.decls.push_back(std::move(top));
+    expect(TokenKind::Semicolon, "expected ';'");
+}
+
 void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export_ok) {
     (void)file_scope_export_ok;
     const std::size_t marker = pos_;
@@ -44,41 +81,11 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         saw_decl_ = true;
         return;
     }
-    if (check(TokenKind::KwTypedef) && at_func_type(1)) {
+    if (check(TokenKind::KwType)) {
         if (exported && is_static) {
             diags_.error(storage_loc, "export static");
         }
-        ++pos_;
-        const PlacedType type = parse_func_type();
-        while (true) {
-            TypedefDecl item;
-            item.loc = peek().loc;
-            if (check(TokenKind::Identifier)) {
-                item.name = peek().text;
-                item.loc = peek().loc;
-                ++pos_;
-            } else {
-                error_here("expected an identifier");
-            }
-            item.type_name = type.type_name;
-            item.type_package = type.type_package;
-            item.is_struct = type.is_struct;
-            item.is_enum = type.is_enum;
-            item.indirections = type.indirections;
-            item.is_fn_ptr = type.is_fn_ptr;
-            item.ret_indirections = type.ret_indirections;
-            item.fn_params = type.fn_params;
-            item.fn_variadic = type.fn_variadic;
-            item.fn_results = type.fn_results;
-            item.exported = exported;
-            TopDecl top;
-            top.data = std::move(item);
-            unit.decls.push_back(std::move(top));
-            if (!eat(TokenKind::Comma)) {
-                expect(TokenKind::Semicolon, "expected ';'");
-                break;
-            }
-        }
+        parse_type_decl(unit, exported);
         saw_decl_ = true;
         return;
     }
@@ -163,7 +170,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));
         // `}` ends the definition. `;` is optional. A following declarator is
-        // `struct Point { x int; } p` or `typedef struct Point { x int; } Alias`.
+        // `struct Point { x int; } p`.
         if (eat(TokenKind::Semicolon) || !continues_declarator()) {
             saw_decl_ = true;
             return;
@@ -186,7 +193,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             return;
         }
     }
-    // `struct Name;`, `typedef struct Name;`, `extern struct Name;`, and `enum Name;`
+    // `struct Name;`, `extern struct Name;`, and `enum Name;`
     // are not declarations. A body is required. A following declarator is still a C variable.
     if (((specs.is_struct && !specs.struct_definition) || (specs.is_enum && !specs.enum_definition)) &&
         (check(TokenKind::Semicolon) || !continues_declarator())) {
@@ -199,51 +206,6 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         const Declarator decl = parse_declarator();
         if (!decl.method_struct.empty() && !decl.is_function) {
             diags_.error(decl.loc, "type mismatch");
-        }
-        if (specs.is_typedef) {
-            if (decl.is_function) {
-                diags_.error(decl.loc, "not supported yet");
-                if (check(TokenKind::LBrace)) {
-                    parse_block();
-                } else {
-                    expect(TokenKind::Semicolon, "expected ';'");
-                }
-                break;
-            }
-            TypedefDecl item;
-            item.loc = decl.loc.valid() ? decl.loc : specs.loc;
-            item.name = decl.name;
-            item.type_name = specs.type_name;
-            item.type_package = specs.type_package;
-            item.is_struct = specs.is_struct;
-            item.is_enum = specs.is_enum;
-            // `typedef *int Ptr`. A star on the name is the old form.
-            if (decl.is_fn_ptr) {
-                item.indirections = decl.indirections;
-                item.ret_indirections = decl.ret_indirections + specs.pointer_depth;
-            } else {
-                if (decl.indirections > 0) {
-                    diags_.error(decl.loc.valid() ? decl.loc : specs.loc, "type mismatch");
-                }
-                item.indirections = specs.pointer_depth;
-            }
-            item.is_array = decl.is_array;
-            item.array_len = decl.array_len;
-            item.is_fn_ptr = decl.is_fn_ptr;
-            item.fn_params = decl.fn_params;
-            item.fn_variadic = decl.fn_variadic;
-            item.exported = specs.exported;
-            if (!item.name.empty()) {
-                type_names_.insert(item.name);
-            }
-            TopDecl top;
-            top.data = std::move(item);
-            unit.decls.push_back(std::move(top));
-            if (!eat(TokenKind::Comma)) {
-                expect(TokenKind::Semicolon, "expected ';'");
-                break;
-            }
-            continue;
         }
         if (decl.is_function) {
             diags_.error(decl.loc, "not supported yet");

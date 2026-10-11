@@ -29,7 +29,6 @@ class Parser {
         bool enum_definition = false;
         std::string underlying;
         std::vector<Enumerator> enumerators;
-        bool is_typedef = false;
         bool exported = false;
         bool is_static = false;
         bool is_extern = false;
@@ -38,8 +37,6 @@ class Parser {
         int align = 0;
         bool is_const = false;
         bool saw_type = false;
-        // Stars in front of a typedef type: `typedef *int Ptr`.
-        int pointer_depth = 0;
     };
 
     struct Declarator {
@@ -125,6 +122,8 @@ class Parser {
     void take_result(FunctionDecl &fn, const PlacedType &type);
     void parse_results(FunctionDecl &fn);
     FunctionDecl parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body);
+    // `type Name go-type;`. The name is another spelling of that type.
+    void parse_type_decl(TranslationUnit &unit, bool exported);
     void parse_top_declaration(TranslationUnit &unit, bool file_scope_export_ok);
     std::unique_ptr<Stmt> parse_decl_stmt(bool file_scope);
     std::unique_ptr<Stmt> parse_statement();
@@ -188,7 +187,7 @@ class Parser {
     void parse_trait(TranslationUnit &unit);
     bool at_contextual(std::string_view spelling) const;
 
-    // Struct, enum, union, and typedef names seen in this file.
+    // Struct, enum, union, and type-alias names seen in this file.
     std::unordered_set<std::string> type_names_;
 };
 

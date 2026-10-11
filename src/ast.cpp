@@ -557,7 +557,7 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             out += ")\n";
         } else if (const auto *item = std::get_if<TypedefDecl>(&decl.data)) {
             append_indent(out, 1);
-            out += "(typedef ";
+            out += "(type ";
             out += item->name;
             out += ' ';
             out += type_text(item->type_name, item->type_package, item->is_struct, item->is_enum, item->indirections,

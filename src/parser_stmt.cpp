@@ -25,6 +25,18 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         }
         ++pos_;
     }
+    if (check(TokenKind::KwType)) {
+        diags_.error(peek().loc, "not supported yet");
+        ++pos_;
+        while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
+            if (check(TokenKind::LBrace)) {
+                break;
+            }
+            ++pos_;
+        }
+        eat(TokenKind::Semicolon);
+        return make_stmt(Stmt::Expression{});
+    }
     if (at_func_type()) {
         pos_ = marker;
         bool storage = false;
@@ -92,13 +104,6 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         diags_.error(specs.loc, "expected '{'");
         eat(TokenKind::Semicolon);
         return make_stmt(Stmt::Expression{});
-    }
-    if (specs.is_typedef) {
-        diags_.error(specs.loc, "not supported yet");
-        if (check(TokenKind::Semicolon)) {
-            ++pos_;
-            return make_stmt(Stmt::Expression{});
-        }
     }
     Stmt::Decl decl;
     decl.loc = specs.loc;

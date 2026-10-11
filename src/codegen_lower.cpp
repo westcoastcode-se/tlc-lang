@@ -317,7 +317,7 @@ bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
     if (find_alias(target, item.type_name) != nullptr) {
         return true;
     }
-    // `typedef Point Point` names the struct tag. The typedef is not waiting on itself.
+    // `type Point Point` names the struct tag. The alias is not waiting on itself.
     if (has_typedef(target, item.type_name) && !(item.type_package.empty() && item.name == item.type_name)) {
         return false;
     }

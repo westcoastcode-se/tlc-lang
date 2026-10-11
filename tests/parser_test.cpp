@@ -210,7 +210,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "typedef func (i32, i32) i32 BinOp;\n"
+            "type BinOp func (i32, i32) i32;\n"
             "var saved func (i32) i32;\n"
             "struct Box {\n"
             "  op func (i32, i32) i32;\n"
@@ -224,7 +224,7 @@ int run_parser_tests() {
             "  return myfunc(fp);\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(typedef BinOp i32* fnptr");
+        EXPECT_HAS(check, parsed.dump, "(type BinOp i32* fnptr");
         EXPECT_HAS(check, parsed.dump, "(var saved i32* fnptr");
         EXPECT_HAS(check, parsed.dump, "(field op i32* fnptr");
         EXPECT_HAS(check, parsed.dump, "(fn myfunc (params (ptr i32* fnptr)) i32");
@@ -381,9 +381,9 @@ int run_parser_tests() {
             "  Green = 40,\n"
             "  Blue,\n"
             "};\n"
-            "typedef struct Point Point;\n"
-            "typedef *int Ptr;\n"
-            "typedef int Pair[2];\n"
+            "type Point struct Point;\n"
+            "type Ptr *int;\n"
+            "type Pair [2]int;\n"
             "var c enum Color;\n"
             "func main() int { return Blue; }\n");
         EXPECT(check, parsed.errors.empty());
@@ -391,15 +391,14 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(enumerator Red)\n");
         EXPECT_HAS(check, parsed.dump, "(enumerator Green 40)\n");
         EXPECT_HAS(check, parsed.dump, "(enumerator Blue)\n");
-        EXPECT_HAS(check, parsed.dump, "(typedef Point struct Point)\n");
-        EXPECT_HAS(check, parsed.dump, "(typedef Ptr int*)\n");
-        EXPECT_HAS(check, parsed.dump, "(typedef Pair int[2])\n");
+        EXPECT_HAS(check, parsed.dump, "(type Point struct Point)\n");
+        EXPECT_HAS(check, parsed.dump, "(type Ptr int*)\n");
+        EXPECT_HAS(check, parsed.dump, "(type Pair int[2])\n");
         EXPECT_HAS(check, parsed.dump, "(var c enum Color)\n");
     }
 
     {
         const Parsed parsed = parse_source(
-            "typedef struct Node;\n"
             "struct Node;\n"
             "enum Color;\n"
             "extern(abi=\"c\") enum Flag;\n"
@@ -482,7 +481,7 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("func main() int { typedef int T; return 0; }\n");
+        const Parsed parsed = parse_source("func main() int { type T int; return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -492,8 +491,8 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("typedef int F(int);\nfunc main() int { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        const Parsed parsed = parse_source("type F int(int);\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "expected ';'");
     }
 
     {
@@ -970,7 +969,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "func old(p int *) int { return 0; }\n"
-            "typedef int *Name;\n"
+            "type Name *int;\n"
             "func main() int { return sizeof(int *); }\n");
         EXPECT_HAS(check, parsed.errors, "type mismatch");
     }

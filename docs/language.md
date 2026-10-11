@@ -121,7 +121,7 @@ export func add(a int, b int) int {
 
 `secret` can be called from any file in the package. An importer sees `add`.
 
-`export` applies to functions, variables, structs, enums, and typedefs. `export static` is an error. `export extern(abi="c")` is allowed on a function, and the symbol keeps its C name. `export` together with `extern` on a variable is an error.
+`export` applies to functions, variables, structs, enums, and type aliases. `export static` is an error. `export extern(abi="c")` is allowed on a function, and the symbol keeps its C name. `export` together with `extern` on a variable is an error.
 
 File-scope `static` keeps the symbol private to that file. A `static` local is rejected.
 
@@ -293,7 +293,7 @@ A variable is `var name type`, `var name = expr`, or `name := expr`. `int value 
 
 At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `var a, b = expr` at file scope is `not supported yet`. `export`, `static`, `extern`, and `extern(abi="c")` go on a typed `var`: `export var n int = 1`, `static var n = 1`, `extern var slot int`, `extern(abi="c") var slot int`. `export` or `extern` on an inferred `var name = expr` or `name := expr` is `not supported yet`.
 
-Several results are still bound together: `var a, b = call`. A local struct, enum, or typedef is rejected. A pointer is a leading star in every position, including a parameter, a result, a typedef, a cast, and `sizeof`: `*int`, `*const char`, `typedef *Point Ptr`, `sizeof(*int)`, `*int(value)`. A parameter or typedef array stays after the element type: `int[4]`, `typedef int Pair[2]`.
+Several results are still bound together: `var a, b = call`. A local struct, enum, or type alias is rejected. A pointer is a leading star in every position, including a parameter, a result, a type alias, a cast, and `sizeof`: `*int`, `*const char`, `type Ptr *Point`, `sizeof(*int)`, `*int(value)`. A `var`, a field, or a type alias writes an array in front of its element type: `type Pair [2]int`. A parameter array stays after the element type: `int[4]`.
 
 A global with no initializer is zero. An array cannot be initialized with `=`.
 
@@ -361,7 +361,7 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 }
 ```
 
-A variable or a field names the value, then the type: `var fp func (i32, i32) i32;`, `var fp func (i32) (i32, i32);`, and, inside a struct, `op func (i32, i32) i32`. A typedef still writes the type, then the name: `typedef func (i32, i32) i32 BinOp;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
+A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32;`, `var fp func (i32) (i32, i32);`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
 A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
 
@@ -448,7 +448,7 @@ func main() int {
 
 This returns 30. `box = {.complex = {.inner_value = 42}}` replaces the whole value, so `box.value` becomes 0. A global initializer must be a constant, the same rule as any other global. A call in a local initializer is allowed.
 
-A struct or an enum is defined by its body. `struct Node;`, `typedef struct Node;`, `extern(abi="c") struct Node;`, `enum Color;`, and `extern(abi="c") enum Color;` are `expected '{'`. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
+A struct or an enum is defined by its body. `struct Node;`, `extern(abi="c") struct Node;`, `enum Color;`, and `extern(abi="c") enum Color;` are `expected '{'`. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
 
 An `extern(abi="c") struct` is marked so it can be used with an `extern(abi="c")` function. An empty body is an opaque handle: the type has no fields and occupies one byte, and a library uses it through a pointer. An empty struct that is not `extern(abi="c")`, including an empty `extern struct`, is `not supported yet`. An empty enum is `not supported yet`. `extern struct` uses the compiler's own layout.
 
@@ -621,7 +621,7 @@ There is no `impl` keyword. A struct satisfies a trait by defining the methods, 
 - A wrong return type or wrong extra parameters are `type mismatch`.
 - The address is not taken automatically. `apply(r)` is `type mismatch` when the parameter is `*Shape`. The call is `apply(&r)`.
 
-A trait type is allowed only as a function parameter, either `Shape` or `*Shape`. A local, a global, a return type, an array, a typedef, and `sizeof` of a trait are rejected. `**Shape` is rejected.
+A trait type is allowed only as a function parameter, either `Shape` or `*Shape`. A local, a global, a return type, an array, a type alias, and `sizeof` of a trait are rejected. `**Shape` is rejected.
 
 The function is monomorphized. Each struct that is passed in gets its own copy, and the call `s.area()` becomes a direct call of that struct's method. Passing the same trait onward, as `measure(s)` inside `apply`, is not checked again.
 
@@ -629,7 +629,7 @@ The function is monomorphized. Each struct that is passed in gets its own copy, 
 
 `s.area` without a call is `undeclared identifier`.
 
-## Enums and typedefs
+## Enums and type aliases
 
 An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `int`, and it does not convert to its representation. The semicolon after `}` may be omitted.
 
@@ -701,13 +701,13 @@ func Color::code(self this) int {
 `value.code()` passes `value`. The method is written in the same file as `enum Color`. Every file in the package can call it, and it is not exported.
 
 ```c
-typedef *Point Ptr;
-typedef int Integer;
-typedef int Pair[2];
+type Ptr *Point;
+type Integer int;
+type Pair [2]int;
 ```
 
-A typedef gives another name to a type. `typedef Point Point` is rejected, because the alias repeats the struct tag. When a typedef and a struct tag share a name, as in `typedef int Point` beside `struct Point`, the bare name uses the typedef, and `struct Point` still names the tag. That is the only use of `struct` outside a definition. An exported typedef is imported as a type name.
+A `type` declaration gives another name to a type. `type Point Point` is rejected, because the alias repeats the struct tag. When a type alias and a struct tag share a name, as in `type Point int` beside `struct Point`, the bare name uses the alias, and `struct Point` still names the tag. That is the only use of `struct` outside a definition. An exported type alias is imported as a type name. A local `type` is `not supported yet`. A struct or enum body inside the alias, as in `type Red enum { Red };`, is `not supported yet`.
 
 ## Reserved words
 
-Beyond C, `import`, `export`, `package`, `trait`, `func`, `defer`, and `var` are keywords. `impl`, `from`, `as`, and `this` are identifiers.
+Beyond C, `import`, `export`, `package`, `trait`, `func`, `defer`, `var`, and `type` are keywords. `impl`, `from`, `as`, and `this` are identifiers.

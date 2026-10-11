@@ -36,21 +36,6 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             take_extern(specs.is_extern, specs.extern_c);
             continue;
         }
-        if (token.kind == TokenKind::KwTypedef) {
-            if (!file_scope) {
-                error_at(token, "not supported yet");
-            }
-            specs.is_typedef = true;
-            ++pos_;
-            continue;
-        }
-        // `typedef *int Ptr`. A star after the type is the old declarator form.
-        if (specs.is_typedef && !specs.saw_type && !ints.any && !saw_void && !saw_bool && !saw_float &&
-            token.kind == TokenKind::Star) {
-            ++specs.pointer_depth;
-            ++pos_;
-            continue;
-        }
         if (token.kind == TokenKind::KwVoid) {
             if (ints.any || saw_bool) {
                 ints.bad = true;

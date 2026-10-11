@@ -5,7 +5,7 @@ struct Point {
     y int;
 };
 
-export typedef Point Alias;
+export type Alias Point;
 
 export func sum(p Alias) int {
     return p.x + p.y;

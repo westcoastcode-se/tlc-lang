@@ -58,7 +58,7 @@ enum class TokenKind {
     KwThreadLocal,
     KwTrue,
     KwTrait,
-    KwTypedef,
+    KwType,
     KwTypeof,
     KwTypeofUnqual,
     KwUnion,

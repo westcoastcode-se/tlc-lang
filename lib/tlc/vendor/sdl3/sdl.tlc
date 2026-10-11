@@ -6,18 +6,19 @@ package sdl3;
 export extern(abi="c") struct SDL_Window {}
 export extern(abi="c") struct SDL_GLContextState {}
 
-// SDL_Event is the C union. Every member starts at offset 0, `type` included.
-// The included structs are the ones this binding names. `padding` is the
-// 128-byte member from SDL_events.h, so the union stays 128 bytes. The u64
-// timestamp in the structs makes the alignment 8, matching SDL.
+// SDL_Event is the C union. Every member starts at offset 0, including the C
+// member `type`, written `kind` here. The included structs are the ones this
+// binding names. `padding` is the 128-byte member from SDL_events.h, so the
+// union stays 128 bytes. The u64 timestamp in the structs makes the alignment
+// 8, matching SDL.
 export extern(abi="c") struct SDL_CommonEvent {
-    type u32;
+    kind u32;
     reserved u32;
     timestamp u64;
 }
 
 export extern(abi="c") struct SDL_WindowEvent {
-    type u32;
+    kind u32;
     reserved u32;
     timestamp u64;
     windowID u32;
@@ -26,13 +27,13 @@ export extern(abi="c") struct SDL_WindowEvent {
 }
 
 export extern(abi="c") struct SDL_QuitEvent {
-    type u32;
+    kind u32;
     reserved u32;
     timestamp u64;
 }
 
 export extern(abi="c") union SDL_Event {
-    type u32;
+    kind u32;
     common SDL_CommonEvent;
     window SDL_WindowEvent;
     quit SDL_QuitEvent;

@@ -538,9 +538,9 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; y int; };\n"
-            "typedef *Point Ptr;\n"
-            "typedef int Integer;\n"
-            "typedef int Pair[2];\n"
+            "type Ptr *Point;\n"
+            "type Integer int;\n"
+            "type Pair [2]int;\n"
             "func make(x int, y int) Point {\n"
             "  var p Point;\n"
             "  p.x = x;\n"
@@ -600,14 +600,14 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "typedef enum { Red } Red;\n"
+            "type Red enum { Red };\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string errors = diagnose(
-            "typedef int Point;\n"
+            "type Point int;\n"
             "var Point int;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "redefinition");
@@ -700,7 +700,7 @@ int run_sema_tests() {
             {"main.tlc", "import { Point } from \"geom\";\n"
                        "func main() int { return 0; }\n"},
             {"geom.tlc", "package geom;\n"
-                       "typedef int Point;\n"},
+                       "type Point int;\n"},
         });
         EXPECT_HAS(check, errors, "is not exported");
     }
@@ -716,7 +716,7 @@ int run_sema_tests() {
 "}\n"},
             {"geom.tlc", "package geom;\n"
                        "struct Point { x int; y int; };\n"
-                       "export typedef Point Alias;\n"
+                       "export type Alias Point;\n"
                        "export func sum(p Alias) int { return p.x + p.y; }\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -733,7 +733,7 @@ int run_sema_tests() {
 "}\n"},
             {"geom.tlc", "package geom;\n"
                        "struct Point { x int; y int; };\n"
-                       "export typedef Point Alias;\n"
+                       "export type Alias Point;\n"
                        "export func sum(p Alias) int { return p.x + p.y; }\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -1019,7 +1019,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "typedef uint Word;\n"
+            "type Word uint;\n"
             "func main() int {\n"
             "  var n Word;\n"
             "  n = 1u32;\n"
@@ -1438,14 +1438,14 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
-            "typedef Point Point;\n"
+            "type Point Point;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "redefinition");
     }
 
     {
         const std::string errors = diagnose(
-            "typedef struct Point Point;\n"
+            "type Point struct Point;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "redefinition");
     }
@@ -1593,7 +1593,6 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "typedef struct Node;\n"
             "enum Color;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "expected '{'");
@@ -1652,7 +1651,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "struct Point { x int; };\n"
-            "typedef int Point;\n"
+            "type Point int;\n"
             "func main() int {\n"
             "  var n Point;\n"
             "  var p struct Point;\n"
@@ -2710,7 +2709,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func pair(n i32) (i32, i32) { return n, n + 2; }\n"
-            "typedef func (i32) (i32, i32) PairFn;\n"
+            "type PairFn func (i32) (i32, i32);\n"
             "func apply(p PairFn) i32 {\n"
             "  a, b := p(20);\n"
             "  return a + b;\n"

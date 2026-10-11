@@ -30,11 +30,11 @@ declaration = function
             | struct-decl
             | union-decl
             | enum-decl
-            | typedef-decl
+            | type-decl
             | trait-decl ;
 ```
 
-`export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, struct, enum, or typedef. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` is `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. Another abi is `not supported yet`. `export static` is an error. `export` and `extern` on an inferred variable are rejected.
+`export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, struct, enum, or type alias. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` is `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. Another abi is `not supported yet`. `export static` is an error. `export` and `extern` on an inferred variable are rejected.
 
 ## Functions and methods
 
@@ -84,7 +84,7 @@ A variable whose type is a function pointer is written with `func` first, then t
 fn-var      = func-type identifier { "," identifier } ";" ;
 ```
 
-## Structs, enums, traits, and typedefs
+## Structs, enums, traits, and type aliases
 
 ```ebnf
 struct-decl = "struct" [ align ] identifier "{" { field } "}" [ ";" ] ;
@@ -102,8 +102,7 @@ enumerator  = identifier [ "=" integer-literal ] ;
 trait-decl  = "trait" identifier "{" { trait-method } "}" ";" ;
 trait-method = "func" identifier "(" [ parameters ] ")" result ";" ;
 
-typedef-decl = "typedef" placed-type declarator { "," declarator } ";"
-            | "typedef" func-type identifier { "," identifier } ";" ;
+type-decl   = "type" identifier go-type ";" ;
 ```
 
 The semicolon after `}` of a struct, a union, or an enum is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `struct Name;`, `union Name;`, and `enum Name;` are not declarations. An empty `extern(abi="c") struct` is `extern(abi="c") struct Name "{" "}"`.
@@ -116,7 +115,7 @@ A trait method has no body and no receiver.
 
 ## Types
 
-A pointer is a leading star in every type position: `*int`, `*Point`, `*pkg.Point`, `*const char`, `typedef *int Name`, `sizeof(*int)`, and `*int(expr)`. `int *`, `Point *`, `typedef int *Name`, `sizeof(int *)`, and `int*(expr)` are `type mismatch`. A `var` or a field writes an array in front of its element type. A parameter or a typedef keeps the array after the element type: `int[4]`, `typedef int Pair[2]`.
+A pointer is a leading star in every type position: `*int`, `*Point`, `*pkg.Point`, `*const char`, `type Name *int`, `sizeof(*int)`, and `*int(expr)`. `int *`, `Point *`, `sizeof(int *)`, and `int*(expr)` are `type mismatch`. A `var`, a field, or a type alias writes an array in front of its element type: `[4]int`, `type Pair [2]int`. A parameter keeps the array after the element type: `int[4]`.
 
 ```ebnf
 go-type     = func-type
@@ -153,7 +152,7 @@ One `*` before `[` is a pointer to an array, as in `*[4]i32`. Two stars there, a
 
 `signed`, `unsigned`, and `long long` are not type names.
 
-A parameter array and a typedef array stay after the element type. A star before a typedef name, as in `typedef int *Name`, is `type mismatch`. The function-pointer declarator `type (*name)(` parameters `)` still parses. A new variable is not written as a C declarator. `int value = 1` is `expected var`.
+A parameter array stays after the element type. A type alias uses `go-type`, the same order as `var`: `type Integer int`, `type Ptr *Point`, `type Pair [2]int`, `type BinOp func (int, int) int`. The function-pointer declarator `int (*name)(` parameters `)` still parses. A new variable is not written as a C declarator. `int value = 1` is `expected var`.
 
 ## Statements
 
@@ -234,7 +233,7 @@ cast        = { "*" } scalar-type "(" expression ")"
 scalar-type = integer-type | "void" | "bool" | "float" | "double" | integer-name | float-name ;
 ```
 
-An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)` or `*int(p)`. A pointer cast of a declared struct, enum, or typedef is `*Point(p)`. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof "(" { "*" } scalar-type ")"`, or the same with `struct` or `enum` before the name. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
+An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)` or `*int(p)`. A pointer cast of a declared struct, enum, or type alias is `*Point(p)`. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof "(" { "*" } scalar-type ")"`, or the same with `struct` or `enum` before the name. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
 
 A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A positional element, such as `{10}`, is `not supported yet`. A trailing comma is allowed.
 
@@ -282,7 +281,7 @@ These words are keywords and cannot be identifiers:
 ```text
 bool break case char const continue default defer do double else enum
 export extern false float for func if import int long null package
-return short sizeof static struct switch trait true typedef var void while
+return short sizeof static struct switch trait true type var void while
 ```
 
 C keywords that tlc reserves but does not use are also keywords: `alignas`, `alignof`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof`, `typeof_unqual`, `union`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).

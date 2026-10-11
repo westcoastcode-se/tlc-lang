@@ -75,8 +75,8 @@ func main() int {
     while (running != 0) {
         var event SDL_Event;
         while (SDL_PollEvent(&event) != 0) {
-            if (event.type == SdlEventKind.SDL_EVENT_QUIT ||
-                event.type == SdlEventKind.SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            if (event.kind == SdlEventKind.SDL_EVENT_QUIT ||
+                event.kind == SdlEventKind.SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 running = 0;
             }
         }
