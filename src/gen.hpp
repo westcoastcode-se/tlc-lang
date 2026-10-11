@@ -168,6 +168,9 @@ class CodeGen {
     int local_seq_ = 0;
     uint32_t entry_file_ = 0;
     bool testing_ = false;
+    // Set while emitting one test body. `testing.error` reads `test_name_`.
+    bool emitting_test_ = false;
+    std::string test_name_;
     uint32_t current_file_ = 0;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
     std::unordered_map<uint32_t, FileSymbols> files_;
@@ -666,6 +669,8 @@ class CodeGen {
     void bind_imports(const PackageNode &node);
     void emit_bodies(const PackageNode &node);
     void emit_tests();
+    bool is_testing_error_call(const Expr::Call &node) const;
+    TypedValue emit_testing_error(const Expr::Call &node);
     void apply_initializer(const VarDecl &var);
     llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
     llvm::Constant *const_field(const Expr &expr, const FieldLayout &slot);

@@ -1,0 +1,15 @@
+func add(a int, b int) int {
+    return a + b;
+}
+
+test "add joins its arguments" {
+    var value = add(2, 2);
+    if (value != 4) {
+        return testing.error("Expected 4 but was %d", value);
+    }
+}
+
+test "bad" {
+    var value = add(2, 3);
+    return testing.error("Expected 4 but was %d", value);
+}

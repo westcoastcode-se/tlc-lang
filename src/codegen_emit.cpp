@@ -1824,6 +1824,11 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.type = low.depth == 0 && low.elem_void ? nullptr : low.type;
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (is_testing_error_call(node)) {
+                    Shape shape;
+                    shape.type = i32();
+                    return shape;
+                }
                 if (node.callee == nullptr) {
                     return {};
                 }
@@ -2126,6 +2131,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return rhs;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (is_testing_error_call(node)) {
+                    return emit_testing_error(node);
+                }
                 if (node.callee != nullptr) {
                     if (const auto *named = std::get_if<Expr::Name>(&node.callee->data)) {
                         if (const Binding *binding = lookup(named->text);
@@ -3104,6 +3112,82 @@ void CodeGen::emit(const PackageGraph &graph) {
     graph_ = nullptr;
 }
 
+bool CodeGen::is_testing_error_call(const Expr::Call &node) const {
+    if (!emitting_test_ || node.callee == nullptr || packages_.contains("testing")) {
+        return false;
+    }
+    const auto *selector = std::get_if<Expr::Selector>(&node.callee->data);
+    if (selector == nullptr || selector->field != "error" || selector->base == nullptr) {
+        return false;
+    }
+    const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+    return base != nullptr && base->text == "testing";
+}
+
+TypedValue CodeGen::emit_testing_error(const Expr::Call &node) {
+    std::vector<llvm::Value *> args;
+    args.reserve(node.args.size());
+    for (std::size_t i = 0; i < node.args.size(); ++i) {
+        if (terminated() || node.args[i] == nullptr) {
+            break;
+        }
+        const TypedValue value = emit_rvalue(*node.args[i]);
+        llvm::Value *bits = value.value;
+        if (bits == nullptr) {
+            bits = i == 0 ? static_cast<llvm::Value *>(null_ptr()) : zero();
+        } else if (bits->getType()->isAggregateType()) {
+            error(expr_loc(*node.args[i]), "not supported yet");
+            bits = zero();
+        } else if (i > 0 && bits->getType()->isIntegerTy() && bits->getType()->getIntegerBitWidth() < 32) {
+            const bool zero_extend = value.elem_unsigned || value.elem_char;
+            bits = zero_extend ? builder_.CreateZExt(bits, i32()) : builder_.CreateSExt(bits, i32());
+        } else if (i > 0 && bits->getType()->isFloatTy()) {
+            bits = builder_.CreateFPExt(bits, f64_ty());
+        }
+        args.push_back(bits);
+    }
+    if (terminated()) {
+        return {const_i32(1), 0};
+    }
+    if (args.empty()) {
+        args.push_back(null_ptr());
+    }
+    auto *printf_type = llvm::FunctionType::get(i32(), {ptr_type()}, true);
+    llvm::FunctionCallee printf_fn = module_.getOrInsertFunction("printf", printf_type);
+    std::string file_name = "unknown";
+    int line = 1;
+    int column = 1;
+    if (const SourceFile *file = diags_.source(node.loc.file)) {
+        const LineCol at = file->line_col(node.loc.offset);
+        line = at.line;
+        column = at.column;
+        const std::string &path = file->path();
+        std::string dir;
+        if (graph_ != nullptr && !graph_->nodes.empty()) {
+            const std::string &entry = graph_->nodes.front().path;
+            const auto slash = entry.find_last_of("/\\");
+            if (slash != std::string::npos) {
+                dir = entry.substr(0, slash + 1);
+            }
+        }
+        if (!dir.empty() && path.starts_with(dir)) {
+            file_name = path.substr(dir.size());
+        } else {
+            const auto slash = path.find_last_of("/\\");
+            file_name = slash == std::string::npos ? path : path.substr(slash + 1);
+        }
+    }
+    llvm::Value *header = builder_.CreateGlobalString("%s:%d:%d: %s: ");
+    llvm::Value *file_value = builder_.CreateGlobalString(file_name);
+    llvm::Value *name_value = builder_.CreateGlobalString(test_name_);
+    builder_.CreateCall(printf_type, printf_fn.getCallee(),
+                        {header, file_value, const_i32(line), const_i32(column), name_value});
+    builder_.CreateCall(printf_type, printf_fn.getCallee(), args);
+    llvm::Value *newline = builder_.CreateGlobalString("\n");
+    builder_.CreateCall(printf_type, printf_fn.getCallee(), {newline});
+    return {const_i32(1), 0};
+}
+
 void CodeGen::emit_tests() {
     struct TestFn {
         std::string name;
@@ -3143,6 +3227,10 @@ void CodeGen::emit_tests() {
             return_depth_ = 0;
             return_many_ = false;
             share_function_scope_ = true;
+            const bool saved_emitting = emitting_test_;
+            const std::string saved_test_name = test_name_;
+            emitting_test_ = true;
+            test_name_ = test->name;
             extern_struct_ret_ = false;
             extern_sret_ = false;
             extern_sret_ptr_ = nullptr;
@@ -3154,6 +3242,8 @@ void CodeGen::emit_tests() {
             emit_stmt(*test->body);
             finish_function();
             pop();
+            emitting_test_ = saved_emitting;
+            test_name_ = saved_test_name;
             function_ = nullptr;
             return_type_ = nullptr;
             return_depth_ = 0;

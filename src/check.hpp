@@ -128,6 +128,9 @@ class Checker {
     Type return_type_ = type_invalid();
     // Set while folding `sizeof`, so a second lookup does not repeat a diagnostic.
     bool quiet_ = false;
+    // Set while checking a test body. `testing.error` exists only then.
+    bool in_test_ = false;
+    Symbol testing_error_{};
     int loop_depth_ = 0;
     bool checking_defer_ = false;
     std::vector<SwitchFrame> switches_;
@@ -226,6 +229,10 @@ class Checker {
     void check_stmt(const Stmt &stmt);
     void check_assert(SourceLoc loc, const Expr *cond, const std::string &message);
     void check_test(const TestDecl &test);
+    // `testing.error` inside a test. The compiler supplies the test name and the call site.
+    Symbol *testing_error();
+    bool is_testing_error(const Symbol *symbol) const;
+    Type check_testing_error(const Expr::Call &node, bool deferring);
     Type sizeof_operand(const Expr::Sizeof &node);
     std::optional<int> fold_int(const Expr &expr);
     void check_function(const FunctionDecl &fn);

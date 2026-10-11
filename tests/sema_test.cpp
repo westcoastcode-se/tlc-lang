@@ -3110,5 +3110,69 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "return type");
     }
 
+    {
+        const std::string errors = diagnose(
+            "func add(a int, b int) int { return a + b; }\n"
+            "test \"add joins its arguments\" {\n"
+            "  var value = add(2, 2);\n"
+            "  if (value != 4) {\n"
+            "    return testing.error(\"Expected 4 but was %d\", value);\n"
+            "  }\n"
+            "}\n"
+            "test \"string\" { return testing.error(\"%s\", \"no\"); }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  return testing.error(\"x\");\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "test \"t\" { return testing.error(); }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "test \"t\" { return testing.error(1); }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "test \"t\" { return testing.missing(\"x\"); }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not exported");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; y int; }\n"
+            "test \"t\" {\n"
+            "  var p Point;\n"
+            "  return testing.error(\"%d\", p);\n"
+            "}\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "test \"t\" {\n"
+            "  var f = testing.error;\n"
+            "  return 0;\n"
+            "}\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
     return check.failed;
 }

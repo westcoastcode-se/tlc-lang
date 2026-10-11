@@ -779,6 +779,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return type_invalid();
                     }
+                    if (target.kind == SelectorTarget::Kind::Package && is_testing_error(target.symbol)) {
+                        return check_testing_error(node, deferring);
+                    }
                     if (target.kind != SelectorTarget::Kind::Package && selector->base != nullptr) {
                         const Type base = check_expr(*selector->base, true);
                         if (base.kind == TypeKind::Invalid) {
@@ -975,6 +978,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 if (target.kind == SelectorTarget::Kind::Package) {
+                    if (is_testing_error(target.symbol)) {
+                        error(node.loc, "not supported yet");
+                        return type_invalid();
+                    }
                     if (target.symbol->is_type) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
@@ -1187,13 +1194,59 @@ void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &m
     }
 }
 
+Symbol *Checker::testing_error() {
+    if (testing_error_.type.kind != TypeKind::Function) {
+        testing_error_.name = "error";
+        testing_error_.is_function = true;
+        testing_error_.has_body = true;
+        testing_error_.type = type_function(type_int(), {type_pointer(type_char())}, true);
+    }
+    return &testing_error_;
+}
+
+bool Checker::is_testing_error(const Symbol *symbol) const {
+    return symbol == &testing_error_ && testing_error_.is_function;
+}
+
+Type Checker::check_testing_error(const Expr::Call &node, bool deferring) {
+    if (deferring) {
+        error(node.loc, "not supported yet");
+    }
+    const Symbol *fn = testing_error();
+    if (node.args.size() < fn->type.params.size()) {
+        error(node.loc, "argument count");
+        return type_int();
+    }
+    if (node.args[0] != nullptr) {
+        check_against(*node.args[0], fn->type.params[0]);
+    } else {
+        error(node.loc, "type mismatch");
+    }
+    for (std::size_t i = 1; i < node.args.size(); ++i) {
+        if (node.args[i] == nullptr) {
+            error(node.loc, "type mismatch");
+            continue;
+        }
+        const Type arg = check_expr(*node.args[i], true);
+        if (arg.kind == TypeKind::Invalid) {
+            continue;
+        }
+        if (!is_numeric(arg) && arg.kind != TypeKind::Pointer && arg.kind != TypeKind::Enum) {
+            error(expr_loc(*node.args[i]), "not supported yet");
+        }
+    }
+    return type_int();
+}
+
 void Checker::check_test(const TestDecl &test) {
     push_function();
     const Type saved = return_type_;
     const int saved_loops = loop_depth_;
     auto saved_switches = std::move(switches_);
+    const bool saved_test = in_test_;
     loop_depth_ = 0;
     switches_.clear();
+    in_test_ = true;
     return_type_ = type_int();
     if (test.body) {
         if (const auto *block = std::get_if<Stmt::Block>(&test.body->data)) {
@@ -1206,6 +1259,7 @@ void Checker::check_test(const TestDecl &test) {
             check_stmt(*test.body);
         }
     }
+    in_test_ = saved_test;
     switches_ = std::move(saved_switches);
     loop_depth_ = saved_loops;
     return_type_ = saved;

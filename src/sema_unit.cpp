@@ -267,6 +267,13 @@ Checker::SelectorTarget Checker::resolve_selector(const Expr::Selector &selector
     }
     const Symbol *symbol = lookup(base->text);
     if (symbol == nullptr) {
+        if (in_test_ && base->text == "testing") {
+            if (selector.field != "error") {
+                error(selector.loc, selector.field + " is not exported");
+                return {SelectorTarget::Kind::Failed, nullptr};
+            }
+            return {SelectorTarget::Kind::Package, testing_error()};
+        }
         error(base->loc, "undeclared identifier");
         return {SelectorTarget::Kind::Failed, nullptr};
     }
