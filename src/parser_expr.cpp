@@ -226,7 +226,7 @@ bool Parser::skip_type_base(std::size_t &index, int leading, bool cast) const {
         ++index;
         return true;
     }
-    if (head.kind == TokenKind::KwStruct || head.kind == TokenKind::KwEnum) {
+    if (head.kind == TokenKind::KwEnum) {
         if (peek(index + 1).kind != TokenKind::Identifier) {
             return false;
         }
@@ -325,16 +325,6 @@ Parser::ParenType Parser::parse_cast_type() {
         type.name = "float";
     } else if (eat(TokenKind::KwDouble)) {
         type.name = "double";
-    } else if (eat(TokenKind::KwStruct)) {
-        type.is_struct = true;
-        if (check(TokenKind::Identifier)) {
-            type.name = peek().text;
-            type.loc = peek().loc;
-            ++pos_;
-        } else {
-            error_here("expected an identifier");
-            type.name = "invalid";
-        }
     } else if (eat(TokenKind::KwEnum)) {
         type.is_enum = true;
         if (check(TokenKind::Identifier)) {
@@ -399,7 +389,26 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         Expr::Sizeof node;
         node.loc = peek().loc;
         ++pos_;
-        if (starts_type_paren()) {
+        // `sizeof(Point)`. `struct` is not a type spelling here.
+        std::size_t look = 0;
+        if (peek(look).kind == TokenKind::LParen) {
+            ++look;
+            while (peek(look).kind == TokenKind::Star) {
+                ++look;
+            }
+        }
+        if (peek().kind == TokenKind::LParen && peek(look).kind == TokenKind::KwStruct) {
+            error_at(peek(look), "expected a type");
+            int depth = 0;
+            do {
+                if (check(TokenKind::LParen)) {
+                    ++depth;
+                } else if (check(TokenKind::RParen)) {
+                    --depth;
+                }
+                ++pos_;
+            } while (depth > 0 && !eof());
+        } else if (starts_type_paren()) {
             const ParenType type = parse_paren_type();
             node.on_type = true;
             node.type_name = type.name;

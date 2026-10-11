@@ -1,6 +1,6 @@
 package math;
 
-struct Point { x int; y int; };
+type Point struct { x int; y int; };
 
 func Point::sum(self this) int {
     return self.x + self.y;

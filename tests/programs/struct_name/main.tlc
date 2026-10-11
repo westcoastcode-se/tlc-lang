@@ -1,9 +1,9 @@
-struct Point {
+type Point struct {
     x int;
     y int;
 };
 
-struct Node {
+type Node struct {
     n int;
     next *Node;
 };

@@ -1,6 +1,6 @@
 package math;
 
-export struct Point {
+export type Point struct {
     x int;
     y int;
 };

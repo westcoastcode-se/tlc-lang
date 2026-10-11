@@ -1,8 +1,8 @@
-struct Inner {
+type Inner struct {
     inner_value int;
 };
 
-struct Box {
+type Box struct {
     value int;
     complex Inner;
 };

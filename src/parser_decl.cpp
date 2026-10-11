@@ -6,17 +6,125 @@
 
 namespace tlc {
 
-void Parser::parse_type_decl(TranslationUnit &unit, bool exported) {
-    TypedefDecl item;
-    item.loc = peek().loc;
+void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c, std::string name,
+                            SourceLoc name_loc) {
+    const TokenKind kind = peek().kind;
+    const SourceLoc kind_loc = peek().loc;
+    ++pos_;
+    int align = 0;
+    std::string underlying;
+    if (kind == TokenKind::KwStruct && check(TokenKind::LParen)) {
+        align = parse_struct_align();
+    } else if (kind == TokenKind::KwEnum && check(TokenKind::LParen)) {
+        underlying = parse_enum_underlying();
+    } else if (check(TokenKind::LParen)) {
+        diags_.error(peek().loc, "not supported yet");
+        int depth = 0;
+        do {
+            if (check(TokenKind::LParen)) {
+                ++depth;
+            } else if (check(TokenKind::RParen)) {
+                --depth;
+            }
+            ++pos_;
+        } while (depth > 0 && !eof());
+    }
+    if (!eat(TokenKind::LBrace)) {
+        diags_.error(kind_loc, "expected '{'");
+        eat(TokenKind::Semicolon);
+        return;
+    }
+    if (!name.empty()) {
+        type_names_.insert(name);
+    }
+    if (kind == TokenKind::KwTrait) {
+        if (exported || is_extern) {
+            diags_.error(name_loc, "not supported yet");
+        }
+        TraitDecl trait;
+        trait.loc = name_loc;
+        trait.name = std::move(name);
+        while (!check(TokenKind::RBrace) && !eof()) {
+            const std::size_t before = pos_;
+            if (!check(TokenKind::KwFunc)) {
+                error_here("expected a declaration");
+                ++pos_;
+                continue;
+            }
+            FunctionDecl method = parse_function(false, false, false, false, false);
+            if (!method.method_struct.empty()) {
+                diags_.error(method.loc, "type mismatch");
+            }
+            trait.methods.push_back(std::move(method));
+            if (pos_ == before) {
+                error_here("expected a declaration");
+                ++pos_;
+            }
+        }
+        expect(TokenKind::RBrace, "expected '}'");
+        eat(TokenKind::Semicolon);
+        TopDecl top;
+        top.data = std::move(trait);
+        unit.decls.push_back(std::move(top));
+        return;
+    }
+    if (kind == TokenKind::KwEnum) {
+        EnumDecl item;
+        item.loc = name_loc;
+        item.name = std::move(name);
+        item.underlying = std::move(underlying);
+        item.enumerators = parse_enumerators();
+        item.exported = exported;
+        item.is_extern = is_extern;
+        item.extern_c = extern_c;
+        expect(TokenKind::RBrace, "expected '}'");
+        eat(TokenKind::Semicolon);
+        TopDecl top;
+        top.data = std::move(item);
+        unit.decls.push_back(std::move(top));
+        return;
+    }
+    const bool as_union = kind == TokenKind::KwUnion;
+    std::vector<FieldDecl> fields = parse_fields();
+    expect(TokenKind::RBrace, "expected '}'");
+    eat(TokenKind::Semicolon);
+    if (as_union && !extern_c) {
+        diags_.error(kind_loc, "not supported yet");
+        return;
+    }
+    StructDecl item;
+    item.loc = name_loc;
+    item.name = std::move(name);
+    item.fields = std::move(fields);
+    item.exported = exported;
+    item.is_extern = is_extern || as_union;
+    item.extern_c = extern_c;
+    item.align = align;
+    item.is_union = as_union;
+    TopDecl top;
+    top.data = std::move(item);
+    unit.decls.push_back(std::move(top));
+}
+
+void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c) {
     eat(TokenKind::KwType);
+    std::string name;
+    SourceLoc name_loc = peek().loc;
     if (check(TokenKind::Identifier)) {
-        item.name = peek().text;
-        item.loc = peek().loc;
+        name = peek().text;
+        name_loc = peek().loc;
         ++pos_;
     } else {
         error_here("expected an identifier");
     }
+    if (check(TokenKind::KwStruct) || check(TokenKind::KwEnum) || check(TokenKind::KwTrait) ||
+        check(TokenKind::KwUnion)) {
+        parse_type_def(unit, exported, is_extern, extern_c, std::move(name), name_loc);
+        return;
+    }
+    TypedefDecl item;
+    item.loc = name_loc;
+    item.name = std::move(name);
     const PlacedType type = parse_go_type();
     if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
         diags_.error(type.loc.valid() ? type.loc : item.loc, "not supported yet");
@@ -85,7 +193,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         if (exported && is_static) {
             diags_.error(storage_loc, "export static");
         }
-        parse_type_decl(unit, exported);
+        parse_type_decl(unit, exported, is_extern, extern_c);
         saw_decl_ = true;
         return;
     }

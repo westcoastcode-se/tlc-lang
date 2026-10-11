@@ -103,7 +103,8 @@ class Parser {
     // `extern` is `abi="tlc"`. `extern(abi="c")` is a C library. Other values are rejected.
     bool take_extern(bool &is_extern, bool &extern_c);
     int parse_struct_align();
-    bool take_enum_underlying(std::string &out);
+    // `enum(i32)`. Empty means `int` when the caller saw no parentheses.
+    std::string parse_enum_underlying();
     std::vector<Enumerator> parse_enumerators();
     std::vector<FieldDecl> parse_fields();
     Declarator parse_declarator();
@@ -122,8 +123,11 @@ class Parser {
     void take_result(FunctionDecl &fn, const PlacedType &type);
     void parse_results(FunctionDecl &fn);
     FunctionDecl parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body);
-    // `type Name go-type;`. The name is another spelling of that type.
-    void parse_type_decl(TranslationUnit &unit, bool exported);
+    // `type Name struct`, `type Name enum`, `type Name trait`, `type Name union`,
+    // or `type Name go-type` for an alias.
+    void parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c);
+    void parse_type_def(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c, std::string name,
+                        SourceLoc name_loc);
     void parse_top_declaration(TranslationUnit &unit, bool file_scope_export_ok);
     std::unique_ptr<Stmt> parse_decl_stmt(bool file_scope);
     std::unique_ptr<Stmt> parse_statement();
@@ -184,7 +188,6 @@ class Parser {
     std::unique_ptr<Expr> parse_cast_expr();
 
     void parse_import(TranslationUnit &unit);
-    void parse_trait(TranslationUnit &unit);
     bool at_contextual(std::string_view spelling) const;
 
     // Struct, enum, union, and type-alias names seen in this file.

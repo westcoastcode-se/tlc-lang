@@ -1,6 +1,6 @@
 package geom;
 
-export struct Point {
+export type Point struct {
     x int;
     y int;
 };

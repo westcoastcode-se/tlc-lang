@@ -69,7 +69,7 @@ func none() (*int, int) {
     return null, 3;
 }
 
-struct Point {
+type Point struct {
     x int;
     y int;
 };
@@ -81,7 +81,7 @@ func make(n int) (Point, int) {
     return p, 2;
 }
 
-struct Box {
+type Box struct {
     v int;
     w int;
 };

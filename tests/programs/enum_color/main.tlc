@@ -1,10 +1,10 @@
-enum Color {
+type Color enum {
     Red,
     Green = 40,
     Blue,
 };
 
-enum Tiny i8 {
+type Tiny enum(i8) {
     A,
     B,
 };

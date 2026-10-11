@@ -3,21 +3,21 @@ package sdl3;
 // The subset of SDL3 used by examples/triangle. The real library is the
 // system libSDL3 named in the link file.
 
-export extern(abi="c") struct SDL_Window {}
-export extern(abi="c") struct SDL_GLContextState {}
+export extern(abi="c") type SDL_Window struct {}
+export extern(abi="c") type SDL_GLContextState struct {}
 
 // SDL_Event is the C union. Every member starts at offset 0, including the C
 // member `type`, written `kind` here. The included structs are the ones this
 // binding names. `padding` is the 128-byte member from SDL_events.h, so the
 // union stays 128 bytes. The u64 timestamp in the structs makes the alignment
 // 8, matching SDL.
-export extern(abi="c") struct SDL_CommonEvent {
+export extern(abi="c") type SDL_CommonEvent struct {
     kind u32;
     reserved u32;
     timestamp u64;
 }
 
-export extern(abi="c") struct SDL_WindowEvent {
+export extern(abi="c") type SDL_WindowEvent struct {
     kind u32;
     reserved u32;
     timestamp u64;
@@ -26,13 +26,13 @@ export extern(abi="c") struct SDL_WindowEvent {
     data2 i32;
 }
 
-export extern(abi="c") struct SDL_QuitEvent {
+export extern(abi="c") type SDL_QuitEvent struct {
     kind u32;
     reserved u32;
     timestamp u64;
 }
 
-export extern(abi="c") union SDL_Event {
+export extern(abi="c") type SDL_Event union {
     kind u32;
     common SDL_CommonEvent;
     window SDL_WindowEvent;
@@ -40,20 +40,20 @@ export extern(abi="c") union SDL_Event {
     padding [128]u8;
 }
 
-export extern(abi="c") enum SdlInit {
+export extern(abi="c") type SdlInit enum {
     SDL_INIT_VIDEO = 0x20,
 }
 
-export extern(abi="c") enum SdlWindow {
+export extern(abi="c") type SdlWindow enum {
     SDL_WINDOW_OPENGL = 2,
 }
 
-export extern(abi="c") enum SdlEventKind {
+export extern(abi="c") type SdlEventKind enum {
     SDL_EVENT_QUIT = 0x100,
     SDL_EVENT_WINDOW_CLOSE_REQUESTED = 0x210,
 }
 
-export extern(abi="c") enum SdlGlAttr {
+export extern(abi="c") type SdlGlAttr enum {
     SDL_GL_CONTEXT_MAJOR_VERSION = 17,
     SDL_GL_CONTEXT_MINOR_VERSION = 18,
     SDL_GL_CONTEXT_PROFILE_MASK = 20,

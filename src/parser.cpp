@@ -103,42 +103,6 @@ bool Parser::starts_declaration() const {
 }
 
 
-void Parser::parse_trait(TranslationUnit &unit) {
-    TraitDecl trait;
-    trait.loc = peek().loc;
-    eat(TokenKind::KwTrait);
-    if (check(TokenKind::Identifier)) {
-        trait.name = peek().text;
-        trait.loc = peek().loc;
-        ++pos_;
-    } else {
-        error_here("expected an identifier");
-    }
-    expect(TokenKind::LBrace, "expected '{'");
-    while (!check(TokenKind::RBrace) && !eof()) {
-        const std::size_t before = pos_;
-        if (!check(TokenKind::KwFunc)) {
-            error_here("expected a declaration");
-            ++pos_;
-            continue;
-        }
-        FunctionDecl method = parse_function(false, false, false, false, false);
-        if (!method.method_struct.empty()) {
-            diags_.error(method.loc, "type mismatch");
-        }
-        trait.methods.push_back(std::move(method));
-        if (pos_ == before) {
-            error_here("expected a declaration");
-            ++pos_;
-        }
-    }
-    expect(TokenKind::RBrace, "expected '}'");
-    expect(TokenKind::Semicolon, "expected ';'");
-    TopDecl top;
-    top.data = std::move(trait);
-    unit.decls.push_back(std::move(top));
-}
-
 void Parser::parse_import(TranslationUnit &unit) {
     ImportDecl import;
     import.loc = peek().loc;
@@ -227,11 +191,6 @@ TranslationUnit Parser::parse() {
         }
         if (check(TokenKind::KwImport)) {
             parse_import(unit);
-            continue;
-        }
-        if (check(TokenKind::KwTrait)) {
-            parse_trait(unit);
-            saw_decl_ = true;
             continue;
         }
         if (check(TokenKind::KwVar) ||

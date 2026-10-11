@@ -1,9 +1,9 @@
-struct Point {
+type Point struct {
     x int;
     y int;
 };
 
-struct Pair {
+type Pair struct {
     a int;
     b int;
 };

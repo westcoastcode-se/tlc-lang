@@ -27,14 +27,10 @@ declaration = function
             | method
             | var-decl
             | fn-var
-            | struct-decl
-            | union-decl
-            | enum-decl
-            | type-decl
-            | trait-decl ;
+            | type-decl ;
 ```
 
-`export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, struct, enum, or type alias. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` is `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. Another abi is `not supported yet`. `export static` is an error. `export` and `extern` on an inferred variable are rejected.
+`export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, or `type`. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` is `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. Another abi is `not supported yet`. `export static` is an error. `export` and `extern` on an inferred variable are rejected.
 
 ## Functions and methods
 
@@ -87,29 +83,29 @@ fn-var      = func-type identifier { "," identifier } ";" ;
 ## Structs, enums, traits, and type aliases
 
 ```ebnf
-struct-decl = "struct" [ align ] identifier "{" { field } "}" [ ";" ] ;
+type-decl   = "type" identifier type-body ;
+type-body   = "struct" [ align ] "{" { field } "}" [ ";" ]
+            | "enum" [ "(" underlying ")" ] "{" [ enumerators ] "}" [ ";" ]
+            | "trait" "{" { trait-method } "}" [ ";" ]
+            | "union" "{" field { field } "}" [ ";" ]
+            | go-type ";" ;
 align       = "(" "align" "=" integer-literal ")" ;
-union-decl  = "extern" "(" "abi" "=" "\"c\"" ")" "union" identifier "{" field { field } "}" [ ";" ] ;
 field       = identifier go-type ";" ;
 declarator  = identifier [ array ]
             | "(" "*" { "*" } identifier ")" "(" [ func-args ] ")" ;
 
-enum-decl   = "enum" identifier [ underlying ] "{" [ enumerators ] "}" [ ";" ] ;
 underlying  = integer-name | "bool" | "char" | "short" | "int" | "long" ;
 enumerators = enumerator { "," enumerator } [ "," ] ;
 enumerator  = identifier [ "=" integer-literal ] ;
 
-trait-decl  = "trait" identifier "{" { trait-method } "}" ";" ;
 trait-method = "func" identifier "(" [ parameters ] ")" result ";" ;
-
-type-decl   = "type" identifier go-type ";" ;
 ```
 
-The semicolon after `}` of a struct, a union, or an enum is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `struct Name;`, `union Name;`, and `enum Name;` are not declarations. An empty `extern(abi="c") struct` is `extern(abi="c") struct Name "{" "}"`.
+The semicolon after `}` is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `type Name struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `type Name struct` without `{` is `expected '{'`. An empty `extern(abi="c") struct` is `extern(abi="c") type Name struct "{" "}"`. A `union` requires `extern(abi="c")`.
 
 `extern(abi="c") union` is a C union: every field starts at offset 0, the size is the largest field, and the alignment is the strictest field. A union without `extern(abi="c")`, including `extern union`, is `not supported yet`. An empty union is `not supported yet`.
 
-`extern(abi="c") enum` has no underlying type. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
+`extern(abi="c") type Name enum` has no underlying type. `extern(abi="c") type Name enum(i8)` is `extern enum`. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
 
 A trait method has no body and no receiver.
 
@@ -134,9 +130,7 @@ base-type   = integer-type
             | "void" | "bool" | "float" | "double"
             | integer-name | float-name
             | identifier
-            | identifier "." identifier
-            | "struct" identifier
-            | "enum" identifier ;
+            | identifier "." identifier ;
 
 integer-type = "char"
              | "short" [ "int" ]
@@ -228,12 +222,11 @@ designator  = "." identifier "=" expression ;
 anonymous   = "func" "(" [ parameters ] ")" [ result ] block ;
 short-function = "(" [ name-list ] ")" block ;
 cast        = { "*" } scalar-type "(" expression ")"
-            | { "*" } ( "struct" identifier | "enum" identifier ) "(" expression ")"
             | "*" { "*" } identifier "(" expression ")" ;
 scalar-type = integer-type | "void" | "bool" | "float" | "double" | integer-name | float-name ;
 ```
 
-An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)` or `*int(p)`. A pointer cast of a declared struct, enum, or type alias is `*Point(p)`. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof "(" { "*" } scalar-type ")"`, or the same with `struct` or `enum` before the name. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
+An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)` or `*int(p)`. A pointer cast of a declared struct, enum, or type alias is `*Point(p)`. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof "(" { "*" } scalar-type ")"`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
 
 A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A positional element, such as `{10}`, is `not supported yet`. A trailing comma is allowed.
 

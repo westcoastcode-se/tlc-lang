@@ -2,7 +2,7 @@ func combine(op func (int, int) int) int {
     return op(4, 6);
 }
 
-struct Box {
+type Box struct {
     n int;
 }
 

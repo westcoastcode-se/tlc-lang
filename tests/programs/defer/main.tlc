@@ -4,7 +4,7 @@ func put(n int) void {
     acc = acc * 3 + n;
 }
 
-struct Box {
+type Box struct {
     v int;
     w int;
 };

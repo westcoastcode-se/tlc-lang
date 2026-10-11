@@ -1,4 +1,4 @@
-extern(abi="c") enum Flag {
+extern(abi="c") type Flag enum {
     A = 20,
     B = 22,
 }

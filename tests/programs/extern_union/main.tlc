@@ -1,9 +1,9 @@
-extern(abi="c") union Num {
+extern(abi="c") type Num union {
     n int;
     m int;
 }
 
-extern(abi="c") union Word {
+extern(abi="c") type Word union {
     n int;
     raw [8]char;
 }

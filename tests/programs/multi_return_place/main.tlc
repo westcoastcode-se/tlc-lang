@@ -1,8 +1,8 @@
-struct Inner {
+type Inner struct {
     v int;
 };
 
-struct Outer {
+type Outer struct {
     in Inner;
 };
 

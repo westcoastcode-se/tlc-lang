@@ -1,6 +1,6 @@
 import "math";
 
-struct Pair {
+type Pair struct {
     n int;
 };
 

@@ -28,8 +28,22 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
     if (check(TokenKind::KwType)) {
         diags_.error(peek().loc, "not supported yet");
         ++pos_;
-        while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
+        int depth = 0;
+        while (!eof()) {
             if (check(TokenKind::LBrace)) {
+                ++depth;
+                ++pos_;
+                continue;
+            }
+            if (check(TokenKind::RBrace)) {
+                if (depth == 0) {
+                    break;
+                }
+                --depth;
+                ++pos_;
+                continue;
+            }
+            if (depth == 0 && check(TokenKind::Semicolon)) {
                 break;
             }
             ++pos_;

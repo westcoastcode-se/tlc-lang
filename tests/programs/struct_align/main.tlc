@@ -1,9 +1,9 @@
-struct(align=16) Pair {
+type Pair struct(align=16) {
     a int;
     b int;
 }
 
-struct Holder {
+type Holder struct {
     a Pair;
     b int;
 }

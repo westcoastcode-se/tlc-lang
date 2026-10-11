@@ -1138,7 +1138,8 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         return;
     }
     Type existing;
-    if (package_has_enum(file_id_, item.name) || package_typedef(file_id_, item.name, existing)) {
+    if (package_has_enum(file_id_, item.name) || package_typedef(file_id_, item.name, existing) ||
+        find_tag(file_id_, item.name) >= 0 || package_trait(file_id_, item.name) >= 0) {
         error(item.loc, "redefinition");
         return;
     }

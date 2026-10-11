@@ -80,67 +80,27 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             ++pos_;
             continue;
         }
-        if (token.kind == TokenKind::KwStruct || token.kind == TokenKind::KwUnion) {
-            const bool as_union = token.kind == TokenKind::KwUnion;
+        // `struct` is only written in `type Name struct`. A variable names the type.
+        if (token.kind == TokenKind::KwStruct || token.kind == TokenKind::KwEnum || token.kind == TokenKind::KwUnion ||
+            token.kind == TokenKind::KwTrait) {
+            error_at(token, token.kind == TokenKind::KwStruct ? "expected a type" : "not supported yet");
             ++pos_;
-            specs.saw_type = true;
             if (check(TokenKind::LParen)) {
-                if (as_union) {
-                    diags_.error(peek().loc, "not supported yet");
-                    int depth = 0;
-                    do {
-                        if (check(TokenKind::LParen)) {
-                            ++depth;
-                        } else if (check(TokenKind::RParen)) {
-                            --depth;
-                        }
-                        ++pos_;
-                    } while (depth > 0 && !eof());
-                } else {
-                    specs.align = parse_struct_align();
-                }
+                int depth = 0;
+                do {
+                    if (check(TokenKind::LParen)) {
+                        ++depth;
+                    } else if (check(TokenKind::RParen)) {
+                        --depth;
+                    }
+                    ++pos_;
+                } while (depth > 0 && !eof());
             }
             if (check(TokenKind::Identifier)) {
-                specs.type_name = peek().text;
-                specs.loc = peek().loc;
                 ++pos_;
-            } else {
-                error_here("expected an identifier");
-                specs.type_name = "invalid";
             }
-            if (eat(TokenKind::LBrace)) {
-                if (as_union) {
-                    specs.is_union = true;
-                    specs.union_definition = true;
-                } else {
-                    specs.is_struct = true;
-                    specs.struct_definition = true;
-                }
-                specs.fields = parse_fields();
-                expect(TokenKind::RBrace, "expected '}'");
-            } else {
-                // `union Name` outside a definition is the same mistake as `struct Name`.
-                specs.is_struct = true;
-                specs.is_union = as_union;
-            }
-            break;
-        }
-        if (token.kind == TokenKind::KwEnum) {
-            ++pos_;
-            specs.is_enum = true;
             specs.saw_type = true;
-            if (check(TokenKind::Identifier)) {
-                specs.type_name = peek().text;
-                specs.loc = peek().loc;
-                ++pos_;
-            }
-            if (take_enum_underlying(specs.underlying) || check(TokenKind::LBrace)) {
-                if (eat(TokenKind::LBrace)) {
-                    specs.enum_definition = true;
-                    specs.enumerators = parse_enumerators();
-                    expect(TokenKind::RBrace, "expected '}'");
-                }
-            }
+            specs.type_name = "invalid";
             break;
         }
         if (!specs.saw_type && token.kind == TokenKind::Identifier && peek(1).kind == TokenKind::Dot &&
@@ -202,68 +162,51 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
     return specs;
 }
 
-bool Parser::take_enum_underlying(std::string &out) {
-    if (check(TokenKind::LBrace) || check(TokenKind::Semicolon) || eof()) {
-        return false;
-    }
-    auto brace_after = [&](std::size_t begin) {
-        for (std::size_t ahead = begin; ahead < 6; ++ahead) {
-            const TokenKind kind = peek(ahead).kind;
-            if (kind == TokenKind::LBrace) {
-                return true;
-            }
-            if (kind == TokenKind::Semicolon || kind == TokenKind::Comma || kind == TokenKind::RBrace ||
-                kind == TokenKind::End || kind == TokenKind::Eq) {
-                return false;
-            }
-        }
-        return false;
-    };
-    if (!brace_after(0)) {
-        return false;
-    }
-    const auto alias = [&](const std::string &name) {
+std::string Parser::parse_enum_underlying() {
+    expect(TokenKind::LParen, "expected '('");
+    std::string out = "invalid";
+    const auto alias = [](const std::string &name) {
         return name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" ||
                name == "i64" || name == "u64" || name == "uint" || name == "ulong";
     };
-    if (check(TokenKind::Identifier) && alias(peek().text) && peek(1).kind == TokenKind::LBrace) {
+    if (check(TokenKind::Identifier) && alias(peek().text)) {
         out = peek().text;
         ++pos_;
-        return true;
-    }
-    if (check(TokenKind::KwBool) && peek(1).kind == TokenKind::LBrace) {
+    } else if (check(TokenKind::KwBool)) {
         out = "bool";
         ++pos_;
-        return true;
-    }
-    if (check(TokenKind::KwFloat) || check(TokenKind::KwDouble)) {
+    } else if (check(TokenKind::KwFloat) || check(TokenKind::KwDouble)) {
         error_here("type mismatch");
         ++pos_;
-        return true;
-    }
-    if (is_int_spec(peek().kind)) {
+    } else if (is_int_spec(peek().kind)) {
         IntSpecs ints;
+        const SourceLoc spec_loc = peek().loc;
         while (is_int_spec(peek().kind)) {
             take_int_spec(ints, peek().kind);
             ++pos_;
         }
-        if (!check(TokenKind::LBrace) || ints.bad) {
-            error_here("type mismatch");
-            out = "invalid";
-            return true;
+        if (ints.bad) {
+            diags_.error(spec_loc, "type mismatch");
+        } else {
+            out = canonical_int(ints);
+            if (out == "invalid") {
+                diags_.error(spec_loc, "type mismatch");
+            }
         }
-        out = canonical_int(ints);
-        if (out == "invalid") {
-            error_here("type mismatch");
-        }
-        return true;
-    }
-    if (check(TokenKind::Identifier) && peek(1).kind == TokenKind::LBrace) {
+    } else if (check(TokenKind::Identifier)) {
         error_here("type mismatch");
         ++pos_;
-        return true;
+    } else {
+        error_here("expected a type");
     }
-    return false;
+    if (check(TokenKind::Comma)) {
+        diags_.error(peek().loc, "not supported yet");
+        while (!check(TokenKind::RParen) && !eof()) {
+            ++pos_;
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    return out;
 }
 
 bool Parser::take_extern(bool &is_extern, bool &extern_c) {

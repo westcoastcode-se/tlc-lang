@@ -1,6 +1,6 @@
 package geom;
 
-struct Point {
+type Point struct {
     x int;
     y int;
 };

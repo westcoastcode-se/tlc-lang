@@ -1,4 +1,4 @@
-struct(align=1) Bad {
+type Bad struct(align=1) {
     n int;
 }
 

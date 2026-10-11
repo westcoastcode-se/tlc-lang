@@ -212,7 +212,7 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "type BinOp func (i32, i32) i32;\n"
             "var saved func (i32) i32;\n"
-            "struct Box {\n"
+            "type Box struct {\n"
             "  op func (i32, i32) i32;\n"
             "};\n"
             "func myfunc(ptr func (i32, i32) i32) i32 {\n"
@@ -302,27 +302,27 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "export struct Point {\n"
+            "export type Point struct {\n"
             "  x int;\n"
             "  y *int;\n"
             "};\n"
-            "var p struct Point;\n"
+            "var p Point;\n"
             "var q geom.Point;\n"
-            "func sum(p struct Point) int {\n"
+            "func sum(p Point) int {\n"
             "  return p.x;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(struct Point export\n");
         EXPECT_HAS(check, parsed.dump, "(field x int)\n");
         EXPECT_HAS(check, parsed.dump, "(field y int*)\n");
-        EXPECT_HAS(check, parsed.dump, "(var p struct Point)\n");
+        EXPECT_HAS(check, parsed.dump, "(var p Point)\n");
         EXPECT_HAS(check, parsed.dump, "(var q geom.Point)\n");
-        EXPECT_HAS(check, parsed.dump, "(fn sum (params (p struct Point)) int\n");
+        EXPECT_HAS(check, parsed.dump, "(fn sum (params (p Point)) int\n");
         EXPECT_HAS(check, parsed.dump, "(return (. (name p) x))\n");
     }
 
     {
-        const Parsed parsed = parse_source("func main() int { struct Point { x int; }; return 0; }\n");
+        const Parsed parsed = parse_source("func main() int { type Point struct { x int; }; return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -350,8 +350,8 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "extern(abi=\"tlc\") func add(a int, b int) int;\n"
-            "struct(align=16) Pair { a int; b int; }\n"
-            "struct(align=3) Bad { n int; }\n");
+            "type Pair struct(align=16) { a int; b int; }\n"
+            "type Bad struct(align=3) { n int; }\n");
         EXPECT(check, parsed.errors.find("type mismatch") != std::string::npos);
         EXPECT_HAS(check, parsed.dump, "(fn add (params (a int) (b int)) int extern\n");
         EXPECT(check, parsed.dump.find("abi=") == std::string::npos);
@@ -376,32 +376,30 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "export enum Color {\n"
+            "export type Color enum {\n"
             "  Red,\n"
             "  Green = 40,\n"
             "  Blue,\n"
             "};\n"
-            "type Point struct Point;\n"
             "type Ptr *int;\n"
             "type Pair [2]int;\n"
-            "var c enum Color;\n"
+            "var c Color;\n"
             "func main() int { return Blue; }\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(enum Color export\n");
         EXPECT_HAS(check, parsed.dump, "(enumerator Red)\n");
         EXPECT_HAS(check, parsed.dump, "(enumerator Green 40)\n");
         EXPECT_HAS(check, parsed.dump, "(enumerator Blue)\n");
-        EXPECT_HAS(check, parsed.dump, "(type Point struct Point)\n");
         EXPECT_HAS(check, parsed.dump, "(type Ptr int*)\n");
         EXPECT_HAS(check, parsed.dump, "(type Pair int[2])\n");
-        EXPECT_HAS(check, parsed.dump, "(var c enum Color)\n");
+        EXPECT_HAS(check, parsed.dump, "(var c Color)\n");
     }
 
     {
         const Parsed parsed = parse_source(
-            "struct Node;\n"
-            "enum Color;\n"
-            "extern(abi=\"c\") enum Flag;\n"
+            "type Node struct;\n"
+            "type Color enum;\n"
+            "extern(abi=\"c\") type Flag enum;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "expected '{'");
         EXPECT(check, parsed.dump.find("forward") == std::string::npos);
@@ -409,8 +407,8 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "extern(abi=\"c\") struct Pair { a int; b int; };\n"
-            "export extern(abi=\"c\") struct Node;\n"
+            "extern(abi=\"c\") type Pair struct { a int; b int; };\n"
+            "export extern(abi=\"c\") type Node struct;\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "expected '{'");
         EXPECT_HAS(check, parsed.dump, "(struct Pair extern(abi=\"c\")\n");
@@ -419,7 +417,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "export extern(abi=\"c\") struct Handle {}\n"
+            "export extern(abi=\"c\") type Handle struct {}\n"
             "func main() int { return 0; }\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(struct Handle export extern(abi=\"c\")\n");
@@ -427,9 +425,9 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "extern(abi=\"c\") union Num { n int; m int; }\n"
-            "union Plain { n int; }\n"
-            "extern union Tlc { n int; }\n"
+            "extern(abi=\"c\") type Num union { n int; m int; }\n"
+            "type Plain union { n int; }\n"
+            "extern type Tlc union { n int; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
         EXPECT_HAS(check, parsed.dump, "(union Num extern(abi=\"c\")\n");
@@ -440,15 +438,15 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "struct Box { p *[4]int; }\n"
+            "type Box struct { p *[4]int; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
     {
         const Parsed parsed = parse_source(
-            "struct Point { x int; }\n"
-            "enum Color { Red, Blue = 2 }\n"
+            "type Point struct { x int; }\n"
+            "type Color enum { Red, Blue = 2 }\n"
             "func main() int { return 0; }\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(struct Point\n");
@@ -457,7 +455,7 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("enum Tiny i8 { A, B = 2 };\nfunc main() int { return 0; }\n");
+        const Parsed parsed = parse_source("type Tiny enum(i8) { A, B = 2 };\nfunc main() int { return 0; }\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(enum Tiny i8\n");
         EXPECT_HAS(check, parsed.dump, "(enumerator B 2)\n");
@@ -465,7 +463,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "export extern(abi=\"c\") enum Color {\n"
+            "export extern(abi=\"c\") type Color enum {\n"
             "  Red,\n"
             "  Blue = 2,\n"
             "}\n"
@@ -476,7 +474,7 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("enum Color { Green = -1 };\nfunc main() int { return 0; }\n");
+        const Parsed parsed = parse_source("type Color enum { Green = -1 };\nfunc main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -486,7 +484,7 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("func main() int { enum E { A }; return 0; }\n");
+        const Parsed parsed = parse_source("func main() int { type E enum { A }; return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -617,7 +615,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "struct Point {\n"
+            "type Point struct {\n"
             "  x int;\n"
             "};\n"
             "func Point::sum(self this, extra int) int {\n"
@@ -630,10 +628,10 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "struct Inner {\n"
+            "type Inner struct {\n"
             "  inner_value int;\n"
             "};\n"
-            "struct Box {\n"
+            "type Box struct {\n"
             "  value int;\n"
             "  complex Inner;\n"
             "};\n"
@@ -710,7 +708,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "trait Shape {\n"
+            "type Shape trait {\n"
             "  func area() int;\n"
             "  func grow(n int) void;\n"
             "};\n");
@@ -722,7 +720,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "trait Shape {\n"
+            "type Shape trait {\n"
             "  func area(self this) int { return 1; }\n"
             "};\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
@@ -730,7 +728,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "trait Shape {\n"
+            "type Shape trait {\n"
             "  func grow(self **this) void;\n"
             "};\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
@@ -796,7 +794,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "struct Point { x int; };\n"
+            "type Point struct { x int; };\n"
             "func Point::method(self this, a int, b int, c int) void {\n"
             "}\n"
             "func main() int {\n"
@@ -847,7 +845,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "struct Box { v int; };\n"
+            "type Box struct { v int; };\n"
             "func Box::both(self *this, p *math.Point) (int, *Box, math.Point, ulong) {\n"
             "  return self.v, self, p, 1;\n"
             "}\n"
@@ -986,7 +984,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "struct Point { x int; };\n"
+            "type Point struct { x int; };\n"
             "func main() int {\n"
             "  var p Point;\n"
             "  var q *Point = *Point(&p);\n"

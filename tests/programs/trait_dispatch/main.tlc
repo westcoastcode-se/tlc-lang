@@ -1,18 +1,18 @@
-trait Shape {
+type Shape trait {
     func area() int;
     func grow(n int) void;
 };
 
-trait Meas {
+type Meas trait {
     func area() int;
 };
 
-struct Rect {
+type Rect struct {
     w int;
     h int;
 };
 
-struct Box {
+type Box struct {
     n int;
 };
 

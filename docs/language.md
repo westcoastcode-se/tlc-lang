@@ -385,10 +385,10 @@ return dosomething((arg1, arg2) { return arg1 + arg2; });
 
 ## Structs, pointers, and arrays
 
-A struct definition uses the `struct` keyword. Variables, parameters, return types, and fields then use the bare tag. A pointer is written `*Point` and `*int`, not `Point *` or `int *`, in a parameter, a result, and every other type position. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next *Node`, `raw [8]char`. A pointer to an array is `not supported yet` as a field. The semicolon after `}` may be omitted. A field still ends with `;`.
+A struct definition is `type Name struct`. Variables, parameters, return types, and fields then use the bare name. A pointer is written `*Point` and `*int`, not `Point *` or `int *`, in a parameter, a result, and every other type position. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next *Node`, `raw [8]char`. A pointer to an array is `not supported yet` as a field. The semicolon after `}` may be omitted. A field still ends with `;`.
 
 ```c
-struct Point {
+type Point struct {
     x int;
     y int;
 };
@@ -411,10 +411,10 @@ func main() int {
 
 This program returns 42.
 
-A struct may contain a pointer to itself. A by-value field of the struct that is being defined is rejected. `struct(align=16)` sets the alignment. The value is a positive power of two, at most 4096. The size is rounded up to that alignment. An alignment weaker than a field requires is `type mismatch`.
+A struct may contain a pointer to itself. A by-value field of the struct that is being defined is rejected. `type Wide struct(align=16)` sets the alignment. The value is a positive power of two, at most 4096. The size is rounded up to that alignment. An alignment weaker than a field requires is `type mismatch`.
 
 ```c
-struct(align=16) Wide {
+type Wide struct(align=16) {
     n int;
 }
 ```
@@ -422,7 +422,7 @@ struct(align=16) Wide {
 `sizeof(Wide)` is 16.
 
 ```c
-struct Node {
+type Node struct {
     n int;
     next *Node;
 };
@@ -431,11 +431,11 @@ struct Node {
 A struct value can name its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. A field that is left out is zero. Naming a field twice is `redefinition`. An unknown field is `undeclared identifier`. `{10, 20}` is `not supported yet`. Used where the type is not a struct, the initializer is `type mismatch`.
 
 ```c
-struct Inner {
+type Inner struct {
     inner_value int;
 };
 
-struct Box {
+type Box struct {
     value int;
     complex Inner;
 };
@@ -448,17 +448,17 @@ func main() int {
 
 This returns 30. `box = {.complex = {.inner_value = 42}}` replaces the whole value, so `box.value` becomes 0. A global initializer must be a constant, the same rule as any other global. A call in a local initializer is allowed.
 
-A struct or an enum is defined by its body. `struct Node;`, `extern(abi="c") struct Node;`, `enum Color;`, and `extern(abi="c") enum Color;` are `expected '{'`. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
+A struct or an enum is defined by its body. `type Node struct`, `extern(abi="c") type Node struct`, `type Color enum`, and `extern(abi="c") type Color enum` are `expected '{'` without that body. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
 
 An `extern(abi="c") struct` is marked so it can be used with an `extern(abi="c")` function. An empty body is an opaque handle: the type has no fields and occupies one byte, and a library uses it through a pointer. An empty struct that is not `extern(abi="c")`, including an empty `extern struct`, is `not supported yet`. An empty enum is `not supported yet`. `extern struct` uses the compiler's own layout.
 
 ```c
-extern(abi="c") struct Pair {
+extern(abi="c") type Pair struct {
     a int;
     b int;
 };
 
-extern(abi="c") struct SDL_Window {}
+extern(abi="c") type SDL_Window struct {}
 
 extern(abi="c") func make_pair(a int, b int) Pair;
 extern(abi="c") func SDL_DestroyWindow(window *SDL_Window) void;
@@ -469,12 +469,12 @@ A plain struct in an `extern(abi="c")` function is `struct must be extern(abi="c
 `extern(abi="c") union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A union without `extern(abi="c")`, including `extern union`, is `not supported yet`; a tagged union waits. An empty union is `not supported yet`. A struct or a union nested inside it must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
 
 ```c
-extern(abi="c") union Num {
+extern(abi="c") type Num union {
     n int;
     m int;
 };
 
-extern(abi="c") union Word {
+extern(abi="c") type Word union {
     n int;
     raw [8]char;
 };
@@ -519,7 +519,7 @@ func main() int {
 ```c
 package geom;
 
-export struct Point {
+export type Point struct {
     x int;
     y int;
 };
@@ -538,7 +538,7 @@ A method belongs to a struct or an enum, and it is written in the same file as t
 The call omits the receiver. This program returns 42.
 
 ```c
-struct Point {
+type Point struct {
     x int;
     y int;
 };
@@ -574,12 +574,12 @@ Every file in the package can call the method. It is not exported, so another pa
 A trait is a list of methods. The receiver is implicit and is omitted from the trait type.
 
 ```c
-trait Shape {
+type Shape trait {
     func area() int;
     func grow(n int) void;
 };
 
-struct Rect {
+type Rect struct {
     w int;
     h int;
 };
@@ -634,7 +634,7 @@ The function is monomorphized. Each struct that is passed in gets its own copy, 
 An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `int`, and it does not convert to its representation. The semicolon after `}` may be omitted.
 
 ```c
-enum Color {
+type Color enum {
     Red,
     Green = 40,
     Blue,
@@ -649,10 +649,10 @@ func main() int {
 }
 ```
 
-`Red` is 0, `Green` is 40, and `Blue` is 41. Without an explicit value, the next constant is one higher than the previous one. The representation is `int` when the definition does not name a primitive. A primitive is written between the name and the body:
+`Red` is 0, `Green` is 40, and `Blue` is 41. Without an explicit value, the next constant is one higher than the previous one. The representation is `int` when the definition does not name a primitive. A primitive is written in parentheses after `enum`:
 
 ```c
-enum Tiny i8 {
+type Tiny enum(i8) {
     A,
     B,
 };
@@ -660,10 +660,10 @@ enum Tiny i8 {
 
 `sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `char`. A value that does not fit is `type mismatch`. An empty enum is rejected. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `int`. Other operators are `type mismatch`.
 
-`extern(abi="c") enum` is the C form. It has no underlying type of its own; the representation is `int`, and a value may be passed or compared where an integer is expected. `extern(abi="c") enum Name i8` is `extern(abi="c") enum`. Methods are still allowed:
+`extern(abi="c") type Name enum` is the C form. It has no underlying type of its own; the representation is `int`, and a value may be passed or compared where an integer is expected. `extern(abi="c") type Name enum(i8)` is `extern enum`. Methods are still allowed:
 
 ```c
-extern(abi="c") enum Flag {
+extern(abi="c") type Flag enum {
     Off,
     On = 1,
 }
@@ -698,7 +698,7 @@ func Color::code(self this) int {
 }
 ```
 
-`value.code()` passes `value`. The method is written in the same file as `enum Color`. Every file in the package can call it, and it is not exported.
+`value.code()` passes `value`. The method is written in the same file as `type Color enum`. Every file in the package can call it, and it is not exported.
 
 ```c
 type Ptr *Point;
@@ -706,7 +706,7 @@ type Integer int;
 type Pair [2]int;
 ```
 
-A `type` declaration gives another name to a type. `type Point Point` is rejected, because the alias repeats the struct tag. When a type alias and a struct tag share a name, as in `type Point int` beside `struct Point`, the bare name uses the alias, and `struct Point` still names the tag. That is the only use of `struct` outside a definition. An exported type alias is imported as a type name. A local `type` is `not supported yet`. A struct or enum body inside the alias, as in `type Red enum { Red };`, is `not supported yet`.
+`type Integer int` gives another name to a type. `type Point struct`, `type Color enum`, and `type Shape trait` define a new type. `type Point Point` is rejected, because the alias repeats the struct. `type Point int` beside `type Point struct` is `redefinition`. A variable and `sizeof` use the bare name, `var p Point` and `sizeof(Point)`. `struct` there, as in `var p struct Point` or `sizeof(struct Point)`, is `expected a type`. An exported type alias is imported as a type name. A local `type` is `not supported yet`.
 
 ## Reserved words
 
