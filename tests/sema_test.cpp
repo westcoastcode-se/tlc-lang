@@ -3273,5 +3273,32 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "func take(item Box[int]) int { return item.value; }\n"
+            "func main() int {\n"
+            "  var ints Box[int];\n"
+            "  var chars Box[char];\n"
+            "  var floats Box[float];\n"
+            "  ints = floats;\n"
+            "  return take(chars);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected Box.spec.int, found Box.spec.float");
+        EXPECT_HAS(check, errors, "type mismatch: expected Box.spec.int, found Box.spec.char");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "func pair[T type](a Box[T], b Box[T]) int { return 0; }\n"
+            "func main() int {\n"
+            "  var ints Box[int];\n"
+            "  var chars Box[char];\n"
+            "  return pair(ints, chars);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "error: type mismatch\n");
+    }
+
     return check.failed;
 }

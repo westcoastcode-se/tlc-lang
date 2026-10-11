@@ -117,7 +117,7 @@ enumerator  = identifier [ "=" integer-literal ] ;
 trait-method = "func" identifier "(" [ parameters ] ")" result ";" ;
 ```
 
-`type Vec[T type] struct` is a generic struct. The parameter list is only allowed before `struct`. A use is `Vec[int]` or `Vec[Point]`. A method on `Vec` is `func Vec::get(self *this, i int) T` and does not repeat `[T type]`. `Vec` without arguments is `type mismatch`.
+`type Vec[T type] struct` is a generic struct. The parameter list is only allowed before `struct`. A use is `Vec[int]` or `Vec[Point]`. A method on `Vec` is `func Vec::get(self *this, i int) T` and does not repeat `[T type]`. `Vec` without arguments is `type mismatch`. `Vec[int]` and `Vec[char]` are different types. Assigning one to the other, or passing one where the parameter is the other, is `type mismatch`.
 
 The semicolon after `}` is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `type Name struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `type Name struct` without `{` is `expected '{'`. An empty `extern(abi="c") struct` is `extern(abi="c") type Name struct "{" "}"`.
 
