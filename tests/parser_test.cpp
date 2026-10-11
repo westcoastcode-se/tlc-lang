@@ -605,6 +605,52 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "struct Inner {\n"
+            "  inner_value int;\n"
+            "};\n"
+            "struct Box {\n"
+            "  value int;\n"
+            "  complex Inner;\n"
+            "};\n"
+            "func main() int {\n"
+            "  var box Box = {.value = 10, .complex = {.inner_value=20}};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump,
+                   "(init (.value (int 10)) (.complex (init (.inner_value (int 20)))))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  var box Point = {.x = 1,};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var box Point (init (.x (int 1))))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  var box Point = {10, 20};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  var box Point = {. = 1};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, parsed.errors, "expected an identifier");
+    }
+
+    {
         const Parsed parsed = parse_source("func f(self this) int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "type mismatch");
     }

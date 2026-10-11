@@ -446,6 +446,17 @@ std::string dump_expr(const Expr &expr) {
                 std::string text;
                 dump_function(*node.decl, text, 0);
                 return text;
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                std::string text = "(init";
+                for (const Expr::FieldInit &field : node.fields) {
+                    text += " (.";
+                    text += field.field;
+                    text += ' ';
+                    text += field.value ? dump_expr(*field.value) : "(unsupported)";
+                    text += ')';
+                }
+                text += ')';
+                return text;
             } else {
                 return "(unsupported)";
             }

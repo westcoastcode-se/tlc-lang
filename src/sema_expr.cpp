@@ -250,9 +250,69 @@ Type Checker::elaborate_inferred(FunctionDecl &fn, const Type &want) {
     return type_pointer(std::move(concrete));
 }
 
+Type Checker::check_init(Expr::Init &init, const Type &want) {
+    auto check_values = [&]() {
+        for (const Expr::FieldInit &field : init.fields) {
+            if (field.value) {
+                check_expr(*field.value, true);
+            }
+        }
+    };
+    if (want.kind != TypeKind::Struct || want.struct_id < 0 ||
+        want.struct_id >= static_cast<int>(structs_.size())) {
+        error(init.loc, "type mismatch");
+        check_values();
+        return type_invalid();
+    }
+    if (!structs_[static_cast<std::size_t>(want.struct_id)].complete) {
+        error(init.loc, "not supported yet");
+        check_values();
+        return type_invalid();
+    }
+    init.struct_id = want.struct_id;
+    std::unordered_set<std::string> seen;
+    for (const Expr::FieldInit &field : init.fields) {
+        if (field.field.empty()) {
+            if (field.value) {
+                check_expr(*field.value, true);
+            }
+            continue;
+        }
+        if (!seen.insert(field.field).second) {
+            error(field.loc, "redefinition");
+        }
+        Type field_type;
+        if (!lookup_field(want, field.field, field_type)) {
+            error(field.loc, "undeclared identifier");
+            if (field.value) {
+                check_expr(*field.value, true);
+            }
+            continue;
+        }
+        if (field_type.kind == TypeKind::Array) {
+            error(field.loc, "not supported yet");
+            if (field.value) {
+                check_expr(*field.value, true);
+            }
+            continue;
+        }
+        if (field.value) {
+            check_against(*field.value, field_type);
+        }
+    }
+    return want;
+}
+
 Type Checker::check_against(const Expr &expr, const Type &want) {
     if (FunctionDecl *fn = inferred_function(expr)) {
         const Type got = elaborate_inferred(*fn, want);
+        if (got.kind != TypeKind::Invalid) {
+            expect_value(got, want, expr, expr_loc(expr));
+        }
+        return got;
+    }
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
+        const Type got = check_init(const_cast<Expr::Init &>(*init), want);
         if (got.kind != TypeKind::Invalid) {
             expect_value(got, want, expr, expr_loc(expr));
         }
@@ -926,6 +986,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 error(node.loc, "type mismatch");
                 return type_invalid();
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                (void)used;
+                error(node.loc, "type mismatch");
+                for (const Expr::FieldInit &field : node.fields) {
+                    if (field.value) {
+                        check_expr(*field.value, true);
+                    }
+                }
+                return type_invalid();
             } else if constexpr (std::is_same_v<T, Expr::Func>) {
                 (void)used;
                 if (node.decl == nullptr) {
@@ -1091,13 +1160,20 @@ void Checker::check_stmt(const Stmt &stmt) {
                         exprs.push_back(extra.get());
                     }
                 }
+                auto supplied = [&](const Expr &value, const Type &want) {
+                    if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
+                        return check_init(const_cast<Expr::Init &>(*init), want);
+                    }
+                    return check_expr(value, true);
+                };
                 if (return_type_.kind == TypeKind::Tuple) {
                     if (exprs.size() != return_type_.results.size()) {
                         error(node.loc, "return type: expected " + std::to_string(return_type_.results.size()) +
                                             " results, found " + std::to_string(exprs.size()));
                     }
                     for (std::size_t i = 0; i < exprs.size(); ++i) {
-                        const Type got = check_expr(*exprs[i], true);
+                        const Type got = i < return_type_.results.size() ? supplied(*exprs[i], return_type_.results[i])
+                                                                          : check_expr(*exprs[i], true);
                         if (i < return_type_.results.size()) {
                             match_return(got, return_type_.results[i], *exprs[i]);
                         }
@@ -1113,7 +1189,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(node.loc, "return type: expected " + type_desc(return_type_) + ", found void");
                     }
                 } else {
-                    match_return(check_expr(*node.value, true), return_type_, *node.value);
+                    match_return(supplied(*node.value, return_type_), return_type_, *node.value);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
                 if (node.expr) {

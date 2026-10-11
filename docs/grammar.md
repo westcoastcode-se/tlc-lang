@@ -219,7 +219,11 @@ primary     = identifier
             | "(" expression ")"
             | anonymous
             | short-function
-            | cast ;
+            | cast
+            | struct-init ;
+
+struct-init = "{" [ designator { "," designator } [ "," ] ] "}" ;
+designator  = "." identifier "=" expression ;
 
 anonymous   = "func" "(" [ parameters ] ")" [ result ] block ;
 short-function = "(" [ name-list ] ")" block ;
@@ -230,6 +234,8 @@ scalar-type = integer-type | "void" | "bool" | "float" | "double" | integer-name
 ```
 
 An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)` or `*int(p)`. A pointer cast of a declared struct, enum, or typedef is `*Point(p)`. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof "(" { "*" } scalar-type ")"`, or the same with `struct` or `enum` before the name. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
+
+A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A positional element, such as `{10}`, is `not supported yet`. A trailing comma is allowed.
 
 ## Tokens
 

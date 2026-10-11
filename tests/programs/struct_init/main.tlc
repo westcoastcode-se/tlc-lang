@@ -1,0 +1,40 @@
+struct Inner {
+    inner_value int;
+};
+
+struct Box {
+    value int;
+    complex Inner;
+};
+
+var bias Box = {.value = 2};
+
+func twenty() int {
+    return 20;
+}
+
+func take(box Box) int {
+    return box.value + box.complex.inner_value;
+}
+
+func made() Box {
+    return {.value = 10, .complex = {.inner_value = 20}};
+}
+
+func main() int {
+    var box Box = {.value = twenty(), .complex = {.inner_value=20}};
+    if (box.value + box.complex.inner_value + bias.value != 42) {
+        return 0;
+    }
+    if (take({.value = 22,}) != 22) {
+        return 0;
+    }
+    if (take({.complex = {.inner_value = 7}, .value = 3}) != 10) {
+        return 0;
+    }
+    if (take(made()) != 30) {
+        return 0;
+    }
+    box = {.complex = {.inner_value=42}};
+    return box.value + box.complex.inner_value;
+}

@@ -428,6 +428,26 @@ struct Node {
 };
 ```
 
+A struct value can name its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. A field that is left out is zero. Naming a field twice is `redefinition`. An unknown field is `undeclared identifier`. `{10, 20}` is `not supported yet`. Used where the type is not a struct, the initializer is `type mismatch`.
+
+```c
+struct Inner {
+    inner_value int;
+};
+
+struct Box {
+    value int;
+    complex Inner;
+};
+
+func main() int {
+    var box Box = {.value = 10, .complex = {.inner_value = 20}};
+    return box.value + box.complex.inner_value;
+}
+```
+
+This returns 30. `box = {.complex = {.inner_value = 42}}` replaces the whole value, so `box.value` becomes 0. A global initializer must be a constant, the same rule as any other global. A call in a local initializer is allowed.
+
 A struct or an enum is defined by its body. `struct Node;`, `typedef struct Node;`, `extern(abi="c") struct Node;`, `enum Color;`, and `extern(abi="c") enum Color;` are `expected '{'`. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
 
 An `extern(abi="c") struct` is marked so it can be used with an `extern(abi="c")` function. An empty body is an opaque handle: the type has no fields and occupies one byte, and a library uses it through a pointer. An empty struct that is not `extern(abi="c")`, including an empty `extern struct`, is `not supported yet`. An empty enum is `not supported yet`. `extern struct` uses the compiler's own layout.

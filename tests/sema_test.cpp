@@ -1472,6 +1472,127 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "struct Inner { inner_value int; };\n"
+            "struct Box { value int; complex Inner; };\n"
+            "var bias Box = {.value = 2};\n"
+            "func twenty() int { return 20; }\n"
+            "func take(box Box) int { return box.value + box.complex.inner_value; }\n"
+            "func made() Box { return {.value = 10, .complex = {.inner_value = 20}}; }\n"
+            "func main() int {\n"
+            "  var box Box = {.value = twenty(), .complex = {.inner_value=20}};\n"
+            "  box = {.complex = {.inner_value = 42}};\n"
+            "  var omitted Box = {.value = 1,};\n"
+            "  var empty Box = {};\n"
+            "  var flipped Box = {.complex = {.inner_value = 1}, .value = 2};\n"
+            "  return take({.value = 1}) + made().value + box.value + omitted.value + empty.value + flipped.value + bias.value;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Point { x int; y int; };\n"
+            "func main() int {\n"
+            "  var p Point = {.z = 1};\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Point { x int; y int; };\n"
+            "func main() int {\n"
+            "  var p Point = {.x = 1, .x = 2};\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Point { x int; y int; };\n"
+            "func main() int {\n"
+            "  var p Point = {.x = nullptr};\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Point { x int; y int; };\n"
+            "func main() int {\n"
+            "  var n = {.x = 1};\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  p := {.x = 1};\n"
+            "  return p;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Point { x int; y int; };\n"
+            "func main() int {\n"
+            "  var n int = {.x = 1};\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Point { x int; y int; };\n"
+            "func main() int {\n"
+            "  return {.x = 1};\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Link { n int; next *Link; };\n"
+            "func main() int {\n"
+            "  var link Link = {.n = 1, .next = nullptr};\n"
+            "  link = {.next = 0};\n"
+            "  if (link.next == nullptr) {\n"
+            "    return link.n;\n"
+            "  }\n"
+            "  return 1;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Buf { raw [4]int; };\n"
+            "func main() int {\n"
+            "  var buf Buf = {.raw = 1};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "struct Point { x int; y int; };\n"
+            "func main() int {\n"
+            "  var p Point = {1, 2};\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
             "typedef struct Node;\n"
             "enum Color;\n"
             "func main() int { return 0; }\n");

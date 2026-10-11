@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <type_traits>
 #include <unordered_map>
@@ -385,12 +386,149 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
         expr.data);
 }
 
+llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) {
+    if (slot.is_array || slot.type == nullptr) {
+        return nullptr;
+    }
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
+        if (slot.depth != 0 || slot.struct_id < 0) {
+            return nullptr;
+        }
+        return const_struct(*init, slot.struct_id);
+    }
+    if (slot.depth > 0) {
+        if (std::holds_alternative<Expr::Nullptr>(expr.data)) {
+            return null_ptr();
+        }
+        const std::optional<int32_t> number = fold(expr);
+        if (number && *number == 0) {
+            return null_ptr();
+        }
+        return nullptr;
+    }
+    if (slot.elem_float) {
+        if (const auto *literal = std::get_if<Expr::Float>(&expr.data)) {
+            const std::string number = literal->text.empty() ? "0" : literal->text;
+            return llvm::ConstantFP::get(slot.type, std::strtod(number.c_str(), nullptr));
+        }
+        const std::optional<int32_t> number = fold(expr);
+        if (!number) {
+            return nullptr;
+        }
+        return llvm::ConstantFP::get(slot.type, static_cast<double>(*number));
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+        selector != nullptr && selector->base != nullptr) {
+        const int enum_id = enum_type_designator(*selector->base);
+        if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size())) {
+            const auto member = enums_[static_cast<std::size_t>(enum_id)].values.find(selector->field);
+            if (member == enums_[static_cast<std::size_t>(enum_id)].values.end() || !slot.type->isIntegerTy()) {
+                return nullptr;
+            }
+            return llvm::ConstantInt::get(slot.type, static_cast<uint64_t>(member->second), true);
+        }
+    }
+    if (!slot.type->isIntegerTy()) {
+        return nullptr;
+    }
+    const std::optional<int32_t> number = fold(expr);
+    if (!number) {
+        return nullptr;
+    }
+    return llvm::ConstantInt::get(slot.type, static_cast<uint64_t>(static_cast<int64_t>(*number)), true);
+}
+
+llvm::Constant *CodeGen::const_struct(const Expr::Init &init, int struct_id) {
+    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+        return nullptr;
+    }
+    const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
+    if (layout.type == nullptr || layout.is_union || !layout.type->isSized()) {
+        return nullptr;
+    }
+    const unsigned count = layout.type->getNumElements();
+    std::vector<llvm::Constant *> elements;
+    elements.reserve(count);
+    for (unsigned index = 0; index < count; ++index) {
+        elements.push_back(llvm::Constant::getNullValue(layout.type->getElementType(index)));
+    }
+    for (const Expr::FieldInit &field : init.fields) {
+        if (field.value == nullptr || field.field.empty()) {
+            return nullptr;
+        }
+        int index = -1;
+        const FieldLayout *slot = find_field(struct_id, field.field, index);
+        if (slot == nullptr || index < 0 || static_cast<unsigned>(index) >= count) {
+            return nullptr;
+        }
+        llvm::Constant *value = const_field(*field.value, *slot);
+        if (value == nullptr || value->getType() != elements[static_cast<std::size_t>(index)]->getType()) {
+            return nullptr;
+        }
+        elements[static_cast<std::size_t>(index)] = value;
+    }
+    return llvm::ConstantStruct::get(layout.type, elements);
+}
+
+TypedValue CodeGen::emit_init(const Expr::Init &init) {
+    if (init.struct_id < 0 || init.struct_id >= static_cast<int>(structs_.size())) {
+        error(init.loc, "type mismatch");
+        return {zero(), 0};
+    }
+    const StructLayout &layout = structs_[static_cast<std::size_t>(init.struct_id)];
+    if (layout.type == nullptr) {
+        error(init.loc, "type mismatch");
+        return {zero(), 0};
+    }
+    // Omitted fields stay zero. A later assignment replaces the whole struct.
+    llvm::AllocaInst *slot = alloca_typed(layout.type, "init");
+    builder_.CreateStore(llvm::ConstantAggregateZero::get(layout.type), slot);
+    for (const Expr::FieldInit &field : init.fields) {
+        if (field.value == nullptr || field.field.empty()) {
+            continue;
+        }
+        const TypedValue addr = field_addr(init.struct_id, slot, field.field, field.loc);
+        if (addr.value == nullptr) {
+            continue;
+        }
+        if (addr.is_array) {
+            error(field.loc, "not supported yet");
+            continue;
+        }
+        const TypedValue rhs = emit_rvalue(*field.value);
+        if (terminated() || rhs.value == nullptr) {
+            continue;
+        }
+        builder_.CreateStore(stored_value(rhs, addr), addr.value);
+    }
+    if (terminated()) {
+        return {zero(), 0};
+    }
+    return load_object(slot, 0, false, init.struct_id);
+}
+
 void CodeGen::apply_initializer(const VarDecl &var) {
     FileSymbols &file = files_[current_file_];
     if (var.is_extern && !var.init) {
         return;
     }
     if (!var.init) {
+        file.folded.insert(var.name);
+        return;
+    }
+    const auto found_early = file.globals.find(var.name);
+    if (const auto *init = std::get_if<Expr::Init>(&var.init->data)) {
+        if (found_early == file.globals.end() || found_early->second.struct_id < 0) {
+            error(var.loc, "type mismatch");
+            return;
+        }
+        llvm::Constant *value = const_struct(*init, found_early->second.struct_id);
+        if (value == nullptr) {
+            error(var.loc, "global initializer is not a constant");
+            return;
+        }
+        auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
+        global->setInitializer(value);
         file.folded.insert(var.name);
         return;
     }
@@ -2067,6 +2205,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return {zero(), 0};
                 }
                 return emit_anon_function(*node.decl);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                return emit_init(node);
             } else {
                 return {zero(), 0};
             }

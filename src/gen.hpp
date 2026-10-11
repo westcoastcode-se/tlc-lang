@@ -657,6 +657,8 @@ class CodeGen {
     void bind_imports(const PackageNode &node);
     void emit_bodies(const PackageNode &node);
     void apply_initializer(const VarDecl &var);
+    llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
+    llvm::Constant *const_field(const Expr &expr, const FieldLayout &slot);
     std::optional<int32_t> fold(const Expr &expr) const;
     void emit_function(const FunctionDecl &fn);
     void emit_local_function(const FunctionDecl &fn);
@@ -675,6 +677,7 @@ class CodeGen {
     void emit_case(const Stmt::Case &node);
     void emit_switch(const Stmt::Switch &node);
     TypedValue emit_rvalue(const Expr &expr);
+    TypedValue emit_init(const Expr::Init &init);
     TypedValue emit_addr(const Expr &expr);
     llvm::Type *shape_type(const Shape &shape) const;
     Shape decay_shape(Shape shape) const;

@@ -97,12 +97,25 @@ struct Expr {
         SourceLoc loc{};
         std::unique_ptr<FunctionDecl> decl;
     };
+    // One designated field in `{.field = value}`.
+    struct FieldInit {
+        SourceLoc loc{};
+        std::string field;
+        std::unique_ptr<Expr> value;
+    };
+    // `{.field = value, ...}`. The destination type supplies the struct. Omitted fields are zero.
+    struct Init {
+        SourceLoc loc{};
+        std::vector<FieldInit> fields;
+        // Filled when the destination struct is known.
+        int struct_id = -1;
+    };
     struct Unsupported {
         SourceLoc loc{};
     };
 
     using Data = std::variant<Name, Int, Unary, Binary, Assign, Call, Selector, String, Index, Sizeof, Cast, Bool,
-                              Nullptr, Char, Float, Func, Unsupported>;
+                              Nullptr, Char, Float, Func, Init, Unsupported>;
 
     Data data;
 

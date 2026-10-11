@@ -160,6 +160,7 @@ class Parser {
     std::unique_ptr<Expr> parse_unary();
     std::unique_ptr<Expr> parse_postfix();
     std::unique_ptr<Expr> parse_primary();
+    std::unique_ptr<Expr> parse_init();
     std::unique_ptr<Expr> parse_anon_function();
     bool starts_short_function() const;
     std::unique_ptr<Expr> parse_short_function();

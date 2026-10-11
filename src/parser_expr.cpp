@@ -554,6 +554,9 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     if (check(TokenKind::KwFunc)) {
         return parse_anon_function();
     }
+    if (check(TokenKind::LBrace)) {
+        return parse_init();
+    }
     const SourceLoc loc = peek().loc;
     error_here("expected an expression");
     if (!eof() && !check(TokenKind::Semicolon) && !check(TokenKind::RParen) && !check(TokenKind::RBrace) &&
@@ -561,6 +564,40 @@ std::unique_ptr<Expr> Parser::parse_primary() {
         ++pos_;
     }
     return unsupported_expr(loc);
+}
+
+std::unique_ptr<Expr> Parser::parse_init() {
+    Expr::Init init;
+    init.loc = peek().loc;
+    expect(TokenKind::LBrace, "expected '{'");
+    while (!check(TokenKind::RBrace) && !eof()) {
+        if (!eat(TokenKind::Dot)) {
+            error_here("not supported yet");
+            while (!check(TokenKind::Comma) && !check(TokenKind::RBrace) && !check(TokenKind::Semicolon) && !eof()) {
+                ++pos_;
+            }
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+            continue;
+        }
+        Expr::FieldInit field;
+        field.loc = peek().loc;
+        if (check(TokenKind::Identifier)) {
+            field.field = peek().text;
+            ++pos_;
+        } else {
+            error_here("expected an identifier");
+        }
+        expect(TokenKind::Eq, "expected '='");
+        field.value = parse_assignment();
+        init.fields.push_back(std::move(field));
+        if (!eat(TokenKind::Comma)) {
+            break;
+        }
+    }
+    expect(TokenKind::RBrace, "expected '}'");
+    return make_expr(std::move(init));
 }
 
 std::unique_ptr<Expr> Parser::parse_anon_function() {
