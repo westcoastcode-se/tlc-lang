@@ -121,9 +121,9 @@ export func add(a int, b int) int {
 
 `secret` can be called from any file in the package. An importer sees `add`.
 
-`export` applies to functions, variables, structs, enums, and type aliases. `export static` is an error. `export extern(abi="c")` is allowed on a function, and the symbol keeps its C name. `export` together with `extern` on a variable is an error.
+`export` applies to functions, variables, and `type` declarations other than a trait. `export type Name trait` is `not supported yet`. `export static` is an error. `export extern(abi="c")` is allowed on a function, and the symbol keeps its C name. `export` together with `extern` on a variable is `export extern`.
 
-File-scope `static` keeps the symbol private to that file. A `static` local is rejected.
+File-scope `static` keeps the symbol private to that file. A `static` local is `static locals are not supported yet`.
 
 `extern` and `extern(abi="tlc")` name a symbol from a tlc library. The symbol is `qualifier.name`, and the calling convention is the compiler's own, so the function may return several results. `extern(abi="c")` names a symbol from a C library, and only then. It keeps the C name and the C calling convention. It returns one result, the same as a C function. Linking a program that uses `extern(abi="c")` requires a C library on the link line: `-l`, or a library file such as `libfoo.a`. `--check` and `--emit-*` do not link, so they accept the declaration. Without that library the link step reports `extern(abi="c") requires a C library`. Its parameters and its result cannot include a function pointer that returns several results. A struct used by an `extern(abi="c")` function, by value or through a pointer, must itself be `extern(abi="c")`. That includes a struct nested inside it. An `extern(abi="c") struct` uses the platform C memory layout, so its fields line up with a static or shared library. `bool` in that struct is one byte. On this host a struct of at most 16 bytes is passed in registers, and a larger struct is passed as a pointer. A function that is not `extern(abi="c")` keeps the compiler's own convention for struct values. That is how a program calls a C library:
 
@@ -158,7 +158,7 @@ Integers on `x86_64-pc-linux-gnu` follow LP64. `long` and `i64` are both 64 bits
 
 `i8` and `u8` are the 8-bit integers. `i16` is `short` and `u16` is its unsigned counterpart. `i32` is `int` and `u32` is `uint`. `i64` and `u64` are the other 64-bit integers. `ulong` is 64 bits and a different type from `u64`. `long` stays a different 64-bit type from `i64`. `char` stays different from `i8`.
 
-The rank order is `bool`, then `char`, `i8`, and `u8`, then `short` and `u16`, then `int`, `long`, and `i64`. An unsigned type has the same rank as its signed counterpart.
+The rank order is `bool`, then `char`, `i8`, and `u8`, then `short`, `i16`, and `u16`, then `int`, `i32`, `uint`, and `u32`, then `long` and `ulong`, then `i64` and `u64`. An unsigned type has the same rank as its signed counterpart.
 
 A type whose rank is below `int` widens to `int` when it is used as a value. `i8` is sign-extended. `char` and `u8` are zero-extended. The usual arithmetic conversions apply after that. `+`, `-`, `*`, `/`, `%`, and the bitwise operators produce the common type. Comparisons and `!` produce `int`, either 0 or 1.
 
@@ -200,7 +200,7 @@ var text *char = `hello
 world`;
 ```
 
-`sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(i64)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted.
+`sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(i64)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted. `sizeof(Point)` and `sizeof(enum Color)` name a declared type. `sizeof(struct Point)` is `expected a type`.
 
 ## Expressions
 
@@ -233,15 +233,15 @@ An integer literal `0` may be assigned to a pointer, and the pointer becomes nul
 
 A condition in `if`, `while`, `do`, and `for` is an integer after promotion. A pointer used as a condition is `type mismatch`. `switch` requires exactly `int`.
 
-A cast is the type followed by the value in parentheses: `i32(n)`, `int(n)`, `*char(bits)`, `*void(p)`, `*Point(p)`. A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `null` can be cast to a pointer. `long(p)`, `uint(p)`, and `int(null)` are `type mismatch`. `int*(p)` is `type mismatch`. A cast to `void` is rejected. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type.
+A cast is the type followed by the value in parentheses: `i32(n)`, `int(n)`, `*char(bits)`, `*void(p)`, `*Point(p)`. A name declared as a type in this file is a cast too: `Integer(n)` after `type Integer int`, and `ShapeType(shape)` to read the tag of a tlc union. A cast to a struct is `type mismatch`. From another file in the package, `ShapeType(shape)` still reads that tag. A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `null` can be cast to a pointer. `long(p)`, `uint(p)`, and `int(null)` are `type mismatch`. `int*(p)` is `type mismatch`. A cast to `void` is `not supported yet`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type.
 
 Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
-`++`, `--`, compound assignment, `?:`, and `->` are rejected.
+`++`, `--`, compound assignment, `?:`, and `->` are `not supported yet`.
 
 ## Statements
 
-Blocks, `if`/`else`, `while`, `do`/`while`, `for`, `switch`, `break`, `continue`, `return`, and empty statements are accepted. `goto` is rejected. The body of `if`, `while`, and `for` is a block. `else` is a block or another `if`. A body without `{` is `expected '{'`.
+Blocks, `if`/`else`, `while`, `do`/`while`, `for`, `switch`, `break`, `continue`, `return`, and empty statements are accepted. `goto` is `not supported yet`. The body of `if`, `while`, and `for` is a block. `else` is a block or another `if`. A body without `{` is `expected '{'`. `do` and `switch` take a statement, so their body need not be a block.
 
 `for` has C's three clauses. A declaration in the first clause is visible only inside the loop. That clause may also bind several results with `var`, `:=`, or `=`. A comma in the name list must be followed by another name.
 
@@ -289,11 +289,11 @@ func main() int {
 
 An anonymous function is an expression, `func (parameters) { body }`. The return type may be omitted, and then it is `void`. A return type is written after the parameters when it is present: `func () int { return 1; }`. Several results use the same parenthesized list as a named function: `func () (int, int) { return 1, 2; }`. The call is the argument list after the body. It does not capture a local or a parameter from an enclosing function.
 
-A variable is `var name type`, `var name = expr`, or `name := expr`. `int value = 1` is `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *int`, `var buf [32]u8`, `var ps [2]*int`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`. `name := expr` defines a new name and can also assign a name that already exists. `var name := expr` is `type mismatch`. `*[4]i32` is a pointer to an array. `arr[1]` reads and writes the same element as `(*arr)[1]`. `&` of an array has that pointer type. Two stars outside the array, as in `**[4]i32`, are `not supported yet`.
+A variable is `var name type`, `var name = expr`, or `name := expr`. `int value = 1` is `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *int`, `var buf [32]u8`, `var ps [2]*int`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`. `name := expr` defines a new name. In a list, it also assigns a name that already exists in the block, and at least one name must be new. A `:=` whose names are all already in the block is `type mismatch`. `var name := expr` is `type mismatch`. `*[4]i32` is a pointer to an array. `arr[1]` reads and writes the same element as `(*arr)[1]`. `&` of an array has that pointer type. Two stars outside the array, as in `**[4]i32`, are `not supported yet`.
 
 At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `var a, b = expr` at file scope is `not supported yet`. `export`, `static`, `extern`, and `extern(abi="c")` go on a typed `var`: `export var n int = 1`, `static var n = 1`, `extern var slot int`, `extern(abi="c") var slot int`. `export` or `extern` on an inferred `var name = expr` or `name := expr` is `not supported yet`.
 
-Several results are still bound together: `var a, b = call`. A local struct, enum, or type alias is rejected. A pointer is a leading star in every position, including a parameter, a result, a type alias, a cast, and `sizeof`: `*int`, `*const char`, `type Ptr *Point`, `sizeof(*int)`, `*int(value)`. A `var`, a field, or a type alias writes an array in front of its element type: `type Pair [2]int`. A parameter array stays after the element type: `int[4]`.
+Several results are still bound together: `var a, b = call`. A local `type` is `not supported yet`. A pointer is a leading star in every position, including a parameter, a result, a type alias, a cast, and `sizeof`: `*int`, `*const char`, `type Ptr *Point`, `sizeof(*int)`, `*int(value)`. A `var`, a field, or a type alias writes an array in front of its element type: `type Pair [2]int`. A parameter array stays after the element type: `int[4]`.
 
 A global with no initializer is zero. An array cannot be initialized with `=`.
 
@@ -566,7 +566,7 @@ export func sum(p Point) int {
 }
 ```
 
-Inside the package the type is written `Point`. `import { Point } from "geom"` makes `Point` a type name in the importing file. A struct tag is visible to every file in the package, so one file can declare `struct A { b B; }` when `struct B` is in another file of that package.
+Inside the package the type is written `Point`. `import { Point } from "geom"` makes `Point` a type name in the importing file. A struct is visible to every file in the package, so one file can declare `type A struct { b B; }` when `type B struct` is in another file of that package.
 
 ## Methods
 
@@ -658,7 +658,7 @@ There is no `impl` keyword. A struct satisfies a trait by defining the methods, 
 - A wrong return type or wrong extra parameters are `type mismatch`.
 - The address is not taken automatically. `apply(r)` is `type mismatch` when the parameter is `*Shape`. The call is `apply(&r)`.
 
-A trait type is allowed only as a function parameter, either `Shape` or `*Shape`. A local, a global, a return type, an array, a type alias, and `sizeof` of a trait are rejected. `**Shape` is rejected.
+A trait type is allowed only as a function parameter, either `Shape` or `*Shape`. A variable, a return type, an array, a type alias, and `**Shape` are `not supported yet`. `sizeof(Shape)` is `undeclared identifier`.
 
 The function is monomorphized. Each struct that is passed in gets its own copy, and the call `s.area()` becomes a direct call of that struct's method. Passing the same trait onward, as `measure(s)` inside `apply`, is not checked again.
 
@@ -743,7 +743,7 @@ type Integer int;
 type Pair [2]int;
 ```
 
-`type Integer int` gives another name to a type. `type Point struct`, `type Color enum`, and `type Shape trait` define a new type. `type Point Point` is rejected, because the alias repeats the struct. `type Point int` beside `type Point struct` is `redefinition`. A variable and `sizeof` use the bare name, `var p Point` and `sizeof(Point)`. `struct` there, as in `var p struct Point` or `sizeof(struct Point)`, is `expected a type`. An exported type alias is imported as a type name. A local `type` is `not supported yet`.
+`type Integer int` gives another name to a type. `type Point struct`, `type Color enum`, and `type Shape trait` define a new type. `type Point Point` is `redefinition`, because the alias repeats the struct. `type Point int` beside `type Point struct` is `redefinition`. A variable and `sizeof` use the bare name, `var p Point` and `sizeof(Point)`. `struct` there, as in `var p struct Point` or `sizeof(struct Point)`, is `expected a type`. An exported type alias is imported as a type name. A local `type` is `not supported yet`.
 
 ## Reserved words
 

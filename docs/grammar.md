@@ -72,7 +72,7 @@ binding     = "var" name-list "=" expression ";"
             | name-list "=" expression ";" ;
 ```
 
-`name :=` defines a name that is new in the block and assigns a name that already exists there. `=` assigns names that already exist. `var` defines every name.
+`name :=` defines a name that is new in the block and assigns a name that already exists there. At least one name must be new. A `:=` whose names are all already in the block is `type mismatch`. `=` assigns names that already exist. `var` defines every name.
 
 A variable whose type is a function pointer is written with `func` first, then the name:
 
@@ -227,11 +227,11 @@ designator  = "." identifier "=" expression ;
 anonymous   = "func" "(" [ parameters ] ")" [ result ] block ;
 short-function = "(" [ name-list ] ")" block ;
 cast        = { "*" } scalar-type "(" expression ")"
-            | "*" { "*" } identifier "(" expression ")" ;
+            | { "*" } identifier "(" expression ")" ;
 scalar-type = integer-type | "void" | "bool" | "float" | "double" | integer-name | float-name ;
 ```
 
-An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)` or `*int(p)`. A pointer cast of a declared struct, enum, or type alias is `*Point(p)`. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof "(" { "*" } scalar-type ")"`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
+An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)` or `*int(p)`. A builtin name such as `i32` is always that cast. A name declared as a type in this file is a cast too: `Integer(n)`, `*Point(p)`, `ShapeType(shape)`. A cast to a struct is `type mismatch`. `ShapeType(shape)` reads the tag of a tlc union, including from another file in the package. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof(int)`, `sizeof(*int)`, `sizeof(enum Color)`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
 
 A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A positional element, such as `{10}`, is `not supported yet`. A trailing comma is allowed.
 
@@ -279,9 +279,9 @@ These words are keywords and cannot be identifiers:
 ```text
 bool break case char const continue default defer do double else enum
 export extern false float for func if import int long null package
-return short sizeof static struct switch trait true type var void while
+return short sizeof static struct switch trait true type union var void while
 ```
 
-C keywords that tlc reserves but does not use are also keywords: `alignas`, `alignof`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof`, `typeof_unqual`, `union`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).
+C keywords that tlc reserves but does not use are also keywords: `alignas`, `alignof`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof`, `typeof_unqual`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).
 
 `as`, `from`, `impl`, and `this` are not keywords. `signed` and `unsigned` are not keywords.
