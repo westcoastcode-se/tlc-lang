@@ -1,6 +1,8 @@
 # Grammar
 
-This is the syntax of tlc. Meaning, types, and diagnostics are in [language.md](language.md). A form that this grammar does not list is not part of the language, even when the parser recognizes a similar C spelling and then rejects it.
+[Index](README.md)
+
+This is the syntax of tlc. Meaning, types, and diagnostics are in the [language pages](README.md). A form that this grammar does not list is not part of the language, even when the parser recognizes a similar C spelling and then rejects it.
 
 ## Notation
 

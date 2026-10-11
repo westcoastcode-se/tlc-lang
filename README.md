@@ -2,7 +2,7 @@
 
 `tlc` 0.1.0 is a compiler for a C dialect. You compile one entry file. `import` names a directory of `.tlc` files, and only `export` is visible outside that package.
 
-The language is described in [docs/language.md](docs/language.md). The syntax is in [docs/grammar.md](docs/grammar.md).
+The language is described in [docs/README.md](docs/README.md).
 
 ## Build
 
@@ -23,7 +23,7 @@ build/tlc --check main.tlc
 
 With no mode flag, `tlc` writes an executable. The default name is `a.out`. `cc` links it. `--run` compiles, links, and runs. The exit status is the program's. `-l` and `-L` link shared or static libraries. `-Bstatic` and `-Bdynamic` choose which kind each `-l` uses. A library path, such as `libfoo.a`, `libfoo.so`, or `libfoo.so.1`, is passed to the linker as well.
 
-`import "vendor/sdl3"` loads a package from `lib/tlc/vendor` next to the compiler prefix, or from the directory in `TLC_LIB`. A package there is `.tlc` bindings plus the static and shared libraries beside them. Those libraries are linked when the package is imported. See [docs/language.md](docs/language.md).
+`import "vendor/sdl3"` loads a package from `lib/tlc/vendor` next to the compiler prefix, or from the directory in `TLC_LIB`. A package there is `.tlc` bindings plus the static and shared libraries beside them. Those libraries are linked when the package is imported. See [Packages](docs/packages.md).
 
 `examples/triangle` draws a triangle with SDL3 and OpenGL:
 
