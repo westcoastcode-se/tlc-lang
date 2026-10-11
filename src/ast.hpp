@@ -14,13 +14,14 @@ namespace tlc {
 struct FunctionDecl;
 
 // One slot of `func id[T type, N int]`. `T type` is a type. `T Shape` is a trait.
-// `N int` is a compile-time integer.
+// `N int` is a compile-time integer. `[...U]` is a type pack and is the only parameter.
 struct TypeParam {
     SourceLoc loc{};
     std::string name;
     bool is_type = false;
     bool is_value = false;
     bool is_trait = false;
+    bool is_pack = false;
     std::string constraint;
     std::string constraint_package;
 };
@@ -92,6 +93,8 @@ struct Expr {
         SourceLoc loc{};
         std::unique_ptr<Expr> base;
         std::unique_ptr<Expr> index;
+        // Set while checking a tuple element. Negative when this is not that index.
+        mutable int tuple_index = -1;
     };
     struct Sizeof {
         SourceLoc loc{};
@@ -154,10 +157,12 @@ struct Expr {
         std::string field;
         std::unique_ptr<Expr> value;
     };
-    // `{.field = value, ...}`. The destination type supplies the struct. Omitted fields are zero.
+    // `{.field = value}` names struct fields. `{value, value}` is a value list: one value
+    // collapses, and several values are a tuple unless the destination is an array.
     struct Init {
         SourceLoc loc{};
         std::vector<FieldInit> fields;
+        std::vector<std::unique_ptr<Expr>> elements;
         // Filled when the destination struct is known.
         int struct_id = -1;
     };
@@ -406,6 +411,25 @@ struct Stmt {
     Stmt &operator=(Stmt &&) noexcept;
 };
 
+struct ResultSlot {
+    std::string type_name;
+    std::string type_package;
+    bool is_struct = false;
+    bool is_enum = false;
+    int indirections = 0;
+    uint32_t optional = 0;
+    bool is_array = false;
+    int array_len = 0;
+    std::string array_len_name;
+    std::vector<TypeArg> type_args;
+    bool is_fn_ptr = false;
+    int ret_indirections = 0;
+    uint32_t ret_optional = 0;
+    std::vector<FnParam> fn_params;
+    bool fn_variadic = false;
+    std::vector<FnParam> fn_results;
+};
+
 struct Param {
     SourceLoc loc{};
     std::string name;
@@ -427,25 +451,9 @@ struct Param {
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
-};
-
-struct ResultSlot {
-    std::string type_name;
-    std::string type_package;
-    bool is_struct = false;
-    bool is_enum = false;
-    int indirections = 0;
-    uint32_t optional = 0;
-    bool is_array = false;
-    int array_len = 0;
-    std::string array_len_name;
-    std::vector<TypeArg> type_args;
-    bool is_fn_ptr = false;
-    int ret_indirections = 0;
-    uint32_t ret_optional = 0;
-    std::vector<FnParam> fn_params;
-    bool fn_variadic = false;
-    std::vector<FnParam> fn_results;
+    // A pack of several types. `tuple_parts` are the element types, in order.
+    bool is_tuple = false;
+    std::vector<ResultSlot> tuple_parts;
 };
 
 struct FunctionDecl {
@@ -470,6 +478,8 @@ struct FunctionDecl {
     // Names written in `func Vec[T]::get`. Empty for `func Point::sum`.
     std::vector<std::string> method_params;
     std::vector<TypeParam> type_params;
+    // Parallel to `results`. A non-null entry is `typeof(expr)` and is resolved while checking.
+    std::vector<std::unique_ptr<Expr>> result_typeof;
     // `(a, b) { ... }` takes its parameter and result types from the expected function pointer.
     bool inferred = false;
     bool elaborated = false;

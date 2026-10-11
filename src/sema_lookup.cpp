@@ -146,6 +146,14 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
 }
 
 Type Checker::type_of_param(const Param &param) {
+    if (param.is_tuple) {
+        std::vector<Type> parts;
+        parts.reserve(param.tuple_parts.size());
+        for (const ResultSlot &slot : param.tuple_parts) {
+            parts.push_back(type_of_result(slot, param.loc));
+        }
+        return type_tuple(std::move(parts));
+    }
     Param &written = const_cast<Param &>(param);
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
@@ -922,6 +930,12 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         if (!item->type_params.empty()) {
             if (item->is_extern || item->extern_c || item->is_union) {
                 error(item->loc, "not supported yet");
+            }
+            for (const TypeParam &param : item->type_params) {
+                if (param.is_pack) {
+                    error(item->loc, "not supported yet");
+                    break;
+                }
             }
             owned_structs_.push_back(*item);
             struct_templates_[file_id][item->name] = &owned_structs_.back();

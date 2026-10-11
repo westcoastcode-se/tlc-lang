@@ -69,6 +69,29 @@ func main() int {
 
 `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` writes the type. A type that cannot be inferred is `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[int]` and `Vec[char]` for `Vec[T]`, is `type mismatch`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
 
+`[...U]` is one type parameter, and it is the only parameter in the brackets. One argument type makes `U` that type, so `*U` is a pointer to it. Several argument types make `U` a tuple. `{40}` is one value, the same call as `keep(40)`. `{40, 2}` is a tuple. The element types are the types of the values before promotion, so `'a'` stays `char`.
+
+```c
+func keep[...U](args U) U {
+    return args;
+}
+
+func first[...U](args U) typeof(args[0]) {
+    return args[0];
+}
+
+func main() int {
+    var n = keep(40);
+    a, b := keep({40, 2});
+    x, y := keep({40, 'a'});
+    return n + a + first({7, 8});
+}
+```
+
+`keep[int](40)` and `keep[int, char]({40, 'a'})` write the types. A value in that list, such as `keep[4]`, is `type mismatch`. Another parameter beside `...U` is `not supported yet`. `first(40)` is `type mismatch`: `args` is `int`, and `args[0]` reads a tuple. The index is a constant. `return args` returns the tuple, and so does `return keep({1, 2})` from a function with those two results. `a, b :=` binds them. `[...U]` is not the `...` that `builtin.va()` reads.
+
+A result may be `typeof(expression)`. The expression is checked after the parameters exist, so `func id(x int) typeof(x)` has result `int`. That spelling is the result type. An expression `typeof(x)` still has type `Type`.
+
 Structs are passed and returned by value. An array parameter becomes a pointer, both as `a int[]` and as `a int[4]`. A function may return an array. The return expression is a local array name, as in `return out` for `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
 
 There is one `main`.

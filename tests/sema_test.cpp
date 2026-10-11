@@ -1624,7 +1624,7 @@ int run_sema_tests() {
             "  var p Point = {1, 2};\n"
             "  return p.x;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
@@ -2594,9 +2594,9 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func add(x int, y int) (int, int) { return x, y; }\n"
-            "func bad() (int, int) { return add(1, 2); }\n"
+            "func pass() (int, int) { return add(1, 2); }\n"
             "func main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "return type");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -3455,6 +3455,79 @@ int run_sema_tests() {
             "type Point struct { x int; };\n"
             "func main() int { return typeof(struct Point); }\n");
         EXPECT_HAS(check, errors, "expected a type");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func keep[...U](args U) U { return args; }\n"
+            "func first[...U](args U) typeof(args[0]) { return args[0]; }\n"
+            "func id(x int) typeof(x) { return x; }\n"
+            "func main() int {\n"
+            "  var n = keep(40);\n"
+            "  a, b := keep({40, 2});\n"
+            "  var row [3]int = {10, 20, 12};\n"
+            "  var head = first({7, 8});\n"
+            "  return n + a + b + row[0] + head + id(1);\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; y int; };\n"
+            "func main() int { var box Point = {10, 20}; return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func first[...U](args U) typeof(args[0]) { return args[0]; }\n"
+            "func main() int { return first(40); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func f[T type, ...U](a T, args U) T { return a; }\n"
+            "func main() int { return f(1); }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int { var row [3]int = {10, 20}; return row[0]; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func keep[...U](args U) int { args[0] = 1; return 0; }\n"
+            "func main() int { return keep({1, 2}); }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose("type Box[...U] struct { n int; };\nfunc main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func keep[...U](args U) U { return args; }\n"
+            "func main() int { return keep(); }\n");
+        EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = diagnose("func main() int { a, b := {40, 2}; return a + b; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func keep[...U](args U) U { return args; }\n"
+            "func main() int { return keep[4](1); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     return check.failed;

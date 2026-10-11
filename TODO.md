@@ -9,7 +9,16 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 ## Generics and compile-time
 
 - A generic used as a value: `var f = id`.
-- `extern` on a generic, a generic with no body, and a variadic generic.
+- `extern` on a generic, a generic with no body, and a generic that is also `...`. `[...U]` is a separate parameter and is accepted when it is the only type parameter.
+- A pack beside another type parameter, `[T type, ...U]`.
+- A pack on a struct or a union.
+- An empty pack.
+- A pack of several types used as `*U`, `[N]U`, a type argument, or a field.
+- A tuple element that is itself a tuple.
+- `typeof` inside a parenthesized result list. A bare result `typeof(expression)` is accepted.
+- Several names bound from a brace list, `a, b := {1, 2}`. Several names are unpacked from a call.
+- A tuple index that is not a constant, and assignment to a tuple element.
+- `count(U)` and `const for`.
 - A type-parameter list after the method name: `func Vec[T]::get[U type]`. `func Vec[T]::get` names the struct's parameters.
 - Type parameters on an alias, an enum, a trait, or a union. Only `type Name[T type] struct` takes the list.
 - A qualified type application: `pkg.Vec[int]`.
@@ -55,7 +64,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `var a, b =` at file scope. Inside a function, several names can be bound from one call.
 - `export` or `extern` on an inferred variable, `var name = expr` or `name := expr`. They go on a typed `var`.
 - A local `type`, including a local struct or enum.
-- An array initialized with `=`.
+- A global array initializer. A local array accepts `var row [3]int = {10, 20, 12}`. Any other local array initializer is `not supported yet`.
 - A `static` local. File-scope `static` is private to its file.
 - Another abi than `"c"` and `"tlc"`.
 - `export type Name trait`.
@@ -77,7 +86,6 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - A union that is not `extern(abi="c")` and does not name an enum, including `extern union`.
 - `extern` or `extern(abi="c")` on `union(Enum)`.
 - A qualified enum name in `union(Enum)`, such as `union(pkg.Kind)`.
-- A positional initializer, `{10, 20}`. Fields are named: `{.x = 10}`.
 - A by-value field of a struct that is still incomplete, including the struct being defined. A pointer to that struct is fine.
 
 ## Methods and traits

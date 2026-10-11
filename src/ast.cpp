@@ -511,6 +511,10 @@ std::string dump_expr(const Expr &expr) {
                     text += field.value ? dump_expr(*field.value) : "(unsupported)";
                     text += ')';
                 }
+                for (const auto &element : node.elements) {
+                    text += ' ';
+                    text += element ? dump_expr(*element) : "(unsupported)";
+                }
                 text += ')';
                 return text;
             } else {
@@ -733,6 +737,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 Expr::Index copy;
                 copy.loc = node.loc;
+                copy.tuple_index = node.tuple_index;
                 copy.base = node.base ? clone_expr(*node.base) : nullptr;
                 copy.index = node.index ? clone_expr(*node.index) : nullptr;
                 out->data = std::move(copy);
@@ -789,6 +794,9 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                     cloned.field = field.field;
                     cloned.value = field.value ? clone_expr(*field.value) : nullptr;
                     copy.fields.push_back(std::move(cloned));
+                }
+                for (const auto &element : node.elements) {
+                    copy.elements.push_back(element ? clone_expr(*element) : nullptr);
                 }
                 out->data = std::move(copy);
             } else {
@@ -926,6 +934,9 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.method_struct = fn.method_struct;
     copy.method_params = fn.method_params;
     copy.type_params = fn.type_params;
+    for (const auto &expr : fn.result_typeof) {
+        copy.result_typeof.push_back(expr ? clone_expr(*expr) : nullptr);
+    }
     copy.inferred = fn.inferred;
     copy.elaborated = fn.elaborated;
     return copy;

@@ -595,6 +595,22 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
 }
 
 CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) const {
+    if (param.is_tuple) {
+        std::vector<llvm::Type *> fields;
+        Lowered out;
+        out.is_tuple = true;
+        out.tuple_parts = param.tuple_parts;
+        for (const ResultSlot &slot : param.tuple_parts) {
+            const Lowered part = lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
+                                       slot.is_array, slot.array_len, false);
+            fields.push_back(stored_type(part));
+        }
+        if (fields.empty()) {
+            fields.push_back(i32());
+        }
+        out.type = llvm::StructType::get(context_, fields);
+        return out;
+    }
     if (param.is_fn_ptr) {
         return lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
                            param.indirections, param.fn_params, param.fn_variadic, param.fn_results);
@@ -625,6 +641,8 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.enum_id = low.enum_id;
     binding.ptr_to_array = low.ptr_to_array;
     binding.ptr_array_len = low.ptr_array_len;
+    binding.is_tuple = low.is_tuple;
+    binding.tuple_parts = low.tuple_parts;
 }
 
 const CodeGen::FieldLayout *CodeGen::find_field(int struct_id, const std::string &name, int &index) const {

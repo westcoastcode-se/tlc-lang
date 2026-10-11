@@ -32,9 +32,54 @@ bool same_spec(const SpecArg &lhs, const SpecArg &rhs) {
     if (lhs.is_value || rhs.is_value) {
         return lhs.is_value && rhs.is_value && lhs.value == rhs.value;
     }
+    if (lhs.is_pack || rhs.is_pack) {
+        if (!lhs.is_pack || !rhs.is_pack || lhs.parts.size() != rhs.parts.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < lhs.parts.size(); ++i) {
+            if (!same_spec(lhs.parts[i], rhs.parts[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
     return lhs.type_name == rhs.type_name && lhs.type_package == rhs.type_package && lhs.is_struct == rhs.is_struct &&
            lhs.is_enum == rhs.is_enum && lhs.indirections == rhs.indirections && lhs.optional == rhs.optional &&
            lhs.is_array == rhs.is_array && lhs.array_len == rhs.array_len;
+}
+
+ResultSlot slot_from_spec(const SpecArg &arg) {
+    ResultSlot slot;
+    slot.type_name = arg.type_name;
+    slot.type_package = arg.type_package;
+    slot.is_struct = arg.is_struct;
+    slot.is_enum = arg.is_enum;
+    slot.indirections = arg.indirections;
+    slot.optional = arg.optional;
+    slot.is_array = arg.is_array;
+    slot.array_len = arg.array_len;
+    return slot;
+}
+
+void apply_spec(ResultSlot &slot, const SpecArg &arg) {
+    slot.type_name = arg.type_name;
+    slot.type_package = arg.type_package;
+    slot.is_struct = arg.is_struct;
+    slot.is_enum = arg.is_enum;
+    slot.indirections = arg.indirections;
+    slot.optional = arg.optional;
+    slot.is_array = arg.is_array;
+    slot.array_len = arg.array_len;
+}
+
+SpecArg pack_bound(std::vector<SpecArg> parts) {
+    if (parts.size() == 1) {
+        return std::move(parts[0]);
+    }
+    SpecArg packed;
+    packed.is_pack = true;
+    packed.parts = std::move(parts);
+    return packed;
 }
 
 } // namespace
@@ -191,11 +236,18 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
 
 std::string Checker::mangle_spec(const std::string &base, const std::vector<SpecArg> &args) const {
     std::string name = base + ".spec";
-    for (const SpecArg &arg : args) {
+    auto append = [&](auto &&self, const SpecArg &arg) -> void {
         name += '.';
+        if (arg.is_pack) {
+            name += "pack";
+            for (const SpecArg &part : arg.parts) {
+                self(self, part);
+            }
+            return;
+        }
         if (arg.is_value) {
             name += std::to_string(arg.value);
-            continue;
+            return;
         }
         if (arg.is_array) {
             name += "arr.";
@@ -210,6 +262,9 @@ std::string Checker::mangle_spec(const std::string &base, const std::vector<Spec
             name += '.';
         }
         name += arg.type_name.empty() ? "invalid" : arg.type_name;
+    };
+    for (const SpecArg &arg : args) {
+        append(append, arg);
     }
     return name;
 }
@@ -270,6 +325,10 @@ bool Checker::generic_struct_name(uint32_t file, const std::string &name) const 
 
 void Checker::expose_bounds(uint32_t owner, const std::vector<SpecArg> &bounds) {
     for (const SpecArg &bound : bounds) {
+        if (bound.is_pack) {
+            expose_bounds(owner, bound.parts);
+            continue;
+        }
         if (bound.is_value || bound.type_name.empty()) {
             continue;
         }
@@ -408,6 +467,10 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         if (bound == nullptr) {
             return;
         }
+        if (bound->is_pack) {
+            error(arg.loc, "not supported yet");
+            return;
+        }
         if (bound->is_value) {
             if (arg.indirections != 0 || arg.is_array || !arg.args.empty()) {
                 error(arg.loc, "type mismatch");
@@ -449,6 +512,11 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
     }
     const SpecArg *bound = find_arg(params, bounds, type_name);
     if (bound == nullptr) {
+        return;
+    }
+    if (bound->is_pack) {
+        error(loc, "not supported yet");
+        type_name = "invalid";
         return;
     }
     if (bound->is_value) {
@@ -606,6 +674,11 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         substitute_expr(params, bounds, *field.value);
                     }
                 }
+                for (const auto &element : node.elements) {
+                    if (element) {
+                        substitute_expr(params, bounds, *element);
+                    }
+                }
             } else if constexpr (std::is_same_v<T, Expr::Func>) {
                 if (node.decl) {
                     substitute_function(*node.decl, params, bounds);
@@ -713,10 +786,44 @@ void Checker::substitute_stmt(const std::vector<TypeParam> &params, const std::v
 }
 
 void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds) {
+    auto bare_pack = [&](const std::string &type_name, const std::string &type_package, int indirections, bool is_array,
+                         const std::vector<TypeArg> &type_args) -> const SpecArg * {
+        if (!type_package.empty() || indirections != 0 || is_array || !type_args.empty()) {
+            return nullptr;
+        }
+        const SpecArg *bound = find_arg(params, bounds, type_name);
+        if (bound == nullptr || !bound->is_pack) {
+            return nullptr;
+        }
+        return bound;
+    };
     for (Param &param : fn.params) {
+        if (const SpecArg *pack = bare_pack(param.type_name, param.type_package, param.indirections, param.is_array,
+                                            param.type_args)) {
+            param.is_tuple = true;
+            param.tuple_parts.clear();
+            for (const SpecArg &part : pack->parts) {
+                param.tuple_parts.push_back(slot_from_spec(part));
+            }
+            param.type_name.clear();
+            continue;
+        }
         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
                         param.indirections, param.optional, param.is_array, param.array_len, param.array_len_name,
                         param.type_args, param.loc);
+    }
+    if (fn.results.size() == 1) {
+        ResultSlot &slot = fn.results.front();
+        if (const SpecArg *pack =
+                bare_pack(slot.type_name, slot.type_package, slot.indirections, slot.is_array, slot.type_args)) {
+            std::vector<ResultSlot> expanded;
+            expanded.reserve(pack->parts.size());
+            for (const SpecArg &part : pack->parts) {
+                expanded.push_back(slot_from_spec(part));
+            }
+            fn.results = std::move(expanded);
+            fn.result_typeof.clear();
+        }
     }
     for (ResultSlot &slot : fn.results) {
         substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
@@ -731,9 +838,84 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         fn.indirections = first.indirections;
         fn.optional = first.optional;
     }
+    for (const auto &expr : fn.result_typeof) {
+        if (expr) {
+            substitute_expr(params, bounds, *expr);
+        }
+    }
     if (fn.body) {
         substitute_stmt(params, bounds, *fn.body);
     }
+}
+
+bool Checker::resolve_result_typeof(FunctionDecl &fn) {
+    bool any = false;
+    for (const auto &expr : fn.result_typeof) {
+        if (expr) {
+            any = true;
+        }
+    }
+    if (!any) {
+        return true;
+    }
+    push();
+    for (const Param &param : fn.params) {
+        if (param.name.empty()) {
+            continue;
+        }
+        Symbol symbol;
+        symbol.name = param.name;
+        symbol.type = type_of_param(param);
+        symbol.is_auto = true;
+        symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
+        declare(std::move(symbol), param.loc);
+    }
+    bool ok = true;
+    for (std::size_t i = 0; i < fn.result_typeof.size() && i < fn.results.size(); ++i) {
+        const Expr *expr = fn.result_typeof[i].get();
+        if (expr == nullptr) {
+            continue;
+        }
+        const auto *node = std::get_if<Expr::Typeof>(&expr->data);
+        if (node == nullptr) {
+            error(fn.loc, "type mismatch");
+            ok = false;
+            continue;
+        }
+        const Type type = operand_type(node->on_type, node->type_name, node->type_package, node->is_struct, node->is_enum,
+                                       node->indirections, node->optional, node->expr.get(), node->loc);
+        if (type.kind == TypeKind::Invalid) {
+            ok = false;
+            continue;
+        }
+        if (type.kind == TypeKind::Function || type.kind == TypeKind::Tuple || mentions_trait(type)) {
+            error(node->loc, "not supported yet");
+            ok = false;
+            continue;
+        }
+        SpecArg spelled;
+        if (!spell_type(type, spelled)) {
+            error(node->loc, "type mismatch");
+            ok = false;
+            continue;
+        }
+        apply_spec(fn.results[i], spelled);
+    }
+    pop();
+    if (!ok) {
+        return false;
+    }
+    fn.result_typeof.clear();
+    if (!fn.results.empty()) {
+        const ResultSlot &first = fn.results.front();
+        fn.return_type = first.type_name;
+        fn.type_package = first.type_package;
+        fn.is_struct = first.is_struct;
+        fn.is_enum = first.is_enum;
+        fn.indirections = first.indirections;
+        fn.optional = first.optional;
+    }
+    return true;
 }
 
 void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
@@ -972,7 +1154,18 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         error(call.loc, "not supported yet");
         return type_invalid();
     }
-    if (call.type_args.size() > templ->type_params.size()) {
+    const bool sole_pack = templ->type_params.size() == 1 && templ->type_params.front().is_pack;
+    bool any_pack = false;
+    for (const TypeParam &param : templ->type_params) {
+        if (param.is_pack) {
+            any_pack = true;
+        }
+    }
+    if (any_pack && !sole_pack) {
+        error(call.loc, "not supported yet");
+        return type_invalid();
+    }
+    if (!sole_pack && call.type_args.size() > templ->type_params.size()) {
         error(call.loc, "argument count");
         return type_invalid();
     }
@@ -999,11 +1192,28 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     }
     std::vector<SpecArg> bounds(templ->type_params.size());
     std::vector<char> set(templ->type_params.size(), 0);
-    for (std::size_t i = 0; i < call.type_args.size(); ++i) {
-        if (!bind_type_arg(templ->type_params[i], call.type_args[i], bounds[i], call.type_args[i].loc)) {
-            return type_invalid();
+    if (sole_pack && !call.type_args.empty()) {
+        std::vector<SpecArg> parts;
+        parts.reserve(call.type_args.size());
+        TypeParam as_type = templ->type_params.front();
+        as_type.is_pack = false;
+        as_type.is_type = true;
+        for (const TypeArg &arg : call.type_args) {
+            SpecArg bound;
+            if (!bind_type_arg(as_type, arg, bound, arg.loc)) {
+                return type_invalid();
+            }
+            parts.push_back(std::move(bound));
         }
-        set[i] = 1;
+        bounds[0] = pack_bound(std::move(parts));
+        set[0] = 1;
+    } else {
+        for (std::size_t i = 0; i < call.type_args.size(); ++i) {
+            if (!bind_type_arg(templ->type_params[i], call.type_args[i], bounds[i], call.type_args[i].loc)) {
+                return type_invalid();
+            }
+            set[i] = 1;
+        }
     }
     auto constrain = [&](int index, const Type &got) {
         if (index < 0 || got.kind == TypeKind::Invalid) {
@@ -1051,6 +1261,36 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
             continue;
         }
         if (templ->type_params[static_cast<std::size_t>(index)].is_value) {
+            continue;
+        }
+        if (templ->type_params[static_cast<std::size_t>(index)].is_pack && param.indirections == 0 && !param.is_array) {
+            if (got.kind == TypeKind::Tuple) {
+                if (got.results.empty()) {
+                    error(call.loc, "type mismatch");
+                    return type_invalid();
+                }
+                std::vector<SpecArg> parts;
+                parts.reserve(got.results.size());
+                for (const Type &part : got.results) {
+                    SpecArg spelled;
+                    if (!spell_type(part, spelled)) {
+                        error(call.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    parts.push_back(std::move(spelled));
+                }
+                const SpecArg packed = pack_bound(std::move(parts));
+                if (set[static_cast<std::size_t>(index)] &&
+                    !same_spec(bounds[static_cast<std::size_t>(index)], packed)) {
+                    error(call.loc, "type mismatch");
+                    return type_invalid();
+                }
+                bounds[static_cast<std::size_t>(index)] = packed;
+                set[static_cast<std::size_t>(index)] = 1;
+            } else if (!constrain(index, got)) {
+                error(call.loc, "type mismatch");
+                return type_invalid();
+            }
             continue;
         }
         const Type *cursor = &got;
@@ -1163,6 +1403,10 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         spec.is_enum = first.is_enum;
         spec.indirections = first.indirections;
         spec.optional = first.optional;
+    }
+    if (!resolve_result_typeof(spec)) {
+        file_id_ = saved_file;
+        return type_invalid();
     }
     Type signature = function_signature(spec);
     file_id_ = saved_file;

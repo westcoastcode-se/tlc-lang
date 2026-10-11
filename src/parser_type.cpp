@@ -876,6 +876,12 @@ void Parser::parse_results(FunctionDecl &fn) {
             }
             expect(TokenKind::RParen, "expected ')'");
         }
+    } else if (check(TokenKind::KwTypeof)) {
+        ResultSlot slot;
+        slot.type_name = "invalid";
+        fn.results.push_back(std::move(slot));
+        fn.result_typeof.resize(fn.results.size());
+        fn.result_typeof.back() = parse_unary();
     } else {
         take_result(fn, parse_placed_type(false, false));
     }
@@ -1145,6 +1151,9 @@ bool Parser::looks_like_type_params() const {
             continue;
         }
         if (depth == 1 && !named) {
+            if (kind == TokenKind::Ellipsis) {
+                continue;
+            }
             if (kind != TokenKind::Identifier) {
                 return false;
             }
@@ -1268,6 +1277,38 @@ std::vector<TypeParam> Parser::parse_type_params() {
     while (!check(TokenKind::RBracket) && !check(TokenKind::LBrace) && !check(TokenKind::LParen) && !eof()) {
         TypeParam param;
         param.loc = peek().loc;
+        if (check(TokenKind::Ellipsis)) {
+            if (!params.empty()) {
+                diags_.error(param.loc, "not supported yet");
+                while (!check(TokenKind::RBracket) && !eof()) {
+                    ++pos_;
+                }
+                break;
+            }
+            ++pos_;
+            if (!check(TokenKind::Identifier)) {
+                error_here("expected an identifier");
+                break;
+            }
+            param.name = peek().text;
+            param.is_pack = true;
+            param.is_type = true;
+            ++pos_;
+            if (!check(TokenKind::Comma) && !check(TokenKind::RBracket)) {
+                diags_.error(peek().loc, "type mismatch");
+                if (!check(TokenKind::RBracket) && !eof()) {
+                    ++pos_;
+                }
+            }
+            params.push_back(std::move(param));
+            if (eat(TokenKind::Comma)) {
+                diags_.error(peek().loc, "not supported yet");
+                while (!check(TokenKind::RBracket) && !eof()) {
+                    ++pos_;
+                }
+            }
+            break;
+        }
         if (!check(TokenKind::Identifier)) {
             error_here("expected an identifier");
             break;

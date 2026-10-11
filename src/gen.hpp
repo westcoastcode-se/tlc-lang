@@ -67,6 +67,9 @@ struct Binding {
     int fn_ret_struct = -1;
     std::vector<FnParam> fn_results{};
     int enum_id = -1;
+    // A pack of several types, stored as one anonymous struct.
+    bool is_tuple = false;
+    std::vector<ResultSlot> tuple_parts;
 };
 
 struct TypedValue {
@@ -91,6 +94,7 @@ struct TypedValue {
     int fn_ret_struct = -1;
     std::vector<FnParam> fn_results{};
     int enum_id = -1;
+    bool is_tuple = false;
     // Set when this value is a pointer to an array (`*[4]i32`).
     bool ptr_to_array = false;
     int ptr_array_len = 0;
@@ -278,6 +282,8 @@ class CodeGen {
         int fn_ret_struct = -1;
         std::vector<FnParam> fn_results{};
         int enum_id = -1;
+        bool is_tuple = false;
+        std::vector<ResultSlot> tuple_parts;
     };
     struct EnumLayout {
         std::string name;
@@ -464,6 +470,33 @@ class CodeGen {
         if (value == nullptr) {
             return zero();
         }
+        if (slot_type != nullptr && slot_type->isStructTy() && from_depth == 0 && value->getType()->isStructTy()) {
+            if (value->getType() == slot_type) {
+                return value;
+            }
+            auto *dest = llvm::cast<llvm::StructType>(slot_type);
+            auto *src = llvm::cast<llvm::StructType>(value->getType());
+            if (dest->getNumElements() == src->getNumElements()) {
+                llvm::Value *aggregate = llvm::ConstantAggregateZero::get(dest);
+                for (unsigned index = 0; index < dest->getNumElements(); ++index) {
+                    llvm::Value *field = builder_.CreateExtractValue(value, index);
+                    llvm::Type *want = dest->getElementType(index);
+                    if (field->getType() != want) {
+                        if (field->getType()->isIntegerTy() && want->isIntegerTy()) {
+                            field = resize_int(field, want, source_unsigned);
+                        } else if (field->getType()->isFloatingPointTy() && want->isFloatingPointTy()) {
+                            field = field->getType()->getPrimitiveSizeInBits() < want->getPrimitiveSizeInBits()
+                                        ? builder_.CreateFPExt(field, want)
+                                        : builder_.CreateFPTrunc(field, want);
+                        } else {
+                            field = llvm::Constant::getNullValue(want);
+                        }
+                    }
+                    aggregate = builder_.CreateInsertValue(aggregate, field, index);
+                }
+                return aggregate;
+            }
+        }
         if (slot_type != nullptr && slot_type->isPointerTy() && from_depth == 0) {
             // A function designator is already a pointer. Its depth is the return depth, which is 0 for a scalar.
             if (value->getType()->isPointerTy()) {
@@ -579,6 +612,16 @@ class CodeGen {
         if (binding.is_array) {
             return {binding.value, binding.depth + 1, binding.elem_char, binding.struct_id, false, binding.elem_void,
                     binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};
+        }
+        if (binding.is_tuple && binding.value != nullptr) {
+            llvm::Type *ty = object_type(binding.value);
+            if (ty == nullptr) {
+                return {zero(), 0};
+            }
+            TypedValue loaded;
+            loaded.value = builder_.CreateLoad(ty, binding.value);
+            loaded.is_tuple = true;
+            return loaded;
         }
         TypedValue loaded = load_object(binding.value, binding.depth, binding.elem_char, binding.struct_id, binding.elem_void,
                                         binding.elem_bool, binding.elem_bits, binding.elem_unsigned, binding.elem_float);

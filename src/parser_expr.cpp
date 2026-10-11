@@ -440,8 +440,11 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             spelled = parse_paren_type();
             on_type = true;
         } else if (!is_sizeof && peek().kind == TokenKind::LParen) {
-            // `(p).name()` calls the method. The operand stops at `)`.
-            expr = parse_primary();
+            // The operand stops at `)`. `(x) { ... }` after a result is the function body,
+            // so this does not take the short-function parse.
+            ++pos_;
+            expr = parse_expr();
+            expect(TokenKind::RParen, "expected ')'");
         } else {
             expr = parse_unary();
         }
@@ -653,9 +656,23 @@ std::unique_ptr<Expr> Parser::parse_init() {
     Expr::Init init;
     init.loc = peek().loc;
     expect(TokenKind::LBrace, "expected '{'");
+    if (!check(TokenKind::Dot) && !check(TokenKind::RBrace)) {
+        while (!check(TokenKind::RBrace) && !eof()) {
+            if (check(TokenKind::Dot)) {
+                error_here("type mismatch");
+                break;
+            }
+            init.elements.push_back(parse_assignment());
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+        }
+        expect(TokenKind::RBrace, "expected '}'");
+        return make_expr(std::move(init));
+    }
     while (!check(TokenKind::RBrace) && !eof()) {
         if (!eat(TokenKind::Dot)) {
-            error_here("not supported yet");
+            error_here("type mismatch");
             while (!check(TokenKind::Comma) && !check(TokenKind::RBrace) && !check(TokenKind::Semicolon) && !eof()) {
                 ++pos_;
             }

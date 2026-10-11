@@ -282,6 +282,58 @@ Type Checker::elaborate_inferred(FunctionDecl &fn, const Type &want) {
 }
 
 Type Checker::check_init(Expr::Init &init, const Type &want) {
+    if (!init.elements.empty()) {
+        auto check_elements = [&]() {
+            for (const auto &element : init.elements) {
+                if (element) {
+                    check_expr(*element, true);
+                }
+            }
+        };
+        if (!init.fields.empty()) {
+            error(init.loc, "type mismatch");
+            check_elements();
+            return type_invalid();
+        }
+        if (want.kind == TypeKind::Array && want.element != nullptr) {
+            if (static_cast<int>(init.elements.size()) != want.length) {
+                error(init.loc, "type mismatch");
+                check_elements();
+                return type_invalid();
+            }
+            for (const auto &element : init.elements) {
+                if (element) {
+                    check_against(*element, *want.element);
+                }
+            }
+            return want;
+        }
+        if (want.kind == TypeKind::Struct) {
+            error(init.loc, "type mismatch");
+            check_elements();
+            return type_invalid();
+        }
+        if (want.kind == TypeKind::Tuple) {
+            if (init.elements.size() != want.results.size()) {
+                error(init.loc, "type mismatch");
+                check_elements();
+                return type_invalid();
+            }
+            for (std::size_t i = 0; i < init.elements.size(); ++i) {
+                if (init.elements[i]) {
+                    check_against(*init.elements[i], want.results[i]);
+                }
+            }
+            return want;
+        }
+        if (init.elements.size() == 1 && init.elements.front() && want.kind != TypeKind::Invalid &&
+            want.kind != TypeKind::Void) {
+            return check_against(*init.elements.front(), want);
+        }
+        error(init.loc, "type mismatch");
+        check_elements();
+        return type_invalid();
+    }
     auto check_values = [&]() {
         for (const Expr::FieldInit &field : init.fields) {
             if (field.value) {
@@ -669,6 +721,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     const Type base = check_expr(*index->base, true);
                     const Type subscript = check_expr(*index->index, true);
                     expect(subscript, type_int(), expr_loc(*index->index));
+                    if (base.kind == TypeKind::Tuple) {
+                        error(node.loc, "not supported yet");
+                        check_expr(*node.rhs, true);
+                        return type_invalid();
+                    }
                     if (base.kind == TypeKind::Pointer && base.optional) {
                         error(node.loc, "type mismatch");
                         check_expr(*node.rhs, true);
@@ -1095,6 +1152,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 const Type base = check_expr(*node.base, true);
                 const Type subscript = check_expr(*node.index, true);
                 expect(subscript, type_int(), expr_loc(*node.index));
+                if (base.kind == TypeKind::Tuple) {
+                    const std::optional<int> folded = node.index ? fold_int(*node.index) : std::nullopt;
+                    if (!folded) {
+                        error(node.loc, "not supported yet");
+                        return type_invalid();
+                    }
+                    if (*folded < 0 || static_cast<std::size_t>(*folded) >= base.results.size()) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    node.tuple_index = *folded;
+                    return base.results[static_cast<std::size_t>(*folded)];
+                }
                 if (base.kind == TypeKind::Pointer && base.optional) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
@@ -1180,10 +1250,39 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_invalid();
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
                 (void)used;
+                if (!node.elements.empty() && node.fields.empty()) {
+                    if (node.elements.size() == 1 && node.elements.front()) {
+                        return check_raw(*node.elements.front(), true);
+                    }
+                    std::vector<Type> parts;
+                    parts.reserve(node.elements.size());
+                    bool invalid = false;
+                    for (const auto &element : node.elements) {
+                        if (!element) {
+                            invalid = true;
+                            parts.push_back(type_invalid());
+                            continue;
+                        }
+                        Type part = check_raw(*element, true);
+                        if (part.kind == TypeKind::Invalid) {
+                            invalid = true;
+                        }
+                        parts.push_back(std::move(part));
+                    }
+                    if (invalid) {
+                        return type_invalid();
+                    }
+                    return type_tuple(std::move(parts));
+                }
                 error(node.loc, "type mismatch");
                 for (const Expr::FieldInit &field : node.fields) {
                     if (field.value) {
                         check_expr(*field.value, true);
+                    }
+                }
+                for (const auto &element : node.elements) {
+                    if (element) {
+                        check_expr(*element, true);
                     }
                 }
                 return type_invalid();
@@ -1571,6 +1670,21 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     return check_expr(value, true);
                 };
+                if (return_type_.kind == TypeKind::Tuple && exprs.size() == 1 && exprs.front() != nullptr) {
+                    Type got = type_invalid();
+                    if (const auto *init = std::get_if<Expr::Init>(&exprs.front()->data)) {
+                        got = check_init(const_cast<Expr::Init &>(*init), return_type_);
+                    } else {
+                        got = check_raw(*exprs.front(), true);
+                    }
+                    if (got.kind == TypeKind::Tuple && same_type(got, return_type_)) {
+                        return;
+                    }
+                    if (got.kind == TypeKind::Tuple) {
+                        error(node.loc, "type mismatch");
+                        return;
+                    }
+                }
                 if (return_type_.kind == TypeKind::Tuple) {
                     if (exprs.size() != return_type_.results.size()) {
                         error(node.loc, "return type: expected " + std::to_string(return_type_.results.size()) +
@@ -1761,6 +1875,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                         return;
                     }
                     parts.push_back(rhs);
+                } else if (rhs.kind == TypeKind::Tuple && rhs.results.size() == node.names.size() &&
+                           !std::holds_alternative<Expr::Call>(node.value->data)) {
+                    // Several names are unpacked from a call.
+                    error(node.loc, "not supported yet");
+                    return;
                 } else if (rhs.kind != TypeKind::Tuple || rhs.results.size() != node.names.size()) {
                     const std::string found = rhs.kind == TypeKind::Tuple
                                                   ? std::to_string(rhs.results.size()) + " results"
@@ -1872,7 +1991,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.is_auto = true;
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     declare(std::move(symbol), var.loc);
-                    if (var.is_array && !var.ptr_to_array && var.init) {
+                    const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
+                    const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
+                    if (var.is_array && !var.ptr_to_array && var.init && !array_list) {
                         error(var.loc, "not supported yet");
                     } else if (var.init) {
                         check_against(*var.init, type);
@@ -1902,6 +2023,7 @@ void Checker::check_function(const FunctionDecl &fn) {
     loop_depth_ = 0;
     switches_.clear();
     variadic_function_ = fn.variadic;
+    resolve_result_typeof(const_cast<FunctionDecl &>(fn));
     return_type_ = function_result(fn);
     for (const Param &param : fn.params) {
         Type type = type_of_param(param);

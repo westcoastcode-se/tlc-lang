@@ -57,4 +57,6 @@ A cast is the type followed by the value in parentheses: `i32(n)`, `int(n)`, `*c
 
 Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
+`{40}` is the value `40`. `{40, 2}` is a tuple of the value types before promotion, so `{40, 'a'}` is `int` and `char`. Where an array is expected, the same braces fill that array. Where a struct is expected, the list is `type mismatch`. A constant index reads one tuple element, and `typeof(args[0])` is that element's type. One name bound from a tuple is `type mismatch: expected 1 result`.
+
 [Index](README.md) · [Previous: Types](types.md) · [Next: Statements](statements.md) · [Grammar](grammar.md)

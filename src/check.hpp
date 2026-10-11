@@ -26,6 +26,9 @@ struct SpecArg {
     int array_len = 0;
     int struct_id = -1;
     int enum_id = -1;
+    // Several types bound to `[...U]`. One type is stored in the fields above instead.
+    bool is_pack = false;
+    std::vector<SpecArg> parts;
 };
 
 struct Symbol {
@@ -316,6 +319,8 @@ class Checker {
     void substitute_expr(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Expr &expr);
     void substitute_stmt(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Stmt &stmt);
     void substitute_function(FunctionDecl &fn, const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds);
+    // Replace `typeof(expr)` results with the type of that expression. Parameters must typecheck.
+    bool resolve_result_typeof(FunctionDecl &fn);
     void check_isolated(uint32_t file, const FunctionDecl &fn);
     void queue_spec(uint32_t file, FunctionDecl fn);
     bool generic_struct_name(uint32_t file, const std::string &name) const;

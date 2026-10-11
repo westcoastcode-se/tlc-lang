@@ -763,6 +763,17 @@ int run_parser_tests() {
             "  var box Point = {10, 20};\n"
             "  return 0;\n"
             "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(init (int 10) (int 20))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func keep[...U](args U) U { return args; }\n");
+        EXPECT(check, parsed.errors.empty());
+    }
+
+    {
+        const Parsed parsed = parse_source("func keep[T type, ...U](a T, args U) T { return a; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 

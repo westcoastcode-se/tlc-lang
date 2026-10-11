@@ -1441,8 +1441,13 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         llvm::Value *wide = zero_extend ? builder_.CreateZExt(inst, i32()) : builder_.CreateSExt(inst, i32());
         return tagged({wide, 0});
     }
-    return tagged({inst, call.depth, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool, call.elem_bits,
-                   call.elem_unsigned});
+    TypedValue result = tagged({inst, call.depth, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool,
+                                call.elem_bits, call.elem_unsigned});
+    if (inst->getType()->isStructTy() &&
+        ((call.decl != nullptr && call.decl->results.size() > 1) || call.fn_results.size() > 1)) {
+        result.is_tuple = true;
+    }
+    return result;
 }
 
 llvm::AllocaInst *CodeGen::defer_flag() {
@@ -1641,6 +1646,10 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                 inner.elem_bits, inner.elem_unsigned};
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        if (index->tuple_index >= 0) {
+            error(index->loc, "not supported yet");
+            return {};
+        }
         const TypedValue base = emit_rvalue(*index->base);
         const TypedValue subscript = emit_rvalue(*index->index);
         if (base.depth <= 0 || base.value == nullptr || subscript.value == nullptr) {
@@ -1891,6 +1900,30 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
                 return node.lhs ? raw_shape(*node.lhs) : Shape{};
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                if (node.tuple_index >= 0 && node.base != nullptr) {
+                    const auto *named = std::get_if<Expr::Name>(&node.base->data);
+                    const Binding *binding = named == nullptr ? nullptr : lookup(named->text);
+                    if (binding != nullptr && binding->is_tuple &&
+                        node.tuple_index < static_cast<int>(binding->tuple_parts.size())) {
+                        const ResultSlot &slot = binding->tuple_parts[static_cast<std::size_t>(node.tuple_index)];
+                        const Lowered low = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct,
+                                                  slot.indirections, slot.is_array, slot.array_len, false);
+                        Shape shape;
+                        shape.depth = low.depth;
+                        shape.elem_char = low.elem_char;
+                        shape.elem_void = low.elem_void;
+                        shape.elem_bool = low.elem_bool;
+                        shape.elem_bits = low.elem_bits;
+                        shape.elem_unsigned = low.elem_unsigned;
+                        shape.elem_float = low.elem_float;
+                        shape.struct_id = low.struct_id;
+                        shape.is_array = low.is_array;
+                        shape.array_len = low.array_len;
+                        shape.type = low.type;
+                        return shape;
+                    }
+                    return {};
+                }
                 if (node.base == nullptr) {
                     return {};
                 }
@@ -2411,6 +2444,66 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                                         llvm::GlobalValue::PrivateLinkage, data, ".str");
                 return {global, 1, true};
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                if (node.tuple_index >= 0) {
+                    if (node.base == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    const TypedValue base = emit_rvalue(*node.base);
+                    if (base.value == nullptr || !base.value->getType()->isStructTy()) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    auto *struct_ty = llvm::cast<llvm::StructType>(base.value->getType());
+                    const auto index = static_cast<unsigned>(node.tuple_index);
+                    if (index >= struct_ty->getNumElements()) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    llvm::Value *extracted = builder_.CreateExtractValue(base.value, index);
+                    const auto *named = std::get_if<Expr::Name>(&node.base->data);
+                    const Binding *binding = named == nullptr ? nullptr : lookup(named->text);
+                    if (binding != nullptr && index < binding->tuple_parts.size()) {
+                        const ResultSlot &slot = binding->tuple_parts[index];
+                        const Lowered part = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct,
+                                                   slot.indirections, slot.is_array, slot.array_len, false);
+                        if (part.depth == 0 && part.elem_bool) {
+                            return {builder_.CreateZExt(extracted, i32()), 0};
+                        }
+                        if (part.depth == 0 && (part.elem_char || part.elem_bits == 8 || part.elem_bits == 16)) {
+                            const bool zero_extend = part.elem_unsigned || part.elem_char;
+                            llvm::Value *wide = zero_extend ? builder_.CreateZExt(extracted, i32())
+                                                            : builder_.CreateSExt(extracted, i32());
+                            return {wide, 0};
+                        }
+                        if (part.depth == 0 && part.elem_float) {
+                            return {extracted, 0, false, -1, false, false, false, part.elem_bits, false, -1, true};
+                        }
+                        if (part.depth == 0 && part.elem_bits == 64) {
+                            return {extracted, 0, false, -1, false, false, false, 64, part.elem_unsigned};
+                        }
+                        if (part.depth == 0 && part.elem_unsigned) {
+                            return {extracted, 0, false, -1, false, false, false, 32, true};
+                        }
+                        return {extracted, part.depth, part.elem_char, part.struct_id, false, part.elem_void,
+                                part.elem_bool, part.elem_bits, part.elem_unsigned, -1, part.elem_float};
+                    }
+                    llvm::Type *field_ty = extracted->getType();
+                    if (field_ty->isIntegerTy(1) || field_ty->isIntegerTy(8) || field_ty->isIntegerTy(16)) {
+                        return {builder_.CreateZExt(extracted, i32()), 0};
+                    }
+                    if (field_ty->isFloatingPointTy()) {
+                        const int bits = field_ty->getPrimitiveSizeInBits() >= 64 ? 64 : 32;
+                        return {extracted, 0, false, -1, false, false, false, bits, false, -1, true};
+                    }
+                    if (field_ty->isIntegerTy(64)) {
+                        return {extracted, 0, false, -1, false, false, false, 64, false};
+                    }
+                    if (field_ty->isPointerTy()) {
+                        return {extracted, 1};
+                    }
+                    return {extracted, 0};
+                }
                 const TypedValue addr = emit_addr(expr);
                 if (addr.value == nullptr) {
                     return {zero(), 0};
@@ -2537,6 +2630,35 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return emit_anon_function(*node.decl);
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                if (!node.elements.empty()) {
+                    if (node.elements.size() == 1 && node.elements.front()) {
+                        return emit_rvalue(*node.elements.front());
+                    }
+                    std::vector<llvm::Value *> fields;
+                    std::vector<llvm::Type *> types;
+                    fields.reserve(node.elements.size());
+                    types.reserve(node.elements.size());
+                    for (const auto &element : node.elements) {
+                        TypedValue value = element ? emit_rvalue(*element) : TypedValue{};
+                        if (terminated()) {
+                            return {zero(), 0};
+                        }
+                        if (value.value == nullptr) {
+                            value.value = zero();
+                        }
+                        fields.push_back(value.value);
+                        types.push_back(value.value->getType());
+                    }
+                    llvm::StructType *aggregate_type = llvm::StructType::get(context_, types);
+                    llvm::Value *aggregate = llvm::ConstantAggregateZero::get(aggregate_type);
+                    for (unsigned index = 0; index < fields.size(); ++index) {
+                        aggregate = builder_.CreateInsertValue(aggregate, fields[index], index);
+                    }
+                    TypedValue out;
+                    out.value = aggregate;
+                    out.is_tuple = true;
+                    return out;
+                }
                 return emit_init(node);
             } else {
                 return {zero(), 0};
@@ -2833,6 +2955,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.elem_bool = low.elem_bool;
             binding.elem_bits = low.elem_bits;
             binding.elem_unsigned = low.elem_unsigned;
+            binding.elem_float = low.elem_float;
             binding.trait_id = low.trait_id;
             scopes_.back()[node.names[index]] = binding;
         } else if (dest != nullptr) {
@@ -2918,6 +3041,43 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     auto *aggregate_type = llvm::cast<llvm::StructType>(return_type_);
                     llvm::Value *aggregate = llvm::ConstantAggregateZero::get(aggregate_type);
                     const unsigned count = aggregate_type->getNumElements();
+                    // `return args` and `return {40, 'a'}` are one tuple. Spread it across the results.
+                    if (exprs.size() == 1 && exprs[0] != nullptr) {
+                        const TypedValue value = emit_rvalue(*exprs[0]);
+                        if (terminated()) {
+                            return;
+                        }
+                        const bool matching = value.is_tuple && value.value != nullptr &&
+                                              value.value->getType()->isStructTy() &&
+                                              llvm::cast<llvm::StructType>(value.value->getType())->getNumElements() == count;
+                        if (matching) {
+                            llvm::Value *converted = as_stored(value.value, 0, aggregate_type, value.elem_unsigned);
+                            if (converted != nullptr && converted->getType() == aggregate_type) {
+                                aggregate = converted;
+                            }
+                        } else if (count > 0) {
+                            llvm::Type *field = aggregate_type->getElementType(0);
+                            llvm::Value *piece = llvm::Constant::getNullValue(field);
+                            if (value.value != nullptr) {
+                                if (field->isPointerTy()) {
+                                    piece = value.depth > 0 && value.value->getType()->isPointerTy() ? value.value : null_ptr();
+                                } else if (field->isIntegerTy() && value.value->getType()->isIntegerTy()) {
+                                    piece = resize_int(value.value, field, value.elem_unsigned);
+                                } else if (value.value->getType() == field) {
+                                    piece = value.value;
+                                }
+                            }
+                            aggregate = builder_.CreateInsertValue(aggregate, piece, 0);
+                        }
+                        if (!terminated()) {
+                            emit_defers_from(0);
+                        }
+                        if (terminated()) {
+                            return;
+                        }
+                        builder_.CreateRet(aggregate);
+                        return;
+                    }
                     for (unsigned index = 0; index < count; ++index) {
                         llvm::Type *field = aggregate_type->getElementType(index);
                         llvm::Value *piece = llvm::Constant::getNullValue(field);
@@ -3189,6 +3349,31 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         binding.elem_bits = low.elem_bits;
                         binding.elem_unsigned = low.elem_unsigned;
                         scopes_.back()[var.name] = binding;
+                        if (var.init != nullptr && ty->isArrayTy()) {
+                            const auto *init = std::get_if<Expr::Init>(&var.init->data);
+                            if (init != nullptr && !init->elements.empty()) {
+                                auto *array_ty = llvm::cast<llvm::ArrayType>(ty);
+                                llvm::Type *elem = array_ty->getElementType();
+                                const unsigned limit = array_ty->getNumElements();
+                                unsigned index = 0;
+                                for (const auto &element : init->elements) {
+                                    if (index >= limit || terminated()) {
+                                        break;
+                                    }
+                                    const TypedValue value = element ? emit_rvalue(*element) : TypedValue{};
+                                    if (terminated()) {
+                                        break;
+                                    }
+                                    llvm::Value *slot_i = builder_.CreateInBoundsGEP(
+                                        array_ty, slot, {const_i32(0), const_i32(static_cast<int>(index))});
+                                    llvm::Value *stored = value.value == nullptr
+                                                              ? llvm::Constant::getNullValue(elem)
+                                                              : as_stored(value.value, value.depth, elem, value.elem_unsigned);
+                                    builder_.CreateStore(stored, slot_i);
+                                    ++index;
+                                }
+                            }
+                        }
                         continue;
                     }
                     llvm::Type *ty = stored_type(low);
