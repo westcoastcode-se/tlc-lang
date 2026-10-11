@@ -64,7 +64,7 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 }
 ```
 
-A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32;`, `var fp func (i32) (i32, i32);`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. A function pointer whose result is itself a function pointer is not supported yet. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
+A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type does too. A function pointer whose result is itself a function pointer is not supported yet. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
 A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
 

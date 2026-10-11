@@ -1,0 +1,51 @@
+type Address struct {
+    street ?*char;
+};
+
+type Person struct {
+    nickname ?*char;
+    home *Address;
+};
+
+func settle(person *Person, home *Address) void {
+    person.home = home;
+}
+
+func bind(person ?*Person, home ?*Address) void {
+    if (person == null) {
+        return;
+    }
+    if (home == null) {
+        return;
+    }
+    settle(person, home);
+}
+
+func value(p ?*int) int {
+    if (p == null) {
+        return 0;
+    }
+    return *p;
+}
+
+func main() int {
+    var home Address = {.street = null};
+    var person Person = {.nickname = null, .home = &home};
+    person.nickname = null;
+    person.home = &home;
+    bind(&person, &home);
+    if (person.nickname != null) {
+        return 1;
+    }
+    if (person.home != &home) {
+        return 2;
+    }
+    var n int = 40;
+    if (value(&n) != 40) {
+        return 3;
+    }
+    if (value(null) != 0) {
+        return 4;
+    }
+    return 42;
+}

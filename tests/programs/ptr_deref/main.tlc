@@ -1,8 +1,7 @@
 func main() int {
     var n int = 7;
-    var p *int = null;
+    var p *int = &n;
     var pp **int = &p;
-    p = &n;
     **pp = 42;
     return n;
 }

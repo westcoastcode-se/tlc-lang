@@ -366,11 +366,13 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     var.is_struct = type.is_struct;
     var.is_enum = type.is_enum;
     var.indirections = type.indirections;
+    var.optional = type.optional;
     var.is_array = type.is_array;
     var.array_len = type.array_len;
     var.ptr_to_array = type.ptr_to_array;
     var.is_fn_ptr = type.is_fn_ptr;
     var.ret_indirections = type.ret_indirections;
+    var.ret_optional = type.ret_optional;
     var.fn_params = type.fn_params;
     var.fn_variadic = type.fn_variadic;
     var.fn_results = type.fn_results;

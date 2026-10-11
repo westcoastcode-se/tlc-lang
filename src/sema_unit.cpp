@@ -182,6 +182,12 @@ void Checker::check_globals(const TranslationUnit &unit) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
             check_function(*fn);
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (!var->init && !var->is_extern) {
+                const Symbol *symbol = lookup(var->name);
+                if (symbol != nullptr && needs_nonnull_pointer(symbol->type)) {
+                    error(var->loc, "type mismatch");
+                }
+            }
             if (var->is_array && !var->ptr_to_array && var->init) {
                 error(var->loc, "not supported yet");
             } else if (var->init) {
@@ -327,7 +333,7 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             Symbol symbol;
             symbol.name = var->name;
             symbol.type = published_object(var->type_name, var->indirections, var->is_array, var->array_len, var->loc,
-                                           false, var->type_package, var->is_struct, var->is_enum);
+                                           false, var->type_package, var->is_struct, var->is_enum, var->optional);
             exports_[file_id].emplace(var->name, std::move(symbol));
         }
     }

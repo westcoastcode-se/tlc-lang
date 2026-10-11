@@ -35,7 +35,7 @@ void dump_stmt(const Stmt &stmt, std::string &out, int indent);
 void dump_function(const FunctionDecl &fn, std::string &out, int indent);
 
 std::string type_text(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
-                       int indirections, bool is_array, int array_len) {
+                       int indirections, bool is_array, int array_len, uint32_t optional = 0) {
     std::string text;
     if (!package.empty()) {
         text = package + "." + name;
@@ -46,8 +46,11 @@ std::string type_text(const std::string &name, const std::string &package, bool 
     } else {
         text = name;
     }
-    if (indirections > 0) {
-        text.append(static_cast<std::size_t>(indirections), '*');
+    for (int i = 0; i < indirections; ++i) {
+        if ((optional & (1u << i)) != 0) {
+            text += '?';
+        }
+        text += '*';
     }
     if (is_array) {
         text += '[';
@@ -76,7 +79,7 @@ void dump_field(const FieldDecl &field, std::string &out, int indent) {
     }
     out += ' ';
     out += type_text(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
-                     field.is_array, field.array_len);
+                     field.is_array, field.array_len, field.optional);
     if (field.is_fn_ptr) {
         out += " fnptr";
         append_many_results(out, field.fn_results);
@@ -94,7 +97,8 @@ void append_many_results(std::string &out, const std::vector<FnParam> &results) 
             out += ", ";
         }
         const FnParam &part = results[i];
-        out += type_text(part.type_name, part.type_package, part.is_struct, part.is_enum, part.indirections, false, 0);
+        out += type_text(part.type_name, part.type_package, part.is_struct, part.is_enum, part.indirections, false, 0,
+                         part.optional);
     }
     out += ')';
 }
@@ -133,7 +137,7 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
         }
     } else {
         out += type_text(var.type_name, var.type_package, var.is_struct, var.is_enum, var.indirections, var.is_array,
-                         var.array_len);
+                         var.array_len, var.optional);
         if (var.ptr_to_array) {
             out += " ptrarr";
         }
@@ -342,7 +346,7 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
         out += param.name.empty() ? "_" : param.name;
         out += ' ';
         out += type_text(param.type_name, param.type_package, param.is_struct, param.is_enum, param.indirections,
-                         param.is_array, param.array_len);
+                         param.is_array, param.array_len, param.optional);
         if (param.is_fn_ptr) {
             out += " fnptr";
             append_many_results(out, param.fn_results);
@@ -363,7 +367,8 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
                 out += ", ";
             }
             const ResultSlot &slot = fn.results[i];
-            out += type_text(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections, false, 0);
+            out += type_text(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections, false,
+                             0, slot.optional);
             if (slot.is_fn_ptr) {
                 out += " fnptr";
                 append_many_results(out, slot.fn_results);
@@ -371,7 +376,8 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
         }
         out += ')';
     } else {
-        out += type_text(fn.return_type, fn.type_package, fn.is_struct, fn.is_enum, fn.indirections, false, 0);
+        out += type_text(fn.return_type, fn.type_package, fn.is_struct, fn.is_enum, fn.indirections, false, 0,
+                         fn.optional);
         if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
             out += " fnptr";
             append_many_results(out, fn.results.front().fn_results);
@@ -445,8 +451,11 @@ std::string dump_expr(const Expr &expr) {
                 } else {
                     spelled = node.type_name;
                 }
-                if (node.indirections > 0) {
-                    spelled.append(static_cast<std::size_t>(node.indirections), '*');
+                for (int i = 0; i < node.indirections; ++i) {
+                    if ((node.optional & (1u << i)) != 0) {
+                        spelled += '?';
+                    }
+                    spelled += '*';
                 }
                 if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                     if (!node.on_type) {
@@ -583,7 +592,7 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             out += item->name;
             out += ' ';
             out += type_text(item->type_name, item->type_package, item->is_struct, item->is_enum, item->indirections,
-                             item->is_array, item->array_len);
+                             item->is_array, item->array_len, item->optional);
             if (item->is_fn_ptr) {
                 out += " fnptr";
                 append_many_results(out, item->fn_results);

@@ -271,9 +271,17 @@ bool Parser::starts_type_paren() const {
     }
     std::size_t index = 1;
     int leading = 0;
-    while (peek(index).kind == TokenKind::Star) {
-        ++leading;
-        ++index;
+    while (peek(index).kind == TokenKind::Star || peek(index).kind == TokenKind::Question) {
+        if (peek(index).kind == TokenKind::Question && peek(index + 1).kind != TokenKind::Star) {
+            break;
+        }
+        if (peek(index).kind == TokenKind::Question) {
+            ++index;
+        }
+        if (peek(index).kind == TokenKind::Star) {
+            ++leading;
+            ++index;
+        }
     }
     if (!skip_type_base(index, leading, false)) {
         return false;
@@ -287,9 +295,17 @@ bool Parser::starts_type_paren() const {
 bool Parser::starts_cast_type() const {
     std::size_t index = 0;
     int leading = 0;
-    while (peek(index).kind == TokenKind::Star) {
-        ++leading;
-        ++index;
+    while (peek(index).kind == TokenKind::Star || peek(index).kind == TokenKind::Question) {
+        if (peek(index).kind == TokenKind::Question && peek(index + 1).kind != TokenKind::Star) {
+            break;
+        }
+        if (peek(index).kind == TokenKind::Question) {
+            ++index;
+        }
+        if (peek(index).kind == TokenKind::Star) {
+            ++leading;
+            ++index;
+        }
     }
     if (!skip_type_base(index, leading, true)) {
         return false;
@@ -303,10 +319,8 @@ bool Parser::starts_cast_type() const {
 Parser::ParenType Parser::parse_cast_type() {
     ParenType type;
     type.loc = peek().loc;
-    int leading = 0;
-    while (eat(TokenKind::Star)) {
-        ++leading;
-    }
+    const PointerPrefix prefix = parse_pointer_prefix();
+    const int leading = prefix.count;
     if (is_int_spec(peek().kind)) {
         IntSpecs ints;
         while (is_int_spec(peek().kind)) {
@@ -356,6 +370,7 @@ Parser::ParenType Parser::parse_cast_type() {
         }
     }
     type.indirections = leading;
+    type.optional = prefix.optional;
     return type;
 }
 
@@ -375,6 +390,7 @@ std::unique_ptr<Expr> Parser::parse_cast_expr() {
     node.is_struct = type.is_struct;
     node.is_enum = type.is_enum;
     node.indirections = type.indirections;
+    node.optional = type.optional;
     expect(TokenKind::LParen, "expected '('");
     if (check(TokenKind::RParen)) {
         error_here("expected an expression");
@@ -398,7 +414,11 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         std::size_t look = 0;
         if (peek(look).kind == TokenKind::LParen) {
             ++look;
-            while (peek(look).kind == TokenKind::Star) {
+            while (peek(look).kind == TokenKind::Star ||
+                   (peek(look).kind == TokenKind::Question && peek(look + 1).kind == TokenKind::Star)) {
+                if (peek(look).kind == TokenKind::Question) {
+                    ++look;
+                }
                 ++look;
             }
         }
@@ -421,6 +441,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             node.is_struct = type.is_struct;
             node.is_enum = type.is_enum;
             node.indirections = type.indirections;
+            node.optional = type.optional;
         } else {
             node.expr = parse_unary();
         }

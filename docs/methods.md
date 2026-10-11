@@ -2,7 +2,7 @@
 
 [Index](README.md) · [Previous: Structs, pointers, and arrays](structs.md) · [Next: Enums and type aliases](enums.md) · [Grammar](grammar.md)
 
-A method belongs to a struct or an enum, and it is written in the same file as that type. A method in any other file is `method in another file`. The first parameter is the receiver. It is the name, then `this`: `self this`. `this` stands for that struct or enum. A pointer receiver is `self *this`, the same order as `*Point`. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value.
+A method belongs to a struct or an enum, and it is written in the same file as that type. A method in any other file is `method in another file`. The first parameter is the receiver. It is the name, then `this`: `self this`. `this` stands for that struct or enum. A pointer receiver is `self *this`, the same order as `*Point`. `self ?*this` may be `null`, and a `*T` value may be passed to it. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value.
 
 The call omits the receiver. This program returns 42.
 

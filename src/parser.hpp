@@ -83,12 +83,15 @@ class Parser {
         bool struct_definition = false;
         bool enum_definition = false;
         int indirections = 0;
+        // Bit 0 is the outermost `*`. A set bit is `?*`.
+        uint32_t optional = 0;
         bool is_array = false;
         int array_len = 0;
         // `*[4]i32`: one pointer outside the array.
         bool ptr_to_array = false;
         bool is_fn_ptr = false;
         int ret_indirections = 0;
+        uint32_t ret_optional = 0;
         std::vector<FnParam> fn_params;
         bool fn_variadic = false;
         std::vector<FnParam> fn_results;
@@ -188,7 +191,14 @@ class Parser {
         bool is_struct = false;
         bool is_enum = false;
         int indirections = 0;
+        uint32_t optional = 0;
     };
+    struct PointerPrefix {
+        int count = 0;
+        uint32_t optional = 0;
+    };
+    // `*` and `?*`. `?` before any other type is `not supported yet`.
+    PointerPrefix parse_pointer_prefix();
     ParenType parse_paren_type();
     ParenType parse_cast_type();
     std::unique_ptr<Expr> parse_cast_expr();

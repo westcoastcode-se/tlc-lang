@@ -20,11 +20,10 @@ func sum(p Point) int {
 
 func main() int {
     var p Point;
-    var q Ptr;
     var bias Integer;
     var extra Pair;
     p = make(40, 2);
-    q = &p;
+    var q Ptr = &p;
     bias = 0;
     extra[0] = 0;
     extra[1] = 0;

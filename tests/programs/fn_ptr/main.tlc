@@ -28,11 +28,9 @@ func apply(p func (func (i32) i32) i32, f func (i32) i32) i32 {
 
 type BinOp func (i32, i32) i32;
 
-var saved func (i32, i32) i32;
-
 func main() i32 {
-    var fp func (i32, i32) i32;
-    fp = add;
+    var saved func (i32, i32) i32 = add;
+    var fp func (i32, i32) i32 = add;
     saved = fp;
     var op BinOp = saved;
     if (op(1, 1) != 2) {

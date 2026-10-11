@@ -65,7 +65,7 @@ func pick(p *int) (*int, int) {
     return p, 7;
 }
 
-func none() (*int, int) {
+func none() (?*int, int) {
     return null, 3;
 }
 
@@ -136,9 +136,9 @@ func hide(outer int) int {
 }
 
 func main() int {
-    var q *int;
+    var q ?*int;
     var n int;
-    var np *int;
+    var np ?*int;
     var nn int;
     var wide i64;
     var wk int;

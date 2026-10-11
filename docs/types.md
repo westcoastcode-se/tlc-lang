@@ -18,6 +18,8 @@ Integers on `x86_64-pc-linux-gnu` follow LP64. `long` and `i64` are both 64 bits
 
 `char`, `i8`, and `u8` are three types. They are assignment-compatible. `*int` and `*uint` are different types.
 
+`*T` is a pointer with a value. `?*T` is that pointer or `null`. `*?*T` and `?**T` are different types. `?` on a type that is not a pointer, such as `?int`, is `not supported yet`.
+
 `i8` and `u8` are the 8-bit integers. `i16` is `short` and `u16` is its unsigned counterpart. `i32` is `int` and `u32` is `uint`. `i64` and `u64` are the other 64-bit integers. `ulong` is 64 bits and a different type from `u64`. `long` stays a different 64-bit type from `i64`. `char` stays different from `i8`.
 
 The rank order is `bool`, then `char`, `i8`, and `u8`, then `short`, `i16`, and `u16`, then `int`, `i32`, `uint`, and `u32`, then `long` and `ulong`, then `i64` and `u64`. An unsigned type has the same rank as its signed counterpart.
@@ -49,7 +51,7 @@ A `bool` value is 0 or 1.
 | `"hi"` | array of `char`, including the terminating null |
 | `` `hi` `` | the same array type; the text may span lines |
 | `true`, `false` | `bool` |
-| `null` | null pointer |
+| `null` | null pointer, stored only in `?*T` |
 
 An unsuffixed number greater than `2147483647` is `type mismatch`. It does not become `i64`. A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `1u` and `1l` are `invalid integer suffix`. A value that does not fit in the suffix is `type mismatch`.
 

@@ -166,17 +166,22 @@ class Checker {
     void check_unit(const TranslationUnit &unit, uint32_t file_id, const PackageNode *node);
 
     Type type_of_name(const std::string &name, SourceLoc loc, bool allow_incomplete = false);
-    Type with_indirections(Type type, int count, SourceLoc loc);
+    Type with_indirections(Type type, int count, SourceLoc loc, uint32_t optional = 0);
     void note_struct_use(bool is_struct, const std::string &name, SourceLoc loc);
     Type object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                      bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
-                     bool receiver = false);
+                     bool receiver = false, uint32_t optional = 0);
     Type spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
-                      int indirections, SourceLoc loc);
+                      int indirections, SourceLoc loc, uint32_t optional = 0);
+    bool accepts_pointer(const Type &got, const Type &want) const;
+    bool needs_nonnull_pointer(const Type &type) const;
+    // A `?*T` name in this function becomes `*T`. A package global is left alone.
+    bool narrow_optional(const std::string &name);
+    void restore_optional(const std::string &name);
     Type type_of_fn_param(const FnParam &param, SourceLoc loc);
     Type type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
                         int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
-                        const std::vector<FnParam> &results, SourceLoc loc);
+                        const std::vector<FnParam> &results, SourceLoc loc, uint32_t ret_optional = 0);
     Type type_of_param(const Param &param);
     Type type_of_var(const VarDecl &var);
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
@@ -200,9 +205,10 @@ class Checker {
     void register_typedefs(const TranslationUnit &unit, uint32_t file_id);
     bool name_taken(const std::string &name) const;
     Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
-                          bool parameter, const std::string &package, bool is_struct, bool is_enum);
+                          bool parameter, const std::string &package, bool is_struct, bool is_enum,
+                          uint32_t optional = 0);
     Type published_result(const std::string &name, int indirections, SourceLoc loc, const std::string &package,
-                          bool is_struct, bool is_enum);
+                          bool is_struct, bool is_enum, uint32_t optional = 0);
     void expect(const Type &got, const Type &want, SourceLoc loc);
     void expect_value(const Type &got, const Type &want, const Expr &expr, SourceLoc loc);
     Type check_init(Expr::Init &init, const Type &want);

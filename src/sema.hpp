@@ -27,6 +27,8 @@ struct Type {
     int rank = 3;
     bool is_unsigned = false;
     bool plain_char = false;
+    // `?*T` may be null. `*T` has a value.
+    bool optional = false;
 };
 
 Type type_invalid();

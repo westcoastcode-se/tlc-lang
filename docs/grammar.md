@@ -50,7 +50,7 @@ result      = placed-type
 
 A function with no body is a prototype and ends with `;`. A body replaces that semicolon. `...` is allowed only on an `extern(abi="c")` declaration. One parenthesized result is the same type as the bare result. `()` as a result list is an error.
 
-A method's first parameter is the receiver, written `name this` or `name *this`. `this` stands for the method's struct or enum, so a pointer is `*this`. `self **this` is `not supported yet`. `this` is an ordinary identifier everywhere else.
+A method's first parameter is the receiver, written `name this`, `name *this`, or `name ?*this`. `this` stands for the method's struct or enum, so a pointer is `*this` and an optional pointer is `?*this`. `self **this` is `not supported yet`. `this` is an ordinary identifier everywhere else.
 
 The method is written in the same file as that struct or enum. A method in another file is `method in another file`. Every file in the package can call it.
 
@@ -118,15 +118,15 @@ A trait method has no body and no receiver.
 
 ## Types
 
-A pointer is a leading star in every type position: `*int`, `*Point`, `*pkg.Point`, `*const char`, `type Name *int`, `sizeof(*int)`, and `*int(expr)`. `int *`, `Point *`, `sizeof(int *)`, and `int*(expr)` are `type mismatch`. A `var`, a field, or a type alias writes an array in front of its element type: `[4]int`, `type Pair [2]int`. A parameter keeps the array after the element type: `int[4]`.
+A pointer is a leading star in every type position: `*int`, `?*Point`, `*pkg.Point`, `*const char`, `type Name *int`, `sizeof(*int)`, and `*int(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `?int` is `not supported yet`. `int *`, `Point *`, `sizeof(int *)`, and `int*(expr)` are `type mismatch`. A `var`, a field, or a type alias writes an array in front of its element type: `[4]int`, `type Pair [2]int`. A parameter keeps the array after the element type: `int[4]`.
 
 ```ebnf
 go-type     = func-type
-            | { "*" } base-type
-            | { "*" } "[" integer-literal "]" { "*" } base-type ;
+            | { [ "?" ] "*" } base-type
+            | { [ "?" ] "*" } "[" integer-literal "]" { [ "?" ] "*" } base-type ;
 
 placed-type = func-type
-            | { "*" } [ "const" ] base-type [ array ] ;
+            | { [ "?" ] "*" } [ "const" ] base-type [ array ] ;
 
 array       = "[" [ integer-literal ] "]" ;
 
@@ -149,7 +149,7 @@ integer-name = "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64"
 float-name   = "f32" | "f64" ;
 ```
 
-One `*` before `[` is a pointer to an array, as in `*[4]i32`. Two stars there, and a nested array, are rejected. An unsized `[]` is allowed on a parameter and rejected on a `var`. `const` is allowed on an `extern(abi="c")` parameter.
+One `*` before `[` is a pointer to an array, as in `*[4]i32`. `?*` before `[` is `not supported yet`. Two stars there, and a nested array, are rejected. An unsized `[]` is allowed on a parameter and rejected on a `var`. `const` is allowed on an `extern(abi="c")` parameter.
 
 `signed`, `unsigned`, and `long long` are not type names.
 
@@ -233,7 +233,7 @@ cast        = { "*" } scalar-type "(" expression ")"
 scalar-type = integer-type | "void" | "bool" | "float" | "double" | integer-name | float-name ;
 ```
 
-An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)` or `*int(p)`. A builtin name such as `i32` is always that cast. A name declared as a type in this file is a cast too: `Integer(n)`, `*Point(p)`, `ShapeType(shape)`. A cast to a struct is `type mismatch`. `ShapeType(shape)` reads the tag of a tlc union, including from another file in the package. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof(int)`, `sizeof(*int)`, `sizeof(enum Color)`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
+An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)`, `*int(p)`, or `?*int(p)`. A builtin name such as `i32` is always that cast. A name declared as a type in this file is a cast too: `Integer(n)`, `*Point(p)`, `ShapeType(shape)`. A cast to a struct is `type mismatch`. `ShapeType(shape)` reads the tag of a tlc union, including from another file in the package. The cast has the type that was written, so `*int(p)` is `*int` and `?*int(null)` is `?*int`. `*int(null)` is `type mismatch`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof(int)`, `sizeof(*int)`, `sizeof(enum Color)`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression.
 
 A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A positional element, such as `{10}`, is `not supported yet`. A trailing comma is allowed.
 

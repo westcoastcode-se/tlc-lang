@@ -57,6 +57,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
             field.is_struct = type.is_struct;
             field.is_enum = type.is_enum;
             field.indirections = type.indirections;
+            field.optional = type.optional;
             field.is_array = type.is_array;
             field.array_len = type.array_len;
             field.is_fn_ptr = type.is_fn_ptr;
@@ -265,10 +266,12 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.is_struct = type.is_struct;
     item.is_enum = type.is_enum;
     item.indirections = type.indirections;
+    item.optional = type.optional;
     item.is_array = type.is_array;
     item.array_len = type.array_len;
     item.is_fn_ptr = type.is_fn_ptr;
     item.ret_indirections = type.ret_indirections;
+    item.ret_optional = type.ret_optional;
     item.fn_params = type.fn_params;
     item.fn_variadic = type.fn_variadic;
     item.fn_results = type.fn_results;

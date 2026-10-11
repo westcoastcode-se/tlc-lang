@@ -1,5 +1,5 @@
 func main() int {
-    var p *int;
+    var p ?*int;
     var x int;
     var n int;
     x = 7;

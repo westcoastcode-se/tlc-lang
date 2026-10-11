@@ -23,11 +23,8 @@ func main() int {
     var p Point;
     p.x = 20;
     p.y = 10;
-    var q *Point;
-    q = &p;
-    var head Node;
-    head.n = 4;
-    head.next = &head;
+    var q *Point = &p;
+    var head Node = {.n = 4, .next = &head};
     var made Point;
     made = make(*q);
     return made.sum(0) + head.next.n + sizeof(Point);

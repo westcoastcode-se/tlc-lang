@@ -161,19 +161,22 @@ inline Type usual(const Type &lhs, const Type &rhs) {
     return type_rank(signed_rank, true);
 }
 
-inline Type quiet_indirect(Type type, int count) {
+inline Type quiet_indirect(Type type, int count, uint32_t optional = 0) {
     for (int i = 0; i < count; ++i) {
         if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool &&
             type.kind != TypeKind::Pointer && type.kind != TypeKind::Void) {
             return type_invalid();
         }
         type = type_pointer(std::move(type));
+        const int level = count - 1 - i;
+        type.optional = (optional & (1u << level)) != 0;
     }
     return type;
 }
 
-inline Type quiet_object(const std::string &name, int indirections, bool is_array, int array_len, bool parameter) {
-    Type type = quiet_indirect(quiet_type(name), indirections);
+inline Type quiet_object(const std::string &name, int indirections, bool is_array, int array_len, bool parameter,
+                         uint32_t optional = 0) {
+    Type type = quiet_indirect(quiet_type(name), indirections, optional);
     if (!is_array) {
         return type;
     }

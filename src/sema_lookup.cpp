@@ -47,15 +47,15 @@ bool Checker::captured(const Symbol &symbol) const {
 Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
     if (param.is_fn_ptr) {
         return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
-                              param.indirections, param.params, param.variadic, param.results, loc);
+                              param.indirections, param.params, param.variadic, param.results, loc, param.ret_optional);
     }
     return object_type(param.type_name, param.indirections, false, 0, loc, true, param.type_package, param.is_struct,
-                       param.is_enum);
+                       param.is_enum, false, param.optional);
 }
 
 Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
                              int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
-                             const std::vector<FnParam> &results, SourceLoc loc) {
+                             const std::vector<FnParam> &results, SourceLoc loc, uint32_t ret_optional) {
     Type result;
     if (results.size() > 1) {
         std::vector<Type> parts;
@@ -63,9 +63,9 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
         for (const FnParam &part : results) {
             Type one = part.is_struct || part.is_enum || !part.type_package.empty()
                            ? object_type(part.type_name, part.indirections, false, 0, loc, false, part.type_package,
-                                         part.is_struct, part.is_enum)
+                                         part.is_struct, part.is_enum, false, part.optional)
                            : with_indirections(type_of_name(part.type_name, loc, part.indirections > 0), part.indirections,
-                                               loc);
+                                               loc, part.optional);
             if (one.kind == TypeKind::Void) {
                 error(loc, "type mismatch");
             }
@@ -75,8 +75,10 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
     } else {
         // Same result spelling as a function result, so `void` and a bare struct tag stay valid.
         result = ret_struct || ret_enum || !ret_package.empty()
-                     ? object_type(ret_name, ret_indirections, false, 0, loc, false, ret_package, ret_struct, ret_enum)
-                     : with_indirections(type_of_name(ret_name, loc, ret_indirections > 0), ret_indirections, loc);
+                     ? object_type(ret_name, ret_indirections, false, 0, loc, false, ret_package, ret_struct, ret_enum, false,
+                                   ret_optional)
+                     : with_indirections(type_of_name(ret_name, loc, ret_indirections > 0), ret_indirections, loc,
+                                         ret_optional);
     }
     std::vector<Type> args;
     args.reserve(params.size());
@@ -94,9 +96,10 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
 Type Checker::type_of_var(const VarDecl &var) {
     Type type = var.is_fn_ptr
                     ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
-                                     var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc)
+                                     var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
+                                     var.ret_optional)
                     : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
-                                  var.type_package, var.is_struct, var.is_enum);
+                                  var.type_package, var.is_struct, var.is_enum, false, var.optional);
     if (!var.ptr_to_array || type.kind == TypeKind::Invalid) {
         return type;
     }
@@ -136,21 +139,24 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
 Type Checker::type_of_param(const Param &param) {
     if (param.is_fn_ptr) {
         return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
-                              param.indirections, param.fn_params, param.fn_variadic, param.fn_results, param.loc);
+                              param.indirections, param.fn_params, param.fn_variadic, param.fn_results, param.loc,
+                              param.ret_optional);
     }
     return object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
-                       param.type_package, param.is_struct, param.is_enum, param.is_receiver);
+                       param.type_package, param.is_struct, param.is_enum, param.is_receiver, param.optional);
 }
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
     if (slot.is_fn_ptr) {
         return type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
-                              slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results, loc);
+                              slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results, loc,
+                              slot.ret_optional);
     }
     return slot.is_struct || slot.is_enum || !slot.type_package.empty()
                ? object_type(slot.type_name, slot.indirections, false, 0, loc, false, slot.type_package, slot.is_struct,
-                             slot.is_enum)
-               : with_indirections(type_of_name(slot.type_name, loc, slot.indirections > 0), slot.indirections, loc);
+                             slot.is_enum, false, slot.optional)
+               : with_indirections(type_of_name(slot.type_name, loc, slot.indirections > 0), slot.indirections, loc,
+                                   slot.optional);
 }
 
 Type Checker::function_result(const FunctionDecl &fn) {
@@ -170,9 +176,11 @@ Type Checker::function_result(const FunctionDecl &fn) {
         return type_of_result(fn.results.front(), fn.loc);
     }
     if (fn.is_struct || fn.is_enum || !fn.type_package.empty()) {
-        return object_type(fn.return_type, fn.indirections, false, 0, fn.loc, false, fn.type_package, fn.is_struct, fn.is_enum);
+        return object_type(fn.return_type, fn.indirections, false, 0, fn.loc, false, fn.type_package, fn.is_struct,
+                           fn.is_enum, false, fn.optional);
     }
-    return with_indirections(type_of_name(fn.return_type, fn.loc, fn.indirections > 0), fn.indirections, fn.loc);
+    return with_indirections(type_of_name(fn.return_type, fn.loc, fn.indirections > 0), fn.indirections, fn.loc,
+                             fn.optional);
 }
 
 Type Checker::function_signature(const FunctionDecl &fn) {
@@ -496,14 +504,16 @@ Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_in
     return type_invalid();
 }
 
-Type Checker::with_indirections(Type type, int count, SourceLoc loc) {
+Type Checker::with_indirections(Type type, int count, SourceLoc loc, uint32_t optional) {
     if (type.kind == TypeKind::Trait) {
         if (count > 1) {
             error(loc, "not supported yet");
             return type_invalid();
         }
         if (count == 1) {
-            return type_pointer(std::move(type));
+            Type pointer = type_pointer(std::move(type));
+            pointer.optional = (optional & 1u) != 0;
+            return pointer;
         }
         return type;
     }
@@ -517,7 +527,10 @@ Type Checker::with_indirections(Type type, int count, SourceLoc loc) {
             error(loc, "not supported yet");
             return type_invalid();
         }
-        type = type_pointer(std::move(type));
+        Type pointer = type_pointer(std::move(type));
+        const int level = count - 1 - i;
+        pointer.optional = (optional & (1u << level)) != 0;
+        type = std::move(pointer);
     }
     return type;
 }
@@ -569,6 +582,46 @@ bool Checker::lookup_field(const Type &object, const std::string &name, Type &ou
         }
     }
     return false;
+}
+
+bool Checker::accepts_pointer(const Type &got, const Type &want) const {
+    if (same_type(got, want)) {
+        return true;
+    }
+    if (got.kind != TypeKind::Pointer || want.kind != TypeKind::Pointer || got.pointee == nullptr ||
+        want.pointee == nullptr) {
+        return false;
+    }
+    // `*T` may be stored where `?*T` is required. The pointee is the same type.
+    return want.optional && !got.optional && same_type(*got.pointee, *want.pointee);
+}
+
+bool Checker::needs_nonnull_pointer(const Type &type) const {
+    std::unordered_set<int> seen;
+    const auto walk = [&](const auto &self, const Type &current) -> bool {
+        if (current.kind == TypeKind::Pointer) {
+            return !current.optional;
+        }
+        if (current.kind == TypeKind::Array && current.element != nullptr) {
+            return self(self, *current.element);
+        }
+        if (current.kind != TypeKind::Struct || current.struct_id < 0 ||
+            current.struct_id >= static_cast<int>(structs_.size())) {
+            return false;
+        }
+        const StructInfo &info = structs_[static_cast<std::size_t>(current.struct_id)];
+        // A union payload is one variant. Zero storage is tag 0, not every field at once.
+        if (info.is_union || !seen.insert(current.struct_id).second) {
+            return false;
+        }
+        for (const StructInfo::Field &field : info.fields) {
+            if (self(self, field.type)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    return walk(walk, type);
 }
 
 bool Checker::dot_object(const Type &base, Type &object, bool &through_pointer) const {
@@ -702,9 +755,9 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
             }
             Type result = method.is_struct || method.is_enum || !method.type_package.empty()
                               ? object_type(method.return_type, method.indirections, false, 0, method.loc, false,
-                                            method.type_package, method.is_struct, method.is_enum)
+                                            method.type_package, method.is_struct, method.is_enum, false, method.optional)
                               : with_indirections(type_of_name(method.return_type, method.loc, method.indirections > 0),
-                                                  method.indirections, method.loc);
+                                                  method.indirections, method.loc, method.optional);
             if (mentions_trait(result)) {
                 error(method.loc, "not supported yet");
                 continue;
@@ -924,9 +977,10 @@ void Checker::define_struct_fields() {
             Type field_type =
                 field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                  field.ret_indirections, field.indirections, field.fn_params,
-                                                 field.fn_variadic, field.fn_results, field.loc)
+                                                 field.fn_variadic, field.fn_results, field.loc, field.ret_optional)
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
-                                              false, field.type_package, field.is_struct, field.is_enum);
+                                              false, field.type_package, field.is_struct, field.is_enum, false,
+                                              field.optional);
             if (info.extern_c) {
                 require_extern_struct(field_type, field.loc);
             }
@@ -1208,9 +1262,9 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
     const Type type = item.is_fn_ptr
                           ? type_of_fn_ptr(item.type_name, item.type_package, item.is_struct, item.is_enum,
                                            item.ret_indirections, item.indirections, item.fn_params, item.fn_variadic,
-                                           item.fn_results, item.loc)
+                                           item.fn_results, item.loc, item.ret_optional)
                           : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
-                                        item.type_package, item.is_struct, item.is_enum);
+                                        item.type_package, item.is_struct, item.is_enum, false, item.optional);
     if (type.kind == TypeKind::Invalid) {
         return;
     }
@@ -1264,27 +1318,29 @@ bool Checker::name_taken(const std::string &name) const {
 }
 
 Type Checker::published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
-                               bool parameter, const std::string &package, bool is_struct, bool is_enum) {
+                               bool parameter, const std::string &package, bool is_struct, bool is_enum,
+                               uint32_t optional) {
     Type alias;
     if (is_struct || is_enum || !package.empty() || package_typedef(file_id_, name, alias) || find_tag(file_id_, name) >= 0) {
-        return object_type(name, indirections, is_array, array_len, loc, parameter, package, is_struct, is_enum);
+        return object_type(name, indirections, is_array, array_len, loc, parameter, package, is_struct, is_enum, false,
+                           optional);
     }
-    return quiet_object(name, indirections, is_array, array_len, parameter);
+    return quiet_object(name, indirections, is_array, array_len, parameter, optional);
 }
 
 Type Checker::published_result(const std::string &name, int indirections, SourceLoc loc, const std::string &package,
-                               bool is_struct, bool is_enum) {
+                               bool is_struct, bool is_enum, uint32_t optional) {
     if (is_struct || is_enum || !package.empty()) {
-        return object_type(name, indirections, false, 0, loc, false, package, is_struct, is_enum);
+        return object_type(name, indirections, false, 0, loc, false, package, is_struct, is_enum, false, optional);
     }
     Type alias;
     if (package_typedef(file_id_, name, alias)) {
-        return with_indirections(std::move(alias), indirections, loc);
+        return with_indirections(std::move(alias), indirections, loc, optional);
     }
     if (find_tag(file_id_, name) >= 0) {
-        return object_type(name, indirections, false, 0, loc, false, package, false, false);
+        return object_type(name, indirections, false, 0, loc, false, package, false, false, false, optional);
     }
-    return quiet_indirect(quiet_type(name), indirections);
+    return quiet_indirect(quiet_type(name), indirections, optional);
 }
 
 void Checker::note_struct_use(bool is_struct, const std::string &name, SourceLoc loc) {
@@ -1299,13 +1355,13 @@ void Checker::note_struct_use(bool is_struct, const std::string &name, SourceLoc
 }
 
 Type Checker::spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
-                           int indirections, SourceLoc loc) {
+                           int indirections, SourceLoc loc, uint32_t optional) {
     note_struct_use(is_struct, name, loc);
     if (!package.empty()) {
-        return with_indirections(lookup_qualified_type(package, name, loc), indirections, loc);
+        return with_indirections(lookup_qualified_type(package, name, loc), indirections, loc, optional);
     }
     if (is_struct) {
-        return with_indirections(lookup_tag(name, loc, indirections > 0), indirections, loc);
+        return with_indirections(lookup_tag(name, loc, indirections > 0), indirections, loc, optional);
     }
     if (is_enum) {
         if (name.empty()) {
@@ -1317,37 +1373,38 @@ Type Checker::spelled_type(const std::string &name, const std::string &package, 
             error(loc, "undeclared identifier");
             return type_invalid();
         }
-        return with_indirections(type_enum(enum_id), indirections, loc);
+        return with_indirections(type_enum(enum_id), indirections, loc, optional);
     }
-    return with_indirections(type_of_name(name, loc, indirections > 0), indirections, loc);
+    return with_indirections(type_of_name(name, loc, indirections > 0), indirections, loc, optional);
 }
 
 Type Checker::object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
-                          bool parameter, const std::string &package, bool is_struct, bool is_enum, bool receiver) {
+                          bool parameter, const std::string &package, bool is_struct, bool is_enum, bool receiver,
+                          uint32_t optional) {
     if (!receiver) {
         note_struct_use(is_struct, name, loc);
     }
     Type type;
     if (!package.empty()) {
-        type = with_indirections(lookup_qualified_type(package, name, loc), indirections, loc);
+        type = with_indirections(lookup_qualified_type(package, name, loc), indirections, loc, optional);
     } else if (is_struct) {
         if (find_tag(file_id_, name) < 0 && find_enum(file_id_, name) >= 0) {
-            type = with_indirections(type_enum(find_enum(file_id_, name)), indirections, loc);
+            type = with_indirections(type_enum(find_enum(file_id_, name)), indirections, loc, optional);
         } else {
-            type = with_indirections(lookup_tag(name, loc, indirections > 0), indirections, loc);
+            type = with_indirections(lookup_tag(name, loc, indirections > 0), indirections, loc, optional);
         }
     } else if (is_enum) {
         if (name.empty()) {
             error(loc, "not supported yet");
             type = type_invalid();
         } else if (const int enum_id = find_enum(file_id_, name); enum_id >= 0) {
-            type = with_indirections(type_enum(enum_id), indirections, loc);
+            type = with_indirections(type_enum(enum_id), indirections, loc, optional);
         } else {
             error(loc, "undeclared identifier");
             type = type_invalid();
         }
     } else {
-        type = with_indirections(type_of_name(name, loc, indirections > 0), indirections, loc);
+        type = with_indirections(type_of_name(name, loc, indirections > 0), indirections, loc, optional);
     }
     if (mentions_trait(type) && (is_array || !parameter)) {
         error(loc, "not supported yet");
@@ -1416,7 +1473,7 @@ std::string Checker::type_desc(const Type &type) const {
         return type.is_unsigned ? "uint" : "int";
     }
     case TypeKind::Pointer:
-        return "*" + type_desc(type.pointee ? *type.pointee : type_invalid());
+        return std::string(type.optional ? "?" : "") + "*" + type_desc(type.pointee ? *type.pointee : type_invalid());
     case TypeKind::Array:
         return type_desc(type.element ? *type.element : type_invalid()) + "[" + std::to_string(type.length) + "]";
     case TypeKind::Struct:

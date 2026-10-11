@@ -46,8 +46,7 @@ func main() int {
     if (f != 2) {
         return 6;
     }
-    var p *Inner;
-    p = &boxes[0];
+    var p *Inner = &boxes[0];
     g, h := (*p).split();
     if (g != 1) {
         return 7;

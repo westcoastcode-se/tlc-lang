@@ -369,10 +369,12 @@ std::vector<FieldDecl> Parser::parse_fields() {
         field.is_struct = type.is_struct;
         field.is_enum = type.is_enum;
         field.indirections = type.indirections;
+        field.optional = type.optional;
         field.is_array = type.is_array;
         field.array_len = type.array_len;
         field.is_fn_ptr = type.is_fn_ptr;
         field.ret_indirections = type.ret_indirections;
+        field.ret_optional = type.ret_optional;
         field.fn_params = type.fn_params;
         field.fn_variadic = type.fn_variadic;
         field.fn_results = type.fn_results;
@@ -462,6 +464,7 @@ Parser::PlacedType Parser::parse_func_type() {
     type.is_struct = first.is_struct;
     type.is_enum = first.is_enum;
     type.ret_indirections = first.indirections;
+    type.ret_optional = first.optional;
     if (results.size() > 1) {
         type.fn_results.reserve(results.size());
         for (const PlacedType &result : results) {
@@ -490,7 +493,9 @@ void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_
         var.is_struct = type.is_struct;
         var.is_enum = type.is_enum;
         var.indirections = type.indirections;
+        var.optional = type.optional;
         var.is_fn_ptr = type.is_fn_ptr;
+        var.ret_optional = type.ret_optional;
         var.ret_indirections = type.ret_indirections;
         var.fn_params = type.fn_params;
         var.fn_variadic = type.fn_variadic;
@@ -510,18 +515,60 @@ void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_
     }
 }
 
+Parser::PointerPrefix Parser::parse_pointer_prefix() {
+    PointerPrefix prefix;
+    while (check(TokenKind::Question) || check(TokenKind::Star)) {
+        if (prefix.count >= 31) {
+            diags_.error(peek().loc, "not supported yet");
+            break;
+        }
+        bool opt = false;
+        if (check(TokenKind::Question)) {
+            if (peek(1).kind != TokenKind::Star) {
+                diags_.error(peek().loc, "not supported yet");
+                ++pos_;
+                break;
+            }
+            ++pos_;
+            opt = true;
+        }
+        if (!eat(TokenKind::Star)) {
+            break;
+        }
+        if (opt) {
+            prefix.optional |= 1u << prefix.count;
+        }
+        ++prefix.count;
+    }
+    return prefix;
+}
+
 Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array) {
     if (at_func_type()) {
         return parse_func_type();
     }
     // Pointers are prefix: `*int`, `*Point`, `*pkg.Point`, `*const char`, `**int`.
     auto pointer_prefix = [&]() {
-        if (peek().kind != TokenKind::Star) {
+        std::size_t ahead = 0;
+        if (peek(ahead).kind == TokenKind::Question) {
+            if (peek(ahead + 1).kind != TokenKind::Star) {
+                return false;
+            }
+            ++ahead;
+        }
+        if (peek(ahead).kind != TokenKind::Star) {
             return false;
         }
-        std::size_t ahead = 0;
-        while (peek(ahead).kind == TokenKind::Star) {
-            ++ahead;
+        while (peek(ahead).kind == TokenKind::Star || peek(ahead).kind == TokenKind::Question) {
+            if (peek(ahead).kind == TokenKind::Question && peek(ahead + 1).kind != TokenKind::Star) {
+                break;
+            }
+            if (peek(ahead).kind == TokenKind::Question) {
+                ++ahead;
+            }
+            if (peek(ahead).kind == TokenKind::Star) {
+                ++ahead;
+            }
         }
         const Token &next = peek(ahead);
         if (is_int_spec(next.kind) || next.kind == TokenKind::KwVoid || next.kind == TokenKind::KwBool ||
@@ -533,11 +580,12 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     };
     PlacedType type;
     int leading = 0;
+    uint32_t leading_optional = 0;
     if (pointer_prefix()) {
         type.loc = peek().loc;
-        while (eat(TokenKind::Star)) {
-            ++leading;
-        }
+        const PointerPrefix prefix = parse_pointer_prefix();
+        leading = prefix.count;
+        leading_optional = prefix.optional;
     }
     const Specifiers specs = parse_specifiers(false, allow_const, true);
     type.loc = specs.loc;
@@ -552,6 +600,7 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
         // `*int (*fp)(int)`. The stars belong to the return type.
         type.is_fn_ptr = true;
         type.ret_indirections = leading;
+        type.ret_optional = leading_optional;
         std::string name;
         SourceLoc name_loc;
         parse_fn_pointer(type.indirections, name, name_loc, type.fn_params, type.fn_variadic);
@@ -566,6 +615,7 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
         }
     }
     type.indirections = leading;
+    type.optional = leading_optional;
     if (check(TokenKind::LBracket)) {
         if (!allow_array) {
             error_here("not supported yet");
@@ -603,22 +653,21 @@ Parser::PlacedType Parser::parse_go_type() {
     }
     PlacedType type;
     type.loc = peek().loc;
-    int outer = 0;
-    while (check(TokenKind::Star)) {
-        ++outer;
-        ++pos_;
-    }
+    const PointerPrefix outer_prefix = parse_pointer_prefix();
+    const int outer = outer_prefix.count;
     if (!check(TokenKind::LBracket)) {
         if (at_func_type()) {
             PlacedType fn = parse_func_type();
             if (outer > 0) {
                 diags_.error(type.loc, "not supported yet");
                 fn.indirections += outer;
+                fn.optional |= outer_prefix.optional;
             }
             return fn;
         }
         take_base(type, parse_specifiers(false, false, true));
         type.indirections = outer;
+        type.optional = outer_prefix.optional;
         return type;
     }
     // One star outside the brackets is a pointer to the array: `*[4]i32`.
@@ -630,11 +679,8 @@ Parser::PlacedType Parser::parse_go_type() {
     const ArrayMark array = parse_array_suffix(true);
     type.is_array = array.is_array;
     type.array_len = array.length;
-    int inner = 0;
-    while (check(TokenKind::Star)) {
-        ++inner;
-        ++pos_;
-    }
+    const PointerPrefix inner_prefix = parse_pointer_prefix();
+    const int inner = inner_prefix.count;
     if (check(TokenKind::LBracket)) {
         diags_.error(peek().loc, "not supported yet");
         while (eat(TokenKind::LBracket)) {
@@ -655,6 +701,10 @@ Parser::PlacedType Parser::parse_go_type() {
     }
     take_base(type, parse_specifiers(false, false, true));
     type.indirections = inner;
+    type.optional = inner_prefix.optional;
+    if (type.ptr_to_array && outer_prefix.optional != 0) {
+        diags_.error(type.loc, "not supported yet");
+    }
     return type;
 }
 
@@ -668,8 +718,16 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             return false;
         }
         std::size_t ahead = 1;
-        while (peek(ahead).kind == TokenKind::Star) {
-            ++ahead;
+        while (peek(ahead).kind == TokenKind::Star || peek(ahead).kind == TokenKind::Question) {
+            if (peek(ahead).kind == TokenKind::Question && peek(ahead + 1).kind != TokenKind::Star) {
+                break;
+            }
+            if (peek(ahead).kind == TokenKind::Question) {
+                ++ahead;
+            }
+            if (peek(ahead).kind == TokenKind::Star) {
+                ++ahead;
+            }
         }
         if (peek(ahead).kind != TokenKind::Identifier || peek(ahead).text != "this") {
             return false;
@@ -682,9 +740,9 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
         param.loc = peek().loc;
         param.name = peek().text;
         ++pos_;
-        while (eat(TokenKind::Star)) {
-            ++param.indirections;
-        }
+        const PointerPrefix prefix = parse_pointer_prefix();
+        param.indirections = prefix.count;
+        param.optional = prefix.optional;
         ++pos_;
         param.type_name = method_struct;
         param.is_struct = true;
@@ -739,10 +797,12 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             param.is_enum = type.is_enum;
             param.is_const = type.is_const;
             param.indirections = type.indirections;
+            param.optional = type.optional;
             param.is_array = type.is_array;
             param.array_len = type.array_len;
             param.is_fn_ptr = type.is_fn_ptr;
             param.ret_indirections = type.ret_indirections;
+            param.ret_optional = type.ret_optional;
             param.fn_params = type.fn_params;
             param.fn_variadic = type.fn_variadic;
         param.fn_results = type.fn_results;
@@ -769,6 +829,7 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
     slot.is_struct = type.is_struct;
     slot.is_enum = type.is_enum;
     slot.indirections = type.indirections;
+    slot.optional = type.optional;
     slot.is_fn_ptr = type.is_fn_ptr;
     slot.ret_indirections = type.ret_indirections;
     slot.fn_params = type.fn_params;
@@ -806,6 +867,7 @@ void Parser::parse_results(FunctionDecl &fn) {
     fn.is_struct = first.is_struct;
     fn.is_enum = first.is_enum;
     fn.indirections = first.indirections;
+    fn.optional = first.optional;
 }
 
 FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body) {
@@ -872,8 +934,10 @@ FnParam Parser::fn_param_from(const PlacedType &type) const {
     param.is_struct = type.is_struct;
     param.is_enum = type.is_enum;
     param.indirections = type.indirections;
+    param.optional = type.optional;
     param.is_fn_ptr = type.is_fn_ptr;
     param.ret_indirections = type.ret_indirections;
+    param.ret_optional = type.ret_optional;
     param.params = type.fn_params;
     param.variadic = type.fn_variadic;
     param.results = type.fn_results;

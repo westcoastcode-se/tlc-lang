@@ -2,7 +2,7 @@
 
 [Index](README.md) · [Previous: Functions](functions.md) · [Next: Methods](methods.md) · [Grammar](grammar.md)
 
-A struct definition is `type Name struct`. Variables, parameters, return types, and fields then use the bare name. A pointer is written `*Point` and `*int`, not `Point *` or `int *`, in a parameter, a result, and every other type position. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next *Node`, `raw [8]char`. A pointer to an array is `not supported yet` as a field. The semicolon after `}` may be omitted. A field still ends with `;`.
+A struct definition is `type Name struct`. Variables, parameters, return types, and fields then use the bare name. A pointer is written `*Point` and `*int`, not `Point *` or `int *`, in a parameter, a result, and every other type position. `?*Point` may be `null`. `*Point` may not. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next ?*Node`, `home *Address`, `raw [8]char`. A designated initializer that omits a `*T` field is `type mismatch`. An omitted `?*T` field is `null`. A pointer to an array is `not supported yet` as a field. The semicolon after `}` may be omitted. A field still ends with `;`.
 
 ```c
 type Point struct {
@@ -136,7 +136,7 @@ extern(abi="c") type Word union {
 
 `Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory.
 
-Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `**Point` and `*int` are left as they are, and the access is `type mismatch`. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
+Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `**Point` and `*int` are left as they are, and the access is `type mismatch`. A `?*Point` is `type mismatch` until the name is known to be non-null. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
 
 An array length is a positive decimal `int` literal.
 

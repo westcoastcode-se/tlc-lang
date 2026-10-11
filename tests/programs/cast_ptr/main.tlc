@@ -1,9 +1,9 @@
 func main() int {
-    var n int;
-    var bits int;
-    var c *char;
-    var v *void;
-    var p *int;
+    var n int = 0;
+    var bits int = 0;
+    var c *char = *char(0);
+    var v *void = *void(0);
+    var p *int = &n;
     bits = 42;
     c = *char(bits);
     v = *void(c);

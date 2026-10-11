@@ -161,7 +161,7 @@ bool same_type(const Type &lhs, const Type &rhs) {
         return false;
     }
     if (lhs.kind == TypeKind::Pointer) {
-        return lhs.pointee && rhs.pointee && same_type(*lhs.pointee, *rhs.pointee);
+        return lhs.optional == rhs.optional && lhs.pointee && rhs.pointee && same_type(*lhs.pointee, *rhs.pointee);
     }
     if (lhs.kind == TypeKind::Array) {
         return lhs.length == rhs.length && lhs.element && rhs.element && same_type(*lhs.element, *rhs.element);

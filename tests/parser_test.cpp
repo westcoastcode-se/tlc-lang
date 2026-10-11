@@ -274,6 +274,30 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "type Person struct { nickname ?*char; home *Address; };\n"
+            "func bind(person ?*Person, home ?*Address) void { return; }\n"
+            "func main() int {\n"
+            "  var p ?*int;\n"
+            "  var q *?*int;\n"
+            "  var r ?**int;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(field nickname char?*)");
+        EXPECT_HAS(check, parsed.dump, "(field home Address*)");
+        EXPECT_HAS(check, parsed.dump, "(fn bind (params (person Person?*) (home Address?*)) void");
+        EXPECT_HAS(check, parsed.dump, "(var p int?*");
+        EXPECT_HAS(check, parsed.dump, "(var q int*?*");
+        EXPECT_HAS(check, parsed.dump, "(var r int?**");
+    }
+
+    {
+        const Parsed parsed = parse_source("var p ?int;\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "var a [4]int;\n"
             "var b [2]*int;\n"
             "var s [3]char;\n"
