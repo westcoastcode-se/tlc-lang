@@ -2,7 +2,7 @@
 
 [Index](README.md) · [Previous: Functions](functions.md) · [Next: Methods](methods.md) · [Grammar](grammar.md)
 
-A struct definition is `type Name struct`. `type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[int]`. A method is `func Vec[T]::get(self *this, i int) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is `type mismatch`. The wrong count is `argument count`. `func Vec[T type]::get` is `type mismatch`. `func Vec::get[T type]` is `not supported yet`. `Vec` with no arguments is `type mismatch`. `Vec[int]` and `Vec[char]` are different types. Assigning one to the other, or passing one where the parameter is the other, is `type mismatch`. Variables, parameters, return types, and fields then use the bare name. A pointer is written `*Point` and `*int`, not `Point *` or `int *`, in a parameter, a result, and every other type position. `?*Point` may be `null`. `*Point` may not. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next ?*Node`, `home *Address`, `raw [8]char`. A designated initializer that omits a `*T` field is `type mismatch`. An omitted `?*T` field is `null`. A pointer to an array is `not supported yet` as a field. The semicolon after `}` may be omitted. A field still ends with `;`.
+A struct definition is `type Name struct`. `type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[int]`. A method is `func Vec[T]::get(self *this, i int) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is `type mismatch`. The wrong count is `argument count`. `func Vec[T type]::get` is `type mismatch`. `Vec` with no arguments is `type mismatch`. `Vec[int]` and `Vec[char]` are different types. Assigning one to the other, or passing one where the parameter is the other, is `type mismatch`. Variables, parameters, return types, and fields then use the bare name. A pointer is written `*Point` and `*int`, not `Point *` or `int *`, in a parameter, a result, and every other type position. `?*Point` may be `null`. `*Point` may not. A field is a name, then its type, in the same order and with the same type syntax as `var`: `x int`, `next ?*Node`, `home *Address`, `raw [8]char`. A designated initializer that omits a `*T` field is `type mismatch`. An omitted `?*T` field is `null`. The semicolon after `}` may be omitted. A field still ends with `;`.
 
 ```c
 type Point struct {
@@ -28,7 +28,7 @@ func main() int {
 
 This program returns 42.
 
-A struct may contain a pointer to itself. A by-value field of the struct that is being defined is rejected. `type Wide struct(align=16)` sets the alignment. The value is a positive power of two, at most 4096. The size is rounded up to that alignment. An alignment weaker than a field requires is `type mismatch`.
+A struct may contain a pointer to itself. `type Wide struct(align=16)` sets the alignment. The value is a positive power of two, at most 4096. The size is rounded up to that alignment. An alignment weaker than a field requires is `type mismatch`.
 
 ```c
 type Wide struct(align=16) {
@@ -45,7 +45,7 @@ type Node struct {
 };
 ```
 
-A struct value can name its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. A field that is left out is zero. Naming a field twice is `redefinition`. An unknown field is `undeclared identifier`. `{10, 20}` is `not supported yet`. Used where the type is not a struct, the initializer is `type mismatch`.
+A struct value can name its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. A field that is left out is zero. Naming a field twice is `redefinition`. An unknown field is `undeclared identifier`. Used where the type is not a struct, the initializer is `type mismatch`.
 
 ```c
 type Inner struct {
@@ -67,7 +67,7 @@ This returns 30. `box = {.complex = {.inner_value = 42}}` replaces the whole val
 
 A struct or an enum is defined by its body. `type Node struct`, `extern(abi="c") type Node struct`, `type Color enum`, and `extern(abi="c") type Color enum` are `expected '{'` without that body. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
 
-An `extern(abi="c") struct` is marked so it can be used with an `extern(abi="c")` function. An empty body is an opaque handle: the type has no fields and occupies one byte, and a library uses it through a pointer. An empty struct that is not `extern(abi="c")`, including an empty `extern struct`, is `not supported yet`. An empty enum is `not supported yet`. `extern struct` uses the compiler's own layout.
+An `extern(abi="c") struct` is marked so it can be used with an `extern(abi="c")` function. An empty body is an opaque handle: the type has no fields and occupies one byte, and a library uses it through a pointer. `extern struct` uses the compiler's own layout.
 
 ```c
 extern(abi="c") type Pair struct {
@@ -118,9 +118,7 @@ type Named union(ShapeType) {
 
 The value stores the tag and one payload. Every field starts at the same offset after the tag, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 4 for the `int` tag and 8 for the payload. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0.
 
-`extern` and `extern(abi="c")` cannot use `union(Enum)`. That is `not supported yet`.
-
-`extern(abi="c") union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A union without `extern(abi="c")` and without an enum, including `extern union`, is `not supported yet`. An empty union is `not supported yet`. A struct or a union nested inside a C union must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
+`extern(abi="c") union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A struct or a union nested inside a C union must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
 
 ```c
 extern(abi="c") type Num union {
@@ -155,7 +153,7 @@ func main() int {
 }
 ```
 
-The array becomes a pointer when it is passed. A string is an array of `char` and can be passed to `*char`. The index has type `int`. Multidimensional arrays are rejected.
+The array becomes a pointer when it is passed. A string is an array of `char` and can be passed to `*char`. The index has type `int`.
 
 An exported struct is named with the package and without the `struct` keyword:
 

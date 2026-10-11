@@ -32,13 +32,11 @@ func main() int {
 
 `add` takes a pointer, so `p` must be an lvalue. The compiler passes `&p`. `sum` takes a value. A call on a `*Point` loads the struct. A pointer method on a temporary struct value is `not an lvalue`.
 
-The receiver may have one star. `self **this` is rejected.
-
-A method on a generic struct names that struct's parameters. `func Vec[T]::get(self *this, i int) T` is the method on `type Vec[T type] struct`. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. The names match the struct, in the same order. Leaving the list out is `type mismatch`. A different name is `type mismatch`. The wrong count is `argument count`. `func Vec[T type]::get` is `type mismatch`. A list after the method name, `func Vec::get[T type]`, is `not supported yet`. A struct that is not generic keeps `func Point::sum`. `func Point[T]::sum` is `type mismatch`.
+A method on a generic struct names that struct's parameters. `func Vec[T]::get(self *this, i int) T` is the method on `type Vec[T type] struct`. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. The names match the struct, in the same order. Leaving the list out is `type mismatch`. A different name is `type mismatch`. The wrong count is `argument count`. `func Vec[T type]::get` is `type mismatch`. A struct that is not generic keeps `func Point::sum`. `func Point[T]::sum` is `type mismatch`.
 
 The same method name may exist on different structs and as a free function. The call `p.sum(...)` selects the struct's method. A free call `sum(...)` selects the function.
 
-Every file in the package can call the method. It is not exported, so another package cannot call it. `export` on a method is `not supported yet`. `Point::sum(p, 1)` is not a call.
+Every file in the package can call the method. It is not exported, so another package cannot call it. `Point::sum(p, 1)` is not a call.
 
 ## Traits
 
@@ -92,11 +90,11 @@ There is no `impl` keyword. A struct satisfies a trait by defining the methods, 
 - A wrong return type or wrong extra parameters are `type mismatch`.
 - The address is not taken automatically. `apply(r)` is `type mismatch` when the parameter is `*Shape`. The call is `apply(&r)`.
 
-A trait type is allowed only as a function parameter, either `Shape` or `*Shape`. A variable, a return type, an array, a type alias, and `**Shape` are `not supported yet`. `sizeof(Shape)` is `undeclared identifier`.
+A trait is written as a function parameter, `Shape` or `*Shape`. `sizeof(Shape)` is `undeclared identifier`.
 
 The function is monomorphized. Each struct that is passed in gets its own copy, and the call `s.area()` becomes a direct call of that struct's method. Passing the same trait onward, as `measure(s)` inside `apply`, is not checked again.
 
-`this` inside a trait method is `type mismatch`. A body in the trait is rejected. A function with a trait parameter cannot be `export`, `extern`, or variadic, and a method cannot take a trait parameter.
+`this` inside a trait method is `type mismatch`.
 
 `s.area` without a call is `undeclared identifier`.
 

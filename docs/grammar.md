@@ -35,7 +35,7 @@ declaration = function
             | test-decl ;
 ```
 
-`export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, or `type`. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` is `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. Another abi is `not supported yet`. `export static` is an error. `export` and `extern` on an inferred variable are rejected.
+`export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, or `type`. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` is `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. `export static` is an error.
 
 ## Functions and methods
 
@@ -59,13 +59,13 @@ result      = placed-type
 
 A function with no body is a prototype and ends with `;`. A body replaces that semicolon. `...` is allowed on an `extern(abi="c")` declaration and on a function with a body. Inside that body, `builtin.va()` reads the extra arguments. One parenthesized result is the same type as the bare result. `()` as a result list is an error.
 
-A method's first parameter is the receiver, written `name this`, `name *this`, or `name ?*this`. `this` stands for the method's struct or enum, so a pointer is `*this` and an optional pointer is `?*this`. `self **this` is `not supported yet`. `this` is an ordinary identifier everywhere else.
+A method's first parameter is the receiver, written `name this`, `name *this`, or `name ?*this`. `this` stands for the method's struct or enum, so a pointer is `*this` and an optional pointer is `?*this`. `this` is an ordinary identifier everywhere else.
 
 The method is written in the same file as that struct or enum. A method in another file is `method in another file`. Every file in the package can call it.
 
-An inner function uses the same `function` form inside a block. It has a body, and it is not `export`, `static`, `extern`, or a method.
+An inner function uses the same `function` form inside a block. It has a body.
 
-`func name[T type, N int](value T) [N]T` is a generic function. `T type` is a type. `N int`, or another integer type, is a compile-time integer. `T Shape` requires a type that has `Shape`'s methods. The call `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` and `zero[int]()` write a type. A generic used as a value is `not supported yet`. A method on a generic struct names that struct's parameters, `func Vec[T]::get(self *this) T`. `func Vec::get[T type]` is `not supported yet`. `extern` cannot be generic. After the call is specialized, `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` use the concrete type and the integer.
+`func name[T type, N int](value T) [N]T` is a generic function. `T type` is a type. `N int`, or another integer type, is a compile-time integer. `T Shape` requires a type that has `Shape`'s methods. The call `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` and `zero[int]()` write a type. A method on a generic struct names that struct's parameters, `func Vec[T]::get(self *this) T`. After the call is specialized, `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` use the concrete type and the integer.
 
 ## Variables
 
@@ -78,7 +78,7 @@ var-decl    = "var" identifier go-type [ "=" expression ] ";"
 const-decl  = "const" identifier "=" expression ";" ;
 ```
 
-`var name :=` is an error. At file scope, `var a, b =` is rejected. Inside a function, several names can be bound from one call:
+`var name :=` is an error. Inside a function, several names can be bound from one call:
 
 ```ebnf
 binding     = "var" name-list "=" expression ";"
@@ -120,11 +120,11 @@ trait-method = "func" identifier "(" [ parameters ] ")" result ";" ;
 
 `type Vec[T type] struct` is a generic struct. The parameter list is only allowed before `struct`. A use is `Vec[int]` or `Vec[Point]`. A method on `Vec` is `func Vec[T]::get(self *this, i int) T`. The names are the struct's parameters, in that order. Leaving them out, or writing a different name, is `type mismatch`. The wrong count is `argument count`. `func Vec[T type]::get` is `type mismatch`. `Vec` without arguments is `type mismatch`. `Vec[int]` and `Vec[char]` are different types. Assigning one to the other, or passing one where the parameter is the other, is `type mismatch`.
 
-The semicolon after `}` is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `type Name struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `type Name struct` without `{` is `expected '{'`. An empty `extern(abi="c") struct` is `extern(abi="c") type Name struct "{" "}"`.
+The semicolon after `}` is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `type Name struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. `type Name struct` without `{` is `expected '{'`. An empty `extern(abi="c") struct` is `extern(abi="c") type Name struct "{" "}"`.
 
-`type Name union(Enum)` is a tlc union. `Enum` is an enum in the same package. A qualified name there is `not supported yet`. Each enumerator is one field, and each field names one enumerator. A field that is not an enumerator is `undeclared identifier`. An enumerator with no field is `type mismatch`. The field is an inline struct, `Circle struct { radius f32; };`, or the name of a struct, `Circle Circle;`. A field that is not a struct is `type mismatch`. The value stores the enum tag and one payload. Every field starts at the same offset after the tag. The payload is large enough for the largest field. Assigning a field, or a field inside it, stores that enumerator. A designated initializer does the same. `Enum(value)` reads the tag. Reading a field does not check the tag. `extern` and `extern(abi="c")` cannot use `union(Enum)`. That is `not supported yet`.
+`type Name union(Enum)` is a tlc union. `Enum` is an enum in the same package. Each enumerator is one field, and each field names one enumerator. A field that is not an enumerator is `undeclared identifier`. An enumerator with no field is `type mismatch`. The field is an inline struct, `Circle struct { radius f32; };`, or the name of a struct, `Circle Circle;`. A field that is not a struct is `type mismatch`. The value stores the enum tag and one payload. Every field starts at the same offset after the tag. The payload is large enough for the largest field. Assigning a field, or a field inside it, stores that enumerator. A designated initializer does the same. `Enum(value)` reads the tag. Reading a field does not check the tag.
 
-`extern(abi="c") union` is a C union: every field starts at offset 0, the size is the largest field, and the alignment is the strictest field. A union without `extern(abi="c")` and without an enum, including `extern union`, is `not supported yet`. An empty union is `not supported yet`.
+`extern(abi="c") union` is a C union: every field starts at offset 0, the size is the largest field, and the alignment is the strictest field.
 
 `extern(abi="c") type Name enum` has no underlying type. `extern(abi="c") type Name enum(i8)` is `extern enum`. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
 
@@ -132,12 +132,12 @@ A trait method has no body and no receiver.
 
 ## Types
 
-A pointer is a leading star in every type position: `*int`, `?*Point`, `*pkg.Point`, `*const char`, `type Name *int`, `sizeof(*int)`, and `*int(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `?int` is `not supported yet`. `int *`, `Point *`, `sizeof(int *)`, and `int*(expr)` are `type mismatch`. A `var`, a field, or a type alias writes an array in front of its element type: `[4]int`, `type Pair [2]int`. A parameter keeps the array after the element type: `int[4]`.
+A pointer is a leading star in every type position: `*int`, `?*Point`, `*pkg.Point`, `*const char`, `type Name *int`, `sizeof(*int)`, and `*int(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `int *`, `Point *`, `sizeof(int *)`, and `int*(expr)` are `type mismatch`. A `var`, a field, or a type alias writes an array in front of its element type: `[4]int`, `type Pair [2]int`. A parameter keeps the array after the element type: `int[4]`.
 
 ```ebnf
 go-type     = func-type
             | { [ "?" ] "*" } base-type [ type-args ]
-            | { [ "?" ] "*" } "[" array-length "]" { [ "?" ] "*" } base-type [ type-args ] ;
+            | "*" "[" array-length "]" { [ "?" ] "*" } base-type [ type-args ] ;
 
 placed-type = func-type
             | { [ "?" ] "*" } [ "const" ] base-type [ array | type-args ]
@@ -169,7 +169,7 @@ integer-name = "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64"
 float-name   = "f32" | "f64" ;
 ```
 
-One `*` before `[` is a pointer to an array, as in `*[4]i32`. `?*` before `[` is `not supported yet`. Two stars there, and a nested array, are rejected. An unsized `[]` is allowed on a parameter and rejected on a `var`. `const` is allowed on an `extern(abi="c")` parameter.
+One `*` before `[` is a pointer to an array, as in `*[4]i32`. An unsized `[]` is a parameter array, `int[]`. `const` is allowed on an `extern(abi="c")` parameter.
 
 `signed`, `unsigned`, and `long long` are not type names.
 
@@ -205,7 +205,7 @@ if-statement = "if" "(" expression ")" block [ "else" ( if-statement | block ) ]
 for-init    = ";" | var-decl | binding | expression ";" ;
 ```
 
-`if`, `while`, and `for` take a block. `else` takes a block or another `if`. A body without `{` is `expected '{'`. `defer` takes one call expression. `assert` checks a constant integer at compile time. The string is the diagnostic when the condition is false. A condition that is not a constant integer is `not supported yet`. `case` and `default` are statements, so they appear inside the switch body.
+`if`, `while`, and `for` take a block. `else` takes a block or another `if`. A body without `{` is `expected '{'`. `defer` takes one call expression. `assert` checks a constant integer at compile time. The string is the diagnostic when the condition is false. `case` and `default` are statements, so they appear inside the switch body.
 
 ## Expressions
 
@@ -238,8 +238,6 @@ argument-list = expression { "," expression } ;
 
 Postfix `!` asserts that a `?*T` has a value. `pointer!` has type `*T`. `pointer!.value` reads the field. Prefix `!` is still the integer operator. There is no runtime check.
 
-`?:`, `++`, `--`, `->`, and compound assignments such as `+=` are not part of the language.
-
 ```ebnf
 primary     = identifier
             | integer-literal
@@ -265,7 +263,7 @@ scalar-type = integer-type | "void" | "bool" | "float" | "double" | integer-name
 
 An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)`, `*int(p)`, or `?*int(p)`. A builtin name such as `i32` is always that cast. A name declared as a type in this file is a cast too: `Integer(n)`, `*Point(p)`, `ShapeType(shape)`. A cast to a struct is `type mismatch`. `ShapeType(shape)` reads the tag of a tlc union, including from another file in the package. The cast has the type that was written, so `*int(p)` is `*int` and `?*int(null)` is `?*int`. `*int(null)` is `type mismatch`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof(int)`, `sizeof(*int)`, `sizeof(enum Color)`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression. `typeof` has the same shape and produces a `Type`. `typeof(int)`, `typeof(*int)`, and `typeof n` are accepted. `typeof(struct Point)` is `expected a type`.
 
-A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A positional element, such as `{10}`, is `not supported yet`. A trailing comma is allowed.
+A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A trailing comma is allowed.
 
 ## Tokens
 

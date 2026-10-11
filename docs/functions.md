@@ -33,11 +33,11 @@ func main() int {
 }
 ```
 
-`var` defines every name in the current block. `:=` defines a name that is new in the current block and assigns a name that already exists there. At least one name must be new. A name from an outer block is shadowed. The same bind may be the first clause of `for`. A call used as a statement, or as the call in `defer`, discards every result. The call may be a function, a method on a field, a subscript, a dereference, or a temporary value. An `extern(abi="c")` function cannot return several results. A trait method cannot either. A type error names the expected type and the found type.
+`var` defines every name in the current block. `:=` defines a name that is new in the current block and assigns a name that already exists there. At least one name must be new. A name from an outer block is shadowed. The same bind may be the first clause of `for`. A call used as a statement, or as the call in `defer`, discards every result. The call may be a function, a method on a field, a subscript, a dereference, or a temporary value. An `extern(abi="c")` function cannot return several results. A type error names the expected type and the found type.
 
 A function may be declared first and defined later, with the same type. Two bodies for the same function are `redefinition`.
 
-A function may also be written inside a block. Its name is visible from that declaration through the end of the block, including blocks nested inside it. A prototype in that block must be followed by a body in the same block. The function can call functions already in scope, and it can use globals. A use of a local or a parameter from an enclosing function is rejected. `export`, `static`, `extern`, and a method are rejected on a function in a block. An anonymous function, used from `defer` or called directly, follows the same rule.
+A function may also be written inside a block. Its name is visible from that declaration through the end of the block, including blocks nested inside it. It has a body in that block. The function can call functions already in scope, and it can use globals. An anonymous function, used from `defer` or called directly, is that same kind of function.
 
 ```c
 func main() int {
@@ -67,17 +67,17 @@ func main() int {
 }
 ```
 
-`id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` writes the type. A type that cannot be inferred is `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[int]` and `Vec[char]` for `Vec[T]`, is `type mismatch`. A generic used as a value, and `extern` on a generic, are `not supported yet`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
+`id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` writes the type. A type that cannot be inferred is `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[int]` and `Vec[char]` for `Vec[T]`, is `type mismatch`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
 
-Structs are passed and returned by value. An array parameter becomes a pointer, both as `a int[]` and as `a int[4]`. A generic may return an array, `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
+Structs are passed and returned by value. An array parameter becomes a pointer, both as `a int[]` and as `a int[4]`. A function may return an array. The return expression is a local array name, as in `return out` for `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
 
-A function cannot return an array. There is one `main`.
+There is one `main`.
 
-`test "name" { ... }` is a file-scope test. The body is a function that returns `int`. Reaching the end passes, and so does `return 0`. Any other `return` fails that test. `return;` is `type mismatch`. The same test name twice in one file is `redefinition`. A `test` inside a function is `not supported yet`.
+`test "name" { ... }` is a file-scope test. The body is a function that returns `int`. Reaching the end passes, and so does `return 0`. Any other `return` fails that test. `return;` is `type mismatch`. The same test name twice in one file is `redefinition`.
 
-`import "std/testing"` provides `testing.error`. It returns `1`. The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `double`. A struct argument is `not supported yet`.
+`import "std/testing"` provides `testing.error`. It returns `1`. The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `double`.
 
-`testing.error` prints `builtin.trace()`, then the message. `builtin.trace` is the TLC calls that have not returned. Each line is `file:line:column: name`, oldest first, and the last line has no newline. `builtin.va` reads the extra arguments of the variadic function it is called from. A call outside such a function is `not supported yet`.
+`testing.error` prints `builtin.trace()`, then the message. `builtin.trace` is the TLC calls that have not returned. Each line is `file:line:column: name`, oldest first, and the last line has no newline. `builtin.va` reads the extra arguments of the variadic function it is called from.
 
 ```c
 import "std/testing";
@@ -110,7 +110,7 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 }
 ```
 
-A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type does too. A function pointer whose result is itself a function pointer is not supported yet. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
+A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type does too. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
 A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
 

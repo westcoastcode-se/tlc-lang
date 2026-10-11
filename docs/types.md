@@ -18,7 +18,7 @@ Integers on `x86_64-pc-linux-gnu` follow LP64. `long` and `i64` are both 64 bits
 
 `char`, `i8`, and `u8` are three types. They are assignment-compatible. `*int` and `*uint` are different types.
 
-`*T` is a pointer with a value. `?*T` is that pointer or `null`. `*?*T` and `?**T` are different types. `?` on a type that is not a pointer, such as `?int`, is `not supported yet`.
+`*T` is a pointer with a value. `?*T` is that pointer or `null`. `*?*T` and `?**T` are different types.
 
 `i8` and `u8` are the 8-bit integers. `i16` is `short` and `u16` is its unsigned counterpart. `i32` is `int` and `u32` is `uint`. `i64` and `u64` are the other 64-bit integers. `ulong` is 64 bits and a different type from `u64`. `long` stays a different 64-bit type from `i64`. `char` stays different from `i8`.
 
@@ -66,7 +66,7 @@ world`;
 
 `sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(i64)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted. `sizeof(Point)` and `sizeof(enum Color)` name a declared type. `sizeof(struct Point)` is `expected a type`. `sizeof(Type)` is 8.
 
-`Type` is the type of a tlc type. `typeof(int)` and `typeof n` produce a `Type`. `typeof(Point)`, `typeof(*int)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)` is `expected a type`. `i32` is `int`, so `typeof(i32)` and `typeof(int)` are the same value. `typeof` does not decay an array or a function. A function, a tuple, or a trait is `not supported yet`. `var t Type` with no value is `type mismatch`.
+`Type` is the type of a tlc type. `typeof(int)` and `typeof n` produce a `Type`. `typeof(Point)`, `typeof(*int)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)` is `expected a type`. `i32` is `int`, so `typeof(i32)` and `typeof(int)` are the same value. `typeof` does not decay an array. `var t Type` with no value is `type mismatch`.
 
 `typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*Type` uses the value `p` points at. `name` is a method of `Type`. `t.name()` returns `*char`. The text is the spelling diagnostics use: `int`, `*int`, `?*Point`, `int[4]`, `Box.spec.int`. `name` takes no arguments. Another argument is `argument count`. Another method is `undeclared identifier`. `t.name` without the call is `undeclared identifier`.
 
