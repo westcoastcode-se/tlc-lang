@@ -350,7 +350,8 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func main() int { var a [n]int; return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var a int[n]");
     }
 
     {

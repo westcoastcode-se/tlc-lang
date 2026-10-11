@@ -1,0 +1,8 @@
+func id[T type](value T) T {
+    assert(sizeof(T) == 4, "size");
+    return value;
+}
+
+func main() int {
+    return id(40) + id[int](2);
+}

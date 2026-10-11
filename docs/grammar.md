@@ -28,6 +28,7 @@ A declaration is one of:
 declaration = function
             | method
             | var-decl
+            | const-decl
             | fn-var
             | type-decl
             | assert-stmt
@@ -39,7 +40,12 @@ declaration = function
 ## Functions and methods
 
 ```ebnf
-function    = "func" identifier "(" [ parameters ] ")" result ( block | ";" ) ;
+function    = "func" identifier [ type-params ] "(" [ parameters ] ")" result ( block | ";" ) ;
+type-params = "[" type-param { "," type-param } "]" ;
+type-param  = identifier "type"
+            | identifier integer-name
+            | identifier ( "char" | "short" | "int" | "long" )
+            | identifier identifier ;
 method      = "func" identifier "::" identifier "(" receiver [ "," parameters ] ")" result ( block | ";" ) ;
 receiver    = identifier [ "*" ] "this" ;
 
@@ -58,6 +64,8 @@ The method is written in the same file as that struct or enum. A method in anoth
 
 An inner function uses the same `function` form inside a block. It has a body, and it is not `export`, `static`, `extern`, or a method.
 
+`func name[T type, N int](value T) [N]T` is a generic function. `T type` is a type. `N int`, or another integer type, is a compile-time integer. `T Shape` requires a type that has `Shape`'s methods. The call `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` and `zero[int]()` write a type. A generic used as a value is `not supported yet`. A method does not repeat the list; `func Vec::get[T type]` is `not supported yet`. `extern` cannot be generic. After the call is specialized, `sizeof(T)` and `assert(N > 0, "empty")` use the concrete type and the integer.
+
 ## Variables
 
 A typed variable names the type in Go order, after the name:
@@ -66,6 +74,7 @@ A typed variable names the type in Go order, after the name:
 var-decl    = "var" identifier go-type [ "=" expression ] ";"
             | "var" identifier "=" expression ";"
             | identifier ":=" expression ";" ;
+const-decl  = "const" identifier "=" expression ";" ;
 ```
 
 `var name :=` is an error. At file scope, `var a, b =` is rejected. Inside a function, several names can be bound from one call:
@@ -87,7 +96,7 @@ fn-var      = func-type identifier { "," identifier } ";" ;
 ## Structs, enums, traits, and type aliases
 
 ```ebnf
-type-decl   = "type" identifier type-body ;
+type-decl   = "type" identifier [ type-params ] type-body ;
 type-body   = "struct" [ align ] "{" { field } "}" [ ";" ]
             | "enum" [ "(" underlying ")" ] "{" [ enumerators ] "}" [ ";" ]
             | "trait" "{" { trait-method } "}" [ ";" ]
@@ -108,6 +117,8 @@ enumerator  = identifier [ "=" integer-literal ] ;
 trait-method = "func" identifier "(" [ parameters ] ")" result ";" ;
 ```
 
+`type Vec[T type] struct` is a generic struct. The parameter list is only allowed before `struct`. A use is `Vec[int]` or `Vec[Point]`. A method on `Vec` is `func Vec::get(self *this, i int) T` and does not repeat `[T type]`. `Vec` without arguments is `type mismatch`.
+
 The semicolon after `}` is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `type Name struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `type Name struct` without `{` is `expected '{'`. An empty `extern(abi="c") struct` is `extern(abi="c") type Name struct "{" "}"`.
 
 `type Name union(Enum)` is a tlc union. `Enum` is an enum in the same package. A qualified name there is `not supported yet`. Each enumerator is one field, and each field names one enumerator. A field that is not an enumerator is `undeclared identifier`. An enumerator with no field is `type mismatch`. The field is an inline struct, `Circle struct { radius f32; };`, or the name of a struct, `Circle Circle;`. A field that is not a struct is `type mismatch`. The value stores the enum tag and one payload. Every field starts at the same offset after the tag. The payload is large enough for the largest field. Assigning a field, or a field inside it, stores that enumerator. A designated initializer does the same. `Enum(value)` reads the tag. Reading a field does not check the tag. `extern` and `extern(abi="c")` cannot use `union(Enum)`. That is `not supported yet`.
@@ -124,13 +135,19 @@ A pointer is a leading star in every type position: `*int`, `?*Point`, `*pkg.Poi
 
 ```ebnf
 go-type     = func-type
-            | { [ "?" ] "*" } base-type
-            | { [ "?" ] "*" } "[" integer-literal "]" { [ "?" ] "*" } base-type ;
+            | { [ "?" ] "*" } base-type [ type-args ]
+            | { [ "?" ] "*" } "[" array-length "]" { [ "?" ] "*" } base-type [ type-args ] ;
 
 placed-type = func-type
-            | { [ "?" ] "*" } [ "const" ] base-type [ array ] ;
+            | { [ "?" ] "*" } [ "const" ] base-type [ array | type-args ]
+            | go-type ;
 
-array       = "[" [ integer-literal ] "]" ;
+array       = "[" [ array-length ] "]" ;
+array-length = integer-literal | identifier ;
+type-args   = "[" type-arg { "," type-arg } "]" ;
+type-arg    = integer-literal
+            | { [ "?" ] "*" } base-type [ type-args ]
+            | array-length ;
 
 func-type   = "func" "(" [ func-args ] ")" result ;
 func-args   = placed-type { "," placed-type } ;
@@ -209,11 +226,14 @@ unary       = ( "+" | "-" | "!" | "~" | "&" | "*" | "sizeof" ) unary
             | postfix ;
 postfix     = primary { postfix-op } ;
 postfix-op  = "(" [ argument-list ] ")"
+            | type-args "(" [ argument-list ] ")"
             | "." identifier
             | "[" expression "]"
             | "!" ;
 argument-list = expression { "," expression } ;
 ```
+
+`name[args](` is a generic call, not an index. `ops[i]()` is that call. `(ops[i])()` is the call of an element. An array length may be a file-scope `const` name: `[N]int`.
 
 Postfix `!` asserts that a `?*T` has a value. `pointer!` has type `*T`. `pointer!.value` reads the field. Prefix `!` is still the integer operator. There is no runtime check.
 

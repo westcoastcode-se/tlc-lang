@@ -99,6 +99,10 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
 }
 
 Type Checker::type_of_var(const VarDecl &var) {
+    VarDecl &written = const_cast<VarDecl &>(var);
+    prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
+                    written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
+                    written.loc);
     Type type = var.is_fn_ptr
                     ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
                                      var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
@@ -142,6 +146,10 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
 }
 
 Type Checker::type_of_param(const Param &param) {
+    Param &written = const_cast<Param &>(param);
+    prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
+                    written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
+                    written.loc);
     if (param.is_fn_ptr) {
         return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
                               param.indirections, param.fn_params, param.fn_variadic, param.fn_results, param.loc,
@@ -152,10 +160,17 @@ Type Checker::type_of_param(const Param &param) {
 }
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
+    ResultSlot &written = const_cast<ResultSlot &>(slot);
+    prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
+                    written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args, loc);
     if (slot.is_fn_ptr) {
         return type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
                               slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results, loc,
                               slot.ret_optional);
+    }
+    if (slot.is_array) {
+        return object_type(slot.type_name, slot.indirections, true, slot.array_len, loc, false, slot.type_package,
+                           slot.is_struct, slot.is_enum, false, slot.optional);
     }
     return slot.is_struct || slot.is_enum || !slot.type_package.empty()
                ? object_type(slot.type_name, slot.indirections, false, 0, loc, false, slot.type_package, slot.is_struct,
@@ -260,22 +275,33 @@ Symbol *Checker::lookup(const std::string &name) {
     if (Symbol *local = lookup_scope(name)) {
         return local;
     }
-    if (graph_ == nullptr) {
-        return nullptr;
+    if (graph_ != nullptr) {
+        const PackageNode *self = find_node(file_id_);
+        if (self != nullptr && !self->package_key.empty()) {
+            const auto package = package_syms_.find(self->package_key);
+            if (package != package_syms_.end()) {
+                const auto found = package->second.find(name);
+                if (found != package->second.end()) {
+                    return &found->second;
+                }
+            }
+        }
     }
-    const PackageNode *self = find_node(file_id_);
-    if (self == nullptr || self->package_key.empty()) {
-        return nullptr;
+    for (const uint32_t id : files_in_package(file_id_)) {
+        const auto specs = spec_symbols_.find(id);
+        if (specs == spec_symbols_.end()) {
+            continue;
+        }
+        const auto spec = specs->second.find(name);
+        if (spec == specs->second.end()) {
+            continue;
+        }
+        if (id != file_id_ && static_spec_keys_.contains(std::to_string(id) + "\n" + name)) {
+            continue;
+        }
+        return &spec->second;
     }
-    const auto package = package_syms_.find(self->package_key);
-    if (package == package_syms_.end()) {
-        return nullptr;
-    }
-    const auto found = package->second.find(name);
-    if (found == package->second.end()) {
-        return nullptr;
-    }
-    return &found->second;
+    return nullptr;
 }
 
 bool Checker::remember_shared(const Symbol &symbol, SourceLoc loc) {
@@ -504,6 +530,11 @@ Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_in
     }
     if (const int trait = package_trait(file_id_, name); trait >= 0) {
         return type_trait(trait);
+    }
+    uint32_t owner = file_id_;
+    if (find_struct_template(name, owner) != nullptr) {
+        error(loc, "type mismatch");
+        return type_invalid();
     }
     error(loc, "not supported yet");
     return type_invalid();
@@ -885,6 +916,14 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         if (item == nullptr || item->name.empty()) {
             continue;
         }
+        if (!item->type_params.empty()) {
+            if (item->is_extern || item->extern_c || item->is_union) {
+                error(item->loc, "not supported yet");
+            }
+            owned_structs_.push_back(*item);
+            struct_templates_[file_id][item->name] = &owned_structs_.back();
+            continue;
+        }
         const int existing = find_tag(file_id, item->name);
         if (existing >= 0) {
             error(item->loc, "redefinition");
@@ -1101,6 +1140,10 @@ void Checker::define_struct_fields() {
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc});
                 continue;
             }
+            FieldDecl &written = const_cast<FieldDecl &>(field);
+            prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
+                            written.indirections, written.optional, written.is_array, written.array_len,
+                            written.array_len_name, written.type_args, written.loc);
             Type field_type =
                 field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                  field.ret_indirections, field.indirections, field.fn_params,
@@ -1157,6 +1200,7 @@ void Checker::define_struct_fields() {
 
 void Checker::register_structs(const TranslationUnit &unit, uint32_t file_id) {
     declare_struct_tags(unit, file_id);
+    fold_early_consts(const_cast<TranslationUnit &>(unit), file_id);
     define_struct_fields();
 }
 
@@ -1372,6 +1416,10 @@ bool Checker::typedef_target_ready(const TypedefDecl &item) const {
 }
 
 void Checker::register_one_typedef(const TypedefDecl &item) {
+    TypedefDecl &written = const_cast<TypedefDecl &>(item);
+    prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
+                    written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
+                    written.loc);
     if (item.name.empty()) {
         return;
     }

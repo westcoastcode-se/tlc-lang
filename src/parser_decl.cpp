@@ -60,6 +60,8 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
             field.optional = type.optional;
             field.is_array = type.is_array;
             field.array_len = type.array_len;
+            field.array_len_name = type.array_len_name;
+            field.type_args = type.type_args;
             field.is_fn_ptr = type.is_fn_ptr;
             field.ret_indirections = type.ret_indirections;
             field.fn_params = type.fn_params;
@@ -79,7 +81,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
 }
 
 void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c, std::string name,
-                            SourceLoc name_loc) {
+                            SourceLoc name_loc, std::vector<TypeParam> type_params) {
     const TokenKind kind = peek().kind;
     const SourceLoc kind_loc = peek().loc;
     ++pos_;
@@ -233,6 +235,7 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     item.align = align;
     item.is_union = as_union;
     item.tag_name = std::move(tag_name);
+    item.type_params = std::move(type_params);
     TopDecl top;
     top.data = std::move(item);
     unit.decls.push_back(std::move(top));
@@ -249,10 +252,21 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     } else {
         error_here("expected an identifier");
     }
+    std::vector<TypeParam> type_params;
+    if (looks_like_type_params()) {
+        type_params = parse_type_params();
+    }
     if (check(TokenKind::KwStruct) || check(TokenKind::KwEnum) || check(TokenKind::KwTrait) ||
         check(TokenKind::KwUnion)) {
-        parse_type_def(unit, exported, is_extern, extern_c, std::move(name), name_loc);
+        if (!type_params.empty() && peek().kind != TokenKind::KwStruct) {
+            diags_.error(peek().loc, "not supported yet");
+            type_params.clear();
+        }
+        parse_type_def(unit, exported, is_extern, extern_c, std::move(name), name_loc, std::move(type_params));
         return;
+    }
+    if (!type_params.empty()) {
+        diags_.error(name_loc, "not supported yet");
     }
     TypedefDecl item;
     item.loc = name_loc;
@@ -269,6 +283,8 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.optional = type.optional;
     item.is_array = type.is_array;
     item.array_len = type.array_len;
+    item.array_len_name = type.array_len_name;
+    item.type_args = type.type_args;
     item.is_fn_ptr = type.is_fn_ptr;
     item.ret_indirections = type.ret_indirections;
     item.ret_optional = type.ret_optional;
@@ -308,6 +324,31 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             continue;
         }
         break;
+    }
+    if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq) {
+        if (is_extern) {
+            diags_.error(peek().loc, "not supported yet");
+        }
+        if (exported && is_static) {
+            diags_.error(storage_loc, "export static");
+        }
+        VarDecl var;
+        var.is_const_decl = true;
+        var.exported = exported;
+        var.is_static = is_static;
+        var.loc = peek().loc;
+        ++pos_;
+        var.name = peek().text;
+        var.loc = peek().loc;
+        ++pos_;
+        expect(TokenKind::Eq, "expected '='");
+        var.init = parse_assignment();
+        expect(TokenKind::Semicolon, "expected ';'");
+        TopDecl top;
+        top.data = std::move(var);
+        unit.decls.push_back(std::move(top));
+        saw_decl_ = true;
+        return;
     }
     if (at_func_type()) {
         if (exported && is_static) {

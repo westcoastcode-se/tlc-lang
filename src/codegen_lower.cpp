@@ -130,6 +130,8 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
     const bool many = fn.results.size() > 1;
     const bool returns_void =
         !many && fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty();
+    const bool result_array = !many && fn.results.size() == 1 && fn.results.front().is_array &&
+                              fn.results.front().array_len > 0 && !fn.results.front().is_fn_ptr;
     llvm::Type *ret = many ? aggregate_return(fn, file)
                            : (returns_void ? llvm::Type::getVoidTy(context_)
                                            : stored_type(fn.results.size() == 1 && fn.results.front().is_fn_ptr
@@ -143,7 +145,8 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
                                                                           fn.results.front().fn_variadic,
                                                                           fn.results.front().fn_results)
                                                             : lower(file, fn.return_type, fn.type_package, fn.is_struct,
-                                                                    fn.indirections, false, 0, false)));
+                                                                    fn.indirections, result_array,
+                                                                    result_array ? fn.results.front().array_len : 0, false)));
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (const Param &param : fn.params) {
@@ -736,7 +739,8 @@ void CodeGen::prepare_structs() {
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
             const auto *item = std::get_if<StructDecl>(&decl.data);
-            if (item == nullptr || item->name.empty() || tag_id(node.file_id, item->name) >= 0) {
+            if (item == nullptr || item->name.empty() || !item->type_params.empty() ||
+                tag_id(node.file_id, item->name) >= 0) {
                 continue;
             }
             const int id = static_cast<int>(structs_.size());
@@ -752,7 +756,7 @@ void CodeGen::prepare_structs() {
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
             const auto *item = std::get_if<StructDecl>(&decl.data);
-            if (item == nullptr || item->name.empty()) {
+            if (item == nullptr || item->name.empty() || !item->type_params.empty()) {
                 continue;
             }
             const int id = tag_id(node.file_id, item->name);
@@ -1283,11 +1287,13 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         low.fn_ret_struct = binding.fn_ret_struct;
         low.fn_results = binding.fn_results;
         low.enum_id = binding.enum_id;
-        if (const auto *global = llvm::dyn_cast<llvm::GlobalVariable>(binding.value)) {
-            low.type = global->getValueType();
-        } else {
-            low.type = leaf_type(low.depth, low.elem_char, low.struct_id, low.elem_bool, low.elem_bits, low.elem_float);
+        if (binding.value != nullptr) {
+            if (const auto *global = llvm::dyn_cast<llvm::GlobalVariable>(binding.value)) {
+                low.type = global->getValueType();
+                return low;
+            }
         }
+        low.type = leaf_type(low.depth, low.elem_char, low.struct_id, low.elem_bool, low.elem_bits, low.elem_float);
         return low;
     };
     const auto find_global = [&](const std::string &name) -> const Binding * {

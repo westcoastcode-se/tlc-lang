@@ -4,6 +4,7 @@
 
 #include "sema.hpp"
 
+#include <deque>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -11,6 +12,21 @@
 #include <vector>
 
 namespace tlc {
+
+struct SpecArg {
+    bool is_value = false;
+    int value = 0;
+    std::string type_name;
+    std::string type_package;
+    bool is_struct = false;
+    bool is_enum = false;
+    int indirections = 0;
+    uint32_t optional = 0;
+    bool is_array = false;
+    int array_len = 0;
+    int struct_id = -1;
+    int enum_id = -1;
+};
 
 struct Symbol {
     std::string name;
@@ -25,6 +41,8 @@ struct Symbol {
     bool is_enum = false;
     bool is_typedef = false;
     bool is_struct_tag = false;
+    bool is_template = false;
+    const FunctionDecl *fn_template = nullptr;
     int const_value = 0;
     int function_id = 0;
     uint32_t package_file = 0;
@@ -72,6 +90,9 @@ class Checker {
         // Enum that tags a tlc union. Empty until check_unions resolves `tag_name`.
         std::string tag_name;
         int tag_enum = -1;
+        // Set on a specialization. Empty on a struct written in source.
+        std::string template_name;
+        std::vector<SpecArg> spec_args;
     };
 
     struct MethodInfo {
@@ -242,6 +263,60 @@ class Checker {
     const Symbol *find_export(uint32_t file_id, const std::string &name) const;
     const PackageNode *target_of(const PackageNode &from, const ImportDecl &import) const;
     SelectorTarget resolve_selector(const Expr::Selector &selector);
+
+    struct OwnedFn {
+        uint32_t file_id = 0;
+        FunctionDecl fn;
+    };
+    struct PendingAppend {
+        uint32_t file_id = 0;
+        TopDecl decl;
+    };
+    struct ConstBinding {
+        int value = 0;
+        bool is_static = false;
+    };
+
+    TranslationUnit *primary_unit_ = nullptr;
+    std::deque<OwnedFn> owned_fns_;
+    std::deque<StructDecl> owned_structs_;
+    std::unordered_map<uint32_t, std::unordered_map<std::string, FunctionDecl *>> fn_templates_;
+    std::unordered_map<uint32_t, std::unordered_map<std::string, StructDecl *>> struct_templates_;
+    std::unordered_map<uint32_t, std::unordered_map<std::string, ConstBinding>> const_values_;
+    std::deque<OwnedFn> deferred_methods_;
+    std::vector<PendingAppend> pending_appends_;
+    std::unordered_set<std::string> spec_checking_;
+    std::unordered_set<std::string> spec_ready_;
+    std::unordered_map<uint32_t, std::unordered_map<std::string, Symbol>> spec_symbols_;
+    std::unordered_set<std::string> static_spec_keys_;
+
+    void collect_templates(TranslationUnit &unit, uint32_t file_id);
+    void fold_early_consts(TranslationUnit &unit, uint32_t file_id);
+    std::optional<int> lookup_const_value(const std::string &name);
+    void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
+                         int &indirections, uint32_t &optional, bool &is_array, int &array_len,
+                         std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);
+    const StructDecl *find_struct_template(const std::string &name, uint32_t &owner) const;
+    std::optional<Type> maybe_generic_call(Expr &expr, bool used);
+    void drain_deferred();
+    void flush_appends();
+    TranslationUnit *unit_for(uint32_t file_id);
+    bool spell_type(const Type &type, SpecArg &out) const;
+    std::string mangle_spec(const std::string &base, const std::vector<SpecArg> &args) const;
+    std::string specialize_type_app(const std::string &package, const std::string &name, const std::vector<TypeArg> &args,
+                                    SourceLoc loc);
+    bool bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg &out, SourceLoc loc);
+    void expose_bounds(uint32_t owner, const std::vector<SpecArg> &bounds);
+    void substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, std::string &type_name,
+                         std::string &type_package, bool &is_struct, bool &is_enum, int &indirections, uint32_t &optional,
+                         bool &is_array, int &array_len, std::string &array_len_name, std::vector<TypeArg> &type_args,
+                         SourceLoc loc);
+    void substitute_expr(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Expr &expr);
+    void substitute_stmt(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Stmt &stmt);
+    void substitute_function(FunctionDecl &fn, const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds);
+    void check_isolated(uint32_t file, const FunctionDecl &fn);
+    void queue_spec(uint32_t file, FunctionDecl fn);
+    bool generic_struct_name(uint32_t file, const std::string &name) const;
 };
 
 } // namespace tlc

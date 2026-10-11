@@ -35,7 +35,8 @@ void dump_stmt(const Stmt &stmt, std::string &out, int indent);
 void dump_function(const FunctionDecl &fn, std::string &out, int indent);
 
 std::string type_text(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
-                       int indirections, bool is_array, int array_len, uint32_t optional = 0) {
+                       int indirections, bool is_array, int array_len, uint32_t optional = 0,
+                       const std::string &len_name = {}) {
     std::string text;
     if (!package.empty()) {
         text = package + "." + name;
@@ -54,7 +55,9 @@ std::string type_text(const std::string &name, const std::string &package, bool 
     }
     if (is_array) {
         text += '[';
-        if (array_len >= 0) {
+        if (!len_name.empty()) {
+            text += len_name;
+        } else if (array_len >= 0) {
             text += std::to_string(array_len);
         }
         text += ']';
@@ -137,7 +140,7 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
         }
     } else {
         out += type_text(var.type_name, var.type_package, var.is_struct, var.is_enum, var.indirections, var.is_array,
-                         var.array_len, var.optional);
+                         var.array_len, var.optional, var.array_len_name);
         if (var.ptr_to_array) {
             out += " ptrarr";
         }
@@ -640,5 +643,267 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
     out += ")\n";
     return out;
 }
+
+VarDecl clone_var(const VarDecl &var) {
+    VarDecl copy;
+    copy.loc = var.loc;
+    copy.name = var.name;
+    copy.type_name = var.type_name;
+    copy.type_package = var.type_package;
+    copy.is_struct = var.is_struct;
+    copy.is_enum = var.is_enum;
+    copy.indirections = var.indirections;
+    copy.optional = var.optional;
+    copy.is_array = var.is_array;
+    copy.array_len = var.array_len;
+    copy.array_len_name = var.array_len_name;
+    copy.type_args = var.type_args;
+    copy.ptr_to_array = var.ptr_to_array;
+    copy.is_fn_ptr = var.is_fn_ptr;
+    copy.ret_indirections = var.ret_indirections;
+    copy.ret_optional = var.ret_optional;
+    copy.fn_params = var.fn_params;
+    copy.fn_variadic = var.fn_variadic;
+    copy.fn_results = var.fn_results;
+    copy.init = var.init ? clone_expr(*var.init) : nullptr;
+    copy.exported = var.exported;
+    copy.is_static = var.is_static;
+    copy.is_extern = var.is_extern;
+    copy.extern_c = var.extern_c;
+    copy.inferred = var.inferred;
+    copy.is_const_decl = var.is_const_decl;
+    copy.has_const = var.has_const;
+    copy.const_value = var.const_value;
+    return copy;
+}
+
+std::unique_ptr<Expr> clone_expr(const Expr &expr) {
+    auto out = std::make_unique<Expr>();
+    std::visit(
+        [&](const auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Unary>) {
+                Expr::Unary copy;
+                copy.loc = node.loc;
+                copy.op = node.op;
+                copy.postfix = node.postfix;
+                copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                Expr::Binary copy;
+                copy.loc = node.loc;
+                copy.op = node.op;
+                copy.lhs = node.lhs ? clone_expr(*node.lhs) : nullptr;
+                copy.rhs = node.rhs ? clone_expr(*node.rhs) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                Expr::Assign copy;
+                copy.loc = node.loc;
+                copy.lhs = node.lhs ? clone_expr(*node.lhs) : nullptr;
+                copy.rhs = node.rhs ? clone_expr(*node.rhs) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                Expr::Call copy;
+                copy.loc = node.loc;
+                copy.callee = node.callee ? clone_expr(*node.callee) : nullptr;
+                copy.type_args = node.type_args;
+                for (const auto &arg : node.args) {
+                    copy.args.push_back(arg ? clone_expr(*arg) : nullptr);
+                }
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                Expr::Selector copy;
+                copy.loc = node.loc;
+                copy.base = node.base ? clone_expr(*node.base) : nullptr;
+                copy.field = node.field;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                Expr::Index copy;
+                copy.loc = node.loc;
+                copy.base = node.base ? clone_expr(*node.base) : nullptr;
+                copy.index = node.index ? clone_expr(*node.index) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                Expr::Sizeof copy;
+                copy.loc = node.loc;
+                copy.on_type = node.on_type;
+                copy.type_name = node.type_name;
+                copy.type_package = node.type_package;
+                copy.is_struct = node.is_struct;
+                copy.is_enum = node.is_enum;
+                copy.indirections = node.indirections;
+                copy.optional = node.optional;
+                copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                Expr::Cast copy;
+                copy.loc = node.loc;
+                copy.type_name = node.type_name;
+                copy.type_package = node.type_package;
+                copy.is_struct = node.is_struct;
+                copy.is_enum = node.is_enum;
+                copy.indirections = node.indirections;
+                copy.optional = node.optional;
+                copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Func>) {
+                Expr::Func copy;
+                copy.loc = node.loc;
+                if (node.decl) {
+                    copy.decl = std::make_unique<FunctionDecl>(clone_function(*node.decl));
+                }
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                Expr::Init copy;
+                copy.loc = node.loc;
+                copy.struct_id = node.struct_id;
+                for (const Expr::FieldInit &field : node.fields) {
+                    Expr::FieldInit cloned;
+                    cloned.loc = field.loc;
+                    cloned.field = field.field;
+                    cloned.value = field.value ? clone_expr(*field.value) : nullptr;
+                    copy.fields.push_back(std::move(cloned));
+                }
+                out->data = std::move(copy);
+            } else {
+                out->data = node;
+            }
+        },
+        expr.data);
+    return out;
+}
+
+std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
+    auto out = std::make_unique<Stmt>();
+    std::visit(
+        [&](const auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                Stmt::Block copy;
+                copy.loc = node.loc;
+                for (const auto &child : node.statements) {
+                    copy.statements.push_back(child ? clone_stmt(*child) : nullptr);
+                }
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                Stmt::Return copy;
+                copy.loc = node.loc;
+                copy.value = node.value ? clone_expr(*node.value) : nullptr;
+                for (const auto &extra : node.extra) {
+                    copy.extra.push_back(extra ? clone_expr(*extra) : nullptr);
+                }
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                Stmt::Expression copy;
+                copy.loc = node.loc;
+                copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                Stmt::If copy;
+                copy.loc = node.loc;
+                copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
+                copy.then_arm = node.then_arm ? clone_stmt(*node.then_arm) : nullptr;
+                copy.else_arm = node.else_arm ? clone_stmt(*node.else_arm) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::While>) {
+                Stmt::While copy;
+                copy.loc = node.loc;
+                copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
+                copy.body = node.body ? clone_stmt(*node.body) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                Stmt::For copy;
+                copy.loc = node.loc;
+                copy.init = node.init ? clone_stmt(*node.init) : nullptr;
+                copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
+                copy.step = node.step ? clone_expr(*node.step) : nullptr;
+                copy.body = node.body ? clone_stmt(*node.body) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
+                Stmt::DoWhile copy;
+                copy.loc = node.loc;
+                copy.body = node.body ? clone_stmt(*node.body) : nullptr;
+                copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                Stmt::Switch copy;
+                copy.loc = node.loc;
+                copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
+                copy.body = node.body ? clone_stmt(*node.body) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                Stmt::Case copy;
+                copy.loc = node.loc;
+                copy.value = node.value ? clone_expr(*node.value) : nullptr;
+                copy.stmt = node.stmt ? clone_stmt(*node.stmt) : nullptr;
+                copy.is_default = node.is_default;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                Stmt::Decl copy;
+                copy.loc = node.loc;
+                for (const VarDecl &var : node.vars) {
+                    copy.vars.push_back(clone_var(var));
+                }
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::Func>) {
+                Stmt::Func copy;
+                if (node.decl) {
+                    copy.decl = std::make_unique<FunctionDecl>(clone_function(*node.decl));
+                }
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                Stmt::Defer copy;
+                copy.loc = node.loc;
+                copy.call = node.call ? clone_expr(*node.call) : nullptr;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                Stmt::Bind copy;
+                copy.loc = node.loc;
+                copy.names = node.names;
+                copy.name_locs = node.name_locs;
+                copy.value = node.value ? clone_expr(*node.value) : nullptr;
+                copy.is_var = node.is_var;
+                copy.is_define = node.is_define;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                Stmt::Assert copy;
+                copy.loc = node.loc;
+                copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
+                copy.message = node.message;
+                out->data = std::move(copy);
+            } else {
+                out->data = node;
+            }
+        },
+        stmt.data);
+    return out;
+}
+
+FunctionDecl clone_function(const FunctionDecl &fn) {
+    FunctionDecl copy;
+    copy.loc = fn.loc;
+    copy.name = fn.name;
+    copy.return_type = fn.return_type;
+    copy.type_package = fn.type_package;
+    copy.is_struct = fn.is_struct;
+    copy.is_enum = fn.is_enum;
+    copy.indirections = fn.indirections;
+    copy.optional = fn.optional;
+    copy.results = fn.results;
+    copy.params = fn.params;
+    copy.body = fn.body ? clone_stmt(*fn.body) : nullptr;
+    copy.exported = fn.exported;
+    copy.is_static = fn.is_static;
+    copy.is_extern = fn.is_extern;
+    copy.extern_c = fn.extern_c;
+    copy.variadic = fn.variadic;
+    copy.method_struct = fn.method_struct;
+    copy.type_params = fn.type_params;
+    copy.inferred = fn.inferred;
+    copy.elaborated = fn.elaborated;
+    return copy;
+}
+
+StructDecl clone_struct(const StructDecl &item) { return item; }
 
 } // namespace tlc

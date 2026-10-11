@@ -45,6 +45,22 @@ void CodeGen::declare_file(const PackageNode &node) {
     FileSymbols &file = files_[node.file_id];
     const bool entry = node.file_id == entry_file_;
     for (const auto &[name, acc] : functions) {
+        if (!acc.fn->type_params.empty()) {
+            continue;
+        }
+        if (!acc.fn->method_struct.empty()) {
+            bool method_template = false;
+            for (const TopDecl &decl : node.unit.decls) {
+                const auto *item = std::get_if<StructDecl>(&decl.data);
+                if (item != nullptr && item->name == acc.fn->method_struct && !item->type_params.empty()) {
+                    method_template = true;
+                    break;
+                }
+            }
+            if (method_template) {
+                continue;
+            }
+        }
         const bool many = acc.fn->results.size() > 1;
         const bool returns_void = !many && acc.fn->return_type == "void" && acc.fn->indirections == 0 && !acc.fn->is_struct &&
                                   acc.fn->type_package.empty();
@@ -119,6 +135,15 @@ void CodeGen::declare_file(const PackageNode &node) {
     for (const TopDecl &decl : node.unit.decls) {
         const auto *var = std::get_if<VarDecl>(&decl.data);
         if (var == nullptr || var->name.empty() || file.globals.contains(var->name)) {
+            continue;
+        }
+        if (var->is_const_decl) {
+            Binding binding;
+            binding.immediate = true;
+            binding.const_value = var->const_value;
+            binding.elem_bits = 32;
+            binding.is_static = var->is_static;
+            file.globals.emplace(var->name, binding);
             continue;
         }
         const SymbolForm form =
@@ -250,6 +275,12 @@ std::optional<int32_t> CodeGen::fold_global(uint32_t file, const std::string &na
             continue;
         }
         if (global->second.is_static && !(allow_local_static && id == file)) {
+            continue;
+        }
+        if (global->second.immediate) {
+            return global->second.const_value;
+        }
+        if (global->second.value == nullptr) {
             continue;
         }
         const auto *variable = llvm::dyn_cast<llvm::GlobalVariable>(global->second.value);
@@ -640,6 +671,10 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
 
 void CodeGen::apply_initializer(const VarDecl &var) {
     FileSymbols &file = files_[current_file_];
+    if (var.is_const_decl) {
+        file.folded.insert(var.name);
+        return;
+    }
     if (var.is_extern && !var.init) {
         return;
     }
@@ -735,6 +770,9 @@ bool CodeGen::param_is_trait(uint32_t file, const Param &param) const {
 }
 
 bool CodeGen::function_is_generic(uint32_t file, const FunctionDecl &fn) const {
+    if (!fn.type_params.empty()) {
+        return true;
+    }
     if (!fn.method_struct.empty()) {
         return false;
     }
@@ -1360,6 +1398,15 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         value.enum_id = call.enum_id;
         return value;
     };
+    if (inst->getType()->isArrayTy() && function_ != nullptr) {
+        auto *array_ty = llvm::cast<llvm::ArrayType>(inst->getType());
+        llvm::IRBuilder<> allocas(&function_->getEntryBlock(), function_->getEntryBlock().begin());
+        llvm::AllocaInst *slot = allocas.CreateAlloca(array_ty, nullptr, "arr.ret");
+        builder_.CreateStore(inst, slot);
+        llvm::Value *first = builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(0)});
+        return tagged({first, call.depth + 1, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool,
+                       call.elem_bits, call.elem_unsigned});
+    }
     if (call.depth == 0 && call.elem_bool) {
         return tagged({builder_.CreateZExt(inst, i32()), 0});
     }
@@ -1929,6 +1976,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (binding->is_generic) {
                     error(node.loc, "not supported yet");
                     return {zero(), 0};
+                }
+                if (binding->immediate) {
+                    return value_of_binding(*binding);
                 }
                 if (binding->value == nullptr) {
                     error(node.loc, "undeclared identifier");
@@ -2823,6 +2873,22 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         return;
                     }
                     builder_.CreateRet(aggregate);
+                    return;
+                }
+                if (return_type_ != nullptr && return_type_->isArrayTy() && node.value != nullptr) {
+                    const auto *name = std::get_if<Expr::Name>(&node.value->data);
+                    const Binding *binding = name == nullptr ? nullptr : lookup(name->text);
+                    if (binding == nullptr || !binding->is_array || binding->value == nullptr) {
+                        error(node.loc, "not supported yet");
+                        return;
+                    }
+                    llvm::Value *loaded = builder_.CreateLoad(return_type_, binding->value);
+                    if (!terminated()) {
+                        emit_defers_from(0);
+                    }
+                    if (!terminated()) {
+                        builder_.CreateRet(loaded);
+                    }
                     return;
                 }
                 llvm::Value *ret = nullptr;

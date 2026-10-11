@@ -52,6 +52,9 @@ struct Binding {
     int trait_id = -1;
     bool is_generic = false;
     bool is_static = false;
+    // `const name = expr`. `value` is null and `const_value` is the folded integer.
+    bool immediate = false;
+    int const_value = 0;
     const FunctionDecl *decl = nullptr;
     bool elem_float = false;
     llvm::FunctionType *fn_ty = nullptr;
@@ -563,6 +566,9 @@ class CodeGen {
         return {loaded, 0};
     }
     TypedValue value_of_binding(const Binding &binding) {
+        if (binding.immediate) {
+            return {const_i32(binding.const_value), 0};
+        }
         if (binding.is_function) {
             TypedValue value{binding.value, binding.depth, binding.elem_char, binding.struct_id, false, binding.elem_void,
                              binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};

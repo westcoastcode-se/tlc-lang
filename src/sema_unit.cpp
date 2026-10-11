@@ -14,6 +14,37 @@ namespace tlc {
 void Checker::declare_globals(const TranslationUnit &unit) {
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+            if (!fn->type_params.empty()) {
+                if (fn->is_extern || fn->extern_c || fn->variadic || !fn->method_struct.empty()) {
+                    error(fn->loc, "not supported yet");
+                }
+                FunctionDecl *stable = nullptr;
+                const auto file = fn_templates_.find(file_id_);
+                if (file != fn_templates_.end()) {
+                    const auto found = file->second.find(fn->name);
+                    if (found != file->second.end()) {
+                        stable = found->second;
+                    }
+                }
+                Symbol symbol;
+                symbol.name = fn->name;
+                symbol.is_function = true;
+                symbol.is_template = true;
+                symbol.fn_template = stable;
+                symbol.has_body = fn->body != nullptr;
+                symbol.package_file = file_id_;
+                symbol.type = type_function(type_invalid(), {});
+                if (fn->is_static) {
+                    statics_[file_id_].insert_or_assign(fn->name, symbol);
+                    declare(std::move(symbol), fn->loc);
+                } else if (remember_shared(symbol, fn->loc)) {
+                    declare(std::move(symbol), fn->loc);
+                }
+                continue;
+            }
+            if (!fn->method_struct.empty() && generic_struct_name(file_id_, fn->method_struct)) {
+                continue;
+            }
             std::vector<Type> params;
             for (const Param &param : fn->params) {
                 params.push_back(type_of_param(param));
@@ -140,6 +171,48 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 declare(std::move(symbol), fn->loc);
             }
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (var->is_const_decl) {
+                if (var->is_extern) {
+                    error(var->loc, "not supported yet");
+                    continue;
+                }
+                VarDecl &written = const_cast<VarDecl &>(*var);
+                if (!written.has_const) {
+                    if (written.init == nullptr) {
+                        error(written.loc, "type mismatch");
+                        continue;
+                    }
+                    const Type got = check_expr(*written.init, true);
+                    const std::optional<int> value = fold_int(*written.init);
+                    if (got.kind == TypeKind::Invalid) {
+                        continue;
+                    }
+                    if (!is_integer(got) && got.kind != TypeKind::Bool && !is_c_enum(got)) {
+                        error(written.loc, "type mismatch");
+                        continue;
+                    }
+                    if (!value) {
+                        error(written.loc, "not supported yet");
+                        continue;
+                    }
+                    written.has_const = true;
+                    written.const_value = *value;
+                }
+                const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static};
+                Symbol symbol;
+                symbol.name = written.name;
+                symbol.type = type_int();
+                symbol.is_constant = true;
+                symbol.const_value = written.const_value;
+                symbol.package_file = file_id_;
+                if (written.is_static) {
+                    statics_[file_id_].insert_or_assign(written.name, symbol);
+                    declare(std::move(symbol), written.loc);
+                } else if (remember_shared(symbol, written.loc)) {
+                    declare(std::move(symbol), written.loc);
+                }
+                continue;
+            }
             Type alias;
             if (package_typedef(file_id_, var->name, alias) || package_trait(file_id_, var->name) >= 0) {
                 error(var->loc, "redefinition");
@@ -181,6 +254,10 @@ void Checker::check_globals(const TranslationUnit &unit) {
     std::unordered_set<std::string> tests;
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+            if (!fn->type_params.empty() ||
+                (!fn->method_struct.empty() && generic_struct_name(file_id_, fn->method_struct))) {
+                continue;
+            }
             check_function(*fn);
         } else if (const auto *test = std::get_if<TestDecl>(&decl.data)) {
             if (!test->name.empty() && !tests.insert(test->name).second) {
@@ -212,6 +289,8 @@ void Checker::check_globals(const TranslationUnit &unit) {
 }
 
 void Checker::analyze(const TranslationUnit &unit) {
+    primary_unit_ = const_cast<TranslationUnit *>(&unit);
+    collect_templates(const_cast<TranslationUnit &>(unit), 0);
     register_structs(unit, 0);
     register_enums(unit, 0);
     register_traits(unit, 0);
@@ -219,6 +298,8 @@ void Checker::analyze(const TranslationUnit &unit) {
     check_unions();
     publish_exports(unit, 0);
     analyze_unit(unit, 0, nullptr);
+    flush_appends();
+    primary_unit_ = nullptr;
 }
 
 const PackageNode *Checker::find_node(uint32_t file_id) const {
@@ -288,6 +369,29 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             if (!fn->method_struct.empty()) {
                 continue;
             }
+            if (!fn->type_params.empty()) {
+                if (!fn->exported || fn->is_static || fn->name.empty()) {
+                    continue;
+                }
+                FunctionDecl *stable = nullptr;
+                const auto file = fn_templates_.find(file_id);
+                if (file != fn_templates_.end()) {
+                    const auto found = file->second.find(fn->name);
+                    if (found != file->second.end()) {
+                        stable = found->second;
+                    }
+                }
+                Symbol symbol;
+                symbol.name = fn->name;
+                symbol.is_function = true;
+                symbol.is_template = true;
+                symbol.fn_template = stable;
+                symbol.has_body = fn->body != nullptr;
+                symbol.package_file = file_id;
+                symbol.type = type_function(type_invalid(), {});
+                exports_[file_id].insert_or_assign(fn->name, std::move(symbol));
+                continue;
+            }
             if (!fn->exported || fn->is_static || fn->name.empty()) {
                 continue;
             }
@@ -326,6 +430,19 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 found->second.has_body = true;
             }
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (var->is_const_decl) {
+                if (!var->exported || var->is_static || var->name.empty() || !var->has_const) {
+                    continue;
+                }
+                Symbol symbol;
+                symbol.name = var->name;
+                symbol.type = type_int();
+                symbol.is_constant = true;
+                symbol.const_value = var->const_value;
+                symbol.package_file = file_id;
+                exports_[file_id].insert_or_assign(var->name, std::move(symbol));
+                continue;
+            }
             if (var->exported && var->is_extern) {
                 error(var->loc, "export extern");
             }
@@ -461,6 +578,7 @@ void Checker::analyze_unit(const TranslationUnit &unit, uint32_t file_id, const 
     }
     declare_globals(unit);
     check_globals(unit);
+    drain_deferred();
     pop();
 }
 
@@ -488,11 +606,15 @@ void Checker::check_unit(const TranslationUnit &unit, uint32_t file_id, const Pa
         }
     }
     check_globals(unit);
+    drain_deferred();
     pop();
 }
 
 void Checker::analyze_graph(const PackageGraph &graph) {
     graph_ = &graph;
+    for (const PackageNode &node : graph.nodes) {
+        collect_templates(const_cast<TranslationUnit &>(node.unit), node.file_id);
+    }
     if (!graph.nodes.empty()) {
         const uint32_t entry = graph.nodes.front().file_id;
         for (const PackageNode &node : graph.nodes) {
@@ -509,6 +631,9 @@ void Checker::analyze_graph(const PackageGraph &graph) {
     }
     for (const PackageNode &node : graph.nodes) {
         declare_struct_tags(node.unit, node.file_id);
+    }
+    for (const PackageNode &node : graph.nodes) {
+        fold_early_consts(const_cast<TranslationUnit &>(node.unit), node.file_id);
     }
     define_struct_fields();
     for (const PackageNode &node : graph.nodes) {
@@ -570,6 +695,7 @@ void Checker::analyze_graph(const PackageGraph &graph) {
     for (const PackageNode &node : graph.nodes) {
         check_unit(node.unit, node.file_id, &node);
     }
+    flush_appends();
     graph_ = nullptr;
 }
 

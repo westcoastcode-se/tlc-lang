@@ -48,7 +48,28 @@ func main() int {
 }
 ```
 
-Structs are passed and returned by value. An array parameter becomes a pointer, both as `a int[]` and as `a int[4]`.
+A generic function names its parameters in brackets. `T type` is a type. `N int` is a compile-time integer. `T Shape` is a type that must have the methods of the trait `Shape`. One body is specialized for each call. There is no `impl` and no runtime table.
+
+```c
+func id[T type](value T) T {
+    return value;
+}
+
+func repeat[N int, T type](value T) [N]T {
+    assert(N > 0, "empty");
+    var out [N]T;
+    out[0] = value;
+    return out;
+}
+
+func main() int {
+    return id(40) + repeat[4](2)[0];
+}
+```
+
+`id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` writes the type. A type that cannot be inferred is `type mismatch`. A generic used as a value, and `extern` on a generic, are `not supported yet`. `sizeof(T)` and `assert(N > 0, "empty")` see the concrete type and the integer.
+
+Structs are passed and returned by value. An array parameter becomes a pointer, both as `a int[]` and as `a int[4]`. A generic may return an array, `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
 
 A function cannot return an array. There is one `main`.
 

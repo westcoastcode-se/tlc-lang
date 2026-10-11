@@ -504,6 +504,24 @@ std::unique_ptr<Expr> Parser::parse_postfix() {
             expr = make_expr(std::move(selector));
             continue;
         }
+        if (check(TokenKind::LBracket) && bracket_then_paren()) {
+            Expr::Call call;
+            call.loc = expr_loc(*expr);
+            call.callee = std::move(expr);
+            call.type_args = parse_type_args();
+            expect(TokenKind::LParen, "expected '('");
+            if (!check(TokenKind::RParen)) {
+                while (!check(TokenKind::RParen) && !eof()) {
+                    call.args.push_back(parse_assignment());
+                    if (!eat(TokenKind::Comma)) {
+                        break;
+                    }
+                }
+            }
+            expect(TokenKind::RParen, "expected ')'");
+            expr = make_expr(std::move(call));
+            continue;
+        }
         if (eat(TokenKind::LBracket)) {
             Expr::Index index;
             index.loc = expr_loc(*expr);

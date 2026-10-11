@@ -395,6 +395,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
+                if (symbol->is_template) {
+                    error(node.loc, "not supported yet");
+                    return type_invalid();
+                }
                 if (symbol->is_function && symbol->name == "va" && is_std_builtin_file(symbol->package_file)) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
@@ -753,6 +757,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 const bool deferring = checking_defer_;
                 if (deferring) {
                     checking_defer_ = false;
+                }
+                if (node.callee != nullptr) {
+                    if (const std::optional<Type> generic = maybe_generic_call(const_cast<Expr &>(expr), used)) {
+                        return *generic;
+                    }
                 }
                 if (node.callee != nullptr && is_builtin_va_call(*node.callee)) {
                     if (deferring || !variadic_function_) {
@@ -1494,6 +1503,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                 auto supplied = [&](const Expr &value, const Type &want) {
                     if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
                         return check_init(const_cast<Expr::Init &>(*init), want);
+                    }
+                    if (want.kind == TypeKind::Array) {
+                        return check_raw(value, true);
                     }
                     return check_expr(value, true);
                 };

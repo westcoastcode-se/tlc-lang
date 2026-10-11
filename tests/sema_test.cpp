@@ -3235,5 +3235,43 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
+    {
+        const std::string errors = diagnose(
+            "func id[T type](value T) T { return value; }\n"
+            "func main() int { var f = id; return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func weird[T type](value int) int { return value; }\n"
+            "func main() int { return weird(1); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() int; };\n"
+            "type Point struct { x int; y int; };\n"
+            "func id[T Shape](value T) int { return 1; }\n"
+            "func main() int { var p Point; return id(p); }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern func id[T type](value T) T;\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n int; };\n"
+            "func Vec::get[U type](self *this) int { return self.n; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
     return check.failed;
 }

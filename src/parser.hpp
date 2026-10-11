@@ -57,6 +57,7 @@ class Parser {
 
     struct ArrayMark {
         bool is_array = false;
+        std::string len_name;
         int length = 0;
     };
 
@@ -87,6 +88,8 @@ class Parser {
         uint32_t optional = 0;
         bool is_array = false;
         int array_len = 0;
+        std::string array_len_name;
+        std::vector<TypeArg> type_args;
         // `*[4]i32`: one pointer outside the array.
         bool ptr_to_array = false;
         bool is_fn_ptr = false;
@@ -123,6 +126,13 @@ class Parser {
     PlacedType parse_func_type();
     void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern, bool extern_c);
     ArrayMark parse_array_suffix(bool allow_unsized);
+    bool bracket_then_paren() const;
+    bool looks_like_type_params() const;
+    std::vector<TypeParam> parse_type_params();
+    std::vector<TypeArg> parse_type_args();
+    TypeArg parse_one_type_arg();
+    bool primitive_type_name(const std::string &name) const;
+    bool integer_constraint_name(const std::string &name) const;
     PlacedType parse_placed_type(bool allow_const, bool allow_array);
     // `var` and field types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
     // A pointer is prefix in every other position too: `*int`, `*const char`.
@@ -136,7 +146,7 @@ class Parser {
     // or `type Name go-type` for an alias.
     void parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c);
     void parse_type_def(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c, std::string name,
-                        SourceLoc name_loc);
+                        SourceLoc name_loc, std::vector<TypeParam> type_params);
     void parse_top_declaration(TranslationUnit &unit, bool file_scope_export_ok);
     std::unique_ptr<Stmt> parse_decl_stmt(bool file_scope);
     std::unique_ptr<Stmt> parse_statement();

@@ -1,0 +1,8 @@
+const N = 4;
+
+func main() int {
+    var buf [N]int;
+    buf[0] = 40;
+    buf[1] = 2;
+    return buf[0] + buf[1];
+}

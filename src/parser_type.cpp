@@ -372,6 +372,8 @@ std::vector<FieldDecl> Parser::parse_fields() {
         field.optional = type.optional;
         field.is_array = type.is_array;
         field.array_len = type.array_len;
+        field.array_len_name = type.array_len_name;
+        field.type_args = type.type_args;
         field.is_fn_ptr = type.is_fn_ptr;
         field.ret_indirections = type.ret_indirections;
         field.ret_optional = type.ret_optional;
@@ -544,6 +546,9 @@ Parser::PointerPrefix Parser::parse_pointer_prefix() {
 }
 
 Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array) {
+    if (check(TokenKind::LBracket)) {
+        return parse_go_type();
+    }
     if (at_func_type()) {
         return parse_func_type();
     }
@@ -617,7 +622,10 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     type.indirections = leading;
     type.optional = leading_optional;
     if (check(TokenKind::LBracket)) {
-        if (!allow_array) {
+        // `int[4]` and `int[N]` are arrays. `Vec[int]` and `Vec[4]` are type arguments.
+        if (!primitive_type_name(type.type_name) && !type.type_name.empty() && type.type_name != "invalid") {
+            type.type_args = parse_type_args();
+        } else if (!allow_array) {
             error_here("not supported yet");
             while (eat(TokenKind::LBracket)) {
                 while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::Comma) &&
@@ -630,6 +638,7 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
             const ArrayMark array = parse_array_suffix(true);
             type.is_array = array.is_array;
             type.array_len = array.length;
+            type.array_len_name = array.len_name;
         }
     }
     return type;
@@ -668,6 +677,9 @@ Parser::PlacedType Parser::parse_go_type() {
         take_base(type, parse_specifiers(false, false, true));
         type.indirections = outer;
         type.optional = outer_prefix.optional;
+        if (check(TokenKind::LBracket)) {
+            type.type_args = parse_type_args();
+        }
         return type;
     }
     // One star outside the brackets is a pointer to the array: `*[4]i32`.
@@ -679,6 +691,7 @@ Parser::PlacedType Parser::parse_go_type() {
     const ArrayMark array = parse_array_suffix(true);
     type.is_array = array.is_array;
     type.array_len = array.length;
+    type.array_len_name = array.len_name;
     const PointerPrefix inner_prefix = parse_pointer_prefix();
     const int inner = inner_prefix.count;
     if (check(TokenKind::LBracket)) {
@@ -702,6 +715,9 @@ Parser::PlacedType Parser::parse_go_type() {
     take_base(type, parse_specifiers(false, false, true));
     type.indirections = inner;
     type.optional = inner_prefix.optional;
+    if (check(TokenKind::LBracket)) {
+        type.type_args = parse_type_args();
+    }
     if (type.ptr_to_array && outer_prefix.optional != 0) {
         diags_.error(type.loc, "not supported yet");
     }
@@ -805,7 +821,9 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             param.ret_optional = type.ret_optional;
             param.fn_params = type.fn_params;
             param.fn_variadic = type.fn_variadic;
-        param.fn_results = type.fn_results;
+            param.fn_results = type.fn_results;
+            param.array_len_name = type.array_len_name;
+            param.type_args = type.type_args;
             params.push_back(std::move(param));
             if (!eat(TokenKind::Comma)) {
                 break;
@@ -835,6 +853,10 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
     slot.fn_params = type.fn_params;
     slot.fn_variadic = type.fn_variadic;
     slot.fn_results = type.fn_results;
+    slot.is_array = type.is_array;
+    slot.array_len = type.array_len;
+    slot.array_len_name = type.array_len_name;
+    slot.type_args = type.type_args;
     fn.results.push_back(std::move(slot));
 }
 
@@ -896,6 +918,12 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         }
     } else {
         error_here("expected an identifier");
+    }
+    if (fn.method_struct.empty() && check(TokenKind::LBracket)) {
+        fn.type_params = parse_type_params();
+    } else if (!fn.method_struct.empty() && check(TokenKind::LBracket)) {
+        diags_.error(peek().loc, "not supported yet");
+        parse_type_params();
     }
     fn.params = parse_params(extern_c, fn.variadic, fn.method_struct);
     parse_results(fn);
@@ -1058,6 +1086,10 @@ Parser::ArrayMark Parser::parse_array_suffix(bool allow_unsized) {
         mark.length = static_cast<int>(peek().int_value);
         ++pos_;
         expect(TokenKind::RBracket, "expected ']'");
+    } else if (check(TokenKind::Identifier)) {
+        mark.len_name = peek().text;
+        ++pos_;
+        expect(TokenKind::RBracket, "expected ']'");
     } else {
         diags_.error(loc, "not supported yet");
         while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::RParen) &&
@@ -1077,6 +1109,239 @@ Parser::ArrayMark Parser::parse_array_suffix(bool allow_unsized) {
         }
     }
     return mark;
+}
+
+bool Parser::looks_like_type_params() const {
+    if (!check(TokenKind::LBracket)) {
+        return false;
+    }
+    int depth = 0;
+    bool named = false;
+    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
+        const TokenKind kind = peek(ahead).kind;
+        if (kind == TokenKind::LBracket) {
+            ++depth;
+            continue;
+        }
+        if (kind == TokenKind::RBracket) {
+            --depth;
+            if (depth == 0) {
+                const TokenKind next = peek(ahead + 1).kind;
+                return named && (next == TokenKind::KwStruct || next == TokenKind::KwEnum || next == TokenKind::KwTrait ||
+                                 next == TokenKind::KwUnion);
+            }
+            continue;
+        }
+        if (depth == 1 && !named) {
+            if (kind != TokenKind::Identifier) {
+                return false;
+            }
+            named = true;
+        }
+        if (ahead > 4096) {
+            return false;
+        }
+    }
+    return false;
+}
+
+bool Parser::bracket_then_paren() const {
+    if (!check(TokenKind::LBracket)) {
+        return false;
+    }
+    int depth = 0;
+    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
+        const TokenKind kind = peek(ahead).kind;
+        if (kind == TokenKind::LBracket) {
+            ++depth;
+        } else if (kind == TokenKind::RBracket) {
+            --depth;
+            if (depth == 0) {
+                return peek(ahead + 1).kind == TokenKind::LParen;
+            }
+        } else if (depth == 1 && (kind == TokenKind::Semicolon || kind == TokenKind::LBrace || kind == TokenKind::RBrace)) {
+            return false;
+        }
+        if (ahead > 4096) {
+            return false;
+        }
+    }
+    return false;
+}
+
+bool Parser::primitive_type_name(const std::string &name) const {
+    return name == "void" || name == "bool" || name == "char" || name == "short" || name == "int" || name == "long" ||
+           name == "float" || name == "double" || name == "uint" || name == "ulong" || name == "i8" || name == "u8" ||
+           name == "i16" || name == "u16" || name == "i32" || name == "u32" || name == "i64" || name == "u64" ||
+           name == "f32" || name == "f64" || name == "invalid";
+}
+
+bool Parser::integer_constraint_name(const std::string &name) const {
+    return name == "char" || name == "short" || name == "int" || name == "long" || name == "uint" || name == "ulong" ||
+           name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" ||
+           name == "i64" || name == "u64";
+}
+
+std::vector<TypeParam> Parser::parse_type_params() {
+    std::vector<TypeParam> params;
+    const SourceLoc loc = peek().loc;
+    expect(TokenKind::LBracket, "expected '['");
+    if (check(TokenKind::RBracket)) {
+        diags_.error(loc, "type mismatch");
+        ++pos_;
+        return params;
+    }
+    while (!check(TokenKind::RBracket) && !check(TokenKind::LBrace) && !check(TokenKind::LParen) && !eof()) {
+        TypeParam param;
+        param.loc = peek().loc;
+        if (!check(TokenKind::Identifier)) {
+            error_here("expected an identifier");
+            break;
+        }
+        param.name = peek().text;
+        ++pos_;
+        for (const TypeParam &prior : params) {
+            if (prior.name == param.name) {
+                diags_.error(param.loc, "redefinition");
+            }
+        }
+        if (eat(TokenKind::KwType)) {
+            param.is_type = true;
+        } else if (check(TokenKind::KwInt) || check(TokenKind::KwChar) || check(TokenKind::KwShort) ||
+                   check(TokenKind::KwLong)) {
+            param.is_value = true;
+            if (check(TokenKind::KwInt)) {
+                param.constraint = "int";
+            } else if (check(TokenKind::KwChar)) {
+                param.constraint = "char";
+            } else if (check(TokenKind::KwShort)) {
+                param.constraint = "short";
+            } else {
+                param.constraint = "long";
+            }
+            ++pos_;
+        } else if (check(TokenKind::Identifier) && integer_constraint_name(peek().text)) {
+            param.is_value = true;
+            param.constraint = peek().text;
+            ++pos_;
+        } else if (check(TokenKind::Identifier)) {
+            param.is_trait = true;
+            if (peek(1).kind == TokenKind::Dot && peek(2).kind == TokenKind::Identifier) {
+                param.constraint_package = peek().text;
+                param.constraint = peek(2).text;
+                pos_ += 3;
+            } else {
+                param.constraint = peek().text;
+                ++pos_;
+            }
+        } else {
+            error_here("expected a type");
+            break;
+        }
+        params.push_back(std::move(param));
+        if (!eat(TokenKind::Comma)) {
+            break;
+        }
+    }
+    expect(TokenKind::RBracket, "expected ']'");
+    return params;
+}
+
+TypeArg Parser::parse_one_type_arg() {
+    TypeArg arg;
+    arg.loc = peek().loc;
+    if (check(TokenKind::IntLiteral)) {
+        arg.is_value = true;
+        if (peek().suffix.is_unsigned || peek().suffix.bits == 8 || peek().suffix.bits == 16 || peek().suffix.bits == 64 ||
+            peek().int_value > 2147483647ULL) {
+            diags_.error(peek().loc, "type mismatch");
+        } else {
+            arg.has_value = true;
+            arg.value = static_cast<int>(peek().int_value);
+        }
+        ++pos_;
+        return arg;
+    }
+    if (check(TokenKind::LBracket)) {
+        arg.is_array = true;
+        const ArrayMark array = parse_array_suffix(false);
+        arg.array_len = array.length;
+        arg.array_len_name = array.len_name;
+        TypeArg element = parse_one_type_arg();
+        arg.type_name = std::move(element.type_name);
+        arg.type_package = std::move(element.type_package);
+        arg.is_struct = element.is_struct;
+        arg.is_enum = element.is_enum;
+        arg.indirections = element.indirections;
+        arg.optional = element.optional;
+        arg.args = std::move(element.args);
+        if (element.is_array) {
+            diags_.error(arg.loc, "not supported yet");
+        }
+        return arg;
+    }
+    const PointerPrefix prefix = parse_pointer_prefix();
+    arg.indirections = prefix.count;
+    arg.optional = prefix.optional;
+    if (check(TokenKind::KwInt) || check(TokenKind::KwChar) || check(TokenKind::KwShort) || check(TokenKind::KwLong) ||
+        check(TokenKind::KwBool) || check(TokenKind::KwFloat) || check(TokenKind::KwDouble) || check(TokenKind::KwVoid)) {
+        if (check(TokenKind::KwInt)) {
+            arg.type_name = "int";
+        } else if (check(TokenKind::KwChar)) {
+            arg.type_name = "char";
+        } else if (check(TokenKind::KwShort)) {
+            arg.type_name = "short";
+        } else if (check(TokenKind::KwLong)) {
+            arg.type_name = "long";
+        } else if (check(TokenKind::KwBool)) {
+            arg.type_name = "bool";
+        } else if (check(TokenKind::KwFloat)) {
+            arg.type_name = "float";
+        } else if (check(TokenKind::KwDouble)) {
+            arg.type_name = "double";
+        } else {
+            arg.type_name = "void";
+        }
+        ++pos_;
+    } else if (check(TokenKind::Identifier) && peek(1).kind == TokenKind::Dot && peek(2).kind == TokenKind::Identifier) {
+        arg.type_package = peek().text;
+        arg.type_name = peek(2).text;
+        pos_ += 3;
+    } else if (check(TokenKind::Identifier)) {
+        arg.type_name = peek().text;
+        ++pos_;
+    } else {
+        error_here("expected a type");
+        arg.type_name = "invalid";
+        return arg;
+    }
+    if (check(TokenKind::LBracket)) {
+        arg.args = parse_type_args();
+    }
+    return arg;
+}
+
+std::vector<TypeArg> Parser::parse_type_args() {
+    std::vector<TypeArg> args;
+    expect(TokenKind::LBracket, "expected '['");
+    if (check(TokenKind::RBracket)) {
+        diags_.error(peek().loc, "type mismatch");
+        ++pos_;
+        return args;
+    }
+    while (!check(TokenKind::RBracket) && !check(TokenKind::LBrace) && !check(TokenKind::LParen) &&
+           !check(TokenKind::Semicolon) && !eof()) {
+        const std::size_t before = pos_;
+        args.push_back(parse_one_type_arg());
+        if (pos_ == before) {
+            ++pos_;
+        }
+        if (!eat(TokenKind::Comma)) {
+            break;
+        }
+    }
+    expect(TokenKind::RBracket, "expected ']'");
+    return args;
 }
 
 } // namespace tlc

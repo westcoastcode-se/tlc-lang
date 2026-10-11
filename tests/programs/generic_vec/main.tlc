@@ -1,0 +1,14 @@
+type Vec[T type] struct {
+    data *T;
+    len int;
+};
+
+func Vec::get(self *this, i int) T {
+    return self.data[i];
+}
+
+func main() int {
+    var value = 42;
+    var v Vec[int] = {.data = &value, .len = 1};
+    return v.get(0);
+}

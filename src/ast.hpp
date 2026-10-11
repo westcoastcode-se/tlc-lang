@@ -13,6 +13,36 @@ namespace tlc {
 
 struct FunctionDecl;
 
+// One slot of `func id[T type, N int]`. `T type` is a type. `T Shape` is a trait.
+// `N int` is a compile-time integer.
+struct TypeParam {
+    SourceLoc loc{};
+    std::string name;
+    bool is_type = false;
+    bool is_value = false;
+    bool is_trait = false;
+    std::string constraint;
+    std::string constraint_package;
+};
+
+// One argument of `id[int](1)` or `Vec[int]`. A value argument is a folded integer or a constant name.
+struct TypeArg {
+    SourceLoc loc{};
+    bool is_value = false;
+    bool has_value = false;
+    int value = 0;
+    std::string type_name;
+    std::string type_package;
+    bool is_struct = false;
+    bool is_enum = false;
+    int indirections = 0;
+    uint32_t optional = 0;
+    bool is_array = false;
+    int array_len = 0;
+    std::string array_len_name;
+    std::vector<TypeArg> args;
+};
+
 struct Expr {
     struct Name {
         SourceLoc loc{};
@@ -44,6 +74,7 @@ struct Expr {
     struct Call {
         SourceLoc loc{};
         std::unique_ptr<Expr> callee;
+        std::vector<TypeArg> type_args;
         std::vector<std::unique_ptr<Expr>> args;
     };
     struct Selector {
@@ -160,6 +191,9 @@ struct FieldDecl {
     uint32_t optional = 0;
     bool is_array = false;
     int array_len = 0;
+    // `[N]int` when N is a name. Folded into `array_len` before code generation.
+    std::string array_len_name;
+    std::vector<TypeArg> type_args;
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
@@ -184,6 +218,7 @@ struct StructDecl {
     bool is_union = false;
     // Enum that selects the active field. Empty on an `extern(abi="c")` union.
     std::string tag_name;
+    std::vector<TypeParam> type_params;
     // The struct synthesized for an inline variant. Its name is not a type the program can write.
     bool anonymous = false;
 };
@@ -218,6 +253,8 @@ struct TypedefDecl {
     uint32_t optional = 0;
     bool is_array = false;
     int array_len = 0;
+    std::string array_len_name;
+    std::vector<TypeArg> type_args;
     bool exported = false;
     bool is_fn_ptr = false;
     int ret_indirections = 0;
@@ -238,6 +275,8 @@ struct VarDecl {
     uint32_t optional = 0;
     bool is_array = false;
     int array_len = 0;
+    std::string array_len_name;
+    std::vector<TypeArg> type_args;
     // The value is a pointer to the array, as in `*[4]i32`.
     bool ptr_to_array = false;
     bool is_fn_ptr = false;
@@ -254,6 +293,10 @@ struct VarDecl {
     bool extern_c = false;
     // `name := expr` at file scope. The type comes from the initializer.
     bool inferred = false;
+    // `const name = expr`. The value is folded and has no address.
+    bool is_const_decl = false;
+    bool has_const = false;
+    int const_value = 0;
 };
 
 struct Stmt {
@@ -359,6 +402,8 @@ struct Param {
     uint32_t optional = 0;
     bool is_array = false;
     int array_len = 0;
+    std::string array_len_name;
+    std::vector<TypeArg> type_args;
     bool is_const = false;
     bool is_receiver = false;
     bool is_fn_ptr = false;
@@ -376,6 +421,10 @@ struct ResultSlot {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    bool is_array = false;
+    int array_len = 0;
+    std::string array_len_name;
+    std::vector<TypeArg> type_args;
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
@@ -403,6 +452,7 @@ struct FunctionDecl {
     bool extern_c = false;
     bool variadic = false;
     std::string method_struct;
+    std::vector<TypeParam> type_params;
     // `(a, b) { ... }` takes its parameter and result types from the expected function pointer.
     bool inferred = false;
     bool elaborated = false;
@@ -451,6 +501,11 @@ struct TranslationUnit {
     std::vector<ImportDecl> imports;
     std::vector<TopDecl> decls;
 };
+
+std::unique_ptr<Expr> clone_expr(const Expr &expr);
+std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt);
+FunctionDecl clone_function(const FunctionDecl &fn);
+StructDecl clone_struct(const StructDecl &item);
 
 SourceLoc expr_loc(const Expr &expr);
 std::string dump_expr(const Expr &expr);

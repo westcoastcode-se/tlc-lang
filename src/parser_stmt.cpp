@@ -369,6 +369,8 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     var.optional = type.optional;
     var.is_array = type.is_array;
     var.array_len = type.array_len;
+    var.array_len_name = type.array_len_name;
+    var.type_args = type.type_args;
     var.ptr_to_array = type.ptr_to_array;
     var.is_fn_ptr = type.is_fn_ptr;
     var.ret_indirections = type.ret_indirections;
