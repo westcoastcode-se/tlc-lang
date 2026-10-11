@@ -225,6 +225,7 @@ class Checker {
     Type check_against(const Expr &expr, const Type &want);
     void check_stmt(const Stmt &stmt);
     void check_assert(SourceLoc loc, const Expr *cond, const std::string &message);
+    void check_test(const TestDecl &test);
     Type sizeof_operand(const Expr::Sizeof &node);
     std::optional<int> fold_int(const Expr &expr);
     void check_function(const FunctionDecl &fn);

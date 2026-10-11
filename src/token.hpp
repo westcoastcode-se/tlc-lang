@@ -56,6 +56,7 @@ enum class TokenKind {
     KwStaticAssert,
     KwStruct,
     KwSwitch,
+    KwTest,
     KwThreadLocal,
     KwTrue,
     KwTrait,

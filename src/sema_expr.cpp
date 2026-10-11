@@ -1187,6 +1187,31 @@ void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &m
     }
 }
 
+void Checker::check_test(const TestDecl &test) {
+    push_function();
+    const Type saved = return_type_;
+    const int saved_loops = loop_depth_;
+    auto saved_switches = std::move(switches_);
+    loop_depth_ = 0;
+    switches_.clear();
+    return_type_ = type_int();
+    if (test.body) {
+        if (const auto *block = std::get_if<Stmt::Block>(&test.body->data)) {
+            for (const auto &child : block->statements) {
+                if (child) {
+                    check_stmt(*child);
+                }
+            }
+        } else {
+            check_stmt(*test.body);
+        }
+    }
+    switches_ = std::move(saved_switches);
+    loop_depth_ = saved_loops;
+    return_type_ = saved;
+    pop();
+}
+
 std::optional<int> Checker::fold_int(const Expr &expr) {
     auto wrap = [](int64_t value) { return static_cast<int>(static_cast<uint32_t>(value)); };
     return std::visit(

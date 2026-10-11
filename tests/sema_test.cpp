@@ -3075,5 +3075,40 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
+    {
+        const std::string errors = diagnose(
+            "func add(a int, b int) int { return a + b; }\n"
+            "test \"add joins its arguments\" {\n"
+            "  if (add(2, 2) != 4) { return 1; }\n"
+            "}\n"
+            "test \"empty passes\" {}\n"
+            "func main() int { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "test \"same\" {}\n"
+            "test \"same\" {}\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  test \"inside\" {}\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "test \"void return\" { return; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "return type");
+    }
+
     return check.failed;
 }

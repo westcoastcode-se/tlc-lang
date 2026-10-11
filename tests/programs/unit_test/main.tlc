@@ -1,0 +1,16 @@
+func add(a int, b int) int {
+    return a + b;
+}
+
+test "add joins its arguments" {
+    if (add(2, 2) != 4) {
+        return 1;
+    }
+}
+
+test "empty passes" {
+}
+
+test "bad" {
+    return 1;
+}

@@ -293,6 +293,17 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "test \"add joins its arguments\" {\n"
+            "  return 1;\n"
+            "}\n"
+            "func main() int { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(test \"add joins its arguments\"");
+        EXPECT_HAS(check, parsed.dump, "(return (int 1))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "assert(sizeof(i32) == 4, \"i32 must be 4 bytes\");\n"
             "func main() int {\n"
             "  assert(1, \"kept\");\n"

@@ -178,9 +178,15 @@ void Checker::declare_globals(const TranslationUnit &unit) {
 }
 
 void Checker::check_globals(const TranslationUnit &unit) {
+    std::unordered_set<std::string> tests;
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
             check_function(*fn);
+        } else if (const auto *test = std::get_if<TestDecl>(&decl.data)) {
+            if (!test->name.empty() && !tests.insert(test->name).second) {
+                error(test->loc, "redefinition");
+            }
+            check_test(*test);
         } else if (const auto *item = std::get_if<AssertDecl>(&decl.data)) {
             check_assert(item->loc, item->cond.get(), item->message);
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {

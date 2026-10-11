@@ -60,6 +60,7 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"static_assert", TokenKind::KwStaticAssert},
     {"struct", TokenKind::KwStruct},
     {"switch", TokenKind::KwSwitch},
+    {"test", TokenKind::KwTest},
     {"thread_local", TokenKind::KwThreadLocal},
     {"true", TokenKind::KwTrue},
     {"trait", TokenKind::KwTrait},
@@ -161,6 +162,7 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::KwStaticAssert: return "static_assert";
     case TokenKind::KwStruct: return "struct";
     case TokenKind::KwSwitch: return "switch";
+    case TokenKind::KwTest: return "test";
     case TokenKind::KwThreadLocal: return "thread_local";
     case TokenKind::KwTrue: return "true";
     case TokenKind::KwTrait: return "trait";

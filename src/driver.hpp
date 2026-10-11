@@ -16,6 +16,7 @@ enum class Mode {
     EmitObj,
     Compile,
     Run,
+    Test,
     Error,
 };
 

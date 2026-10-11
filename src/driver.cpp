@@ -36,6 +36,7 @@ std::string help_text() {
         "  --emit-llvm     print LLVM IR\n"
         "  --emit-obj      write an object file\n"
         "  --run           compile, link, and run\n"
+        "  --test          compile, link, and run every test in the program\n"
         "  -o <file>       output path\n"
         "  -P <dir>        package search root, after the entry directory\n"
         "  -l <lib>        link lib<lib> when producing an executable\n"
@@ -175,6 +176,8 @@ Options parse_args(int argc, char **argv) {
             set_mode(Mode::EmitObj);
         } else if (arg == "--run") {
             set_mode(Mode::Run);
+        } else if (arg == "--test") {
+            set_mode(Mode::Test);
         } else if (arg == "-o") {
             if (i + 1 >= argc) {
                 opt.mode = Mode::Error;
@@ -387,7 +390,7 @@ CompileOutput compile_source(const Options &opt) {
     std::string object_path;
     if (opt.mode == Mode::EmitObj) {
         object_path = opt.output.empty() ? "a.o" : opt.output;
-    } else if (opt.mode == Mode::Compile || opt.mode == Mode::Run) {
+    } else if (opt.mode == Mode::Compile || opt.mode == Mode::Run || opt.mode == Mode::Test) {
         object.path = make_temp(".o");
         object_path = object.path;
         if (object_path.empty()) {
@@ -396,7 +399,7 @@ CompileOutput compile_source(const Options &opt) {
         }
     }
 
-    const CodegenOutput generated = codegen(graph, diags, object_path);
+    const CodegenOutput generated = codegen(graph, diags, object_path, opt.mode == Mode::Test);
     output.ir = generated.ir;
     if (!generated.ok || !diags.ok()) {
         output.compiler_stderr = diags.render();
@@ -469,7 +472,8 @@ int execute(const Options &opt) {
     case Mode::EmitLlvm:
     case Mode::EmitObj:
     case Mode::Compile:
-    case Mode::Run: {
+    case Mode::Run:
+    case Mode::Test: {
         const CompileOutput output = compile_source(opt);
         if (opt.mode == Mode::EmitLlvm) {
             std::cout << output.ir;

@@ -30,7 +30,8 @@ declaration = function
             | var-decl
             | fn-var
             | type-decl
-            | assert-stmt ;
+            | assert-stmt
+            | test-decl ;
 ```
 
 `export`, `static`, and `extern` may stand, in any order, in front of a function, method, variable, or `type`. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` is `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. Another abi is `not supported yet`. `export static` is an error. `export` and `extern` on an inferred variable are rejected.
@@ -180,6 +181,7 @@ statement   = block
             | ";" ;
 
 assert-stmt = "assert" "(" expression "," string ")" ";" ;
+test-decl   = "test" string block ;
 
 if-statement = "if" "(" expression ")" block [ "else" ( if-statement | block ) ] ;
 for-init    = ";" | var-decl | binding | expression ";" ;
@@ -288,7 +290,7 @@ These words are keywords and cannot be identifiers:
 ```text
 assert bool break case char const continue default defer do double else enum
 export extern false float for func if import int long null package
-return short sizeof static struct switch trait true type union var void while
+return short sizeof static struct switch test trait true type union var void while
 ```
 
 C keywords that tlc reserves but does not use are also keywords: `alignas`, `alignof`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof`, `typeof_unqual`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).

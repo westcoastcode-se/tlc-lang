@@ -29,6 +29,7 @@ struct Expectation {
     std::vector<std::string> link_args;
     bool has_exit = false;
     int exit_code = 0;
+    bool run_tests = false;
     bool has_stdout = false;
     std::string stdout_text;
 };
@@ -49,6 +50,7 @@ Expectation parse_expect(const std::string &text) {
         constexpr std::string_view kLinkError = "link-error:";
         constexpr std::string_view kLink = "link:";
         constexpr std::string_view kStdout = "stdout:";
+        constexpr std::string_view kMode = "mode:";
         if (line.starts_with(kExit)) {
             expect.has_exit = true;
             expect.exit_code = std::stoi(line.substr(kExit.size()));
@@ -75,6 +77,13 @@ Expectation parse_expect(const std::string &text) {
             if (!arg.empty()) {
                 expect.link_args.push_back(std::move(arg));
             }
+        } else if (line.starts_with(kMode)) {
+            std::string mode = line.substr(kMode.size());
+            const auto first = mode.find_first_not_of(' ');
+            if (first != std::string::npos) {
+                mode.erase(0, first);
+            }
+            expect.run_tests = mode == "test";
         } else if (line.starts_with(kStdout)) {
             expect.has_stdout = true;
             expect.stdout_text = line.substr(kStdout.size());
@@ -119,7 +128,7 @@ int run_program_tests() {
         tlc::Options opt;
         opt.input = main_path.string();
         opt.link_args = expect.link_args;
-        opt.mode = expect.compile_error ? tlc::Mode::Check : tlc::Mode::Run;
+        opt.mode = expect.compile_error ? tlc::Mode::Check : (expect.run_tests ? tlc::Mode::Test : tlc::Mode::Run);
         const tlc::CompileOutput output = tlc::compile_source(opt);
         if (expect.link_error) {
             if (output.compiler_stderr.find(expect.link_error_text) == std::string::npos) {

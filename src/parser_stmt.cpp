@@ -535,6 +535,11 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         eat(TokenKind::Semicolon);
         return make_stmt(Stmt::Expression{});
     }
+    if (check(TokenKind::KwTest)) {
+        error_here("not supported yet");
+        parse_test();
+        return make_stmt(Stmt::Expression{});
+    }
     if (check(TokenKind::KwAssert)) {
         AssertDecl item = parse_assert();
         Stmt::Assert stmt;
@@ -585,6 +590,24 @@ AssertDecl Parser::parse_assert() {
     }
     expect(TokenKind::RParen, "expected ')'");
     expect(TokenKind::Semicolon, "expected ';'");
+    return item;
+}
+
+TestDecl Parser::parse_test() {
+    TestDecl item;
+    item.loc = peek().loc;
+    ++pos_;
+    if (check(TokenKind::StringLiteral)) {
+        item.name = peek().text;
+        item.loc = peek().loc;
+        if (item.name.empty()) {
+            diags_.error(item.loc, "type mismatch");
+        }
+        ++pos_;
+    } else {
+        error_here("expected a string");
+    }
+    item.body = parse_required_block();
     return item;
 }
 

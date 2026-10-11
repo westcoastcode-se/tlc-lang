@@ -1,0 +1,7 @@
+func main() int {
+    return 7;
+}
+
+test "not run" {
+    return 1;
+}

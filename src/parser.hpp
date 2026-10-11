@@ -141,6 +141,7 @@ class Parser {
     std::unique_ptr<Stmt> parse_decl_stmt(bool file_scope);
     std::unique_ptr<Stmt> parse_statement();
     AssertDecl parse_assert();
+    TestDecl parse_test();
     std::unique_ptr<Stmt> parse_block();
     // The body of if, while, and for. A missing '{' is an error.
     std::unique_ptr<Stmt> parse_required_block();

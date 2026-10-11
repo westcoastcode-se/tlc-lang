@@ -13,6 +13,7 @@ struct CodegenOutput {
     std::string error;
 };
 
-CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const std::string &object_path);
+CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const std::string &object_path,
+                      bool testing = false);
 
 } // namespace tlc

@@ -73,8 +73,8 @@ void CodeGen::declare_file(const PackageNode &node) {
             file.functions.emplace(name, binding);
             continue;
         }
-        const SymbolForm form =
-            symbol_form(node, name, acc.is_extern, acc.extern_c, acc.is_static, acc.exported, entry && name == "main");
+        const SymbolForm form = symbol_form(node, name, acc.is_extern, acc.extern_c, acc.is_static, acc.exported,
+                                            entry && !testing_ && name == "main");
         llvm::Function *function = acc.is_extern ? module_.getFunction(form.name) : nullptr;
         const ExternLayout layout = acc.extern_c ? extern_layout(*acc.fn, node.file_id) : ExternLayout{};
         if (function == nullptr) {
@@ -3098,7 +3098,108 @@ void CodeGen::emit(const PackageGraph &graph) {
     for (const PackageNode &node : graph.nodes) {
         emit_bodies(node);
     }
+    if (testing_) {
+        emit_tests();
+    }
     graph_ = nullptr;
+}
+
+void CodeGen::emit_tests() {
+    struct TestFn {
+        std::string name;
+        llvm::Function *function = nullptr;
+    };
+    std::vector<TestFn> tests;
+    if (graph_ == nullptr) {
+        return;
+    }
+    for (const PackageNode &node : graph_->nodes) {
+        int index = 0;
+        current_file_ = node.file_id;
+        packages_.clear();
+        push();
+        bind_package_globals();
+        bind_imports(node);
+        for (const TopDecl &decl : node.unit.decls) {
+            const auto *test = std::get_if<TestDecl>(&decl.data);
+            if (test == nullptr || test->body == nullptr) {
+                continue;
+            }
+            const std::string symbol = "tlc.test." + std::to_string(node.file_id) + "." + std::to_string(index);
+            ++index;
+            auto *type = llvm::FunctionType::get(i32(), false);
+            auto *function =
+                llvm::Function::Create(type, llvm::GlobalValue::InternalLinkage, symbol, module_);
+            function->setCallingConv(llvm::CallingConv::C);
+            const bool saved_many = return_many_;
+            const bool saved_share = share_function_scope_;
+            const bool saved_extern = extern_struct_ret_;
+            const bool saved_sret = extern_sret_;
+            llvm::Value *saved_sret_ptr = extern_sret_ptr_;
+            const CAbi saved_abi = extern_ret_abi_;
+            llvm::Type *saved_struct = extern_ret_struct_;
+            function_ = function;
+            return_type_ = function->getReturnType();
+            return_depth_ = 0;
+            return_many_ = false;
+            share_function_scope_ = true;
+            extern_struct_ret_ = false;
+            extern_sret_ = false;
+            extern_sret_ptr_ = nullptr;
+            extern_ret_abi_ = {};
+            extern_ret_struct_ = nullptr;
+            llvm::BasicBlock *entry = llvm::BasicBlock::Create(context_, "entry", function);
+            builder_.SetInsertPoint(entry);
+            push();
+            emit_stmt(*test->body);
+            finish_function();
+            pop();
+            function_ = nullptr;
+            return_type_ = nullptr;
+            return_depth_ = 0;
+            return_many_ = saved_many;
+            share_function_scope_ = saved_share;
+            extern_struct_ret_ = saved_extern;
+            extern_sret_ = saved_sret;
+            extern_sret_ptr_ = saved_sret_ptr;
+            extern_ret_abi_ = saved_abi;
+            extern_ret_struct_ = saved_struct;
+            tests.push_back(TestFn{test->name, function});
+        }
+        pop();
+    }
+    if (tests.empty()) {
+        error(SourceLoc{}, "no tests");
+        return;
+    }
+    auto *main_type = llvm::FunctionType::get(i32(), false);
+    auto *main = llvm::Function::Create(main_type, llvm::GlobalValue::ExternalLinkage, "main", module_);
+    main->setCallingConv(llvm::CallingConv::C);
+    auto *printf_type = llvm::FunctionType::get(i32(), {ptr_type()}, true);
+    llvm::FunctionCallee printf_fn = module_.getOrInsertFunction("printf", printf_type);
+    llvm::BasicBlock *block = llvm::BasicBlock::Create(context_, "entry", main);
+    builder_.SetInsertPoint(block);
+    llvm::Value *failed = const_i32(0);
+    for (const TestFn &test : tests) {
+        llvm::BasicBlock *from = builder_.GetInsertBlock();
+        llvm::Value *result = builder_.CreateCall(test.function);
+        llvm::Value *bad = builder_.CreateICmpNE(result, const_i32(0));
+        auto *fail_block = llvm::BasicBlock::Create(context_, "fail", main);
+        auto *next_block = llvm::BasicBlock::Create(context_, "next", main);
+        builder_.CreateCondBr(bad, fail_block, next_block);
+        builder_.SetInsertPoint(fail_block);
+        llvm::Value *format = builder_.CreateGlobalString("fail: %s\n");
+        llvm::Value *label = builder_.CreateGlobalString(test.name);
+        builder_.CreateCall(printf_type, printf_fn.getCallee(), {format, label});
+        llvm::Value *added = builder_.CreateAdd(failed, const_i32(1));
+        builder_.CreateBr(next_block);
+        builder_.SetInsertPoint(next_block);
+        auto *phi = builder_.CreatePHI(i32(), 2);
+        phi->addIncoming(failed, from);
+        phi->addIncoming(added, fail_block);
+        failed = phi;
+    }
+    builder_.CreateRet(failed);
 }
 
 } // namespace tlc

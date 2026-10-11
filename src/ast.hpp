@@ -414,6 +414,13 @@ struct TraitDecl {
     std::vector<FunctionDecl> methods;
 };
 
+// `test "name" { ... }` at file scope. The body returns `int`. Zero passes.
+struct TestDecl {
+    SourceLoc loc{};
+    std::string name;
+    std::unique_ptr<Stmt> body;
+};
+
 // `assert(condition, "message");` at file scope. The condition is checked while compiling.
 struct AssertDecl {
     SourceLoc loc{};
@@ -422,7 +429,7 @@ struct AssertDecl {
 };
 
 struct TopDecl {
-    std::variant<FunctionDecl, VarDecl, StructDecl, EnumDecl, TypedefDecl, TraitDecl, AssertDecl> data;
+    std::variant<FunctionDecl, VarDecl, StructDecl, EnumDecl, TypedefDecl, TraitDecl, AssertDecl, TestDecl> data;
 };
 
 struct ImportDecl {

@@ -134,6 +134,7 @@ class CodeGen {
         : context_(context), module_(module), diags_(diags), builder_(context) {}
 
     void emit(const PackageGraph &graph);
+    void enable_tests() { testing_ = true; }
 
   private:
     struct FileSymbols {
@@ -166,6 +167,7 @@ class CodeGen {
     std::unordered_map<const llvm::Function *, ExternLayout> extern_abis_;
     int local_seq_ = 0;
     uint32_t entry_file_ = 0;
+    bool testing_ = false;
     uint32_t current_file_ = 0;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
     std::unordered_map<uint32_t, FileSymbols> files_;
@@ -663,6 +665,7 @@ class CodeGen {
     std::optional<int32_t> fold_global(uint32_t file, const std::string &name, bool allow_local_static = true) const;
     void bind_imports(const PackageNode &node);
     void emit_bodies(const PackageNode &node);
+    void emit_tests();
     void apply_initializer(const VarDecl &var);
     llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
     llvm::Constant *const_field(const Expr &expr, const FieldLayout &slot);

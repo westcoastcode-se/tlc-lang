@@ -52,6 +52,22 @@ Structs are passed and returned by value. An array parameter becomes a pointer, 
 
 A function cannot return an array. There is one `main`.
 
+`test "name" { ... }` is a file-scope test. The body is a function that returns `int`. Reaching the end passes, and so does `return 0`. Any other `return` fails that test. `return;` is `type mismatch`. The same test name twice in one file is `redefinition`. A `test` inside a function is `not supported yet`.
+
+```c
+func add(a int, b int) int {
+    return a + b;
+}
+
+test "add joins its arguments" {
+    if (add(2, 2) != 4) {
+        return 1;
+    }
+}
+```
+
+`tlc --test file.tlc` compiles the program, runs every test, and skips `main`. A failing test prints `fail:` and the name. The process status is the number of failed tests. A build without `--test` typechecks the tests and does not run them.
+
 A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types. A function name used as a value is a pointer to that function.
 
 ```c

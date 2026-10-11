@@ -608,6 +608,16 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
                 out += " export";
             }
             out += ")\n";
+        } else if (const auto *item = std::get_if<TestDecl>(&decl.data)) {
+            append_indent(out, 1);
+            out += "(test ";
+            out += quote_string(item->name);
+            out += "\n";
+            if (item->body) {
+                dump_stmt(*item->body, out, 2);
+            }
+            append_indent(out, 1);
+            out += ")\n";
         } else if (const auto *item = std::get_if<AssertDecl>(&decl.data)) {
             append_indent(out, 1);
             out += "(assert ";
