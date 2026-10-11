@@ -513,6 +513,15 @@ std::unique_ptr<Expr> Parser::parse_postfix() {
             expr = make_expr(std::move(index));
             continue;
         }
+        if (eat(TokenKind::Bang)) {
+            Expr::Unary node;
+            node.loc = expr_loc(*expr);
+            node.op = TokenKind::Bang;
+            node.postfix = true;
+            node.expr = std::move(expr);
+            expr = make_expr(std::move(node));
+            continue;
+        }
         if (check(TokenKind::Arrow) || check(TokenKind::PlusPlus) || check(TokenKind::MinusMinus)) {
             error_here("not supported yet");
             ++pos_;

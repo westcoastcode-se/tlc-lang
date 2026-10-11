@@ -298,6 +298,18 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "func main() int {\n"
+            "  var p ?*int;\n"
+            "  var n = !p;\n"
+            "  return p!.n;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(! (name p))");
+        EXPECT_HAS(check, parsed.dump, "(. (!post (name p)) n)");
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "var a [4]int;\n"
             "var b [2]*int;\n"
             "var s [3]char;\n"

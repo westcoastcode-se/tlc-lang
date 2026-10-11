@@ -3006,5 +3006,32 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
+    {
+        const std::string errors = diagnose(
+            "type Box struct { n int; };\n"
+            "func read(p *int) int { return *p; }\n"
+            "func main() int {\n"
+            "  var n int = 1;\n"
+            "  var p ?*int = &n;\n"
+            "  var box Box;\n"
+            "  box.n = 2;\n"
+            "  var q ?*Box = &box;\n"
+            "  return read(p!) + q!.n;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func read(p *int) int { return *p; }\n"
+            "func main() int {\n"
+            "  var n int = 1;\n"
+            "  var p ?*int = &n;\n"
+            "  var direct *int = &n;\n"
+            "  return read(p) + read(direct!) + p!! + n!;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
     return check.failed;
 }

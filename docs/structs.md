@@ -136,7 +136,7 @@ extern(abi="c") type Word union {
 
 `Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory.
 
-Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `**Point` and `*int` are left as they are, and the access is `type mismatch`. A `?*Point` is `type mismatch` until the name is known to be non-null. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
+Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `**Point` and `*int` are left as they are, and the access is `type mismatch`. A `?*Point` is `type mismatch` until the name is known to be non-null, or until that use is written `p!.field`. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
 
 An array length is a positive decimal `int` literal.
 

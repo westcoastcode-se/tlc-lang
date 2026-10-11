@@ -26,6 +26,8 @@ struct Expr {
     struct Unary {
         SourceLoc loc{};
         TokenKind op = TokenKind::End;
+        // `pointer!`. Prefix `!` stays the integer operator.
+        bool postfix = false;
         std::unique_ptr<Expr> expr;
     };
     struct Binary {

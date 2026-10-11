@@ -1,0 +1,1 @@
+- All changes made to the language should update the documentation.

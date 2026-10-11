@@ -415,8 +415,8 @@ std::string dump_expr(const Expr &expr) {
                 text += ')';
                 return text;
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
-                return std::string("(") + token_kind_name(node.op) + " " +
-                       (node.expr ? dump_expr(*node.expr) : "(unsupported)") + ")";
+                const std::string op = node.postfix ? "!post" : token_kind_name(node.op);
+                return "(" + op + " " + (node.expr ? dump_expr(*node.expr) : "(unsupported)") + ")";
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
                 return std::string("(") + token_kind_name(node.op) + " " +
                        (node.lhs ? dump_expr(*node.lhs) : "(unsupported)") + " " +

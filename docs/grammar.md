@@ -204,9 +204,12 @@ unary       = ( "+" | "-" | "!" | "~" | "&" | "*" | "sizeof" ) unary
 postfix     = primary { postfix-op } ;
 postfix-op  = "(" [ argument-list ] ")"
             | "." identifier
-            | "[" expression "]" ;
+            | "[" expression "]"
+            | "!" ;
 argument-list = expression { "," expression } ;
 ```
+
+Postfix `!` asserts that a `?*T` has a value. `pointer!` has type `*T`. `pointer!.value` reads the field. Prefix `!` is still the integer operator. There is no runtime check.
 
 `?:`, `++`, `--`, `->`, and compound assignments such as `+=` are not part of the language.
 

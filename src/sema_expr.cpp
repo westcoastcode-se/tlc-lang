@@ -449,6 +449,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 (void)used;
                 return type_float(node.is_f32 ? 32 : 64);
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.op == TokenKind::Bang && node.postfix) {
+                    const Type inner = check_expr(*node.expr, true);
+                    if (inner.kind == TypeKind::Invalid) {
+                        return inner;
+                    }
+                    if (inner.kind != TypeKind::Pointer || !inner.optional || inner.pointee == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    Type asserted = inner;
+                    asserted.optional = false;
+                    return asserted;
+                }
                 if (node.op == TokenKind::Star) {
                     const Type inner = check_expr(*node.expr, true);
                     if (inner.kind == TypeKind::Invalid) {
@@ -1186,6 +1199,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 return node.value ? 1 : 0;
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.postfix) {
+                    return std::nullopt;
+                }
                 const std::optional<int> inner = node.expr ? fold_int(*node.expr) : std::nullopt;
                 if (!inner) {
                     return std::nullopt;

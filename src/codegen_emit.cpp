@@ -325,7 +325,7 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 case TokenKind::Plus: return *inner;
                 case TokenKind::Minus: return wrap(-static_cast<int64_t>(*inner));
                 case TokenKind::Tilde: return wrap(~static_cast<uint32_t>(*inner));
-                case TokenKind::Bang: return *inner == 0 ? 1 : 0;
+                case TokenKind::Bang: return node.postfix ? std::nullopt : std::optional<int32_t>(*inner == 0 ? 1 : 0);
                 default: return std::nullopt;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
@@ -1762,6 +1762,9 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.type = shape_type(shape);
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.postfix && node.op == TokenKind::Bang && node.expr) {
+                    return raw_shape(*node.expr);
+                }
                 if (node.op == TokenKind::Star && node.expr) {
                     const Shape inner = decay_shape(raw_shape(*node.expr));
                     if (inner.depth <= 0) {
@@ -1978,6 +1981,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             addr.elem_bits, addr.elem_unsigned};
                 }
                 const TypedValue inner_value = emit_rvalue(*node.expr);
+                if (node.op == TokenKind::Bang && node.postfix) {
+                    return inner_value;
+                }
                 llvm::Value *inner = inner_value.value;
                 switch (node.op) {
                 case TokenKind::Plus: return inner_value;

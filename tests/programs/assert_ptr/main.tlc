@@ -1,0 +1,17 @@
+type Box struct {
+    n int;
+};
+
+func read(p *int) int {
+    return *p;
+}
+
+func main() int {
+    var n int = 40;
+    var p ?*int = &n;
+    var box Box;
+    box.n = 2;
+    var q ?*Box = &box;
+    q!.n = q!.n;
+    return read(p!) + q!.n;
+}

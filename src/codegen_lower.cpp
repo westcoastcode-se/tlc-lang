@@ -1487,6 +1487,9 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                 return std::nullopt;
             }
             if (unary->op == TokenKind::Bang) {
+                if (unary->postfix) {
+                    return inner;
+                }
                 return as_int(32, false);
             }
             if (inner->elem_float && (unary->op == TokenKind::Plus || unary->op == TokenKind::Minus)) {
