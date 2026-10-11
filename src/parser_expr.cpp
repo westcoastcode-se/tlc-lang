@@ -519,7 +519,7 @@ std::unique_ptr<Expr> Parser::parse_primary() {
         ++pos_;
         return make_expr(std::move(literal));
     }
-    if (check(TokenKind::KwNullptr)) {
+    if (check(TokenKind::KwNull)) {
         Expr::Nullptr literal;
         literal.loc = peek().loc;
         ++pos_;

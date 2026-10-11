@@ -160,10 +160,10 @@ A parameter array and a typedef array stay after the element type. A star before
 ```ebnf
 block       = "{" { statement } "}" ;
 statement   = block
-            | "if" "(" expression ")" statement [ "else" statement ]
-            | "while" "(" expression ")" statement
+            | if-statement
+            | "while" "(" expression ")" block
             | "do" statement "while" "(" expression ")" ";"
-            | "for" "(" for-init [ expression ] ";" [ expression ] ")" statement
+            | "for" "(" for-init [ expression ] ";" [ expression ] ")" block
             | "switch" "(" expression ")" statement
             | "case" expression ":" statement
             | "default" ":" statement
@@ -177,10 +177,11 @@ statement   = block
             | expression ";"
             | ";" ;
 
+if-statement = "if" "(" expression ")" block [ "else" ( if-statement | block ) ] ;
 for-init    = ";" | var-decl | binding | expression ";" ;
 ```
 
-`defer` takes one call expression. `case` and `default` are statements, so they appear inside the switch body.
+`if`, `while`, and `for` take a block. `else` takes a block or another `if`. A body without `{` is `expected '{'`. `defer` takes one call expression. `case` and `default` are statements, so they appear inside the switch body.
 
 ## Expressions
 
@@ -215,7 +216,7 @@ primary     = identifier
             | float-literal
             | string
             | char-literal
-            | "true" | "false" | "nullptr"
+            | "true" | "false" | "null"
             | "(" expression ")"
             | anonymous
             | short-function
@@ -280,7 +281,7 @@ These words are keywords and cannot be identifiers:
 
 ```text
 bool break case char const continue default defer do double else enum
-export extern false float for func if import int long nullptr package
+export extern false float for func if import int long null package
 return short sizeof static struct switch trait true typedef var void while
 ```
 

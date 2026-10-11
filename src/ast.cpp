@@ -434,7 +434,7 @@ std::string dump_expr(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 return node.value ? "(true)" : "(false)";
             } else if constexpr (std::is_same_v<T, Expr::Nullptr>) {
-                return "(nullptr)";
+                return "(null)";
             } else if constexpr (std::is_same_v<T, Expr::Char>) {
                 return "(char " + std::to_string(node.value) + ")";
             } else if constexpr (std::is_same_v<T, Expr::Float>) {

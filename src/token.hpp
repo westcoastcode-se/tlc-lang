@@ -43,7 +43,7 @@ enum class TokenKind {
     KwInline,
     KwInt,
     KwLong,
-    KwNullptr,
+    KwNull,
     KwPackage,
     KwRegister,
     KwRestrict,

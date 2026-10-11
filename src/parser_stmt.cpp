@@ -166,6 +166,22 @@ std::unique_ptr<Stmt> Parser::parse_block() {
     return make_stmt(std::move(block));
 }
 
+std::unique_ptr<Stmt> Parser::parse_required_block() {
+    if (check(TokenKind::LBrace)) {
+        return parse_block();
+    }
+    error_here("expected '{'");
+    // Skip one statement so a following else still belongs to this if.
+    if (!eof() && !check(TokenKind::RBrace) && !check(TokenKind::KwElse)) {
+        const std::size_t before = pos_;
+        parse_statement();
+        if (pos_ == before) {
+            ++pos_;
+        }
+    }
+    return nullptr;
+}
+
 std::unique_ptr<Stmt> Parser::parse_if() {
     Stmt::If stmt;
     stmt.loc = peek().loc;
@@ -173,9 +189,9 @@ std::unique_ptr<Stmt> Parser::parse_if() {
     expect(TokenKind::LParen, "expected '('");
     stmt.cond = parse_expr();
     expect(TokenKind::RParen, "expected ')'");
-    stmt.then_arm = parse_statement();
+    stmt.then_arm = parse_required_block();
     if (eat(TokenKind::KwElse)) {
-        stmt.else_arm = parse_statement();
+        stmt.else_arm = check(TokenKind::KwIf) ? parse_if() : parse_required_block();
     }
     return make_stmt(std::move(stmt));
 }
@@ -187,7 +203,7 @@ std::unique_ptr<Stmt> Parser::parse_while() {
     expect(TokenKind::LParen, "expected '('");
     stmt.cond = parse_expr();
     expect(TokenKind::RParen, "expected ')'");
-    stmt.body = parse_statement();
+    stmt.body = parse_required_block();
     return make_stmt(std::move(stmt));
 }
 
@@ -242,7 +258,7 @@ std::unique_ptr<Stmt> Parser::parse_for() {
         stmt.step = parse_expr();
     }
     expect(TokenKind::RParen, "expected ')'");
-    stmt.body = parse_statement();
+    stmt.body = parse_required_block();
     return make_stmt(std::move(stmt));
 }
 

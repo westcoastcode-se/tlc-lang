@@ -55,13 +55,13 @@ func main() int {
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_PROFILE_MASK, SdlGlAttr.SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
 
     var window *SDL_Window = SDL_CreateWindow("Triangle", 960, 540, SdlWindow.SDL_WINDOW_OPENGL);
-    if (window == nullptr) {
+    if (window == null) {
         printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
     var context *SDL_GLContextState = SDL_GL_CreateContext(window);
-    if (context == nullptr) {
+    if (context == null) {
         printf("SDL_GL_CreateContext failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
         SDL_Quit();

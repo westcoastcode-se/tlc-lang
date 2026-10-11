@@ -63,7 +63,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "func main(n int) int {\n"
-            "  if (n) return -n; else return 0;\n"
+            "  if (n) { return -n; } else if (n) { return 1; } else { return 0; }\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_EQ(check, parsed.dump,
@@ -71,8 +71,17 @@ int run_parser_tests() {
                   "  (fn main (params (n int)) int\n"
                   "    (block\n"
                   "      (if (name n)\n"
-                  "        (return (- (name n)))\n"
-                  "        (return (int 0))\n"
+                  "        (block\n"
+                  "          (return (- (name n)))\n"
+                  "        )\n"
+                  "        (if (name n)\n"
+                  "          (block\n"
+                  "            (return (int 1))\n"
+                  "          )\n"
+                  "          (block\n"
+                  "            (return (int 0))\n"
+                  "          )\n"
+                  "        )\n"
                   "      )\n"
                   "    )\n"
                   "  )\n"
@@ -82,7 +91,19 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "func main(n int) int {\n"
+            "  if (n) return -n;\n"
+            "  if (n) { return -n; } else return 0;\n"
             "  while (n) n = n - 1;\n"
+            "  for (;;) break;\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT_HAS(check, parsed.errors, "expected '{'");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main(n int) int {\n"
+            "  while (n) { n = n - 1; }\n"
             "  return n;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
@@ -94,8 +115,8 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "func main() int {\n"
             "  var s int = 0;\n"
-            "  for (var i int = 0; i < 10; i = i + 1) s = s + i;\n"
-            "  for (;;) break;\n"
+            "  for (var i int = 0; i < 10; i = i + 1) { s = s + i; }\n"
+            "  for (;;) { break; }\n"
             "  return s;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
@@ -112,13 +133,17 @@ int run_parser_tests() {
                   "        )\n"
                   "        (< (name i) (int 10))\n"
                   "        (= (name i) (+ (name i) (int 1)))\n"
-                  "        (expr (= (name s) (+ (name s) (name i))))\n"
+                  "        (block\n"
+                  "          (expr (= (name s) (+ (name s) (name i))))\n"
+                  "        )\n"
                   "      )\n"
                   "      (for\n"
                   "        (empty)\n"
                   "        (empty)\n"
                   "        (empty)\n"
-                  "        (break)\n"
+                  "        (block\n"
+                  "          (break)\n"
+                  "        )\n"
                   "      )\n"
                   "      (return (name s))\n"
                   "    )\n"
@@ -527,14 +552,14 @@ int run_parser_tests() {
             "  var p *int;\n"
             "  b = true;\n"
             "  b = false;\n"
-            "  p = nullptr;\n"
+            "  p = null;\n"
             "  return b;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(var b bool");
         EXPECT_HAS(check, parsed.dump, "(= (name b) (true))");
         EXPECT_HAS(check, parsed.dump, "(= (name b) (false))");
-        EXPECT_HAS(check, parsed.dump, "(= (name p) (nullptr))");
+        EXPECT_HAS(check, parsed.dump, "(= (name p) (null))");
     }
 
     {

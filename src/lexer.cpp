@@ -48,7 +48,7 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"inline", TokenKind::KwInline},
     {"int", TokenKind::KwInt},
     {"long", TokenKind::KwLong},
-    {"nullptr", TokenKind::KwNullptr},
+    {"null", TokenKind::KwNull},
     {"package", TokenKind::KwPackage},
     {"register", TokenKind::KwRegister},
     {"restrict", TokenKind::KwRestrict},
@@ -147,7 +147,7 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::KwInline: return "inline";
     case TokenKind::KwInt: return "int";
     case TokenKind::KwLong: return "long";
-    case TokenKind::KwNullptr: return "nullptr";
+    case TokenKind::KwNull: return "null";
     case TokenKind::KwPackage: return "package";
     case TokenKind::KwRegister: return "register";
     case TokenKind::KwRestrict: return "restrict";

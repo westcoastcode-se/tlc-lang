@@ -1340,7 +1340,7 @@ std::string Checker::type_desc(const Type &type) const {
     case TypeKind::Float:
         return type.rank >= 64 ? "double" : "float";
     case TypeKind::Nullptr:
-        return "nullptr";
+        return "null";
     case TypeKind::Char:
         if (type.plain_char) {
             return "char";

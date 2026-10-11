@@ -187,7 +187,7 @@ A `bool` value is 0 or 1.
 | `"hi"` | array of `char`, including the terminating null |
 | `` `hi` `` | the same array type; the text may span lines |
 | `true`, `false` | `bool` |
-| `nullptr` | null pointer |
+| `null` | null pointer |
 
 An unsuffixed number greater than `2147483647` is `type mismatch`. It does not become `i64`. A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `1u` and `1l` are `invalid integer suffix`. A value that does not fit in the suffix is `type mismatch`.
 
@@ -227,13 +227,13 @@ func main() int {
 
 A shift is evaluated in the common type.
 
-Pointers of the same type can be compared with `==` and `!=`. A pointer can be compared with `nullptr`, and `nullptr == nullptr` is allowed. The result is `int`. Pointers of different types cannot be compared. Relational operators on pointers are rejected. `p == 0` is `type mismatch`.
+Pointers of the same type can be compared with `==` and `!=`. A pointer can be compared with `null`, and `null == null` is allowed. The result is `int`. Pointers of different types cannot be compared. Relational operators on pointers are rejected. `p == 0` is `type mismatch`.
 
-An integer literal `0` may be assigned to a pointer, and the pointer becomes null. `nullptr` may be assigned to any pointer. Assigning `nullptr` to `int` or `bool` is `type mismatch`. `true` and `false` do not convert to pointers.
+An integer literal `0` may be assigned to a pointer, and the pointer becomes null. `null` may be assigned to any pointer. Assigning `null` to `int` or `bool` is `type mismatch`. `true` and `false` do not convert to pointers.
 
 A condition in `if`, `while`, `do`, and `for` is an integer after promotion. A pointer used as a condition is `type mismatch`. `switch` requires exactly `int`.
 
-A cast is the type followed by the value in parentheses: `i32(n)`, `int(n)`, `*char(bits)`, `*void(p)`, `*Point(p)`. A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `nullptr` can be cast to a pointer. `long(p)`, `uint(p)`, and `int(nullptr)` are `type mismatch`. `int*(p)` is `type mismatch`. A cast to `void` is rejected. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type.
+A cast is the type followed by the value in parentheses: `i32(n)`, `int(n)`, `*char(bits)`, `*void(p)`, `*Point(p)`. A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. `null` can be cast to a pointer. `long(p)`, `uint(p)`, and `int(null)` are `type mismatch`. `int*(p)` is `type mismatch`. A cast to `void` is rejected. `Point(x)` is a call. `*f()` dereferences the call when `f` is not a type.
 
 Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
@@ -241,7 +241,7 @@ Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
 ## Statements
 
-Blocks, `if`/`else`, `while`, `do`/`while`, `for`, `switch`, `break`, `continue`, `return`, and empty statements are accepted. `goto` is rejected.
+Blocks, `if`/`else`, `while`, `do`/`while`, `for`, `switch`, `break`, `continue`, `return`, and empty statements are accepted. `goto` is rejected. The body of `if`, `while`, and `for` is a block. `else` is a block or another `if`. A body without `{` is `expected '{'`.
 
 `for` has C's three clauses. A declaration in the first clause is visible only inside the loop. That clause may also bind several results with `var`, `:=`, or `=`. A comma in the name list must be followed by another name.
 

@@ -66,7 +66,7 @@ func pick(p *int) (*int, int) {
 }
 
 func none() (*int, int) {
-    return nullptr, 3;
+    return null, 3;
 }
 
 struct Point {
@@ -229,7 +229,7 @@ func main() int {
 
     var x int = 5;
     q, n = pick(&x);
-    if (q == nullptr) {
+    if (q == null) {
         return 19;
     }
     if (*q + n != 12) {
@@ -237,7 +237,7 @@ func main() int {
     }
 
     np, nn = none();
-    if (np != nullptr) {
+    if (np != null) {
         return 21;
     }
     if (nn != 3) {

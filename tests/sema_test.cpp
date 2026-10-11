@@ -978,12 +978,12 @@ int run_sema_tests() {
             "  var p *int;\n"
             "  var x int;\n"
             "  x = 0;\n"
-            "  p = nullptr;\n"
-            "  if (p == nullptr) {\n"
+            "  p = null;\n"
+            "  if (p == null) {\n"
             "    return 1;\n"
             "  }\n"
             "  p = &x;\n"
-            "  return p != nullptr;\n"
+            "  return p != null;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -991,7 +991,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() int {\n"
-            "  var x int = nullptr;\n"
+            "  var x int = null;\n"
             "  return x;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -1513,7 +1513,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Point { x int; y int; };\n"
             "func main() int {\n"
-            "  var p Point = {.x = nullptr};\n"
+            "  var p Point = {.x = null};\n"
             "  return p.x;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -1561,9 +1561,9 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "struct Link { n int; next *Link; };\n"
             "func main() int {\n"
-            "  var link Link = {.n = 1, .next = nullptr};\n"
+            "  var link Link = {.n = 1, .next = null};\n"
             "  link = {.next = 0};\n"
-            "  if (link.next == nullptr) {\n"
+            "  if (link.next == null) {\n"
             "    return link.n;\n"
             "  }\n"
             "  return 1;\n"
@@ -2269,7 +2269,7 @@ int run_sema_tests() {
             "  var p Point;\n"
             "  p.x = n;\n"
             "  p.y = n;\n"
-            "  return n, nullptr, p;\n"
+            "  return n, null, p;\n"
             "}\n"
             "func narrow() (short, char, bool) { return -2, 200, true; }\n"
             "func add(x int, y int) (int, int);\n"
@@ -2390,7 +2390,7 @@ int run_sema_tests() {
             "func main() int {\n"
             "  var p *int;\n"
             "  var n int;\n"
-            "  p = nullptr;\n"
+            "  p = null;\n"
             "  p, n = add(1, 2);\n"
             "  return n;\n"
             "}\n");
@@ -2520,7 +2520,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() int {\n"
             "  func pair(n int) (int, int);\n"
-            "  func pair(n int) (int, *int) { return n, nullptr; }\n"
+            "  func pair(n int) (int, *int) { return n, null; }\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "redefinition");
