@@ -11,3 +11,13 @@ build/tlc --run examples/triangle/main.tlc
 ```
 
 Close the window to exit. The context is an OpenGL 2.1 compatibility profile, so the triangle is drawn with `glBegin`. Core-profile entry points are loaded at run time, and this dialect cannot cast a function pointer yet.
+
+## Tetris
+
+`examples/tetris` is a playable game in the same window. Blocks are colored quads made from `glBegin` triangles. The board is a `[200]int`. Pieces rotate in the program, and `SDL_GetTicks` times the drop.
+
+Left, right, and down move. Up rotates clockwise, Z rotates the other way, and space drops the piece. R starts again after the stack reaches the top. Escape or closing the window quits. Line clears and the score are printed in the terminal. A column of marks on the left counts cleared lines, and the next piece is shown on the right.
+
+```sh
+build/tlc --run examples/tetris/main.tlc
+```

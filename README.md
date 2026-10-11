@@ -25,8 +25,9 @@ With no mode flag, `tlc` writes an executable. The default name is `a.out`. `cc`
 
 `import "vendor/sdl3"` loads a package from `lib/tlc/vendor` next to the compiler prefix, or from the directory in `TLC_LIB`. A package there is `.tlc` bindings plus the static and shared libraries beside them. Those libraries are linked when the package is imported. See [Packages](docs/packages.md).
 
-`examples/triangle` draws a triangle with SDL3 and OpenGL:
+`examples/triangle` draws a triangle with SDL3 and OpenGL. `examples/tetris` is a game in the same kind of window:
 
 ```sh
 build/tlc --run examples/triangle/main.tlc
+build/tlc --run examples/tetris/main.tlc
 ```

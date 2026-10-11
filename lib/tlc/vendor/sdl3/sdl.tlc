@@ -1,6 +1,6 @@
 package sdl3;
 
-// The subset of SDL3 used by examples/triangle. The real library is the
+// The subset of SDL3 used by the examples. The real library is the
 // system libSDL3 named in the link file.
 
 export extern(abi="c") type SDL_Window struct {}
@@ -32,11 +32,27 @@ export extern(abi="c") type SDL_QuitEvent struct {
     timestamp u64;
 }
 
+// Same layout as SDL_KeyboardEvent. `scancode` is the C enum, an int.
+export extern(abi="c") type SDL_KeyboardEvent struct {
+    kind u32;
+    reserved u32;
+    timestamp u64;
+    windowID u32;
+    which u32;
+    scancode int;
+    keycode u32;
+    mod u16;
+    raw u16;
+    down bool;
+    repeat bool;
+}
+
 export extern(abi="c") type SDL_Event union {
     kind u32;
     common SDL_CommonEvent;
     window SDL_WindowEvent;
     quit SDL_QuitEvent;
+    key SDL_KeyboardEvent;
     padding [128]u8;
 }
 
@@ -51,6 +67,19 @@ export extern(abi="c") type SdlWindow enum {
 export extern(abi="c") type SdlEventKind enum {
     SDL_EVENT_QUIT = 0x100,
     SDL_EVENT_WINDOW_CLOSE_REQUESTED = 0x210,
+    SDL_EVENT_KEY_DOWN = 0x300,
+    SDL_EVENT_KEY_UP = 0x301,
+}
+
+export extern(abi="c") type SdlScancode enum {
+    SDL_SCANCODE_R = 21,
+    SDL_SCANCODE_Z = 29,
+    SDL_SCANCODE_ESCAPE = 41,
+    SDL_SCANCODE_SPACE = 44,
+    SDL_SCANCODE_RIGHT = 79,
+    SDL_SCANCODE_LEFT = 80,
+    SDL_SCANCODE_DOWN = 81,
+    SDL_SCANCODE_UP = 82,
 }
 
 export extern(abi="c") type SdlGlAttr enum {
@@ -71,3 +100,5 @@ export extern(abi="c") func SDL_GL_MakeCurrent(window *SDL_Window, context *SDL_
 export extern(abi="c") func SDL_GL_SwapWindow(window *SDL_Window) bool;
 export extern(abi="c") func SDL_PollEvent(event *SDL_Event) bool;
 export extern(abi="c") func SDL_Delay(ms u32) void;
+export extern(abi="c") func SDL_GetTicks() u64;
+export extern(abi="c") func SDL_rand(n i32) i32;
