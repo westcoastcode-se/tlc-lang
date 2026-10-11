@@ -1,0 +1,19 @@
+package shape;
+
+type Other enum {
+    A,
+    B,
+}
+
+type Left struct {
+    n int;
+}
+
+type Right struct {
+    n int;
+}
+
+type Pair union(Other) {
+    A Left;
+    B Right;
+}

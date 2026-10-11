@@ -836,9 +836,12 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         StructInfo created;
         created.name = item->name;
         created.file_id = file_id;
+        created.loc = item->loc;
         created.is_extern = item->is_extern;
         created.extern_c = item->extern_c;
         created.align = item->align;
+        created.is_union = item->is_union;
+        created.tag_name = item->tag_name;
         structs_.push_back(std::move(created));
         tags_[file_id][item->name] = id;
         if (item->fields.empty()) {
@@ -915,7 +918,7 @@ void Checker::define_struct_fields() {
             }
             if (complain_waiting && field_waits(field)) {
                 error(field.loc, "not supported yet");
-                info.fields.push_back(StructInfo::Field{field.name, type_invalid()});
+                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc});
                 continue;
             }
             Type field_type =
@@ -927,7 +930,7 @@ void Checker::define_struct_fields() {
             if (info.extern_c) {
                 require_extern_struct(field_type, field.loc);
             }
-            info.fields.push_back(StructInfo::Field{field.name, std::move(field_type)});
+            info.fields.push_back(StructInfo::Field{field.name, std::move(field_type), field.loc});
         }
         if (pending.decl->align > 0) {
             int natural = 1;
@@ -1110,6 +1113,60 @@ void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
         symbol.is_enum = true;
         symbol.type = type_enum(id);
         exports_[file_id].emplace(item->name, std::move(symbol));
+    }
+}
+
+void Checker::check_unions() {
+    for (StructInfo &info : structs_) {
+        if (info.tag_name.empty()) {
+            continue;
+        }
+        file_id_ = info.file_id;
+        int enum_id = find_enum(info.file_id, info.tag_name);
+        if (enum_id < 0) {
+            Type alias;
+            if (package_typedef(info.file_id, info.tag_name, alias)) {
+                if (alias.kind == TypeKind::Enum) {
+                    enum_id = alias.enum_id;
+                } else {
+                    error(info.loc, "type mismatch");
+                    continue;
+                }
+            } else if (find_tag(info.file_id, info.tag_name) >= 0 || package_trait(info.file_id, info.tag_name) >= 0) {
+                error(info.loc, "type mismatch");
+                continue;
+            } else {
+                error(info.loc, "undeclared identifier");
+                continue;
+            }
+        }
+        if (enum_id < 0 || enum_id >= static_cast<int>(enum_types_.size())) {
+            error(info.loc, "type mismatch");
+            continue;
+        }
+        info.tag_enum = enum_id;
+        const EnumInfo &enumeration = enum_types_[static_cast<std::size_t>(enum_id)];
+        for (const StructInfo::Field &field : info.fields) {
+            if (find_enum_member(enum_id, field.name) == nullptr) {
+                error(field.loc, "undeclared identifier");
+            }
+            if (field.type.kind != TypeKind::Struct || field.type.struct_id < 0 ||
+                field.type.struct_id >= static_cast<int>(structs_.size()) ||
+                structs_[static_cast<std::size_t>(field.type.struct_id)].is_union) {
+                error(field.loc, "type mismatch");
+            }
+        }
+        for (const EnumInfo::Member &member : enumeration.members) {
+            bool found = false;
+            for (const StructInfo::Field &field : info.fields) {
+                if (field.name == member.name) {
+                    found = true;
+                }
+            }
+            if (!found) {
+                error(info.loc, "type mismatch");
+            }
+        }
     }
 }
 

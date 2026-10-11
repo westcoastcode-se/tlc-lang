@@ -157,6 +157,8 @@ struct FieldDecl {
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
+    // Fields of `Name struct { ... }` inside a tlc union. Empty when the variant names a declared struct.
+    std::vector<FieldDecl> inline_fields;
 };
 
 struct StructDecl {
@@ -169,8 +171,12 @@ struct StructDecl {
     bool extern_c = false;
     // `struct(align=N)`. Zero means the natural alignment.
     int align = 0;
-    // An `extern(abi="c") union` overlays its fields. A plain union waits for tagged unions.
+    // An `extern(abi="c") union` overlays its fields. A tlc union stores `tag_name` and one payload.
     bool is_union = false;
+    // Enum that selects the active field. Empty on an `extern(abi="c")` union.
+    std::string tag_name;
+    // The struct synthesized for an inline variant. Its name is not a type the program can write.
+    bool anonymous = false;
 };
 
 struct Enumerator {

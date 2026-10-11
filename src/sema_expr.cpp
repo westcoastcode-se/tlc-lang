@@ -678,6 +678,27 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (deferring) {
                     checking_defer_ = false;
                 }
+                // Another file in the package does not see the enum as a cast spelling.
+                // `ShapeType(shape)` is still the tag read.
+                if (node.callee != nullptr && node.args.size() == 1 && node.args.front() != nullptr) {
+                    if (const auto *named = std::get_if<Expr::Name>(&node.callee->data)) {
+                        if (lookup(named->text) == nullptr) {
+                            const int enum_id = find_enum(file_id_, named->text);
+                            if (enum_id >= 0) {
+                                const Type source = check_expr(*node.args.front(), true);
+                                if (source.kind == TypeKind::Struct && source.struct_id >= 0 &&
+                                    source.struct_id < static_cast<int>(structs_.size()) &&
+                                    structs_[static_cast<std::size_t>(source.struct_id)].tag_enum == enum_id) {
+                                    return type_enum(enum_id);
+                                }
+                                if (source.kind != TypeKind::Invalid) {
+                                    error(node.loc, "type mismatch");
+                                }
+                                return type_invalid();
+                            }
+                        }
+                    }
+                }
                 if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
                     const SelectorTarget target = resolve_selector(*selector);
                     if (target.kind == SelectorTarget::Kind::Failed) {
@@ -971,6 +992,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 if ((is_c_enum(source) && is_integer(target)) || (is_c_enum(target) && is_integer(source))) {
+                    return target;
+                }
+                // `ShapeType(shape)` reads the tag of a tlc union.
+                if (source.kind == TypeKind::Struct && target.kind == TypeKind::Enum && source.struct_id >= 0 &&
+                    source.struct_id < static_cast<int>(structs_.size()) &&
+                    structs_[static_cast<std::size_t>(source.struct_id)].tag_enum == target.enum_id &&
+                    target.enum_id >= 0) {
                     return target;
                 }
                 const bool source_scalar = is_numeric(source);

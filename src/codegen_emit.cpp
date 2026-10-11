@@ -1,6 +1,7 @@
 // Emitting function bodies, calls, expressions, and statements.
 #include "gen.hpp"
 
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -438,13 +439,145 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
     return llvm::ConstantInt::get(slot.type, static_cast<uint64_t>(static_cast<int64_t>(*number)), true);
 }
 
+void CodeGen::store_union_tag(int struct_id, llvm::Value *pointer, const std::string &field) {
+    if (pointer == nullptr || struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+        return;
+    }
+    const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
+    if (layout.tag_enum < 0 || layout.tag_enum >= static_cast<int>(enums_.size()) || layout.type == nullptr ||
+        layout.type->getNumElements() == 0) {
+        return;
+    }
+    const auto member = enums_[static_cast<std::size_t>(layout.tag_enum)].values.find(field);
+    if (member == enums_[static_cast<std::size_t>(layout.tag_enum)].values.end()) {
+        return;
+    }
+    llvm::Constant *tag = enum_constant(layout.tag_enum, member->second);
+    if (tag == nullptr || tag->getType() != layout.type->getElementType(0)) {
+        return;
+    }
+    llvm::Value *addr = builder_.CreateInBoundsGEP(layout.type, pointer,
+                                                    llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(0)});
+    builder_.CreateStore(tag, addr);
+}
+
+bool CodeGen::write_constant_bytes(llvm::Constant *value, uint64_t offset, std::vector<uint8_t> &bytes) const {
+    if (value == nullptr) {
+        return false;
+    }
+    const llvm::DataLayout &data_layout = module_.getDataLayout();
+    llvm::Type *type = value->getType();
+    if (type == nullptr || !type->isSized()) {
+        return false;
+    }
+    const uint64_t size = data_layout.getTypeAllocSize(type).getFixedValue();
+    if (offset + size > bytes.size()) {
+        return false;
+    }
+    if (llvm::isa<llvm::ConstantAggregateZero>(value) || llvm::isa<llvm::UndefValue>(value) ||
+        llvm::isa<llvm::PoisonValue>(value) || llvm::isa<llvm::ConstantPointerNull>(value)) {
+        return true;
+    }
+    auto put_int = [&](const llvm::APInt &bits) {
+        if (bits.getBitWidth() > 64) {
+            return false;
+        }
+        const uint64_t raw = bits.getZExtValue();
+        const unsigned nbytes = static_cast<unsigned>(size);
+        const bool little = data_layout.isLittleEndian();
+        for (unsigned i = 0; i < nbytes; ++i) {
+            const unsigned shift = little ? i * 8 : (nbytes - 1U - i) * 8U;
+            bytes[offset + i] = shift >= 64 ? 0 : static_cast<uint8_t>((raw >> shift) & 0xFFU);
+        }
+        return true;
+    };
+    if (const auto *integer = llvm::dyn_cast<llvm::ConstantInt>(value)) {
+        return put_int(integer->getValue());
+    }
+    if (const auto *fp = llvm::dyn_cast<llvm::ConstantFP>(value)) {
+        return put_int(fp->getValueAPF().bitcastToAPInt());
+    }
+    if (const auto *structure = llvm::dyn_cast<llvm::ConstantStruct>(value)) {
+        const llvm::StructLayout *slots = data_layout.getStructLayout(llvm::cast<llvm::StructType>(type));
+        for (unsigned index = 0; index < structure->getNumOperands(); ++index) {
+            if (!write_constant_bytes(structure->getOperand(index), offset + slots->getElementOffset(index), bytes)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (const auto *array = llvm::dyn_cast<llvm::ConstantArray>(value)) {
+        const uint64_t stride = data_layout.getTypeAllocSize(array->getType()->getElementType()).getFixedValue();
+        for (unsigned index = 0; index < array->getNumOperands(); ++index) {
+            if (!write_constant_bytes(array->getOperand(index), offset + stride * index, bytes)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (const auto *data = llvm::dyn_cast<llvm::ConstantDataSequential>(value)) {
+        const uint64_t stride = data_layout.getTypeAllocSize(data->getElementType()).getFixedValue();
+        for (unsigned index = 0; index < data->getNumElements(); ++index) {
+            if (!write_constant_bytes(data->getElementAsConstant(index), offset + stride * index, bytes)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 llvm::Constant *CodeGen::const_struct(const Expr::Init &init, int struct_id) {
     if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
         return nullptr;
     }
     const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
-    if (layout.type == nullptr || layout.is_union || !layout.type->isSized()) {
+    if (layout.type == nullptr || !layout.type->isSized() || (layout.is_union && layout.tag_enum < 0)) {
         return nullptr;
+    }
+    if (layout.tag_enum >= 0) {
+        if (layout.type->getNumElements() < 3 || layout.tag_enum >= static_cast<int>(enums_.size())) {
+            return nullptr;
+        }
+        const auto *bytes_type = llvm::dyn_cast<llvm::ArrayType>(layout.type->getElementType(2));
+        if (bytes_type == nullptr) {
+            return nullptr;
+        }
+        std::vector<uint8_t> raw(bytes_type->getNumElements(), 0);
+        int64_t tag_value = 0;
+        for (const Expr::FieldInit &field : init.fields) {
+            if (field.value == nullptr || field.field.empty()) {
+                return nullptr;
+            }
+            int index = -1;
+            const FieldLayout *slot = find_field(struct_id, field.field, index);
+            if (slot == nullptr) {
+                return nullptr;
+            }
+            llvm::Constant *value = const_field(*field.value, *slot);
+            if (value == nullptr) {
+                return nullptr;
+            }
+            std::fill(raw.begin(), raw.end(), 0);
+            if (!write_constant_bytes(value, 0, raw)) {
+                return nullptr;
+            }
+            const auto member = enums_[static_cast<std::size_t>(layout.tag_enum)].values.find(field.field);
+            if (member == enums_[static_cast<std::size_t>(layout.tag_enum)].values.end()) {
+                return nullptr;
+            }
+            tag_value = member->second;
+        }
+        llvm::Constant *tag = enum_constant(layout.tag_enum, tag_value);
+        if (tag == nullptr || tag->getType() != layout.type->getElementType(0)) {
+            return nullptr;
+        }
+        llvm::Constant *bytes = llvm::ConstantDataArray::get(context_, raw);
+        if (bytes->getType() != bytes_type) {
+            return nullptr;
+        }
+        return llvm::ConstantStruct::get(layout.type,
+                                         {tag, llvm::ConstantAggregateZero::get(layout.type->getElementType(1)), bytes});
     }
     const unsigned count = layout.type->getNumElements();
     std::vector<llvm::Constant *> elements;
@@ -487,6 +620,7 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
         if (field.value == nullptr || field.field.empty()) {
             continue;
         }
+        store_union_tag(init.struct_id, slot, field.field);
         const TypedValue addr = field_addr(init.struct_id, slot, field.field, field.loc);
         if (addr.value == nullptr) {
             continue;
@@ -1971,7 +2105,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 default: return {zero(), 0};
                 }
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                arm_union_tag_ = true;
                 const TypedValue slot = emit_addr(*node.lhs);
+                arm_union_tag_ = false;
                 const TypedValue rhs = emit_rvalue(*node.rhs);
                 llvm::Value *stored = nullptr;
                 if (slot.value != nullptr && rhs.value != nullptr) {
@@ -1993,6 +2129,32 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         if (const Binding *binding = lookup(named->text);
                             binding != nullptr && binding->is_generic && binding->decl != nullptr) {
                             return emit_generic_call(*binding, node);
+                        }
+                        if (lookup(named->text) == nullptr && node.args.size() == 1 && node.args.front() != nullptr) {
+                            int enum_id = enum_named(current_file_, named->text);
+                            if (enum_id < 0) {
+                                enum_id = selective_enum(current_file_, named->text);
+                            }
+                            if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size())) {
+                                const TypedValue source = emit_rvalue(*node.args.front());
+                                if (source.value != nullptr && source.depth == 0 && source.struct_id >= 0 &&
+                                    source.struct_id < static_cast<int>(structs_.size()) &&
+                                    source.value->getType()->isStructTy() &&
+                                    structs_[static_cast<std::size_t>(source.struct_id)].tag_enum == enum_id) {
+                                    llvm::Value *tag = builder_.CreateExtractValue(source.value, 0);
+                                    const EnumLayout &enumeration = enums_[static_cast<std::size_t>(enum_id)];
+                                    TypedValue value;
+                                    value.value = tag;
+                                    value.enum_id = enum_id;
+                                    value.elem_bool = enumeration.is_bool;
+                                    value.elem_char = enumeration.is_char;
+                                    value.elem_unsigned = enumeration.is_unsigned;
+                                    value.elem_bits = enumeration.is_bool ? 0 : enumeration.bits;
+                                    return value;
+                                }
+                                error(node.loc, "type mismatch");
+                                return {zero(), 0};
+                            }
                         }
                     }
                 }
@@ -2074,6 +2236,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (base.value != nullptr) {
                         builder_.CreateStore(base.value, slot);
                     }
+                    if (structs_[static_cast<std::size_t>(base.struct_id)].tag_enum >= 0) {
+                        const TypedValue addr = field_addr(base.struct_id, slot, node.field, node.loc);
+                        if (addr.value == nullptr) {
+                            return {zero(), 0};
+                        }
+                        return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,
+                                           addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.elem_float);
+                    }
                     return load_object(slot, field->depth, field->elem_char, field->struct_id, field->elem_void,
                                        field->elem_bool, field->elem_bits, field->elem_unsigned, field->elem_float);
                 }
@@ -2148,6 +2318,24 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                              false, 0, false);
                 if (source.value == nullptr) {
                     return {zero(), 0};
+                }
+                if (source.depth == 0 && source.struct_id >= 0 && source.struct_id < static_cast<int>(structs_.size()) &&
+                    source.value->getType()->isStructTy()) {
+                    const StructLayout &layout = structs_[static_cast<std::size_t>(source.struct_id)];
+                    if (layout.tag_enum >= 0 && target.enum_id == layout.tag_enum &&
+                        layout.tag_enum < static_cast<int>(enums_.size()) && layout.type != nullptr &&
+                        layout.type->getNumElements() > 0) {
+                        llvm::Value *tag = builder_.CreateExtractValue(source.value, 0);
+                        const EnumLayout &enumeration = enums_[static_cast<std::size_t>(layout.tag_enum)];
+                        TypedValue value;
+                        value.value = tag;
+                        value.enum_id = layout.tag_enum;
+                        value.elem_bool = enumeration.is_bool;
+                        value.elem_char = enumeration.is_char;
+                        value.elem_unsigned = enumeration.is_unsigned;
+                        value.elem_bits = enumeration.is_bool ? 0 : enumeration.bits;
+                        return value;
+                    }
                 }
                 if (target.depth > 0 && source.depth > 0) {
                     return {source.value, target.depth, target.elem_char, target.struct_id, false, target.elem_void,
@@ -2890,9 +3078,9 @@ void CodeGen::emit(const PackageGraph &graph) {
     }
     graph_ = &graph;
     entry_file_ = graph.nodes.front().file_id;
+    prepare_enums();
     prepare_structs();
     prepare_traits();
-    prepare_enums();
     for (const PackageNode &node : graph.nodes) {
         declare_file(node);
     }

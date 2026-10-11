@@ -107,6 +107,12 @@ class Parser {
     std::string parse_enum_underlying();
     std::vector<Enumerator> parse_enumerators();
     std::vector<FieldDecl> parse_fields();
+    struct UnionBody {
+        std::vector<FieldDecl> fields;
+        std::vector<StructDecl> anonymous;
+    };
+    // `Circle struct { ... };` or `Circle Circle;`. The enum name was already parsed.
+    UnionBody parse_union_variants(const std::string &union_name);
     Declarator parse_declarator();
     void parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, std::vector<FnParam> &params, bool &variadic);
     FnParam fn_param_from(const PlacedType &type) const;

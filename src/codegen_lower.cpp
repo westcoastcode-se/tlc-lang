@@ -645,9 +645,22 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
         error(loc, slot == nullptr ? "undeclared identifier" : "type mismatch");
         return {};
     }
-    // Every union field starts at the same address. The storage type is only the size and alignment.
-    if (structs_[static_cast<std::size_t>(struct_id)].is_union) {
-        return {pointer, slot->depth, slot->elem_char, slot->struct_id, slot->is_array, slot->elem_void, slot->elem_bool,
+    const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
+    // A C union overlays every field at offset 0. A tlc union overlays them after the tag.
+    if (layout.is_union) {
+        llvm::Value *addr = pointer;
+        if (layout.tag_enum >= 0) {
+            if (arm_union_tag_) {
+                store_union_tag(struct_id, pointer, field);
+            }
+            if (layout.type->getNumElements() < 3) {
+                error(loc, "type mismatch");
+                return {};
+            }
+            addr = builder_.CreateInBoundsGEP(layout.type, pointer,
+                                               llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(2)});
+        }
+        return {addr, slot->depth, slot->elem_char, slot->struct_id, slot->is_array, slot->elem_void, slot->elem_bool,
                 slot->elem_bits, slot->elem_unsigned, -1, slot->elem_float};
     }
     llvm::Value *zero_index = const_i32(0);
@@ -781,6 +794,9 @@ void CodeGen::prepare_structs() {
             structs_[static_cast<std::size_t>(id)].is_extern = item->is_extern;
             structs_[static_cast<std::size_t>(id)].extern_c = item->extern_c;
             structs_[static_cast<std::size_t>(id)].is_union = item->is_union;
+            if (!item->tag_name.empty()) {
+                structs_[static_cast<std::size_t>(id)].tag_enum = enum_named(file, item->tag_name);
+            }
             auto c_memory = [&](auto &&self, llvm::Type *ty) -> llvm::Type * {
                 if (ty == nullptr) {
                     return ty;
@@ -855,10 +871,22 @@ void CodeGen::prepare_structs() {
                     }
                 }
                 const uint64_t rounded = (union_size + best_align - 1) / best_align * best_align;
-                body.clear();
-                body.push_back(fields[static_cast<std::size_t>(prefix)].type);
-                if (prefix_size < rounded) {
-                    body.push_back(llvm::ArrayType::get(i8(), rounded - prefix_size));
+                llvm::Type *prefix_type = fields[static_cast<std::size_t>(prefix)].type;
+                if (!item->tag_name.empty() && prefix_type != nullptr &&
+                    structs_[static_cast<std::size_t>(id)].tag_enum >= 0) {
+                    // Tag, a zero-length array that carries the payload alignment, then the payload bytes.
+                    // Every variant starts at the byte array. A load uses the variant's own type.
+                    const int tag_id = structs_[static_cast<std::size_t>(id)].tag_enum;
+                    body.clear();
+                    body.push_back(enum_mem_type(tag_id));
+                    body.push_back(llvm::ArrayType::get(prefix_type, 0));
+                    body.push_back(llvm::ArrayType::get(i8(), rounded == 0 ? 1 : rounded));
+                } else {
+                    body.clear();
+                    body.push_back(prefix_type);
+                    if (prefix_size < rounded) {
+                        body.push_back(llvm::ArrayType::get(i8(), rounded - prefix_size));
+                    }
                 }
             }
             if (body.empty()) {
@@ -993,6 +1021,14 @@ void CodeGen::prepare_aliases() {
         }
         aliases_[item.file].emplace(item.item->name, Alias{});
     }
+}
+
+llvm::Type *CodeGen::enum_mem_type(int enum_id) const {
+    if (enum_id < 0 || enum_id >= static_cast<int>(enums_.size())) {
+        return i32();
+    }
+    const EnumLayout &layout = enums_[static_cast<std::size_t>(enum_id)];
+    return leaf_type(0, layout.is_char, -1, layout.is_bool, layout.is_bool ? 0 : layout.bits, false);
 }
 
 void CodeGen::describe_enum(const std::string &underlying, EnumLayout &layout) const {

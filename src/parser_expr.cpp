@@ -246,6 +246,11 @@ bool Parser::skip_type_base(std::size_t &index, int leading, bool cast) const {
     if (head.kind != TokenKind::Identifier) {
         return false;
     }
+    // `ShapeType(value)` after the type is declared in this file. `f()` stays a call.
+    if (cast && type_names_.count(head.text) != 0 && peek(index + 1).kind == TokenKind::LParen) {
+        ++index;
+        return true;
+    }
     // `*Point(p)` after Point is declared. `*f()` stays a dereference.
     // `sizeof(*Point)` is an expression; sema treats a type name as a type.
     if (cast && leading > 0 && type_names_.count(head.text) != 0) {

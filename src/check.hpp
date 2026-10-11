@@ -58,14 +58,20 @@ class Checker {
         // File that wrote the struct. A method on it belongs in this file.
         uint32_t file_id = 0;
         bool complete = false;
+        SourceLoc loc{};
         struct Field {
             std::string name;
             Type type;
+            SourceLoc loc{};
         };
         std::vector<Field> fields;
         bool is_extern = false;
         bool extern_c = false;
         int align = 0;
+        bool is_union = false;
+        // Enum that tags a tlc union. Empty until check_unions resolves `tag_name`.
+        std::string tag_name;
+        int tag_enum = -1;
     };
 
     struct MethodInfo {
@@ -189,6 +195,7 @@ class Checker {
     void register_structs(const TranslationUnit &unit, uint32_t file_id);
     void require_extern_struct(const Type &type, SourceLoc loc);
     void register_enums(const TranslationUnit &unit, uint32_t file_id);
+    void check_unions();
     void register_traits(const TranslationUnit &unit, uint32_t file_id);
     void register_typedefs(const TranslationUnit &unit, uint32_t file_id);
     bool name_taken(const std::string &name) const;

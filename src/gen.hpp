@@ -161,6 +161,8 @@ class CodeGen {
     CAbi extern_ret_abi_{};
     llvm::Type *extern_ret_struct_ = nullptr;
     bool share_function_scope_ = false;
+    // Set while computing the address of an assignment, so writing a variant stores its tag.
+    bool arm_union_tag_ = false;
     std::unordered_map<const llvm::Function *, ExternLayout> extern_abis_;
     int local_seq_ = 0;
     uint32_t entry_file_ = 0;
@@ -233,6 +235,8 @@ class CodeGen {
         bool is_extern = false;
         bool extern_c = false;
         bool is_union = false;
+        // Enum stored in a tlc union. Negative for an `extern(abi="c")` overlay.
+        int tag_enum = -1;
     };
     struct Lowered {
         llvm::Type *type = nullptr;
@@ -633,6 +637,9 @@ class CodeGen {
     void apply_low(Binding &binding, const Lowered &low) const;
     const FieldLayout *find_field(int struct_id, const std::string &name, int &index) const;
     TypedValue field_addr(int struct_id, llvm::Value *pointer, const std::string &field, SourceLoc loc);
+    void store_union_tag(int struct_id, llvm::Value *pointer, const std::string &field);
+    llvm::Type *enum_mem_type(int enum_id) const;
+    bool write_constant_bytes(llvm::Constant *value, uint64_t offset, std::vector<uint8_t> &bytes) const;
     bool addressable(const Expr &expr) const;
     void prepare_structs();
     void prepare_traits();

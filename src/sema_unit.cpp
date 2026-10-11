@@ -201,6 +201,7 @@ void Checker::analyze(const TranslationUnit &unit) {
     register_enums(unit, 0);
     register_traits(unit, 0);
     register_typedefs(unit, 0);
+    check_unions();
     publish_exports(unit, 0);
     analyze_unit(unit, 0, nullptr);
 }
@@ -543,6 +544,7 @@ void Checker::analyze_graph(const PackageGraph &graph) {
         file_id_ = item.file_id;
         register_one_typedef(*item.item);
     }
+    check_unions();
     for (const PackageNode &node : graph.nodes) {
         publish_exports(node.unit, node.file_id);
     }

@@ -59,6 +59,31 @@ std::string type_text(const std::string &name, const std::string &package, bool 
     return text;
 }
 
+void append_many_results(std::string &out, const std::vector<FnParam> &results);
+
+void dump_field(const FieldDecl &field, std::string &out, int indent) {
+    append_indent(out, indent);
+    out += "(field ";
+    out += field.name;
+    if (!field.inline_fields.empty()) {
+        out += " struct\n";
+        for (const FieldDecl &inner : field.inline_fields) {
+            dump_field(inner, out, indent + 1);
+        }
+        append_indent(out, indent);
+        out += ")\n";
+        return;
+    }
+    out += ' ';
+    out += type_text(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
+                     field.is_array, field.array_len);
+    if (field.is_fn_ptr) {
+        out += " fnptr";
+        append_many_results(out, field.fn_results);
+    }
+    out += ")\n";
+}
+
 void append_many_results(std::string &out, const std::vector<FnParam> &results) {
     if (results.size() < 2) {
         return;
@@ -500,9 +525,16 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
             dump_var(*var, out, 1);
         } else if (const auto *item = std::get_if<StructDecl>(&decl.data)) {
+            if (item->anonymous) {
+                continue;
+            }
             append_indent(out, 1);
             out += item->is_union ? "(union " : "(struct ";
             out += item->name;
+            if (!item->tag_name.empty()) {
+                out += ' ';
+                out += item->tag_name;
+            }
             if (item->align > 0) {
                 out += " align ";
                 out += std::to_string(item->align);
@@ -513,17 +545,7 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             append_extern(out, item->is_extern, item->extern_c);
             out += "\n";
             for (const FieldDecl &field : item->fields) {
-                append_indent(out, 2);
-                out += "(field ";
-                out += field.name;
-                out += ' ';
-                out += type_text(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
-                                 field.is_array, field.array_len);
-                if (field.is_fn_ptr) {
-                    out += " fnptr";
-                    append_many_results(out, field.fn_results);
-                }
-                out += ")\n";
+                dump_field(field, out, 2);
             }
             append_indent(out, 1);
             out += ")\n";

@@ -87,8 +87,11 @@ type-decl   = "type" identifier type-body ;
 type-body   = "struct" [ align ] "{" { field } "}" [ ";" ]
             | "enum" [ "(" underlying ")" ] "{" [ enumerators ] "}" [ ";" ]
             | "trait" "{" { trait-method } "}" [ ";" ]
+            | "union" "(" identifier ")" "{" { union-variant } "}" [ ";" ]
             | "union" "{" field { field } "}" [ ";" ]
             | go-type ";" ;
+union-variant = identifier "struct" "{" { field } "}" ";"
+              | field ;
 align       = "(" "align" "=" integer-literal ")" ;
 field       = identifier go-type ";" ;
 declarator  = identifier [ array ]
@@ -101,9 +104,11 @@ enumerator  = identifier [ "=" integer-literal ] ;
 trait-method = "func" identifier "(" [ parameters ] ")" result ";" ;
 ```
 
-The semicolon after `}` is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `type Name struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `type Name struct` without `{` is `expected '{'`. An empty `extern(abi="c") struct` is `extern(abi="c") type Name struct "{" "}"`. A `union` requires `extern(abi="c")`.
+The semicolon after `}` is optional. A field is a name and then a `go-type`, the same order as `var`: `x int`, `next *Node`, `raw [8]char`, `op func (int, int) int`. A field still ends with `;`. `type Name struct(align=16)` sets the alignment. The literal is a positive power of two, at most 4096. A weaker alignment than the fields require is `type mismatch`. A pointer to an array (`*[4]int`) is `not supported yet` as a field. `type Name struct` without `{` is `expected '{'`. An empty `extern(abi="c") struct` is `extern(abi="c") type Name struct "{" "}"`.
 
-`extern(abi="c") union` is a C union: every field starts at offset 0, the size is the largest field, and the alignment is the strictest field. A union without `extern(abi="c")`, including `extern union`, is `not supported yet`. An empty union is `not supported yet`.
+`type Name union(Enum)` is a tlc union. `Enum` is an enum in the same package. A qualified name there is `not supported yet`. Each enumerator is one field, and each field names one enumerator. A field that is not an enumerator is `undeclared identifier`. An enumerator with no field is `type mismatch`. The field is an inline struct, `Circle struct { radius f32; };`, or the name of a struct, `Circle Circle;`. A field that is not a struct is `type mismatch`. The value stores the enum tag and one payload. Every field starts at the same offset after the tag. The payload is large enough for the largest field. Assigning a field, or a field inside it, stores that enumerator. A designated initializer does the same. `Enum(value)` reads the tag. Reading a field does not check the tag. `extern` and `extern(abi="c")` cannot use `union(Enum)`. That is `not supported yet`.
+
+`extern(abi="c") union` is a C union: every field starts at offset 0, the size is the largest field, and the alignment is the strictest field. A union without `extern(abi="c")` and without an enum, including `extern union`, is `not supported yet`. An empty union is `not supported yet`.
 
 `extern(abi="c") type Name enum` has no underlying type. `extern(abi="c") type Name enum(i8)` is `extern enum`. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
 

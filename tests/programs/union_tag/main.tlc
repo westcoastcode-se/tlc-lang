@@ -1,0 +1,99 @@
+type ShapeType enum {
+    Circle,
+    Rectangle,
+}
+
+type Shape union(ShapeType) {
+    Circle struct {
+        radius int;
+    };
+    Rectangle struct {
+        width int;
+        height int;
+    };
+}
+
+type Circle struct {
+    radius int;
+}
+
+type Rectangle struct {
+    width int;
+    height int;
+}
+
+type Named union(ShapeType) {
+    Circle Circle;
+    Rectangle Rectangle;
+}
+
+type Kind enum {
+    A = 2,
+    B,
+}
+
+type One struct {
+    n int;
+}
+
+type Two struct {
+    n int;
+}
+
+type Pick union(Kind) {
+    A One;
+    B Two;
+}
+
+type WideKind enum {
+    A,
+    B,
+}
+
+type WideA struct {
+    n i64;
+}
+
+type WideB struct {
+    n i64;
+}
+
+type Wide union(WideKind) {
+    A WideA;
+    B WideB;
+}
+
+var g Shape = {.Rectangle = {.width = 4, .height = 5}};
+
+func main() int {
+    var s Shape = {.Circle = {.radius = 1}};
+    if (ShapeType(s) != ShapeType.Circle || s.Circle.radius != 1) {
+        return 1;
+    }
+    var p *Shape = &s;
+    p.Rectangle.width = 20;
+    p.Rectangle.height = 22;
+    if (ShapeType(s) != ShapeType.Rectangle || s.Rectangle.width != 20 || s.Rectangle.height != 22) {
+        return 2;
+    }
+    var n Named;
+    n.Circle.radius = 7;
+    if (ShapeType(n) != ShapeType.Circle || n.Circle.radius != 7 || n.Rectangle.width != 7) {
+        return 3;
+    }
+    if (sizeof(Shape) != 12 || sizeof(Named) != 12 || sizeof(Wide) != 16) {
+        return sizeof(Shape);
+    }
+    if (ShapeType(g) != ShapeType.Rectangle || g.Rectangle.width != 4 || g.Rectangle.height != 5) {
+        return 4;
+    }
+    var pick Pick = {.B = {.n = 9}};
+    if (Kind(pick) != Kind.B || pick.B.n != 9) {
+        return 5;
+    }
+    var wide Wide = {.A = {.n = 40}};
+    if (WideKind(wide) != WideKind.A || wide.A.n != 40) {
+        return 6;
+    }
+    return s.Rectangle.width + s.Rectangle.height;
+}

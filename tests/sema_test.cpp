@@ -2225,6 +2225,88 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type ShapeType enum { Circle, Rectangle }\n"
+            "type Shape union(ShapeType) {\n"
+            "    Circle struct { radius f32; };\n"
+            "    Rectangle struct { width f32; height f32; };\n"
+            "}\n"
+            "type Circle struct { radius int; }\n"
+            "type Rectangle struct { width int; height int; }\n"
+            "type Named union(ShapeType) { Circle Circle; Rectangle Rectangle; }\n"
+            "func main() int {\n"
+            "    var s Shape = {.Circle = {.radius = 1.0}};\n"
+            "    s.Rectangle.width = 2.0;\n"
+            "    var n Named;\n"
+            "    n.Circle.radius = 3;\n"
+            "    if (ShapeType(s) == ShapeType.Rectangle && ShapeType(n) == ShapeType.Circle) {\n"
+            "        return n.Circle.radius;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape union(ShapeType) { Circle Circle; Rectangle Rectangle; }\n"
+            "type Rectangle struct { width int; height int; }\n"
+            "type Circle struct { radius int; }\n"
+            "type ShapeType enum { Rectangle, Circle }\n"
+            "func main() int { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type ShapeType enum { Circle, Rectangle }\n"
+            "type Shape union(ShapeType) {\n"
+            "    Circle struct { radius int; };\n"
+            "    Other struct { n int; };\n"
+            "}\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type ShapeType enum { Circle, Rectangle }\n"
+            "type Shape union(ShapeType) { Circle int; Rectangle int; }\n"
+            "type Box struct { n int; }\n"
+            "type Bad union(Box) { A struct { n int; }; }\n"
+            "type Missing union(Nope) { A struct { n int; }; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Kind enum { A }\n"
+            "extern(abi=\"c\") type Num union(Kind) { A struct { n int; }; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"app/main.tlc",
+             "func main() int {\n"
+             "  var pair Pair = {.B = {.n = 8}};\n"
+             "  if (Other(pair) != Other.B) { return 0; }\n"
+             "  return pair.B.n;\n"
+             "}\n"},
+            {"app/shape.tlc",
+             "type Other enum { A, B }\n"
+             "type Left struct { n int; }\n"
+             "type Right struct { n int; }\n"
+             "type Pair union(Other) { A Left; B Right; }\n"},
+        });
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
             "extern(abi=\"c\") type Num union { n int; m int; }\n"
             "type Inner struct { n int; };\n"
             "extern(abi=\"c\") type Bad union { item Inner; n int; }\n"

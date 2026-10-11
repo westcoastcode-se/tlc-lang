@@ -280,7 +280,8 @@ ExternLayout CodeGen::extern_layout(const FunctionDecl &fn, uint32_t file) const
         layout.args[index].is_struct = true;
         layout.args[index].struct_id = low.struct_id;
         layout.args[index].struct_type = low.type;
-        layout.args[index].abi = structs_[static_cast<std::size_t>(low.struct_id)].is_union
+        const StructLayout &arg_layout = structs_[static_cast<std::size_t>(low.struct_id)];
+        layout.args[index].abi = arg_layout.is_union && arg_layout.tag_enum < 0
                                      ? c_abi_union(low.struct_id)
                                      : c_abi(llvm::cast<llvm::StructType>(low.type));
     }
@@ -291,9 +292,9 @@ ExternLayout CodeGen::extern_layout(const FunctionDecl &fn, uint32_t file) const
     if (ret_struct) {
         layout.ret_struct = ret.type;
         layout.ret_struct_id = ret.struct_id;
-        layout.ret = structs_[static_cast<std::size_t>(ret.struct_id)].is_union
-                         ? c_abi_union(ret.struct_id)
-                         : c_abi(llvm::cast<llvm::StructType>(ret.type));
+        const StructLayout &ret_layout = structs_[static_cast<std::size_t>(ret.struct_id)];
+        layout.ret = ret_layout.is_union && ret_layout.tag_enum < 0 ? c_abi_union(ret.struct_id)
+                                                                   : c_abi(llvm::cast<llvm::StructType>(ret.type));
         layout.sret = layout.ret.memory;
     }
     std::vector<llvm::Type *> params;

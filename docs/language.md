@@ -466,7 +466,44 @@ extern(abi="c") func SDL_DestroyWindow(window *SDL_Window) void;
 
 A plain struct in an `extern(abi="c")` function is `struct must be extern(abi="c")`.
 
-`extern(abi="c") union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A union without `extern(abi="c")`, including `extern union`, is `not supported yet`; a tagged union waits. An empty union is `not supported yet`. A struct or a union nested inside it must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
+A tlc union names the enum that selects the active field. The enum is in the same package. Each enumerator is one field, and each field is one enumerator. A field that is not an enumerator is `undeclared identifier`. An enumerator with no field is `type mismatch`. The field's type is a struct. It can be written inline, or it can name a struct that is already declared. A field that is not a struct is `type mismatch`. The name in parentheses is `undeclared identifier` when it names nothing, and `type mismatch` when it is not an enum.
+
+```c
+type ShapeType enum {
+    Circle,
+    Rectangle,
+};
+
+type Shape union(ShapeType) {
+    Circle struct {
+        radius f32;
+    };
+    Rectangle struct {
+        width f32;
+        height f32;
+    };
+};
+
+type Circle struct {
+    radius f32;
+};
+
+type Rectangle struct {
+    width f32;
+    height f32;
+};
+
+type Named union(ShapeType) {
+    Circle Circle;
+    Rectangle Rectangle;
+};
+```
+
+The value stores the tag and one payload. Every field starts at the same offset after the tag, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 4 for the `int` tag and 8 for the payload. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0.
+
+`extern` and `extern(abi="c")` cannot use `union(Enum)`. That is `not supported yet`.
+
+`extern(abi="c") union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A union without `extern(abi="c")` and without an enum, including `extern union`, is `not supported yet`. An empty union is `not supported yet`. A struct or a union nested inside a C union must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
 
 ```c
 extern(abi="c") type Num union {

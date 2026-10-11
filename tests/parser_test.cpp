@@ -438,6 +438,36 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "type ShapeType enum { Circle, Rectangle }\n"
+            "type Shape union(ShapeType) {\n"
+            "    Circle struct { radius f32; };\n"
+            "    Rectangle struct { width f32; height f32; };\n"
+            "}\n"
+            "type Circle struct { radius f32; }\n"
+            "type Rectangle struct { width f32; height f32; }\n"
+            "type Named union(ShapeType) { Circle Circle; Rectangle Rectangle; }\n"
+            "func tag(s Shape) ShapeType { return ShapeType(s); }\n"
+            "extern(abi=\"c\") type Ext union(ShapeType) { Circle struct { radius f32; }; }\n"
+            "extern type Plain union(ShapeType) { Circle Circle; }\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.dump, "(union Shape ShapeType\n");
+        EXPECT_HAS(check, parsed.dump, "(field Circle struct\n");
+        EXPECT_HAS(check, parsed.dump, "(field radius f32)\n");
+        EXPECT_HAS(check, parsed.dump, "(field Rectangle struct\n");
+        EXPECT_HAS(check, parsed.dump, "(field width f32)\n");
+        EXPECT_HAS(check, parsed.dump, "(field height f32)\n");
+        EXPECT_HAS(check, parsed.dump, "(union Named ShapeType\n");
+        EXPECT_HAS(check, parsed.dump, "(field Circle Circle)\n");
+        EXPECT_HAS(check, parsed.dump, "(field Rectangle Rectangle)\n");
+        EXPECT_HAS(check, parsed.dump, "(cast ShapeType (name s))");
+        EXPECT(check, parsed.dump.find("(struct Shape.") == std::string::npos);
+        EXPECT(check, parsed.dump.find("(union Ext") == std::string::npos);
+        EXPECT(check, parsed.dump.find("(union Plain") == std::string::npos);
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "type Box struct { p *[4]int; }\n"
             "func main() int { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");

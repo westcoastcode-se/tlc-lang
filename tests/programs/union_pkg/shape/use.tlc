@@ -1,0 +1,9 @@
+package shape;
+
+export func read() int {
+    var pair Pair = {.B = {.n = 8}};
+    if (Other(pair) != Other.B || pair.B.n != 8) {
+        return 0;
+    }
+    return 42;
+}
