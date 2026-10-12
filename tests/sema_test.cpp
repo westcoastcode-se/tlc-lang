@@ -2435,7 +2435,7 @@ int run_sema_tests() {
             "  a := add(1, 2);\n"
             "  return a;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch: expected 1 result, found 2 results");
+        EXPECT_HAS(check, errors, "return type: expected int, found (int, int)");
     }
 
     {
@@ -2445,7 +2445,7 @@ int run_sema_tests() {
             "  var a = add(1, 2);\n"
             "  return a;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "return type: expected int, found (int, int)");
     }
 
     {
@@ -3237,6 +3237,43 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var n u8 = 1;\n"
+            "  const value = n + 2;\n"
+            "  var p *const u8 = &n;\n"
+            "  var q *u8 = p;\n"
+            "  *p = 3;\n"
+            "  value = 4;\n"
+            "  return value + *p + q[0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
+            "func main() int {\n"
+            "  var p *const u8 = builtin.trace();\n"
+            "  var q *u8 = builtin.trace();\n"
+            "  return *p;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() int {\n"
+            "  var n u8 = 1;\n"
+            "  var p *u8 = &n;\n"
+            "  var q *const u8 = p;\n"
+            "  const value = 40 + 2;\n"
+            "  return value + *q;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
             "func id[T type](value T) T { return value; }\n"
             "func main() int { var f = id; return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
@@ -3464,9 +3501,9 @@ int run_sema_tests() {
             "func id(x int) typeof(x) { return x; }\n"
             "func main() int {\n"
             "  var n = keep(40);\n"
-            "  a, b := keep({40, 2});\n"
+            "  a, b := keep((40, 2));\n"
             "  var row [3]int = {10, 20, 12};\n"
-            "  var head = first({7, 8});\n"
+            "  var head = first((7, 8));\n"
             "  return n + a + b + row[0] + head + id(1);\n"
             "}\n");
         EXPECT(check, errors.empty());
@@ -3502,7 +3539,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func keep[...U](args U) int { args[0] = 1; return 0; }\n"
-            "func main() int { return keep({1, 2}); }\n");
+            "func main() int { return keep((1, 2)); }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
@@ -3519,7 +3556,7 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("func main() int { a, b := {40, 2}; return a + b; }\n");
+        const std::string errors = diagnose("func main() int { a, b := (40, 2); return a + b; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 

@@ -2631,10 +2631,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return emit_anon_function(*node.decl);
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
-                if (!node.elements.empty()) {
-                    if (node.elements.size() == 1 && node.elements.front()) {
-                        return emit_rvalue(*node.elements.front());
-                    }
+                if (node.is_tuple) {
                     std::vector<llvm::Value *> fields;
                     std::vector<llvm::Type *> types;
                     fields.reserve(node.elements.size());
@@ -2659,6 +2656,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     out.value = aggregate;
                     out.is_tuple = true;
                     return out;
+                }
+                if (node.elements.size() == 1 && node.elements.front()) {
+                    return emit_rvalue(*node.elements.front());
                 }
                 return emit_init(node);
             } else {
@@ -2823,6 +2823,15 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         return;
     }
     auto create_scalar = [&](const std::string &name, const TypedValue &got) {
+        if (got.is_tuple && got.value != nullptr && got.value->getType()->isStructTy()) {
+            llvm::AllocaInst *slot = alloca_typed(got.value->getType(), name);
+            builder_.CreateStore(got.value, slot);
+            Binding binding;
+            binding.value = slot;
+            binding.is_tuple = true;
+            scopes_.back()[name] = binding;
+            return;
+        }
         llvm::Type *ty = i32();
         Binding binding;
         if (got.enum_id >= 0 && got.enum_id < static_cast<int>(enums_.size())) {
@@ -2867,7 +2876,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         scopes_.back()[name] = binding;
     };
     auto destination = [&](const std::string &name, bool &create) -> llvm::Value * {
-        create = node.is_var;
+        create = node.is_var || node.is_const;
         if (create) {
             return nullptr;
         }
@@ -3042,7 +3051,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     auto *aggregate_type = llvm::cast<llvm::StructType>(return_type_);
                     llvm::Value *aggregate = llvm::ConstantAggregateZero::get(aggregate_type);
                     const unsigned count = aggregate_type->getNumElements();
-                    // `return args` and `return {40, 'a'}` are one tuple. Spread it across the results.
+                    // `return args` and `return (40, 'a')` are one tuple. Spread it across the results.
                     if (exprs.size() == 1 && exprs[0] != nullptr) {
                         const TypedValue value = emit_rvalue(*exprs[0]);
                         if (terminated()) {

@@ -394,7 +394,7 @@ int run_parser_tests() {
             "  return 0;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(fn printf (params (fmt char*) ...) int extern(abi=\"c\")\n");
+        EXPECT_HAS(check, parsed.dump, "(fn printf (params (fmt const char*) ...) int extern(abi=\"c\")\n");
         EXPECT_HAS(check, parsed.dump, "(expr (call (name printf) (string \"hi\\n\")))\n");
     }
 

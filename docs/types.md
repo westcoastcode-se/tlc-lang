@@ -20,6 +20,8 @@ Integers on `x86_64-pc-linux-gnu` follow LP64. `long` and `i64` are both 64 bits
 
 `*T` is a pointer with a value. `?*T` is that pointer or `null`. `*?*T` and `?**T` are different types.
 
+`*const T` is a pointer to constant `T`. `var p *const u8` may be reseated, and `*p = 1` or `p[i] = 1` is `type mismatch`. Reading `*p` and `p[i]` is allowed. `*T` may be stored in `*const T`. `*const T` may not be stored in `*T`. `?*const T` is that pointer or `null`. `**const T` is a pointer to a pointer to constant `T`. `*const *T` is a pointer to a constant pointer.
+
 `i8` and `u8` are the 8-bit integers. `i16` is `short` and `u16` is its unsigned counterpart. `i32` is `int` and `u32` is `uint`. `i64` and `u64` are the other 64-bit integers. `ulong` is 64 bits and a different type from `u64`. `long` stays a different 64-bit type from `i64`. `char` stays different from `i8`.
 
 The rank order is `bool`, then `char`, `i8`, and `u8`, then `short`, `i16`, and `u16`, then `int`, `i32`, `uint`, and `u32`, then `long` and `ulong`, then `i64` and `u64`. An unsigned type has the same rank as its signed counterpart.

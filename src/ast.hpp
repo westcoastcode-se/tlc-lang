@@ -38,6 +38,7 @@ struct TypeArg {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    uint32_t const_pointee = 0;
     bool is_array = false;
     int array_len = 0;
     std::string array_len_name;
@@ -106,6 +107,8 @@ struct Expr {
         int indirections = 0;
         // Bit 0 is the outermost `*`. A set bit is `?*`.
         uint32_t optional = 0;
+        // Bit 0 is the outermost `*`. A set bit means that pointer's pointee is `const`.
+        uint32_t const_pointee = 0;
         std::unique_ptr<Expr> expr;
     };
     struct Typeof {
@@ -117,6 +120,7 @@ struct Expr {
         bool is_enum = false;
         int indirections = 0;
         uint32_t optional = 0;
+        uint32_t const_pointee = 0;
         std::unique_ptr<Expr> expr;
         // Filled while checking. Codegen interns this spelling, so equal types share one value.
         mutable std::string canonical;
@@ -129,6 +133,7 @@ struct Expr {
         bool is_enum = false;
         int indirections = 0;
         uint32_t optional = 0;
+        uint32_t const_pointee = 0;
         std::unique_ptr<Expr> expr;
     };
     struct Bool {
@@ -157,12 +162,14 @@ struct Expr {
         std::string field;
         std::unique_ptr<Expr> value;
     };
-    // `{.field = value}` names struct fields. `{value, value}` is a value list: one value
-    // collapses, and several values are a tuple unless the destination is an array.
+    // `{.field = value}` names struct fields. `{value, value}` fills an array.
+    // `(value, value)` is a tuple.
     struct Init {
         SourceLoc loc{};
         std::vector<FieldInit> fields;
         std::vector<std::unique_ptr<Expr>> elements;
+        // `(value, value, ...)`. A brace list is not a tuple.
+        bool is_tuple = false;
         // Filled when the destination struct is known.
         int struct_id = -1;
     };
@@ -191,9 +198,11 @@ struct FnParam {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    uint32_t const_pointee = 0;
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
+    uint32_t ret_const_pointee = 0;
     std::vector<FnParam> params;
     bool variadic = false;
     // Set when this function pointer returns more than one result.
@@ -209,6 +218,7 @@ struct FieldDecl {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    uint32_t const_pointee = 0;
     bool is_array = false;
     int array_len = 0;
     // `[N]int` when N is a name. Folded into `array_len` before code generation.
@@ -217,6 +227,7 @@ struct FieldDecl {
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
+    uint32_t ret_const_pointee = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
@@ -271,6 +282,7 @@ struct TypedefDecl {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    uint32_t const_pointee = 0;
     bool is_array = false;
     int array_len = 0;
     std::string array_len_name;
@@ -279,6 +291,7 @@ struct TypedefDecl {
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
+    uint32_t ret_const_pointee = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
@@ -293,6 +306,7 @@ struct VarDecl {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    uint32_t const_pointee = 0;
     bool is_array = false;
     int array_len = 0;
     std::string array_len_name;
@@ -302,6 +316,7 @@ struct VarDecl {
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
+    uint32_t ret_const_pointee = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
@@ -391,6 +406,8 @@ struct Stmt {
         std::unique_ptr<Expr> value;
         bool is_var = false;
         bool is_define = false;
+        // `const name = expr`. The name is immutable.
+        bool is_const = false;
     };
     struct Assert {
         SourceLoc loc{};
@@ -418,6 +435,7 @@ struct ResultSlot {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    uint32_t const_pointee = 0;
     bool is_array = false;
     int array_len = 0;
     std::string array_len_name;
@@ -425,6 +443,7 @@ struct ResultSlot {
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
+    uint32_t ret_const_pointee = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
@@ -439,6 +458,7 @@ struct Param {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    uint32_t const_pointee = 0;
     bool is_array = false;
     int array_len = 0;
     std::string array_len_name;
@@ -448,6 +468,7 @@ struct Param {
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
+    uint32_t ret_const_pointee = 0;
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
@@ -465,6 +486,7 @@ struct FunctionDecl {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    uint32_t const_pointee = 0;
     std::vector<ResultSlot> results;
     std::vector<Param> params;
     std::unique_ptr<Stmt> body;

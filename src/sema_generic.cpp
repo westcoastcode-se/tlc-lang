@@ -45,7 +45,7 @@ bool same_spec(const SpecArg &lhs, const SpecArg &rhs) {
     }
     return lhs.type_name == rhs.type_name && lhs.type_package == rhs.type_package && lhs.is_struct == rhs.is_struct &&
            lhs.is_enum == rhs.is_enum && lhs.indirections == rhs.indirections && lhs.optional == rhs.optional &&
-           lhs.is_array == rhs.is_array && lhs.array_len == rhs.array_len;
+           lhs.const_pointee == rhs.const_pointee && lhs.is_array == rhs.is_array && lhs.array_len == rhs.array_len;
 }
 
 ResultSlot slot_from_spec(const SpecArg &arg) {
@@ -56,6 +56,7 @@ ResultSlot slot_from_spec(const SpecArg &arg) {
     slot.is_enum = arg.is_enum;
     slot.indirections = arg.indirections;
     slot.optional = arg.optional;
+    slot.const_pointee = arg.const_pointee;
     slot.is_array = arg.is_array;
     slot.array_len = arg.array_len;
     return slot;
@@ -68,6 +69,7 @@ void apply_spec(ResultSlot &slot, const SpecArg &arg) {
     slot.is_enum = arg.is_enum;
     slot.indirections = arg.indirections;
     slot.optional = arg.optional;
+    slot.const_pointee = arg.const_pointee;
     slot.is_array = arg.is_array;
     slot.array_len = arg.array_len;
 }
@@ -186,9 +188,13 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
     }
     int depth = 0;
     uint32_t optional = 0;
+    uint32_t const_pointee = 0;
     while (cursor->kind == TypeKind::Pointer && cursor->pointee != nullptr) {
         if (cursor->optional) {
             optional |= 1u << depth;
+        }
+        if (cursor->pointee->is_const) {
+            const_pointee |= 1u << depth;
         }
         ++depth;
         cursor = cursor->pointee.get();
@@ -198,6 +204,7 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
     }
     out.indirections = depth;
     out.optional = optional;
+    out.const_pointee = const_pointee;
     out.is_value = false;
     out.type_package.clear();
     out.struct_id = -1;
@@ -256,6 +263,9 @@ std::string Checker::mangle_spec(const std::string &base, const std::vector<Spec
         }
         for (int i = 0; i < arg.indirections; ++i) {
             name += (arg.optional & (1u << i)) != 0 ? "opt." : "ptr.";
+            if ((arg.const_pointee & (1u << i)) != 0) {
+                name += "const.";
+            }
         }
         if (!arg.type_package.empty()) {
             name += arg.type_package;
@@ -419,7 +429,8 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
         concrete.is_struct = true;
     }
     const Type type = object_type(concrete.type_name, concrete.indirections, concrete.is_array, concrete.array_len, arg.loc,
-                                  false, concrete.type_package, false, concrete.is_enum, false, concrete.optional);
+                                  false, concrete.type_package, false, concrete.is_enum, false, concrete.optional,
+                                  concrete.const_pointee);
     if (type.kind == TypeKind::Invalid) {
         return false;
     }
@@ -484,6 +495,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         }
         const int written = arg.indirections;
         const uint32_t written_opt = arg.optional;
+        const uint32_t written_const = arg.const_pointee;
         const bool written_array = arg.is_array;
         const int written_len = arg.array_len;
         if (bound->is_array && (written_array || written > 0)) {
@@ -496,6 +508,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         arg.is_enum = bound->is_enum;
         arg.indirections = written + bound->indirections;
         arg.optional = written_opt | (bound->optional << written);
+        arg.const_pointee = written_const | (bound->const_pointee << written);
         if (bound->is_array) {
             arg.is_array = true;
             arg.array_len = bound->array_len;
@@ -837,6 +850,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         fn.is_enum = first.is_enum;
         fn.indirections = first.indirections;
         fn.optional = first.optional;
+        fn.const_pointee = first.const_pointee;
     }
     for (const auto &expr : fn.result_typeof) {
         if (expr) {
@@ -883,7 +897,8 @@ bool Checker::resolve_result_typeof(FunctionDecl &fn) {
             continue;
         }
         const Type type = operand_type(node->on_type, node->type_name, node->type_package, node->is_struct, node->is_enum,
-                                       node->indirections, node->optional, node->expr.get(), node->loc);
+                                       node->indirections, node->optional, node->expr.get(), node->loc,
+                                       node->const_pointee);
         if (type.kind == TypeKind::Invalid) {
             ok = false;
             continue;
@@ -914,6 +929,7 @@ bool Checker::resolve_result_typeof(FunctionDecl &fn) {
         fn.is_enum = first.is_enum;
         fn.indirections = first.indirections;
         fn.optional = first.optional;
+        fn.const_pointee = first.const_pointee;
     }
     return true;
 }
@@ -1026,9 +1042,10 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         Type field_type = field.is_fn_ptr
                               ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
-                                               field.fn_results, field.loc, field.ret_optional)
+                                               field.fn_results, field.loc, field.ret_optional, field.ret_const_pointee)
                               : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
-                                            false, field.type_package, field.is_struct, field.is_enum, false, field.optional);
+                                            false, field.type_package, field.is_struct, field.is_enum, false,
+                                            field.optional, field.const_pointee);
         structs_[static_cast<std::size_t>(id)].fields.push_back(
             StructInfo::Field{field.name, std::move(field_type), field.loc});
     }

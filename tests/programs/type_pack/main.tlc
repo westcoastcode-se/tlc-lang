@@ -2,17 +2,17 @@ func keep[...U](args U) U { return args; }
 
 func first[...U](args U) typeof(args[0]) { return args[0]; }
 
-func pass() (int, int) { return keep({3, 4}); }
+func pass() (int, int) { return keep((3, 4)); }
 
 func main() int {
     var n = keep(40);
-    a, b := keep({40, 2});
-    x, y := keep({40, 'a'});
+    a, b := keep((40, 2));
+    x, y := keep((40, 'a'));
     var row [3]int = {10, 20, 12};
-    var head = first({7, 8});
-    var one = keep({5});
+    var head = first((7, 8));
+    var one = keep((5));
     var p = keep[int](1);
-    c, d := keep[int, char]({3, 'b'});
+    c, d := keep[int, char]((3, 'b'));
     if (n != 40) { return 1; }
     if (a != 40 || b != 2) { return 2; }
     if (x != 40 || y != 'a') { return 3; }

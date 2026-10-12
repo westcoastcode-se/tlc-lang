@@ -609,15 +609,17 @@ class Resolver {
             add_edge(from_file, kKey, import);
             return;
         }
-        auto pointer_char = [](const std::string &name) {
+        auto pointer_char = [](const std::string &name, bool const_bytes) {
             FunctionDecl fn;
             fn.exported = true;
             fn.name = name;
-            fn.return_type = "char";
+            fn.return_type = const_bytes ? "u8" : "char";
             fn.indirections = 1;
+            fn.const_pointee = const_bytes ? 1u : 0u;
             ResultSlot slot;
-            slot.type_name = "char";
+            slot.type_name = fn.return_type;
             slot.indirections = 1;
+            slot.const_pointee = fn.const_pointee;
             fn.results.push_back(std::move(slot));
             return fn;
         };
@@ -631,9 +633,9 @@ class Resolver {
         clause.name = "builtin";
         node.unit.package = clause;
         TopDecl trace;
-        trace.data = pointer_char("trace");
+        trace.data = pointer_char("trace", true);
         TopDecl va;
-        va.data = pointer_char("va");
+        va.data = pointer_char("va", false);
         node.unit.decls.push_back(std::move(trace));
         node.unit.decls.push_back(std::move(va));
         node.imported_from = from_file;

@@ -282,6 +282,9 @@ bool Parser::starts_type_paren() const {
             ++leading;
             ++index;
         }
+        if (peek(index).kind == TokenKind::KwConst) {
+            ++index;
+        }
     }
     if (!skip_type_base(index, leading, false)) {
         return false;
@@ -304,6 +307,9 @@ bool Parser::starts_cast_type() const {
         }
         if (peek(index).kind == TokenKind::Star) {
             ++leading;
+            ++index;
+        }
+        if (peek(index).kind == TokenKind::KwConst) {
             ++index;
         }
     }
@@ -371,6 +377,7 @@ Parser::ParenType Parser::parse_cast_type() {
     }
     type.indirections = leading;
     type.optional = prefix.optional;
+    type.const_pointee = prefix.const_pointee;
     return type;
 }
 
@@ -391,6 +398,7 @@ std::unique_ptr<Expr> Parser::parse_cast_expr() {
     node.is_enum = type.is_enum;
     node.indirections = type.indirections;
     node.optional = type.optional;
+    node.const_pointee = type.const_pointee;
     expect(TokenKind::LParen, "expected '('");
     if (check(TokenKind::RParen)) {
         error_here("expected an expression");
@@ -423,6 +431,9 @@ std::unique_ptr<Expr> Parser::parse_unary() {
                     ++look;
                 }
                 ++look;
+                if (peek(look).kind == TokenKind::KwConst) {
+                    ++look;
+                }
             }
         }
         if (peek().kind == TokenKind::LParen && peek(look).kind == TokenKind::KwStruct) {
@@ -457,6 +468,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             node.is_enum = spelled.is_enum;
             node.indirections = spelled.indirections;
             node.optional = spelled.optional;
+            node.const_pointee = spelled.const_pointee;
             node.expr = std::move(expr);
         };
         if (is_sizeof) {
@@ -632,10 +644,26 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     if (starts_short_function()) {
         return parse_short_function();
     }
-    if (eat(TokenKind::LParen)) {
+    if (check(TokenKind::LParen)) {
+        const SourceLoc loc = peek().loc;
+        ++pos_;
         auto expr = parse_expr();
+        if (!eat(TokenKind::Comma)) {
+            expect(TokenKind::RParen, "expected ')'");
+            return expr;
+        }
+        Expr::Init tuple;
+        tuple.loc = loc;
+        tuple.is_tuple = true;
+        tuple.elements.push_back(std::move(expr));
+        while (!check(TokenKind::RParen) && !eof()) {
+            tuple.elements.push_back(parse_assignment());
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+        }
         expect(TokenKind::RParen, "expected ')'");
-        return expr;
+        return make_expr(std::move(tuple));
     }
     if (check(TokenKind::KwFunc)) {
         return parse_anon_function();

@@ -87,6 +87,6 @@ func main() int {
 }
 ```
 
-`const` is accepted on parameters of an `extern(abi="c")` declaration. A variadic function may be declared with `extern(abi="c")` and without a body. A function with a body may use `...`, and `builtin.va()` reads the extra arguments.
+`*const T` on a parameter, including an `extern(abi="c")` parameter, is a pointer to constant `T`. A variadic function may be declared with `extern(abi="c")` and without a body. A function with a body may use `...`, and `builtin.va()` reads the extra arguments.
 
 [Index](README.md) · [Previous: The compiler](compiler.md) · [Next: Types](types.md) · [Grammar](grammar.md)

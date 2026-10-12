@@ -1,0 +1,8 @@
+func main() int {
+    var value = (40, 2);
+    pair := (7, 8);
+    if (value[0] != 40 || value[1] != 2 || pair[0] != 7 || pair[1] != 8) {
+        return 1;
+    }
+    return value[0] + value[1] + pair[0] + pair[1];
+}

@@ -56,6 +56,8 @@ A local array takes a brace list with one value per element: `var row [3]int = {
 
 `const name = expr` at file scope is a compile-time integer. It has no address. The expression is folded the same way as `assert`, including `sizeof`. `const N = 4` can be an array length, `[N]int`.
 
+Inside a function, `const name = expr` is an immutable binding. The type is the type of the expression. `name = ...` is `type mismatch`. `&name` has type `*const T`, so a store through that pointer is `type mismatch`. The binding is not a compile-time integer, and it cannot be an array length.
+
 At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `export`, `static`, `extern`, and `extern(abi="c")` go on a typed `var`: `export var n int = 1`, `static var n = 1`, `extern var slot int`, `extern(abi="c") var slot int`.
 
 Several results are still bound together: `var a, b = call`. A pointer is a leading star in every position, including a parameter, a result, a type alias, a cast, and `sizeof`: `*int`, `*const char`, `type Ptr *Point`, `sizeof(*int)`, `*int(value)`. A `var`, a field, or a type alias writes an array in front of its element type: `type Pair [2]int`. A parameter array stays after the element type: `int[4]`.

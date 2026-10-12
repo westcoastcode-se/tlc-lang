@@ -6,7 +6,7 @@ extern(abi="c") func printf(fmt *const char, ...) int;
 extern(abi="c") func vprintf(fmt *const char, ap *char) int;
 
 export func error(fmt *char, ...) int {
-    printf("%s: ", builtin.trace());
+    printf("%s: ", *char(builtin.trace()));
     vprintf(fmt, builtin.va());
     printf("\n");
     return 1;

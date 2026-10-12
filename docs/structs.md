@@ -45,7 +45,7 @@ type Node struct {
 };
 ```
 
-A struct value names its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. A field that is left out is zero. Naming a field twice is `redefinition`. An unknown field is `undeclared identifier`. Used where the type is not a struct, the initializer is `type mismatch`. `{10, 20}` is a value list, so where a struct is expected it is `type mismatch`. An empty `{}` leaves every field zero. Mixing a named field and a positional value is `type mismatch`.
+A struct value names its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. A field that is left out is zero. Naming a field twice is `redefinition`. An unknown field is `undeclared identifier`. Used where the type is not a struct, the initializer is `type mismatch`. `{10, 20}` is a value list, so where a struct is expected it is `type mismatch`. `(10, 20)` is a tuple, so where a struct is expected it is `type mismatch`. An empty `{}` leaves every field zero. Mixing a named field and a positional value is `type mismatch`.
 
 ```c
 type Inner struct {

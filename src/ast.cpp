@@ -36,7 +36,7 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent);
 
 std::string type_text(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
                        int indirections, bool is_array, int array_len, uint32_t optional = 0,
-                       const std::string &len_name = {}) {
+                       const std::string &len_name = {}, uint32_t const_pointee = 0) {
     std::string text;
     if (!package.empty()) {
         text = package + "." + name;
@@ -47,11 +47,17 @@ std::string type_text(const std::string &name, const std::string &package, bool 
     } else {
         text = name;
     }
+    if (indirections > 0 && (const_pointee & (1u << (indirections - 1))) != 0) {
+        text = "const " + text;
+    }
     for (int i = 0; i < indirections; ++i) {
         if ((optional & (1u << i)) != 0) {
             text += '?';
         }
         text += '*';
+        if (i + 1 < indirections && (const_pointee & (1u << i)) != 0) {
+            text += "const ";
+        }
     }
     if (is_array) {
         text += '[';
@@ -82,7 +88,7 @@ void dump_field(const FieldDecl &field, std::string &out, int indent) {
     }
     out += ' ';
     out += type_text(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
-                     field.is_array, field.array_len, field.optional);
+                     field.is_array, field.array_len, field.optional, {}, field.const_pointee);
     if (field.is_fn_ptr) {
         out += " fnptr";
         append_many_results(out, field.fn_results);
@@ -101,7 +107,7 @@ void append_many_results(std::string &out, const std::vector<FnParam> &results) 
         }
         const FnParam &part = results[i];
         out += type_text(part.type_name, part.type_package, part.is_struct, part.is_enum, part.indirections, false, 0,
-                         part.optional);
+                         part.optional, {}, part.const_pointee);
     }
     out += ')';
 }
@@ -140,7 +146,7 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
         }
     } else {
         out += type_text(var.type_name, var.type_package, var.is_struct, var.is_enum, var.indirections, var.is_array,
-                         var.array_len, var.optional, var.array_len_name);
+                         var.array_len, var.optional, var.array_len_name, var.const_pointee);
         if (var.ptr_to_array) {
             out += " ptrarr";
         }
@@ -309,7 +315,7 @@ void dump_stmt(const Stmt &stmt, std::string &out, int indent) {
             } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
                 append_indent(out, indent);
                 out += "(bind ";
-                out += node.is_var ? "var" : (node.is_define ? "def" : "set");
+                out += node.is_const ? "const" : (node.is_var ? "var" : (node.is_define ? "def" : "set"));
                 for (const std::string &name : node.names) {
                     out += ' ';
                     out += name;
@@ -366,7 +372,7 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
         out += param.name.empty() ? "_" : param.name;
         out += ' ';
         out += type_text(param.type_name, param.type_package, param.is_struct, param.is_enum, param.indirections,
-                         param.is_array, param.array_len, param.optional);
+                         param.is_array, param.array_len, param.optional, {}, param.const_pointee);
         if (param.is_fn_ptr) {
             out += " fnptr";
             append_many_results(out, param.fn_results);
@@ -388,7 +394,7 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
             }
             const ResultSlot &slot = fn.results[i];
             out += type_text(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections, false,
-                             0, slot.optional);
+                             0, slot.optional, {}, slot.const_pointee);
             if (slot.is_fn_ptr) {
                 out += " fnptr";
                 append_many_results(out, slot.fn_results);
@@ -397,7 +403,7 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
         out += ')';
     } else {
         out += type_text(fn.return_type, fn.type_package, fn.is_struct, fn.is_enum, fn.indirections, false, 0,
-                         fn.optional);
+                         fn.optional, {}, fn.const_pointee);
         if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
             out += " fnptr";
             append_many_results(out, fn.results.front().fn_results);
@@ -503,7 +509,7 @@ std::string dump_expr(const Expr &expr) {
                 dump_function(*node.decl, text, 0);
                 return text;
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
-                std::string text = "(init";
+                std::string text = node.is_tuple ? "(tuple" : "(init";
                 for (const Expr::FieldInit &field : node.fields) {
                     text += " (.";
                     text += field.field;
@@ -618,7 +624,7 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             out += item->name;
             out += ' ';
             out += type_text(item->type_name, item->type_package, item->is_struct, item->is_enum, item->indirections,
-                             item->is_array, item->array_len, item->optional);
+                             item->is_array, item->array_len, item->optional, {}, item->const_pointee);
             if (item->is_fn_ptr) {
                 out += " fnptr";
                 append_many_results(out, item->fn_results);
@@ -670,6 +676,7 @@ VarDecl clone_var(const VarDecl &var) {
     copy.is_enum = var.is_enum;
     copy.indirections = var.indirections;
     copy.optional = var.optional;
+    copy.const_pointee = var.const_pointee;
     copy.is_array = var.is_array;
     copy.array_len = var.array_len;
     copy.array_len_name = var.array_len_name;
@@ -678,6 +685,7 @@ VarDecl clone_var(const VarDecl &var) {
     copy.is_fn_ptr = var.is_fn_ptr;
     copy.ret_indirections = var.ret_indirections;
     copy.ret_optional = var.ret_optional;
+    copy.ret_const_pointee = var.ret_const_pointee;
     copy.fn_params = var.fn_params;
     copy.fn_variadic = var.fn_variadic;
     copy.fn_results = var.fn_results;
@@ -751,6 +759,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.is_enum = node.is_enum;
                 copy.indirections = node.indirections;
                 copy.optional = node.optional;
+                copy.const_pointee = node.const_pointee;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
@@ -763,6 +772,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.is_enum = node.is_enum;
                 copy.indirections = node.indirections;
                 copy.optional = node.optional;
+                copy.const_pointee = node.const_pointee;
                 copy.canonical = node.canonical;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
@@ -775,6 +785,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.is_enum = node.is_enum;
                 copy.indirections = node.indirections;
                 copy.optional = node.optional;
+                copy.const_pointee = node.const_pointee;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Func>) {
@@ -787,6 +798,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
                 Expr::Init copy;
                 copy.loc = node.loc;
+                copy.is_tuple = node.is_tuple;
                 copy.struct_id = node.struct_id;
                 for (const Expr::FieldInit &field : node.fields) {
                     Expr::FieldInit cloned;
@@ -898,6 +910,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.value = node.value ? clone_expr(*node.value) : nullptr;
                 copy.is_var = node.is_var;
                 copy.is_define = node.is_define;
+                copy.is_const = node.is_const;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
                 Stmt::Assert copy;
@@ -923,6 +936,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.is_enum = fn.is_enum;
     copy.indirections = fn.indirections;
     copy.optional = fn.optional;
+    copy.const_pointee = fn.const_pointee;
     copy.results = fn.results;
     copy.params = fn.params;
     copy.body = fn.body ? clone_stmt(*fn.body) : nullptr;

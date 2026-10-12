@@ -86,6 +86,8 @@ class Parser {
         int indirections = 0;
         // Bit 0 is the outermost `*`. A set bit is `?*`.
         uint32_t optional = 0;
+        // Bit 0 is the outermost `*`. A set bit means that pointer's pointee is `const`.
+        uint32_t const_pointee = 0;
         bool is_array = false;
         int array_len = 0;
         std::string array_len_name;
@@ -95,6 +97,7 @@ class Parser {
         bool is_fn_ptr = false;
         int ret_indirections = 0;
         uint32_t ret_optional = 0;
+        uint32_t ret_const_pointee = 0;
         std::vector<FnParam> fn_params;
         bool fn_variadic = false;
         std::vector<FnParam> fn_results;
@@ -167,6 +170,7 @@ class Parser {
     std::unique_ptr<Stmt> parse_case();
     std::unique_ptr<Stmt> parse_return();
     std::unique_ptr<Stmt> parse_bind(bool is_var);
+    std::unique_ptr<Stmt> parse_const_local();
     bool var_is_bind() const;
     bool var_is_inferred() const;
     std::unique_ptr<Stmt> parse_var_or_bind();
@@ -209,10 +213,12 @@ class Parser {
         bool is_enum = false;
         int indirections = 0;
         uint32_t optional = 0;
+        uint32_t const_pointee = 0;
     };
     struct PointerPrefix {
         int count = 0;
         uint32_t optional = 0;
+        uint32_t const_pointee = 0;
     };
     // `*` and `?*`. `?` before any other type is `not supported yet`.
     PointerPrefix parse_pointer_prefix();

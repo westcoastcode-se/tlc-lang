@@ -31,6 +31,8 @@ struct Type {
     bool plain_char = false;
     // `?*T` may be null. `*T` has a value.
     bool optional = false;
+    // The value is constant. On a pointee, `*const T` cannot be stored through.
+    bool is_const = false;
 };
 
 Type type_invalid();

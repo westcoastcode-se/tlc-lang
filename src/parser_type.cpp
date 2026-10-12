@@ -370,6 +370,7 @@ std::vector<FieldDecl> Parser::parse_fields() {
         field.is_enum = type.is_enum;
         field.indirections = type.indirections;
         field.optional = type.optional;
+        field.const_pointee = type.const_pointee;
         field.is_array = type.is_array;
         field.array_len = type.array_len;
         field.array_len_name = type.array_len_name;
@@ -377,6 +378,7 @@ std::vector<FieldDecl> Parser::parse_fields() {
         field.is_fn_ptr = type.is_fn_ptr;
         field.ret_indirections = type.ret_indirections;
         field.ret_optional = type.ret_optional;
+        field.ret_const_pointee = type.ret_const_pointee;
         field.fn_params = type.fn_params;
         field.fn_variadic = type.fn_variadic;
         field.fn_results = type.fn_results;
@@ -467,6 +469,7 @@ Parser::PlacedType Parser::parse_func_type() {
     type.is_enum = first.is_enum;
     type.ret_indirections = first.indirections;
     type.ret_optional = first.optional;
+    type.ret_const_pointee = first.const_pointee;
     if (results.size() > 1) {
         type.fn_results.reserve(results.size());
         for (const PlacedType &result : results) {
@@ -496,8 +499,10 @@ void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_
         var.is_enum = type.is_enum;
         var.indirections = type.indirections;
         var.optional = type.optional;
+        var.const_pointee = type.const_pointee;
         var.is_fn_ptr = type.is_fn_ptr;
         var.ret_optional = type.ret_optional;
+        var.ret_const_pointee = type.ret_const_pointee;
         var.ret_indirections = type.ret_indirections;
         var.fn_params = type.fn_params;
         var.fn_variadic = type.fn_variadic;
@@ -539,6 +544,10 @@ Parser::PointerPrefix Parser::parse_pointer_prefix() {
         }
         if (opt) {
             prefix.optional |= 1u << prefix.count;
+        }
+        if (check(TokenKind::KwConst)) {
+            prefix.const_pointee |= 1u << prefix.count;
+            ++pos_;
         }
         ++prefix.count;
     }
@@ -586,11 +595,13 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     PlacedType type;
     int leading = 0;
     uint32_t leading_optional = 0;
+    uint32_t leading_const = 0;
     if (pointer_prefix()) {
         type.loc = peek().loc;
         const PointerPrefix prefix = parse_pointer_prefix();
         leading = prefix.count;
         leading_optional = prefix.optional;
+        leading_const = prefix.const_pointee;
     }
     const Specifiers specs = parse_specifiers(false, allow_const, true);
     type.loc = specs.loc;
@@ -606,6 +617,7 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
         type.is_fn_ptr = true;
         type.ret_indirections = leading;
         type.ret_optional = leading_optional;
+        type.ret_const_pointee = leading_const;
         std::string name;
         SourceLoc name_loc;
         parse_fn_pointer(type.indirections, name, name_loc, type.fn_params, type.fn_variadic);
@@ -621,6 +633,7 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     }
     type.indirections = leading;
     type.optional = leading_optional;
+    type.const_pointee = leading_const;
     if (check(TokenKind::LBracket)) {
         // `int[4]` and `int[N]` are arrays. `Vec[int]` and `Vec[4]` are type arguments.
         if (!primitive_type_name(type.type_name) && !type.type_name.empty() && type.type_name != "invalid") {
@@ -671,12 +684,14 @@ Parser::PlacedType Parser::parse_go_type() {
                 diags_.error(type.loc, "not supported yet");
                 fn.indirections += outer;
                 fn.optional |= outer_prefix.optional;
+                fn.const_pointee |= outer_prefix.const_pointee;
             }
             return fn;
         }
         take_base(type, parse_specifiers(false, false, true));
         type.indirections = outer;
         type.optional = outer_prefix.optional;
+        type.const_pointee = outer_prefix.const_pointee;
         if (check(TokenKind::LBracket)) {
             type.type_args = parse_type_args();
         }
@@ -715,6 +730,7 @@ Parser::PlacedType Parser::parse_go_type() {
     take_base(type, parse_specifiers(false, false, true));
     type.indirections = inner;
     type.optional = inner_prefix.optional;
+    type.const_pointee = type.ptr_to_array ? outer_prefix.const_pointee : inner_prefix.const_pointee;
     if (check(TokenKind::LBracket)) {
         type.type_args = parse_type_args();
     }
@@ -744,6 +760,9 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             if (peek(ahead).kind == TokenKind::Star) {
                 ++ahead;
             }
+            if (peek(ahead).kind == TokenKind::KwConst) {
+                ++ahead;
+            }
         }
         if (peek(ahead).kind != TokenKind::Identifier || peek(ahead).text != "this") {
             return false;
@@ -759,6 +778,7 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
         const PointerPrefix prefix = parse_pointer_prefix();
         param.indirections = prefix.count;
         param.optional = prefix.optional;
+        param.const_pointee = prefix.const_pointee;
         ++pos_;
         param.type_name = method_struct;
         param.is_struct = true;
@@ -814,11 +834,13 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             param.is_const = type.is_const;
             param.indirections = type.indirections;
             param.optional = type.optional;
+            param.const_pointee = type.const_pointee;
             param.is_array = type.is_array;
             param.array_len = type.array_len;
             param.is_fn_ptr = type.is_fn_ptr;
             param.ret_indirections = type.ret_indirections;
             param.ret_optional = type.ret_optional;
+            param.ret_const_pointee = type.ret_const_pointee;
             param.fn_params = type.fn_params;
             param.fn_variadic = type.fn_variadic;
             param.fn_results = type.fn_results;
@@ -848,6 +870,7 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
     slot.is_enum = type.is_enum;
     slot.indirections = type.indirections;
     slot.optional = type.optional;
+    slot.const_pointee = type.const_pointee;
     slot.is_fn_ptr = type.is_fn_ptr;
     slot.ret_indirections = type.ret_indirections;
     slot.fn_params = type.fn_params;
@@ -896,6 +919,7 @@ void Parser::parse_results(FunctionDecl &fn) {
     fn.is_enum = first.is_enum;
     fn.indirections = first.indirections;
     fn.optional = first.optional;
+    fn.const_pointee = first.const_pointee;
 }
 
 FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body) {
@@ -978,9 +1002,11 @@ FnParam Parser::fn_param_from(const PlacedType &type) const {
     param.is_enum = type.is_enum;
     param.indirections = type.indirections;
     param.optional = type.optional;
+    param.const_pointee = type.const_pointee;
     param.is_fn_ptr = type.is_fn_ptr;
     param.ret_indirections = type.ret_indirections;
     param.ret_optional = type.ret_optional;
+    param.ret_const_pointee = type.ret_const_pointee;
     param.params = type.fn_params;
     param.variadic = type.fn_variadic;
     param.results = type.fn_results;
@@ -1389,6 +1415,7 @@ TypeArg Parser::parse_one_type_arg() {
         arg.is_enum = element.is_enum;
         arg.indirections = element.indirections;
         arg.optional = element.optional;
+        arg.const_pointee = element.const_pointee;
         arg.args = std::move(element.args);
         if (element.is_array) {
             diags_.error(arg.loc, "not supported yet");
@@ -1398,6 +1425,7 @@ TypeArg Parser::parse_one_type_arg() {
     const PointerPrefix prefix = parse_pointer_prefix();
     arg.indirections = prefix.count;
     arg.optional = prefix.optional;
+    arg.const_pointee = prefix.const_pointee;
     if (check(TokenKind::KwInt) || check(TokenKind::KwChar) || check(TokenKind::KwShort) || check(TokenKind::KwLong) ||
         check(TokenKind::KwBool) || check(TokenKind::KwFloat) || check(TokenKind::KwDouble) || check(TokenKind::KwVoid)) {
         if (check(TokenKind::KwInt)) {

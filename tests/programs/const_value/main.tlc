@@ -1,0 +1,13 @@
+func main() int {
+    var n u8 = 7;
+    const value = 40 + 2;
+    var p *const u8 = &n;
+    if (value != 42 || *p != 7) {
+        return 1;
+    }
+    var q *const int = &value;
+    if (*q != 42) {
+        return 2;
+    }
+    return *p + *q;
+}

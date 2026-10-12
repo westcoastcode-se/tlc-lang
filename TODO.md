@@ -16,7 +16,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - A pack of several types used as `*U`, `[N]U`, a type argument, or a field.
 - A tuple element that is itself a tuple.
 - `typeof` inside a parenthesized result list. A bare result `typeof(expression)` is accepted.
-- Several names bound from a brace list, `a, b := {1, 2}`. Several names are unpacked from a call.
+- Several names bound from a tuple, `a, b := (1, 2)`. Several names are unpacked from a call.
 - A tuple index that is not a constant, and assignment to a tuple element.
 - `count(U)` and `const for`.
 - A type-parameter list after the method name: `func Vec[T]::get[U type]`. `func Vec[T]::get` names the struct's parameters.
@@ -28,7 +28,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `sizeof(T)` when `T` is an array.
 - `typeof(T)` when `T` is an array.
 - `typeof` of a function, a tuple, or a trait.
-- `const` inside a function. File scope is `const name = expr`. A local `const` is still the C qualifier, as is `var x const int` and `const` on a parameter of a function that has a body.
+- The C qualifier spelling `const int x` and `var x const int`. Inside a function, `const name = expr` is an immutable binding, and `*const T` is a pointer to constant `T`.
 - A file-scope `const` whose value is not an integer constant.
 - A non-positive compile-time length, including `const N = 0` used as `[N]int`.
 - Returning an array from anything other than a local array name. `return out` works for `[N]T`. Another return expression does not.

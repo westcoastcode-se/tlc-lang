@@ -22,6 +22,8 @@ struct SpecArg {
     bool is_enum = false;
     int indirections = 0;
     uint32_t optional = 0;
+    // Bit 0 is the outermost `*`. A set bit means that pointer's pointee is `const`.
+    uint32_t const_pointee = 0;
     bool is_array = false;
     int array_len = 0;
     int struct_id = -1;
@@ -41,6 +43,8 @@ struct Symbol {
     bool is_package = false;
     bool is_type = false;
     bool is_constant = false;
+    // `const name = expr` inside a function. The binding has storage and cannot be assigned.
+    bool is_immutable = false;
     bool is_enum = false;
     bool is_typedef = false;
     bool is_struct_tag = false;
@@ -195,13 +199,15 @@ class Checker {
     void check_unit(const TranslationUnit &unit, uint32_t file_id, const PackageNode *node);
 
     Type type_of_name(const std::string &name, SourceLoc loc, bool allow_incomplete = false);
-    Type with_indirections(Type type, int count, SourceLoc loc, uint32_t optional = 0);
+    Type with_indirections(Type type, int count, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
     void note_struct_use(bool is_struct, const std::string &name, SourceLoc loc);
     Type object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                      bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
-                     bool receiver = false, uint32_t optional = 0);
+                     bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0);
     Type spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
-                      int indirections, SourceLoc loc, uint32_t optional = 0);
+                      int indirections, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
+    // A store through this lvalue would change a `const` binding or a `*const` pointee.
+    bool const_path(const Expr &expr);
     bool accepts_pointer(const Type &got, const Type &want) const;
     bool needs_nonnull_pointer(const Type &type) const;
     // A `?*T` name in this function becomes `*T`. A package global is left alone.
@@ -210,7 +216,8 @@ class Checker {
     Type type_of_fn_param(const FnParam &param, SourceLoc loc);
     Type type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
                         int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
-                        const std::vector<FnParam> &results, SourceLoc loc, uint32_t ret_optional = 0);
+                        const std::vector<FnParam> &results, SourceLoc loc, uint32_t ret_optional = 0,
+                        uint32_t ret_const = 0);
     Type type_of_param(const Param &param);
     Type type_of_var(const VarDecl &var);
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
@@ -255,7 +262,8 @@ class Checker {
     bool is_std_builtin_file(uint32_t file_id) const;
     bool is_builtin_va_call(const Expr &callee);
     Type operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
-                      bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc);
+                      bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
+                      uint32_t const_pointee = 0);
     Type sizeof_operand(const Expr::Sizeof &node);
     std::optional<int> fold_int(const Expr &expr);
     void check_function(const FunctionDecl &fn);

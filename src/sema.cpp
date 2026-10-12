@@ -163,7 +163,7 @@ Type type_tuple(std::vector<Type> results) {
 }
 
 bool same_type(const Type &lhs, const Type &rhs) {
-    if (lhs.kind != rhs.kind) {
+    if (lhs.kind != rhs.kind || lhs.is_const != rhs.is_const) {
         return false;
     }
     if (lhs.kind == TypeKind::Pointer) {

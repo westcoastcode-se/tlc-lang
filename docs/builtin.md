@@ -2,7 +2,7 @@
 
 [Index](README.md) · [Previous: Functions](functions.md) · [Next: Structs, pointers, and arrays](structs.md) · [Grammar](grammar.md)
 
-`import "builtin"` is the compiler package. It exports `trace` and `va`. Both return `*char` and take no arguments. An argument is `argument count`. The import links the C library.
+`import "builtin"` is the compiler package. It exports `trace` and `va`. `trace` returns `*const u8`. `va` returns `*char`. Both take no arguments. An argument is `argument count`. The import links the C library.
 
 ```c
 import "builtin";
@@ -14,7 +14,7 @@ The first form calls them as `builtin.trace()` and `builtin.va()`. The alias use
 
 ## `trace`
 
-`builtin.trace()` returns the calls that have not returned, oldest first. A line is `file:line:column: name`. The name is the function that made the call, and the location is that call. The last line has no newline. `builtin.trace` and `builtin.va` are omitted. With no such call still running, the text is empty.
+`builtin.trace()` returns `*const u8`. The text is the calls that have not returned, oldest first. A line is `file:line:column: name`. The name is the function that made the call, and the location is that call. The last line has no newline. `builtin.trace` and `builtin.va` are omitted. With no such call still running, the text is empty.
 
 ```c
 import "builtin";
@@ -22,7 +22,7 @@ import "builtin";
 extern(abi="c") func printf(fmt *const char, ...) int;
 
 func leaf() int {
-    printf("%s\n", builtin.trace());
+    printf("%s\n", *char(builtin.trace()));
     return 1;
 }
 

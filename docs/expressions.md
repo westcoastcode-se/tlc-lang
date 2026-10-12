@@ -57,6 +57,6 @@ A cast is the type followed by the value in parentheses: `i32(n)`, `int(n)`, `*c
 
 Pointer arithmetic is `type mismatch`. A subscript index has type `int`.
 
-`{40}` is the value `40`. `{40, 2}` is a tuple of the value types before promotion, so `{40, 'a'}` is `int` and `char`. Where an array is expected, the same braces fill that array. Where a struct is expected, the list is `type mismatch`. A constant index reads one tuple element, and `typeof(args[0])` is that element's type. One name bound from a tuple is `type mismatch: expected 1 result`.
+`(40, 2)` is a tuple. The element types are the types of the values before promotion, so `(40, 'a')` is `int` and `char`. `(40)` is the value `40`. `var value = (40, 2)` and `value := (40, 2)` each bind that tuple. `value[0]` reads one element. The index is a constant. `{10, 20, 12}` fills an array. Where a struct is expected, that brace list is `type mismatch`. An empty `{}` names no fields.
 
 [Index](README.md) · [Previous: Types](types.md) · [Next: Statements](statements.md) · [Grammar](grammar.md)
