@@ -47,7 +47,7 @@ The executable stays on disk. `gdb app` or `lldb app` can break on a source line
 
 ## Language server
 
-`tlc lsp` reads the editor's buffer and typechecks that text, including when it differs from the file on disk. The server publishes diagnostics and answers completion, hover, go to definition, and document symbols.
+`tlc lsp` is the language server. Its sources are in `plugins/lsp`, and the `tlc` binary includes them. Any editor can start that command. It reads the editor's buffer and typechecks that text, including when it differs from the file on disk. The server publishes diagnostics and answers completion, hover, go to definition, and document symbols.
 
 In Zed, hold Ctrl and click a function name to open its definition. That includes a function brought in by `import { name } from "pkg"`.
 

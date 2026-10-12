@@ -3,7 +3,7 @@ name = "TLC"
 version = "0.1.0"
 schema_version = 1
 authors = ["tlc"]
-description = "Open TLC files in Zed, run them, and complete them with tlc lsp."
+description = "Open TLC files in Zed and run them. Completions come from tlc lsp."
 repository = "file:///home/per/Projects/test-lang"
 
 [language_servers.tlc]
