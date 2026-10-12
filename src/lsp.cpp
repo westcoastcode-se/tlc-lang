@@ -1612,8 +1612,6 @@ const Sym *lookup_bare(const std::vector<Sym> &syms, const std::string &uri, con
             rank = 0;
         } else if (sym.uri == uri) {
             rank = 1;
-        } else {
-            continue;
         }
         const uint32_t begin = sym.scope_begin;
         const bool closer = best == nullptr || rank < best_rank || (rank == best_rank && begin >= best_begin);
@@ -2314,6 +2312,13 @@ int run_lsp() {
                 send_json(result_response(*id, jnull()));
             } else if (method == "textDocument/hover") {
                 send_json(result_response(*id, hover_of(*sym)));
+            } else if (method == "textDocument/definition") {
+                const Json loc = location_of(*sym);
+                if (loc.kind == Json::Kind::Null) {
+                    send_json(result_response(*id, jnull()));
+                } else {
+                    send_json(result_response(*id, jarr({loc})));
+                }
             } else {
                 send_json(result_response(*id, location_of(*sym)));
             }

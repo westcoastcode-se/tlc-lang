@@ -2,9 +2,11 @@
 
 [Index](README.md) · [Previous: Expressions](expressions.md) · [Next: Functions](functions.md) · [Grammar](grammar.md)
 
-Blocks, `if`/`else`, `while`, `do`/`while`, `for`, `switch`, `break`, `continue`, `return`, and empty statements are accepted. The body of `if`, `while`, and `for` is a block. `else` is a block or another `if`. A body without `{` is `expected '{'`. `do` and `switch` take a statement, so their body need not be a block.
+A block is a sequence of statements in braces. `if`, `while`, and `for` take a block. `else` is a block or another `if`. A body without `{` is reported as `expected '{'`. `do` and `switch` take a statement, so their body need not be a block. An empty statement is `;`.
 
-`for` has C's three clauses. A declaration in the first clause is visible only inside the loop. That clause may also bind several results with `var`, `:=`, or `=`. A comma in the name list must be followed by another name.
+## `for`
+
+`for` has three clauses, as in C. A declaration in the first clause is visible only inside the loop. That clause may also bind several results with `var`, `:=`, or `=`. A comma in the name list must be followed by another name.
 
 ```c
 func main() int {
@@ -16,7 +18,9 @@ func main() int {
 }
 ```
 
-`switch` falls through until `break`. A `case` label is a constant `int`. `case 1u32` is `type mismatch`. Each value appears once, and `default` appears once.
+## `switch`
+
+`switch` falls through until `break`. A `case` label is a constant `int`. `case 1u32` is reported as `type mismatch`. Each value appears once, and `default` appears once.
 
 ```c
 func main() int {
@@ -36,7 +40,9 @@ func main() int {
 }
 ```
 
-This returns 42. `break` leaves the innermost loop or `switch`. `continue` is valid inside loops.
+The program returns 42. `break` leaves the innermost loop or `switch`. `continue` is valid inside loops.
+
+## `defer`
 
 `defer` runs one call when the enclosing block is left. The call can be a function, a method, an inner function, or an anonymous function. Calls in the same block run in reverse order. A `defer` whose statement did not run does not run. `return`, `break`, `continue`, and reaching the end of the block all run the calls of the blocks they leave. A `return` expression is evaluated before those calls. Arguments, and a method receiver, are evaluated at the `defer`.
 
@@ -50,19 +56,35 @@ func main() int {
 
 An anonymous function is an expression, `func (parameters) { body }`. The return type may be omitted, and then it is `void`. A return type is written after the parameters when it is present: `func () int { return 1; }`. Several results use the same parenthesized list as a named function: `func () (int, int) { return 1, 2; }`. The call is the argument list after the body.
 
-A variable is `var name type`, `var name = expr`, or `name := expr`. `int value = 1` is `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *int`, `var buf [32]u8`, `var ps [2]*int`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`. A `*T`, or a struct or array that contains one, needs an initializer. `var p *int;` is `type mismatch`. `var p ?*int;` may be `null`. `extern var p *int;` is not checked. `name := expr` defines a new name. In a list, it also assigns a name that already exists in the block, and at least one name must be new. A `:=` whose names are all already in the block is `type mismatch`. `var name := expr` is `type mismatch`. `*[4]i32` is a pointer to an array. `arr[1]` reads and writes the same element as `(*arr)[1]`. `&` of an array has that pointer type.
+## Bindings
 
-A local array takes a brace list with one value per element: `var row [3]int = {10, 20, 12}`. A different count is `type mismatch`. `row[0]` reads an element.
+A variable is `var name type`, `var name = expr`, or `name := expr`. `int value = 1` is reported as `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *int`, `var buf [32]u8`, `var ps [2]*int`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`.
+
+A `*T`, or a struct or array that contains one, needs an initializer. `var p *int;` is reported as `type mismatch`. `var p ?*int;` may be `null`. `extern var p *int;` is not checked. `name := expr` defines a new name. In a list, it also assigns a name that already exists in the block, and at least one name must be new. A `:=` whose names are all already in the block is reported as `type mismatch`. `var name := expr` is reported as `type mismatch`.
+
+`*[4]i32` is a pointer to an array. `arr[1]` reads and writes the same element as `(*arr)[1]`. `&` of an array has that pointer type.
+
+A local array takes a brace list with one value per element: `var row [3]int = {10, 20, 12}`. A different count is reported as `type mismatch`. `row[0]` reads an element.
+
+### `const`
 
 `const name = expr` at file scope is a compile-time integer. It has no address. The expression is folded the same way as `assert`, including `sizeof`. `const N = 4` can be an array length, `[N]int`.
 
-Inside a function, `const name = expr` is an immutable binding. The type is the type of the expression. `name = ...` is `type mismatch`. `&name` has type `*const T`, so a store through that pointer is `type mismatch`. The binding is not a compile-time integer, and it cannot be an array length.
+Inside a function, `const name = expr` is an immutable binding. The type is the type of the expression. `name = ...` is reported as `type mismatch`. `&name` has type `*const T`, so a store through that pointer is reported as `type mismatch`. The binding is not a compile-time integer, and it cannot be an array length.
 
-At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `export`, `static`, `extern`, and `extern(abi="c")` go on a typed `var`: `export var n int = 1`, `static var n = 1`, `extern var slot int`, `extern(abi="c") var slot int`.
+### File scope
 
-Several names unpack one tuple. `var value1, value2 = mytuple` defines both names. `a, b := mytuple` does the same when at least one name is new. `value1, value2 = mytuple` assigns names that already exist. A call that returns several results is that tuple, so `var a, b = call` unpacks it the same way. The number of names matches the tuple. A different count is `type mismatch`. A pointer is a leading star in every position, including a parameter, a result, a type alias, a cast, and `sizeof`: `*int`, `*const char`, `type Ptr *Point`, `sizeof(*int)`, `*int(value)`. A `var`, a field, or a type alias writes an array in front of its element type: `type Pair [2]int`. A parameter array stays after the element type: `int[4]`.
+At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `export`, `static`, `extern`, and `extern(abi="c")` go on a typed `var`: `export var n int = 1`, `static var n = 1`, `extern var slot int`, `extern(abi="c") var slot int`. A global with no initializer is zero.
 
-A global with no initializer is zero.
+### Tuples
+
+Several names unpack one tuple. `var value1, value2 = mytuple` defines both names. `a, b := mytuple` does the same when at least one name is new. `value1, value2 = mytuple` assigns names that already exist. A call that returns several results is that tuple, so `var a, b = call` unpacks it the same way. The number of names matches the tuple. A different count is reported as `type mismatch`.
+
+### Pointer and array order
+
+A pointer is a leading star in every position, including a parameter, a result, a type alias, a cast, and `sizeof`: `*int`, `*const char`, `type Ptr *Point`, `sizeof(*int)`, `*int(value)`. A `var`, a field, or a type alias writes an array in front of its element type: `type Pair [2]int`. A parameter array stays after the element type: `int[4]`.
+
+## `assert`
 
 `assert` checks a constant integer while compiling. It may stand at file scope or inside a function. The condition is an expression such as `sizeof(i32) == 4`, and the message is a string literal. A false condition is an error, and the diagnostic is that message. A true `assert` produces no code.
 

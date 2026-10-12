@@ -2,9 +2,11 @@
 
 [Index](README.md) · [Previous: The compiler](compiler.md) · [Next: Types](types.md) · [Grammar](grammar.md)
 
-The file on the command line is its own package. Other `.tlc` files next to it are not compiled with it. An import names a directory. Every `.tlc` file directly in that directory is one package, and a subdirectory is a different package.
+A package is a directory of `.tlc` files. The file named on the command line is its own package: other `.tlc` files beside it are not compiled with it. An import names a directory. Every `.tlc` file directly in that directory belongs to one package. A subdirectory is a different package.
 
-The qualifier is the `package` name when every file in the directory agrees. When no file has a `package` clause, the qualifier is the directory's name. Clauses that disagree produce `package mismatch`. The entry file's qualifier is its `package` name, or the file name without `.tlc`.
+## The package clause
+
+`package` is the first declaration in a file, before imports. The name is an identifier.
 
 ```c
 package math;
@@ -14,9 +16,11 @@ export func add(a int, b int) int {
 }
 ```
 
-`package` comes first, before imports and declarations. The name is an identifier.
+The qualifier is that name when every file in the directory agrees. When no file has a `package` clause, the qualifier is the directory's name. Clauses that disagree are reported as `package mismatch`. The entry file's qualifier is its `package` name, or the file name without `.tlc`.
 
-Imports come after `package` and before every declaration. There are three forms:
+## Imports
+
+Imports follow `package` and precede every other declaration. An import is private to the file that wrote it. There are three forms:
 
 ```c
 import "math";
@@ -24,17 +28,24 @@ import "math" as m;
 import { add, Point } from "math";
 ```
 
-`as` and `from` are ordinary words in those positions. They are identifiers everywhere else.
+| Form | Name in this file |
+| --- | --- |
+| `import "math"` | The qualifier, as in `math.add(40, 2)`. |
+| `import "math" as m` | The alias, as in `m.add(40, 2)`. |
+| `import { add, Point } from "math"` | Each listed export, as in `add(40, 2)`. |
 
-The first form binds the package qualifier as a name, so the call is `math.add(40, 2)`. The alias makes it `m.add(40, 2)`. The selective form brings the named exports into the file, so the call is `add(40, 2)`. An import is private to the file that wrote it.
+`as` and `from` are ordinary identifiers in every other position.
 
-The path is a string and names a directory. An empty path and an absolute path are rejected. A path that is not a directory, including one that ends in `.tlc`, produces `unknown package`.
+The path is a string and names a directory. An empty path and an absolute path are rejected. A path that does not name a directory, including a path that ends in `.tlc`, is reported as `unknown package`. A directory with no `.tlc` file is reported the same way.
 
-- `./` and `../` are resolved relative to the importing file and must name a directory.
-- Every other path is searched in the entry file's directory, then in each `-P` root. A path `vendor/<name>` that is not found there is then loaded from the vendor directory. A path that is still not found is then loaded from the standard library directory, `lib/tlc` next to the compiler prefix. `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`. `import "builtin"` is the compiler package when no directory with that name was found. The first directory that contains a `.tlc` file wins.
-- A directory with no `.tlc` file produces `unknown package`.
+Search proceeds as follows.
 
-The vendor directory holds packages that ship with the compiler, such as a binding to a C library. `import "vendor/sdl3"` loads `<vendor>/sdl3`.
+1. A path that starts with `./` or `../` is resolved from the importing file. It must name a directory.
+2. Every other path is searched in the entry file's directory, then in each `-P` root.
+3. A path `vendor/<name>` that is still missing is loaded from the vendor directory.
+4. A path that is still missing is loaded from the standard library, `lib/tlc` next to the compiler prefix. `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`. `import "builtin"` is the compiler package when no directory of that name was found.
+
+The first directory that contains a `.tlc` file is the package. The vendor directory holds packages that ship with the compiler, such as a binding to a C library. `import "vendor/sdl3"` loads `<vendor>/sdl3`.
 
 ```text
 lib/tlc/vendor/sdl3/
@@ -44,19 +55,23 @@ lib/tlc/vendor/sdl3/
     link
 ```
 
-`examples/triangle` is a program that imports `vendor/sdl3` and `vendor/gl`. Each of those packages names a system library in its `link` file.
+`examples/triangle` imports `vendor/sdl3` and `vendor/gl`. Each of those packages names a system library in its `link` file.
 
-Every `.tlc` file in that package is compiled with the program. A static archive (`.a`) and a shared library (`.so`, `.dylib`, or a versioned name such as `libfoo.so.1`) in the same directory is linked into the executable. When one library name has both an archive and a shared library, the archive is linked. Shared libraries are found through an rpath that points at the package directory. The same package imported from several files is linked once.
+## Libraries
 
-A file named `link` in the package adds more linker arguments after those libraries. Each line holds the same flags as the command line: `-l`, `-L`, `-Bstatic`, `-Bdynamic`, `-static`, `-Wl`, and library paths. `#` comments out the rest of the line. A relative path is resolved from the package directory. `$ORIGIN` in an rpath is left as written. `--check`, `--emit-llvm`, and `--emit-obj` load the package and do not link.
+Every `.tlc` file in an imported package is compiled with the program. A static archive (`.a`) and a shared library (`.so`, `.dylib`, or a versioned name such as `libfoo.so.1`) in the same directory is linked into the executable. When one library name has both an archive and a shared library, the archive is linked. Shared libraries are found through an rpath that points at the package directory. A package imported from several files is linked once.
 
-An import cycle produces `circular import` followed by the qualifiers, for example `a -> b -> a`. The same package may be imported from several files and is loaded once.
+A file named `link` adds further linker arguments after those libraries. Each line holds the same flags as the command line: `-l`, `-L`, `-Bstatic`, `-Bdynamic`, `-static`, `-Wl`, and library paths. `#` comments out the rest of the line. A relative path is resolved from the package directory. `$ORIGIN` in an rpath is left as written. `--check`, `--emit-llvm`, and `--emit-obj` load the package and do not link.
 
-Inside a package, every file can use what the other files in the directory declare. A name that is not `static` is visible from every file. The same non-static name in two files is `redefinition`. `static` stays private to its file, so two files may each declare `static` with the same name. A method is written in the file that defines its struct or enum, and the other files can call it.
+An import cycle is reported as `circular import` followed by the qualifiers, for example `a -> b -> a`. The same package may be imported from several files and is loaded once.
+
+## Names inside a package
+
+Every file in a package can use a name declared in another file of that directory, unless the name is `static`. The same non-`static` name in two files is `redefinition`. Two files may each declare `static` with the same name. A method is written in the file that defines its struct or enum. The other files of the package can call it.
 
 ## Visibility
 
-Only a file-scope `export` is published to importers. A name that was not exported produces `name is not exported`.
+Only a file-scope `export` is published to importers. A name that was not exported is reported as `name is not exported`.
 
 ```c
 package math;
@@ -72,11 +87,17 @@ export func add(a int, b int) int {
 
 `secret` can be called from any file in the package. An importer sees `add`.
 
-`export` applies to functions, variables, and `type` declarations. `export static` is an error. `export extern(abi="c")` is allowed on a function, and the symbol keeps its C name. `export` together with `extern` on a variable is `export extern`.
+`export` applies to functions, variables, and `type` declarations. `export static` is an error. `export extern(abi="c")` is allowed on a function, and the symbol keeps its C name. `export` together with `extern` on a variable is written `export extern`.
 
 File-scope `static` keeps the symbol private to that file.
 
-`extern` and `extern(abi="tlc")` name a symbol from a tlc library. The symbol is `qualifier.name`, and the calling convention is the compiler's own, so the function may return several results. `extern(abi="c")` names a symbol from a C library, and only then. It keeps the C name and the C calling convention. It returns one result, the same as a C function. Linking a program that uses `extern(abi="c")` requires a C library on the link line: `-l`, or a library file such as `libfoo.a`. `--check` and `--emit-*` do not link, so they accept the declaration. Without that library the link step reports `extern(abi="c") requires a C library`. Its parameters and its result cannot include a function pointer that returns several results. A struct used by an `extern(abi="c")` function, by value or through a pointer, must itself be `extern(abi="c")`. That includes a struct nested inside it. An `extern(abi="c") struct` uses the platform C memory layout, so its fields line up with a static or shared library. `bool` in that struct is one byte. On this host a struct of at most 16 bytes is passed in registers, and a larger struct is passed as a pointer. A function that is not `extern(abi="c")` keeps the compiler's own convention for struct values. That is how a program calls a C library:
+## `extern`
+
+`extern` and `extern(abi="tlc")` name a symbol from a tlc library. The symbol is `qualifier.name`. The calling convention is the compiler's own, so the function may return several results.
+
+`extern(abi="c")` names a symbol from a C library. It keeps the C name and the C calling convention, and it returns one result. Linking a program that uses `extern(abi="c")` requires a C library on the link line, either `-l` or a library file such as `libfoo.a`. `--check` and `--emit-*` do not link, so they accept the declaration. Without that library the link step reports `extern(abi="c") requires a C library`.
+
+A parameter or result of an `extern(abi="c")` function cannot be a function pointer that returns several results. A struct used by such a function, by value or through a pointer, must itself be `extern(abi="c")`. That includes a struct nested inside it. An `extern(abi="c") struct` uses the platform C memory layout, so its fields line up with a static or shared library. `bool` in that struct is one byte. On this host a struct of at most 16 bytes is passed in registers, and a larger struct is passed as a pointer. A function that is not `extern(abi="c")` keeps the compiler's own convention for struct values.
 
 ```c
 extern(abi="c") func printf(fmt *const char, ...) int;

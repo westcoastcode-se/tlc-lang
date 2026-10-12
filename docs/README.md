@@ -1,25 +1,31 @@
-# Documentation
+# The tlc language
 
-`tlc` compiles a C dialect. The syntax is close to C. A function is written `func name(arg type) type`. You compile one entry file, import names a directory of source files, and types can have methods and traits. The dialect is a subset of ISO C with these additions.
+tlc is a compiled language in the C family. A program is a single entry file. A function is written `func name(parameter type) result`. A type is written after the name it describes, as in `var n int` and `x int` inside a struct. An import names a directory of source files. Structs and enums may have methods, and a struct may satisfy a trait by defining those methods.
 
-Diagnostics look like `file:line:column: error: message`.
+The language accepts a subset of ISO C, together with the forms described in this reference. A syntactic form that the [grammar](grammar.md) does not list is not part of the language, even when the parser recognizes a similar C spelling and then rejects it.
 
-## Language
+A diagnostic has this form:
 
-- [The compiler](compiler.md) — options, a program, and comments
-- [Packages](packages.md) — imports, visibility, and `extern`
-- [Types](types.md) — integers, floating types, and literals
-- [Expressions](expressions.md) — operators, casts, and `null`
-- [Statements](statements.md) — `if`, loops, `switch`, and `defer`
-- [Functions](functions.md) — results, function pointers, and nested functions
+```text
+file:line:column: error: message
+```
+
+## Reference
+
+- [The compiler](compiler.md) — invoking `tlc`, debug information, and the language server
+- [Packages](packages.md) — files, imports, visibility, and `extern`
+- [Types](types.md) — integers, floating-point types, pointers, and literals
+- [Expressions](expressions.md) — operators, casts, tuples, and `null`
+- [Statements](statements.md) — control flow, bindings, and `defer`
+- [Functions](functions.md) — results, generics, tests, and function pointers
 - [Builtin](builtin.md) — `builtin.trace` and `builtin.va`
-- [Structs, pointers, and arrays](structs.md) — structs, unions, and layout
+- [Structs, pointers, and arrays](structs.md) — layout, initializers, and unions
 - [Methods and traits](methods.md)
-- [Enums and type aliases](enums.md) — enums, `type` aliases, and keywords
+- [Enums and type aliases](enums.md)
 
 ## Grammar
 
-The syntax is [one page](grammar.md). A form that page does not list is not part of the language, even when the parser recognizes a similar C spelling and then rejects it.
+The syntax is specified on [one page](grammar.md).
 
 - [Notation](grammar.md#notation)
 - [Source file](grammar.md#source-file)
@@ -30,3 +36,17 @@ The syntax is [one page](grammar.md). A form that page does not list is not part
 - [Statements](grammar.md#statements)
 - [Expressions](grammar.md#expressions)
 - [Tokens](grammar.md#tokens)
+
+## A first program
+
+```c
+func main() int {
+    return 40 + 2;
+}
+```
+
+```sh
+tlc --run main.tlc
+```
+
+The process exits with status 42. There is one `main`, and it belongs to the entry file.

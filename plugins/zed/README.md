@@ -15,7 +15,7 @@ Det letar först efter `build/tlc` i projektroten. Finns den inte där används 
 
 Samma knapp finns i kommandopaletten (Ctrl+Shift+P) under namnet `zed: install dev extension`. Programmet `zed` i terminalen öppnar filer, så de orden ska inte skrivas där.
 
-Zed bygger en liten Rust-del när tillägget installeras. Den startar `tlc lsp`. Rust från rustup behöver finnas. Servern är `build/tlc` i projektroten, annars `tlc` på `PATH`. Den ger diagnostik, komplettering, hovring, gå-till-definition och symboler.
+Zed bygger en liten Rust-del när tillägget installeras. Den startar `tlc lsp`. Rust från rustup behöver finnas. Servern är `build/tlc` i projektroten, annars `tlc` på `PATH`. Den ger diagnostik, komplettering, hovring, gå-till-definition och symboler. Håll inne Ctrl och klicka på ett funktionsnamn för att öppna definitionen.
 
 Zed hämtar grammatiken från `grammars/tree-sitter-tlc`. Den mappen är ett eget git-arkiv, så låt `.git` där ligga kvar.
 

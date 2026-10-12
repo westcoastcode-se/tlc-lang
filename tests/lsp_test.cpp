@@ -3,6 +3,8 @@
 #include <cerrno>
 #include <charconv>
 #include <fcntl.h>
+#include <filesystem>
+#include <fstream>
 #include <poll.h>
 #include <signal.h>
 #include <string>
@@ -299,6 +301,30 @@ int run_lsp_tests() {
     const std::string symbols = read_until(from_child[0], "\"id\":5", 3000);
     EXPECT_HAS(check, symbols, "Point");
     EXPECT_HAS(check, symbols, "main");
+
+    const std::filesystem::path goto_root = "/tmp/tlc-goto-def";
+    std::filesystem::remove_all(goto_root);
+    std::filesystem::create_directories(goto_root / "math");
+    {
+        std::ofstream math(goto_root / "math" / "add.tlc");
+        math << "export func add(a int, b int) int {\n    return a + b;\n}\n";
+        std::ofstream entry(goto_root / "main.tlc");
+        entry << "import { add } from \"math\";\nfunc main() int {\n    return add(1, 2);\n}\n";
+    }
+    const std::string goto_source = "import { add } from \"math\";\nfunc main() int {\n    return add(1, 2);\n}\n";
+    const std::string goto_uri = std::string("file://") + (goto_root / "main.tlc").string();
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  goto_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(goto_source) + R"("}}})");
+    const LineCol imported = at_needle(goto_source, "return add", true);
+    EXPECT(check, imported.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":10,"method":"textDocument/definition","params":{"textDocument":{"uri":")") +
+                  goto_uri + R"("},"position":{"line":)" + std::to_string(imported.line) + R"(,"character":)" +
+                  std::to_string(imported.character) + "}}}");
+    const std::string jumped = read_until(from_child[0], "\"id\":10", 4000);
+    EXPECT_HAS(check, jumped, "math/add.tlc");
+    EXPECT_HAS(check, jumped, "\"line\":0");
 
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);
