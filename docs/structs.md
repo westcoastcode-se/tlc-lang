@@ -38,6 +38,26 @@ type Wide struct(align=16) {
 
 `sizeof(Wide)` is 16.
 
+An empty struct has no fields. `sizeof` is 0. It can have methods, so a generic `type Tag[T type] struct {}` and a trait parameter both accept it.
+
+```c
+type Empty struct {}
+
+func Empty::id(self this) int {
+    return 7;
+}
+
+type Marker trait {
+    func id() int;
+}
+
+func take(value Marker) int {
+    return value.id();
+}
+```
+
+`take` on an `Empty` returns 7. `extern type Empty struct {}` has the same size. An empty `extern(abi="c") struct` is still a one-byte opaque handle.
+
 ```c
 type Node struct {
     n int;

@@ -1,0 +1,68 @@
+type Empty struct {}
+
+func Empty::id(self this) int {
+    return 7;
+}
+
+func Empty::bump(self *this) int {
+    return 3;
+}
+
+type Marker trait {
+    func id() int;
+}
+
+func take(value Marker) int {
+    return value.id();
+}
+
+type Tag[T type] struct {}
+
+func Tag[T]::id(self this) int {
+    return 1;
+}
+
+func keep[T type](value T) T {
+    return value;
+}
+
+type Hold struct {
+    tag Empty;
+    n int;
+}
+
+extern type Plain struct {}
+
+func main() int {
+    var e Empty;
+    if (sizeof(Empty) != 0 || sizeof(e) != 0) {
+        return 1;
+    }
+    if (e.id() != 7 || e.bump() != 3) {
+        return 2;
+    }
+    if (take(e) != 7) {
+        return 3;
+    }
+    var tag Tag[int];
+    if (sizeof(tag) != 0 || tag.id() != 1 || take(tag) != 1) {
+        return 4;
+    }
+    var again = keep(e);
+    if (again.id() != 7 || sizeof(again) != 0) {
+        return 5;
+    }
+    var hold Hold;
+    hold.n = 40;
+    if (sizeof(hold) != 4 || hold.n != 40 || hold.tag.id() != 7) {
+        return 6;
+    }
+    if (sizeof(Plain) != 0) {
+        return 7;
+    }
+    var row [2]Empty;
+    if (sizeof(row) != 0) {
+        return 8;
+    }
+    return 42;
+}

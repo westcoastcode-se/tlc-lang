@@ -79,7 +79,6 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 
 ## Structs, enums, and unions
 
-- An empty struct that is not `extern(abi="c")`, including an empty `extern struct`. An empty `extern(abi="c") struct` is an opaque handle.
 - An empty enum.
 - An empty union.
 - A union that is not `extern(abi="c")` and does not name an enum, including `extern union`.

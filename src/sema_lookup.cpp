@@ -983,8 +983,9 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         structs_.push_back(std::move(created));
         tags_[file_id][item->name] = id;
         if (item->fields.empty()) {
-            // An empty extern(abi="c") struct is an opaque C handle. A union needs a field. Any other empty struct has no fields to store.
-            if (!item->extern_c || item->is_union) {
+            // An empty tlc struct is zero-sized and may still have methods. An empty
+            // extern(abi="c") struct is a one-byte opaque handle. A union needs a field.
+            if (item->is_union) {
                 error(item->loc, "not supported yet");
             }
             structs_.back().complete = true;
@@ -1105,7 +1106,13 @@ std::optional<int> Checker::type_size(const Type &type) const {
             return std::nullopt;
         }
         if (info.fields.empty()) {
-            return info.is_extern && info.extern_c && !info.is_union ? std::optional<int>(1) : std::nullopt;
+            if (info.is_union) {
+                return std::nullopt;
+            }
+            if (info.extern_c) {
+                return 1;
+            }
+            return align_up(0, std::max(info.align, 1));
         }
         if (info.is_union && info.tag_enum < 0) {
             int size = 0;

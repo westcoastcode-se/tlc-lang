@@ -484,8 +484,11 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("type Empty struct {};\nfunc main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        const std::string errors = diagnose(
+            "type Empty struct {}\n"
+            "func Empty::id(self this) int { return 7; }\n"
+            "func main() int { var e Empty; return e.id() + sizeof(Empty); }\n");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -1637,6 +1640,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "extern(abi=\"c\") type Handle struct {}\n"
+            "assert(sizeof(Handle) == 1, \"handle\");\n"
             "func main() int {\n"
             "  var p ?*Handle;\n"
             "  p = null;\n"
@@ -2216,8 +2220,8 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("extern type Handle struct {}\nfunc main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        const std::string errors = diagnose("extern type Handle struct {}\nfunc main() int { return sizeof(Handle); }\n");
+        EXPECT(check, errors.empty());
     }
 
     {

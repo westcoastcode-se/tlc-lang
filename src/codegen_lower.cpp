@@ -914,7 +914,8 @@ void CodeGen::prepare_structs() {
                     }
                 }
             }
-            if (body.empty()) {
+            // An empty tlc struct stays zero-sized. An empty extern(abi="c") struct is one byte.
+            if (body.empty() && (item->is_union || item->extern_c)) {
                 body.push_back(i8());
             }
             if (item->align > 0) {
