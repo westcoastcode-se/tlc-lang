@@ -25,7 +25,7 @@ tlc --help
 | `-g` | Emit DWARF debug information |
 | `-Wl,<opt>` | Pass `<opt>` through to the linker |
 
-`-g` writes DWARF into the object file. Each function records its source file and its line, and each instruction records the line and column that produced it. Parameters, locals, and globals record their addresses. A debugger uses that to set a breakpoint on a source line, step, and read those variables. A file-scope `const` has no address, so it is not a debug variable. `--check` accepts `-g` and does not emit code. `--emit-llvm` prints the same information as LLVM debug metadata.
+`-g` writes DWARF into the object file. Each function records its source file and its line, and each instruction records the line and column that produced it. Parameters, locals, and globals record their addresses. A debugger uses that to set a breakpoint on a source line, step, and read those variables. Stepping over an `if` whose condition is false continues at the statement after the `if`. A file-scope `const` has no address, so it is not a debug variable. `--check` accepts `-g` and does not emit code. `--emit-llvm` prints the same information as LLVM debug metadata.
 
 `tlc -g -o app main.tlc` writes that executable and leaves it on disk. `gdb app` or `lldb app` can break on a source line. In Zed, `debugger: start` uses `.zed/debug.json`. The session builds the open file with `-g` into `build/debug/` and launches it under CodeLLDB, or under GDB. A breakpoint is a click in the gutter.
 

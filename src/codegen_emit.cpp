@@ -3380,6 +3380,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     emit_rvalue(*node.expr);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                const SourceLoc if_loc = node.loc;
                 llvm::Value *cond = emit_rvalue(*node.cond).value;
                 if (terminated()) {
                     return;
@@ -3387,6 +3388,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                 llvm::BasicBlock *then_block = llvm::BasicBlock::Create(context_, "if.then", function_);
                 llvm::BasicBlock *else_block = llvm::BasicBlock::Create(context_, "if.else", function_);
                 llvm::BasicBlock *merge_block = llvm::BasicBlock::Create(context_, "if.end", function_);
+                // The branch itself is the if line. The arms must not leak their
+                // lines onto the path that skips them.
+                set_loc(if_loc);
                 builder_.CreateCondBr(is_nonzero(cond), then_block, else_block);
                 builder_.SetInsertPoint(then_block);
                 if (node.then_arm) {
@@ -3396,13 +3400,18 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     builder_.CreateBr(merge_block);
                 }
                 builder_.SetInsertPoint(else_block);
+                set_loc(if_loc);
                 if (node.else_arm) {
                     emit_stmt(*node.else_arm);
                 }
                 if (!terminated()) {
+                    if (node.else_arm == nullptr) {
+                        set_loc(if_loc);
+                    }
                     builder_.CreateBr(merge_block);
                 }
                 builder_.SetInsertPoint(merge_block);
+                set_loc(if_loc);
             } else if constexpr (std::is_same_v<T, Stmt::While>) {
                 llvm::BasicBlock *cond_block = llvm::BasicBlock::Create(context_, "while.cond", function_);
                 llvm::BasicBlock *body_block = llvm::BasicBlock::Create(context_, "while.body", function_);

@@ -67,6 +67,37 @@ int run_cli_tests() {
     EXPECT(check, debug_run.code == 42);
     EXPECT(check, debug_run.err.empty());
 
+    const std::string if_step = "/tmp/tlc-if-step.tlc";
+    {
+        std::ofstream out(if_step);
+        out << "func main() int {\n"
+               "    var n = 1;\n"
+               "    if (n == 0) {\n"
+               "        return 2;\n"
+               "    }\n"
+               "    return n;\n"
+               "}\n";
+    }
+    const tlc::test::Proc if_ir = tlc::test::spawn({bin, "--emit-llvm", "-g", if_step});
+    EXPECT(check, if_ir.code == 0);
+    const auto else_at = if_ir.out.find("if.else:");
+    const auto else_br = else_at == std::string::npos ? std::string::npos : if_ir.out.find("br label %if.end", else_at);
+    EXPECT(check, else_br != std::string::npos);
+    const auto dbg_mark = else_br == std::string::npos ? std::string::npos : if_ir.out.find("!dbg !", else_br);
+    std::string else_line;
+    if (dbg_mark != std::string::npos) {
+        const auto id_begin = dbg_mark + std::string("!dbg !").size();
+        const auto id_end = if_ir.out.find_first_not_of("0123456789", id_begin);
+        const std::string id = if_ir.out.substr(id_begin, id_end - id_begin);
+        const std::string key = "!" + id + " = !DILocation(line: ";
+        const auto loc_at = if_ir.out.find(key);
+        if (loc_at != std::string::npos) {
+            else_line = if_ir.out.substr(loc_at + key.size(), 1);
+        }
+    }
+    EXPECT_EQ(check, else_line, "3");
+    std::remove(if_step.c_str());
+
     const std::string import_qual = std::string(TLC_ROOT) + "/tests/programs/import_qual/main.tlc";
     const tlc::test::Proc pkg_ir = tlc::test::spawn({bin, "--emit-llvm", import_qual});
     EXPECT(check, pkg_ir.code == 0);
