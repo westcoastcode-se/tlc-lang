@@ -14,7 +14,7 @@ namespace tlc {
 struct FunctionDecl;
 
 // One slot of `func id[T type, N int]`. `T type` is a type. `T Shape` is a trait.
-// `N int` is a compile-time integer. `[...U]` is a type pack and is the only parameter.
+// `N int` is a compile-time integer. `[...U]` is a type pack and is the last parameter.
 struct TypeParam {
     SourceLoc loc{};
     std::string name;

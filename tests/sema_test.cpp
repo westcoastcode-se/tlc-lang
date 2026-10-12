@@ -3526,7 +3526,21 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func f[T type, ...U](a T, args U) T { return a; }\n"
-            "func main() int { return f(1); }\n");
+            "func main() int { return f(1, 2); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func f[...U, T type](args U, a T) T { return a; }\n"
+            "func main() int { return f(1, 2); }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func f[T type, ...U, V type](a T, args U, b V) T { return a; }\n"
+            "func main() int { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 

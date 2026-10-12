@@ -9,8 +9,8 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 ## Generics and compile-time
 
 - A generic used as a value: `var f = id`.
-- `extern` on a generic, a generic with no body, and a generic that is also `...`. `[...U]` is a separate parameter and is accepted when it is the only type parameter.
-- A pack beside another type parameter, `[T type, ...U]`.
+- `extern` on a generic, a generic with no body, and a generic that is also `...`. `[...U]` is a separate parameter and is accepted when it is the last type parameter, as in `[T type, ...U]`.
+- A pack that is not the last type parameter, `[...U, T type]`.
 - A pack on a struct or a union.
 - An empty pack.
 - A pack of several types used as `*U`, `[N]U`, a type argument, or a field.

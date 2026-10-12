@@ -1171,18 +1171,20 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         error(call.loc, "not supported yet");
         return type_invalid();
     }
-    const bool sole_pack = templ->type_params.size() == 1 && templ->type_params.front().is_pack;
-    bool any_pack = false;
-    for (const TypeParam &param : templ->type_params) {
-        if (param.is_pack) {
-            any_pack = true;
+    int pack_at = -1;
+    for (std::size_t i = 0; i < templ->type_params.size(); ++i) {
+        if (!templ->type_params[i].is_pack) {
+            continue;
         }
+        if (pack_at >= 0 || i + 1 != templ->type_params.size()) {
+            error(call.loc, "not supported yet");
+            return type_invalid();
+        }
+        pack_at = static_cast<int>(i);
     }
-    if (any_pack && !sole_pack) {
-        error(call.loc, "not supported yet");
-        return type_invalid();
-    }
-    if (!sole_pack && call.type_args.size() > templ->type_params.size()) {
+    const bool trailing_pack = pack_at >= 0;
+    const std::size_t fixed = trailing_pack ? templ->type_params.size() - 1 : templ->type_params.size();
+    if (!trailing_pack && call.type_args.size() > templ->type_params.size()) {
         error(call.loc, "argument count");
         return type_invalid();
     }
@@ -1209,21 +1211,27 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     }
     std::vector<SpecArg> bounds(templ->type_params.size());
     std::vector<char> set(templ->type_params.size(), 0);
-    if (sole_pack && !call.type_args.empty()) {
+    if (trailing_pack && call.type_args.size() > fixed) {
+        for (std::size_t i = 0; i < fixed; ++i) {
+            if (!bind_type_arg(templ->type_params[i], call.type_args[i], bounds[i], call.type_args[i].loc)) {
+                return type_invalid();
+            }
+            set[i] = 1;
+        }
         std::vector<SpecArg> parts;
-        parts.reserve(call.type_args.size());
-        TypeParam as_type = templ->type_params.front();
+        parts.reserve(call.type_args.size() - fixed);
+        TypeParam as_type = templ->type_params[static_cast<std::size_t>(pack_at)];
         as_type.is_pack = false;
         as_type.is_type = true;
-        for (const TypeArg &arg : call.type_args) {
+        for (std::size_t i = fixed; i < call.type_args.size(); ++i) {
             SpecArg bound;
-            if (!bind_type_arg(as_type, arg, bound, arg.loc)) {
+            if (!bind_type_arg(as_type, call.type_args[i], bound, call.type_args[i].loc)) {
                 return type_invalid();
             }
             parts.push_back(std::move(bound));
         }
-        bounds[0] = pack_bound(std::move(parts));
-        set[0] = 1;
+        bounds[static_cast<std::size_t>(pack_at)] = pack_bound(std::move(parts));
+        set[static_cast<std::size_t>(pack_at)] = 1;
     } else {
         for (std::size_t i = 0; i < call.type_args.size(); ++i) {
             if (!bind_type_arg(templ->type_params[i], call.type_args[i], bounds[i], call.type_args[i].loc)) {

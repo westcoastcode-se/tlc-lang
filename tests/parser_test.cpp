@@ -774,6 +774,11 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func keep[T type, ...U](a T, args U) T { return a; }\n");
+        EXPECT(check, parsed.errors.empty());
+    }
+
+    {
+        const Parsed parsed = parse_source("func keep[...U, T type](args U, a T) U { return args; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 

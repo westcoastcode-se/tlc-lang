@@ -18,6 +18,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 if (fn->is_extern || fn->extern_c || fn->variadic || !fn->method_struct.empty()) {
                     error(fn->loc, "not supported yet");
                 }
+                for (std::size_t i = 0; i < fn->type_params.size(); ++i) {
+                    if (fn->type_params[i].is_pack && i + 1 != fn->type_params.size()) {
+                        error(fn->type_params[i].loc, "not supported yet");
+                    }
+                }
                 if (!fn->method_struct.empty()) {
                     require_method_params(*fn);
                 }

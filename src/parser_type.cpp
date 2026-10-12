@@ -1304,22 +1304,23 @@ std::vector<TypeParam> Parser::parse_type_params() {
         TypeParam param;
         param.loc = peek().loc;
         if (check(TokenKind::Ellipsis)) {
-            if (!params.empty()) {
-                diags_.error(param.loc, "not supported yet");
-                while (!check(TokenKind::RBracket) && !eof()) {
-                    ++pos_;
-                }
-                break;
-            }
+            // `[...U]` is a type pack. It may follow other parameters. It is the last one.
+            const SourceLoc pack_loc = peek().loc;
             ++pos_;
             if (!check(TokenKind::Identifier)) {
                 error_here("expected an identifier");
                 break;
             }
             param.name = peek().text;
+            param.loc = pack_loc;
             param.is_pack = true;
             param.is_type = true;
             ++pos_;
+            for (const TypeParam &prior : params) {
+                if (prior.name == param.name) {
+                    diags_.error(pack_loc, "redefinition");
+                }
+            }
             if (!check(TokenKind::Comma) && !check(TokenKind::RBracket)) {
                 diags_.error(peek().loc, "type mismatch");
                 if (!check(TokenKind::RBracket) && !eof()) {
@@ -1327,7 +1328,7 @@ std::vector<TypeParam> Parser::parse_type_params() {
                 }
             }
             params.push_back(std::move(param));
-            if (eat(TokenKind::Comma)) {
+            if (eat(TokenKind::Comma) && !check(TokenKind::RBracket)) {
                 diags_.error(peek().loc, "not supported yet");
                 while (!check(TokenKind::RBracket) && !eof()) {
                     ++pos_;
