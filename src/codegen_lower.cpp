@@ -106,6 +106,7 @@ void CodeGen::bind_package_globals() {
 
 llvm::AllocaInst *CodeGen::alloca_typed(llvm::Type *type, const std::string &name) {
     llvm::IRBuilder<> allocas(&function_->getEntryBlock(), function_->getEntryBlock().begin());
+    stamp_builder(allocas);
     return allocas.CreateAlloca(type, nullptr, name);
 }
 

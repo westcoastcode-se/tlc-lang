@@ -103,8 +103,8 @@ bool is_under(const fs::path &dir, const fs::path &root) {
 class Resolver {
   public:
     Resolver(const ResolveRequest &request, SourceSet &sources, DiagnosticEngine &diags, PackageGraph &graph)
-        : sources_(sources), diags_(diags), graph_(graph), vendor_request_(request.vendor_root),
-          std_request_(request.std_root) {
+        : sources_(sources), diags_(diags), graph_(graph), overlays_(request.overlays),
+          vendor_request_(request.vendor_root), std_request_(request.std_root) {
         for (const std::string &root : request.package_paths) {
             extra_roots_.emplace_back(root);
         }
@@ -113,12 +113,18 @@ class Resolver {
 
     void run() {
         std::error_code ec;
-        if (!fs::is_regular_file(entry_, ec) || ec) {
-            diags_.error({}, "cannot read file");
-            return;
-        }
-        const fs::path canonical = fs::canonical(entry_, ec);
-        if (ec) {
+        const bool on_disk = fs::is_regular_file(entry_, ec) && !ec;
+        fs::path canonical;
+        if (on_disk) {
+            canonical = fs::canonical(entry_, ec);
+            if (ec) {
+                diags_.error({}, "cannot read file");
+                return;
+            }
+        } else if (overlays_.contains(entry_.string()) && fs::is_directory(entry_.parent_path(), ec)) {
+            // The editor has a buffer for a path that is not on disk yet.
+            canonical = entry_;
+        } else {
             diags_.error({}, "cannot read file");
             return;
         }
@@ -154,6 +160,7 @@ class Resolver {
     SourceSet &sources_;
     DiagnosticEngine &diags_;
     PackageGraph &graph_;
+    const std::unordered_map<std::string, std::string> &overlays_;
     fs::path entry_;
     std::string vendor_request_;
     std::string std_request_;
@@ -166,7 +173,12 @@ class Resolver {
     std::vector<std::string> package_stack_;
 
     std::size_t load_new(const fs::path &canonical) {
-        std::optional<std::string> text = read_file(canonical.string());
+        std::optional<std::string> text;
+        if (const auto over = overlays_.find(canonical.string()); over != overlays_.end()) {
+            text = over->second;
+        } else {
+            text = read_file(canonical.string());
+        }
         if (!text) {
             return kMissing;
         }

@@ -5,6 +5,7 @@
 #include "source.hpp"
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace tlc {
@@ -49,6 +50,10 @@ struct ResolveRequest {
     // entry directory and each `-P` root. `import "std/testing"` loads
     // `<std_root>/std/testing`. A `link` file there is added to `link_args`.
     std::string std_root;
+    // Replacement text keyed by the path the loader opens. The language server
+    // uses this for the unsaved buffer. A missing file is still loaded when its
+    // path is a key and its parent directory exists.
+    std::unordered_map<std::string, std::string> overlays;
 };
 
 // `import "builtin"` is this package. The compiler supplies it. It has no source file.

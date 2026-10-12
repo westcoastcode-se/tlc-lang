@@ -1,0 +1,28 @@
+[
+  {
+    "label": "Run TLC program",
+    "command": "$ZED_WORKTREE_ROOT/plugins/zed/tlc.sh",
+    "args": ["run", "$ZED_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": ["tlc-main"],
+    "reveal": "always"
+  },
+  {
+    "label": "Check TLC program",
+    "command": "$ZED_WORKTREE_ROOT/plugins/zed/tlc.sh",
+    "args": ["check", "$ZED_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "Build TLC debug binary",
+    "command": "$ZED_WORKTREE_ROOT/plugins/zed/tlc.sh",
+    "args": [
+      "build-debug",
+      "$ZED_FILE",
+      "$ZED_WORKTREE_ROOT/build/debug/$ZED_RELATIVE_DIR/$ZED_STEM"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  }
+]

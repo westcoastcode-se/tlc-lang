@@ -2,6 +2,16 @@
 
 What the language pages leave out. The compiler reports most of these as `not supported yet`. Diagnostics stay the short English phrases already used (`not supported yet`, `type mismatch`).
 
+## Language server
+
+`tlc lsp` publishes diagnostics and answers completion, hover, definition, and document symbols. These are not in place:
+
+- Rename, formatting, code actions, and signature help.
+- Incremental document sync. Each change replaces the whole buffer.
+- Completion after a dot when the receiver is a call, an index, or a parenthesized expression. `{.field = ...}` completes the struct's fields.
+- Member completion for a name introduced with `:=`, because that binding does not store a type on its own.
+- Semantic tokens from the server. Colors come from the tree-sitter grammar.
+
 ## `const if`
 
 Compile-time branching was left out on purpose. `const if` is not a form yet.

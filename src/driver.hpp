@@ -17,6 +17,8 @@ enum class Mode {
     Compile,
     Run,
     Test,
+    // Speak LSP on stdin and stdout. No input file.
+    Lsp,
     Error,
 };
 
@@ -27,6 +29,8 @@ struct Options {
     std::vector<std::string> package_paths;
     // Passed to cc after the object file, in the order given. Used when linking.
     std::vector<std::string> link_args;
+    // `-g`. Emit DWARF line numbers and variable locations.
+    bool debug_info = false;
     std::string error;
 };
 
@@ -46,6 +50,8 @@ std::string help_text();
 // holds this binary (`bin/tlc` and `build/tlc` both land on `<prefix>/lib/tlc/vendor`).
 // Import a package there as `vendor/<name>`.
 std::string vendor_library_root();
+// `<prefix>/lib/tlc`, next to the vendor directory.
+std::string std_library_root();
 Options parse_args(int argc, char **argv);
 CompileOutput compile_source(const Options &opt);
 int execute(const Options &opt);

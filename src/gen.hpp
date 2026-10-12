@@ -4,11 +4,13 @@
 
 #include "codegen.hpp"
 
+#include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -144,6 +146,7 @@ class CodeGen {
 
     void emit(const PackageGraph &graph);
     void enable_tests() { testing_ = true; }
+    void enable_debug() { debug_ = true; }
 
   private:
     struct FileSymbols {
@@ -177,6 +180,15 @@ class CodeGen {
     int local_seq_ = 0;
     uint32_t entry_file_ = 0;
     bool testing_ = false;
+    // `-g`. Line numbers and variable locations for a debugger.
+    bool debug_ = false;
+    std::unique_ptr<llvm::DIBuilder> di_builder_;
+    llvm::DICompileUnit *di_unit_ = nullptr;
+    llvm::DISubprogram *di_subprogram_ = nullptr;
+    std::vector<llvm::DIScope *> di_scopes_;
+    std::unordered_map<uint32_t, llvm::DIFile *> di_files_;
+    std::unordered_map<std::string, llvm::DIType *> di_basic_;
+    std::unordered_map<int, llvm::DIType *> di_structs_;
     // Name recorded on the approximate call stack while a function or test is emitted.
     std::string trace_name_;
     llvm::StructType *trace_frame_ = nullptr;
@@ -659,6 +671,19 @@ class CodeGen {
     }
     void push() { scopes_.emplace_back(); }
     void pop() { scopes_.pop_back(); }
+    void open_debug();
+    void finish_debug();
+    llvm::DIFile *debug_file(SourceLoc loc);
+    void set_loc(SourceLoc loc);
+    void debug_enter(SourceLoc loc);
+    void debug_leave();
+    void debug_begin_function(const FunctionDecl &fn, llvm::Function *function);
+    void debug_end_function();
+    void debug_declare(const std::string &name, SourceLoc loc, const Binding &binding, unsigned param_index);
+    void debug_global(const std::string &name, llvm::GlobalVariable *global, SourceLoc loc, const Lowered &low,
+                      bool local);
+    llvm::DIType *debug_type(const Lowered &low);
+    void stamp_builder(llvm::IRBuilderBase &builder) const;
     const Binding *lookup(const std::string &name) const;
     llvm::AllocaInst *alloca_typed(llvm::Type *type, const std::string &name);
     llvm::FunctionType *function_type(const FunctionDecl &fn, uint32_t file) const;

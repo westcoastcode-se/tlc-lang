@@ -1,4 +1,5 @@
 - All changes made to the language should update the documentation.
+- A language change updates every plugin under `plugins/` that needs to match the change.
 - Always consider TOOD.md
   - Remove a feature that's added
   - When adding new features, add anything skipped to be implemented in the future into TODO.md

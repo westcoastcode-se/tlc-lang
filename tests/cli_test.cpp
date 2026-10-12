@@ -36,6 +36,8 @@ int run_cli_tests() {
     EXPECT_HAS(check, help.out, "-l <lib>");
     EXPECT_HAS(check, help.out, "-Bstatic");
     EXPECT_HAS(check, help.out, "-Bdynamic");
+    EXPECT_HAS(check, help.out, "-g");
+    EXPECT_HAS(check, help.out, "tlc lsp");
     EXPECT_HAS(check, help.out, "TLC_LIB");
 
     const tlc::test::Proc unknown = tlc::test::spawn({bin, "--nope"});
@@ -53,6 +55,17 @@ int run_cli_tests() {
     const tlc::test::Proc ir = tlc::test::spawn({bin, "--emit-llvm", ret_const});
     EXPECT(check, ir.code == 0);
     EXPECT_HAS(check, ir.out, "define i32 @main");
+    EXPECT(check, ir.out.find("DICompileUnit") == std::string::npos);
+
+    const tlc::test::Proc debug_ir = tlc::test::spawn({bin, "--emit-llvm", "-g", ret_const});
+    EXPECT(check, debug_ir.code == 0);
+    EXPECT_HAS(check, debug_ir.out, "DICompileUnit");
+    EXPECT_HAS(check, debug_ir.out, "DISubprogram(name: \"main\"");
+    EXPECT_HAS(check, debug_ir.out, "!dbg ");
+
+    const tlc::test::Proc debug_run = tlc::test::spawn({bin, "--run", "-g", ret_const});
+    EXPECT(check, debug_run.code == 42);
+    EXPECT(check, debug_run.err.empty());
 
     const std::string import_qual = std::string(TLC_ROOT) + "/tests/programs/import_qual/main.tlc";
     const tlc::test::Proc pkg_ir = tlc::test::spawn({bin, "--emit-llvm", import_qual});

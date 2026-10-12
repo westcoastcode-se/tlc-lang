@@ -44,6 +44,10 @@ func draw_triangle() void {
     glEnd();
 }
 
+type K struct {
+    value i32;
+}
+
 func main() int {
     if (SDL_Init(SdlInit.SDL_INIT_VIDEO) == 0) {
         printf("SDL_Init failed: %s\n", SDL_GetError());

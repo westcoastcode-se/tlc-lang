@@ -182,6 +182,7 @@ void CodeGen::declare_file(const PackageNode &node) {
                 }
             }
             global = new llvm::GlobalVariable(module_, ty, false, form.linkage, init, form.name);
+            debug_global(var->name, global, var->loc, low, var->is_static);
         }
         Binding binding;
         binding.value = global;
@@ -768,6 +769,7 @@ void CodeGen::finish_function() {
             continue;
         }
         llvm::IRBuilder<> fix(&block);
+        stamp_builder(fix);
         if (extern_sret_ && extern_sret_ptr_ != nullptr && extern_ret_struct_ != nullptr) {
             fix.CreateStore(llvm::ConstantAggregateZero::get(extern_ret_struct_), extern_sret_ptr_);
             fix.CreateRetVoid();
@@ -847,6 +849,11 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
     if (function == nullptr || !fn.body || !function->empty()) {
         return;
     }
+    std::vector<llvm::DIScope *> saved_scopes = std::move(di_scopes_);
+    di_scopes_.clear();
+    llvm::DISubprogram *saved_subprogram = di_subprogram_;
+    const llvm::DebugLoc saved_loc = builder_.getCurrentDebugLocation();
+    builder_.SetCurrentDebugLocation(llvm::DebugLoc());
     const std::string saved_trace = trace_name_;
     trace_name_ = fn.name.empty() ? std::string("anon") : fn.name;
     const bool saved_many = return_many_;
@@ -877,6 +884,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
     }
     llvm::BasicBlock *entry = llvm::BasicBlock::Create(context_, "entry", function);
     builder_.SetInsertPoint(entry);
+    debug_begin_function(fn, function);
     push();
     if (abi_body) {
         const ExternLayout &layout = abi_layout;
@@ -908,6 +916,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
                     binding.value = slot;
                     apply_low(binding, low);
                     scopes_.back()[name] = binding;
+                    debug_declare(name, fn.params[index].loc, binding, static_cast<unsigned>(index + 1));
                 }
             } else if (abi < function->arg_size()) {
                 llvm::Argument *arg = function->getArg(abi++);
@@ -918,6 +927,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
                     binding.value = slot;
                     apply_low(binding, low);
                     scopes_.back()[name] = binding;
+                    debug_declare(name, fn.params[index].loc, binding, static_cast<unsigned>(index + 1));
                 }
             }
         }
@@ -933,6 +943,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
                 binding.value = slot;
                 apply_low(binding, low);
                 scopes_.back()[name] = binding;
+                debug_declare(name, fn.params[index].loc, binding, static_cast<unsigned>(index + 1));
             }
             ++index;
         }
@@ -940,6 +951,10 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
     emit_stmt(*fn.body);
     finish_function();
     pop();
+    debug_end_function();
+    di_scopes_ = std::move(saved_scopes);
+    di_subprogram_ = saved_subprogram;
+    builder_.SetCurrentDebugLocation(saved_loc);
     function_ = nullptr;
     return_type_ = nullptr;
     return_depth_ = 0;
@@ -1428,6 +1443,7 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
     if (inst->getType()->isArrayTy() && function_ != nullptr) {
         auto *array_ty = llvm::cast<llvm::ArrayType>(inst->getType());
         llvm::IRBuilder<> allocas(&function_->getEntryBlock(), function_->getEntryBlock().begin());
+        stamp_builder(allocas);
         llvm::AllocaInst *slot = allocas.CreateAlloca(array_ty, nullptr, "arr.ret");
         builder_.CreateStore(inst, slot);
         llvm::Value *first = builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(0)});
@@ -1470,6 +1486,7 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
 
 llvm::AllocaInst *CodeGen::defer_flag() {
     llvm::IRBuilder<> allocas(&function_->getEntryBlock(), function_->getEntryBlock().begin());
+    stamp_builder(allocas);
     llvm::AllocaInst *flag = allocas.CreateAlloca(i1(), nullptr, "defer.on");
     allocas.CreateStore(llvm::ConstantInt::getFalse(context_), flag);
     return flag;
@@ -2054,6 +2071,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
     if (terminated()) {
         return {zero(), 0};
     }
+    set_loc(std::visit([](const auto &node) -> SourceLoc { return node.loc; }, expr.data));
     return std::visit(
         [&](const auto &node) -> TypedValue {
             using T = std::decay_t<decltype(node)>;
@@ -2946,6 +2964,16 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         error(node.loc, "type mismatch");
         return;
     }
+    auto note = [&](const std::string &name, const Binding &binding) {
+        SourceLoc loc = node.loc;
+        for (std::size_t i = 0; i < node.names.size() && i < node.name_locs.size(); ++i) {
+            if (node.names[i] == name) {
+                loc = node.name_locs[i];
+                break;
+            }
+        }
+        debug_declare(name, loc, binding, 0);
+    };
     auto create_scalar = [&](const std::string &name, const TypedValue &got) {
         if (got.is_tuple && got.value != nullptr && got.value->getType()->isStructTy()) {
             llvm::AllocaInst *slot = alloca_typed(got.value->getType(), name);
@@ -2955,6 +2983,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.is_tuple = true;
             binding.tuple_parts = got.tuple_parts;
             scopes_.back()[name] = binding;
+            note(name, binding);
             return;
         }
         llvm::Type *ty = i32();
@@ -2999,6 +3028,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         builder_.CreateStore(stored, slot);
         binding.value = slot;
         scopes_.back()[name] = binding;
+        note(name, binding);
     };
     auto destination = [&](const std::string &name, bool &create) -> llvm::Value * {
         create = node.is_var || node.is_const;
@@ -3135,6 +3165,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.value = slot_alloca;
             apply_low(binding, low);
             scopes_.back()[node.names[index]] = binding;
+            note(node.names[index], binding);
         } else if (dest != nullptr) {
             llvm::Type *ty = object_type(dest);
             builder_.CreateStore(as_stored(field, low.depth, ty, low.elem_unsigned), dest);
@@ -3146,6 +3177,16 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
 }
 
 void CodeGen::emit_stmt(const Stmt &stmt) {
+    set_loc(std::visit(
+        [](const auto &node) -> SourceLoc {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Func>) {
+                return node.decl ? node.decl->loc : SourceLoc{};
+            } else {
+                return node.loc;
+            }
+        },
+        stmt.data));
     std::visit(
         [&](const auto &node) {
             using T = std::decay_t<decltype(node)>;
@@ -3156,6 +3197,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                 share_function_scope_ = false;
                 if (!share) {
                     push();
+                    debug_enter(node.loc);
                 }
                 defers_.push_back(DeferFrame{static_cast<int>(loops_.size()), {}});
                 for (const auto &child : node.statements) {
@@ -3170,6 +3212,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     defers_.pop_back();
                 }
                 if (!share) {
+                    debug_leave();
                     pop();
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Func>) {
@@ -3526,6 +3569,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         binding.elem_bits = low.elem_bits;
                         binding.elem_unsigned = low.elem_unsigned;
                         scopes_.back()[var.name] = binding;
+                        debug_declare(var.name, var.loc, binding, 0);
                         if (var.init != nullptr && ty->isArrayTy()) {
                             const auto *init = std::get_if<Expr::Init>(&var.init->data);
                             if (init != nullptr && !init->elements.empty()) {
@@ -3581,6 +3625,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     binding.elem_bool = low.elem_bool;
                     apply_low(binding, low);
                     scopes_.back()[var.name] = binding;
+                    debug_declare(var.name, var.loc, binding, 0);
                     if (var.init) {
                         const TypedValue value = emit_rvalue(*var.init);
                         if (!terminated()) {
@@ -3600,6 +3645,9 @@ void CodeGen::emit(const PackageGraph &graph) {
     }
     graph_ = &graph;
     entry_file_ = graph.nodes.front().file_id;
+    if (debug_) {
+        open_debug();
+    }
     prepare_enums();
     prepare_structs();
     prepare_traits();
@@ -3620,6 +3668,9 @@ void CodeGen::emit(const PackageGraph &graph) {
     emit_builtin_trace();
     if (testing_) {
         emit_tests();
+    }
+    if (di_builder_ != nullptr) {
+        finish_debug();
     }
     graph_ = nullptr;
 }
@@ -3769,6 +3820,7 @@ TypedValue CodeGen::emit_builtin_va(SourceLoc loc) {
     auto *tag = llvm::StructType::get(context_, {i32(), i32(), ptr_type(), ptr_type()});
     auto *list = llvm::ArrayType::get(tag, 1);
     llvm::IRBuilder<> allocas(&function_->getEntryBlock(), function_->getEntryBlock().begin());
+    stamp_builder(allocas);
     llvm::AllocaInst *slot = allocas.CreateAlloca(list, nullptr, "va");
     slot->setAlignment(llvm::Align(16));
     llvm::Value *ap = builder_.CreateInBoundsGEP(list, slot, {const_i32(0), const_i32(0)});

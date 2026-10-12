@@ -1,0 +1,15 @@
+id = "tlc"
+name = "TLC"
+version = "0.1.0"
+schema_version = 1
+authors = ["tlc"]
+description = "Open TLC files in Zed, run them, and complete them with tlc lsp."
+repository = "file:///home/per/Projects/test-lang"
+
+[language_servers.tlc]
+name = "TLC"
+languages = ["TLC"]
+
+[grammars.tlc]
+repository = "file:///home/per/Projects/test-lang/plugins/zed/grammars/tree-sitter-tlc"
+rev = "7e174536686956511c58146265d2c3e288ecea5d"

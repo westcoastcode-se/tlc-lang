@@ -38,7 +38,9 @@ add_library(tlc_lib
     src/codegen_abi.cpp
     src/codegen_lower.cpp
     src/codegen_emit.cpp
+    src/codegen_debug.cpp
     src/pkg.cpp
+    src/lsp.cpp
 )
 target_include_directories(tlc_lib PUBLIC "${CMAKE_SOURCE_DIR}/src" ${LLVM_INCLUDE_DIRS})
 target_compile_options(tlc_lib PUBLIC ${TLC_LLVM_DEFINITIONS})
@@ -58,6 +60,7 @@ add_executable(tlc_tests
     tests/pkg_test.cpp
     tests/programs_test.cpp
     tests/abi_test.cpp
+    tests/lsp_test.cpp
 )
 target_link_libraries(tlc_tests PRIVATE tlc_lib)
 target_compile_definitions(tlc_tests PRIVATE

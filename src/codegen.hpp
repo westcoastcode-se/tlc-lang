@@ -14,6 +14,6 @@ struct CodegenOutput {
 };
 
 CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const std::string &object_path,
-                      bool testing = false);
+                      bool testing = false, bool debug_info = false);
 
 } // namespace tlc

@@ -2,6 +2,7 @@
 
 #include "codegen.hpp"
 #include "diag.hpp"
+#include "lsp.hpp"
 #include "pkg.hpp"
 #include "sema.hpp"
 
@@ -28,6 +29,7 @@ std::string version_text() {
 std::string help_text() {
     return
         "usage: tlc [options] <entry.tlc>\n"
+        "       tlc lsp\n"
         "       tlc --version\n"
         "       tlc --help\n"
         "\n"
@@ -44,6 +46,8 @@ std::string help_text() {
         "  -Bstatic        link later -l libraries from static archives\n"
         "  -Bdynamic       link later -l libraries from shared libraries\n"
         "  -static         link all libraries statically\n"
+        "  -g              emit DWARF debug information\n"
+        "  lsp             speak the language server protocol on stdin and stdout\n"
         "  -Wl,<opt>       pass <opt> to the linker\n"
         "\n"
         "Vendor packages live in lib/tlc/vendor next to the compiler prefix, or in TLC_LIB.\n"
@@ -51,20 +55,6 @@ std::string help_text() {
         ".tlc files are linked. A file named link in the package adds further linker arguments.\n"
         "Standard packages live in lib/tlc. import \"std/testing\" loads the testing package.\n"
         "import \"builtin\" is the compiler package.\n";
-}
-
-std::string vendor_library_root() {
-    if (const char *env = std::getenv("TLC_LIB")) {
-        if (env[0] != '\0') {
-            return env;
-        }
-    }
-    std::error_code ec;
-    const std::filesystem::path exe = std::filesystem::read_symlink("/proc/self/exe", ec);
-    if (ec) {
-        return {};
-    }
-    return (exe.parent_path().parent_path() / "lib" / "tlc" / "vendor").string();
 }
 
 namespace {
@@ -78,6 +68,21 @@ std::filesystem::path install_prefix() {
     return exe.parent_path().parent_path();
 }
 
+} // namespace
+
+std::string vendor_library_root() {
+    if (const char *env = std::getenv("TLC_LIB")) {
+        if (env[0] != '\0') {
+            return env;
+        }
+    }
+    const std::filesystem::path prefix = install_prefix();
+    if (prefix.empty()) {
+        return {};
+    }
+    return (prefix / "lib" / "tlc" / "vendor").string();
+}
+
 std::string std_library_root() {
     const std::filesystem::path prefix = install_prefix();
     if (prefix.empty()) {
@@ -85,8 +90,6 @@ std::string std_library_root() {
     }
     return (prefix / "lib" / "tlc").string();
 }
-
-} // namespace
 
 namespace {
 
@@ -201,6 +204,8 @@ Options parse_args(int argc, char **argv) {
             set_mode(Mode::Run);
         } else if (arg == "--test") {
             set_mode(Mode::Test);
+        } else if (arg == "--lsp" || arg == "lsp") {
+            set_mode(Mode::Lsp);
         } else if (arg == "-o") {
             if (i + 1 >= argc) {
                 opt.mode = Mode::Error;
@@ -232,6 +237,8 @@ Options parse_args(int argc, char **argv) {
             opt.link_args.push_back("-Wl," + arg);
         } else if (arg == "-static") {
             opt.link_args.push_back(arg);
+        } else if (arg == "-g") {
+            opt.debug_info = true;
         } else if (arg.starts_with('-')) {
             opt.mode = Mode::Error;
             opt.error = "unknown option: " + arg;
@@ -255,7 +262,11 @@ Options parse_args(int argc, char **argv) {
         opt.mode = Mode::HelpStderr;
         return opt;
     }
-    if (opt.mode == Mode::Version || opt.mode == Mode::HelpStdout) {
+    if (opt.mode == Mode::Version || opt.mode == Mode::HelpStdout || opt.mode == Mode::Lsp) {
+        if (opt.mode == Mode::Lsp && saw_input) {
+            opt.mode = Mode::Error;
+            opt.error = "lsp takes no file";
+        }
         return opt;
     }
     if (!saw_input) {
@@ -423,7 +434,7 @@ CompileOutput compile_source(const Options &opt) {
         }
     }
 
-    const CodegenOutput generated = codegen(graph, diags, object_path, opt.mode == Mode::Test);
+    const CodegenOutput generated = codegen(graph, diags, object_path, opt.mode == Mode::Test, opt.debug_info);
     output.ir = generated.ir;
     if (!generated.ok || !diags.ok()) {
         output.compiler_stderr = diags.render();
@@ -492,6 +503,8 @@ int execute(const Options &opt) {
     case Mode::Error:
         std::cerr << "error: " << opt.error << "\n" << help_text();
         return 1;
+    case Mode::Lsp:
+        return run_lsp();
     case Mode::Check:
     case Mode::EmitLlvm:
     case Mode::EmitObj:
