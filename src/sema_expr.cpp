@@ -1951,11 +1951,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                 std::vector<Type> parts;
                 if (node.names.size() == 1) {
                     parts.push_back(rhs);
-                } else if (rhs.kind == TypeKind::Tuple && rhs.results.size() == node.names.size() &&
-                           !std::holds_alternative<Expr::Call>(node.value->data)) {
-                    // Several names are unpacked from a call.
-                    error(node.loc, "not supported yet");
-                    return;
                 } else if (rhs.kind != TypeKind::Tuple || rhs.results.size() != node.names.size()) {
                     const std::string found = rhs.kind == TypeKind::Tuple
                                                   ? std::to_string(rhs.results.size()) + " results"

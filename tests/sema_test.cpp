@@ -3557,7 +3557,23 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("func main() int { a, b := (40, 2); return a + b; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func add(x int, y int) (int, int) { return x, y; }\n"
+            "func main() int {\n"
+            "  var mytuple = add(40, 2);\n"
+            "  var value1, value2 = mytuple;\n"
+            "  return value1 + value2;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose("func main() int { var a, b, c = (1, 2); return a; }\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected 3 results, found 2 results");
     }
 
     {

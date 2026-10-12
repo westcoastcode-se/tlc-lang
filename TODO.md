@@ -16,7 +16,6 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - A pack of several types used as `*U`, `[N]U`, a type argument, or a field.
 - A tuple element that is itself a tuple.
 - `typeof` inside a parenthesized result list. A bare result `typeof(expression)` is accepted.
-- Several names bound from a tuple, `a, b := (1, 2)`. Several names are unpacked from a call.
 - A tuple index that is not a constant, and assignment to a tuple element.
 - `count(U)` and `const for`.
 - A type-parameter list after the method name: `func Vec[T]::get[U type]`. `func Vec[T]::get` names the struct's parameters.
@@ -61,7 +60,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 
 ## Declarations
 
-- `var a, b =` at file scope. Inside a function, several names can be bound from one call.
+- `var a, b =` at file scope. Inside a function, several names unpack one tuple.
 - `export` or `extern` on an inferred variable, `var name = expr` or `name := expr`. They go on a typed `var`.
 - A local `type`, including a local struct or enum.
 - A global array initializer. A local array accepts `var row [3]int = {10, 20, 12}`. Any other local array initializer is `not supported yet`.

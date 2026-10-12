@@ -95,6 +95,8 @@ struct TypedValue {
     std::vector<FnParam> fn_results{};
     int enum_id = -1;
     bool is_tuple = false;
+    // Element types of a tuple value, in order. Empty when the value is not a tuple.
+    std::vector<ResultSlot> tuple_parts;
     // Set when this value is a pointer to an array (`*[4]i32`).
     bool ptr_to_array = false;
     int ptr_array_len = 0;
@@ -621,6 +623,7 @@ class CodeGen {
             TypedValue loaded;
             loaded.value = builder_.CreateLoad(ty, binding.value);
             loaded.is_tuple = true;
+            loaded.tuple_parts = binding.tuple_parts;
             return loaded;
         }
         TypedValue loaded = load_object(binding.value, binding.depth, binding.elem_char, binding.struct_id, binding.elem_void,

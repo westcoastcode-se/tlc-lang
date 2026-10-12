@@ -1,8 +1,93 @@
+func add(x int, y int) (int, int) {
+    return x + y, x;
+}
+
+func tagged() (int, char) {
+    return 3, 'b';
+}
+
+func pick(p *int) (*int, int) {
+    return p, 7;
+}
+
+type Point struct {
+    x int;
+};
+
+func make(n int) (Point, int) {
+    var p Point;
+    p.x = n;
+    return p, n + 1;
+}
+
+type Box struct {
+    n int;
+};
+
+func Box::split(self *this) (int, int) {
+    return self.n, self.n + 1;
+}
+
 func main() int {
     var value = (40, 2);
     pair := (7, 8);
     if (value[0] != 40 || value[1] != 2 || pair[0] != 7 || pair[1] != 8) {
         return 1;
+    }
+    var value1, value2 = value;
+    a, b := pair;
+    if (value1 != 40 || value2 != 2 || a != 7 || b != 8) {
+        return 2;
+    }
+    c, d := (1, 2);
+    if (c + d != 3) {
+        return 3;
+    }
+    var stored = add(3, 4);
+    var left, right = stored;
+    if (left != 7 || right != 3) {
+        return 4;
+    }
+    var letters = tagged();
+    var n, ch = letters;
+    if (n != 3 || ch != 'b' || sizeof(ch) != 1) {
+        return 5;
+    }
+    var cell int = 11;
+    var pointed = pick(&cell);
+    var ptr, k = pointed;
+    if (*ptr != 11 || k != 7) {
+        return 6;
+    }
+    var made = make(4);
+    var pt, extra = made;
+    if (pt.x != 4 || extra != 5) {
+        return 7;
+    }
+    var box Box;
+    box.n = 9;
+    var whole = box.split();
+    var p, q = whole;
+    if (p != 9 || q != 10) {
+        return 8;
+    }
+    value1, value2 = (5, 6);
+    if (value1 != 5 || value2 != 6) {
+        return 9;
+    }
+    var lit_n, lit_ch = (40, 'a');
+    if (lit_n != 40 || lit_ch != 'a' || sizeof(lit_ch) != 1) {
+        return 10;
+    }
+    var src char = 'c';
+    var wrapped = (src, 2);
+    var out_ch, out_n = wrapped;
+    if (out_ch != 'c' || out_n != 2 || sizeof(out_ch) != 1) {
+        return 11;
+    }
+    var flag, count = (true, 1);
+    if (flag == 0 || count != 1 || sizeof(flag) != 1) {
+        return 12;
     }
     return value[0] + value[1] + pair[0] + pair[1];
 }

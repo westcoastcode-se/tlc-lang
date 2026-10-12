@@ -80,7 +80,7 @@ var-decl    = "var" identifier go-type [ "=" expression ] ";"
 const-decl  = "const" identifier "=" expression ";" ;
 ```
 
-`var name :=` is an error. Inside a function, several names can be bound from one call:
+`var name :=` is an error. Inside a function, several names unpack one tuple. A call that returns several results is that tuple:
 
 ```ebnf
 binding     = "var" name-list "=" expression ";"
@@ -267,7 +267,7 @@ scalar-type = integer-type | "void" | "bool" | "float" | "double" | integer-name
 
 An anonymous function with no result type has result `void`. The short form is only where a function pointer is expected; its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)`, `*int(p)`, or `?*int(p)`. A builtin name such as `i32` is always that cast. A name declared as a type in this file is a cast too: `Integer(n)`, `*Point(p)`, `ShapeType(shape)`. A cast to a struct is `type mismatch`. `ShapeType(shape)` reads the tag of a tlc union, including from another file in the package. The cast has the type that was written, so `*int(p)` is `*int` and `?*int(null)` is `?*int`. `*int(null)` is `type mismatch`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type. `int*(p)` is `type mismatch`. `sizeof` of a parenthesized type is `sizeof(int)`, `sizeof(*int)`, `sizeof(enum Color)`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression. `typeof` has the same shape and produces a `Type`. `typeof(int)`, `typeof(*int)`, and `typeof n` are accepted. `typeof(struct Point)` is `expected a type`.
 
-A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A trailing comma is allowed. `{10, 20}` is a value list. Where the destination is an array, it fills that array. Where a struct is expected, the value list is `type mismatch`. An empty `{}` names no fields. Mixing a named field and a positional value is `type mismatch`. `(40, 2)` is a tuple. `(40)` is the value `40`. `var value = (40, 2)` and `value := (40, 2)` bind that tuple. `value[0]` reads an element.
+A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A trailing comma is allowed. `{10, 20}` is a value list. Where the destination is an array, it fills that array. Where a struct is expected, the value list is `type mismatch`. An empty `{}` names no fields. Mixing a named field and a positional value is `type mismatch`. `(40, 2)` is a tuple. `(40)` is the value `40`. `var value = (40, 2)` and `value := (40, 2)` bind that tuple. `var value1, value2 = value` and `a, b := value` unpack it. `value[0]` reads an element.
 
 ## Tokens
 

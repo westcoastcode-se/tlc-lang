@@ -1447,6 +1447,23 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
     if (inst->getType()->isStructTy() &&
         ((call.decl != nullptr && call.decl->results.size() > 1) || call.fn_results.size() > 1)) {
         result.is_tuple = true;
+        if (call.decl != nullptr && call.decl->results.size() > 1) {
+            result.tuple_parts = call.decl->results;
+        } else {
+            result.tuple_parts.reserve(call.fn_results.size());
+            for (const FnParam &part : call.fn_results) {
+                ResultSlot slot;
+                slot.type_name = part.type_name;
+                slot.type_package = part.type_package;
+                slot.is_struct = part.is_struct;
+                slot.is_enum = part.is_enum;
+                slot.indirections = part.indirections;
+                slot.optional = part.optional;
+                slot.const_pointee = part.const_pointee;
+                slot.is_array = false;
+                result.tuple_parts.push_back(std::move(slot));
+            }
+        }
     }
     return result;
 }
@@ -2634,8 +2651,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (node.is_tuple) {
                     std::vector<llvm::Value *> fields;
                     std::vector<llvm::Type *> types;
+                    std::vector<TypedValue> element_values;
                     fields.reserve(node.elements.size());
                     types.reserve(node.elements.size());
+                    element_values.reserve(node.elements.size());
                     for (const auto &element : node.elements) {
                         TypedValue value = element ? emit_rvalue(*element) : TypedValue{};
                         if (terminated()) {
@@ -2644,17 +2663,122 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         if (value.value == nullptr) {
                             value.value = zero();
                         }
+                        // An rvalue promotes char, bool, and a narrow integer to int. The tuple keeps
+                        // the type sema gave the element, the same width a function result uses.
+                        auto restore = [&](llvm::Type *ty, bool elem_char, bool elem_bool, int elem_bits,
+                                           bool elem_unsigned) {
+                            if (ty == nullptr || value.value == nullptr) {
+                                return;
+                            }
+                            if (value.value->getType() == ty) {
+                                value.elem_char = elem_char;
+                                value.elem_bool = elem_bool;
+                                value.elem_bits = elem_bits;
+                                value.elem_unsigned = elem_unsigned;
+                                return;
+                            }
+                            if (!value.value->getType()->isIntegerTy() || !ty->isIntegerTy() ||
+                                ty->getIntegerBitWidth() >= value.value->getType()->getIntegerBitWidth()) {
+                                return;
+                            }
+                            value.value = as_stored(value.value, 0, ty, elem_unsigned || elem_char);
+                            value.elem_char = elem_char;
+                            value.elem_bool = elem_bool;
+                            value.elem_bits = elem_bits;
+                            value.elem_unsigned = elem_unsigned;
+                            value.elem_float = false;
+                            value.depth = 0;
+                            value.struct_id = -1;
+                        };
+                        if (element != nullptr && std::holds_alternative<Expr::Char>(element->data)) {
+                            restore(i8(), true, false, 8, false);
+                        } else if (element != nullptr && std::holds_alternative<Expr::Bool>(element->data)) {
+                            restore(i1(), false, true, 0, false);
+                        } else if (element != nullptr) {
+                            if (const auto *number = std::get_if<Expr::Int>(&element->data);
+                                number != nullptr && (number->suffix.bits == 8 || number->suffix.bits == 16)) {
+                                llvm::Type *ty = number->suffix.bits == 8 ? i8() : i16();
+                                restore(ty, false, false, number->suffix.bits, number->suffix.is_unsigned);
+                            } else if (const auto *named = std::get_if<Expr::Name>(&element->data)) {
+                                const Binding *binding = lookup(named->text);
+                                if (binding != nullptr && !binding->is_tuple && !binding->is_function &&
+                                    !binding->is_array && binding->depth == 0 && binding->struct_id < 0 &&
+                                    binding->value != nullptr) {
+                                    restore(object_type(binding->value), binding->elem_char, binding->elem_bool,
+                                            binding->elem_bits, binding->elem_unsigned);
+                                    if (binding->enum_id >= 0) {
+                                        value.enum_id = binding->enum_id;
+                                    }
+                                }
+                            }
+                        }
                         fields.push_back(value.value);
                         types.push_back(value.value->getType());
+                        element_values.push_back(std::move(value));
                     }
                     llvm::StructType *aggregate_type = llvm::StructType::get(context_, types);
                     llvm::Value *aggregate = llvm::ConstantAggregateZero::get(aggregate_type);
                     for (unsigned index = 0; index < fields.size(); ++index) {
                         aggregate = builder_.CreateInsertValue(aggregate, fields[index], index);
                     }
+                    auto slot_of = [&](const TypedValue &element) {
+                        ResultSlot slot;
+                        auto scalar = [&]() -> std::string {
+                            if (element.elem_bool) {
+                                return "bool";
+                            }
+                            if (element.elem_char) {
+                                return "char";
+                            }
+                            if (element.elem_float) {
+                                return element.elem_bits >= 64 ? "double" : "float";
+                            }
+                            if (element.elem_bits == 64) {
+                                return element.elem_unsigned ? "u64" : "i64";
+                            }
+                            if (element.elem_bits == 16) {
+                                return element.elem_unsigned ? "u16" : "i16";
+                            }
+                            if (element.elem_bits == 8) {
+                                return element.elem_unsigned ? "u8" : "i8";
+                            }
+                            if (element.elem_unsigned) {
+                                return "uint";
+                            }
+                            return "int";
+                        };
+                        if (element.depth > 0) {
+                            slot.indirections = element.depth;
+                            if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
+                                slot.is_struct = true;
+                                slot.type_name = structs_[static_cast<std::size_t>(element.struct_id)].name;
+                            } else if (element.elem_void) {
+                                slot.type_name = "void";
+                            } else {
+                                slot.type_name = scalar();
+                            }
+                            return slot;
+                        }
+                        if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
+                            slot.is_struct = true;
+                            slot.type_name = structs_[static_cast<std::size_t>(element.struct_id)].name;
+                            return slot;
+                        }
+                        if (element.enum_id >= 0 && element.enum_id < static_cast<int>(enums_.size())) {
+                            slot.is_enum = true;
+                            slot.type_name = enums_[static_cast<std::size_t>(element.enum_id)].name;
+                            return slot;
+                        }
+                        slot.type_name = scalar();
+                        return slot;
+                    };
                     TypedValue out;
                     out.value = aggregate;
                     out.is_tuple = true;
+                    out.tuple_parts.reserve(element_values.size());
+                    for (const TypedValue &element : element_values) {
+                        out.tuple_parts.push_back(slot_of(element));
+                    }
                     return out;
                 }
                 if (node.elements.size() == 1 && node.elements.front()) {
@@ -2829,6 +2953,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             Binding binding;
             binding.value = slot;
             binding.is_tuple = true;
+            binding.tuple_parts = got.tuple_parts;
             scopes_.back()[name] = binding;
             return;
         }
@@ -2906,8 +3031,8 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         }
         return;
     }
-    // The component types live on the function declaration, or on the function-pointer
-    // type when the call is indirect. prepare_call resolves the same callee the call uses.
+    // A call's component types live on the function, or on the function-pointer type.
+    // A tuple value carries the same slots on `tuple_parts`.
     const FunctionDecl *decl = nullptr;
     std::vector<FnParam> fn_results;
     TypedValue value;
@@ -2937,6 +3062,56 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             parts.push_back(lower(current_file_, part.type_name, part.type_package, part.is_struct, part.indirections,
                                   false, 0, false));
         }
+    } else if (value.is_tuple && value.value != nullptr && value.value->getType()->isStructTy() &&
+               value.tuple_parts.size() == node.names.size()) {
+        parts.reserve(value.tuple_parts.size());
+        for (const ResultSlot &slot : value.tuple_parts) {
+            parts.push_back(lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
+                                  slot.is_array, slot.array_len, false));
+        }
+    } else if (value.value != nullptr && value.value->getType()->isStructTy() && value.tuple_parts.empty()) {
+        auto *aggregate = llvm::cast<llvm::StructType>(value.value->getType());
+        if (aggregate->getNumElements() != node.names.size()) {
+            error(node.loc, "type mismatch");
+            return;
+        }
+        parts.reserve(node.names.size());
+        for (unsigned index = 0; index < aggregate->getNumElements(); ++index) {
+            llvm::Type *ty = aggregate->getElementType(index);
+            Lowered low;
+            if (ty != nullptr && ty->isIntegerTy(1)) {
+                low.elem_bool = true;
+                low.type = leaf_type(0, false, -1, true, 0, false);
+            } else if (ty != nullptr && ty->isIntegerTy(8)) {
+                low.elem_char = true;
+                low.elem_bits = 8;
+                low.type = leaf_type(0, true, -1, false, 8, false);
+            } else if (ty != nullptr && ty->isIntegerTy(16)) {
+                low.elem_bits = 16;
+                low.type = leaf_type(0, false, -1, false, 16, false);
+            } else if (ty != nullptr && ty->isIntegerTy(64)) {
+                low.elem_bits = 64;
+                low.type = leaf_type(0, false, -1, false, 64, false);
+            } else if (ty != nullptr && ty->isFloatingPointTy()) {
+                low.elem_float = true;
+                low.elem_bits = ty->isDoubleTy() ? 64 : 32;
+                low.type = leaf_type(0, false, -1, false, low.elem_bits, true);
+            } else if (ty != nullptr && ty->isPointerTy()) {
+                low.depth = 1;
+                low.type = ptr_type();
+            } else if (ty != nullptr && ty->isStructTy()) {
+                for (int id = 0; id < static_cast<int>(structs_.size()); ++id) {
+                    if (structs_[static_cast<std::size_t>(id)].type == ty) {
+                        low.struct_id = id;
+                        break;
+                    }
+                }
+                low.type = ty;
+            } else {
+                low.type = ty == nullptr ? i32() : ty;
+            }
+            parts.push_back(std::move(low));
+        }
     } else {
         error(node.loc, "type mismatch");
         return;
@@ -2958,15 +3133,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             builder_.CreateStore(stored, slot_alloca);
             Binding binding;
             binding.value = slot_alloca;
-            binding.depth = low.depth;
-            binding.elem_char = low.elem_char;
-            binding.struct_id = low.struct_id;
-            binding.elem_void = low.elem_void;
-            binding.elem_bool = low.elem_bool;
-            binding.elem_bits = low.elem_bits;
-            binding.elem_unsigned = low.elem_unsigned;
-            binding.elem_float = low.elem_float;
-            binding.trait_id = low.trait_id;
+            apply_low(binding, low);
             scopes_.back()[node.names[index]] = binding;
         } else if (dest != nullptr) {
             llvm::Type *ty = object_type(dest);

@@ -22,14 +22,16 @@ func add(x int, y int) (int, int) {
 }
 ```
 
-The call is not itself one value. Bind the results with `var`, with `:=`, or with `=` when every name already exists:
+The call is a tuple of its results. One name binds that tuple. Several names unpack it, and the same form unpacks a tuple that is already stored:
 
 ```c
 func main() int {
     sum, orig := add(20, 22);
     var extra, base = add(1, 1);
     extra, base = add(0, 0);
-    return sum;
+    var pair = add(20, 22);
+    var value1, value2 = pair;
+    return sum + value1;
 }
 ```
 
@@ -88,7 +90,7 @@ func main() int {
 }
 ```
 
-`keep[int](40)` and `keep[int, char]((40, 'a'))` write the types. A value in that list, such as `keep[4]`, is `type mismatch`. Another parameter beside `...U` is `not supported yet`. `first(40)` is `type mismatch`: `args` is `int`, and `args[0]` reads a tuple. The index is a constant. `return args` returns the tuple, and so does `return keep((1, 2))` from a function with those two results. `a, b :=` binds them. `var value = (40, 2)` binds the tuple itself. `[...U]` is not the `...` that `builtin.va()` reads.
+`keep[int](40)` and `keep[int, char]((40, 'a'))` write the types. A value in that list, such as `keep[4]`, is `type mismatch`. Another parameter beside `...U` is `not supported yet`. `first(40)` is `type mismatch`: `args` is `int`, and `args[0]` reads a tuple. The index is a constant. `return args` returns the tuple, and so does `return keep((1, 2))` from a function with those two results. `a, b :=` unpacks them, and so does `var value1, value2 = value` when `value` holds that tuple. `var value = (40, 2)` binds the tuple itself. `[...U]` is not the `...` that `builtin.va()` reads.
 
 A result may be `typeof(expression)`. The expression is checked after the parameters exist, so `func id(x int) typeof(x)` has result `int`. That spelling is the result type. An expression `typeof(x)` still has type `Type`.
 
