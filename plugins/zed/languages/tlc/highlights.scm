@@ -8,13 +8,15 @@
 (keyword) @keyword
 (builtin_type) @type.builtin
 
+(identifier) @variable
+
 (function_definition
+  "func" @keyword
   name: (identifier) @function)
 
 (type_definition
+  "type" @keyword
   name: (identifier) @type)
-
-(identifier) @variable
 
 (operator) @operator
 (punctuation) @punctuation
