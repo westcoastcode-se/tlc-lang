@@ -3110,6 +3110,38 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func make() func (i32) i32 { return (n) { return n + 1; }; }\n"
+            "func pair() func (i32) (i32, i32) { return (n) { return n, n + 1; }; }\n"
+            "func none() func () i32 { return () { return 1; }; }\n"
+            "type Box struct { n i32; };\n"
+            "func Box::choose(self this) func (i32, i32) i32 { return (a, b) { return a + b; }; }\n"
+            "func Box::full() func (i32) i32 { return func (n i32) i32 { return n; }; }\n"
+            "func main() i32 {\n"
+            "  var f = make();\n"
+            "  var box Box;\n"
+            "  var g = box.choose();\n"
+            "  a, b := pair()(1);\n"
+            "  return f(1) + g(1, 1) + none()() + Box.full()(1) + a + b;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func make(x i32) func (i32) i32 { return (n) { return n + x; }; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func make() func (i32) i32 { return (a, b) { return a; }; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
             "func f() (func (i32) i32, i32) { return 0, 0; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");

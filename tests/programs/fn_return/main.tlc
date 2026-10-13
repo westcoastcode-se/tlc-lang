@@ -6,16 +6,16 @@ func pick() func (i32, i32) i32 {
     return add;
 }
 
-func pair(n i32) (i32, i32) {
-    return n, n + 1;
-}
-
 func pick_pair() func (i32) (i32, i32) {
-    return pair;
+    return (n) { return n, n + 1; };
 }
 
 func make() func (i32) i32 {
-    return func (n i32) i32 { return n + 1; };
+    return (n) { return n + 1; };
+}
+
+func none() func () i32 {
+    return () { return 1; };
 }
 
 type Box struct {
@@ -23,11 +23,11 @@ type Box struct {
 };
 
 func Box::choose(self this) func (i32, i32) i32 {
-    return add;
+    return (a, b) { return a + b; };
 }
 
 func Box::static_choose() func (i32, i32) i32 {
-    return add;
+    return func (a i32, b i32) i32 { return a + b; };
 }
 
 func main() i32 {
@@ -42,5 +42,5 @@ func main() i32 {
     var from_static = Box.static_choose();
     var made = make();
     a, b := pick_pair()(0);
-    return fp(16, 10) + typed(1, 0) + from_method(4, 2) + from_static(1, 0) + made(2) + pick()(2, 1) + local_make()(1) + a + b;
+    return fp(15, 10) + typed(1, 0) + from_method(4, 2) + from_static(1, 0) + made(2) + pick()(2, 1) + local_make()(1) + none()() + a + b;
 }

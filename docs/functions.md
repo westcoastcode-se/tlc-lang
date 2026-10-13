@@ -230,7 +230,7 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 }
 ```
 
-A function returns a function pointer the same way it returns any other value. `var fp = pick()` infers that pointer, and `fp(20, 10)` calls it. `pick()(20, 10)` calls it without naming the pointer. A method returns one the same way: `box.choose()` and `Box.static_choose()` are pointers, and calling the pointer passes the arguments.
+A function returns a function pointer the same way it returns any other value. `var fp = pick()` infers that pointer, and `fp(20, 10)` calls it. `pick()(20, 10)` calls it without naming the pointer. A method returns one the same way: `box.choose()` and `Box.static_choose()` are pointers, and calling the pointer passes the arguments. The returned value may be an anonymous function. The full form writes the parameter types and the result. The short form writes the parameter names, and their types and the result come from the function pointer being returned.
 
 ```c
 func add(a i32, b i32) i32 {
@@ -245,6 +245,24 @@ func main() i32 {
     var fp = pick();
     var typed func (i32, i32) i32 = pick();
     return fp(20, 10) + typed(10, 2);
+}
+```
+
+The program returns 42.
+
+```c
+func make() func (i32) i32 {
+    return (n) { return n + 1; };
+}
+
+func explicit() func (i32) i32 {
+    return func (n i32) i32 { return n; };
+}
+
+func main() i32 {
+    var f = make();
+    var g = explicit();
+    return f(40) + g(1);
 }
 ```
 
@@ -311,6 +329,6 @@ func main() i32 {
 }
 ```
 
-`() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer, including an assignment and the initializer of a typed variable. A call argument whose type is a trait with one method accepts it too. The parameters and the result match that method. Used anywhere else, it is reported as `type mismatch`. A short form whose parameter count does not match is reported as `type mismatch`. It follows the same capture rule as any other anonymous function.
+`() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer, including an assignment, the initializer of a typed variable, and a `return` whose result is that function pointer. A call argument whose type is a trait with one method accepts it too. The parameters and the result match that method. Used anywhere else, it is reported as `type mismatch`. A short form whose parameter count does not match is reported as `type mismatch`. It follows the same capture rule as any other anonymous function.
 
 [Index](README.md) · [Previous: Statements](statements.md) · [Next: Builtin](builtin.md) · [Grammar](grammar.md)

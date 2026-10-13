@@ -1876,7 +1876,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                         exprs.push_back(extra.get());
                     }
                 }
+                // A short anonymous function, `(n) { ... }`, takes its types from the result.
                 auto supplied = [&](const Expr &value, const Type &want) {
+                    if (inferred_function(value) != nullptr) {
+                        return check_against(value, want);
+                    }
                     if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
                         return check_init(const_cast<Expr::Init &>(*init), want);
                     }

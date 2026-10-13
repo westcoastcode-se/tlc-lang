@@ -118,23 +118,19 @@ The program returns 42. The function is written in the same file as the struct. 
 
 The name without a call is a function pointer. `var ptr = Point.make` and `take(Point.make)` use that pointer, and `ptr(40, 2)` calls it. `var ptr = add` is the same form for a free function. An instance method used as a value, `var ptr = Point.sum`, is reported as `type mismatch`. An enumerator stays a value, so `Color.Red` is not a function pointer.
 
-A method can return a function pointer. The call is that pointer. An instance method and a static method both can. The program below returns 42.
+A method can return a function pointer. The call is that pointer. An instance method and a static method both can. The value may be an anonymous function, in the short form or with the parameter types and the result written out. The program below returns 42.
 
 ```c
-func add(a i32, b i32) i32 {
-    return a + b;
-}
-
 type Box struct {
     n i32;
 };
 
 func Box::choose(self this) func (i32, i32) i32 {
-    return add;
+    return (a, b) { return a + b; };
 }
 
 func Box::static_choose() func (i32, i32) i32 {
-    return add;
+    return func (a i32, b i32) i32 { return a + b; };
 }
 
 func main() i32 {
