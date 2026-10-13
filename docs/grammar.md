@@ -57,7 +57,7 @@ result      = placed-type
             | "(" placed-type { "," placed-type } ")" ;
 ```
 
-A function with no body is a prototype and ends with `;`. A body replaces that semicolon. `...` is allowed on an `extern(abi="c")` declaration and on a function with a body. Inside that body, `builtin.va()` reads the extra arguments. One parenthesized result is the same type as the bare result. `()` as a result list is an error. A result may be a function pointer: `func pick() func (i32, i32) i32`. `pick()` is that pointer, and `pick()(1, 2)` calls it. A method uses the same result. The returned value may be a function name or an anonymous function, `return (a, b) { return a + b; }` or `return func (a i32, b i32) i32 { return a + b; }`.
+A function with no body is a prototype and ends with `;`. A body replaces that semicolon. `...` is allowed on an `extern(abi="c")` declaration and on a function with a body. Inside that body, `builtin.va()` reads the extra arguments. One parenthesized result is the same type as the bare result. `()` as a result list is an error. A result may be a function pointer: `func pick() func (i32, i32) i32`. `pick()` is that pointer, and `pick()(1, 2)` calls it. A method uses the same result. The returned value may be a function name or an anonymous function, `return (a, b) { return a + b; }` or `return func (a i32, b i32) i32 { return a + b; }`. An inner function called directly may return a function pointer taken from an enclosing function.
 
 ### Methods
 

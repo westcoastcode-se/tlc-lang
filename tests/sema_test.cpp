@@ -3135,6 +3135,83 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func add(n i32) i32 { return n + 1; }\n"
+            "func outer(op func (i32) i32) func (i32) i32 {\n"
+            "  func pass() func (i32) i32 { return op; }\n"
+            "  return pass();\n"
+            "}\n"
+            "func apply(op func (i32) i32) i32 {\n"
+            "  func inner(n i32) i32 { return op(n); }\n"
+            "  return inner(1);\n"
+            "}\n"
+            "func nested(op func (i32) i32) i32 {\n"
+            "  func mid() i32 {\n"
+            "    func inner() func (i32) i32 { return op; }\n"
+            "    return inner()(1);\n"
+            "  }\n"
+            "  return mid();\n"
+            "}\n"
+            "type Box struct { n i32; };\n"
+            "func Box::wrap(self this, op func (i32) i32) i32 {\n"
+            "  func pass() func (i32) i32 { return op; }\n"
+            "  return pass()(self.n);\n"
+            "}\n"
+            "func main() i32 {\n"
+            "  var box Box;\n"
+            "  return outer(add)(1) + apply(add) + nested(add) + box.wrap(add);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func add(n i32) i32 { return n; }\n"
+            "func outer(op func (i32) i32) i32 {\n"
+            "  func pass() func (i32) i32 { return op; }\n"
+            "  var f = pass;\n"
+            "  return f(1);\n"
+            "}\n"
+            "func main() i32 { return outer(add); }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func add(n i32) i32 { return n; }\n"
+            "func outer(op func (i32) i32) func (i32) i32 {\n"
+            "  return (n) { return op(n); };\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func add(n i32) i32 { return n; }\n"
+            "func outer(op func (i32) i32) i32 {\n"
+            "  func inner() i32 {\n"
+            "    op = add;\n"
+            "    return 0;\n"
+            "  }\n"
+            "  return inner();\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box struct { n i32; };\n"
+            "func Box::bad(self this) i32 {\n"
+            "  func inner() i32 { return self.n; }\n"
+            "  return inner();\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
             "func make() func (i32) i32 { return (a, b) { return a; }; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "type mismatch");

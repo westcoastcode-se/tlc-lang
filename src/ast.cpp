@@ -954,6 +954,9 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     }
     copy.inferred = fn.inferred;
     copy.elaborated = fn.elaborated;
+    copy.function_id = fn.function_id;
+    copy.captures = fn.captures;
+    copy.captured_here = fn.captured_here;
     return copy;
 }
 

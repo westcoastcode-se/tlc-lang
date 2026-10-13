@@ -1,0 +1,77 @@
+func add(n i32) i32 {
+    return n + 1;
+}
+
+func id(n i32) i32 {
+    return n;
+}
+
+func outer(op func (i32) i32) func (i32) i32 {
+    func pass() func (i32) i32 {
+        return op;
+    }
+    return pass();
+}
+
+func apply(op func (i32) i32) i32 {
+    func inner(n i32) i32 {
+        return op(n);
+    }
+    return inner(20);
+}
+
+func nested(op func (i32) i32) i32 {
+    func mid() i32 {
+        func inner() func (i32) i32 {
+            return op;
+        }
+        return inner()(1);
+    }
+    return mid();
+}
+
+func via_local(op func (i32) i32) i32 {
+    var fp = op;
+    func pass() func (i32) i32 {
+        return fp;
+    }
+    return pass()(0);
+}
+
+func anon(op func (i32) i32) i32 {
+    return func () func (i32) i32 { return op; }()(0);
+}
+
+type Box struct {
+    n i32;
+};
+
+func Box::wrap(self this, op func (i32) i32) i32 {
+    func pass() func (i32) i32 {
+        return op;
+    }
+    return pass()(self.n);
+}
+
+func both(a func (i32) i32, b func (i32) i32) i32 {
+    func pass() i32 {
+        return a(1) + b(2);
+    }
+    return pass();
+}
+
+func shadow(op func (i32) i32) i32 {
+    func pass() func (i32) i32 {
+        return op;
+    }
+    {
+        var op = 1;
+        return pass()(5) + op;
+    }
+}
+
+func main() i32 {
+    var box Box;
+    box.n = 4;
+    return outer(add)(0) + apply(add) + nested(add) + via_local(add) + anon(add) + box.wrap(add) + both(add, id) + shadow(add);
+}

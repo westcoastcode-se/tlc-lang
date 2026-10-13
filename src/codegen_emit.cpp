@@ -17,6 +17,15 @@
 #include <utility>
 #include <vector>
 
+namespace {
+
+// Stable name for one captured function pointer. The id is the function that owns the name.
+std::string capture_key(int function_id, const std::string &name) {
+    return ".cap." + std::to_string(function_id) + "." + name;
+}
+
+} // namespace
+
 namespace tlc {
 
 void CodeGen::declare_file(const PackageNode &node) {
@@ -902,10 +911,13 @@ llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector
     return llvm::FunctionType::get(ret, params, false);
 }
 
-void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *function, int return_depth) {
+void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *function, int return_depth,
+                                 const std::vector<Binding> *captures) {
     if (function == nullptr || !fn.body || !function->empty()) {
         return;
     }
+    const FunctionDecl *saved_emitting = emitting_fn_;
+    emitting_fn_ = &fn;
     std::vector<llvm::DIScope *> saved_scopes = std::move(di_scopes_);
     di_scopes_.clear();
     llvm::DISubprogram *saved_subprogram = di_subprogram_;
@@ -960,6 +972,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
                     binding.value = arg;
                     apply_low(binding, low);
                     scopes_.back()[name] = binding;
+                    alias_capture(name, binding);
                 }
             } else if (info.is_struct) {
                 const unsigned align = std::max(info.abi.natural_align, 8u);
@@ -973,6 +986,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
                     binding.value = slot;
                     apply_low(binding, low);
                     scopes_.back()[name] = binding;
+                    alias_capture(name, binding);
                     debug_declare(name, fn.params[index].loc, binding, static_cast<unsigned>(index + 1));
                 }
             } else if (abi < function->arg_size()) {
@@ -984,6 +998,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
                     binding.value = slot;
                     apply_low(binding, low);
                     scopes_.back()[name] = binding;
+                    alias_capture(name, binding);
                     debug_declare(name, fn.params[index].loc, binding, static_cast<unsigned>(index + 1));
                 }
             }
@@ -1000,9 +1015,40 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
                 binding.value = slot;
                 apply_low(binding, low);
                 scopes_.back()[name] = binding;
+                alias_capture(name, binding);
                 debug_declare(name, fn.params[index].loc, binding, static_cast<unsigned>(index + 1));
             }
             ++index;
+        }
+    }
+    if (captures != nullptr) {
+        const unsigned base = static_cast<unsigned>(fn.params.size());
+        for (std::size_t index = 0; index < fn.captures.size() && index < captures->size(); ++index) {
+            const unsigned arg_index = base + static_cast<unsigned>(index);
+            if (arg_index >= function->arg_size()) {
+                break;
+            }
+            const FnCapture &item = fn.captures[index];
+            llvm::Argument *arg = function->getArg(arg_index);
+            if (!item.name.empty()) {
+                arg->setName(item.name);
+            }
+            llvm::AllocaInst *slot = alloca_typed(ptr_type(), item.name.empty() ? "cap" : item.name);
+            builder_.CreateStore(arg, slot);
+            Binding binding = (*captures)[index];
+            binding.value = slot;
+            binding.is_function = false;
+            binding.immediate = false;
+            binding.is_array = false;
+            binding.is_tuple = false;
+            binding.decl = nullptr;
+            if (binding.depth < 1) {
+                binding.depth = 1;
+            }
+            if (!item.name.empty()) {
+                scopes_.back()[item.name] = binding;
+                scopes_.back()[capture_key(item.function_id, item.name)] = binding;
+            }
         }
     }
     emit_stmt(*fn.body);
@@ -1023,6 +1069,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
     extern_ret_abi_ = saved_abi;
     extern_ret_struct_ = saved_struct;
     trace_name_ = saved_trace;
+    emitting_fn_ = saved_emitting;
 }
 
 void CodeGen::emit_function(const FunctionDecl &fn) {
@@ -1032,6 +1079,80 @@ void CodeGen::emit_function(const FunctionDecl &fn) {
         return;
     }
     emit_function_body(fn, llvm::cast<llvm::Function>(found->second.value), found->second.depth);
+}
+
+llvm::FunctionType *CodeGen::function_type_with_captures(const FunctionDecl &fn) const {
+    llvm::FunctionType *base = function_type(fn, current_file_);
+    if (fn.captures.empty() || base == nullptr) {
+        return base;
+    }
+    std::vector<llvm::Type *> params;
+    params.reserve(base->getNumParams() + fn.captures.size());
+    for (unsigned index = 0; index < base->getNumParams(); ++index) {
+        params.push_back(base->getParamType(index));
+    }
+    for (std::size_t index = 0; index < fn.captures.size(); ++index) {
+        params.push_back(ptr_type());
+    }
+    return llvm::FunctionType::get(base->getReturnType(), params, base->isVarArg());
+}
+
+std::vector<Binding> CodeGen::capture_bindings(const FunctionDecl &fn) const {
+    std::vector<Binding> out;
+    out.reserve(fn.captures.size());
+    for (const FnCapture &item : fn.captures) {
+        const Binding *found = lookup(capture_key(item.function_id, item.name));
+        if (found == nullptr) {
+            found = lookup(item.name);
+        }
+        out.push_back(found == nullptr ? Binding{} : *found);
+    }
+    return out;
+}
+
+void CodeGen::alias_capture(const std::string &name, const Binding &binding) {
+    if (emitting_fn_ == nullptr || scopes_.empty() || name.empty() || emitting_fn_->function_id == 0) {
+        return;
+    }
+    bool owned = false;
+    for (const std::string &kept : emitting_fn_->captured_here) {
+        if (kept == name) {
+            owned = true;
+            break;
+        }
+    }
+    if (!owned) {
+        return;
+    }
+    const std::string slot = capture_key(emitting_fn_->function_id, name);
+    if (lookup(slot) != nullptr) {
+        return;
+    }
+    scopes_.back()[slot] = binding;
+}
+
+void CodeGen::append_captures(const FunctionDecl *decl, std::vector<llvm::Value *> &args, SourceLoc loc) {
+    if (decl == nullptr) {
+        return;
+    }
+    for (const FnCapture &item : decl->captures) {
+        const Binding *binding = lookup(capture_key(item.function_id, item.name));
+        if (binding == nullptr) {
+            binding = lookup(item.name);
+        }
+        if (binding == nullptr || binding->value == nullptr) {
+            error(loc, "not supported yet");
+            args.push_back(null_ptr());
+            continue;
+        }
+        const TypedValue value = value_of_binding(*binding);
+        if (value.value == nullptr || !value.value->getType()->isPointerTy()) {
+            error(loc, "not supported yet");
+            args.push_back(null_ptr());
+            continue;
+        }
+        args.push_back(value.value);
+    }
 }
 
 void CodeGen::emit_local_function(const FunctionDecl &fn) {
@@ -1049,6 +1170,7 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
             return;
         }
         function = llvm::dyn_cast_or_null<llvm::Function>(found->second.value);
+        found->second.decl = &fn;
     }
     const bool many = fn.results.size() > 1;
     const bool returns_void =
@@ -1061,7 +1183,7 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
         const PackageNode *owner = find_node(current_file_);
         const std::string qualifier = owner != nullptr && !owner->qualifier.empty() ? owner->qualifier : "local";
         const std::string symbol = qualifier + ".local." + fn.name + "." + std::to_string(++local_seq_);
-        function = llvm::Function::Create(function_type(fn, current_file_), llvm::GlobalValue::InternalLinkage, symbol,
+        function = llvm::Function::Create(function_type_with_captures(fn), llvm::GlobalValue::InternalLinkage, symbol,
                                            module_);
         function->setCallingConv(llvm::CallingConv::C);
         unsigned index = 0;
@@ -1087,10 +1209,16 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
         binding.decl = &fn;
         scopes_.back()[fn.name] = binding;
     }
-    emit_nested_body(fn, function, returns_void ? 0 : ret.depth);
+    if (function != nullptr && !fn.captures.empty() &&
+        function->arg_size() != fn.params.size() + fn.captures.size()) {
+        error(fn.loc, "not supported yet");
+        return;
+    }
+    emit_nested_body(fn, function, returns_void ? 0 : ret.depth, capture_bindings(fn));
 }
 
-void CodeGen::emit_nested_body(const FunctionDecl &fn, llvm::Function *function, int depth) {
+void CodeGen::emit_nested_body(const FunctionDecl &fn, llvm::Function *function, int depth,
+                               std::vector<Binding> captures) {
     if (fn.body == nullptr || function == nullptr || !function->empty()) {
         return;
     }
@@ -1120,7 +1248,7 @@ void CodeGen::emit_nested_body(const FunctionDecl &fn, llvm::Function *function,
     case_blocks_.clear();
     auto saved_spec = active_spec_;
     active_spec_.clear();
-    emit_function_body(fn, function, depth);
+    emit_function_body(fn, function, depth, captures.empty() ? nullptr : &captures);
     active_spec_ = std::move(saved_spec);
     scopes_ = std::move(saved_scopes);
     function_ = saved_function;
@@ -1147,7 +1275,7 @@ TypedValue CodeGen::emit_anon_function(const FunctionDecl &fn) {
     const PackageNode *owner = find_node(current_file_);
     const std::string qualifier = owner != nullptr && !owner->qualifier.empty() ? owner->qualifier : "anon";
     const std::string symbol = qualifier + ".anon." + std::to_string(++local_seq_);
-    llvm::Function *function = llvm::Function::Create(function_type(fn, current_file_), llvm::GlobalValue::InternalLinkage,
+    llvm::Function *function = llvm::Function::Create(function_type_with_captures(fn), llvm::GlobalValue::InternalLinkage,
                                                        symbol, module_);
     function->setCallingConv(llvm::CallingConv::C);
     unsigned index = 0;
@@ -1157,7 +1285,7 @@ TypedValue CodeGen::emit_anon_function(const FunctionDecl &fn) {
         }
         ++index;
     }
-    emit_nested_body(fn, function, returns_void ? 0 : ret.depth);
+    emit_nested_body(fn, function, returns_void ? 0 : ret.depth, capture_bindings(fn));
     return {function,
             returns_void ? 0 : ret.depth,
             !returns_void && ret.elem_char,
@@ -1576,6 +1704,12 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         }
         args.push_back(stored);
         ++index;
+    }
+    append_captures(prepared.decl, args, node.loc);
+    if (prepared.decl != nullptr && !prepared.decl->captures.empty() && !function->isVarArg() &&
+        args.size() != function->arg_size()) {
+        error(node.loc, "not supported yet");
+        return prepared;
     }
     remember(function, std::move(args), callee.depth, callee.elem_char, callee.struct_id, callee.elem_void, callee.elem_bool,
              callee.elem_bits, callee.elem_unsigned);
@@ -3295,6 +3429,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.is_tuple = true;
             binding.tuple_parts = got.tuple_parts;
             scopes_.back()[name] = binding;
+            alias_capture(name, binding);
             note(name, binding);
             return;
         }
@@ -3315,6 +3450,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.fn_ret_struct = got.struct_id;
             binding.fn_results = got.fn_results;
             scopes_.back()[name] = binding;
+            alias_capture(name, binding);
             note(name, binding);
             return;
         }
@@ -3369,6 +3505,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         builder_.CreateStore(stored, slot);
         binding.value = slot;
         scopes_.back()[name] = binding;
+        alias_capture(name, binding);
         note(name, binding);
     };
     auto destination = [&](const std::string &name, bool &create) -> llvm::Value * {
@@ -3506,6 +3643,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.value = slot_alloca;
             apply_low(binding, low);
             scopes_.back()[node.names[index]] = binding;
+            alias_capture(node.names[index], binding);
             note(node.names[index], binding);
         } else if (dest != nullptr) {
             llvm::Type *ty = object_type(dest);
@@ -3919,6 +4057,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         binding.elem_bits = low.elem_bits;
                         binding.elem_unsigned = low.elem_unsigned;
                         scopes_.back()[var.name] = binding;
+                        alias_capture(var.name, binding);
                         debug_declare(var.name, var.loc, binding, 0);
                         if (var.init != nullptr && ty->isArrayTy()) {
                             const auto *init = std::get_if<Expr::Init>(&var.init->data);
@@ -3975,6 +4114,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     binding.elem_bool = low.elem_bool;
                     apply_low(binding, low);
                     scopes_.back()[var.name] = binding;
+                    alias_capture(var.name, binding);
                     debug_declare(var.name, var.loc, binding, 0);
                     if (var.init) {
                         const TypedValue value = emit_rvalue(*var.init);

@@ -293,6 +293,10 @@ Type Checker::elaborate_inferred(FunctionDecl &fn, const Type &want) {
     if (fn.body != nullptr) {
         check_function(fn);
     }
+    // The short form is a value. A capturing function cannot be passed around later.
+    if (!fn.captures.empty()) {
+        error(fn.loc, "not supported yet");
+    }
     return type_pointer(std::move(concrete));
 }
 
@@ -474,6 +478,9 @@ bool Checker::accept_trait_lambda(const Expr &expr, const Type &want) {
     if (fn.body != nullptr) {
         check_function(fn);
     }
+    if (!fn.captures.empty()) {
+        error(fn.loc, "not supported yet");
+    }
     return true;
 }
 
@@ -529,6 +536,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 if (captured(*symbol)) {
+                    // A function pointer is a pointer. A direct call of the inner function can pass it along.
+                    if (!fn_pointer(symbol->type) || checking_.empty()) {
+                        error(node.loc, "not supported yet");
+                        return type_invalid();
+                    }
+                    note_capture(*checking_.back(), node.text, symbol->function_id);
+                    return symbol->type;
+                }
+                if (symbol->is_local_function && symbol->fn_captures && !direct_callee_) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
                 }
@@ -1206,7 +1222,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                     }
                 }
+                const bool saved_direct = direct_callee_;
+                direct_callee_ = std::holds_alternative<Expr::Name>(node.callee->data) ||
+                                 std::holds_alternative<Expr::Func>(node.callee->data);
                 const Type callee = check_expr(*node.callee, true);
+                direct_callee_ = saved_direct;
                 if (callee.kind == TypeKind::Invalid) {
                     for (const auto &arg : node.args) {
                         check_expr(*arg, true);
@@ -1475,15 +1495,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_invalid();
             } else if constexpr (std::is_same_v<T, Expr::Func>) {
                 (void)used;
+                const bool as_callee = direct_callee_;
+                direct_callee_ = false;
                 if (node.decl == nullptr) {
+                    direct_callee_ = as_callee;
                     return type_invalid();
                 }
                 const FunctionDecl &fn = *node.decl;
                 if (fn.inferred && !fn.elaborated) {
+                    direct_callee_ = as_callee;
                     error(fn.loc, "type mismatch");
                     return type_invalid();
                 }
                 if (fn.inferred && fn.elaborated) {
+                    direct_callee_ = as_callee;
                     return function_signature(fn);
                 }
                 if (!fn.method_struct.empty() || fn.exported || fn.is_static || fn.is_extern || fn.variadic) {
@@ -1506,6 +1531,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (fn.body != nullptr) {
                     check_function(fn);
                 }
+                // Hidden arguments are passed at a direct call. The function cannot escape.
+                if (!fn.captures.empty() && !as_callee) {
+                    error(fn.loc, "not supported yet");
+                }
+                direct_callee_ = as_callee;
                 return signature;
             } else {
                 (void)used;
@@ -2228,7 +2258,9 @@ void Checker::check_function(const FunctionDecl &fn) {
             }
         }
     }
+    checking_.push_back(const_cast<FunctionDecl *>(&fn));
     push_function();
+    const_cast<FunctionDecl &>(fn).function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
     const Type saved = return_type_;
     const int saved_loops = loop_depth_;
     auto saved_switches = std::move(switches_);
@@ -2258,11 +2290,13 @@ void Checker::check_function(const FunctionDecl &fn) {
             check_stmt(*fn.body);
         }
     }
+    adopt_captures(fn);
     variadic_function_ = saved_variadic;
     switches_ = std::move(saved_switches);
     loop_depth_ = saved_loops;
     return_type_ = saved;
     pop();
+    checking_.pop_back();
 }
 
 } // namespace tlc

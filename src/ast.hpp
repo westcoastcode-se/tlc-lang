@@ -477,6 +477,12 @@ struct Param {
     std::vector<ResultSlot> tuple_parts;
 };
 
+// A function pointer read from an enclosing function. `function_id` is the function that owns the name.
+struct FnCapture {
+    std::string name;
+    int function_id = 0;
+};
+
 struct FunctionDecl {
     SourceLoc loc{};
     std::string name;
@@ -507,6 +513,13 @@ struct FunctionDecl {
     // `(a, b) { ... }` takes its parameter and result types from the expected function pointer.
     bool inferred = false;
     bool elaborated = false;
+    // Scope id of this function while it is checked. Zero before that.
+    int function_id = 0;
+    // Function pointers read from an enclosing function, in first-use order.
+    // A direct call passes them after the written arguments. The function's type does not list them.
+    std::vector<FnCapture> captures;
+    // Names this function owns that an inner function reads.
+    std::vector<std::string> captured_here;
 };
 
 struct TraitDecl {

@@ -39,6 +39,9 @@ struct Symbol {
     bool has_body = false;
     bool is_function = false;
     bool is_local_function = false;
+    // The function reads a function pointer from an enclosing function. A direct call is fine.
+    // Using the function as a value is not.
+    bool fn_captures = false;
     bool is_auto = false;
     bool is_package = false;
     bool is_type = false;
@@ -160,15 +163,23 @@ class Checker {
     bool quiet_ = false;
     // Set while checking a variadic function body. `builtin.va` is valid only then.
     bool variadic_function_ = false;
+    // The callee of a call is being checked, and that callee is a name or a function expression.
+    bool direct_callee_ = false;
     int loop_depth_ = 0;
     bool checking_defer_ = false;
     std::vector<SwitchFrame> switches_;
+    // Functions whose bodies are on the stack, innermost last.
+    std::vector<FunctionDecl *> checking_;
 
     void error(SourceLoc loc, const std::string &message);
     void push();
     void push_function();
     void pop();
     bool captured(const Symbol &symbol) const;
+    bool fn_pointer(const Type &type) const;
+    void note_capture(FunctionDecl &fn, const std::string &name, int function_id);
+    void note_owned(FunctionDecl &fn, const std::string &name);
+    void adopt_captures(const FunctionDecl &fn);
     Type function_result(const FunctionDecl &fn);
     Type function_signature(const FunctionDecl &fn);
     void check_local_function(const FunctionDecl &fn);

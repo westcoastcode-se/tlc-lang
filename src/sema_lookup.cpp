@@ -49,6 +49,56 @@ bool Checker::captured(const Symbol &symbol) const {
     return symbol.function_id != scopes_.back().function_id;
 }
 
+bool Checker::fn_pointer(const Type &type) const {
+    return type.kind == TypeKind::Pointer && type.pointee != nullptr && type.pointee->kind == TypeKind::Function;
+}
+
+void Checker::note_capture(FunctionDecl &fn, const std::string &name, int function_id) {
+    if (name.empty()) {
+        return;
+    }
+    for (const FnCapture &item : fn.captures) {
+        if (item.name == name) {
+            return;
+        }
+    }
+    fn.captures.push_back(FnCapture{name, function_id});
+}
+
+void Checker::note_owned(FunctionDecl &fn, const std::string &name) {
+    if (name.empty()) {
+        return;
+    }
+    for (const std::string &item : fn.captured_here) {
+        if (item == name) {
+            return;
+        }
+    }
+    fn.captured_here.push_back(name);
+}
+
+void Checker::adopt_captures(const FunctionDecl &fn) {
+    if (checking_.size() < 2 || scopes_.empty()) {
+        return;
+    }
+    FunctionDecl *parent = checking_[checking_.size() - 2];
+    const int here = scopes_.back().function_id;
+    int parent_id = 0;
+    for (std::size_t index = scopes_.size(); index-- > 0;) {
+        if (scopes_[index].function_id != here) {
+            parent_id = scopes_[index].function_id;
+            break;
+        }
+    }
+    for (const FnCapture &item : fn.captures) {
+        if (item.function_id == parent_id) {
+            note_owned(*parent, item.name);
+        } else {
+            note_capture(*parent, item.name, item.function_id);
+        }
+    }
+}
+
 Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
     if (param.is_fn_ptr) {
         return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
@@ -272,6 +322,12 @@ void Checker::check_local_function(const FunctionDecl &fn) {
     }
     if (fn.body != nullptr) {
         check_function(fn);
+        if (!fn.captures.empty()) {
+            Symbol *symbol = lookup_scope(fn.name);
+            if (symbol != nullptr && symbol->is_local_function) {
+                symbol->fn_captures = true;
+            }
+        }
     }
 }
 

@@ -92,7 +92,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `builtin.va` outside a variadic function.
 - A function pointer whose result is itself a function pointer: `func (i32) func (i32) i32`.
 - A variadic `extern` or `extern(abi="tlc")`, and a variadic prototype with no body. `extern(abi="c")` may declare `...`. A function with a body may use `...`, and `builtin.va()` reads the extra arguments.
-- An inner function that uses a local or a parameter from an enclosing function. It can call functions already in scope and use globals. `export`, `static`, `extern`, and a method on a function in a block are the same gap. An anonymous function follows that function.
+- An inner function that uses a local or a parameter from an enclosing function, other than a function pointer it returns or calls. The inner function is called directly. `var f = pass` and passing that function as a value are the same gap. A prototype written before the body is the same gap when the body reads that pointer. It can call functions already in scope and use globals. `export`, `static`, `extern`, and a method on a function in a block are the same gap. A short anonymous function follows that function. A full anonymous function called directly can read the function pointer.
 
 ## Structs, enums, and unions
 

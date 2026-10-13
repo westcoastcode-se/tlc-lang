@@ -184,6 +184,8 @@ class CodeGen {
     llvm::IRBuilder<> builder_;
     const PackageGraph *graph_ = nullptr;
     llvm::Function *function_ = nullptr;
+    // The function whose body is being emitted. Its `captured_here` names keep a stable slot.
+    const FunctionDecl *emitting_fn_ = nullptr;
     llvm::Type *return_type_ = nullptr;
     int return_depth_ = 0;
     bool return_many_ = false;
@@ -771,7 +773,8 @@ class CodeGen {
     Lowered spec_param(const FunctionDecl &fn, std::size_t index, const std::vector<int> &spec) const;
     Lowered lower_param(const FunctionDecl &fn, std::size_t index) const;
     llvm::FunctionType *spec_type(const FunctionDecl &fn, const std::vector<int> &spec) const;
-    void emit_function_body(const FunctionDecl &fn, llvm::Function *function, int return_depth);
+    void emit_function_body(const FunctionDecl &fn, llvm::Function *function, int return_depth,
+                            const std::vector<Binding> *captures = nullptr);
     llvm::Function *specialize(const FunctionDecl &fn, const Binding &meta, const std::vector<TypedValue> &arg_values,
                                SourceLoc loc, std::vector<llvm::Value *> &out_args);
     void generic_method_call(const Binding &method, const TypedValue *receiver, const Expr::Call &node,
@@ -813,8 +816,12 @@ class CodeGen {
     std::optional<int32_t> fold(const Expr &expr) const;
     void emit_function(const FunctionDecl &fn);
     void emit_local_function(const FunctionDecl &fn);
-    void emit_nested_body(const FunctionDecl &fn, llvm::Function *function, int depth);
+    void emit_nested_body(const FunctionDecl &fn, llvm::Function *function, int depth, std::vector<Binding> captures);
     TypedValue emit_anon_function(const FunctionDecl &fn);
+    llvm::FunctionType *function_type_with_captures(const FunctionDecl &fn) const;
+    std::vector<Binding> capture_bindings(const FunctionDecl &fn) const;
+    void alias_capture(const std::string &name, const Binding &binding);
+    void append_captures(const FunctionDecl *decl, std::vector<llvm::Value *> &args, SourceLoc loc);
     PreparedCall prepare_call(const Expr::Call &node);
     TypedValue emit_prepared(const PreparedCall &call);
     // A call whose one result is a function pointer keeps that pointer's type on the value.
