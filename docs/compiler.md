@@ -70,7 +70,7 @@ A symbol is named `qualifier.name`. In a package with more than one file, a `sta
 ## A program
 
 ```c
-func main() int {
+func main() i32 {
     return 40 + 2;
 }
 ```
@@ -87,7 +87,7 @@ A `//` comment runs to the end of the line. A `/* ... */` comment may span lines
 
 ```c
 // The process exits with status 42.
-func main() int {
+func main() i32 {
     /* one
        main */
     return 40 + 2;

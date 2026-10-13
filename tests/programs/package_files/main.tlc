@@ -1,6 +1,6 @@
 import "math";
 
-func main() int {
+func main() i32 {
     math.bias = 10;
     return math.add(20, 2) + math.bias;
 }

@@ -1,80 +1,80 @@
-var acc int;
-var slot int;
-var global_slot int;
+var acc i32;
+var slot i32;
+var global_slot i32;
 
-func put(n int) void {
+func put(n i32) void {
     acc = acc * 10 + n;
 }
 
-func add(x int, y int) (int, int) {
+func add(x i32, y i32) (i32, i32) {
     return x + y, x;
 }
 
-func bump() int {
+func bump() i32 {
     slot = slot + 1;
     return slot;
 }
 
-func ordered() (int, int) {
+func ordered() (i32, i32) {
     return bump(), bump();
 }
 
-func once() (int, int) {
+func once() (i32, i32) {
     slot = slot + 1;
     return slot, slot * 10;
 }
 
-func observe() (int, int) {
+func observe() (i32, i32) {
     defer put(1);
     defer put(2);
     return acc, acc + 3;
 }
 
-func touch() (int, int) {
+func touch() (i32, i32) {
     acc = acc + 5;
     return 1, 2;
 }
 
-func blank() (int, int) {
-    var unused int = 1;
+func blank() (i32, i32) {
+    var unused i32 = 1;
 }
 
-func id(n int) (int) {
+func id(n i32) (i32) {
     return n;
 }
 
-func wrap() (uint, int) {
-    var n uint;
+func wrap() (u32, i32) {
+    var n u32;
     n = 0;
     n = n - 1;
     return n, 1;
 }
 
-func big() (i64, int) {
+func big() (i64, i32) {
     var a i64;
     a = 100000;
     a = a * 100000;
     return a, 2;
 }
 
-func narrow() (short, char, bool) {
+func narrow() (i16, u8, bool) {
     return -2, 200, 4;
 }
 
-func pick(p *int) (*int, int) {
+func pick(p *i32) (*i32, i32) {
     return p, 7;
 }
 
-func none() (?*int, int) {
+func none() (?*i32, i32) {
     return null, 3;
 }
 
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func make(n int) (Point, int) {
+func make(n i32) (Point, i32) {
     var p Point;
     p.x = n;
     p.y = n + 1;
@@ -82,76 +82,76 @@ func make(n int) (Point, int) {
 }
 
 type Box struct {
-    v int;
-    w int;
+    v i32;
+    w i32;
 };
 
-func Box::both(self *this) (int, int) {
+func Box::both(self *this) (i32, i32) {
     return self.v, self.w;
 }
 
-static func hidden() (int, int) {
+static func hidden() (i32, i32) {
     return 40, 2;
 }
 
-func adjust(n int) int {
-    var p *int = &n;
+func adjust(n i32) i32 {
+    var p *i32 = &n;
     n, extra := add(n, 1);
     return *p + extra;
 }
 
-func shadow(n int) int {
-    var p *int = &n;
+func shadow(n i32) i32 {
+    var p *i32 = &n;
     {
         n, extra := add(1, 2);
     }
     return *p;
 }
 
-func set_outer(n int) int {
-    var extra int = 0;
-    var p *int = &n;
+func set_outer(n i32) i32 {
+    var extra i32 = 0;
+    var p *i32 = &n;
     {
         n, extra = add(4, 1);
     }
     return *p + extra;
 }
 
-func mix(keep int) int {
-    var p *int = &keep;
+func mix(keep i32) i32 {
+    var p *i32 = &keep;
     keep, fresh := add(keep, 2);
     return *p + fresh;
 }
 
-func read_global() int {
+func read_global() i32 {
     return global_slot;
 }
 
-func hide(outer int) int {
-    func inner() int {
+func hide(outer i32) i32 {
+    func inner() i32 {
         outer, n := add(1, 2);
         return outer + n;
     }
     return inner() + outer;
 }
 
-func main() int {
-    var q ?*int;
-    var n int;
-    var np ?*int;
-    var nn int;
+func main() i32 {
+    var q ?*i32;
+    var n i32;
+    var np ?*i32;
+    var nn i32;
     var wide i64;
-    var wk int;
-    var s short;
-    var ch char;
+    var wk i32;
+    var s i16;
+    var ch u8;
     var flag bool;
     var point Point;
-    var pk int;
+    var pk i32;
     var box Box;
-    var left int;
-    var right int;
-    var h1 int;
-    var h2 int;
+    var left i32;
+    var right i32;
+    var h1 i32;
+    var h2 i32;
 
     slot = 0;
     a, b := ordered();
@@ -227,7 +227,7 @@ func main() int {
         return 18;
     }
 
-    var x int = 5;
+    var x i32 = 5;
     q, n = pick(&x);
     if (q == null) {
         return 19;

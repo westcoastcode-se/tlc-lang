@@ -2,7 +2,7 @@
 
 [Index](README.md) · [Previous: Functions](functions.md) · [Next: Structs, pointers, and arrays](structs.md) · [Grammar](grammar.md)
 
-`import "builtin"` loads the compiler package. It exports two functions, `trace` and `va`. `trace` returns `*const u8`. `va` returns `*char`. Both take no arguments. An argument is reported as `argument count`. The import links the C library.
+`import "builtin"` loads the compiler package. It exports two functions, `trace` and `va`. `trace` returns `*const u8`. `va` returns `*u8`. Both take no arguments. An argument is reported as `argument count`. The import links the C library.
 
 ```c
 import "builtin";
@@ -19,18 +19,18 @@ The first form calls them as `builtin.trace()` and `builtin.va()`. The alias use
 ```c
 import "builtin";
 
-extern(abi="c") func printf(fmt *const char, ...) int;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-func leaf() int {
-    printf("%s\n", *char(builtin.trace()));
+func leaf() i32 {
+    printf("%s\n", *u8(builtin.trace()));
     return 1;
 }
 
-func mid() int {
+func mid() i32 {
     return leaf();
 }
 
-func main() int {
+func main() i32 {
     return mid();
 }
 ```
@@ -51,7 +51,7 @@ At most 32 calls are kept. The text is at most 4095 bytes. The pointer refers to
 ```c
 import "builtin";
 
-func main() int {
+func main() i32 {
     var f = builtin.trace;
     defer f();
     defer builtin.trace();
@@ -66,19 +66,19 @@ func main() int {
 ```c
 import "builtin";
 
-extern(abi="c") func vprintf(fmt *const char, ap *char) int;
+extern(abi="c") func vprintf(fmt *const u8, ap *u8) i32;
 
-func log(fmt *char, ...) int {
+func log(fmt *u8, ...) i32 {
     return vprintf(fmt, builtin.va());
 }
 
-func main() int {
+func main() i32 {
     log("n=%d\n", 40);
     return 0;
 }
 ```
 
-The program prints `n=40`. An extra argument is an integer, a floating-point value, a pointer, an enum, or `null`. A struct is reported as `not supported yet`. An integer narrower than `int` is passed as `int`. `float` is passed as `double`.
+The program prints `n=40`. An extra argument is an integer, a floating-point value, a pointer, an enum, or `null`. A struct is reported as `not supported yet`. An integer narrower than `i32` is passed as `i32`. `f32` is passed as `f64`.
 
 `builtin.va()` outside a variadic function is reported as `not supported yet`. So is `defer builtin.va()`, and so is using the name without calling it: `builtin.va` and `var p = builtin.va`.
 

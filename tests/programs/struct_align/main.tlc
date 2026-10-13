@@ -1,14 +1,14 @@
 type Pair struct(align=16) {
-    a int;
-    b int;
+    a i32;
+    b i32;
 }
 
 type Holder struct {
     a Pair;
-    b int;
+    b i32;
 }
 
-func main() int {
+func main() i32 {
     if (sizeof(Pair) != 16 || sizeof(Holder) != 32) {
         return 1;
     }

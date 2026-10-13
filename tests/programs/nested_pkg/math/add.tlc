@@ -2,6 +2,6 @@ package math;
 
 import { width } from "./geom";
 
-export func add(a int, b int) int {
+export func add(a i32, b i32) i32 {
     return a + b + width();
 }

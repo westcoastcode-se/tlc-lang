@@ -1,12 +1,12 @@
 package geom;
 
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
 export type Alias Point;
 
-export func sum(p Alias) int {
+export func sum(p Alias) i32 {
     return p.x + p.y;
 }

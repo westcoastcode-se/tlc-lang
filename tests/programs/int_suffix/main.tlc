@@ -1,4 +1,4 @@
-func main() int {
+func main() i32 {
     var a i8 = 20i8;
     var b u16 = 400u16;
     var c i32 = 2i32;

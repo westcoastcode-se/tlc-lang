@@ -3,25 +3,25 @@ extern(abi="c") type Flag enum {
     B = 22,
 }
 
-func take(x int) int {
+func take(x i32) i32 {
     return x;
 }
 
-func take_wide(x u64) int {
+func take_wide(x u64) i32 {
     if (x == 22) {
         return 1;
     }
     return 0;
 }
 
-func Flag::bias(self this) int {
+func Flag::bias(self this) i32 {
     if (self == Flag.B) {
         return 1;
     }
     return 0;
 }
 
-func main() int {
+func main() i32 {
     var kind u32 = 20;
     if (take(Flag.A) == 20 && take_wide(Flag.B) == 1 && Flag.B.bias() == 1 && kind == Flag.A) {
         return 42;

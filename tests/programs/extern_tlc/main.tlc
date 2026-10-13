@@ -1,13 +1,13 @@
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 }
 
-extern func parts(p Point) (int, int) {
+extern func parts(p Point) (i32, i32) {
     return p.x, p.y + 2;
 }
 
-func main() int {
+func main() i32 {
     var p Point;
     p.x = 20;
     p.y = 20;

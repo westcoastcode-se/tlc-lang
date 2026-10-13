@@ -1,6 +1,6 @@
 # The tlc language
 
-tlc is a compiled language in the C family. A program is a single entry file. A function is written `func name(parameter type) result`. A type is written after the name it describes, as in `var n int` and `x int` inside a struct. An import names a directory of source files. Structs and enums may have methods, and a struct may satisfy a trait by defining those methods.
+tlc is a compiled language in the C family. A program is a single entry file. A function is written `func name(parameter type) result`. A type is written after the name it describes, as in `var n i32` and `x i32` inside a struct. An import names a directory of source files. Structs and enums may have methods, and a struct may satisfy a trait by defining those methods.
 
 The language accepts a subset of ISO C, together with the forms described in this reference. A syntactic form that the [grammar](grammar.md) does not list is not part of the language, even when the parser recognizes a similar C spelling and then rejects it.
 
@@ -40,7 +40,7 @@ The syntax is specified on [one page](grammar.md).
 ## A first program
 
 ```c
-func main() int {
+func main() i32 {
     return 40 + 2;
 }
 ```

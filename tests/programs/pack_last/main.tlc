@@ -6,11 +6,11 @@ func rest_of[T type, ...U](value T, rest U) U {
     return rest;
 }
 
-func width[N int, ...U](rest U) int {
+func width[N i32, ...U](rest U) i32 {
     return N;
 }
 
-func main() int {
+func main() i32 {
     if (head(40, (1, 2)) != 40) {
         return 1;
     }
@@ -21,17 +21,17 @@ func main() int {
     if (rest_of(5, 9) != 9) {
         return 3;
     }
-    x, y := rest_of[int, int, char](3, (4, 'b'));
+    x, y := rest_of[i32, i32, u8](3, (4, 'b'));
     if (x != 4 || y != 'b' || sizeof(y) != 1) {
         return 4;
     }
     if (width[4](1) != 4) {
         return 5;
     }
-    if (head[int](40, 2) != 40) {
+    if (head[i32](40, 2) != 40) {
         return 6;
     }
-    if (head[int, int](8, 9) != 8) {
+    if (head[i32, i32](8, 9) != 8) {
         return 7;
     }
     return 42;

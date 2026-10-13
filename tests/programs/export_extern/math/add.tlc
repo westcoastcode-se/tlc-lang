@@ -1,5 +1,5 @@
 package math;
 
-export extern func add(a int, b int) int {
+export extern func add(a i32, b i32) i32 {
     return a + b;
 }

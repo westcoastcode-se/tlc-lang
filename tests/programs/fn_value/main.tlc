@@ -1,28 +1,28 @@
-func add(a int, b int) int {
+func add(a i32, b i32) i32 {
     return a + b;
 }
 
-func inc(n int) int {
+func inc(n i32) i32 {
     return n + 1;
 }
 
 var bump = inc;
-var typed_global func (int) int = inc;
+var typed_global func (i32) i32 = inc;
 
-func take(op func (int, int) int) int {
+func take(op func (i32, i32) i32) i32 {
     return op(40, 2);
 }
 
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func Point::make(x int, y int) int {
+func Point::make(x i32, y i32) i32 {
     return x + y;
 }
 
-func Point::sum(self this) int {
+func Point::sum(self this) i32 {
     return self.x + self.y;
 }
 
@@ -30,18 +30,18 @@ type Color enum {
     Red,
 };
 
-func Color::code() int {
+func Color::code() i32 {
     return 1;
 }
 
-func pair(n int) (int, int) {
+func pair(n i32) (i32, i32) {
     return n, n + 1;
 }
 
-func main() int {
+func main() i32 {
     var free = add;
     var method = Point.make;
-    var typed func (int, int) int = Point.make;
+    var typed func (i32, i32) i32 = Point.make;
     var from_enum = Color.code;
     var copied = free;
     var both = pair;

@@ -1,59 +1,59 @@
 type Shape trait {
-    func area() int;
-    func grow(n int) void;
+    func area() i32;
+    func grow(n i32) void;
 };
 
 type Meas trait {
-    func area() int;
+    func area() i32;
 };
 
 type Rect struct {
-    w int;
-    h int;
+    w i32;
+    h i32;
 };
 
 type Box struct {
-    n int;
+    n i32;
 };
 
-func Rect::area(self this) int {
+func Rect::area(self this) i32 {
     return self.w * self.h;
 }
 
-func Rect::grow(self *this, n int) void {
+func Rect::grow(self *this, n i32) void {
     self.w = self.w + n;
     self.h = self.h + n;
 }
 
-func Box::area(self this) int {
+func Box::area(self this) i32 {
     return self.n;
 }
 
-func Box::grow(self *this, n int) void {
+func Box::grow(self *this, n i32) void {
     self.n = self.n + n;
 }
 
-func measure(s *Shape) int {
+func measure(s *Shape) i32 {
     return s.area();
 }
 
-func apply(s *Shape, n int) int {
+func apply(s *Shape, n i32) i32 {
     s.grow(n);
     return measure(s);
 }
 
-func take(m Meas) int {
+func take(m Meas) i32 {
     return m.area();
 }
 
-func main() int {
+func main() i32 {
     var r Rect;
     var b Box;
     r.w = 5;
     r.h = 6;
     b.n = 0;
-    var a int = apply(&r, 1);
-    var d int = take(r);
-    var c int = apply(&b, 21);
+    var a i32 = apply(&r, 1);
+    var d i32 = take(r);
+    var c i32 = apply(&b, 21);
     return a + c + d - 63;
 }

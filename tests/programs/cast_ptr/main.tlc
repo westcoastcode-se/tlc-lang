@@ -1,18 +1,18 @@
-func main() int {
-    var n int = 0;
-    var bits int = 0;
-    var c *char = *char(0);
+func main() i32 {
+    var n i32 = 0;
+    var bits i32 = 0;
+    var c *u8 = *u8(0);
     var v *void = *void(0);
-    var p *int = &n;
+    var p *i32 = &n;
     bits = 42;
-    c = *char(bits);
+    c = *u8(bits);
     v = *void(c);
-    bits = int(v);
+    bits = i32(v);
     n = 300;
     p = &n;
-    c = *char(p);
+    c = *u8(p);
     v = *void(c);
-    p = *int(v);
+    p = *i32(v);
     if (*p != 300) {
         return 1;
     }

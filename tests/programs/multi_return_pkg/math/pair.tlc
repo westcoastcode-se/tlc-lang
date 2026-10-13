@@ -1,15 +1,15 @@
 package math;
 
 export type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func pair(n int) (int, int) {
+func pair(n i32) (i32, i32) {
     return n + 1, n;
 }
 
-export func make(n int) (Point, int) {
+export func make(n i32) (Point, i32) {
     var p Point;
     p.x = n;
     p.y = 1;

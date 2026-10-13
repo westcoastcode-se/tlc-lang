@@ -8,28 +8,12 @@
 namespace tlc {
 
 inline bool fill_builtin(const std::string &name, Type &out) {
-    if (name == "int") {
+    if (name == "i32") {
         out = type_int();
         return true;
     }
-    if (name == "char") {
-        out = type_char();
-        return true;
-    }
-    if (name == "short") {
-        out = type_rank(2, false);
-        return true;
-    }
-    if (name == "uint" || name == "u32") {
+    if (name == "u32") {
         out = type_rank(3, true);
-        return true;
-    }
-    if (name == "long") {
-        out = type_rank(4, false);
-        return true;
-    }
-    if (name == "ulong") {
-        out = type_rank(4, true);
         return true;
     }
     if (name == "u64") {
@@ -52,10 +36,6 @@ inline bool fill_builtin(const std::string &name, Type &out) {
         out = type_rank(2, true);
         return true;
     }
-    if (name == "i32") {
-        out = type_int();
-        return true;
-    }
     if (name == "i64") {
         out = type_rank(5, false);
         return true;
@@ -64,11 +44,11 @@ inline bool fill_builtin(const std::string &name, Type &out) {
         out = type_bool();
         return true;
     }
-    if (name == "float" || name == "f32") {
+    if (name == "f32") {
         out = type_float(32);
         return true;
     }
-    if (name == "double" || name == "f64") {
+    if (name == "f64") {
         out = type_float(64);
         return true;
     }

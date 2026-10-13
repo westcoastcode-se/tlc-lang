@@ -2,29 +2,29 @@
 
 [Index](README.md) · [Previous: Packages](packages.md) · [Next: Expressions](expressions.md) · [Grammar](grammar.md)
 
-Integer layout on `x86_64-pc-linux-gnu` is LP64. `long` and `i64` are both 64 bits, and they are different types.
+Numeric types are `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, and `f64`. `bool` and `void` are not numeric types. On `x86_64-pc-linux-gnu` a pointer is 64 bits.
 
 | Type | Bits |
 | --- | --- |
-| `char` | 8 |
 | `i8`, `u8` | 8 |
-| `short`, `i16`, `u16` | 16 |
-| `int`, `uint`, `i32`, `u32` | 32 |
-| `long`, `ulong` | 64 |
+| `i16`, `u16` | 16 |
+| `i32`, `u32` | 32 |
 | `i64`, `u64` | 64 |
+| `f32` | 32 |
+| `f64` | 64 |
 | pointer | 64 |
 
-## Specifiers
+## Names
 
-`signed` and `unsigned` are not keywords. Write the fixed names `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `short int` is `short`. `long int` is `long`. `long long` is reported as `type mismatch`. Contradictory specifiers are reported as `type mismatch`.
+A numeric type is `i`, `u`, or `f` followed by the width. Integer widths are 8, 16, 32, and 64. Float widths are 32 and 64. `int`, `uint`, `short`, `long`, `ulong`, `char`, `float`, and `double` are ordinary identifiers. Using one where a type is required is reported as `not supported yet`. `signed` and `unsigned` are reported as `type mismatch`.
 
-`char`, `i8`, and `u8` are three types. They are assignment-compatible. `*int` and `*uint` are different types.
+`i8` is sign-extended. `u8` is zero-extended. A character literal has type `u8`. `*i32` and `*u32` are different types. Integer types are assignment-compatible with each other and with `bool`.
 
 ```c
-func main() int {
-    var a short int = 1;
-    var b long int = 2;
-    var c char = 65;
+func main() i32 {
+    var a i16 = 1;
+    var b i64 = 2;
+    var c u8 = 65;
     var d i8 = c;
     var e u8 = c;
     return a + b + d + e;
@@ -38,45 +38,40 @@ func main() int {
 `*const T` is a pointer to constant `T`. The variable may be reseated. A store through it, `*p = 1` or `p[i] = 1`, is reported as `type mismatch`. Reading `*p` and `p[i]` is allowed. `*T` may be stored in `*const T`. `*const T` may not be stored in `*T`. `?*const T` is that pointer or `null`. `**const T` is a pointer to a pointer to constant `T`. `*const *T` is a pointer to a constant pointer.
 
 ```c
-func main() int {
-    var n int = 1;
-    var p *int = &n;
-    var q ?*int = null;
-    var c *const int = p;
-    var inner *int = &n;
-    var to_const **const int = &inner;
-    var to_ptr *const *int = &inner;
+func main() i32 {
+    var n i32 = 1;
+    var p *i32 = &n;
+    var q ?*i32 = null;
+    var c *const i32 = p;
+    var inner *i32 = &n;
+    var to_const **const i32 = &inner;
+    var to_ptr *const *i32 = &inner;
     q = p;
     return *p + *c + **to_const + **to_ptr;
 }
 ```
-
-## Fixed-width names
-
-`i8` and `u8` are the 8-bit integers. `i16` is `short`, and `u16` is its unsigned counterpart. `i32` is `int`, and `u32` is `uint`. `i64` and `u64` are the other 64-bit integers. `ulong` is 64 bits and a different type from `u64`. `long` is a different 64-bit type from `i64`. `char` is different from `i8`.
 
 ## Rank and conversion
 
 The rank order, from narrowest to widest, is:
 
 1. `bool`
-2. `char`, `i8`, and `u8`
-3. `short`, `i16`, and `u16`
-4. `int`, `i32`, `uint`, and `u32`
-5. `long` and `ulong`
-6. `i64` and `u64`
+2. `i8` and `u8`
+3. `i16` and `u16`
+4. `i32` and `u32`
+5. `i64` and `u64`
 
 An unsigned type has the same rank as its signed counterpart.
 
-A value whose rank is below `int` widens to `int`. `i8` is sign-extended. `char` and `u8` are zero-extended. The usual arithmetic conversions apply after that. `+`, `-`, `*`, `/`, `%`, and the bitwise operators produce the common type. Comparisons and `!` produce `int`, either 0 or 1.
+A value whose rank is below `i32` widens to `i32`. `i8` is sign-extended. `u8` is zero-extended. The usual arithmetic conversions apply after that. `+`, `-`, `*`, `/`, `%`, and the bitwise operators produce the common type. Comparisons and `!` produce `i32`, either 0 or 1.
 
-Unsigned arithmetic wraps. A `uint` that is 0 and then decreased by 1 becomes `4294967295`, so `n < 1` is false. A mixed comparison converts the signed operand. `1u32 < -1` is true, because `-1` becomes the largest unsigned value.
+Unsigned arithmetic wraps. A `u32` that is 0 and then decreased by 1 becomes `4294967295`, so `n < 1` is false. A mixed comparison converts the signed operand. `1u32 < -1` is true, because `-1` becomes the largest unsigned value.
 
-Assignment is allowed among the integer ranks, `char`, and `bool`. A store into `bool` becomes 0 or 1. A store into a narrower integer keeps the low bits.
+Assignment is allowed among the integer ranks, `u8`, and `bool`. A store into `bool` becomes 0 or 1. A store into a narrower integer keeps the low bits.
 
 ```c
-func main() int {
-    var n uint = 0;
+func main() i32 {
+    var n u32 = 0;
     var flag bool = 2;
     var narrow i8 = 300;
     n = n - 1;
@@ -93,17 +88,17 @@ func main() int {
 
 A `bool` value is 0 or 1.
 
-`float` and `f32` are the same 32-bit type. `double` and `f64` are the same 64-bit type. A literal without a suffix has type `double`. A suffix `f` or `F` makes it `float`. `1.5 + 1` is `double`. Comparisons of floating values yield `int`. `%` and the bitwise operators on a floating value are reported as `type mismatch`.
+`f32` is the 32-bit floating type. `f64` is the 64-bit floating type. A literal without a suffix has type `f64`. A suffix `f` or `F` makes it `f32`. `1.5 + 1` is `f64`. Comparisons of floating values yield `i32`. `%` and the bitwise operators on a floating value are reported as `type mismatch`.
 
 ```c
 func skip() void {
     return;
 }
 
-func main() int {
+func main() i32 {
     var a bool = true;
-    var x float = 1.5f;
-    var y double = 20.5;
+    var x f32 = 1.5f;
+    var y f64 = 20.5;
     skip();
     if (a && x < y) {
         return 1;
@@ -116,25 +111,25 @@ func main() int {
 
 | Literal | Type |
 | --- | --- |
-| `42` | `int` |
+| `42` | `i32` |
 | `42i8`, `42u8` | `i8` and `u8`, when the value fits |
 | `42i16`, `42u16` | `i16` and `u16`, when the value fits |
-| `42i32`, `42u32` | `int` and `uint`, when the value fits |
+| `42i32`, `42u32` | `i32` and `u32`, when the value fits |
 | `42i64`, `42u64` | `i64` and `u64`, when the value fits |
-| `'A'` | `char` |
-| `"hi"` | array of `char`, including the terminating null |
+| `'A'` | `u8` |
+| `"hi"` | array of `u8`, including the terminating null |
 | `` `hi` `` | the same array type; the text may span lines |
 | `true`, `false` | `bool` |
 | `null` | null pointer, stored only in `?*T` |
 
 An unsuffixed number greater than `2147483647` is reported as `type mismatch`. It does not become `i64`. A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `1u` and `1l` are reported as `invalid integer suffix`. A value that does not fit in the suffix is reported as `type mismatch`.
 
-A character literal has type `char`. `'A'` is 65 and `'\n'` is 10. A value above 255 is reported as `type mismatch`. The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
+A character literal has type `u8`. `'A'` is 65 and `'\n'` is 10. A value above 255 is reported as `type mismatch`. The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
 
-An integer literal is decimal, `0x` hex, `0b` binary, or `0` octal. A `'` between digits is a separator. `0x1p+4` is a hexadecimal floating literal. It is `double`, and it needs a binary exponent. A suffix `f` makes a floating literal `float`.
+An integer literal is decimal, `0x` hex, `0b` binary, or `0` octal. A `'` between digits is a separator. `0x1p+4` is a hexadecimal floating literal. It is `f64`, and it needs a binary exponent. A suffix `f` makes a floating literal `f32`.
 
 ```c
-func main() int {
+func main() i32 {
     var n = 1'000;
     var hex = 0x2A;
     var bits = 0b1010;
@@ -152,43 +147,43 @@ func main() int {
 
 ## Strings
 
-A string between double quotes cannot cross a line. A string between backticks may span lines. Both are arrays of `char`. In a raw string the characters are copied as written: a backslash is not an escape, and a newline in the source is a newline in the string. The next backtick ends the string.
+A string between double quotes cannot cross a line. A string between backticks may span lines. Both are arrays of `u8`. In a raw string the characters are copied as written: a backslash is not an escape, and a newline in the source is a newline in the string. The next backtick ends the string.
 
 ```c
-var text *char = `hello
+var text *u8 = `hello
 world`;
 ```
 
 ## `sizeof`
 
-`sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(i64)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted. `sizeof(Point)` and `sizeof(enum Color)` name a declared type. `sizeof(struct Point)` is reported as `expected a type`. `sizeof(Type)` is 8.
+`sizeof` produces `i32`. `sizeof(u8)` is 1, `sizeof(i32)` is 4, `sizeof(i64)` is 8, and a pointer is 8. Both `sizeof(i32)` and `sizeof n` are accepted. `sizeof(Point)` and `sizeof(enum Color)` name a declared type. `sizeof(struct Point)` is reported as `expected a type`. `sizeof(Type)` is 8.
 
 ```c
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func main() int {
-    var n int = 1;
-    return sizeof(int) + sizeof n + sizeof(Point);
+func main() i32 {
+    var n i32 = 1;
+    return sizeof(i32) + sizeof n + sizeof(Point);
 }
 ```
 
 ## The `Type` type
 
-`Type` is the type of a tlc type. `typeof(int)` and `typeof n` produce a `Type`. `typeof(Point)`, `typeof(*int)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)` is reported as `expected a type`. `i32` is `int`, so `typeof(i32)` and `typeof(int)` are the same value. `typeof` does not decay an array. `var t Type` with no value is reported as `type mismatch`.
+`Type` is the type of a tlc type. `typeof(i32)` and `typeof n` produce a `Type`. `typeof(Point)`, `typeof(*i32)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)` is reported as `expected a type`. `typeof('A')` is `u8`, and that value is different from `typeof(i8)`. `typeof` does not decay an array. `var t Type` with no value is reported as `type mismatch`.
 
-`typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*Type` uses the value `p` points at. `name` is a method of `Type`. `t.name()` returns `*char`. The text is the spelling diagnostics use: `int`, `*int`, `?*Point`, `int[4]`, `Box.spec.int`. `name` takes no arguments. Another argument is reported as `argument count`. Another method is reported as `undeclared identifier`. `t.name` without the call is reported as `undeclared identifier`.
+`typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*Type` uses the value `p` points at. `name` is a method of `Type`. `t.name()` returns `*u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `i32[4]`, `Box.spec.i32`. `name` takes no arguments. Another argument is reported as `argument count`. Another method is reported as `undeclared identifier`. `t.name` without the call is reported as `undeclared identifier`.
 
-`==` and `!=` compare two `Type` values and yield `int`, either 0 or 1. Other operators on `Type` are reported as `type mismatch`.
+`==` and `!=` compare two `Type` values and yield `i32`, either 0 or 1. Other operators on `Type` are reported as `type mismatch`.
 
 ```c
-func main() int {
-    var n int = 1;
+func main() i32 {
+    var n i32 = 1;
     var t Type = typeof(n);
-    var text *char = t.name();
-    if (t == typeof(int) && t == typeof(i32) && text != null) {
+    var text *u8 = t.name();
+    if (t == typeof(i32) && typeof('A') == typeof(u8) && text != null) {
         return 1;
     }
     return 0;

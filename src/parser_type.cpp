@@ -167,7 +167,7 @@ std::string Parser::parse_enum_underlying() {
     std::string out = "invalid";
     const auto alias = [](const std::string &name) {
         return name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" ||
-               name == "i64" || name == "u64" || name == "uint" || name == "ulong";
+               name == "i64" || name == "u64";
     };
     if (check(TokenKind::Identifier) && alias(peek().text)) {
         out = peek().text;
@@ -1274,15 +1274,13 @@ bool Parser::bracket_then_paren() const {
 }
 
 bool Parser::primitive_type_name(const std::string &name) const {
-    return name == "void" || name == "bool" || name == "char" || name == "short" || name == "int" || name == "long" ||
-           name == "float" || name == "double" || name == "uint" || name == "ulong" || name == "i8" || name == "u8" ||
-           name == "i16" || name == "u16" || name == "i32" || name == "u32" || name == "i64" || name == "u64" ||
-           name == "f32" || name == "f64" || name == "invalid";
+    return name == "void" || name == "bool" || name == "i8" || name == "u8" || name == "i16" || name == "u16" ||
+           name == "i32" || name == "u32" || name == "i64" || name == "u64" || name == "f32" || name == "f64" ||
+           name == "invalid";
 }
 
 bool Parser::integer_constraint_name(const std::string &name) const {
-    return name == "char" || name == "short" || name == "int" || name == "long" || name == "uint" || name == "ulong" ||
-           name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" ||
+    return name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" ||
            name == "i64" || name == "u64";
 }
 

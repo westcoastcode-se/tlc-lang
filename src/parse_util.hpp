@@ -33,8 +33,7 @@ inline std::unique_ptr<Expr> unsupported_expr(SourceLoc loc) {
 
 inline bool is_type_alias(std::string_view text) {
     return text == "i8" || text == "i16" || text == "i32" || text == "i64" || text == "u8" || text == "u16" ||
-           text == "u32" || text == "u64" || text == "uint" || text == "ulong" || text == "f32" || text == "f64" ||
-           text == "Type";
+           text == "u32" || text == "u64" || text == "f32" || text == "f64" || text == "Type";
 }
 
 inline bool is_int_spec(TokenKind kind) {

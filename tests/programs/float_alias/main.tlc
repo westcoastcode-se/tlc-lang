@@ -1,10 +1,10 @@
-func add(a f64, b f32) double {
+func add(a f64, b f32) f64 {
     return a + b;
 }
 
-func main() int {
+func main() i32 {
     var x f64 = 20.5;
-    var y float = 1.5f;
+    var y f32 = 1.5f;
     var z f64 = add(x, y);
     if (z != 22.0) {
         return 1;

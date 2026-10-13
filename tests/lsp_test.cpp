@@ -182,56 +182,56 @@ int run_lsp_tests() {
     if (file < 0) {
         return check.failed;
     }
-    const std::string disk = "func main() int {\n    return 1;\n}\n";
+    const std::string disk = "func main() i32 {\n    return 1;\n}\n";
     EXPECT(check, ::write(file, disk.data(), disk.size()) == static_cast<ssize_t>(disk.size()));
     ::close(file);
 
     const std::string source =
-        "func add(a int, b int) int {\n"
+        "func add(a i32, b i32) i32 {\n"
         "    return a + b;\n"
         "}\n"
         "\n"
         "type Point struct {\n"
-        "    x int;\n"
+        "    x i32;\n"
         "};\n"
         "\n"
-        "func Point::make(n int) Point {\n"
+        "func Point::make(n i32) Point {\n"
         "    var p Point;\n"
         "    p.x = n;\n"
         "    return p;\n"
         "}\n"
         "\n"
-        "func Point::sum(self this) int {\n"
+        "func Point::sum(self this) i32 {\n"
         "    return self.x;\n"
         "}\n"
         "\n"
         "type Shape trait {\n"
-        "    func area() int;\n"
-        "    func grow(n int) void;\n"
+        "    func area() i32;\n"
+        "    func grow(n i32) void;\n"
         "};\n"
         "\n"
-        "func measure(s *Shape) int {\n"
+        "func measure(s *Shape) i32 {\n"
         "    return s.area();\n"
         "}\n"
         "\n"
         "type Inner struct {\n"
-        "    inner_value int;\n"
+        "    inner_value i32;\n"
         "};\n"
         "\n"
         "type Box struct {\n"
-        "    value int;\n"
+        "    value i32;\n"
         "    complex Inner;\n"
         "};\n"
         "\n"
         "type K struct {\n"
-        "    value int;\n"
+        "    value i32;\n"
         "};\n"
         "\n"
-        "func main() int {\n"
+        "func main() i32 {\n"
         "    var p Point;\n"
         "    var built = Point.make(1);\n"
         "    q := Point.make(2);\n"
-        "    var n int = \"no\";\n"
+        "    var n i32 = \"no\";\n"
         "    var kk K = {.value = 10};\n"
         "    var box Box = {.complex = {.inner_value = 1}};\n"
         "    kk = {.value = 2};\n"
@@ -356,7 +356,7 @@ int run_lsp_tests() {
                   R"("},"position":{"line":)" + std::to_string(call.line) + R"(,"character":)" +
                   std::to_string(call.character) + "}}}");
     const std::string hovered = read_until(from_child[0], "\"id\":4", 3000);
-    EXPECT_HAS(check, hovered, "func add(a int, b int) int");
+    EXPECT_HAS(check, hovered, "func add(a i32, b i32) i32");
 
     send_json(to_child[1],
               std::string(R"({"jsonrpc":"2.0","id":5,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")") +
@@ -370,11 +370,11 @@ int run_lsp_tests() {
     std::filesystem::create_directories(goto_root / "math");
     {
         std::ofstream math(goto_root / "math" / "add.tlc");
-        math << "export func add(a int, b int) int {\n    return a + b;\n}\n";
+        math << "export func add(a i32, b i32) i32 {\n    return a + b;\n}\n";
         std::ofstream entry(goto_root / "main.tlc");
-        entry << "import { add } from \"math\";\nfunc main() int {\n    return add(1, 2);\n}\n";
+        entry << "import { add } from \"math\";\nfunc main() i32 {\n    return add(1, 2);\n}\n";
     }
-    const std::string goto_source = "import { add } from \"math\";\nfunc main() int {\n    return add(1, 2);\n}\n";
+    const std::string goto_source = "import { add } from \"math\";\nfunc main() i32 {\n    return add(1, 2);\n}\n";
     const std::string goto_uri = std::string("file://") + (goto_root / "main.tlc").string();
     send_json(to_child[1],
               std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +

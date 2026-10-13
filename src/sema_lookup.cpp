@@ -1677,29 +1677,26 @@ std::string Checker::type_desc(const Type &type) const {
     case TypeKind::Bool:
         return "bool";
     case TypeKind::Float:
-        return type.rank >= 64 ? "double" : "float";
+        return type.rank >= 64 ? "f64" : "f32";
     case TypeKind::Nullptr:
         return "null";
     case TypeKind::Char:
-        if (type.plain_char) {
-            return "char";
+        if (type.plain_char || type.is_unsigned) {
+            return "u8";
         }
-        return type.is_unsigned ? "u8" : "i8";
+        return "i8";
     case TypeKind::Int: {
         const int rank = type.rank == 0 ? 3 : type.rank;
         if (rank <= 1) {
             return type.is_unsigned ? "u8" : "i8";
         }
         if (rank == 2) {
-            return type.is_unsigned ? "u16" : "short";
+            return type.is_unsigned ? "u16" : "i16";
         }
-        if (rank == 4) {
-            return type.is_unsigned ? "ulong" : "long";
-        }
-        if (rank >= 5) {
+        if (rank >= 4) {
             return type.is_unsigned ? "u64" : "i64";
         }
-        return type.is_unsigned ? "uint" : "int";
+        return type.is_unsigned ? "u32" : "i32";
     }
     case TypeKind::Pointer: {
         std::string text = type.optional ? "?" : "";

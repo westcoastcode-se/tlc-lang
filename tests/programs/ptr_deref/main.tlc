@@ -1,7 +1,7 @@
-func main() int {
-    var n int = 7;
-    var p *int = &n;
-    var pp **int = &p;
+func main() i32 {
+    var n i32 = 7;
+    var p *i32 = &n;
+    var pp **i32 = &p;
     **pp = 42;
     return n;
 }

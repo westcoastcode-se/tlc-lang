@@ -1,5 +1,5 @@
 package geom;
 
-export func width() int {
+export func width() i32 {
     return 2;
 }

@@ -593,7 +593,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
-                return type_char();
+                return type_rank(1, true);
             } else if constexpr (std::is_same_v<T, Expr::Float>) {
                 (void)used;
                 return type_float(node.is_f32 ? 32 : 64);
@@ -953,7 +953,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                         }
                     }
-                    return type_pointer(type_char());
+                    return type_pointer(type_rank(1, true));
                 }
                 // Another file in the package does not see the enum as a cast spelling.
                 // `ShapeType(shape)` is still the tag read.
@@ -1060,7 +1060,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 return type_invalid();
                             }
                             node.type_name = true;
-                            return type_pointer(type_char());
+                            return type_pointer(type_rank(1, true));
                         }
                         if (base.kind == TypeKind::Trait ||
                             (base.kind == TypeKind::Pointer && base.pointee && base.pointee->kind == TypeKind::Trait)) {
@@ -1323,7 +1323,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return field;
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 (void)used;
-                return type_array(type_char(), static_cast<int>(node.text.size()) + 1);
+                return type_array(type_rank(1, true), static_cast<int>(node.text.size()) + 1);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 (void)used;
                 const Type base = check_expr(*node.base, true);

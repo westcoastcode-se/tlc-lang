@@ -1,9 +1,9 @@
 type Address struct {
-    street ?*char;
+    street ?*u8;
 };
 
 type Person struct {
-    nickname ?*char;
+    nickname ?*u8;
     home *Address;
 };
 
@@ -21,14 +21,14 @@ func bind(person ?*Person, home ?*Address) void {
     settle(person, home);
 }
 
-func value(p ?*int) int {
+func value(p ?*i32) i32 {
     if (p == null) {
         return 0;
     }
     return *p;
 }
 
-func main() int {
+func main() i32 {
     var home Address = {.street = null};
     var person Person = {.nickname = null, .home = &home};
     person.nickname = null;
@@ -40,7 +40,7 @@ func main() int {
     if (person.home != &home) {
         return 2;
     }
-    var n int = 40;
+    var n i32 = 40;
     if (value(&n) != 40) {
         return 3;
     }

@@ -1,6 +1,6 @@
 import "std/testing";
 
-func check(value int) int {
+func check(value i32) i32 {
     return testing.error("Expected 4 but was %d", value);
 }
 

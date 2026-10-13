@@ -1,5 +1,5 @@
 package math;
 
-func extra() int {
+func extra() i32 {
     return 8;
 }

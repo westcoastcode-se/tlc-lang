@@ -33,22 +33,22 @@ import {
     GL,
 } from "vendor/gl";
 
-extern(abi="c") func printf(fmt *const char, ...) int;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
 
 // 10 columns by 20 rows. A cell is 0 when empty, or 1..7 for a piece color.
-var board [200]int;
-var shape_x [28]int;
-var shape_y [28]int;
-var kind int;
-var rot int;
-var px int;
-var py int;
-var next_kind int;
-var alive int;
-var lines int;
-var score int;
-var running int;
-var told int;
+var board [200]i32;
+var shape_x [28]i32;
+var shape_y [28]i32;
+var kind i32;
+var rot i32;
+var px i32;
+var py i32;
+var next_kind i32;
+var alive i32;
+var lines i32;
+var score i32;
+var running i32;
+var told i32;
 var last u64;
 
 func load_shapes() void {
@@ -116,7 +116,7 @@ func load_shapes() void {
     shape_y[27] = 1;
 }
 
-func spin(x int, y int, turn int) (int, int) {
+func spin(x i32, y i32, turn i32) (i32, i32) {
     var i = 0;
     while (i < turn) {
         var nx = 3 - y;
@@ -128,7 +128,7 @@ func spin(x int, y int, turn int) (int, int) {
     return x, y;
 }
 
-func cell_at(piece int, index int, ox int, oy int, turn int) (int, int) {
+func cell_at(piece i32, index i32, ox i32, oy i32, turn i32) (i32, i32) {
     var x = shape_x[piece * 4 + index];
     var y = shape_y[piece * 4 + index];
     if (piece == 1) {
@@ -138,7 +138,7 @@ func cell_at(piece int, index int, ox int, oy int, turn int) (int, int) {
     return ox + sx, oy + sy;
 }
 
-func fits(piece int, turn int, ox int, oy int) int {
+func fits(piece i32, turn i32, ox i32, oy i32) i32 {
     var i = 0;
     while (i < 4) {
         x, y := cell_at(piece, i, ox, oy, turn);
@@ -161,7 +161,7 @@ func wipe() void {
     }
 }
 
-func clear_lines() int {
+func clear_lines() i32 {
     var cleared = 0;
     var y = 19;
     while (y >= 0) {
@@ -259,7 +259,7 @@ func restart() void {
     last = SDL_GetTicks();
 }
 
-func try_turn(dir int) void {
+func try_turn(dir i32) void {
     var turn = (rot + 4 + dir) % 4;
     if (fits(kind, turn, px, py) != 0) {
         rot = turn;
@@ -295,7 +295,7 @@ func hard_drop() void {
     last = SDL_GetTicks();
 }
 
-func on_key(code int, again int) void {
+func on_key(code i32, again i32) void {
     if (code == SdlScancode.SDL_SCANCODE_ESCAPE) {
         running = 0;
         return;
@@ -345,15 +345,15 @@ func on_key(code int, again int) void {
     }
 }
 
-func ndc_x(pixel int) f32 {
+func ndc_x(pixel i32) f32 {
     return f32(pixel) / 480.0f * 2.0f - 1.0f;
 }
 
-func ndc_y(pixel int) f32 {
+func ndc_y(pixel i32) f32 {
     return 1.0f - f32(pixel) / 640.0f * 2.0f;
 }
 
-func rect(x int, y int, w int, h int) void {
+func rect(x i32, y i32, w i32, h i32) void {
     var left = ndc_x(x);
     var right = ndc_x(x + w);
     var top = ndc_y(y);
@@ -368,7 +368,7 @@ func rect(x int, y int, w int, h int) void {
     glEnd();
 }
 
-func set_color(id int) void {
+func set_color(id i32) void {
     if (id == 1) {
         glColor3f(0.35f, 0.90f, 0.95f);
         return;
@@ -400,12 +400,12 @@ func set_color(id int) void {
     glColor3f(0.45f, 0.48f, 0.55f);
 }
 
-func draw_block(col int, row int, color int, ox int, oy int) void {
+func draw_block(col i32, row i32, color i32, ox i32, oy i32) void {
     set_color(color);
     rect(ox + col * 28, oy + row * 28, 26, 26);
 }
 
-func draw_piece(piece int, turn int, ox int, oy int, color int, drop int) void {
+func draw_piece(piece i32, turn i32, ox i32, oy i32, color i32, drop i32) void {
     var i = 0;
     while (i < 4) {
         x, y := cell_at(piece, i, ox, oy, turn);
@@ -446,7 +446,7 @@ func draw_lines() void {
     }
 }
 
-func ghost_y() int {
+func ghost_y() i32 {
     var gy = py;
     while (fits(kind, rot, px, gy + 1) != 0) {
         gy = gy + 1;
@@ -486,7 +486,7 @@ func draw() void {
     }
 }
 
-func main() int {
+func main() i32 {
     if (SDL_Init(SdlInit.SDL_INIT_VIDEO) == 0) {
         printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -527,7 +527,7 @@ func main() int {
                 running = 0;
             }
             if (event.kind == SdlEventKind.SDL_EVENT_KEY_DOWN) {
-                on_key(event.key.scancode, int(event.key.repeat));
+                on_key(event.key.scancode, i32(event.key.repeat));
             }
         }
         if (alive != 0) {

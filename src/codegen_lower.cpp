@@ -302,13 +302,10 @@ bool CodeGen::has_typedef(uint32_t file, const std::string &name) const {
 }
 
 bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
-    if (item.is_struct || item.is_enum || item.type_name.empty() || item.type_name == "int" || item.type_name == "char" ||
-        item.type_name == "short" || item.type_name == "uint" || item.type_name == "long" || item.type_name == "ulong" ||
-        item.type_name == "void" || item.type_name == "bool" ||
-        item.type_name == "invalid" || item.type_name == "i8" || item.type_name == "i16" || item.type_name == "i32" ||
-        item.type_name == "i64" || item.type_name == "u8" || item.type_name == "u16" || item.type_name == "u32" ||
-        item.type_name == "u64" || item.type_name == "f32" || item.type_name == "f64" || item.type_name == "float" ||
-        item.type_name == "double") {
+    if (item.is_struct || item.is_enum || item.type_name.empty() || item.type_name == "void" ||
+        item.type_name == "bool" || item.type_name == "invalid" || item.type_name == "i8" || item.type_name == "i16" ||
+        item.type_name == "i32" || item.type_name == "i64" || item.type_name == "u8" || item.type_name == "u16" ||
+        item.type_name == "u32" || item.type_name == "u64" || item.type_name == "f32" || item.type_name == "f64") {
         return true;
     }
     uint32_t target = file;
@@ -393,27 +390,24 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
             note_enum(base, imported);
             have = true;
         }
-    } else if (name == "char" || name == "short" || name == "int" || name == "uint" || name == "long" ||
-               name == "ulong" || name == "i8" ||
-               name == "i16" || name == "i32" || name == "i64" || name == "u8" || name == "u16" || name == "u32" ||
-               name == "u64") {
-        base.elem_char = name == "char";
+    } else if (name == "i8" || name == "i16" || name == "i32" || name == "i64" || name == "u8" || name == "u16" ||
+               name == "u32" || name == "u64") {
         base.elem_unsigned = name.starts_with("u");
-        if (name == "char" || name == "i8" || name == "u8") {
+        if (name == "i8" || name == "u8") {
             base.elem_bits = 8;
-        } else if (name == "short" || name == "i16" || name == "u16") {
+        } else if (name == "i16" || name == "u16") {
             base.elem_bits = 16;
-        } else if (name == "long" || name == "ulong" || name == "i64" || name == "u64") {
+        } else if (name == "i64" || name == "u64") {
             base.elem_bits = 64;
         } else {
             base.elem_bits = 32;
         }
         have = true;
-    } else if (name == "float" || name == "f32") {
+    } else if (name == "f32") {
         base.elem_float = true;
         base.elem_bits = 32;
         have = true;
-    } else if (name == "double" || name == "f64") {
+    } else if (name == "f64") {
         base.elem_float = true;
         base.elem_bits = 64;
         have = true;
@@ -426,7 +420,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     } else if (name == "bool") {
         base.elem_bool = true;
         have = true;
-    } else if (name != "int" && name != "invalid" && !name.empty()) {
+    } else if (name != "invalid" && !name.empty()) {
         if (const Alias *local = find_alias(file, name)) {
             take(*local);
         } else if (const Alias *imported = selective_alias(file, name)) {
@@ -1058,18 +1052,17 @@ llvm::Type *CodeGen::enum_mem_type(int enum_id) const {
 }
 
 void CodeGen::describe_enum(const std::string &underlying, EnumLayout &layout) const {
-    const std::string &name = underlying.empty() ? std::string("int") : underlying;
+    const std::string &name = underlying.empty() ? std::string("i32") : underlying;
     layout.is_bool = name == "bool";
-    layout.is_char = name == "char";
-    layout.is_unsigned = name == "uint" || name == "ulong" || name == "u8" || name == "u16" || name == "u32" ||
-                         name == "u64";
+    layout.is_char = false;
+    layout.is_unsigned = name == "u8" || name == "u16" || name == "u32" || name == "u64";
     if (layout.is_bool) {
         layout.bits = 1;
-    } else if (name == "char" || name == "i8" || name == "u8") {
+    } else if (name == "i8" || name == "u8") {
         layout.bits = 8;
-    } else if (name == "short" || name == "i16" || name == "u16") {
+    } else if (name == "i16" || name == "u16") {
         layout.bits = 16;
-    } else if (name == "long" || name == "ulong" || name == "i64" || name == "u64") {
+    } else if (name == "i64" || name == "u64") {
         layout.bits = 64;
     } else {
         layout.bits = 32;
@@ -1565,10 +1558,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     }
                     return as_int(32, false);
                 } else if constexpr (std::is_same_v<T, Expr::Char>) {
-                    Lowered low = as_int(8, false);
-                    low.elem_char = true;
-                    low.type = i8();
-                    return low;
+                    return as_int(8, true);
                 } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                     Lowered low;
                     low.elem_bool = true;
@@ -1579,8 +1569,8 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                 } else if constexpr (std::is_same_v<T, Expr::String>) {
                     Lowered low;
                     low.depth = 1;
-                    low.elem_char = true;
                     low.elem_bits = 8;
+                    low.elem_unsigned = true;
                     low.type = ptr_type();
                     return low;
                 } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
@@ -1625,8 +1615,8 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     if (item.type_name) {
                         Lowered low;
                         low.depth = 1;
-                        low.elem_char = true;
                         low.elem_bits = 8;
+                        low.elem_unsigned = true;
                         low.type = ptr_type();
                         return low;
                     }

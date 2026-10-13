@@ -8,20 +8,20 @@ The call omits the receiver. The program below returns 42.
 
 ```c
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func Point::sum(self this, extra int) int {
+func Point::sum(self this, extra i32) i32 {
     return self.x + self.y + extra;
 }
 
-func Point::add(self *this, dx int, dy int) void {
+func Point::add(self *this, dx i32, dy i32) void {
     self.x = self.x + dx;
     self.y = self.y + dy;
 }
 
-func main() int {
+func main() i32 {
     var p Point;
     p.x = 10;
     p.y = 10;
@@ -36,18 +36,18 @@ func main() int {
 
 ```c
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func Point::read(self ?*this) int {
+func Point::read(self ?*this) i32 {
     if (self == null) {
         return 0;
     }
     return self.x;
 }
 
-func main() int {
+func main() i32 {
     var p Point;
     p.x = 40;
     p.y = 2;
@@ -62,7 +62,7 @@ Every file in the package can call the method. It is not exported, so another pa
 
 ## Generic methods
 
-A method on a generic struct names that struct's parameters. `func Vec[T]::get(self *this, i int) T` is the method on `type Vec[T type] struct`. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. The names match the struct, in the same order. Leaving the list out is reported as `type mismatch`. A different name is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. A struct that is not generic keeps `func Point::sum`. `func Point[T]::sum` is reported as `type mismatch`.
+A method on a generic struct names that struct's parameters. `func Vec[T]::get(self *this, i i32) T` is the method on `type Vec[T type] struct`. `type Buf[N i32, T type] struct` uses `func Buf[N, T]::get`. The names match the struct, in the same order. Leaving the list out is reported as `type mismatch`. A different name is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. A struct that is not generic keeps `func Point::sum`. `func Point[T]::sum` is reported as `type mismatch`.
 
 ```c
 type Vec[T type] struct {
@@ -73,18 +73,18 @@ func Vec[T]::get(self this) T {
     return self.n;
 }
 
-type Buf[N int, T type] struct {
+type Buf[N i32, T type] struct {
     value T;
 };
 
-func Buf[N, T]::len(self this) int {
+func Buf[N, T]::len(self this) i32 {
     return N;
 }
 
-func main() int {
-    var v Vec[int];
+func main() i32 {
+    var v Vec[i32];
     v.n = 38;
-    var b Buf[4, int];
+    var b Buf[4, i32];
     return v.get() + b.len();
 }
 ```
@@ -95,18 +95,18 @@ A function on the struct with no `this` parameter is static. The call names the 
 
 ```c
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func Point::make(x int, y int) Point {
+func Point::make(x i32, y i32) Point {
     var p Point;
     p.x = x;
     p.y = y;
     return p;
 }
 
-func main() int {
+func main() i32 {
     var direct = Point.make(40, 1);
     var ptr = Point.make;
     var p = ptr(0, 2);
@@ -124,34 +124,34 @@ A trait is a list of methods. The receiver is implicit and is omitted from the t
 
 ```c
 type Shape trait {
-    func area() int;
-    func grow(n int) void;
+    func area() i32;
+    func grow(n i32) void;
 };
 
 type Rect struct {
-    w int;
-    h int;
+    w i32;
+    h i32;
 };
 
-func Rect::area(self this) int {
+func Rect::area(self this) i32 {
     return self.w * self.h;
 }
 
-func Rect::grow(self *this, n int) void {
+func Rect::grow(self *this, n i32) void {
     self.w = self.w + n;
     self.h = self.h + n;
 }
 
-func measure(s *Shape) int {
+func measure(s *Shape) i32 {
     return s.area();
 }
 
-func apply(s *Shape, n int) int {
+func apply(s *Shape, n i32) i32 {
     s.grow(n);
     return measure(s);
 }
 
-func main() int {
+func main() i32 {
     var r Rect;
     r.w = 5;
     r.h = 6;
@@ -178,14 +178,14 @@ A trait with one method also accepts an anonymous function. The function's param
 
 ```c
 type Adder trait {
-    func apply(n int) int;
+    func apply(n i32) i32;
 };
 
-func twice(a Adder, n int) int {
+func twice(a Adder, n i32) i32 {
     return a.apply(n) + a.apply(n);
 }
 
-func main() int {
+func main() i32 {
     return twice((n) { return n + 1; }, 20);
 }
 ```
@@ -194,29 +194,29 @@ func main() int {
 
 ```c
 type Adder trait {
-    func apply(n int) int;
+    func apply(n i32) i32;
 };
 
 type Counter struct {
-    base int;
+    base i32;
 };
 
-func through(a *Adder, n int) int {
+func through(a *Adder, n i32) i32 {
     return a.apply(n);
 }
 
-func Counter::add(self *this, a Adder) int {
+func Counter::add(self *this, a Adder) i32 {
     return self.base + a.apply(1);
 }
 
-func Counter::forward(a *Adder, n int) int {
+func Counter::forward(a *Adder, n i32) i32 {
     return through(a, n);
 }
 
-func main() int {
+func main() i32 {
     var c Counter;
     c.base = 6;
-    var from_method = c.add(func (n int) int { return n; });
+    var from_method = c.add(func (n i32) i32 { return n; });
     var from_static = Counter.forward((n) { return n + 1; }, 4);
     return from_method + from_static;
 }

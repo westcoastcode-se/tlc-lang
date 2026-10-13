@@ -5,21 +5,21 @@ type ShapeType enum {
 
 type Shape union(ShapeType) {
     Circle struct {
-        radius int;
+        radius i32;
     };
     Rectangle struct {
-        width int;
-        height int;
+        width i32;
+        height i32;
     };
 }
 
 type Circle struct {
-    radius int;
+    radius i32;
 }
 
 type Rectangle struct {
-    width int;
-    height int;
+    width i32;
+    height i32;
 }
 
 type Named union(ShapeType) {
@@ -33,11 +33,11 @@ type Kind enum {
 }
 
 type One struct {
-    n int;
+    n i32;
 }
 
 type Two struct {
-    n int;
+    n i32;
 }
 
 type Pick union(Kind) {
@@ -65,7 +65,7 @@ type Wide union(WideKind) {
 
 var g Shape = {.Rectangle = {.width = 4, .height = 5}};
 
-func main() int {
+func main() i32 {
     var s Shape = {.Circle = {.radius = 1}};
     if (ShapeType(s) != ShapeType.Circle || s.Circle.radius != 1) {
         return 1;

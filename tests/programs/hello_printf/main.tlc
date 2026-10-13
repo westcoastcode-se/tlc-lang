@@ -1,7 +1,7 @@
-extern(abi="c") func printf(fmt *const char, ...) int;
-extern(abi="c") var slot int;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c") var slot i32;
 
-func main() int {
+func main() i32 {
     printf("hi\n");
     return 0;
 }

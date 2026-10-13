@@ -1,14 +1,14 @@
 package math;
 
-func inc(n int) int {
+func inc(n i32) i32 {
     return n + 1;
 }
 
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func Point::make(x int, y int) int {
+func Point::make(x i32, y i32) i32 {
     return x + y;
 }

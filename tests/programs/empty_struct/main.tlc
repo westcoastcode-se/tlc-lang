@@ -1,24 +1,24 @@
 type Empty struct {}
 
-func Empty::id(self this) int {
+func Empty::id(self this) i32 {
     return 7;
 }
 
-func Empty::bump(self *this) int {
+func Empty::bump(self *this) i32 {
     return 3;
 }
 
 type Marker trait {
-    func id() int;
+    func id() i32;
 }
 
-func take(value Marker) int {
+func take(value Marker) i32 {
     return value.id();
 }
 
 type Tag[T type] struct {}
 
-func Tag[T]::id(self this) int {
+func Tag[T]::id(self this) i32 {
     return 1;
 }
 
@@ -28,12 +28,12 @@ func keep[T type](value T) T {
 
 type Hold struct {
     tag Empty;
-    n int;
+    n i32;
 }
 
 extern type Plain struct {}
 
-func main() int {
+func main() i32 {
     var e Empty;
     if (sizeof(Empty) != 0 || sizeof(e) != 0) {
         return 1;
@@ -44,7 +44,7 @@ func main() int {
     if (take(e) != 7) {
         return 3;
     }
-    var tag Tag[int];
+    var tag Tag[i32];
     if (sizeof(tag) != 0 || tag.id() != 1 || take(tag) != 1) {
         return 4;
     }

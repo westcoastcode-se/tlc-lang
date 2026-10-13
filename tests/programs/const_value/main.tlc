@@ -1,11 +1,11 @@
-func main() int {
+func main() i32 {
     var n u8 = 7;
     const value = 40 + 2;
     var p *const u8 = &n;
     if (value != 42 || *p != 7) {
         return 1;
     }
-    var q *const int = &value;
+    var q *const i32 = &value;
     if (*q != 42) {
         return 2;
     }

@@ -3,6 +3,6 @@ func id[T type](value T) T {
     return value;
 }
 
-func main() int {
-    return id(40) + id[int](2);
+func main() i32 {
+    return id(40) + id[i32](2);
 }

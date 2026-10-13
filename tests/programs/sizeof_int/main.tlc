@@ -1,8 +1,8 @@
-func main() int {
-    var n int;
-    var c char;
+func main() i32 {
+    var n i32;
+    var c u8;
     n = 0;
     c = 0;
-    return sizeof(int) - sizeof n + sizeof(n) + sizeof(char) - sizeof c + sizeof(*int) - sizeof(&n) +
-           sizeof(*void) - sizeof(*char) + sizeof(*void) - 8;
+    return sizeof(i32) - sizeof n + sizeof(n) + sizeof(u8) - sizeof c + sizeof(*i32) - sizeof(&n) +
+           sizeof(*void) - sizeof(*u8) + sizeof(*void) - 8;
 }

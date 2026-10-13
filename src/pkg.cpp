@@ -625,7 +625,7 @@ class Resolver {
             FunctionDecl fn;
             fn.exported = true;
             fn.name = name;
-            fn.return_type = const_bytes ? "u8" : "char";
+            fn.return_type = "u8";
             fn.indirections = 1;
             fn.const_pointee = const_bytes ? 1u : 0u;
             ResultSlot slot;

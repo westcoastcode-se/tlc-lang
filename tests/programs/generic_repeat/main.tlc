@@ -1,10 +1,10 @@
-func repeat[N int, T type](value T) [N]T {
+func repeat[N i32, T type](value T) [N]T {
     assert(N > 0, "empty");
     var out [N]T;
     out[0] = value;
     return out;
 }
 
-func main() int {
+func main() i32 {
     return repeat[4](40)[0] + repeat[2](2)[0];
 }

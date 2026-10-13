@@ -2,22 +2,22 @@
 
 [Index](README.md) · [Previous: Builtin](builtin.md) · [Next: Methods](methods.md) · [Grammar](grammar.md)
 
-A struct definition is `type Name struct`. Variables, parameters, results, and fields then use the bare name. A pointer is written `*Point` and `*int`, in a parameter, a result, and every other type position. `?*Point` may be `null`. `*Point` may not. A field is a name, then its type, in the same order as `var`: `x int`, `next ?*Node`, `home *Address`, `raw [8]char`. A field ends with `;`. The semicolon after `}` may be omitted.
+A struct definition is `type Name struct`. Variables, parameters, results, and fields then use the bare name. A pointer is written `*Point` and `*i32`, in a parameter, a result, and every other type position. `?*Point` may be `null`. `*Point` may not. A field is a name, then its type, in the same order as `var`: `x i32`, `next ?*Node`, `home *Address`, `raw [8]u8`. A field ends with `;`. The semicolon after `}` may be omitted.
 
 ```c
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func make(x int, y int) Point {
+func make(x i32, y i32) Point {
     var p Point;
     p.x = x;
     p.y = y;
     return p;
 }
 
-func main() int {
+func main() i32 {
     var p Point;
     p = make(40, 2);
     var q *Point = &p;
@@ -29,7 +29,7 @@ The program returns 42.
 
 ## Generics
 
-`type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[int]`. A method is `func Vec[T]::get(self *this, i int) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. `Vec` with no arguments is reported as `type mismatch`. `Vec[int]` and `Vec[char]` are different types. Assigning one to the other, or passing one where the parameter is the other, is reported as `type mismatch`.
+`type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[i32]`. A method is `func Vec[T]::get(self *this, i i32) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N i32, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. `Vec` with no arguments is reported as `type mismatch`. `Vec[i32]` and `Vec[u8]` are different types. Assigning one to the other, or passing one where the parameter is the other, is reported as `type mismatch`.
 
 ```c
 type Vec[T type] struct {
@@ -40,8 +40,8 @@ func Vec[T]::get(self this) T {
     return self.n;
 }
 
-func main() int {
-    var v Vec[int];
+func main() i32 {
+    var v Vec[i32];
     v.n = 42;
     return v.get();
 }
@@ -53,7 +53,7 @@ A struct may contain a pointer to itself.
 
 ```c
 type Node struct {
-    n int;
+    n i32;
     next *Node;
 };
 ```
@@ -62,7 +62,7 @@ type Node struct {
 
 ```c
 type Wide struct(align=16) {
-    n int;
+    n i32;
 }
 ```
 
@@ -73,19 +73,19 @@ An empty struct has no fields. `sizeof` is 0. It can have methods, so a generic 
 ```c
 type Empty struct {}
 
-func Empty::id(self this) int {
+func Empty::id(self this) i32 {
     return 7;
 }
 
 type Marker trait {
-    func id() int;
+    func id() i32;
 }
 
-func take(value Marker) int {
+func take(value Marker) i32 {
     return value.id();
 }
 
-func main() int {
+func main() i32 {
     var value Empty;
     return take(value);
 }
@@ -101,15 +101,15 @@ A struct value names its fields. The type comes from the place the value is used
 
 ```c
 type Inner struct {
-    inner_value int;
+    inner_value i32;
 };
 
 type Box struct {
-    value int;
+    value i32;
     complex Inner;
 };
 
-func main() int {
+func main() i32 {
     var box Box = {.value = 10, .complex = {.inner_value = 20,},};
     return box.value + box.complex.inner_value;
 }
@@ -123,13 +123,13 @@ An `extern(abi="c") struct` is marked so it can be used with an `extern(abi="c")
 
 ```c
 extern(abi="c") type Pair struct {
-    a int;
-    b int;
+    a i32;
+    b i32;
 };
 
 extern(abi="c") type SDL_Window struct {}
 
-extern(abi="c") func make_pair(a int, b int) Pair;
+extern(abi="c") func make_pair(a i32, b i32) Pair;
 extern(abi="c") func SDL_DestroyWindow(window *SDL_Window) void;
 ```
 
@@ -169,7 +169,7 @@ type Named union(ShapeType) {
     Rectangle Rectangle;
 };
 
-func main() int {
+func main() i32 {
     var shape Shape = {.Circle = {.radius = 1.0}};
     if (ShapeType(shape) != ShapeType.Circle) {
         return 0;
@@ -183,7 +183,7 @@ func main() int {
 }
 ```
 
-The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `int` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0.
+The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `i32` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0.
 
 ### C unions
 
@@ -191,16 +191,16 @@ The value stores one payload and the enum tag after it. Every field starts at of
 
 ```c
 extern(abi="c") type Num union {
-    n int;
-    m int;
+    n i32;
+    m i32;
 };
 
 extern(abi="c") type Word union {
-    n int;
-    raw [8]char;
+    n i32;
+    raw [8]u8;
 };
 
-func main() int {
+func main() i32 {
     var u Num;
     u.n = 4;
     return u.m;
@@ -211,19 +211,19 @@ func main() int {
 
 ## Fields and pointers
 
-Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `**Point` and `*int` are left as they are, and the access is reported as `type mismatch`. A `?*Point` is reported as `type mismatch` until the name is known to be non-null, or until that use is written `p!.field`. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
+Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `**Point` and `*i32` are left as they are, and the access is reported as `type mismatch`. A `?*Point` is reported as `type mismatch` until the name is known to be non-null, or until that use is written `p!.field`. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
 
 ## Arrays
 
-An array length is a positive decimal `int` literal.
+An array length is a positive decimal `i32` literal.
 
 ```c
-func add4(p *int) int {
+func add4(p *i32) i32 {
     return p[0] + p[1] + p[2] + p[3];
 }
 
-func main() int {
-    var a [4]int;
+func main() i32 {
+    var a [4]i32;
     a[0] = 10;
     a[1] = 20;
     a[2] = 7;
@@ -232,7 +232,7 @@ func main() int {
 }
 ```
 
-The array becomes a pointer when it is passed. A string is an array of `char` and can be passed to `*char`. The index has type `int`.
+The array becomes a pointer when it is passed. A string is an array of `u8` and can be passed to `*u8`. The index has type `i32`.
 
 ## Export
 
@@ -241,7 +241,7 @@ An exported struct is named with the package and without the `struct` keyword.
 ```c
 import "geom";
 
-func main() int {
+func main() i32 {
     var p geom.Point;
     p.x = 40;
     p.y = 2;
@@ -253,11 +253,11 @@ func main() int {
 package geom;
 
 export type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-export func sum(p Point) int {
+export func sum(p Point) i32 {
     return p.x + p.y;
 }
 ```

@@ -1,10 +1,10 @@
 import "math";
 
 type Pair struct {
-    n int;
+    n i32;
 };
 
-func main() int {
+func main() i32 {
     var p Pair;
     p.n = 40;
     return math.add(p.n, 2);

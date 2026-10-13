@@ -1,10 +1,10 @@
-func main() int {
-    var text *char = `hello
+func main() i32 {
+    var text *u8 = `hello
 world`;
     if (text[0] != 'h' || text[5] != '\n' || text[6] != 'w' || text[11] != 0) {
         return 1;
     }
-    var raw *char = `a\n"b`;
+    var raw *u8 = `a\n"b`;
     if (raw[0] != 'a' || raw[1] != '\\' || raw[2] != 'n' || raw[3] != '"' || raw[4] != 'b' || raw[5] != 0) {
         return 2;
     }

@@ -1,7 +1,7 @@
-func main() int {
+func main() i32 {
     var a bool;
     var b bool;
-    var n int;
+    var n i32;
     a = true;
     b = false;
     n = 0;

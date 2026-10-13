@@ -1,4 +1,4 @@
-func main() int {
+func main() i32 {
     var data [4]i32;
     data[0] = 22;
     data[1] = 1;

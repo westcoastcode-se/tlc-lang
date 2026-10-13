@@ -1,7 +1,7 @@
-func main() int {
-    var p ?*int;
-    var x int;
-    var n int;
+func main() i32 {
+    var p ?*i32;
+    var x i32;
+    var n i32;
     x = 7;
     p = null;
     n = 0;

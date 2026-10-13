@@ -1,15 +1,15 @@
-var acc int;
+var acc i32;
 
-func put(n int) void {
+func put(n i32) void {
     acc = acc * 3 + n;
 }
 
 type Box struct {
-    v int;
-    w int;
+    v i32;
+    w i32;
 };
 
-func Box::put(self this, n int) void {
+func Box::put(self this, n i32) void {
     acc = acc * 3 + self.v + n;
 }
 
@@ -17,18 +17,18 @@ func Box::touch(self *this) void {
     acc = acc + self.w;
 }
 
-func main() int {
-    acc = acc + func() int {
+func main() i32 {
+    acc = acc + func() i32 {
         return 0;
     }();
-    func inner(n int) void {
+    func inner(n i32) void {
         acc = acc * 3 + n;
     }
     {
         defer func() {
         }();
-        var arg int = 1;
-        defer func(v int) {
+        var arg i32 = 1;
+        defer func(v i32) {
             acc = acc * 3 + v;
         }(arg);
         arg = 4;
@@ -43,11 +43,11 @@ func main() int {
         if (0) {
             defer put(2);
         }
-        for (var k int = 0; k < 1; k = k + 1) {
+        for (var k i32 = 0; k < 1; k = k + 1) {
             defer put(1);
             continue;
         }
-        var i int = 0;
+        var i i32 = 0;
         while (i < 1) {
             defer put(2);
             i = 1;

@@ -1,6 +1,6 @@
-var n int = 5;
+var n i32 = 5;
 
-func main() int {
-    var n int = 7;
+func main() i32 {
+    var n i32 = 7;
     return n;
 }

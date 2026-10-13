@@ -1,7 +1,7 @@
 package math;
 
-type Point struct { x int; y int; };
+type Point struct { x i32; y i32; };
 
-func Point::sum(self this) int {
+func Point::sum(self this) i32 {
     return self.x + self.y;
 }

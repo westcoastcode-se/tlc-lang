@@ -6,11 +6,11 @@ type Other enum {
 }
 
 type Left struct {
-    n int;
+    n i32;
 }
 
 type Right struct {
-    n int;
+    n i32;
 }
 
 type Pair union(Other) {

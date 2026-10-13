@@ -1,17 +1,17 @@
-func combine(op func (int, int) int) int {
+func combine(op func (i32, i32) i32) i32 {
     return op(4, 6);
 }
 
 type Box struct {
-    n int;
+    n i32;
 }
 
-func Box::map(self this, op func (int) int) int {
+func Box::map(self this, op func (i32) i32) i32 {
     return op(self.n);
 }
 
-func main() int {
-    var full = combine(func (a int, b int) int { return a + b; });
+func main() i32 {
+    var full = combine(func (a i32, b i32) i32 { return a + b; });
     var brief = combine((a, b) { return a * b - 2; });
     var box Box;
     box.n = 40;

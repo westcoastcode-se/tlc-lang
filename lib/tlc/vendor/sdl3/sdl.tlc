@@ -32,14 +32,14 @@ export extern(abi="c") type SDL_QuitEvent struct {
     timestamp u64;
 }
 
-// Same layout as SDL_KeyboardEvent. `scancode` is the C enum, an int.
+// Same layout as SDL_KeyboardEvent. `scancode` is the C enum, an i32.
 export extern(abi="c") type SDL_KeyboardEvent struct {
     kind u32;
     reserved u32;
     timestamp u64;
     windowID u32;
     which u32;
-    scancode int;
+    scancode i32;
     keycode u32;
     mod u16;
     raw u16;
@@ -91,10 +91,10 @@ export extern(abi="c") type SdlGlAttr enum {
 
 export extern(abi="c") func SDL_Init(flags u32) bool;
 export extern(abi="c") func SDL_Quit() void;
-export extern(abi="c") func SDL_GetError() *char;
-export extern(abi="c") func SDL_CreateWindow(title *const char, w int, h int, flags u64) *SDL_Window;
+export extern(abi="c") func SDL_GetError() *u8;
+export extern(abi="c") func SDL_CreateWindow(title *const u8, w i32, h i32, flags u64) *SDL_Window;
 export extern(abi="c") func SDL_DestroyWindow(window *SDL_Window) void;
-export extern(abi="c") func SDL_GL_SetAttribute(attr int, value int) bool;
+export extern(abi="c") func SDL_GL_SetAttribute(attr i32, value i32) bool;
 export extern(abi="c") func SDL_GL_CreateContext(window *SDL_Window) *SDL_GLContextState;
 export extern(abi="c") func SDL_GL_MakeCurrent(window *SDL_Window, context *SDL_GLContextState) bool;
 export extern(abi="c") func SDL_GL_SwapWindow(window *SDL_Window) bool;

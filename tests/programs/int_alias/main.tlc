@@ -1,8 +1,8 @@
-func read32(p *i32) int {
+func read32(p *i32) i32 {
     return *p;
 }
 
-func main() int {
+func main() i32 {
     if (sizeof(i8) != 1 || sizeof(u8) != 1) {
         return 1;
     }
@@ -37,7 +37,7 @@ func main() int {
     if (wide / 100000 / 100000 != 1) {
         return 9;
     }
-    var x int = 40;
+    var x i32 = 40;
     var extra u64 = 2;
     return read32(&x) + extra;
 }

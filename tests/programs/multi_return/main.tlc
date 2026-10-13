@@ -1,17 +1,17 @@
 type Box struct {
-    v int;
+    v i32;
 };
 
-func Box::split(self this) (int, int) {
+func Box::split(self this) (i32, i32) {
     return self.v, self.v + 1;
 }
 
-func add(x int, y int) (int, int) {
+func add(x i32, y i32) (i32, i32) {
     return x + y, x;
 }
 
-func main() int {
-    func pair(n int) (int, int) {
+func main() i32 {
+    func pair(n i32) (i32, i32) {
         return n + 2, n;
     }
     sum, orig := add(20, 22);
@@ -20,7 +20,7 @@ func main() int {
     var box Box;
     box.v = 3;
     var left, right = box.split();
-    var z, w = func() (int, int) {
+    var z, w = func() (i32, i32) {
         return 0, 0;
     }();
     p, q := pair(0);

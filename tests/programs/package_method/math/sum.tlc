@@ -1,6 +1,6 @@
 package math;
 
-export func total() int {
+export func total() i32 {
     var p Point;
     p.x = 40;
     p.y = 2;

@@ -12,4 +12,4 @@ languages = ["TLC"]
 
 [grammars.tlc]
 repository = "file:///home/per/Projects/test-lang/plugins/zed/grammars/tree-sitter-tlc"
-rev = "7e174536686956511c58146265d2c3e288ecea5d"
+rev = "3aa997b226d7c4facadc19ccca60be9db88b7600"

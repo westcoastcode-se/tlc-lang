@@ -2078,8 +2078,7 @@ const char *kKeywords[] = {"func",    "type",    "var",     "const",   "struct",
                            "return",  "break",   "continue","defer",   "import", "package", "export", "static",
                            "extern",  "test",    "assert",  "sizeof",  "typeof", "true",    "false",  "null"};
 
-const char *kBuiltinTypes[] = {"int",  "char", "bool", "void", "float", "double", "short", "long", "uint", "ulong",
-                               "i8",   "u8",   "i16",  "u16",   "i32",   "u32",    "i64",   "u64",  "f32",  "f64"};
+const char *kBuiltinTypes[] = {"bool", "void", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64"};
 
 bool is_space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
 

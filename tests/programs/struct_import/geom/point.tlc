@@ -1,10 +1,10 @@
 package geom;
 
 export type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-export func sum(p Point) int {
+export func sum(p Point) i32 {
     return p.x + p.y;
 }

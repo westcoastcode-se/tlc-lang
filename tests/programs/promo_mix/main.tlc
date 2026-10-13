@@ -1,10 +1,10 @@
-func main() int {
-    var c char;
-    var s short;
-    var n int;
-    var u uint;
-    var u2 uint;
-    var s2 int;
+func main() i32 {
+    var c u8;
+    var s i16;
+    var n i32;
+    var u u32;
+    var u2 u32;
+    var s2 i32;
     c = 20;
     s = 20;
     n = 2;

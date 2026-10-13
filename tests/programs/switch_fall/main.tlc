@@ -1,6 +1,6 @@
-func main() int {
-    var n int;
-    var x int;
+func main() i32 {
+    var n i32;
+    var x i32;
     n = 1;
     x = 0;
     switch (n) {

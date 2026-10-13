@@ -185,7 +185,7 @@ llvm::DIType *CodeGen::debug_type(const Lowered &low) {
         di_structs_.emplace(low.struct_id, type);
         return type;
     }
-    std::string name = "int";
+    std::string name = "i32";
     uint64_t bits = 32;
     unsigned encoding = llvm::dwarf::DW_ATE_signed;
     if (low.elem_bool) {
@@ -194,10 +194,10 @@ llvm::DIType *CodeGen::debug_type(const Lowered &low) {
         encoding = llvm::dwarf::DW_ATE_boolean;
     } else if (low.elem_float) {
         bits = low.elem_bits >= 64 ? 64 : 32;
-        name = bits >= 64 ? "double" : "float";
+        name = bits >= 64 ? "f64" : "f32";
         encoding = llvm::dwarf::DW_ATE_float;
     } else if (low.elem_char) {
-        name = "char";
+        name = "u8";
         bits = 8;
         encoding = llvm::dwarf::DW_ATE_unsigned_char;
     } else if (low.elem_bits == 8) {
@@ -213,7 +213,7 @@ llvm::DIType *CodeGen::debug_type(const Lowered &low) {
         bits = 64;
         encoding = low.elem_unsigned ? llvm::dwarf::DW_ATE_unsigned : llvm::dwarf::DW_ATE_signed;
     } else if (low.elem_unsigned) {
-        name = "uint";
+        name = "u32";
         encoding = llvm::dwarf::DW_ATE_unsigned;
     }
     if (const auto found = di_basic_.find(name); found != di_basic_.end()) {

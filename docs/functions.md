@@ -5,11 +5,11 @@
 A function starts with `func`, then the name, then the parameters, then the result type. A parameter is a name followed by its type. An empty parameter list means there are no parameters. There is one `main`.
 
 ```c
-func add(a int, b int) int {
+func add(a i32, b i32) i32 {
     return a + b;
 }
 
-func main() int {
+func main() i32 {
     return add(20, 22);
 }
 ```
@@ -17,9 +17,9 @@ func main() int {
 A function may be declared first and defined later, with the same type. Two bodies for the same function are reported as `redefinition`.
 
 ```c
-func add(a int, b int) int;
+func add(a i32, b i32) i32;
 
-func add(a int, b int) int {
+func add(a i32, b i32) i32 {
     return a + b;
 }
 ```
@@ -29,7 +29,7 @@ func add(a int, b int) int {
 The result list is parenthesized, and each result is a type. One type in parentheses is the same as writing that type alone. `return` lists one expression per result.
 
 ```c
-func add(x int, y int) (int, int) {
+func add(x i32, y i32) (i32, i32) {
     return x + y, x;
 }
 ```
@@ -37,11 +37,11 @@ func add(x int, y int) (int, int) {
 The call is a tuple of its results. One name binds that tuple. Several names unpack it, and the same form unpacks a tuple that is already stored.
 
 ```c
-func add(x int, y int) (int, int) {
+func add(x i32, y i32) (i32, i32) {
     return x + y, x;
 }
 
-func main() int {
+func main() i32 {
     sum, orig := add(20, 22);
     var extra, base = add(1, 1);
     extra, base = add(0, 0);
@@ -58,8 +58,8 @@ func main() int {
 A function may be written inside a block. Its name is visible from that declaration through the end of the block, including blocks nested inside it. It has a body in that block. The function can call functions already in scope, and it can use globals. An anonymous function, used from `defer` or called directly, is that same kind of function.
 
 ```c
-func main() int {
-    func add(a int, b int) int {
+func main() i32 {
+    func add(a i32, b i32) i32 {
         return a + b;
     }
     return add(20, 22);
@@ -68,22 +68,22 @@ func main() int {
 
 ## Generics
 
-A generic function names its parameters in brackets. `T type` is a type. `N int` is a compile-time integer. `T Shape` is a type that must have the methods of the trait `Shape`. One body is specialized for each call. There is no `impl` and no runtime table.
+A generic function names its parameters in brackets. `T type` is a type. `N i32` is a compile-time integer. `T Shape` is a type that must have the methods of the trait `Shape`. One body is specialized for each call. There is no `impl` and no runtime table.
 
 ```c
 func id[T type](value T) T {
     return value;
 }
 
-func repeat[N int, T type](value T) [N]T {
+func repeat[N i32, T type](value T) [N]T {
     assert(N > 0, "empty");
     var out [N]T;
     out[0] = value;
     return out;
 }
 
-func main() int {
-    return id(40) + id[int](0) + repeat[4](2)[0];
+func main() i32 {
+    return id(40) + id[i32](0) + repeat[4](2)[0];
 }
 ```
 
@@ -91,23 +91,23 @@ func main() int {
 
 ```c
 type Shape trait {
-    func area() int;
+    func area() i32;
 };
 
 type Rect struct {
-    w int;
-    h int;
+    w i32;
+    h i32;
 };
 
-func Rect::area(self this) int {
+func Rect::area(self this) i32 {
     return self.w * self.h;
 }
 
-func measure[T Shape](value T) int {
+func measure[T Shape](value T) i32 {
     return value.area();
 }
 
-func main() int {
+func main() i32 {
     var r Rect;
     r.w = 6;
     r.h = 7;
@@ -115,11 +115,11 @@ func main() int {
 }
 ```
 
-`id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[int](1)` writes the type. A type that cannot be inferred is reported as `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[int]` and `Vec[char]` for `Vec[T]`, is reported as `type mismatch`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
+`id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[i32](1)` writes the type. A type that cannot be inferred is reported as `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[i32]` and `Vec[u8]` for `Vec[T]`, is reported as `type mismatch`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
 
 ### Type packs
 
-`[...U]` is a type pack. It is the last parameter in the brackets, so `func head[T type, ...U](value T, rest U) T` is accepted. A pack before another parameter, as in `[...U, T type]`, is reported as `not supported yet`. One argument type makes `U` that type, so `*U` is a pointer to it. Several argument types make `U` a tuple. `(40)` is one value, the same call as `keep(40)`. `(40, 2)` is a tuple. The element types are the types of the values before promotion, so `'a'` stays `char`.
+`[...U]` is a type pack. It is the last parameter in the brackets, so `func head[T type, ...U](value T, rest U) T` is accepted. A pack before another parameter, as in `[...U, T type]`, is reported as `not supported yet`. One argument type makes `U` that type, so `*U` is a pointer to it. Several argument types make `U` a tuple. `(40)` is one value, the same call as `keep(40)`. `(40, 2)` is a tuple. The element types are the types of the values before promotion, so `'a'` stays `u8`.
 
 ```c
 func keep[...U](args U) U {
@@ -130,58 +130,58 @@ func first[...U](args U) typeof(args[0]) {
     return args[0];
 }
 
-func main() int {
+func main() i32 {
     var n = keep(40);
-    var written = keep[int](1);
+    var written = keep[i32](1);
     a, b := keep((40, 2));
     x, y := keep((40, 'a'));
-    u, v := keep[int, char]((1, 'b'));
+    u, v := keep[i32, u8]((1, 'b'));
     return n + written + a + first((7, 8)) + u + v;
 }
 ```
 
-`keep[int](40)` and `keep[int, char]((40, 'a'))` write the types. A value in that list, such as `keep[4]`, is reported as `type mismatch`. `head(40, (1, 2))` infers `T` and `U`. `head[int, int](40, 2)` writes them. The type arguments before `...U` bind the parameters in front of the pack, and the rest fill `U`. `first(40)` is reported as `type mismatch`: `args` is `int`, and `args[0]` reads a tuple. The index is a constant. `return args` returns the tuple, and so does `return keep((1, 2))` from a function with those two results. `a, b :=` unpacks them, and so does `var value1, value2 = value` when `value` holds that tuple. `var value = (40, 2)` binds the tuple itself. `[...U]` is not the `...` that `builtin.va()` reads.
+`keep[i32](40)` and `keep[i32, u8]((40, 'a'))` write the types. A value in that list, such as `keep[4]`, is reported as `type mismatch`. `head(40, (1, 2))` infers `T` and `U`. `head[i32, i32](40, 2)` writes them. The type arguments before `...U` bind the parameters in front of the pack, and the rest fill `U`. `first(40)` is reported as `type mismatch`: `args` is `i32`, and `args[0]` reads a tuple. The index is a constant. `return args` returns the tuple, and so does `return keep((1, 2))` from a function with those two results. `a, b :=` unpacks them, and so does `var value1, value2 = value` when `value` holds that tuple. `var value = (40, 2)` binds the tuple itself. `[...U]` is not the `...` that `builtin.va()` reads.
 
 ## `typeof` as a result
 
-A result may be `typeof(expression)`. The expression is checked after the parameters exist, so `func id(x int) typeof(x)` has result `int`. That spelling is the result type. An expression `typeof(x)` still has type `Type`.
+A result may be `typeof(expression)`. The expression is checked after the parameters exist, so `func id(x i32) typeof(x)` has result `i32`. That spelling is the result type. An expression `typeof(x)` still has type `Type`.
 
 ```c
-func id(x int) typeof(x) {
+func id(x i32) typeof(x) {
     return x;
 }
 
-func main() int {
+func main() i32 {
     return id(42);
 }
 ```
 
 ## Structs and arrays
 
-Structs are passed and returned by value. An array parameter becomes a pointer, both as `a int[]` and as `a int[4]`. A function may return an array. The return expression is a local array name, as in `return out` for `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
+Structs are passed and returned by value. An array parameter becomes a pointer, both as `a i32[]` and as `a i32[4]`. A function may return an array. The return expression is a local array name, as in `return out` for `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
 
 ```c
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func sum(p Point) int {
+func sum(p Point) i32 {
     return p.x + p.y;
 }
 
-func pair() [2]int {
-    var out [2]int;
+func pair() [2]i32 {
+    var out [2]i32;
     out[0] = 40;
     out[1] = 2;
     return out;
 }
 
-func head(a int[2]) int {
+func head(a i32[2]) i32 {
     return a[0];
 }
 
-func main() int {
+func main() i32 {
     var p Point;
     p.x = 20;
     p.y = 22;
@@ -191,16 +191,16 @@ func main() int {
 
 ## Tests
 
-`test "name" { ... }` is a file-scope test. The body is a function that returns `int`. Reaching the end passes, and so does `return 0`. Any other `return` fails that test. `return;` is reported as `type mismatch`. The same test name twice in one file is reported as `redefinition`.
+`test "name" { ... }` is a file-scope test. The body is a function that returns `i32`. Reaching the end passes, and so does `return 0`. Any other `return` fails that test. `return;` is reported as `type mismatch`. The same test name twice in one file is reported as `redefinition`.
 
-`import "std/testing"` provides `testing.error`. It returns `1`. The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `double`.
+`import "std/testing"` provides `testing.error`. It returns `1`. The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `f64`.
 
 `testing.error` prints `builtin.trace()`, then the message. `builtin.trace` is the tlc calls that have not returned. Each line is `file:line:column: name`, oldest first, and the last line has no newline. `builtin.va` reads the extra arguments of the variadic function it is called from.
 
 ```c
 import "std/testing";
 
-func add(a int, b int) int {
+func add(a i32, b i32) i32 {
     return a + b;
 }
 
@@ -233,33 +233,33 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type does too. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
 ```c
-func add(a int, b int) int {
+func add(a i32, b i32) i32 {
     return a + b;
 }
 
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func Point::make(x int, y int) Point {
+func Point::make(x i32, y i32) Point {
     var p Point;
     p.x = x;
     p.y = y;
     return p;
 }
 
-type BinOp func (int, int) int;
+type BinOp func (i32, i32) i32;
 
 type Box struct {
-    op func (int) int;
+    op func (i32) i32;
 };
 
-func main() int {
+func main() i32 {
     var ptr = add;
     var maker = Point.make;
-    var typed func (int, int) int = (a, b) { return a + b; };
-    var none func () int = () { return 1; };
+    var typed func (i32, i32) i32 = (a, b) { return a + b; };
+    var none func () i32 = () { return 1; };
     var alias BinOp = add;
     var box Box = {.op = (n) { return n + 1; }};
     var p = maker(40, 1);
@@ -270,23 +270,23 @@ func main() int {
 A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
 
 ```c
-func dosomething(op func (int, int) int) int {
+func dosomething(op func (i32, i32) i32) i32 {
     return op(40, 2);
 }
 
-func main() int {
-    return dosomething(func (arg1 int, arg2 int) int { return arg1 + arg2; });
+func main() i32 {
+    return dosomething(func (arg1 i32, arg2 i32) i32 { return arg1 + arg2; });
 }
 ```
 
 The short form writes only the parameter names. Their types, and the result type, come from the function pointer:
 
 ```c
-func dosomething(op func (int, int) int) int {
+func dosomething(op func (i32, i32) i32) i32 {
     return op(40, 2);
 }
 
-func main() int {
+func main() i32 {
     return dosomething((arg1, arg2) { return arg1 + arg2; });
 }
 ```

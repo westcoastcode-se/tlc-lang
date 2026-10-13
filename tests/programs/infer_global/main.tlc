@@ -1,6 +1,6 @@
 var base = 20;
 
-func main() int {
+func main() i32 {
     var n = 40;
     var p = &n;
     if (*p != 40) {

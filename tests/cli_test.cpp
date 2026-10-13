@@ -70,7 +70,7 @@ int run_cli_tests() {
     const std::string if_step = "/tmp/tlc-if-step.tlc";
     {
         std::ofstream out(if_step);
-        out << "func main() int {\n"
+        out << "func main() i32 {\n"
                "    var n = 1;\n"
                "    if (n == 0) {\n"
                "        return 2;\n"
@@ -151,10 +151,10 @@ int run_cli_tests() {
     write_file("pick_a.c", "int pick(void) { return 7; }\n");
     write_file("pick_so.c", "int pick(void) { return 9; }\n");
     write_file("main.tlc",
-               "extern(abi=\"c\") func from_a() int;\n"
-               "extern(abi=\"c\") func from_so() int;\n"
-               "func main() int { return from_a() + from_so(); }\n");
-    write_file("pick.tlc", "extern(abi=\"c\") func pick() int;\nfunc main() int { return pick(); }\n");
+               "extern(abi=\"c\") func from_a() i32;\n"
+               "extern(abi=\"c\") func from_so() i32;\n"
+               "func main() i32 { return from_a() + from_so(); }\n");
+    write_file("pick.tlc", "extern(abi=\"c\") func pick() i32;\nfunc main() i32 { return pick(); }\n");
 
     const std::string dir_text = dir.path.string();
     auto cc = [&](const std::vector<std::string> &args) {
@@ -236,12 +236,12 @@ int run_cli_tests() {
     };
     write_at(vendor_root.path / "answer/answer.c", "int answer(void) { return 20; }\n");
     write_at(vendor_root.path / "answer/answer_so.c", "int answer(void) { return 22; }\n");
-    write_at(vendor_root.path / "answer/answer.tlc", "export extern(abi=\"c\") func answer() int;\n");
+    write_at(vendor_root.path / "answer/answer.tlc", "export extern(abi=\"c\") func answer() i32;\n");
     write_at(vendor_root.path / "onlyso/onlyso.c", "int onlyso(void) { return 22; }\n");
-    write_at(vendor_root.path / "onlyso/onlyso.tlc", "export extern(abi=\"c\") func onlyso() int;\n");
+    write_at(vendor_root.path / "onlyso/onlyso.tlc", "export extern(abi=\"c\") func onlyso() i32;\n");
     write_at(vendor_root.path / "combo/base.c", "int base(void) { return 20; }\n");
     write_at(vendor_root.path / "combo/combo.tlc",
-             "export extern(abi=\"c\") func base() int;\nexport extern(abi=\"c\") func bonus() int;\n");
+             "export extern(abi=\"c\") func base() i32;\nexport extern(abi=\"c\") func bonus() i32;\n");
     write_at(vendor_root.path / "combo/link", "../bonus/libbonus.a\n");
     write_at(vendor_root.path / "bonus/bonus.c", "int bonus(void) { return 22; }\n");
 
@@ -264,11 +264,11 @@ int run_cli_tests() {
     TempDir progs;
     progs.path = std::filesystem::temp_directory_path() / ("tlc-vendor-prog-" + std::to_string(getpid()));
     std::filesystem::create_directories(progs.path);
-    write_at(progs.path / "answer.tlc", "import \"vendor/answer\";\nfunc main() int { return answer.answer(); }\n");
-    write_at(progs.path / "onlyso.tlc", "import \"vendor/onlyso\";\nfunc main() int { return onlyso.onlyso(); }\n");
+    write_at(progs.path / "answer.tlc", "import \"vendor/answer\";\nfunc main() i32 { return answer.answer(); }\n");
+    write_at(progs.path / "onlyso.tlc", "import \"vendor/onlyso\";\nfunc main() i32 { return onlyso.onlyso(); }\n");
     write_at(progs.path / "combo.tlc",
-             "import \"vendor/combo\";\nfunc main() int { return combo.base() + combo.bonus(); }\n");
-    write_at(progs.path / "check.tlc", "import \"vendor/answer\";\nfunc main() int { return 0; }\n");
+             "import \"vendor/combo\";\nfunc main() i32 { return combo.base() + combo.bonus(); }\n");
+    write_at(progs.path / "check.tlc", "import \"vendor/answer\";\nfunc main() i32 { return 0; }\n");
     const std::vector<std::pair<std::string, std::string>> env = {{"TLC_LIB", vendor_text}};
 
     const tlc::test::Proc answer_run =
@@ -292,8 +292,8 @@ int run_cli_tests() {
     TempDir shadow;
     shadow.path = std::filesystem::temp_directory_path() / ("tlc-vendor-shadow-" + std::to_string(getpid()));
     std::filesystem::create_directories(shadow.path / "vendor" / "answer");
-    write_at(shadow.path / "vendor/answer/answer.tlc", "export func answer() int { return 5; }\n");
-    write_at(shadow.path / "main.tlc", "import \"vendor/answer\";\nfunc main() int { return answer.answer(); }\n");
+    write_at(shadow.path / "vendor/answer/answer.tlc", "export func answer() i32 { return 5; }\n");
+    write_at(shadow.path / "main.tlc", "import \"vendor/answer\";\nfunc main() i32 { return answer.answer(); }\n");
     const tlc::test::Proc shadow_run = tlc::test::spawn({bin, "--run", (shadow.path / "main.tlc").string()}, env);
     EXPECT(check, shadow_run.code == 5);
     EXPECT(check, shadow_run.err.empty());
@@ -302,8 +302,8 @@ int run_cli_tests() {
     plain.path = std::filesystem::temp_directory_path() / ("tlc-vendor-plain-" + std::to_string(getpid()));
     std::filesystem::create_directories(plain.path / "side");
     write_at(plain.path / "side/side.c", "int side(void) { return 3; }\n");
-    write_at(plain.path / "side/side.tlc", "export extern(abi=\"c\") func side() int;\n");
-    write_at(plain.path / "main.tlc", "import \"side\";\nfunc main() int { return side.side(); }\n");
+    write_at(plain.path / "side/side.tlc", "export extern(abi=\"c\") func side() i32;\n");
+    write_at(plain.path / "main.tlc", "import \"side\";\nfunc main() i32 { return side.side(); }\n");
     EXPECT(check, built({"cc", "-c", (plain.path / "side/side.c").string(), "-o", (plain.path / "side/side.o").string()}));
     EXPECT(check, built({"ar", "rcs", (plain.path / "side/libside.a").string(), (plain.path / "side/side.o").string()}));
     const tlc::test::Proc plain_run = tlc::test::spawn({bin, "--run", (plain.path / "main.tlc").string()}, env);

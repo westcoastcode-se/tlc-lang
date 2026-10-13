@@ -1,11 +1,11 @@
-var calls int = 0;
+var calls i32 = 0;
 
-func bump() int {
+func bump() i32 {
     calls = calls + 1;
     return 1;
 }
 
-func main() int {
+func main() i32 {
     if (0 && bump()) {}
     if (1 || bump()) {}
     if (1 && bump()) {}

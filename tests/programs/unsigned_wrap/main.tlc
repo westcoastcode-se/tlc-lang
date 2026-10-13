@@ -1,5 +1,5 @@
-func main() int {
-    var n uint;
+func main() i32 {
+    var n u32;
     n = 0;
     n = n - 1;
     if (n < 1) {

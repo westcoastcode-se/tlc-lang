@@ -1,6 +1,6 @@
 import "math";
 
-func main() int {
+func main() i32 {
     math.n = 20;
     math.n = math.n + 22;
     return math.n;

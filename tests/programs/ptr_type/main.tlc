@@ -1,10 +1,10 @@
-func identity(p *int) int {
+func identity(p *i32) i32 {
     return *p;
 }
 
-func main() int {
-    var n int = 1;
-    var p *int = &n;
-    var pp **int = &p;
+func main() i32 {
+    var n i32 = 1;
+    var p *i32 = &n;
+    var pp **i32 = &p;
     return identity(pp);
 }

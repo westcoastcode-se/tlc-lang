@@ -1,7 +1,7 @@
 type Bad struct(align=1) {
-    n int;
+    n i32;
 }
 
-func main() int {
+func main() i32 {
     return sizeof(Bad);
 }

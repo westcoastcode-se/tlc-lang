@@ -1,19 +1,19 @@
 type Inner struct {
-    inner_value int;
+    inner_value i32;
 };
 
 type Box struct {
-    value int;
+    value i32;
     complex Inner;
 };
 
 var bias Box = {.value = 2};
 
-func twenty() int {
+func twenty() i32 {
     return 20;
 }
 
-func take(box Box) int {
+func take(box Box) i32 {
     return box.value + box.complex.inner_value;
 }
 
@@ -21,7 +21,7 @@ func made() Box {
     return {.value = 10, .complex = {.inner_value = 20}};
 }
 
-func main() int {
+func main() i32 {
     var box Box = {.value = twenty(), .complex = {.inner_value=20}};
     if (box.value + box.complex.inner_value + bias.value != 42) {
         return 0;

@@ -114,8 +114,8 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "func main() int { return 0; }\n");
-        tree.write("sibling.tlc", "var side int;\n");
+        tree.write("main.tlc", "func main() i32 { return 0; }\n");
+        tree.write("sibling.tlc", "var side i32;\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
         EXPECT(check, resolved.graph.nodes.size() == 1);
@@ -126,9 +126,9 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
-        tree.write("math/add.tlc", "func add(a int, b int) int { return a + b; }\n");
-        tree.write("math/more.tlc", "func extra() int { return 1; }\n");
+        tree.write("main.tlc", "import \"math\";\nfunc main() i32 { return 0; }\n");
+        tree.write("math/add.tlc", "func add(a i32, b i32) i32 { return a + b; }\n");
+        tree.write("math/more.tlc", "func extra() i32 { return 1; }\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
         EXPECT_EQ(check, resolved.errors, "");
@@ -152,8 +152,8 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "import \"lib/vec\";\nfunc main() int { return 0; }\n");
-        tree.write("lib/vec/len.tlc", "var len int;\n");
+        tree.write("main.tlc", "import \"lib/vec\";\nfunc main() i32 { return 0; }\n");
+        tree.write("lib/vec/len.tlc", "var len i32;\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
         const tlc::PackageNode *vec = find_suffix(resolved.graph, "/lib/vec/len.tlc");
@@ -167,8 +167,8 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "import \"math.tlc\";\nfunc main() int { return 0; }\n");
-        tree.write("math.tlc", "func add(a int, b int) int { return a + b; }\n");
+        tree.write("main.tlc", "import \"math.tlc\";\nfunc main() i32 { return 0; }\n");
+        tree.write("math.tlc", "func add(a i32, b i32) i32 { return a + b; }\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "unknown package");
@@ -178,11 +178,11 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
+        tree.write("main.tlc", "import \"math\";\nfunc main() i32 { return 0; }\n");
         tree.write("math/a.tlc", "package math;\n"
-"var a int;\n");
+"var a i32;\n");
         tree.write("math/b.tlc", "package other;\n"
-"var b int;\n");
+"var b i32;\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "package mismatch");
@@ -191,10 +191,10 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "import \"nested/a\";\nfunc main() int { return 0; }\n");
+        tree.write("main.tlc", "import \"nested/a\";\nfunc main() i32 { return 0; }\n");
         tree.write("nested/a/a.tlc", "import \"./sib\";\n"
-"var value int;\n");
-        tree.write("nested/a/sib/sib.tlc", "var sib int;\n");
+"var value i32;\n");
+        tree.write("nested/a/sib/sib.tlc", "var sib i32;\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
         EXPECT_EQ(check, resolved.errors, "");
@@ -212,8 +212,8 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("sub/main.tlc", "import \"../sib\";\nfunc main() int { return 0; }\n");
-        tree.write("sib/sib.tlc", "var sib int;\n");
+        tree.write("sub/main.tlc", "import \"../sib\";\nfunc main() i32 { return 0; }\n");
+        tree.write("sib/sib.tlc", "var sib i32;\n");
         const Resolved resolved = resolve_at(tree.file("sub/main.tlc"));
         EXPECT(check, resolved.ok);
         const tlc::PackageNode *sib = find_suffix(resolved.graph, "/sib/sib.tlc");
@@ -230,8 +230,8 @@ int run_pkg_tests() {
         TempTree extra;
         EXPECT(check, entry.ok());
         EXPECT(check, extra.ok());
-        entry.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
-        extra.write("math/add.tlc", "package math;\nfunc add(a int, b int) int { return a + b; }\n");
+        entry.write("main.tlc", "import \"math\";\nfunc main() i32 { return 0; }\n");
+        extra.write("math/add.tlc", "package math;\nfunc add(a i32, b i32) i32 { return a + b; }\n");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {extra.directory()});
         EXPECT(check, resolved.ok);
         const tlc::PackageNode *math = find_suffix(resolved.graph, "/math/add.tlc");
@@ -247,9 +247,9 @@ int run_pkg_tests() {
         TempTree extra;
         EXPECT(check, entry.ok());
         EXPECT(check, extra.ok());
-        entry.write("main.tlc", "import \"math\";\nfunc main() int { return 0; }\n");
-        entry.write("math/add.tlc", "var from_entry int;\n");
-        extra.write("math/add.tlc", "var from_extra int;\n");
+        entry.write("main.tlc", "import \"math\";\nfunc main() i32 { return 0; }\n");
+        entry.write("math/add.tlc", "var from_entry i32;\n");
+        extra.write("math/add.tlc", "var from_extra i32;\n");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {extra.directory()});
         EXPECT(check, resolved.ok);
         const tlc::PackageNode *math = find_suffix(resolved.graph, "/math/add.tlc");
@@ -262,7 +262,7 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "import \"missing\";\nfunc main() int { return 0; }\n");
+        tree.write("main.tlc", "import \"missing\";\nfunc main() i32 { return 0; }\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "unknown package");
@@ -273,7 +273,7 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "import \"\";\nimport \"/abs\";\nfunc main() int { return 0; }\n");
+        tree.write("main.tlc", "import \"\";\nimport \"/abs\";\nfunc main() i32 { return 0; }\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "empty package path");
@@ -284,11 +284,11 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "import \"a\";\nfunc main() int { return 0; }\n");
+        tree.write("main.tlc", "import \"a\";\nfunc main() i32 { return 0; }\n");
         tree.write("a/a.tlc", "import \"b\";\n"
-"var from_a int;\n");
+"var from_a i32;\n");
         tree.write("b/b.tlc", "import \"a\";\n"
-"var from_b int;\n");
+"var from_b i32;\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "circular import a -> b -> a");
@@ -299,12 +299,12 @@ int run_pkg_tests() {
     {
         TempTree tree;
         EXPECT(check, tree.ok());
-        tree.write("main.tlc", "import \"a\";\nimport \"b\";\nfunc main() int { return 0; }\n");
+        tree.write("main.tlc", "import \"a\";\nimport \"b\";\nfunc main() i32 { return 0; }\n");
         tree.write("a/a.tlc", "import \"c\";\n"
-"var from_a int;\n");
+"var from_a i32;\n");
         tree.write("b/b.tlc", "import \"c\";\n"
-"var from_b int;\n");
-        tree.write("c/c.tlc", "var shared int;\n");
+"var from_b i32;\n");
+        tree.write("c/c.tlc", "var shared i32;\n");
         const Resolved resolved = resolve_at(tree.file("main.tlc"));
         EXPECT(check, resolved.ok);
         EXPECT_EQ(check, resolved.errors, "");
@@ -330,12 +330,12 @@ int run_pkg_tests() {
         TempTree vendor;
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"vendor/answer\";\nimport \"vendor/onlyso\";\nfunc main() int { return 0; }\n");
-        vendor.write("answer/answer.tlc", "export extern(abi=\"c\") func answer() int;\n");
+        entry.write("main.tlc", "import \"vendor/answer\";\nimport \"vendor/onlyso\";\nfunc main() i32 { return 0; }\n");
+        vendor.write("answer/answer.tlc", "export extern(abi=\"c\") func answer() i32;\n");
         vendor.write("answer/libanswer.so", "");
         vendor.write("answer/libanswer.a", "");
         vendor.write("answer/libother.so.1", "");
-        vendor.write("onlyso/onlyso.tlc", "export extern(abi=\"c\") func onlyso() int;\n");
+        vendor.write("onlyso/onlyso.tlc", "export extern(abi=\"c\") func onlyso() i32;\n");
         vendor.write("onlyso/libonly.so.1.2", "");
         vendor.write("onlyso/libonly.so.1", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
@@ -358,8 +358,8 @@ int run_pkg_tests() {
         TempTree vendor;
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"answer\";\nfunc main() int { return 0; }\n");
-        vendor.write("answer/answer.tlc", "export func answer() int { return 1; }\n");
+        entry.write("main.tlc", "import \"answer\";\nfunc main() i32 { return 0; }\n");
+        vendor.write("answer/answer.tlc", "export func answer() i32 { return 1; }\n");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "unknown package");
@@ -371,8 +371,8 @@ int run_pkg_tests() {
         TempTree vendor;
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"vendor/listed\";\nfunc main() int { return 0; }\n");
-        vendor.write("listed/listed.tlc", "export extern(abi=\"c\") func listed() int;\n");
+        entry.write("main.tlc", "import \"vendor/listed\";\nfunc main() i32 { return 0; }\n");
+        vendor.write("listed/listed.tlc", "export extern(abi=\"c\") func listed() i32;\n");
         vendor.write("listed/liblisted.a", "");
         vendor.write("listed/link", "# extra\n-lpthread\n../outside.a\n-L libs\n-Bstatic\n-Wl,-rpath,run\n");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
@@ -393,10 +393,10 @@ int run_pkg_tests() {
         TempTree vendor;
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"vendor/math\";\nfunc main() int { return 0; }\n");
-        entry.write("vendor/math/add.tlc", "export func add(a int, b int) int { return a + b; }\n");
+        entry.write("main.tlc", "import \"vendor/math\";\nfunc main() i32 { return 0; }\n");
+        entry.write("vendor/math/add.tlc", "export func add(a i32, b i32) i32 { return a + b; }\n");
         entry.write("vendor/math/libmath.a", "");
-        vendor.write("math/add.tlc", "export extern(abi=\"c\") func add(a int, b int) int;\n");
+        vendor.write("math/add.tlc", "export extern(abi=\"c\") func add(a i32, b i32) i32;\n");
         vendor.write("math/libmath.a", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
         EXPECT(check, resolved.ok);
@@ -415,9 +415,9 @@ int run_pkg_tests() {
         EXPECT(check, entry.ok());
         EXPECT(check, extra.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"vendor/math\";\nfunc main() int { return 0; }\n");
-        extra.write("vendor/math/add.tlc", "export func add(a int, b int) int { return 1; }\n");
-        vendor.write("math/add.tlc", "export extern(abi=\"c\") func add(a int, b int) int;\n");
+        entry.write("main.tlc", "import \"vendor/math\";\nfunc main() i32 { return 0; }\n");
+        extra.write("vendor/math/add.tlc", "export func add(a i32, b i32) i32 { return 1; }\n");
+        vendor.write("math/add.tlc", "export extern(abi=\"c\") func add(a i32, b i32) i32;\n");
         vendor.write("math/libmath.a", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {extra.directory()}, vendor.directory());
         EXPECT(check, resolved.ok);
@@ -434,12 +434,12 @@ int run_pkg_tests() {
         TempTree vendor;
         EXPECT(check, entry.ok());
         EXPECT(check, vendor.ok());
-        entry.write("main.tlc", "import \"a\";\nimport \"b\";\nfunc main() int { return 0; }\n");
+        entry.write("main.tlc", "import \"a\";\nimport \"b\";\nfunc main() i32 { return 0; }\n");
         entry.write("a/a.tlc", "import \"vendor/answer\";\n"
-"var from_a int;\n");
+"var from_a i32;\n");
         entry.write("b/b.tlc", "import \"vendor/answer\";\n"
-"var from_b int;\n");
-        vendor.write("answer/answer.tlc", "export extern(abi=\"c\") func answer() int;\n");
+"var from_b i32;\n");
+        vendor.write("answer/answer.tlc", "export extern(abi=\"c\") func answer() i32;\n");
         vendor.write("answer/libanswer.a", "");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
         EXPECT(check, resolved.ok);
@@ -450,7 +450,7 @@ int run_pkg_tests() {
     {
         TempTree entry;
         EXPECT(check, entry.ok());
-        entry.write("main.tlc", "import \"vendor/missing\";\nfunc main() int { return 0; }\n");
+        entry.write("main.tlc", "import \"vendor/missing\";\nfunc main() i32 { return 0; }\n");
         const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, entry.file("no-such-vendor"));
         EXPECT(check, !resolved.ok);
         EXPECT_HAS(check, resolved.errors, "unknown package");

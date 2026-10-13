@@ -64,7 +64,7 @@ int run_lexer_tests() {
             "}\n");
         EXPECT(check, result.errors.empty());
         EXPECT_EQ(check, result.dump,
-                  "func ident(main) ( ) int { return ident(a) -> ident(b) + int-lit(1) <= int-lit(2) && "
+                  "func ident(main) ( ) ident(int) { return ident(a) -> ident(b) + int-lit(1) <= int-lit(2) && "
                   "ident(c) ++ != ident(d) -- ; } eof");
     }
 
@@ -95,7 +95,7 @@ int run_lexer_tests() {
     {
         const LexResult result = lex("\"abc\nint x;");
         EXPECT_HAS(check, result.errors, "unterminated string");
-        EXPECT_HAS(check, result.dump, "int ident(x) ; eof");
+        EXPECT_HAS(check, result.dump, "ident(int) ident(x) ; eof");
     }
 
     {
@@ -125,7 +125,7 @@ int run_lexer_tests() {
         EXPECT_HAS(check, result.errors, "preprocessor directives are not supported");
         EXPECT(check, result.errors.find("preprocessor directives are not supported") !=
                           result.errors.rfind("preprocessor directives are not supported"));
-        EXPECT_EQ(check, result.dump, "var ident(x) int ; eof");
+        EXPECT_EQ(check, result.dump, "var ident(x) ident(int) ; eof");
     }
 
     {
@@ -134,13 +134,13 @@ int run_lexer_tests() {
 "import export package\n");
         EXPECT(check, result.errors.empty());
         EXPECT_EQ(check, result.dump,
-                  "var ident(as) int = int-lit(1) ; var ident(from) int = int-lit(2) ; import export package eof");
+                  "var ident(as) ident(int) = int-lit(1) ; var ident(from) ident(int) = int-lit(2) ; import export package eof");
     }
 
     {
         const LexResult result = lex("int f(...); x <<= 1 >>= 2;");
         EXPECT(check, result.errors.empty());
-        EXPECT_EQ(check, result.dump, "int ident(f) ( ... ) ; ident(x) <<= int-lit(1) >>= int-lit(2) ; eof");
+        EXPECT_EQ(check, result.dump, "ident(int) ident(f) ( ... ) ; ident(x) <<= int-lit(1) >>= int-lit(2) ; eof");
     }
 
     {

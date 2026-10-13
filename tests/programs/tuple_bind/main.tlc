@@ -1,34 +1,34 @@
-func add(x int, y int) (int, int) {
+func add(x i32, y i32) (i32, i32) {
     return x + y, x;
 }
 
-func tagged() (int, char) {
+func tagged() (i32, u8) {
     return 3, 'b';
 }
 
-func pick(p *int) (*int, int) {
+func pick(p *i32) (*i32, i32) {
     return p, 7;
 }
 
 type Point struct {
-    x int;
+    x i32;
 };
 
-func make(n int) (Point, int) {
+func make(n i32) (Point, i32) {
     var p Point;
     p.x = n;
     return p, n + 1;
 }
 
 type Box struct {
-    n int;
+    n i32;
 };
 
-func Box::split(self *this) (int, int) {
+func Box::split(self *this) (i32, i32) {
     return self.n, self.n + 1;
 }
 
-func main() int {
+func main() i32 {
     var value = (40, 2);
     pair := (7, 8);
     if (value[0] != 40 || value[1] != 2 || pair[0] != 7 || pair[1] != 8) {
@@ -53,7 +53,7 @@ func main() int {
     if (n != 3 || ch != 'b' || sizeof(ch) != 1) {
         return 5;
     }
-    var cell int = 11;
+    var cell i32 = 11;
     var pointed = pick(&cell);
     var ptr, k = pointed;
     if (*ptr != 11 || k != 7) {
@@ -79,7 +79,7 @@ func main() int {
     if (lit_n != 40 || lit_ch != 'a' || sizeof(lit_ch) != 1) {
         return 10;
     }
-    var src char = 'c';
+    var src u8 = 'c';
     var wrapped = (src, 2);
     var out_ch, out_n = wrapped;
     if (out_ch != 'c' || out_n != 2 || sizeof(out_ch) != 1) {

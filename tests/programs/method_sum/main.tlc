@@ -1,33 +1,33 @@
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
 type Pair struct {
-    a int;
-    b int;
+    a i32;
+    b i32;
 };
 
-func make(x int, y int) Point {
+func make(x i32, y i32) Point {
     var p Point;
     p.x = x;
     p.y = y;
     return p;
 }
 
-func Point::sum(self this, extra int) int {
+func Point::sum(self this, extra i32) i32 {
     return self.x + self.y + extra;
 }
 
-func Pair::sum(self this, extra int) int {
+func Pair::sum(self this, extra i32) i32 {
     return self.a + self.b + extra;
 }
 
-func sum(n int) int {
+func sum(n i32) i32 {
     return n;
 }
 
-func main() int {
+func main() i32 {
     var q Pair;
     q.a = 1;
     q.b = 1;

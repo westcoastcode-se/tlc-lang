@@ -1,9 +1,9 @@
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func Point::make(x int, y int) Point {
+func Point::make(x i32, y i32) Point {
     var p Point;
     p.x = x;
     p.y = y;
@@ -14,7 +14,7 @@ func Point::zero() Point {
     return Point.make(0, 0);
 }
 
-func main() int {
+func main() i32 {
     var p = Point.make(40, 2);
     var q = Point.zero();
     return p.x + p.y + q.x;

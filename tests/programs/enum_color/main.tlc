@@ -9,21 +9,21 @@ type Tiny enum(i8) {
     B,
 };
 
-func Color::code(self this) int {
+func Color::code(self this) i32 {
     if (self == Color.Blue) {
         return 40;
     }
     return 0;
 }
 
-func Tiny::id(self this) int {
+func Tiny::id(self this) i32 {
     if (self == Tiny.B) {
         return 2;
     }
     return 0;
 }
 
-func main() int {
+func main() i32 {
     value := Color.Blue;
     small := Tiny.B;
     if (value.code() == 40 && small.id() == 2 && sizeof(Tiny) == 1 && sizeof(Color) == 4) {

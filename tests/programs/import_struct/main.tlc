@@ -1,6 +1,6 @@
 import "geom";
 
-func main() int {
+func main() i32 {
     var p geom.Point;
     p.x = 40;
     p.y = 2;

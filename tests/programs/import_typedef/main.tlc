@@ -1,6 +1,6 @@
 import { Alias, sum } from "geom";
 
-func main() int {
+func main() i32 {
     var p Alias;
     p.x = 40;
     p.y = 2;

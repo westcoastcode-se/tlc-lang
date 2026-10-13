@@ -153,7 +153,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         if (var->inferred) {
             if (var->init == nullptr || !infer_global(node.file_id, *var->init, low)) {
                 error(var->loc, "type mismatch");
-                low = lower(node.file_id, "int", "", false, 0, false, 0, false);
+                low = lower(node.file_id, "i32", "", false, 0, false, 0, false);
             }
         } else {
             low = lower_declared(node.file_id, *var);
@@ -762,7 +762,7 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         global->setInitializer(null_ptr());
     } else if (found->second.elem_bool) {
         global->setInitializer(llvm::ConstantInt::get(i1(), *value == 0 ? 0 : 1, false));
-    } else if (var.type_name == "char" || found->second.elem_bits == 8) {
+    } else if (found->second.elem_bits == 8) {
         global->setInitializer(llvm::ConstantInt::get(i8(), static_cast<uint64_t>(*value) & 0xFFU, false));
     } else if (found->second.elem_bits == 16) {
         global->setInitializer(llvm::ConstantInt::get(i16(), static_cast<uint64_t>(*value) & 0xFFFFU, false));
@@ -2161,7 +2161,8 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 Shape shape;
-                shape.elem_char = true;
+                shape.elem_bits = 8;
+                shape.elem_unsigned = true;
                 shape.is_array = true;
                 shape.array_len = static_cast<int>(node.text.size()) + 1;
                 shape.type = shape_type(shape);
@@ -2256,8 +2257,8 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 if (node.type_name) {
                     Shape shape;
                     shape.depth = 1;
-                    shape.elem_char = true;
                     shape.elem_bits = 8;
+                    shape.elem_unsigned = true;
                     shape.type = ptr_type();
                     return shape;
                 }
@@ -2754,7 +2755,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 llvm::Constant *data = llvm::ConstantDataArray::getString(context_, node.text, true);
                 auto *global = new llvm::GlobalVariable(module_, data->getType(), true,
                                                         llvm::GlobalValue::PrivateLinkage, data, ".str");
-                return {global, 1, true};
+                TypedValue out;
+                out.value = global;
+                out.depth = 1;
+                out.elem_bits = 8;
+                out.elem_unsigned = true;
+                return out;
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 if (node.tuple_index >= 0) {
                     if (node.base == nullptr) {
@@ -2985,7 +2991,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             value.struct_id = -1;
                         };
                         if (element != nullptr && std::holds_alternative<Expr::Char>(element->data)) {
-                            restore(i8(), true, false, 8, false);
+                            restore(i8(), false, false, 8, true);
                         } else if (element != nullptr && std::holds_alternative<Expr::Bool>(element->data)) {
                             restore(i1(), false, true, 0, false);
                         } else if (element != nullptr) {
@@ -3022,10 +3028,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                 return "bool";
                             }
                             if (element.elem_char) {
-                                return "char";
+                                return "u8";
                             }
                             if (element.elem_float) {
-                                return element.elem_bits >= 64 ? "double" : "float";
+                                return element.elem_bits >= 64 ? "f64" : "f32";
                             }
                             if (element.elem_bits == 64) {
                                 return element.elem_unsigned ? "u64" : "i64";
@@ -3037,9 +3043,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                 return element.elem_unsigned ? "u8" : "i8";
                             }
                             if (element.elem_unsigned) {
-                                return "uint";
+                                return "u32";
                             }
-                            return "int";
+                            return "i32";
                         };
                         if (element.depth > 0) {
                             slot.indirections = element.depth;
@@ -3418,9 +3424,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                 low.elem_bool = true;
                 low.type = leaf_type(0, false, -1, true, 0, false);
             } else if (ty != nullptr && ty->isIntegerTy(8)) {
-                low.elem_char = true;
                 low.elem_bits = 8;
-                low.type = leaf_type(0, true, -1, false, 8, false);
+                low.elem_unsigned = true;
+                low.type = leaf_type(0, false, -1, false, 8, false);
             } else if (ty != nullptr && ty->isIntegerTy(16)) {
                 low.elem_bits = 16;
                 low.type = leaf_type(0, false, -1, false, 16, false);

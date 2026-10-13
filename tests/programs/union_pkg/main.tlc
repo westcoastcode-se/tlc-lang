@@ -1,5 +1,5 @@
 import "shape";
 
-func main() int {
+func main() i32 {
     return shape.read();
 }

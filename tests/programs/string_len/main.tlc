@@ -1,5 +1,5 @@
-func len(s *char) int {
-    var n int = 0;
+func len(s *u8) i32 {
+    var n i32 = 0;
     while (s[n] != 0) {
         n = n + 1;
         if (n > 3) {
@@ -9,6 +9,6 @@ func len(s *char) int {
     return n;
 }
 
-func main() int {
+func main() i32 {
     return len("hi");
 }

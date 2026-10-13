@@ -11,7 +11,7 @@ A package is a directory of `.tlc` files. The file named on the command line is 
 ```c
 package math;
 
-export func add(a int, b int) int {
+export func add(a i32, b i32) i32 {
     return a + b;
 }
 ```
@@ -76,11 +76,11 @@ Only a file-scope `export` is published to importers. A name that was not export
 ```c
 package math;
 
-func secret() int {
+func secret() i32 {
     return 1;
 }
 
-export func add(a int, b int) int {
+export func add(a i32, b i32) i32 {
     return a + b + secret();
 }
 ```
@@ -92,13 +92,13 @@ export func add(a int, b int) int {
 File-scope `static` keeps the symbol private to that file.
 
 ```c
-static func hidden() int {
+static func hidden() i32 {
     return 1;
 }
 
-static var slot int = 2;
+static var slot i32 = 2;
 
-func main() int {
+func main() i32 {
     return hidden() + slot;
 }
 ```
@@ -113,15 +113,15 @@ A parameter or result of an `extern(abi="c")` function cannot be a function poin
 
 ```c
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-extern(abi="tlc") func parts(p Point) (int, int) {
+extern(abi="tlc") func parts(p Point) (i32, i32) {
     return p.x, p.y;
 }
 
-func main() int {
+func main() i32 {
     var p Point;
     p.x = 20;
     p.y = 22;
@@ -131,9 +131,9 @@ func main() int {
 ```
 
 ```c
-extern(abi="c") func printf(fmt *const char, ...) int;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-func main() int {
+func main() i32 {
     printf("hi\n");
     return 0;
 }

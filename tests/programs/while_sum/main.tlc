@@ -1,6 +1,6 @@
-func main() int {
-    var i int = 1;
-    var s int = 0;
+func main() i32 {
+    var i i32 = 1;
+    var s i32 = 0;
     while (i <= 4) {
         s = s + i;
         i = i + 1;

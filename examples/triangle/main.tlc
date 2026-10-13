@@ -30,7 +30,7 @@ import {
     GL,
 } from "vendor/gl";
 
-extern(abi="c") func printf(fmt *const char, ...) int;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
 
 func draw_triangle() void {
     glClear(GL.COLOR_BUFFER_BIT);
@@ -48,7 +48,7 @@ type K struct {
     value i32;
 }
 
-func main() int {
+func main() i32 {
     if (SDL_Init(SdlInit.SDL_INIT_VIDEO) == 0) {
         printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -75,7 +75,7 @@ func main() int {
     glViewport(0, 0, 960, 540);
     glClearColor(0.08f, 0.09f, 0.12f, 1.0f);
 
-    var running int = 1;
+    var running i32 = 1;
     while (running != 0) {
         var event SDL_Event;
         while (SDL_PollEvent(&event) != 0) {

@@ -1,18 +1,18 @@
 extern(abi="c") type Num union {
-    n int;
-    m int;
+    n i32;
+    m i32;
 }
 
 extern(abi="c") type Word union {
-    n int;
-    raw [8]char;
+    n i32;
+    raw [8]u8;
 }
 
-func Num::value(self this) int {
+func Num::value(self this) i32 {
     return self.m;
 }
 
-func main() int {
+func main() i32 {
     var u Num;
     u.n = 34;
     var wide Word;

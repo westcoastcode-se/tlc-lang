@@ -1,20 +1,20 @@
 type Point struct {
-    x int;
-    y int;
+    x i32;
+    y i32;
 };
 
-func make(x int, y int) Point {
+func make(x i32, y i32) Point {
     var p Point;
     p.x = x;
     p.y = y;
     return p;
 }
 
-func sum(p Point) int {
+func sum(p Point) i32 {
     return p.x + p.y;
 }
 
-func main() int {
+func main() i32 {
     var p Point;
     p = make(40, 2);
     return sum(p);

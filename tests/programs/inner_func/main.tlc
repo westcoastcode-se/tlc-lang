@@ -1,21 +1,21 @@
-var bias int;
+var bias i32;
 
-func add(n int) int {
+func add(n i32) i32 {
     return 0;
 }
 
-func other() int {
-    func add(n int) int {
+func other() i32 {
+    func add(n i32) i32 {
         return n;
     }
     return add(0);
 }
 
-func main() int {
+func main() i32 {
     bias = 1;
-    func add(n int) int;
-    func add(n int) int {
-        func step(m int) int {
+    func add(n i32) i32;
+    func add(n i32) i32 {
+        func step(m i32) i32 {
             switch (m) {
             case 0:
                 return bias;

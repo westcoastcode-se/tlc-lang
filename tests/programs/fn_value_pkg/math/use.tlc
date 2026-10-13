@@ -3,6 +3,6 @@ package math;
 var bump = inc;
 var make_ptr = Point.make;
 
-export func total() int {
+export func total() i32 {
     return bump(40) + make_ptr(1, 0);
 }

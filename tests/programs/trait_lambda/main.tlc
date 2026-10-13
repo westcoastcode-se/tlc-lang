@@ -1,52 +1,52 @@
 type Adder trait {
-    func apply(n int) int;
+    func apply(n i32) i32;
 };
 
 type Meas trait {
-    func area() int;
+    func area() i32;
 };
 
 type Counter struct {
-    base int;
+    base i32;
 };
 
 type Rect struct {
-    w int;
-    h int;
+    w i32;
+    h i32;
 };
 
-func Rect::area(self this) int {
+func Rect::area(self this) i32 {
     return self.w * self.h;
 }
 
-func twice(a Adder, n int) int {
+func twice(a Adder, n i32) i32 {
     return a.apply(n) + a.apply(n);
 }
 
-func through(a *Adder, n int) int {
+func through(a *Adder, n i32) i32 {
     return a.apply(n);
 }
 
-func Counter::forward(a *Adder, n int) int {
+func Counter::forward(a *Adder, n i32) i32 {
     return through(a, n);
 }
 
-func Counter::add(self *this, a Adder) int {
+func Counter::add(self *this, a Adder) i32 {
     return self.base + a.apply(1);
 }
 
-func Counter::measure(self this, m Meas) int {
+func Counter::measure(self this, m Meas) i32 {
     return self.base + m.area();
 }
 
-func main() int {
+func main() i32 {
     var c Counter;
     var r Rect;
     c.base = 6;
     r.w = 2;
     r.h = 3;
     var from_short = twice((n) { return n + 1; }, 8);
-    var from_method = c.add(func (n int) int { return n; });
+    var from_method = c.add(func (n i32) i32 { return n; });
     var from_static = Counter.forward((n) { return n; }, 5);
     var from_struct = c.measure(r);
     return from_short + from_method + from_static + from_struct;

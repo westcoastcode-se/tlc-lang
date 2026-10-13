@@ -8,7 +8,7 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 - `pkg.Type.name(...)`.
 - A call through a type alias, `Alias.name(...)`.
-- A static function on a generic struct, `Vec[int].name(...)`.
+- A static function on a generic struct, `Vec[i32].name(...)`.
 
 ## Language server
 
@@ -37,16 +37,16 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `count(U)` and `const for`.
 - A type-parameter list after the method name: `func Vec[T]::get[U type]`. `func Vec[T]::get` names the struct's parameters.
 - Type parameters on an alias, an enum, a trait, or a union. Only `type Name[T type] struct` takes the list.
-- A qualified type application: `pkg.Vec[int]`.
+- A qualified type application: `pkg.Vec[i32]`.
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.
-- An array type parameter under a pointer, or a pointer to an array, as in `*T` when `T` is `[4]int`.
+- An array type parameter under a pointer, or a pointer to an array, as in `*T` when `T` is `[4]i32`.
 - `sizeof(T)` when `T` is an array.
 - `typeof(T)` when `T` is an array.
 - `typeof` of a function, a tuple, or a trait.
-- The C qualifier spelling `const int x` and `var x const int`. Inside a function, `const name = expr` is an immutable binding, and `*const T` is a pointer to constant `T`.
+- The C qualifier spelling `const i32 x` and `var x const i32`. Inside a function, `const name = expr` is an immutable binding, and `*const T` is a pointer to constant `T`.
 - A file-scope `const` whose value is not an integer constant.
-- A non-positive compile-time length, including `const N = 0` used as `[N]int`.
+- A non-positive compile-time length, including `const N = 0` used as `[N]i32`.
 - Returning an array from anything other than a local array name. `return out` works for `[N]T`. Another return expression does not.
 
 ### Inference
@@ -58,19 +58,19 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 ### Parsing
 
 - `name[args](` is a generic call. A call of an indexed value is `(ops[i])()`.
-- An array length may be a name, `[N]int`. The name has to be a file-scope `const` already folded. A length that needs `sizeof` of a struct that is not complete yet does not fold.
+- An array length may be a name, `[N]i32`. The name has to be a file-scope `const` already folded. A length that needs `sizeof` of a struct that is not complete yet does not fold.
 
 ### Constant evaluation
 
-`assert`, `const`, and a compile-time integer parameter share `fold_int`. That folds integers, names of those constants, and `sizeof`. It does not fold `typeof` or a comparison of two `Type` values, so `assert(typeof(int) == typeof(i32))` is `not supported yet`. A general constant evaluator is not in place. An `assert` whose condition is not a constant integer is the same gap.
+`assert`, `const`, and a compile-time integer parameter share `fold_int`. That folds integers, names of those constants, and `sizeof`. It does not fold `typeof` or a comparison of two `Type` values, so `assert(typeof(i32) == typeof(i64))` is `not supported yet`. A general constant evaluator is not in place. An `assert` whose condition is not a constant integer is the same gap.
 
 ## Types and operators
 
-- `?` on a type that is not a pointer: `?int`.
-- An optional pointer to an array: `?*[4]int`.
+- `?` on a type that is not a pointer: `?i32`.
+- An optional pointer to an array: `?*[4]i32`.
 - Two stars outside an array, `**[4]i32`, and a nested array.
-- A pointer to an array as a field. `var p *[4]int` is fine. `p *[4]int` inside a struct is not.
-- An unsized array on a `var`, `var a []int`. `int[]` is a parameter.
+- A pointer to an array as a field. `var p *[4]i32` is fine. `p *[4]i32` inside a struct is not.
+- An unsized array on a `var`, `var a []i32`. `i32[]` is a parameter.
 - A cast to `void`.
 - `++`, `--`, compound assignment (`+=` and the rest), `?:`, and `->`.
 - `goto`.
@@ -80,7 +80,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `var a, b =` at file scope. Inside a function, several names unpack one tuple.
 - `export` or `extern` on an inferred variable, `var name = expr` or `name := expr`. They go on a typed `var`.
 - A local `type`, including a local struct or enum.
-- A global array initializer. A local array accepts `var row [3]int = {10, 20, 12}`. Any other local array initializer is `not supported yet`.
+- A global array initializer. A local array accepts `var row [3]i32 = {10, 20, 12}`. Any other local array initializer is `not supported yet`.
 - A `static` local. File-scope `static` is private to its file.
 - Another abi than `"c"` and `"tlc"`.
 - `export type Name trait`.

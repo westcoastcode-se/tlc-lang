@@ -1,4 +1,4 @@
-func main() int {
+func main() i32 {
     var a i64;
     a = 100000;
     a = a * 100000;
