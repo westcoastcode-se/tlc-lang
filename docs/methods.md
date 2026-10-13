@@ -119,9 +119,27 @@ There is no `impl` keyword. A struct satisfies a trait by defining the methods, 
 - A wrong result type or wrong extra parameters are reported as `type mismatch`.
 - The address is not taken automatically. `apply(r)` is reported as `type mismatch` when the parameter is `*Shape`. The call is `apply(&r)`.
 
-A trait is written as a function parameter, `Shape` or `*Shape`. `sizeof(Shape)` is reported as `undeclared identifier`.
+A trait is written as a parameter of a function or a method, `Shape` or `*Shape`. `sizeof(Shape)` is reported as `undeclared identifier`.
 
 The function is monomorphized. Each struct that is passed in gets its own copy, and the call `s.area()` becomes a direct call of that struct's method. Passing the same trait onward, as `measure(s)` inside `apply`, is not checked again.
+
+A trait with one method also accepts an anonymous function. The function's parameters and its result are that method's, and there is no receiver. The short form and the `func` form both work. The parameter may be the trait or a pointer to the trait, and the anonymous function is passed directly. A trait with no methods, or with several methods, is reported as `type mismatch`. A named function is reported as `type mismatch`. The wrong parameters or the wrong result are reported as `type mismatch`.
+
+```c
+type Adder trait {
+    func apply(n int) int;
+};
+
+func twice(a Adder, n int) int {
+    return a.apply(n) + a.apply(n);
+}
+
+func main() int {
+    return twice((n) { return n + 1; }, 20);
+}
+```
+
+`twice` calls that function twice. `c.add(func (n int) int { return n; })` is the same argument on a method. `*Adder` takes the anonymous function the same way. One monomorphized copy calls it through a function pointer. A struct argument still gets its own copy and a direct call. Passing the parameter onward, when the next parameter is the same trait, uses that same copy.
 
 `this` inside a trait method is reported as `type mismatch`. `s.area` without a call is reported as `undeclared identifier`.
 

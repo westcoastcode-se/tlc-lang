@@ -741,15 +741,14 @@ void CodeGen::prepare_traits() {
     if (graph_ == nullptr) {
         return;
     }
-    int next = 0;
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
             const auto *item = std::get_if<TraitDecl>(&decl.data);
             if (item == nullptr || item->name.empty() || trait_named(node.file_id, item->name) >= 0) {
                 continue;
             }
-            trait_names_[node.file_id][item->name] = next;
-            ++next;
+            trait_names_[node.file_id][item->name] = static_cast<int>(trait_decls_.size());
+            trait_decls_.push_back(item);
         }
     }
 }

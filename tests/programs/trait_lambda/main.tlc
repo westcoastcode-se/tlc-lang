@@ -1,0 +1,53 @@
+type Adder trait {
+    func apply(n int) int;
+};
+
+type Meas trait {
+    func area() int;
+};
+
+type Counter struct {
+    base int;
+};
+
+type Rect struct {
+    w int;
+    h int;
+};
+
+func Rect::area(self this) int {
+    return self.w * self.h;
+}
+
+func twice(a Adder, n int) int {
+    return a.apply(n) + a.apply(n);
+}
+
+func through(a *Adder, n int) int {
+    return a.apply(n);
+}
+
+func Counter::forward(a *Adder, n int) int {
+    return through(a, n);
+}
+
+func Counter::add(self *this, a Adder) int {
+    return self.base + a.apply(1);
+}
+
+func Counter::measure(self this, m Meas) int {
+    return self.base + m.area();
+}
+
+func main() int {
+    var c Counter;
+    var r Rect;
+    c.base = 6;
+    r.w = 2;
+    r.h = 3;
+    var from_short = twice((n) { return n + 1; }, 8);
+    var from_method = c.add(func (n int) int { return n; });
+    var from_static = Counter.forward((n) { return n; }, 5);
+    var from_struct = c.measure(r);
+    return from_short + from_method + from_static + from_struct;
+}

@@ -169,6 +169,6 @@ The short form writes only the parameter names. Their types, and the result type
 return dosomething((arg1, arg2) { return arg1 + arg2; });
 ```
 
-`() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer, including an assignment and the initializer of a typed variable. Used where no function pointer is expected, it is reported as `type mismatch`. A short form whose parameter count does not match that function pointer is reported as `type mismatch`. It follows the same capture rule as any other anonymous function.
+`() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer, including an assignment and the initializer of a typed variable. A call argument whose type is a trait with one method accepts it too. The parameters and the result match that method. Used anywhere else, it is reported as `type mismatch`. A short form whose parameter count does not match is reported as `type mismatch`. It follows the same capture rule as any other anonymous function.
 
 [Index](README.md) · [Previous: Statements](statements.md) · [Next: Builtin](builtin.md) · [Grammar](grammar.md)

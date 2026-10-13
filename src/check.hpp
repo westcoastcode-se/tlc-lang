@@ -235,6 +235,12 @@ class Checker {
     const TraitInfo::Method *find_trait_method(int trait_id, const std::string &name) const;
     bool trait_method_matches(const Type &trait_fn, const Type &concrete) const;
     void require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc);
+    // The one method of a trait or `*Trait`. Null when the trait has any other count.
+    const Type *sole_trait_method(const Type &want) const;
+    // An anonymous function used as a single-method trait argument. The body is checked
+    // against that method, with no receiver.
+    bool accept_trait_lambda(const Expr &expr, const Type &want);
+    void check_call_arg(const Expr &expr, const Type &want);
     void register_structs(const TranslationUnit &unit, uint32_t file_id);
     void require_extern_struct(const Type &type, SourceLoc loc);
     void register_enums(const TranslationUnit &unit, uint32_t file_id);

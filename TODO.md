@@ -110,4 +110,6 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - A body on a trait method. The trait lists the method and its type.
 - A trait method that returns several results.
 - A trait used as a variable, a return type, an array, a type alias, or `**Shape`. A parameter is `Shape` or `*Shape`.
-- `export`, `extern`, or `...` on a function that takes a trait parameter. A method cannot take a trait parameter.
+- `export`, `extern`, or `...` on a function that takes a trait parameter.
+- A named function as the argument of a single-method trait. The argument is an anonymous function.
+- `(*a).apply(n)` when `a` is a trait pointer passed as an anonymous function. The call is `a.apply(n)`.

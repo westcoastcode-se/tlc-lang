@@ -1626,6 +1626,118 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n int) int;\n"
+            "};\n"
+            "type Meas trait {\n"
+            "  func area() int;\n"
+            "};\n"
+            "type Shape trait {\n"
+            "  func area() int;\n"
+            "  func grow(n int) void;\n"
+            "};\n"
+            "type Counter struct { n int; };\n"
+            "type Rect struct { w int; h int; };\n"
+            "func Rect::area(self this) int { return self.w * self.h; }\n"
+            "func Rect::grow(self *this, n int) void {\n"
+            "  self.w = self.w + n;\n"
+            "  self.h = self.h + n;\n"
+            "}\n"
+            "func twice(a Adder, n int) int { return a.apply(n) + a.apply(n); }\n"
+            "func through(a *Adder, n int) int { return a.apply(n); }\n"
+            "func Counter::forward(a *Adder, n int) int { return through(a, n); }\n"
+            "func Counter::add(self *this, a Adder) int { return self.n + a.apply(1); }\n"
+            "func Counter::measure(self this, s *Shape) int { return s.area(); }\n"
+            "func Counter::read(self this, m Meas) int { return m.area(); }\n"
+            "func main() int {\n"
+            "  var c Counter;\n"
+            "  var r Rect;\n"
+            "  c.n = 1;\n"
+            "  r.w = 2;\n"
+            "  r.h = 3;\n"
+            "  return twice((n) { return n + 1; }, 4) + c.add(func (n int) int { return n; }) +\n"
+            "      Counter.forward((n) { return n; }, 1) + c.measure(&r) + c.read(r);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  func area() int;\n"
+            "  func grow(n int) void;\n"
+            "};\n"
+            "func use(s Shape) int { return s.area(); }\n"
+            "func main() int { return use((n) { return n; }); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Empty trait {};\n"
+            "func use(e Empty) int { return 1; }\n"
+            "func main() int { return use(() { return 1; }); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n int) int;\n"
+            "};\n"
+            "func take(a Adder) int { return a.apply(1); }\n"
+            "func main() int { return take((a, b) { return a; }); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n int) int;\n"
+            "};\n"
+            "func take(a Adder) int { return a.apply(1); }\n"
+            "func main() int { return take(func (n int) void {}); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n int) int;\n"
+            "};\n"
+            "func inc(n int) int { return n + 1; }\n"
+            "func take(a Adder) int { return a.apply(1); }\n"
+            "func main() int { return take(inc); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n int) int;\n"
+            "};\n"
+            "func main() int {\n"
+            "  var a Adder = (n) { return n; };\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n int) int;\n"
+            "};\n"
+            "func take(a Adder) int {\n"
+            "  var x = 1;\n"
+            "  return take((n) { return n + x; });\n"
+            "}\n"
+            "func main() int { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Point struct { x int; y int; };\n"
             "type Holder struct { value Point; link *Point; };\n"
             "func make(a Point) Point {\n"

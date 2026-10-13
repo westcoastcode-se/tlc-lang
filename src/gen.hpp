@@ -378,6 +378,8 @@ class CodeGen {
     std::vector<EnumLayout> enums_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> enum_ids_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> trait_names_;
+    // Parallel to the ids in `trait_names_`. The decl stays in the package AST.
+    std::vector<const TraitDecl *> trait_decls_;
     std::unordered_map<std::string, llvm::Function *> specs_;
     std::unordered_map<std::string, llvm::GlobalVariable *> type_names_;
     std::unordered_set<std::string> emitting_specs_;
@@ -764,9 +766,17 @@ class CodeGen {
     int trait_named(uint32_t file, const std::string &name) const;
     bool param_is_trait(uint32_t file, const Param &param) const;
     bool function_is_generic(uint32_t file, const FunctionDecl &fn) const;
+    // A trait parameter specialized to the function pointer of its one method.
+    Lowered trait_fn_lowered(const std::string &trait_name) const;
+    Lowered spec_param(const FunctionDecl &fn, std::size_t index, const std::vector<int> &spec) const;
     Lowered lower_param(const FunctionDecl &fn, std::size_t index) const;
     llvm::FunctionType *spec_type(const FunctionDecl &fn, const std::vector<int> &spec) const;
     void emit_function_body(const FunctionDecl &fn, llvm::Function *function, int return_depth);
+    llvm::Function *specialize(const FunctionDecl &fn, const Binding &meta, const std::vector<TypedValue> &arg_values,
+                               SourceLoc loc, std::vector<llvm::Value *> &out_args);
+    void generic_method_call(const Binding &method, const TypedValue *receiver, const Expr::Call &node,
+                             PreparedCall &prepared);
+    void call_trait_fn(llvm::Value *fnptr, const TypedValue &meta, const Expr::Call &node, PreparedCall &prepared);
     TypedValue emit_generic_call(const Binding &binding, const Expr::Call &node);
     void prepare_aliases();
     void prepare_enums();

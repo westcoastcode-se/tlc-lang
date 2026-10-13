@@ -814,9 +814,6 @@ bool CodeGen::function_is_generic(uint32_t file, const FunctionDecl &fn) const {
     if (!fn.type_params.empty()) {
         return true;
     }
-    if (!fn.method_struct.empty()) {
-        return false;
-    }
     for (const Param &param : fn.params) {
         if (param_is_trait(file, param)) {
             return true;
@@ -825,14 +822,68 @@ bool CodeGen::function_is_generic(uint32_t file, const FunctionDecl &fn) const {
     return false;
 }
 
-CodeGen::Lowered CodeGen::lower_param(const FunctionDecl &fn, std::size_t index) const {
+// A trait argument that is a function pointer. -1 still means "not a trait parameter".
+constexpr int kFnSpec = -2;
+
+bool trait_fn_argument(const TypedValue &arg) {
+    if (arg.value != nullptr && llvm::isa<llvm::Function>(arg.value)) {
+        return true;
+    }
+    return arg.fn_ty != nullptr && arg.struct_id < 0;
+}
+
+CodeGen::Lowered CodeGen::trait_fn_lowered(const std::string &trait_name) const {
+    const int id = trait_named(current_file_, trait_name);
+    if (id < 0 || id >= static_cast<int>(trait_decls_.size()) || trait_decls_[static_cast<std::size_t>(id)] == nullptr ||
+        trait_decls_[static_cast<std::size_t>(id)]->methods.size() != 1) {
+        return {};
+    }
+    const FunctionDecl &method = trait_decls_[static_cast<std::size_t>(id)]->methods.front();
+    Lowered out;
+    out.depth = 1;
+    out.type = ptr_type();
+    out.fn_ty = function_type(method, current_file_);
+    const bool many = method.results.size() > 1;
+    const bool returns_void = !many && method.return_type == "void" && method.indirections == 0 && !method.is_struct &&
+                              method.type_package.empty();
+    if (!returns_void && !many) {
+        const bool result_array = method.results.size() == 1 && method.results.front().is_array &&
+                                  method.results.front().array_len > 0 && !method.results.front().is_fn_ptr;
+        const Lowered ret =
+            method.results.size() == 1 && method.results.front().is_fn_ptr
+                ? lower_fnptr(current_file_, method.results.front().type_name, method.results.front().type_package,
+                              method.results.front().is_struct, method.results.front().is_enum,
+                              method.results.front().ret_indirections, method.results.front().indirections,
+                              method.results.front().fn_params, method.results.front().fn_variadic,
+                              method.results.front().fn_results)
+                : lower(current_file_, method.return_type, method.type_package, method.is_struct, method.indirections,
+                        result_array, result_array ? method.results.front().array_len : 0, false);
+        out.fn_ret_depth = ret.depth;
+        out.fn_ret_float = ret.elem_float;
+        out.fn_ret_bits = ret.elem_bits;
+        out.fn_ret_unsigned = ret.elem_unsigned;
+        out.fn_ret_char = ret.elem_char;
+        out.fn_ret_bool = ret.elem_bool;
+        out.fn_ret_struct = ret.struct_id;
+    }
+    return out;
+}
+
+CodeGen::Lowered CodeGen::spec_param(const FunctionDecl &fn, std::size_t index, const std::vector<int> &spec) const {
     const Param &param = fn.params[index];
-    if (index < active_spec_.size() && active_spec_[index] >= 0 &&
-        active_spec_[index] < static_cast<int>(structs_.size())) {
-        return lower(current_file_, structs_[static_cast<std::size_t>(active_spec_[index])].name, "", true,
-                     param.indirections, false, 0, true);
+    if (index < spec.size() && spec[index] == kFnSpec) {
+        // `Shape` and `*Shape` are both this one function pointer. The call is `s.method(...)`.
+        return trait_fn_lowered(param.type_name);
+    }
+    if (index < spec.size() && spec[index] >= 0 && spec[index] < static_cast<int>(structs_.size())) {
+        return lower(current_file_, structs_[static_cast<std::size_t>(spec[index])].name, "", true, param.indirections,
+                     false, 0, true);
     }
     return lower_param_type(current_file_, param);
+}
+
+CodeGen::Lowered CodeGen::lower_param(const FunctionDecl &fn, std::size_t index) const {
+    return spec_param(fn, index, active_spec_);
 }
 
 llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector<int> &spec) const {
@@ -846,13 +897,7 @@ llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (std::size_t index = 0; index < fn.params.size(); ++index) {
-        const Param &param = fn.params[index];
-        Lowered low = index < spec.size() && spec[index] >= 0 && spec[index] < static_cast<int>(structs_.size())
-                          ? lower(current_file_, structs_[static_cast<std::size_t>(spec[index])].name, "", true,
-                                  param.indirections, false, 0, true)
-                          : lower(current_file_, param.type_name, param.type_package, param.is_struct, param.indirections,
-                                  param.is_array, param.array_len, true);
-        params.push_back(stored_type(low));
+        params.push_back(stored_type(spec_param(fn, index, spec)));
     }
     return llvm::FunctionType::get(ret, params, false);
 }
@@ -1073,7 +1118,10 @@ void CodeGen::emit_nested_body(const FunctionDecl &fn, llvm::Function *function,
     loops_.clear();
     defers_.clear();
     case_blocks_.clear();
+    auto saved_spec = active_spec_;
+    active_spec_.clear();
     emit_function_body(fn, function, depth);
+    active_spec_ = std::move(saved_spec);
     scopes_ = std::move(saved_scopes);
     function_ = saved_function;
     return_type_ = saved_return;
@@ -1176,6 +1224,10 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             }
             if (!static_type.empty()) {
                 const Binding *method = static_method_binding(current_file_, static_type, selector->field);
+                if (method != nullptr && method->is_generic && method->decl != nullptr) {
+                    generic_method_call(*method, nullptr, node, prepared);
+                    return prepared;
+                }
                 auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
                 if (function == nullptr) {
                     error(node.loc, "type mismatch");
@@ -1217,6 +1269,28 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     }
                     method = &found->second;
                     break;
+                }
+                if (method != nullptr && method->is_generic && method->decl != nullptr && !method->decl->static_method) {
+                    const bool receiver_pointer =
+                        !method->decl->params.empty() && method->decl->params.front().indirections > 0;
+                    TypedValue receiver;
+                    if (receiver_pointer) {
+                        if (!addressable(*selector->base)) {
+                            error(node.loc, "not an lvalue");
+                            return prepared;
+                        }
+                        const TypedValue addr = emit_addr(*selector->base);
+                        receiver.value = addr.value;
+                        receiver.depth = 0;
+                    } else {
+                        receiver = emit_rvalue(*selector->base);
+                    }
+                    if (receiver.value == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return prepared;
+                    }
+                    generic_method_call(*method, &receiver, node, prepared);
+                    return prepared;
                 }
                 auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
                 if (function == nullptr || (method->decl != nullptr && method->decl->static_method)) {
@@ -1272,6 +1346,10 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 if (addr.value == nullptr) {
                     return prepared;
                 }
+                if (addr.fn_ty != nullptr && addr.struct_id < 0) {
+                    call_trait_fn(builder_.CreateLoad(ptr_type(), addr.value), addr, node, prepared);
+                    return prepared;
+                }
                 struct_id = addr.struct_id;
                 if (addr.depth == 0 && addr.struct_id >= 0) {
                     struct_ptr = addr.value;
@@ -1281,6 +1359,10 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             } else {
                 const TypedValue base = emit_rvalue(*selector->base);
                 if (base.value == nullptr) {
+                    return prepared;
+                }
+                if (base.fn_ty != nullptr && base.struct_id < 0) {
+                    call_trait_fn(base.value, base, node, prepared);
                     return prepared;
                 }
                 struct_id = base.struct_id;
@@ -1308,6 +1390,32 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     method = &found->second;
                     break;
                 }
+            }
+            if (method != nullptr && method->is_generic && method->decl != nullptr && !method->decl->static_method) {
+                const bool receiver_pointer =
+                    !method->decl->params.empty() && method->decl->params.front().indirections > 0;
+                TypedValue receiver;
+                if (receiver_pointer) {
+                    receiver.value = pointer_value != nullptr ? pointer_value : struct_ptr;
+                    receiver.depth = 0;
+                } else if (struct_value != nullptr) {
+                    receiver.value = struct_value;
+                    receiver.depth = 0;
+                    receiver.struct_id = struct_id;
+                } else if (struct_id >= 0 && struct_id < static_cast<int>(structs_.size())) {
+                    llvm::Value *ptr = pointer_value != nullptr ? pointer_value : struct_ptr;
+                    if (ptr != nullptr) {
+                        receiver.value = builder_.CreateLoad(structs_[static_cast<std::size_t>(struct_id)].type, ptr);
+                        receiver.depth = 0;
+                        receiver.struct_id = struct_id;
+                    }
+                }
+                if (receiver.value == nullptr) {
+                    error(node.loc, "type mismatch");
+                    return prepared;
+                }
+                generic_method_call(*method, &receiver, node, prepared);
+                return prepared;
             }
             auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
             if (function == nullptr || (method->decl != nullptr && method->decl->static_method)) {
@@ -1600,66 +1708,77 @@ void CodeGen::emit_defers_from(int min_loop_index) {
     }
 }
 
-TypedValue CodeGen::emit_generic_call(const Binding &binding, const Expr::Call &node) {
-    const Binding meta = binding;
-    const FunctionDecl *fn = meta.decl;
-    std::vector<TypedValue> arg_values;
-    arg_values.reserve(node.args.size());
-    for (const auto &arg : node.args) {
-        arg_values.push_back(emit_rvalue(*arg));
+llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
+                                      const std::vector<TypedValue> &arg_values, SourceLoc loc,
+                                      std::vector<llvm::Value *> &out_args) {
+    if (arg_values.size() != fn.params.size()) {
+        error(loc, "argument count");
+        return nullptr;
     }
-    if (fn == nullptr) {
-        error(node.loc, "type mismatch");
-        return {zero(), 0};
-    }
-    if (arg_values.size() != fn->params.size()) {
-        error(node.loc, "argument count");
-        return {zero(), 0};
-    }
-    std::vector<int> spec(fn->params.size(), -1);
-    for (std::size_t i = 0; i < fn->params.size(); ++i) {
-        if (!param_is_trait(current_file_, fn->params[i])) {
+    std::vector<int> spec(fn.params.size(), -1);
+    for (std::size_t i = 0; i < fn.params.size(); ++i) {
+        if (!param_is_trait(current_file_, fn.params[i])) {
             continue;
         }
         const TypedValue &arg = arg_values[i];
-        const int indirections = fn->params[i].indirections;
+        if (trait_fn_argument(arg)) {
+            if (trait_fn_lowered(fn.params[i].type_name).fn_ty == nullptr) {
+                error(loc, "type mismatch");
+                return nullptr;
+            }
+            spec[i] = kFnSpec;
+            continue;
+        }
+        const int indirections = fn.params[i].indirections;
         const bool value_ok = indirections == 0 && arg.depth == 0 && arg.struct_id >= 0;
         const bool pointer_ok = indirections == 1 && arg.depth == 1 && arg.struct_id >= 0;
         if (!value_ok && !pointer_ok) {
-            error(node.loc, "type mismatch");
-            return {zero(), 0};
+            error(loc, "type mismatch");
+            return nullptr;
         }
         spec[i] = arg.struct_id;
     }
     const PackageNode *owner = find_node(current_file_);
     if (owner == nullptr) {
-        error(node.loc, "type mismatch");
-        return {zero(), 0};
+        error(loc, "type mismatch");
+        return nullptr;
     }
-    std::string symbol = owner->qualifier + "." + fn->name + ".spec";
+    std::string symbol = owner->qualifier + ".";
+    if (!fn.method_struct.empty()) {
+        symbol += fn.method_struct;
+        symbol += '.';
+    }
+    symbol += fn.name;
+    symbol += ".spec";
     for (int sid : spec) {
-        if (sid < 0 || sid >= static_cast<int>(structs_.size())) {
+        if (sid == -1) {
             continue;
         }
         symbol += '.';
-        symbol += structs_[static_cast<std::size_t>(sid)].name;
+        if (sid == kFnSpec) {
+            symbol += "fn";
+            continue;
+        }
+        if (sid >= 0 && sid < static_cast<int>(structs_.size())) {
+            symbol += structs_[static_cast<std::size_t>(sid)].name;
+        }
     }
     llvm::Function *function = nullptr;
     if (const auto found = specs_.find(symbol); found != specs_.end()) {
         function = found->second;
     } else {
-        function = llvm::Function::Create(spec_type(*fn, spec), llvm::GlobalValue::InternalLinkage, symbol, module_);
+        function = llvm::Function::Create(spec_type(fn, spec), llvm::GlobalValue::InternalLinkage, symbol, module_);
         function->setCallingConv(llvm::CallingConv::C);
         unsigned index = 0;
         for (auto &arg : function->args()) {
-            if (index < fn->params.size() && !fn->params[index].name.empty()) {
-                arg.setName(fn->params[index].name);
+            if (index < fn.params.size() && !fn.params[index].name.empty()) {
+                arg.setName(fn.params[index].name);
             }
             ++index;
         }
         specs_.emplace(symbol, function);
     }
-    if (fn->body != nullptr && function->empty() && !emitting_specs_.contains(symbol)) {
+    if (fn.body != nullptr && function->empty() && !emitting_specs_.contains(symbol)) {
         emitting_specs_.insert(symbol);
         auto saved_scopes = std::move(scopes_);
         auto saved_packages = std::move(packages_);
@@ -1682,7 +1801,7 @@ TypedValue CodeGen::emit_generic_call(const Binding &binding, const Expr::Call &
         if (const PackageNode *node_owner = find_node(current_file_)) {
             bind_imports(*node_owner);
         }
-        emit_function_body(*fn, function, meta.depth);
+        emit_function_body(fn, function, meta.depth);
         pop();
         scopes_ = std::move(saved_scopes);
         packages_ = std::move(saved_packages);
@@ -1696,15 +1815,98 @@ TypedValue CodeGen::emit_generic_call(const Binding &binding, const Expr::Call &
         builder_.restoreIP(saved_ip);
         emitting_specs_.erase(symbol);
     }
-    std::vector<llvm::Value *> args;
-    args.reserve(arg_values.size());
+    out_args.clear();
+    out_args.reserve(arg_values.size());
     unsigned index = 0;
     for (const TypedValue &value : arg_values) {
         llvm::Type *param = index < function->getFunctionType()->getNumParams()
                                 ? function->getFunctionType()->getParamType(index)
                                 : nullptr;
+        out_args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+        ++index;
+    }
+    return function;
+}
+
+void CodeGen::generic_method_call(const Binding &method, const TypedValue *receiver, const Expr::Call &node,
+                                  PreparedCall &prepared) {
+    if (method.decl == nullptr) {
+        error(node.loc, "type mismatch");
+        return;
+    }
+    std::vector<TypedValue> values;
+    values.reserve((receiver != nullptr ? 1 : 0) + node.args.size());
+    if (receiver != nullptr) {
+        values.push_back(*receiver);
+    }
+    for (const auto &arg : node.args) {
+        values.push_back(arg == nullptr ? TypedValue{} : emit_rvalue(*arg));
+    }
+    std::vector<llvm::Value *> stored;
+    llvm::Function *function = specialize(*method.decl, method, values, node.loc, stored);
+    if (function == nullptr) {
+        return;
+    }
+    prepared.function = function;
+    prepared.args = std::move(stored);
+    prepared.depth = method.depth;
+    prepared.elem_char = method.elem_char;
+    prepared.struct_id = method.struct_id;
+    prepared.elem_void = method.elem_void;
+    prepared.elem_bool = method.elem_bool;
+    prepared.elem_bits = method.elem_bits;
+    prepared.elem_unsigned = method.elem_unsigned;
+    prepared.decl = method.decl;
+    prepared.elem_float = method.elem_float;
+    prepared.enum_id = method.enum_id;
+}
+
+void CodeGen::call_trait_fn(llvm::Value *fnptr, const TypedValue &meta, const Expr::Call &node, PreparedCall &prepared) {
+    if (fnptr == nullptr || meta.fn_ty == nullptr) {
+        error(node.loc, "type mismatch");
+        return;
+    }
+    std::vector<llvm::Value *> args;
+    args.reserve(node.args.size());
+    unsigned index = 0;
+    for (const auto &arg : node.args) {
+        if (arg == nullptr) {
+            ++index;
+            continue;
+        }
+        const TypedValue value = emit_rvalue(*arg);
+        llvm::Type *param = index < meta.fn_ty->getNumParams() ? meta.fn_ty->getParamType(index) : nullptr;
         args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
         ++index;
+    }
+    prepared.indirect = fnptr;
+    prepared.fn_ty = meta.fn_ty;
+    prepared.args = std::move(args);
+    prepared.depth = meta.fn_ret_depth;
+    prepared.elem_char = meta.fn_ret_char;
+    prepared.elem_bool = meta.fn_ret_bool;
+    prepared.elem_bits = meta.fn_ret_bits;
+    prepared.elem_unsigned = meta.fn_ret_unsigned;
+    prepared.elem_float = meta.fn_ret_float;
+    prepared.struct_id = meta.fn_ret_struct;
+}
+
+TypedValue CodeGen::emit_generic_call(const Binding &binding, const Expr::Call &node) {
+    const Binding meta = binding;
+    const FunctionDecl *fn = meta.decl;
+    std::vector<TypedValue> arg_values;
+    arg_values.reserve(node.args.size());
+    for (const auto &arg : node.args) {
+        arg_values.push_back(arg == nullptr ? TypedValue{} : emit_rvalue(*arg));
+    }
+    if (fn == nullptr) {
+        error(node.loc, "type mismatch");
+        return {zero(), 0};
+    }
+    std::vector<llvm::Value *> args;
+    llvm::Function *function = specialize(*fn, meta, arg_values, node.loc, args);
+    if (function == nullptr) {
+        return {zero(), 0};
     }
     llvm::CallInst *call = builder_.CreateCall(function, args);
     call->setCallingConv(function->getCallingConv());

@@ -417,6 +417,73 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
     return want;
 }
 
+const Type *Checker::sole_trait_method(const Type &want) const {
+    const Type *trait = nullptr;
+    if (want.kind == TypeKind::Trait) {
+        trait = &want;
+    } else if (want.kind == TypeKind::Pointer && !want.optional && want.pointee != nullptr &&
+               want.pointee->kind == TypeKind::Trait) {
+        trait = want.pointee.get();
+    } else {
+        return nullptr;
+    }
+    if (trait->trait_id < 0 || trait->trait_id >= static_cast<int>(traits_.size())) {
+        return nullptr;
+    }
+    const std::vector<TraitInfo::Method> &methods = traits_[static_cast<std::size_t>(trait->trait_id)].methods;
+    if (methods.size() != 1 || methods.front().type.kind != TypeKind::Function || methods.front().type.result == nullptr) {
+        return nullptr;
+    }
+    return &methods.front().type;
+}
+
+bool Checker::accept_trait_lambda(const Expr &expr, const Type &want) {
+    const Type *method = sole_trait_method(want);
+    if (method == nullptr) {
+        return false;
+    }
+    const auto *node = std::get_if<Expr::Func>(&expr.data);
+    if (node == nullptr || node->decl == nullptr) {
+        return false;
+    }
+    FunctionDecl &fn = *node->decl;
+    if (fn.inferred && !fn.elaborated) {
+        elaborate_inferred(fn, *method);
+        return true;
+    }
+    if (!fn.method_struct.empty() || fn.exported || fn.is_static || fn.is_extern || fn.variadic) {
+        error(fn.loc, "not supported yet");
+        return true;
+    }
+    bool generic = false;
+    for (const Param &param : fn.params) {
+        if (!param.is_struct && !param.is_enum && !param.is_array && param.type_package.empty() &&
+            package_trait(file_id_, param.type_name) >= 0) {
+            generic = true;
+        }
+    }
+    const Type signature = function_signature(fn);
+    if (signature.result != nullptr && mentions_trait(*signature.result)) {
+        generic = true;
+    }
+    if (generic) {
+        error(fn.loc, "not supported yet");
+    } else if (signature.kind != TypeKind::Function || !same_type(signature, *method)) {
+        error(fn.loc, "type mismatch");
+    }
+    if (fn.body != nullptr) {
+        check_function(fn);
+    }
+    return true;
+}
+
+void Checker::check_call_arg(const Expr &expr, const Type &want) {
+    if (accept_trait_lambda(expr, want)) {
+        return;
+    }
+    check_against(expr, want);
+}
+
 Type Checker::check_against(const Expr &expr, const Type &want) {
     if (FunctionDecl *fn = inferred_function(expr)) {
         const Type got = elaborate_inferred(*fn, want);
@@ -938,7 +1005,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 for (std::size_t i = 0; i < node.args.size(); ++i) {
                                     if (count_ok && i < method->type.params.size()) {
-                                        check_against(*node.args[i], method->type.params[i]);
+                                        check_call_arg(*node.args[i], method->type.params[i]);
                                     } else {
                                         const Type arg = check_expr(*node.args[i], true);
                                         if (arg.kind != TypeKind::Invalid && !is_numeric(arg) &&
@@ -1017,7 +1084,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                             for (std::size_t i = 0; i < node.args.size(); ++i) {
                                 if (count_ok && i < arity) {
-                                    check_against(*node.args[i], method->type.params[i]);
+                                    check_call_arg(*node.args[i], method->type.params[i]);
                                 } else {
                                     check_expr(*node.args[i], true);
                                 }
@@ -1071,7 +1138,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 for (std::size_t i = 0; i < node.args.size(); ++i) {
                                     if (count_ok && i + 1 < arity) {
-                                        check_against(*node.args[i], method->type.params[i + 1]);
+                                        check_call_arg(*node.args[i], method->type.params[i + 1]);
                                     } else {
                                         check_expr(*node.args[i], true);
                                     }
@@ -1119,7 +1186,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 for (std::size_t i = 0; i < node.args.size(); ++i) {
                                     if (count_ok && i + 1 < arity) {
-                                        check_against(*node.args[i], method->type.params[i + 1]);
+                                        check_call_arg(*node.args[i], method->type.params[i + 1]);
                                     } else {
                                         check_expr(*node.args[i], true);
                                     }
@@ -1175,7 +1242,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 for (std::size_t i = 0; i < node.args.size(); ++i) {
                     if (count_ok && i < signature->params.size()) {
-                        check_against(*node.args[i], signature->params[i]);
+                        check_call_arg(*node.args[i], signature->params[i]);
                     } else {
                         const Type arg = check_expr(*node.args[i], true);
                         if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&

@@ -99,7 +99,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (generic && signature.result != nullptr && signature.result->kind == TypeKind::Tuple) {
                 error(fn->loc, "not supported yet");
             }
-            if (generic && (!fn->method_struct.empty() || fn->exported || fn->is_extern || fn->variadic)) {
+            if (generic && (fn->exported || fn->is_extern || fn->variadic)) {
                 error(fn->loc, "not supported yet");
             }
             if (!fn->method_struct.empty()) {
