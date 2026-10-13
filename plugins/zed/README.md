@@ -15,7 +15,7 @@ Det letar först efter `build/tlc` i projektroten. Finns den inte där används 
 
 Samma knapp finns i kommandopaletten (Ctrl+Shift+P) under namnet `zed: install dev extension`. Programmet `zed` i terminalen öppnar filer, så de orden ska inte skrivas där.
 
-Språkservern är `tlc lsp` i `plugins/lsp`. Den är inte en del av det här pluginet. Zed bygger en liten Rust-del när tillägget installeras, och den delen startar bara servern. Rust från rustup behöver finnas. Binären är `build/tlc` i projektroten, annars `tlc` på `PATH`.
+Språkservern är `tlc lsp` i kompilatorn (`src/lsp.cpp`). Den är inte en del av det här pluginet. Zed bygger en liten Rust-del när tillägget installeras, och den delen startar bara servern. Rust från rustup behöver finnas. Binären är `build/tlc` i projektroten, annars `tlc` på `PATH`.
 
 Servern ger diagnostik, komplettering, hovring, gå-till-definition och symboler. Håll inne Ctrl och klicka på ett funktionsnamn för att öppna definitionen.
 

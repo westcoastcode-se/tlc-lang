@@ -205,6 +205,15 @@ int run_lsp_tests() {
         "    return self.x;\n"
         "}\n"
         "\n"
+        "type Shape trait {\n"
+        "    func area() int;\n"
+        "    func grow(n int) void;\n"
+        "};\n"
+        "\n"
+        "func measure(s *Shape) int {\n"
+        "    return s.area();\n"
+        "}\n"
+        "\n"
         "type Inner struct {\n"
         "    inner_value int;\n"
         "};\n"
@@ -294,6 +303,16 @@ int run_lsp_tests() {
     EXPECT_HAS(check, inferred_items, "\"x\"");
     EXPECT_HAS(check, inferred_items, "\"sum\"");
     EXPECT(check, inferred_items.find("\"make\"") == std::string::npos);
+
+    const LineCol trait_call = at_needle(source, "s.", true);
+    EXPECT(check, trait_call.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":13,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(trait_call.line) + R"(,"character":)" +
+                  std::to_string(trait_call.character) + "}}}");
+    const std::string trait_items = read_until(from_child[0], "\"id\":13", 3000);
+    EXPECT_HAS(check, trait_items, "\"area\"");
+    EXPECT_HAS(check, trait_items, "\"grow\"");
 
     const LineCol init_field = at_needle(source, "var kk K = {.", true);
     EXPECT(check, init_field.line >= 0);

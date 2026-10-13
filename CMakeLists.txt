@@ -40,9 +40,9 @@ add_library(tlc_lib
     src/codegen_emit.cpp
     src/codegen_debug.cpp
     src/pkg.cpp
-    plugins/lsp/lsp.cpp
+    src/lsp.cpp
 )
-target_include_directories(tlc_lib PUBLIC "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/plugins/lsp" ${LLVM_INCLUDE_DIRS})
+target_include_directories(tlc_lib PUBLIC "${CMAKE_SOURCE_DIR}/src" ${LLVM_INCLUDE_DIRS})
 target_compile_options(tlc_lib PUBLIC ${TLC_LLVM_DEFINITIONS})
 target_link_libraries(tlc_lib PUBLIC LLVM)
 

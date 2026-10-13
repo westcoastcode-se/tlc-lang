@@ -1795,6 +1795,18 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.detail = "type " + item->name + " trait";
             put_loc(sym, text, item->loc, item->name);
             add_sym(out, std::move(sym));
+            for (const FunctionDecl &method : item->methods) {
+                Sym member;
+                member.name = method.name;
+                member.owner = item->name;
+                member.detail = spell_function(method);
+                member.package_key = node.package_key;
+                member.uri = uri;
+                member.role = Role::Method;
+                apply_result(member, method);
+                put_loc(member, text, method.loc, method.name);
+                add_sym(out, std::move(member));
+            }
         }
     }
 }
@@ -2424,7 +2436,7 @@ Json complete(const Doc &doc, const Cursor &cursor) {
                                           base->role == Role::Alias || base->role == Role::Trait)
                                              ? base->name
                                              : base->type_name;
-                const bool on_type = base->role == Role::StructType || base->role == Role::EnumType;
+                const bool on_type = base->role == Role::StructType || base->role == Role::EnumType || base->role == Role::Trait;
                 for (const Sym &sym : doc.syms) {
                     if (type.empty() || sym.owner != type) {
                         continue;
