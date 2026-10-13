@@ -33,6 +33,8 @@ struct Type {
     bool optional = false;
     // The value is constant. On a pointee, `*const T` cannot be stored through.
     bool is_const = false;
+    // `type Name T` is a distinct type with the same representation as T. Zero means T itself.
+    int alias_id = 0;
 };
 
 Type type_invalid();

@@ -122,7 +122,9 @@ A local array takes a brace list with one value per element: `var row [3]i32 = {
 
 ### `const`
 
-`const name = expr` at file scope is a compile-time integer. It has no address. The expression is folded the same way as `assert`, including `sizeof`. `const N = 4` can be an array length, `[N]i32`.
+`const name = expr` at file scope takes the type of the expression. `const name Type = expr` writes the type, and the expression has to be that type. A plain integer, such as `const N = 4`, is a compile-time integer. It has no address. The expression is folded the same way as `assert`, including `sizeof`. `const N = 4` can be an array length, `[N]i32`.
+
+A struct, a function pointer, or a typedef can be that constant too. `const origin Point = {.x = 10, .y = 10}` and `const other = Integer(4)` are those types. `const op BinOp = BinOp(add)` and `const plain func (i32, i32) i32 = add` name a function. The initializer has to be a constant. A call is reported as `global initializer is not a constant`. Assigning the constant, or a field of a struct constant, is reported as `type mismatch`. It has no address. An alias is still a different type, so `var raw i32 = value` is reported as `type mismatch` when `value` is `Integer`. `i32(value)` confirms it. An alias is not an array length.
 
 Inside a function, `const name = expr` is an immutable binding. The type is the type of the expression. `name = ...` is reported as `type mismatch`. `&name` has type `*const T`, so a store through that pointer is reported as `type mismatch`. The binding is not a compile-time integer, and it cannot be an array length.
 
@@ -137,6 +139,32 @@ func main() i32 {
     return buf[0];
 }
 ```
+
+```c
+type Integer i32;
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+type BinOp func (i32, i32) i32;
+
+const value Integer = Integer(20);
+const other = Integer(2);
+const origin Point = {.x = 10, .y = 8};
+const op BinOp = BinOp(add);
+
+func main() i32 {
+    return i32(value) + i32(other) + origin.x + origin.y + op(1, 1);
+}
+```
+
+The program returns 42.
 
 ### File scope
 

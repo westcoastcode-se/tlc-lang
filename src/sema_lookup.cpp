@@ -385,7 +385,8 @@ bool Checker::remember_shared(const Symbol &symbol, SourceLoc loc) {
     auto &table = package_syms_[self->package_key];
     const auto found = table.find(symbol.name);
     if (found != table.end()) {
-        if (found->second.is_constant && symbol.is_constant && found->second.const_value == symbol.const_value) {
+        if (found->second.is_constant && symbol.is_constant && plain_int_constant(found->second.type) &&
+            plain_int_constant(symbol.type) && found->second.const_value == symbol.const_value) {
             return true;
         }
         error(loc, "redefinition");
@@ -1308,7 +1309,7 @@ void Checker::define_struct_fields() {
 void Checker::register_structs(const TranslationUnit &unit, uint32_t file_id) {
     declare_struct_tags(unit, file_id);
     fold_early_consts(const_cast<TranslationUnit &>(unit), file_id);
-    define_struct_fields();
+    // Field types are filled in after aliases, so `n Integer` can name `type Integer i32`.
 }
 
 void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
@@ -1547,7 +1548,7 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
                                            item.fn_results, item.loc, item.ret_optional)
                           : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
                                         item.type_package, item.is_struct, item.is_enum, false, item.optional,
-                                        item.const_pointee);
+                                        item.const_pointee, true);
     if (type.kind == TypeKind::Invalid) {
         return;
     }
@@ -1555,7 +1556,11 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         error(item.loc, "not supported yet");
         return;
     }
-    typedefs_[file_id_].emplace(item.name, type);
+    // The name is a different type from its representation. A cast confirms either side.
+    Type distinct = type;
+    distinct.alias_id = next_alias_id_++;
+    alias_names_.push_back(item.name);
+    typedefs_[file_id_].emplace(item.name, distinct);
     if (!item.exported) {
         return;
     }
@@ -1570,11 +1575,11 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         symbol.name = item.name;
         symbol.is_type = true;
         symbol.is_typedef = true;
-        symbol.type = type;
+        symbol.type = distinct;
         table.emplace(item.name, std::move(symbol));
         return;
     }
-    if (found->second.is_type && same_type(found->second.type, type)) {
+    if (found->second.is_type && same_type(found->second.type, distinct)) {
         found->second.is_typedef = true;
         return;
     }
@@ -1663,7 +1668,7 @@ Type Checker::spelled_type(const std::string &name, const std::string &package, 
 
 Type Checker::object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum, bool receiver,
-                          uint32_t optional, uint32_t const_pointee) {
+                          uint32_t optional, uint32_t const_pointee, bool allow_incomplete) {
     if (!receiver) {
         note_struct_use(is_struct, name, loc);
     }
@@ -1674,7 +1679,8 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         if (find_tag(file_id_, name) < 0 && find_enum(file_id_, name) >= 0) {
             type = with_indirections(type_enum(find_enum(file_id_, name)), indirections, loc, optional, const_pointee);
         } else {
-            type = with_indirections(lookup_tag(name, loc, indirections > 0), indirections, loc, optional, const_pointee);
+            type = with_indirections(lookup_tag(name, loc, indirections > 0 || allow_incomplete), indirections, loc,
+                                     optional, const_pointee);
         }
     } else if (is_enum) {
         if (name.empty()) {
@@ -1687,7 +1693,8 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             type = type_invalid();
         }
     } else {
-        type = with_indirections(type_of_name(name, loc, indirections > 0), indirections, loc, optional, const_pointee);
+        type = with_indirections(type_of_name(name, loc, indirections > 0 || allow_incomplete), indirections, loc,
+                                 optional, const_pointee);
     }
     if (mentions_trait(type) && (is_array || !parameter)) {
         error(loc, "not supported yet");
@@ -1723,6 +1730,9 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
 bool Checker::is_lvalue_form(const Expr &expr) const { return lvalue_form(expr); }
 
 std::string Checker::type_desc(const Type &type) const {
+    if (type.alias_id > 0 && static_cast<std::size_t>(type.alias_id) < alias_names_.size()) {
+        return alias_names_[static_cast<std::size_t>(type.alias_id)];
+    }
     switch (type.kind) {
     case TypeKind::Invalid:
         return "invalid";

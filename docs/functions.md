@@ -283,7 +283,7 @@ func main() i32 {
 
 The program returns 42.
 
-A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type does too. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
+A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. `BinOp` is a distinct type. `BinOp(add)` confirms that the function pointer is a `BinOp`. A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type does too. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
 ```c
 func add(a i32, b i32) i32 {
@@ -313,7 +313,7 @@ func main() i32 {
     var maker = Point.make;
     var typed func (i32, i32) i32 = (a, b) { return a + b; };
     var none func () i32 = () { return 1; };
-    var alias BinOp = add;
+    var alias BinOp = BinOp(add);
     var box Box = {.op = (n) { return n + 1; }};
     var p = maker(40, 1);
     return ptr(1, 0) + p.x + typed(0, 0) + none() + alias(0, 0);

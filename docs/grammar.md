@@ -79,7 +79,7 @@ A typed variable names the type in Go order, after the name:
 var-decl    = "var" identifier go-type [ "=" expression ] ";"
             | "var" identifier "=" expression ";"
             | identifier ":=" expression ";" ;
-const-decl  = "const" identifier "=" expression ";" ;
+const-decl  = "const" identifier [ go-type ] "=" expression ";" ;
 ```
 
 `var name :=` is an error. Inside a function, several names unpack one tuple. A call that returns several results is that tuple:
@@ -170,7 +170,7 @@ One `*` before `[` is a pointer to an array, as in `*[4]i32`. An unsized `[]` is
 
 `int`, `uint`, `short`, `long`, `ulong`, `char`, `float`, and `double` are ordinary identifiers. Using one where a type is required is reported as `not supported yet`. `signed` and `unsigned` are reported as `type mismatch`.
 
-A known-length array uses `go-type` in every position, including a parameter and a result. An unsized parameter array stays after the element type, `i32[]`. A type alias uses the same order as `var`: `type Integer i32`, `type Ptr *Point`, `type Pair [2]i32`, `type BinOp func (i32, i32) i32`. The function-pointer declarator `i32 (*name)(` parameters `)` still parses. A new variable is not written as a C declarator. `i32 value = 1` is reported as `expected var`.
+A known-length array uses `go-type` in every position, including a parameter and a result. An unsized parameter array stays after the element type, `i32[]`. A type alias uses the same order as `var`: `type Integer i32`, `type Ptr *Point`, `type Pair [2]i32`, `type BinOp func (i32, i32) i32`. The alias is a distinct type. A cast such as `Integer(n)` or `i32(value)` confirms the type. A file-scope constant can name a struct, a function pointer, or a typedef: `const value Integer = Integer(10)` and `const value = Integer(10)`. The function-pointer declarator `i32 (*name)(` parameters `)` still parses. A new variable is not written as a C declarator. `i32 value = 1` is reported as `expected var`.
 
 ## Statements
 

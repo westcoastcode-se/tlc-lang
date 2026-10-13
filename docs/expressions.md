@@ -137,7 +137,7 @@ func main() i32 {
 
 ## Casts
 
-A cast is the type followed by the value in parentheses: `i32(n)`, `i64(n)`, `*u8(bits)`, `*void(p)`, `*Point(p)`. A name declared as a type in this file is a cast too: `Integer(n)` after `type Integer i32`, and `ShapeType(shape)` to read the tag of a tlc union. A cast to a struct is reported as `type mismatch`. From another file in the package, `ShapeType(shape)` still reads that tag.
+A cast is the type followed by the value in parentheses: `i32(n)`, `i64(n)`, `*u8(bits)`, `*void(p)`, `*Point(p)`. A name declared as a type in this file is a cast too: `Integer(n)` after `type Integer i32`, and `ShapeType(shape)` to read the tag of a tlc union. That cast is how a value enters or leaves the alias. `Integer(n)` has type `Integer`, and `i32(value)` has type `i32`. A cast between an alias and a value with the same representation is allowed, including `Spot(p)` after `type Spot Point` and `Ptr(&p)` after `type Ptr *Point`. A cast to a different struct is reported as `type mismatch`. From another file in the package, `ShapeType(shape)` still reads that tag.
 
 A cast between integer types is allowed. Signed `i32` can be cast to and from a pointer. The cast keeps the type that was written: `*i32(p)` is `*i32`, and `?*i32(p)` is `?*i32`. `?*i32(null)` is allowed. `*i32(null)`, `i64(p)`, `u32(p)`, and `i32(null)` are reported as `type mismatch`. `i32*(p)` is reported as `type mismatch`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type.
 
@@ -152,7 +152,7 @@ func main() i32 {
     var q ?*i32 = ?*i32(null);
     var wide = i64(n);
     var alias = Integer(n);
-    if (q == null && *back == alias && wide == 42) {
+    if (q == null && *back == i32(alias) && wide == 42) {
         return *back;
     }
     return 0;

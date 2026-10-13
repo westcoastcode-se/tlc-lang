@@ -810,6 +810,8 @@ class CodeGen {
     void emit_builtin_trace();
     llvm::Value *variadic_arg(const TypedValue &value);
     void apply_initializer(const VarDecl &var);
+    llvm::Constant *const_initializer(const Expr &expr, const Binding &dest);
+    llvm::Constant *sized_int(const Binding &dest, int32_t value) const;
     llvm::Constant *intern_type_name(const std::string &text);
     llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
     llvm::Constant *const_field(const Expr &expr, const FieldLayout &slot);

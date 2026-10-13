@@ -23,9 +23,9 @@ func main() i32 {
     var bias Integer;
     var extra Pair;
     p = make(40, 2);
-    var q Ptr = &p;
-    bias = 0;
+    var q Ptr = Ptr(&p);
+    bias = Integer(0);
     extra[0] = 0;
     extra[1] = 0;
-    return sum(*q) + bias + extra[0];
+    return sum(*q) + i32(bias) + extra[0];
 }

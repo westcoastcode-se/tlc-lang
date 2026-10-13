@@ -15,5 +15,5 @@ func main() i32 {
     if (lo != 10 || hi != 12) {
         return 1;
     }
-    return apply(fp);
+    return apply(PairFn(fp));
 }

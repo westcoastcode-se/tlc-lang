@@ -111,12 +111,37 @@ void Checker::collect_templates(TranslationUnit &unit, uint32_t file_id) {
     }
 }
 
+namespace {
+
+// Early folding runs before typedefs. Only an inferred constant, or one written as a builtin
+// integer or bool, becomes the compile-time `i32` used as `[N]i32`. `const value Integer = 10`
+// keeps `Integer` and is checked later.
+bool early_int_const(const VarDecl &var) {
+    if (var.inferred) {
+        return true;
+    }
+    if (var.is_fn_ptr || var.is_struct || var.is_enum || var.is_array || var.ptr_to_array || var.indirections != 0 ||
+        !var.type_package.empty() || !var.type_args.empty()) {
+        return false;
+    }
+    Type named;
+    if (!fill_builtin(var.type_name, named)) {
+        return false;
+    }
+    return named.alias_id == 0 && (is_integer(named) || named.kind == TypeKind::Bool);
+}
+
+} // namespace
+
 void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
     file_id_ = file_id;
     push();
     for (TopDecl &decl : unit.decls) {
         auto *var = std::get_if<VarDecl>(&decl.data);
         if (var == nullptr || !var->is_const_decl || var->has_const || var->name.empty() || var->init == nullptr) {
+            continue;
+        }
+        if (!early_int_const(*var)) {
             continue;
         }
         const std::optional<int> value = fold_int(*var->init);
@@ -138,7 +163,10 @@ void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
 
 std::optional<int> Checker::lookup_const_value(const std::string &name) {
     if (const Symbol *symbol = lookup(name); symbol != nullptr && symbol->is_constant) {
-        return symbol->const_value;
+        if (plain_int_constant(symbol->type)) {
+            return symbol->const_value;
+        }
+        return std::nullopt;
     }
     auto search = [&](uint32_t file, bool allow_static) -> std::optional<int> {
         const auto table = const_values_.find(file);

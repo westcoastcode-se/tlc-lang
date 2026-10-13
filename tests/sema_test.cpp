@@ -575,10 +575,38 @@ int run_sema_tests() {
             "  var bias Integer;\n"
             "  var extra Pair;\n"
             "  p = make(40, 2);\n"
-            "  var q Ptr = &p;\n"
-            "  bias = 0;\n"
+            "  var q Ptr = Ptr(&p);\n"
+            "  bias = Integer(0);\n"
             "  extra[0] = 0;\n"
-            "  return sum(*q) + bias + extra[0];\n"
+            "  return sum(*q) + i32(bias) + extra[0];\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "type Count i32;\n"
+            "func main() i32 {\n"
+            "  var value Integer = 10;\n"
+            "  var raw i32 = value;\n"
+            "  var count Count = value;\n"
+            "  return value + 1;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected Integer, found i32");
+        EXPECT_HAS(check, errors, "expected i32, found Integer");
+        EXPECT_HAS(check, errors, "expected Count, found Integer");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "type Count i32;\n"
+            "func add(a Integer, b Integer) Integer { return a + b; }\n"
+            "func main() i32 {\n"
+            "  var value Integer = Integer(40);\n"
+            "  var count Count = Count(i32(value));\n"
+            "  return i32(add(value, Integer(2))) + i32(count);\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -1064,11 +1092,57 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Word u32;\n"
             "func main() i32 {\n"
-            "  var n Word;\n"
-            "  n = 1u32;\n"
-            "  return n;\n"
+            "  var n Word = Word(1u32);\n"
+            "  return i32(n);\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "type Point struct { x i32; y i32; };\n"
+            "func add(a i32, b i32) i32 { return a + b; }\n"
+            "type BinOp func (i32, i32) i32;\n"
+            "const value Integer = Integer(8);\n"
+            "const other = Integer(4);\n"
+            "const origin Point = {.x = 20, .y = 8};\n"
+            "const op BinOp = BinOp(add);\n"
+            "func main() i32 {\n"
+            "  var back Integer = other;\n"
+            "  return i32(value) + i32(back) + origin.x + origin.y + op(1, 1);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "const value Integer = 10;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "expected Integer, found i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "const value = Integer(10);\n"
+            "func main() i32 {\n"
+            "  var raw i32 = value;\n"
+            "  return raw;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected i32, found Integer");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "const origin Point = {.x = 1, .y = 2};\n"
+            "func main() i32 {\n"
+            "  origin.x = 3;\n"
+            "  return origin.x;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
@@ -3236,7 +3310,7 @@ int run_sema_tests() {
             "func main() i32 {\n"
             "  var fp func (i32) (i32, i32) = pick();\n"
             "  x, y := fp(10);\n"
-            "  return apply(fp) + x + y;\n"
+            "  return apply(PairFn(fp)) + x + y;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }

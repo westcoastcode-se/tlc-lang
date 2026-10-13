@@ -104,7 +104,17 @@ inline int width_of(const Type &type) {
     }
 }
 
+// A file-scope integer `const` folded to `i32`. An alias is a different type.
+inline bool plain_int_constant(const Type &type) {
+    return type.alias_id == 0 && type.kind == TypeKind::Int && type.rank == 3 && !type.is_unsigned &&
+           !type.plain_char;
+}
+
 inline Type promote(const Type &type) {
+    // A named alias stays that type. `Integer + Integer` is `Integer`, not `i32`.
+    if (type.alias_id != 0) {
+        return type;
+    }
     if (type.kind == TypeKind::Bool || type.kind == TypeKind::Char) {
         return type_int();
     }

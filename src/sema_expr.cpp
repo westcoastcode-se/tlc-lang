@@ -64,9 +64,16 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &, Sour
         return;
     }
     if (is_c_enum(got) && is_integer(want)) {
+        // An alias is confirmed with a cast. Integer ranks still convert to each other.
+        if (got.alias_id != 0 || want.alias_id != 0) {
+            expect(got, want, loc);
+        }
         return;
     }
     if (is_numeric(got) && is_numeric(want)) {
+        if (got.alias_id != 0 || want.alias_id != 0) {
+            expect(got, want, loc);
+        }
         return;
     }
     expect(got, want, loc);
@@ -184,6 +191,11 @@ Type Checker::elaborate_inferred(FunctionDecl &fn, const Type &want) {
         return type_invalid();
     }
     const auto spell = [&](const auto &self, const Type &type) -> Spelling {
+        if (type.alias_id != 0) {
+            Spelling spelled;
+            spelled.type_name = type_desc(type);
+            return spelled;
+        }
         if (type.kind == TypeKind::Pointer && type.pointee != nullptr) {
             if (type.pointee->kind == TypeKind::Function) {
                 const Type &target = *type.pointee;
@@ -495,6 +507,12 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
     if (FunctionDecl *fn = inferred_function(expr)) {
         const Type got = elaborate_inferred(*fn, want);
         if (got.kind != TypeKind::Invalid) {
+            // `(a, b) { ... }` is written for the expected alias, so it is that alias.
+            Type bare = want;
+            bare.alias_id = 0;
+            if (want.alias_id != 0 && same_type(got, bare)) {
+                return want;
+            }
             expect_value(got, want, expr, expr_loc(expr));
         }
         return got;
@@ -719,7 +737,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             return type_invalid();
                         }
                         if (lhs.kind == TypeKind::Pointer && rhs.kind == TypeKind::Pointer) {
-                            if (lhs.pointee == nullptr || rhs.pointee == nullptr ||
+                            if (lhs.alias_id != rhs.alias_id || lhs.pointee == nullptr || rhs.pointee == nullptr ||
                                 !same_type(*lhs.pointee, *rhs.pointee)) {
                                 error(node.loc, "type mismatch");
                                 return type_invalid();
@@ -742,6 +760,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return type_int();
                     }
                     error(node.loc, "type mismatch");
+                    return type_invalid();
+                }
+                if ((lhs.alias_id != 0 || rhs.alias_id != 0) && !same_type(lhs, rhs)) {
+                    mismatch(node.loc, lhs, rhs);
                     return type_invalid();
                 }
                 if (lhs.kind == TypeKind::Enum || rhs.kind == TypeKind::Enum) {
@@ -789,6 +811,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     case TokenKind::Ge:
                         return type_int();
                     default:
+                        if (lhs.alias_id != 0) {
+                            return lhs;
+                        }
                         return type_float(wide ? 64 : 32);
                     }
                 }
@@ -1024,9 +1049,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                         check_call_arg(*node.args[i], method->type.params[i]);
                                     } else {
                                         const Type arg = check_expr(*node.args[i], true);
-                                        if (arg.kind != TypeKind::Invalid && !is_numeric(arg) &&
-                                            arg.kind != TypeKind::Pointer && arg.kind != TypeKind::Enum &&
-                                            arg.kind != TypeKind::Nullptr) {
+                                        if (arg.alias_id != 0) {
+                                            error(expr_loc(*node.args[i]), "type mismatch");
+                                        } else if (arg.kind != TypeKind::Invalid && !is_numeric(arg) &&
+                                                   arg.kind != TypeKind::Pointer && arg.kind != TypeKind::Enum &&
+                                                   arg.kind != TypeKind::Nullptr) {
                                             error(expr_loc(*node.args[i]), "not supported yet");
                                         }
                                     }
@@ -1265,8 +1292,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_call_arg(*node.args[i], signature->params[i]);
                     } else {
                         const Type arg = check_expr(*node.args[i], true);
-                        if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&
-                            arg.kind != TypeKind::Enum && arg.kind != TypeKind::Nullptr) {
+                        if (arg.alias_id != 0) {
+                            error(expr_loc(*node.args[i]), "type mismatch");
+                        } else if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&
+                                   arg.kind != TypeKind::Enum && arg.kind != TypeKind::Nullptr) {
                             error(expr_loc(*node.args[i]), "not supported yet");
                         }
                     }
@@ -1433,15 +1462,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     target.enum_id >= 0) {
                     return target;
                 }
-                const bool source_scalar = is_numeric(source);
-                const bool target_scalar = is_numeric(target);
-                const bool source_int = same_type(source, type_int());
-                const bool target_int = same_type(target, type_int());
+                Type source_rep = source;
+                Type target_rep = target;
+                source_rep.alias_id = 0;
+                target_rep.alias_id = 0;
+                const bool source_scalar = is_numeric(source_rep);
+                const bool target_scalar = is_numeric(target_rep);
+                const bool source_int = same_type(source_rep, type_int());
+                const bool target_int = same_type(target_rep, type_int());
                 if ((target.kind == TypeKind::Pointer && source.kind == TypeKind::Pointer) ||
                     (target.kind == TypeKind::Pointer && source_int) ||
                     (target.kind == TypeKind::Pointer && source.kind == TypeKind::Nullptr) ||
                     (target_int && source.kind == TypeKind::Pointer) ||
-                    (target_scalar && source_scalar)) {
+                    (target_scalar && source_scalar) || same_type(source_rep, target_rep)) {
                     return target;
                 }
                 error(node.loc, "type mismatch");
@@ -1672,7 +1705,7 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 return static_cast<int>(node.value);
             } else if constexpr (std::is_same_v<T, Expr::Name>) {
                 const Symbol *symbol = lookup(node.text);
-                if (symbol != nullptr && symbol->is_constant) {
+                if (symbol != nullptr && symbol->is_constant && plain_int_constant(symbol->type)) {
                     return symbol->const_value;
                 }
                 return std::nullopt;
@@ -1686,7 +1719,7 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                     return std::nullopt;
                 }
                 const Symbol *member = find_export(symbol->package_file, node.field);
-                if (member == nullptr || !member->is_constant) {
+                if (member == nullptr || !member->is_constant || !plain_int_constant(member->type)) {
                     return std::nullopt;
                 }
                 return member->const_value;
@@ -1717,6 +1750,19 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 case TokenKind::Bang: return *inner == 0 ? 1 : 0;
                 default: return std::nullopt;
                 }
+            } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                if (node.indirections != 0 || node.is_struct || node.is_enum || node.expr == nullptr ||
+                    !node.type_package.empty()) {
+                    return std::nullopt;
+                }
+                Type named;
+                if (!fill_builtin(node.type_name, named) && !package_typedef(file_id_, node.type_name, named)) {
+                    return std::nullopt;
+                }
+                if (!is_integer(named) && named.kind != TypeKind::Bool && !is_c_enum(named)) {
+                    return std::nullopt;
+                }
+                return fold_int(*node.expr);
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
                 const std::optional<int> lhs = node.lhs ? fold_int(*node.lhs) : std::nullopt;
                 const std::optional<int> rhs = node.rhs ? fold_int(*node.rhs) : std::nullopt;
@@ -1849,7 +1895,8 @@ void Checker::restore_optional(const std::string &name) {
 bool Checker::const_path(const Expr &expr) {
     if (const auto *name = std::get_if<Expr::Name>(&expr.data)) {
         const Symbol *symbol = lookup(name->text);
-        return symbol != nullptr && symbol->is_immutable && symbol->type.kind != TypeKind::Pointer;
+        return symbol != nullptr && (symbol->is_immutable || symbol->is_constant) &&
+               symbol->type.kind != TypeKind::Pointer;
     }
     const Expr *base = nullptr;
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
@@ -1890,7 +1937,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                     const bool null_pointer =
                         want.kind == TypeKind::Pointer && got.kind == TypeKind::Nullptr && want.optional;
                     const bool widened = accepts_pointer(got, want);
-                    const bool scalar = is_scalar(got) && is_scalar(want);
+                    const bool scalar =
+                        is_scalar(got) && is_scalar(want) && got.alias_id == 0 && want.alias_id == 0;
                     if (!null_pointer && !widened && !scalar &&
                         (want.kind == TypeKind::Void ||
                          (got.kind != TypeKind::Invalid && want.kind != TypeKind::Invalid && !same_type(got, want)))) {

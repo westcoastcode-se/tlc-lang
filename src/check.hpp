@@ -129,6 +129,9 @@ class Checker {
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> tags_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> trait_names_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, Type>> typedefs_;
+    // alias_names_[id] is the source name of a `type Name T`. Index 0 is unused.
+    std::vector<std::string> alias_names_{""};
+    int next_alias_id_ = 1;
     struct EnumInfo {
         std::string name;
         // File that wrote the enum. A method on it belongs in this file.
@@ -216,7 +219,8 @@ class Checker {
     void note_struct_use(bool is_struct, const std::string &name, SourceLoc loc);
     Type object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                      bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
-                     bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0);
+                     bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0,
+                     bool allow_incomplete = false);
     Type spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
                       int indirections, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
     // A store through this lvalue would change a `const` binding or a `*const` pointee.
@@ -324,6 +328,11 @@ class Checker {
 
     void collect_templates(TranslationUnit &unit, uint32_t file_id);
     void fold_early_consts(TranslationUnit &unit, uint32_t file_id);
+    void bind_file_const(VarDecl &var);
+    void define_constant(const VarDecl &var, Type type, int folded);
+    bool integer_const_type(const Type &type) const;
+    bool stored_const_type(const Type &type) const;
+    bool constant_operand(const Expr &expr);
     std::optional<int> lookup_const_value(const std::string &name);
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                          int &indirections, uint32_t &optional, bool &is_array, int &array_len,

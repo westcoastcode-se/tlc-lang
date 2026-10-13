@@ -12,6 +12,7 @@
 namespace tlc {
 
 void Checker::declare_globals(const TranslationUnit &unit) {
+    std::vector<VarDecl *> pending_consts;
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
             if (!fn->type_params.empty()) {
@@ -191,40 +192,13 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     continue;
                 }
                 VarDecl &written = const_cast<VarDecl &>(*var);
-                if (!written.has_const) {
-                    if (written.init == nullptr) {
-                        error(written.loc, "type mismatch");
-                        continue;
-                    }
-                    const Type got = check_expr(*written.init, true);
-                    const std::optional<int> value = fold_int(*written.init);
-                    if (got.kind == TypeKind::Invalid) {
-                        continue;
-                    }
-                    if (!is_integer(got) && got.kind != TypeKind::Bool && !is_c_enum(got)) {
-                        error(written.loc, "type mismatch");
-                        continue;
-                    }
-                    if (!value) {
-                        error(written.loc, "not supported yet");
-                        continue;
-                    }
-                    written.has_const = true;
-                    written.const_value = *value;
+                // Folded before typedefs, so `[N]i32` can use it. A later const keeps its own type.
+                if (written.has_const) {
+                    const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static};
+                    define_constant(written, type_int(), written.const_value);
+                    continue;
                 }
-                const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static};
-                Symbol symbol;
-                symbol.name = written.name;
-                symbol.type = type_int();
-                symbol.is_constant = true;
-                symbol.const_value = written.const_value;
-                symbol.package_file = file_id_;
-                if (written.is_static) {
-                    statics_[file_id_].insert_or_assign(written.name, symbol);
-                    declare(std::move(symbol), written.loc);
-                } else if (remember_shared(symbol, written.loc)) {
-                    declare(std::move(symbol), written.loc);
-                }
+                pending_consts.push_back(&written);
                 continue;
             }
             Type alias;
@@ -262,6 +236,177 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             }
         }
     }
+    for (VarDecl *var : pending_consts) {
+        if (var != nullptr) {
+            bind_file_const(*var);
+        }
+    }
+}
+
+bool Checker::integer_const_type(const Type &type) const {
+    if (type.alias_id != 0) {
+        return false;
+    }
+    return is_integer(type) || type.kind == TypeKind::Bool || is_c_enum(type);
+}
+
+bool Checker::stored_const_type(const Type &type) const {
+    // `type Integer i32`, `type Point struct`, and `func (i32) i32` are file-scope constants.
+    if (type.alias_id != 0) {
+        return true;
+    }
+    if (type.kind == TypeKind::Struct) {
+        return true;
+    }
+    return fn_pointer(type);
+}
+
+void Checker::define_constant(const VarDecl &var, Type type, int folded) {
+    Symbol symbol;
+    symbol.name = var.name;
+    symbol.type = std::move(type);
+    symbol.is_constant = true;
+    symbol.const_value = folded;
+    symbol.package_file = file_id_;
+    Symbol exported = symbol;
+    bool defined = false;
+    if (var.is_static) {
+        statics_[file_id_].insert_or_assign(var.name, symbol);
+        declare(std::move(symbol), var.loc);
+        defined = true;
+    } else if (remember_shared(symbol, var.loc)) {
+        declare(std::move(symbol), var.loc);
+        defined = true;
+    }
+    if (defined && var.exported && !var.is_static && !var.name.empty()) {
+        exports_[file_id_].insert_or_assign(var.name, std::move(exported));
+    }
+}
+
+void Checker::bind_file_const(VarDecl &written) {
+    if (written.init == nullptr) {
+        error(written.loc, "type mismatch");
+        return;
+    }
+    Type got = type_invalid();
+    if (written.inferred) {
+        got = check_expr(*written.init, true);
+    } else {
+        const Type want = type_of_var(written);
+        if (want.kind == TypeKind::Invalid) {
+            return;
+        }
+        got = check_against(*written.init, want);
+        if (got.kind == TypeKind::Invalid || !same_type(got, want)) {
+            return;
+        }
+        got = want;
+    }
+    if (got.kind == TypeKind::Invalid) {
+        return;
+    }
+    if (got.kind == TypeKind::Void || got.kind == TypeKind::Tuple || got.kind == TypeKind::Nullptr) {
+        error(written.loc, "type mismatch");
+        return;
+    }
+    if (integer_const_type(got)) {
+        const std::optional<int> value = fold_int(*written.init);
+        if (!value) {
+            // `const N = 4u32` is a constant tlc does not fold. A call is not a constant.
+            error(written.loc, constant_operand(*written.init) ? "not supported yet"
+                                                                : "global initializer is not a constant");
+            return;
+        }
+        written.has_const = true;
+        written.const_value = *value;
+        const_values_[file_id_][written.name] = ConstBinding{*value, written.is_static};
+        define_constant(written, type_int(), *value);
+        return;
+    }
+    if (!stored_const_type(got)) {
+        error(written.loc, "type mismatch");
+        return;
+    }
+    if (!constant_operand(*written.init)) {
+        error(written.loc, "global initializer is not a constant");
+        return;
+    }
+    define_constant(written, std::move(got), 0);
+}
+
+bool Checker::constant_operand(const Expr &expr) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Int> || std::is_same_v<T, Expr::Bool> ||
+                          std::is_same_v<T, Expr::Char> || std::is_same_v<T, Expr::Float> ||
+                          std::is_same_v<T, Expr::Nullptr>) {
+                return true;
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Binary>) {
+                return fold_int(expr).has_value();
+            } else if constexpr (std::is_same_v<T, Expr::Name>) {
+                const Symbol *symbol = lookup(node.text);
+                return symbol != nullptr && (symbol->is_constant || symbol->is_function);
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.base == nullptr) {
+                    return false;
+                }
+                if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                    const Symbol *symbol = lookup(named->text);
+                    if (symbol != nullptr && symbol->is_package) {
+                        const Symbol *member = find_export(symbol->package_file, node.field);
+                        return member != nullptr && (member->is_constant || member->is_function);
+                    }
+                    const bool shadowed = symbol != nullptr && !symbol->is_type;
+                    if (shadowed) {
+                        return false;
+                    }
+                    const int id = find_enum(file_id_, named->text);
+                    if (id >= 0 && find_enum_member(id, node.field) != nullptr) {
+                        return true;
+                    }
+                    const MethodInfo *method = find_named_method(named->text, node.field);
+                    return method != nullptr && method->is_static;
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                if (node.indirections != 0 || node.expr == nullptr) {
+                    return false;
+                }
+                return constant_operand(*node.expr);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                if (!node.elements.empty()) {
+                    return false;
+                }
+                for (const Expr::FieldInit &field : node.fields) {
+                    if (field.value == nullptr || !constant_operand(*field.value)) {
+                        return false;
+                    }
+                }
+                return true;
+            } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.expr == nullptr) {
+                    return false;
+                }
+                if (node.op == TokenKind::Plus || node.op == TokenKind::Minus || node.op == TokenKind::Tilde ||
+                    node.op == TokenKind::Bang) {
+                    return constant_operand(*node.expr);
+                }
+                if (node.op != TokenKind::Amp) {
+                    return false;
+                }
+                const auto *named = std::get_if<Expr::Name>(&node.expr->data);
+                if (named == nullptr) {
+                    return false;
+                }
+                const Symbol *symbol = lookup(named->text);
+                return symbol != nullptr && !symbol->is_auto && !symbol->is_function && !symbol->is_package &&
+                       !symbol->is_type && !symbol->is_constant;
+            } else {
+                return false;
+            }
+        },
+        expr.data);
 }
 
 void Checker::check_globals(const TranslationUnit &unit) {
@@ -307,8 +452,9 @@ void Checker::analyze(const TranslationUnit &unit) {
     collect_templates(const_cast<TranslationUnit &>(unit), 0);
     register_structs(unit, 0);
     register_enums(unit, 0);
-    register_traits(unit, 0);
     register_typedefs(unit, 0);
+    register_traits(unit, 0);
+    define_struct_fields();
     check_unions();
     publish_exports(unit, 0);
     analyze_unit(unit, 0, nullptr);
@@ -649,12 +795,8 @@ void Checker::analyze_graph(const PackageGraph &graph) {
     for (const PackageNode &node : graph.nodes) {
         fold_early_consts(const_cast<TranslationUnit &>(node.unit), node.file_id);
     }
-    define_struct_fields();
     for (const PackageNode &node : graph.nodes) {
         register_enums(node.unit, node.file_id);
-    }
-    for (const PackageNode &node : graph.nodes) {
-        register_traits(node.unit, node.file_id);
     }
     struct PendingTypedef {
         uint32_t file_id = 0;
@@ -699,6 +841,10 @@ void Checker::analyze_graph(const PackageGraph &graph) {
         file_id_ = item.file_id;
         register_one_typedef(*item.item);
     }
+    for (const PackageNode &node : graph.nodes) {
+        register_traits(node.unit, node.file_id);
+    }
+    define_struct_fields();
     check_unions();
     for (const PackageNode &node : graph.nodes) {
         publish_exports(node.unit, node.file_id);

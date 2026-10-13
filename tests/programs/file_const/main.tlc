@@ -1,0 +1,30 @@
+type Integer i32;
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Spot Point;
+type Ptr *Point;
+
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+type BinOp func (i32, i32) i32;
+
+var base Point;
+const value Integer = Integer(6);
+const other = Integer(4);
+const origin Point = {.x = 10, .y = 10};
+const spot Spot = {.x = 6, .y = 2};
+const op BinOp = BinOp(add);
+const plain func (i32, i32) i32 = add;
+const p Ptr = Ptr(&base);
+
+func main() i32 {
+    base.x = 2;
+    var back Integer = value;
+    return i32(back) + i32(other) + origin.x + origin.y + spot.x + spot.y + op(1, 1) + plain(0, 0) + p.x;
+}

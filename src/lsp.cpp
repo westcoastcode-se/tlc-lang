@@ -1765,7 +1765,8 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.outline = entry;
             sym.role = var->is_const_decl ? Role::Constant : Role::Variable;
             if (var->is_const_decl) {
-                sym.detail = "const " + var->name;
+                sym.detail = var->type_name.empty() && !var->is_fn_ptr ? "const " + var->name
+                                                                       : "const " + var->name + " " + spell_var(*var);
             } else if (!var->type_name.empty()) {
                 sym.detail = var->name + " " + spell_var(*var);
             } else {

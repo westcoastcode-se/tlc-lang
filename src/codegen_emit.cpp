@@ -147,7 +147,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         if (var == nullptr || var->name.empty() || file.globals.contains(var->name)) {
             continue;
         }
-        if (var->is_const_decl) {
+        if (var->is_const_decl && var->has_const) {
             Binding binding;
             binding.immediate = true;
             binding.const_value = var->const_value;
@@ -191,7 +191,7 @@ void CodeGen::declare_file(const PackageNode &node) {
                     init = const_i32(0);
                 }
             }
-            global = new llvm::GlobalVariable(module_, ty, false, form.linkage, init, form.name);
+            global = new llvm::GlobalVariable(module_, ty, var->is_const_decl, form.linkage, init, form.name);
             debug_global(var->name, global, var->loc, low, var->is_static);
         }
         Binding binding;
@@ -423,6 +423,11 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 case TokenKind::Ge: return a >= b ? 1 : 0;
                 default: return std::nullopt;
                 }
+            } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                if (node.indirections != 0 || node.is_struct || node.is_enum || node.expr == nullptr) {
+                    return std::nullopt;
+                }
+                return fold(*node.expr);
             } else {
                 return std::nullopt;
             }
@@ -692,9 +697,129 @@ llvm::Constant *CodeGen::intern_type_name(const std::string &text) {
     return global;
 }
 
+llvm::Constant *CodeGen::sized_int(const Binding &dest, int32_t value) const {
+    if (dest.elem_bool) {
+        return llvm::ConstantInt::get(i1(), value == 0 ? 0 : 1, false);
+    }
+    if (dest.elem_char || dest.elem_bits == 8) {
+        return llvm::ConstantInt::get(i8(), static_cast<uint64_t>(value) & 0xFFU, false);
+    }
+    if (dest.elem_bits == 16) {
+        return llvm::ConstantInt::get(i16(), static_cast<uint64_t>(value) & 0xFFFFU, false);
+    }
+    if (dest.elem_bits == 64) {
+        return llvm::ConstantInt::get(i64(), static_cast<uint64_t>(static_cast<int64_t>(value)), true);
+    }
+    if (dest.depth != 0 || dest.struct_id >= 0 || dest.fn_ty != nullptr || dest.elem_float) {
+        return nullptr;
+    }
+    return const_i32(value);
+}
+
+llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest) {
+    // Initializers run before function scopes exist. Names are the file's globals and functions.
+    const auto find_here = [&](const std::string &name) -> const Binding * {
+        const auto file = files_.find(current_file_);
+        if (file == files_.end()) {
+            return nullptr;
+        }
+        const auto global = file->second.globals.find(name);
+        if (global != file->second.globals.end()) {
+            return &global->second;
+        }
+        const auto function = file->second.functions.find(name);
+        if (function != file->second.functions.end()) {
+            return &function->second;
+        }
+        return nullptr;
+    };
+    const Expr *cursor = &expr;
+    while (const auto *cast = std::get_if<Expr::Cast>(&cursor->data)) {
+        if (cast->expr == nullptr || cast->indirections != 0) {
+            break;
+        }
+        cursor = cast->expr.get();
+    }
+    if (const auto *init = std::get_if<Expr::Init>(&cursor->data)) {
+        if (dest.struct_id < 0) {
+            return nullptr;
+        }
+        return const_struct(*init, dest.struct_id);
+    }
+    if (const Binding *designator = function_designator(current_file_, *cursor)) {
+        auto *function = llvm::dyn_cast_or_null<llvm::Function>(designator->value);
+        if (function == nullptr || dest.depth <= 0 || dest.fn_ty == nullptr) {
+            return nullptr;
+        }
+        return function;
+    }
+    if (const auto *literal = std::get_if<Expr::Float>(&cursor->data)) {
+        if (!dest.elem_float) {
+            return nullptr;
+        }
+        const std::string number = literal->text.empty() ? "0" : literal->text;
+        llvm::Type *ty = dest.elem_bits >= 64 ? f64_ty() : f32_ty();
+        return llvm::ConstantFP::get(ty, std::strtod(number.c_str(), nullptr));
+    }
+    if (std::holds_alternative<Expr::Nullptr>(cursor->data)) {
+        return dest.depth > 0 ? null_ptr() : nullptr;
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
+        unary != nullptr && unary->op == TokenKind::Amp && unary->expr != nullptr) {
+        if (const auto *named = std::get_if<Expr::Name>(&unary->expr->data)) {
+            if (const Binding *binding = find_here(named->text)) {
+                if (auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(binding->value);
+                    global != nullptr && dest.depth > 0) {
+                    return global;
+                }
+            }
+        }
+        return nullptr;
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
+        if (const Binding *binding = find_here(named->text)) {
+            if (binding->immediate) {
+                return sized_int(dest, binding->const_value);
+            }
+            if (auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(binding->value);
+                global != nullptr && global->isConstant() && global->hasInitializer()) {
+                return global->getInitializer();
+            }
+        }
+    }
+    if (dest.elem_float) {
+        const std::optional<int32_t> number = fold(*cursor);
+        if (!number) {
+            return nullptr;
+        }
+        llvm::Type *ty = dest.elem_bits >= 64 ? f64_ty() : f32_ty();
+        return llvm::ConstantFP::get(ty, static_cast<double>(*number));
+    }
+    const std::optional<int32_t> number = fold(*cursor);
+    if (!number) {
+        return nullptr;
+    }
+    if (dest.depth > 0) {
+        return *number == 0 ? null_ptr() : nullptr;
+    }
+    return sized_int(dest, *number);
+}
+
 void CodeGen::apply_initializer(const VarDecl &var) {
     FileSymbols &file = files_[current_file_];
+    if (var.is_const_decl && var.has_const) {
+        file.folded.insert(var.name);
+        return;
+    }
     if (var.is_const_decl) {
+        const auto found = file.globals.find(var.name);
+        auto *global = found == file.globals.end() ? nullptr : llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value);
+        llvm::Constant *value = var.init == nullptr || global == nullptr ? nullptr : const_initializer(*var.init, found->second);
+        if (value == nullptr || value->getType() != global->getValueType()) {
+            error(var.loc, "global initializer is not a constant");
+            return;
+        }
+        global->setInitializer(value);
         file.folded.insert(var.name);
         return;
     }

@@ -328,7 +328,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         }
         break;
     }
-    if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq) {
+    if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
         if (is_extern) {
             diags_.error(peek().loc, "not supported yet");
         }
@@ -344,8 +344,42 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         var.name = peek().text;
         var.loc = peek().loc;
         ++pos_;
-        expect(TokenKind::Eq, "expected '='");
-        var.init = parse_assignment();
+        // `const name = expr` takes the type from the expression. `const name Type = expr` writes it.
+        if (check(TokenKind::Eq)) {
+            var.inferred = true;
+            ++pos_;
+            var.init = parse_assignment();
+        } else {
+            const PlacedType type = parse_go_type();
+            if (type.struct_definition || type.enum_definition) {
+                diags_.error(type.loc, "not supported yet");
+            }
+            var.type_name = type.type_name;
+            var.type_package = type.type_package;
+            var.is_struct = type.is_struct;
+            var.is_enum = type.is_enum;
+            var.indirections = type.indirections;
+            var.optional = type.optional;
+            var.const_pointee = type.const_pointee;
+            var.is_array = type.is_array;
+            var.array_len = type.array_len;
+            var.array_len_name = type.array_len_name;
+            var.type_args = type.type_args;
+            var.ptr_to_array = type.ptr_to_array;
+            var.is_fn_ptr = type.is_fn_ptr;
+            var.ret_indirections = type.ret_indirections;
+            var.ret_optional = type.ret_optional;
+            var.ret_const_pointee = type.ret_const_pointee;
+            var.fn_params = type.fn_params;
+            var.fn_variadic = type.fn_variadic;
+            var.fn_results = type.fn_results;
+            if (var.is_array && var.array_len < 0) {
+                diags_.error(var.loc, "not supported yet");
+            }
+            if (eat(TokenKind::Eq)) {
+                var.init = parse_assignment();
+            }
+        }
         expect(TokenKind::Semicolon, "expected ';'");
         TopDecl top;
         top.data = std::move(var);

@@ -328,7 +328,8 @@ struct VarDecl {
     bool extern_c = false;
     // `name := expr` at file scope. The type comes from the initializer.
     bool inferred = false;
-    // `const name = expr`. The value is folded and has no address.
+    // File-scope `const name = expr` or `const name Type = expr`.
+    // A plain integer is folded and has no address. A struct, a function pointer, or a typedef keeps that type.
     bool is_const_decl = false;
     bool has_const = false;
     int const_value = 0;

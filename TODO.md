@@ -45,7 +45,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `typeof(T)` when `T` is an array.
 - `typeof` of a function, a tuple, or a trait.
 - The C qualifier spelling `const i32 x` and `var x const i32`. Inside a function, `const name = expr` is an immutable binding, and `*const T` is a pointer to constant `T`.
-- A file-scope `const` whose value is not an integer constant.
+- A file-scope `const` of a float, a pointer, a string, or an array. A struct, a function pointer, and a typedef are constants. `const N = 4` remains the compile-time integer used as an array length. An alias is not an array length.
 - A non-positive compile-time length, including `const N = 0` used as `[N]i32`.
 - Returning an array from anything other than a local array name. `return out` works for `[N]T`. Another return expression does not.
 
