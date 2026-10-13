@@ -230,6 +230,26 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 }
 ```
 
+A function returns a function pointer the same way it returns any other value. `var fp = pick()` infers that pointer, and `fp(20, 10)` calls it. `pick()(20, 10)` calls it without naming the pointer. A method returns one the same way: `box.choose()` and `Box.static_choose()` are pointers, and calling the pointer passes the arguments.
+
+```c
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+func pick() func (i32, i32) i32 {
+    return add;
+}
+
+func main() i32 {
+    var fp = pick();
+    var typed func (i32, i32) i32 = pick();
+    return fp(20, 10) + typed(10, 2);
+}
+```
+
+The program returns 42.
+
 A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type does too. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
 ```c

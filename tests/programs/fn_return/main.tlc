@@ -1,0 +1,46 @@
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+func pick() func (i32, i32) i32 {
+    return add;
+}
+
+func pair(n i32) (i32, i32) {
+    return n, n + 1;
+}
+
+func pick_pair() func (i32) (i32, i32) {
+    return pair;
+}
+
+func make() func (i32) i32 {
+    return func (n i32) i32 { return n + 1; };
+}
+
+type Box struct {
+    n i32;
+};
+
+func Box::choose(self this) func (i32, i32) i32 {
+    return add;
+}
+
+func Box::static_choose() func (i32, i32) i32 {
+    return add;
+}
+
+func main() i32 {
+    func local_make() func (i32) i32 {
+        return func (n i32) i32 { return n; };
+    }
+
+    var fp = pick();
+    var typed func (i32, i32) i32 = pick();
+    var box Box;
+    var from_method = box.choose();
+    var from_static = Box.static_choose();
+    var made = make();
+    a, b := pick_pair()(0);
+    return fp(16, 10) + typed(1, 0) + from_method(4, 2) + from_static(1, 0) + made(2) + pick()(2, 1) + local_make()(1) + a + b;
+}

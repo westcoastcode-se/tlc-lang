@@ -821,12 +821,95 @@ Place place_of_field(const FieldDecl &field) {
     return Place{field.type_name, field.indirections, field.optional, field.const_pointee, field.is_array, field.array_len};
 }
 
+std::string spell_fn_param(const FnParam &param);
+
+std::string spell_fn_params(const std::vector<FnParam> &params, bool variadic) {
+    std::string out;
+    bool any = false;
+    for (const FnParam &param : params) {
+        if (any) {
+            out += ", ";
+        }
+        any = true;
+        out += spell_fn_param(param);
+    }
+    if (variadic) {
+        if (any) {
+            out += ", ";
+        }
+        out += "...";
+    }
+    return out;
+}
+
+std::string spell_fn_results(const std::string &type_name, int indirections, uint32_t optional, uint32_t const_pointee,
+                             const std::vector<FnParam> &many) {
+    if (many.size() > 1) {
+        std::string out = "(";
+        for (std::size_t n = 0; n < many.size(); ++n) {
+            if (n != 0) {
+                out += ", ";
+            }
+            out += spell_fn_param(many[n]);
+        }
+        out.push_back(')');
+        return out;
+    }
+    return spell_type(Place{type_name, indirections, optional, const_pointee, false, 0});
+}
+
+std::string spell_fn_param(const FnParam &param) {
+    if (!param.is_fn_ptr) {
+        return spell_type(Place{param.type_name, param.indirections, param.optional, param.const_pointee, false, 0});
+    }
+    return "func (" + spell_fn_params(param.params, param.variadic) + ") " +
+           spell_fn_results(param.type_name, param.ret_indirections, param.ret_optional, param.ret_const_pointee, param.results);
+}
+
+std::string spell_fn_value(const std::string &type_name, int ret_indirections, uint32_t ret_optional, uint32_t ret_const,
+                           const std::vector<FnParam> &params, bool variadic, const std::vector<FnParam> &results) {
+    return "func (" + spell_fn_params(params, variadic) + ") " +
+           spell_fn_results(type_name, ret_indirections, ret_optional, ret_const, results);
+}
+
+std::string spell_slot(const ResultSlot &slot) {
+    if (slot.is_fn_ptr) {
+        return spell_fn_value(slot.type_name, slot.ret_indirections, slot.ret_optional, slot.ret_const_pointee, slot.fn_params,
+                              slot.fn_variadic, slot.fn_results);
+    }
+    return spell_type(place_of_slot(slot));
+}
+
+std::string spell_param(const Param &param) {
+    if (param.is_fn_ptr) {
+        return spell_fn_value(param.type_name, param.ret_indirections, param.ret_optional, param.ret_const_pointee,
+                              param.fn_params, param.fn_variadic, param.fn_results);
+    }
+    return spell_type(place_of_param(param));
+}
+
+std::string spell_var(const VarDecl &var) {
+    if (var.is_fn_ptr) {
+        return spell_fn_value(var.type_name, var.ret_indirections, var.ret_optional, var.ret_const_pointee, var.fn_params,
+                              var.fn_variadic, var.fn_results);
+    }
+    return spell_type(place_of_var(var));
+}
+
+std::string spell_field(const FieldDecl &field) {
+    if (field.is_fn_ptr) {
+        return spell_fn_value(field.type_name, field.ret_indirections, field.ret_optional, field.ret_const_pointee,
+                              field.fn_params, field.fn_variadic, field.fn_results);
+    }
+    return spell_type(place_of_field(field));
+}
+
 std::string spell_results(const std::vector<ResultSlot> &results) {
     if (results.empty()) {
         return {};
     }
     if (results.size() == 1) {
-        const std::string one = spell_type(place_of_slot(results.front()));
+        const std::string one = spell_slot(results.front());
         if (one == "invalid") {
             return {};
         }
@@ -837,7 +920,7 @@ std::string spell_results(const std::vector<ResultSlot> &results) {
         if (n != 0) {
             out += ", ";
         }
-        out += spell_type(place_of_slot(results[n]));
+        out += spell_slot(results[n]);
     }
     out.push_back(')');
     return out;
@@ -883,7 +966,7 @@ std::string spell_function(const FunctionDecl &fn) {
             out += param.name;
             out.push_back(' ');
         }
-        out += spell_type(place_of_param(param));
+        out += spell_param(param);
     }
     if (fn.variadic) {
         if (any) {
@@ -1025,6 +1108,9 @@ void apply_result(Sym &sym, const FunctionDecl &fn) {
         return;
     }
     const ResultSlot &slot = fn.results.front();
+    if (slot.is_fn_ptr) {
+        return;
+    }
     mark_direct(sym, slot.type_name, slot.indirections, slot.is_array);
 }
 
@@ -1426,7 +1512,7 @@ void add_function_locals(const FunctionDecl &fn, const std::string &text, const 
     for (const Param &param : fn.params) {
         Sym sym;
         sym.name = param.name;
-        sym.detail = param.name + " " + spell_type(place_of_param(param));
+        sym.detail = param.name + " " + spell_param(param);
         mark_direct(sym, param.type_name, param.indirections, param.is_array);
         sym.uri = uri;
         sym.bare = true;
@@ -1465,7 +1551,7 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             sym.detail = var.name;
             if (!var.type_name.empty()) {
                 sym.detail += " ";
-                sym.detail += spell_type(place_of_var(var));
+                sym.detail += spell_var(var);
             }
             sym.uri = uri;
             sym.bare = true;
@@ -1681,7 +1767,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             if (var->is_const_decl) {
                 sym.detail = "const " + var->name;
             } else if (!var->type_name.empty()) {
-                sym.detail = var->name + " " + spell_type(place_of_var(*var));
+                sym.detail = var->name + " " + spell_var(*var);
             } else {
                 sym.detail = var->name;
             }
@@ -1728,7 +1814,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 member.package_key = node.package_key;
                 member.uri = uri;
                 member.role = Role::Field;
-                member.detail = field.name + " " + spell_type(place_of_field(field));
+                member.detail = field.name + " " + spell_field(field);
                 put_loc(member, text, field.loc, field.name);
                 add_sym(out, std::move(member));
             }

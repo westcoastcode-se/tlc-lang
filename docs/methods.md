@@ -118,6 +118,33 @@ The program returns 42. The function is written in the same file as the struct. 
 
 The name without a call is a function pointer. `var ptr = Point.make` and `take(Point.make)` use that pointer, and `ptr(40, 2)` calls it. `var ptr = add` is the same form for a free function. An instance method used as a value, `var ptr = Point.sum`, is reported as `type mismatch`. An enumerator stays a value, so `Color.Red` is not a function pointer.
 
+A method can return a function pointer. The call is that pointer. An instance method and a static method both can. The program below returns 42.
+
+```c
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+type Box struct {
+    n i32;
+};
+
+func Box::choose(self this) func (i32, i32) i32 {
+    return add;
+}
+
+func Box::static_choose() func (i32, i32) i32 {
+    return add;
+}
+
+func main() i32 {
+    var box Box;
+    var from_method = box.choose();
+    var from_static = Box.static_choose();
+    return from_method(20, 10) + from_static(10, 2);
+}
+```
+
 ## Traits
 
 A trait is a list of methods. The receiver is implicit and is omitted from the trait type.

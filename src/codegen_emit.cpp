@@ -1654,7 +1654,35 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
             }
         }
     }
+    attach_returned_fn(result, call.decl);
     return result;
+}
+
+void CodeGen::attach_returned_fn(TypedValue &value, const FunctionDecl *decl) const {
+    if (decl == nullptr || decl->results.size() != 1 || !decl->results.front().is_fn_ptr) {
+        return;
+    }
+    const ResultSlot &slot = decl->results.front();
+    const Lowered ret = lower_fnptr(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
+                                     slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,
+                                     slot.fn_results);
+    value.depth = ret.depth;
+    value.elem_char = false;
+    value.elem_void = false;
+    value.elem_bool = false;
+    value.elem_bits = 0;
+    value.elem_unsigned = false;
+    value.elem_float = false;
+    value.struct_id = -1;
+    value.fn_ty = ret.fn_ty;
+    value.fn_ret_depth = ret.fn_ret_depth;
+    value.fn_ret_float = ret.fn_ret_float;
+    value.fn_ret_bits = ret.fn_ret_bits;
+    value.fn_ret_unsigned = ret.fn_ret_unsigned;
+    value.fn_ret_char = ret.fn_ret_char;
+    value.fn_ret_bool = ret.fn_ret_bool;
+    value.fn_ret_struct = ret.fn_ret_struct;
+    value.fn_results = ret.fn_results;
 }
 
 llvm::AllocaInst *CodeGen::defer_flag() {
@@ -1921,8 +1949,10 @@ TypedValue CodeGen::emit_generic_call(const Binding &binding, const Expr::Call &
         llvm::Value *wide = zero_extend ? builder_.CreateZExt(call, i32()) : builder_.CreateSExt(call, i32());
         return {wide, 0};
     }
-    return {call, meta.depth, meta.elem_char, meta.struct_id, false, meta.elem_void, meta.elem_bool, meta.elem_bits,
-            meta.elem_unsigned};
+    TypedValue result{call, meta.depth, meta.elem_char, meta.struct_id, false, meta.elem_void, meta.elem_bool,
+                      meta.elem_bits, meta.elem_unsigned};
+    attach_returned_fn(result, fn);
+    return result;
 }
 
 TypedValue CodeGen::emit_addr(const Expr &expr) {

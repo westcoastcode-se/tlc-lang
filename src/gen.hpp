@@ -817,6 +817,8 @@ class CodeGen {
     TypedValue emit_anon_function(const FunctionDecl &fn);
     PreparedCall prepare_call(const Expr::Call &node);
     TypedValue emit_prepared(const PreparedCall &call);
+    // A call whose one result is a function pointer keeps that pointer's type on the value.
+    void attach_returned_fn(TypedValue &value, const FunctionDecl *decl) const;
     llvm::AllocaInst *defer_flag();
     void emit_one_defer(const DeferredCall &call);
     void emit_defer_frame(DeferFrame &frame);
