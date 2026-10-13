@@ -6,3 +6,5 @@
 - Always consider `TOOD.md`
   - New features added should be removed from the TODO 
   - When adding new features, add anything skipped to be implemented in the future into TODO.md
+- Comments and Documentation should always be in english
+- Consider prioritize making the source code easier to read for a human
