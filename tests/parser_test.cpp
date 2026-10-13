@@ -798,7 +798,8 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func Point::sum(x int) int { return x; }\n");
-        EXPECT_HAS(check, parsed.errors, "type mismatch");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn Point::sum (params (x int)) int");
     }
 
     {

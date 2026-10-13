@@ -810,9 +810,6 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
                 }
                 continue;
             }
-            if (want_receiver) {
-                error_here("type mismatch");
-            }
             Param param;
             param.loc = peek().loc;
             if (check(TokenKind::Identifier)) {
@@ -851,9 +848,6 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
                 break;
             }
         }
-    }
-    if (method && params.empty()) {
-        error_here("type mismatch");
     }
     expect(TokenKind::RParen, "expected ')'");
     return params;
@@ -968,6 +962,7 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         parse_type_params();
     }
     fn.params = parse_params(extern_c, fn.variadic, fn.method_struct);
+    fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
     parse_results(fn);
     if (check(TokenKind::LBrace)) {
         if (!allow_body) {

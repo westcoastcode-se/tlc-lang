@@ -497,6 +497,8 @@ struct FunctionDecl {
     bool extern_c = false;
     bool variadic = false;
     std::string method_struct;
+    // A function on the struct with no `this` parameter. Called as `Type.name(...)`.
+    bool static_method = false;
     // Names written in `func Vec[T]::get`. Empty for `func Point::sum`.
     std::vector<std::string> method_params;
     std::vector<TypeParam> type_params;

@@ -1114,6 +1114,12 @@ int run_sema_tests() {
             "type Point struct { x int; y int; };\n"
             "type Pair struct { a int; b int; };\n"
             "func sum(n int) int { return n; }\n"
+            "func Point::make(x int, y int) Point {\n"
+            "  var p Point;\n"
+            "  p.x = x;\n"
+            "  p.y = y;\n"
+            "  return p;\n"
+            "}\n"
             "func Point::sum(self this, extra int) int { return self.x + self.y + extra; }\n"
             "func Pair::sum(self this, extra int) int { return self.a + self.b + extra; }\n"
             "func Point::value(self this) int;\n"
@@ -1127,6 +1133,91 @@ int run_sema_tests() {
             "  q.b = 1;\n"
             "  return p.sum(1) + q.sum(0) + p.value() + sum(0);\n"
             "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; y int; };\n"
+            "func Point::make(x int, y int) Point {\n"
+            "  var p Point;\n"
+            "  p.x = x;\n"
+            "  p.y = y;\n"
+            "  return p;\n"
+            "}\n"
+            "func main() int {\n"
+            "  var p = Point.make(40, 2);\n"
+            "  return p.x + p.y;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; };\n"
+            "func Point::sum(self this) int { return self.x; }\n"
+            "func main() int { return Point.sum(); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; };\n"
+            "func Point::make(x int) Point { var p Point; p.x = x; return p; }\n"
+            "func main() int {\n"
+            "  var p Point;\n"
+            "  p = p.make(1);\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; };\n"
+            "func main() int { return Point.missing(); }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, };\n"
+            "func Color::code() int { return 7; }\n"
+            "func main() int {\n"
+            "  var c Color = Color.Red;\n"
+            "  if (c == Color.Red) { return Color.code(); }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, };\n"
+            "func Color::code() int { return 7; }\n"
+            "func main() int {\n"
+            "  var c = Color.Red;\n"
+            "  return c.code();\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"math/point.tlc", "package math;\n"
+                               "type Point struct { x int; y int; };\n"
+                               "func Point::make(x int, y int) Point {\n"
+                               "  var p Point;\n"
+                               "  p.x = x;\n"
+                               "  p.y = y;\n"
+                               "  return p;\n"
+                               "}\n"},
+            {"math/use.tlc", "package math;\n"
+                             "export func total() int {\n"
+                             "  var p = Point.make(40, 2);\n"
+                             "  return p.x + p.y;\n"
+                             "}\n"},
+        });
         EXPECT_EQ(check, errors, "");
     }
 
@@ -1179,9 +1270,13 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Point struct { x int; };\n"
             "type Pair struct { a int; };\n"
-            "func Point::sum(self Pair) int { return 0; }\n"
-            "func main() int { return 0; }\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+            "func Point::sum(self Pair) int { return self.a; }\n"
+            "func main() int {\n"
+            "  var pair Pair;\n"
+            "  pair.a = 4;\n"
+            "  return Point.sum(pair);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
     }
 
     {

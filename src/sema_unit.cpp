@@ -109,14 +109,17 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 if (package_trait(file_id_, fn->method_struct) >= 0) {
                     error(fn->loc, "type mismatch");
                 }
-                const int receiver_refs = fn->params.empty() ? -1 : fn->params.front().indirections;
-                const bool receiver_shape = !fn->params.empty() && fn->params.front().is_receiver &&
+                const bool has_param = !fn->params.empty();
+                const int receiver_refs = has_param ? fn->params.front().indirections : -1;
+                const bool receiver_shape = !fn->static_method && has_param && fn->params.front().is_receiver &&
                                             (receiver_refs == 0 || receiver_refs == 1) && !fn->params.front().is_array &&
                                             fn->params.front().type_package.empty() &&
                                             fn->params.front().type_name == fn->method_struct;
-                const bool receiver_ok =
-                    receiver_shape && (fn->params.front().is_struct || package_has_enum(file_id_, fn->method_struct));
-                if (!receiver_ok) {
+                const bool known_type =
+                    find_tag(file_id_, fn->method_struct) >= 0 || package_has_enum(file_id_, fn->method_struct);
+                const bool receiver_ok = receiver_shape && has_param &&
+                                         (fn->params.front().is_struct || package_has_enum(file_id_, fn->method_struct));
+                if (!known_type || (!fn->static_method && !receiver_ok)) {
                     error(fn->loc, "type mismatch");
                 }
                 // The method is written beside its struct or enum. Other files in the package can still call it.
@@ -137,7 +140,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     if (struct_id >= 0 && find_method(struct_id, fn->name) != nullptr) {
                         error(fn->loc, "redefinition");
                     } else {
-                        table.emplace(fn->name, MethodInfo{std::move(signature), fn->body != nullptr});
+                        table.emplace(fn->name, MethodInfo{std::move(signature), fn->body != nullptr, fn->static_method});
                     }
                 }
                 continue;

@@ -64,7 +64,7 @@ func main() int {
 }
 ```
 
-A method uses the same form as a struct method. `this` is the enum value.
+A method uses the same form as a struct method. `this` is the enum value. A function with no `this` parameter is static and is called as `Color.code()`.
 
 ```c
 func Color::code(self this) int {

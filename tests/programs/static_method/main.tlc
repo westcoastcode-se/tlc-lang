@@ -1,0 +1,21 @@
+type Point struct {
+    x int;
+    y int;
+};
+
+func Point::make(x int, y int) Point {
+    var p Point;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+func Point::zero() Point {
+    return Point.make(0, 0);
+}
+
+func main() int {
+    var p = Point.make(40, 2);
+    var q = Point.zero();
+    return p.x + p.y + q.x;
+}

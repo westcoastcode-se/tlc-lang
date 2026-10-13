@@ -66,9 +66,13 @@ void send_json(int fd, const std::string &json) {
     write_all(fd, json);
 }
 
+// Bytes already pulled from the pipe that belong to a later message.
+std::string pending;
+
 // Read one LSP message. Returns an empty string on timeout or a closed pipe.
 std::string read_message(int fd, int timeout_ms) {
-    std::string buffer;
+    std::string buffer = std::move(pending);
+    pending.clear();
     const int step = timeout_ms > 50 ? 50 : timeout_ms;
     int left = timeout_ms;
     auto pull = [&]() {
@@ -92,6 +96,7 @@ std::string read_message(int fd, int timeout_ms) {
     };
     while (buffer.find("\r\n\r\n") == std::string::npos && buffer.find("\n\n") == std::string::npos) {
         if (!pull()) {
+            pending = std::move(buffer);
             return {};
         }
     }
@@ -112,8 +117,12 @@ std::string read_message(int fd, int timeout_ms) {
     std::from_chars(begin, end, length);
     while (buffer.size() < header_end + length) {
         if (!pull()) {
+            pending = std::move(buffer);
             return {};
         }
+    }
+    if (buffer.size() > header_end + length) {
+        pending = buffer.substr(header_end + length);
     }
     return buffer.substr(header_end, length);
 }
@@ -186,6 +195,16 @@ int run_lsp_tests() {
         "    x int;\n"
         "};\n"
         "\n"
+        "func Point::make(n int) Point {\n"
+        "    var p Point;\n"
+        "    p.x = n;\n"
+        "    return p;\n"
+        "}\n"
+        "\n"
+        "func Point::sum(self this) int {\n"
+        "    return self.x;\n"
+        "}\n"
+        "\n"
         "type Inner struct {\n"
         "    inner_value int;\n"
         "};\n"
@@ -201,11 +220,13 @@ int run_lsp_tests() {
         "\n"
         "func main() int {\n"
         "    var p Point;\n"
+        "    var built = Point.make(1);\n"
+        "    q := Point.make(2);\n"
         "    var n int = \"no\";\n"
         "    var kk K = {.value = 10};\n"
         "    var box Box = {.complex = {.inner_value = 1}};\n"
         "    kk = {.value = 2};\n"
-        "    return add(p.x, 1);\n"
+        "    return add(p.x, q.x);\n"
         "}\n";
 
     int to_child[2] = {-1, -1};
@@ -250,6 +271,29 @@ int run_lsp_tests() {
                   std::to_string(member.character) + "}}}");
     const std::string members = read_until(from_child[0], "\"id\":2", 3000);
     EXPECT_HAS(check, members, "\"x\"");
+    EXPECT_HAS(check, members, "\"sum\"");
+    EXPECT(check, members.find("\"make\"") == std::string::npos);
+
+    const LineCol type_call = at_needle(source, "Point.", true);
+    EXPECT(check, type_call.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":10,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(type_call.line) + R"(,"character":)" +
+                  std::to_string(type_call.character) + "}}}");
+    const std::string type_items = read_until(from_child[0], "\"id\":10", 3000);
+    EXPECT_HAS(check, type_items, "\"make\"");
+    EXPECT(check, type_items.find("\"sum\"") == std::string::npos);
+
+    const LineCol inferred = at_needle(source, "q.", true);
+    EXPECT(check, inferred.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":12,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(inferred.line) + R"(,"character":)" +
+                  std::to_string(inferred.character) + "}}}");
+    const std::string inferred_items = read_until(from_child[0], "\"id\":12", 3000);
+    EXPECT_HAS(check, inferred_items, "\"x\"");
+    EXPECT_HAS(check, inferred_items, "\"sum\"");
+    EXPECT(check, inferred_items.find("\"make\"") == std::string::npos);
 
     const LineCol init_field = at_needle(source, "var kk K = {.", true);
     EXPECT(check, init_field.line >= 0);
@@ -319,10 +363,10 @@ int run_lsp_tests() {
     const LineCol imported = at_needle(goto_source, "return add", true);
     EXPECT(check, imported.line >= 0);
     send_json(to_child[1],
-              std::string(R"({"jsonrpc":"2.0","id":10,"method":"textDocument/definition","params":{"textDocument":{"uri":")") +
+              std::string(R"({"jsonrpc":"2.0","id":11,"method":"textDocument/definition","params":{"textDocument":{"uri":")") +
                   goto_uri + R"("},"position":{"line":)" + std::to_string(imported.line) + R"(,"character":)" +
                   std::to_string(imported.character) + "}}}");
-    const std::string jumped = read_until(from_child[0], "\"id\":10", 4000);
+    const std::string jumped = read_until(from_child[0], "\"id\":11", 4000);
     EXPECT_HAS(check, jumped, "math/add.tlc");
     EXPECT_HAS(check, jumped, "\"line\":0");
 

@@ -918,6 +918,10 @@ struct Sym {
     bool outline = false;
     // The type is a struct value, so `{.field = ...}` can name its fields.
     bool direct_type = false;
+    int indirections = 0;
+    bool is_array = false;
+    // A function on a struct or enum with no `this` parameter.
+    bool static_method = false;
     uint32_t scope_begin = 0;
     uint32_t scope_end = 0;
     Role role = Role::Variable;
@@ -1011,6 +1015,8 @@ int symbol_kind(Role role) {
 
 void mark_direct(Sym &sym, const std::string &type_name, int indirections, bool is_array) {
     sym.type_name = type_name;
+    sym.indirections = indirections;
+    sym.is_array = is_array;
     sym.direct_type = indirections == 0 && !is_array && !type_name.empty() && type_name != "invalid";
 }
 
@@ -1050,10 +1056,373 @@ void add_sym(std::vector<Sym> &out, Sym sym) {
     }
 }
 
-void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri, uint32_t scope_end, std::vector<Sym> &out);
+struct UnitIndex {
+    std::vector<const FunctionDecl *> fns;
+    std::vector<std::string> structs;
+    std::vector<std::string> enums;
+};
+
+const Sym *lookup_bare(const std::vector<Sym> &syms, const std::string &uri, const std::string &name, uint32_t offset);
+
+struct Shape {
+    std::string type_name;
+    int indirections = 0;
+    bool is_array = false;
+    bool known = false;
+};
+
+Shape shape_from_slot(const ResultSlot &slot) {
+    Shape shape;
+    if (slot.type_name.empty() || slot.type_name == "invalid" || slot.is_fn_ptr) {
+        return shape;
+    }
+    shape.type_name = slot.type_name;
+    shape.indirections = slot.indirections;
+    shape.is_array = slot.is_array;
+    shape.known = true;
+    return shape;
+}
+
+Shape shape_from_sym(const Sym &sym) {
+    Shape shape;
+    if (sym.type_name.empty() || sym.type_name == "invalid") {
+        return shape;
+    }
+    shape.type_name = sym.type_name;
+    shape.indirections = sym.indirections;
+    shape.is_array = sym.is_array;
+    shape.known = true;
+    return shape;
+}
+
+void collect_fn_decls(const Stmt &stmt, std::vector<const FunctionDecl *> &fns) {
+    if (const auto *fn = std::get_if<Stmt::Func>(&stmt.data)) {
+        if (fn->decl != nullptr) {
+            fns.push_back(fn->decl.get());
+            if (fn->decl->body != nullptr) {
+                collect_fn_decls(*fn->decl->body, fns);
+            }
+        }
+        return;
+    }
+    if (const auto *block = std::get_if<Stmt::Block>(&stmt.data)) {
+        for (const auto &child : block->statements) {
+            if (child) {
+                collect_fn_decls(*child, fns);
+            }
+        }
+        return;
+    }
+    if (const auto *item = std::get_if<Stmt::If>(&stmt.data)) {
+        if (item->then_arm) {
+            collect_fn_decls(*item->then_arm, fns);
+        }
+        if (item->else_arm) {
+            collect_fn_decls(*item->else_arm, fns);
+        }
+        return;
+    }
+    if (const auto *item = std::get_if<Stmt::While>(&stmt.data)) {
+        if (item->body) {
+            collect_fn_decls(*item->body, fns);
+        }
+    } else if (const auto *item = std::get_if<Stmt::For>(&stmt.data)) {
+        if (item->init) {
+            collect_fn_decls(*item->init, fns);
+        }
+        if (item->body) {
+            collect_fn_decls(*item->body, fns);
+        }
+    } else if (const auto *item = std::get_if<Stmt::DoWhile>(&stmt.data)) {
+        if (item->body) {
+            collect_fn_decls(*item->body, fns);
+        }
+    } else if (const auto *item = std::get_if<Stmt::Switch>(&stmt.data)) {
+        if (item->body) {
+            collect_fn_decls(*item->body, fns);
+        }
+    } else if (const auto *item = std::get_if<Stmt::Case>(&stmt.data)) {
+        if (item->stmt) {
+            collect_fn_decls(*item->stmt, fns);
+        }
+    }
+}
+
+void collect_fn(const FunctionDecl &fn, std::vector<const FunctionDecl *> &fns) {
+    fns.push_back(&fn);
+    if (fn.body != nullptr) {
+        collect_fn_decls(*fn.body, fns);
+    }
+}
+
+const FunctionDecl *find_free(const UnitIndex &index, const std::string &name) {
+    const FunctionDecl *found = nullptr;
+    for (const FunctionDecl *fn : index.fns) {
+        if (fn->method_struct.empty() && fn->name == name) {
+            found = fn;
+        }
+    }
+    return found;
+}
+
+const FunctionDecl *find_method(const UnitIndex &index, const std::string &owner, const std::string &name, bool is_static) {
+    const FunctionDecl *found = nullptr;
+    for (const FunctionDecl *fn : index.fns) {
+        if (fn->method_struct == owner && fn->name == name && fn->static_method == is_static) {
+            found = fn;
+        }
+    }
+    return found;
+}
+
+bool unit_type_name(const UnitIndex &index, const std::string &name) {
+    for (const std::string &item : index.structs) {
+        if (item == name) {
+            return true;
+        }
+    }
+    for (const std::string &item : index.enums) {
+        if (item == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const Sym *find_free_sym(const std::vector<Sym> &syms, const std::string &name) {
+    const Sym *found = nullptr;
+    for (const Sym &sym : syms) {
+        if (sym.role == Role::Function && sym.owner.empty() && sym.name == name) {
+            found = &sym;
+        }
+    }
+    return found;
+}
+
+const Sym *find_method_sym(const std::vector<Sym> &syms, const std::string &owner, const std::string &name, bool is_static) {
+    const Sym *found = nullptr;
+    for (const Sym &sym : syms) {
+        if (sym.role == Role::Method && sym.owner == owner && sym.name == name && sym.static_method == is_static) {
+            found = &sym;
+        }
+    }
+    return found;
+}
+
+Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<Sym> &syms, const std::string &uri,
+                    uint32_t offset);
+
+bool type_base(const UnitIndex &index, const std::vector<Sym> &syms, const std::string &uri, const std::string &name,
+               uint32_t offset, std::string &owner) {
+    const Sym *base = lookup_bare(syms, uri, name, offset);
+    if (base != nullptr && base->role != Role::StructType && base->role != Role::EnumType) {
+        return false;
+    }
+    if (base != nullptr) {
+        owner = base->name;
+        return true;
+    }
+    if (!unit_type_name(index, name)) {
+        return false;
+    }
+    owner = name;
+    return true;
+}
+
+const FunctionDecl *callee_fn(const Expr &callee, const UnitIndex &index, const std::vector<Sym> &syms, const std::string &uri,
+                              uint32_t offset) {
+    if (const auto *named = std::get_if<Expr::Name>(&callee.data)) {
+        return find_free(index, named->text);
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&callee.data)) {
+        if (selector->base == nullptr) {
+            return nullptr;
+        }
+        if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
+            std::string owner;
+            if (type_base(index, syms, uri, named->text, offset, owner)) {
+                return find_method(index, owner, selector->field, true);
+            }
+            const Sym *base = lookup_bare(syms, uri, named->text, offset);
+            if (base != nullptr && !base->type_name.empty() && !base->is_array && base->role != Role::Module) {
+                return find_method(index, base->type_name, selector->field, false);
+            }
+            return nullptr;
+        }
+        const Shape base = shape_of_expr(*selector->base, index, syms, uri, offset);
+        if (!base.known || base.is_array) {
+            return nullptr;
+        }
+        return find_method(index, base.type_name, selector->field, false);
+    }
+    return nullptr;
+}
+
+const Sym *callee_sym(const Expr &callee, const UnitIndex &index, const std::vector<Sym> &syms, const std::string &uri,
+                      uint32_t offset) {
+    if (const auto *named = std::get_if<Expr::Name>(&callee.data)) {
+        return find_free_sym(syms, named->text);
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&callee.data)) {
+        if (selector->base == nullptr) {
+            return nullptr;
+        }
+        if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
+            std::string owner;
+            if (type_base(index, syms, uri, named->text, offset, owner)) {
+                return find_method_sym(syms, owner, selector->field, true);
+            }
+            const Sym *base = lookup_bare(syms, uri, named->text, offset);
+            if (base != nullptr && base->role == Role::Module) {
+                for (const Sym &sym : syms) {
+                    if (sym.package_key == base->package_key && sym.name == selector->field && sym.owner.empty() &&
+                        sym.role == Role::Function) {
+                        return &sym;
+                    }
+                }
+                return nullptr;
+            }
+            if (base != nullptr && !base->type_name.empty() && !base->is_array) {
+                return find_method_sym(syms, base->type_name, selector->field, false);
+            }
+            return nullptr;
+        }
+        const Shape base = shape_of_expr(*selector->base, index, syms, uri, offset);
+        if (!base.known || base.is_array) {
+            return nullptr;
+        }
+        return find_method_sym(syms, base.type_name, selector->field, false);
+    }
+    return nullptr;
+}
+
+std::vector<Shape> call_shapes(const Expr::Call &call, const UnitIndex &index, const std::vector<Sym> &syms, const std::string &uri,
+                               uint32_t offset) {
+    if (call.callee == nullptr) {
+        return {};
+    }
+    if (const FunctionDecl *fn = callee_fn(*call.callee, index, syms, uri, offset)) {
+        std::vector<Shape> parts;
+        parts.reserve(fn->results.size());
+        for (const ResultSlot &slot : fn->results) {
+            parts.push_back(shape_from_slot(slot));
+        }
+        return parts;
+    }
+    if (const Sym *sym = callee_sym(*call.callee, index, syms, uri, offset)) {
+        const Shape shape = shape_from_sym(*sym);
+        if (!shape.known) {
+            return {};
+        }
+        return {shape};
+    }
+    return {};
+}
+
+Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<Sym> &syms, const std::string &uri,
+                    uint32_t offset) {
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        const std::vector<Shape> parts = call_shapes(*call, index, syms, uri, offset);
+        if (parts.size() == 1) {
+            return parts.front();
+        }
+        return {};
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        const Sym *sym = lookup_bare(syms, uri, named->text, offset);
+        if (sym == nullptr || (sym->role != Role::Variable && sym->role != Role::Constant)) {
+            return {};
+        }
+        return shape_from_sym(*sym);
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        if (selector->base == nullptr) {
+            return {};
+        }
+        Shape base;
+        if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
+            const Sym *sym = lookup_bare(syms, uri, named->text, offset);
+            if (sym == nullptr) {
+                return {};
+            }
+            base = shape_from_sym(*sym);
+        } else {
+            base = shape_of_expr(*selector->base, index, syms, uri, offset);
+        }
+        if (!base.known || base.is_array) {
+            return {};
+        }
+        for (const Sym &sym : syms) {
+            if (sym.role == Role::Field && sym.owner == base.type_name && sym.name == selector->field) {
+                return shape_from_sym(sym);
+            }
+        }
+        return {};
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        if (unary->postfix || unary->expr == nullptr) {
+            return {};
+        }
+        Shape inner = shape_of_expr(*unary->expr, index, syms, uri, offset);
+        if (!inner.known) {
+            return {};
+        }
+        if (unary->op == TokenKind::Star && inner.indirections > 0) {
+            --inner.indirections;
+            return inner;
+        }
+        if (unary->op == TokenKind::Amp && !inner.is_array) {
+            ++inner.indirections;
+            return inner;
+        }
+        return {};
+    }
+    if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+        Shape shape;
+        if (cast->type_name.empty() || cast->type_name == "invalid") {
+            return shape;
+        }
+        shape.type_name = cast->type_name;
+        shape.indirections = cast->indirections;
+        shape.known = true;
+        return shape;
+    }
+    return {};
+}
+
+std::vector<Shape> shapes_of(const Expr &expr, const UnitIndex &index, const std::vector<Sym> &syms, const std::string &uri,
+                             uint32_t offset) {
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        return call_shapes(*call, index, syms, uri, offset);
+    }
+    const Shape shape = shape_of_expr(expr, index, syms, uri, offset);
+    if (!shape.known) {
+        return {};
+    }
+    return {shape};
+}
+
+void note_shape(Sym &sym, const Shape &shape) {
+    if (!shape.known) {
+        return;
+    }
+    mark_direct(sym, shape.type_name, shape.indirections, shape.is_array);
+    Place place;
+    place.type_name = shape.type_name;
+    place.indirections = shape.indirections;
+    place.is_array = shape.is_array;
+    const std::string spelled = spell_type(place);
+    if (sym.detail == sym.name || sym.detail == "const " + sym.name) {
+        sym.detail += " ";
+        sym.detail += spelled;
+    }
+}
+
+void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri, uint32_t scope_end, std::vector<Sym> &out,
+               const UnitIndex &index);
 
 void add_function_locals(const FunctionDecl &fn, const std::string &text, const std::string &uri, uint32_t scope_end,
-                         std::vector<Sym> &out) {
+                         std::vector<Sym> &out, const UnitIndex &index) {
     for (const Param &param : fn.params) {
         Sym sym;
         sym.name = param.name;
@@ -1082,11 +1451,12 @@ void add_function_locals(const FunctionDecl &fn, const std::string &text, const 
         add_sym(out, std::move(sym));
     }
     if (fn.body) {
-        walk_stmt(*fn.body, text, uri, scope_end, out);
+        walk_stmt(*fn.body, text, uri, scope_end, out, index);
     }
 }
 
-void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri, uint32_t scope_end, std::vector<Sym> &out) {
+void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri, uint32_t scope_end, std::vector<Sym> &out,
+               const UnitIndex &index) {
     if (const auto *decl = std::get_if<Stmt::Decl>(&stmt.data)) {
         for (const VarDecl &var : decl->vars) {
             Sym sym;
@@ -1109,10 +1479,21 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
         return;
     }
     if (const auto *bind = std::get_if<Stmt::Bind>(&stmt.data)) {
+        const uint32_t at = bind->loc.valid() ? bind->loc.offset : 0;
+        std::vector<Shape> shapes;
+        if (bind->value != nullptr) {
+            shapes = shapes_of(*bind->value, index, out, uri, at);
+        }
+        if (shapes.size() != bind->names.size()) {
+            shapes.clear();
+        }
         for (std::size_t n = 0; n < bind->names.size(); ++n) {
             Sym sym;
             sym.name = bind->names[n];
             sym.detail = bind->is_const ? "const " + bind->names[n] : bind->names[n];
+            if (n < shapes.size()) {
+                note_shape(sym, shapes[n]);
+            }
             sym.uri = uri;
             sym.bare = true;
             sym.local = true;
@@ -1144,62 +1525,63 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             sym.bare = fn.method_struct.empty();
             sym.local = true;
             sym.role = fn.method_struct.empty() ? Role::Function : Role::Method;
+            sym.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
             apply_result(sym, fn);
             put_loc(sym, text, fn.loc, fn.name);
             sym.scope_begin = fn.loc.valid() ? fn.loc.offset : 0;
             sym.scope_end = end;
             add_sym(out, std::move(sym));
-            add_function_locals(fn, text, uri, end, out);
+            add_function_locals(fn, text, uri, end, out, index);
         }
         return;
     }
     if (const auto *block = std::get_if<Stmt::Block>(&stmt.data)) {
         for (const auto &child : block->statements) {
             if (child) {
-                walk_stmt(*child, text, uri, scope_end, out);
+                walk_stmt(*child, text, uri, scope_end, out, index);
             }
         }
         return;
     }
     if (const auto *item = std::get_if<Stmt::If>(&stmt.data)) {
         if (item->then_arm) {
-            walk_stmt(*item->then_arm, text, uri, scope_end, out);
+            walk_stmt(*item->then_arm, text, uri, scope_end, out, index);
         }
         if (item->else_arm) {
-            walk_stmt(*item->else_arm, text, uri, scope_end, out);
+            walk_stmt(*item->else_arm, text, uri, scope_end, out, index);
         }
         return;
     }
     if (const auto *item = std::get_if<Stmt::While>(&stmt.data)) {
         if (item->body) {
-            walk_stmt(*item->body, text, uri, scope_end, out);
+            walk_stmt(*item->body, text, uri, scope_end, out, index);
         }
         return;
     }
     if (const auto *item = std::get_if<Stmt::For>(&stmt.data)) {
         if (item->init) {
-            walk_stmt(*item->init, text, uri, scope_end, out);
+            walk_stmt(*item->init, text, uri, scope_end, out, index);
         }
         if (item->body) {
-            walk_stmt(*item->body, text, uri, scope_end, out);
+            walk_stmt(*item->body, text, uri, scope_end, out, index);
         }
         return;
     }
     if (const auto *item = std::get_if<Stmt::DoWhile>(&stmt.data)) {
         if (item->body) {
-            walk_stmt(*item->body, text, uri, scope_end, out);
+            walk_stmt(*item->body, text, uri, scope_end, out, index);
         }
         return;
     }
     if (const auto *item = std::get_if<Stmt::Switch>(&stmt.data)) {
         if (item->body) {
-            walk_stmt(*item->body, text, uri, scope_end, out);
+            walk_stmt(*item->body, text, uri, scope_end, out, index);
         }
         return;
     }
     if (const auto *item = std::get_if<Stmt::Case>(&stmt.data)) {
         if (item->stmt) {
-            walk_stmt(*item->stmt, text, uri, scope_end, out);
+            walk_stmt(*item->stmt, text, uri, scope_end, out, index);
         }
     }
 }
@@ -1248,6 +1630,21 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
         return best;
     };
 
+    UnitIndex index;
+    for (const TopDecl &decl : node.unit.decls) {
+        if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+            collect_fn(*fn, index.fns);
+        } else if (const auto *item = std::get_if<StructDecl>(&decl.data)) {
+            if (!item->anonymous && !item->name.empty()) {
+                index.structs.push_back(item->name);
+            }
+        } else if (const auto *item = std::get_if<EnumDecl>(&decl.data)) {
+            if (!item->name.empty()) {
+                index.enums.push_back(item->name);
+            }
+        }
+    }
+
     for (const TopDecl &decl : node.unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
             const uint32_t end = body_end(*fn, text, next_mark(fn->loc.offset));
@@ -1261,12 +1658,13 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.bare = entry && fn->method_struct.empty();
             sym.outline = entry && fn->method_struct.empty();
             sym.role = fn->method_struct.empty() ? Role::Function : Role::Method;
+            sym.static_method = !fn->method_struct.empty() && (fn->params.empty() || !fn->params.front().is_receiver);
             apply_result(sym, *fn);
             put_loc(sym, text, fn->loc, fn->name);
             sym.scope_end = end;
             add_sym(out, std::move(sym));
             if (entry) {
-                add_function_locals(*fn, text, uri, end, out);
+                add_function_locals(*fn, text, uri, end, out, index);
             }
             continue;
         }
@@ -1286,6 +1684,13 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 sym.detail = var->name + " " + spell_type(place_of_var(*var));
             } else {
                 sym.detail = var->name;
+            }
+            if (var->type_name.empty() && var->init != nullptr) {
+                const uint32_t at = var->loc.valid() ? var->loc.offset : 0;
+                const std::vector<Shape> shapes = shapes_of(*var->init, index, out, uri, at);
+                if (shapes.size() == 1) {
+                    note_shape(sym, shapes.front());
+                }
             }
             put_loc(sym, text, var->loc, var->name);
             if (!entry && (var->is_static || !var->exported)) {
@@ -2019,10 +2424,15 @@ Json complete(const Doc &doc, const Cursor &cursor) {
                                           base->role == Role::Alias || base->role == Role::Trait)
                                              ? base->name
                                              : base->type_name;
+                const bool on_type = base->role == Role::StructType || base->role == Role::EnumType;
                 for (const Sym &sym : doc.syms) {
-                    if (!type.empty() && sym.owner == type) {
-                        push(sym.name, sym.completion_kind, sym.detail);
+                    if (type.empty() || sym.owner != type) {
+                        continue;
                     }
+                    if (sym.role == Role::Method && on_type != sym.static_method) {
+                        continue;
+                    }
+                    push(sym.name, sym.completion_kind, sym.detail);
                 }
             }
         }

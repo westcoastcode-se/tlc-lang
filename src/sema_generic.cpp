@@ -1057,7 +1057,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         FunctionDecl method = clone_function(owned.fn);
         method.method_struct = spec_name;
         method.type_params.clear();
-        if (!method.params.empty()) {
+        if (!method.static_method && !method.params.empty()) {
             method.params.front().type_name = spec_name;
             method.params.front().is_struct = true;
         }
@@ -1081,7 +1081,8 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             method.optional = first.optional;
         }
         Type signature = function_signature(method);
-        methods_[owner][spec_name].insert_or_assign(method.name, MethodInfo{std::move(signature), method.body != nullptr});
+        methods_[owner][spec_name].insert_or_assign(
+            method.name, MethodInfo{std::move(signature), method.body != nullptr, method.static_method});
         deferred_methods_.push_back(OwnedFn{owner, std::move(method)});
     }
     PendingAppend appended;

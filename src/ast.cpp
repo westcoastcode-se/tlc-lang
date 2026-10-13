@@ -946,6 +946,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.extern_c = fn.extern_c;
     copy.variadic = fn.variadic;
     copy.method_struct = fn.method_struct;
+    copy.static_method = fn.static_method;
     copy.method_params = fn.method_params;
     copy.type_params = fn.type_params;
     for (const auto &expr : fn.result_typeof) {

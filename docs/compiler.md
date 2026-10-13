@@ -51,7 +51,7 @@ The executable stays on disk. `gdb app` or `lldb app` can break on a source line
 
 In Zed, hold Ctrl and click a function name to open its definition. That includes a function brought in by `import { name } from "pkg"`.
 
-Completion offers keywords, built-in types, and names in scope. After a dot it offers the fields, methods, and enumerators of a named type. A designated initializer `{.field = value}` completes the fields of that struct. The type is taken from the variable, from the name being assigned, from the result of the enclosing function after `return`, or from the surrounding field when the initializer is nested, as in `{.complex = {.inner = 1}}`. A file-scope `const` is one of the names offered. Zed starts this server from the TLC extension.
+Completion offers keywords, built-in types, and names in scope. After a dot it offers the fields, methods, and enumerators of a value's type. A type name offers that type's static functions, and an enum name also offers its enumerators. A name bound with `:=`, `var name = expression`, or `const name = expression` uses the type of that expression when the expression is a call, a name, a field, or a cast. `p := Point.make(1)` then completes `p.`. A designated initializer `{.field = value}` completes the fields of that struct. The type is taken from the variable, from the name being assigned, from the result of the enclosing function after `return`, or from the surrounding field when the initializer is nested, as in `{.complex = {.inner = 1}}`. A file-scope `const` is one of the names offered. Zed starts this server from the TLC extension.
 
 ## Linking
 

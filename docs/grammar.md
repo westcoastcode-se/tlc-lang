@@ -47,7 +47,7 @@ type-param  = identifier "type"
             | identifier integer-name
             | identifier ( "char" | "short" | "int" | "long" )
             | identifier identifier ;
-method      = "func" identifier [ method-params ] "::" identifier "(" receiver [ "," parameters ] ")" result ( block | ";" ) ;
+method      = "func" identifier [ method-params ] "::" identifier "(" [ parameters ] ")" result ( block | ";" ) ;
 method-params = "[" identifier { "," identifier } "]" ;
 receiver    = identifier [ "*" ] "this" ;
 
@@ -63,7 +63,7 @@ A function with no body is a prototype and ends with `;`. A body replaces that s
 
 ### Methods
 
-The first parameter is the receiver, written `name this`, `name *this`, or `name ?*this`. `this` stands for the method's struct or enum, so a pointer is `*this` and an optional pointer is `?*this`. `this` is an ordinary identifier everywhere else.
+A receiver parameter is written `name this`, `name *this`, or `name ?*this`. `this` stands for the method's struct or enum, so a pointer is `*this` and an optional pointer is `?*this`. `this` is an ordinary identifier everywhere else. When the parameter list has no receiver, the function is static and the call is `Type.name(arguments)`.
 
 The method is written in the same file as that struct or enum. A method in another file is reported as `method in another file`. Every file in the package can call it.
 

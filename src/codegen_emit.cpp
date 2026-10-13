@@ -1134,6 +1134,75 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         const auto *base_name = std::get_if<Expr::Name>(&selector->base->data);
         const bool package_call = base_name != nullptr && packages_.contains(base_name->text);
         if (!package_call) {
+            bool value_named = false;
+            if (base_name != nullptr) {
+                for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
+                    const auto found = scope->find(base_name->text);
+                    if (found == scope->end()) {
+                        continue;
+                    }
+                    value_named = !found->second.is_function;
+                    break;
+                }
+            }
+            std::string static_type;
+            if (base_name != nullptr && !value_named && !packages_.contains(base_name->text)) {
+                for (const StructLayout &item : structs_) {
+                    if (item.name == base_name->text) {
+                        static_type = item.name;
+                        break;
+                    }
+                }
+                if (static_type.empty()) {
+                    for (const EnumLayout &item : enums_) {
+                        if (item.name == base_name->text) {
+                            static_type = item.name;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!static_type.empty()) {
+                const std::string key = static_type + "." + selector->field;
+                const Binding *method = nullptr;
+                for (const uint32_t id : package_files(current_file_)) {
+                    const auto file = files_.find(id);
+                    if (file == files_.end()) {
+                        continue;
+                    }
+                    const auto found = file->second.functions.find(key);
+                    if (found == file->second.functions.end() || !found->second.is_function) {
+                        continue;
+                    }
+                    if (found->second.is_static && id != current_file_) {
+                        continue;
+                    }
+                    method = &found->second;
+                    break;
+                }
+                auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
+                if (function == nullptr || method->decl == nullptr || !method->decl->static_method) {
+                    error(node.loc, "type mismatch");
+                    return prepared;
+                }
+                std::vector<llvm::Value *> args;
+                args.reserve(node.args.size());
+                unsigned index = 0;
+                for (const auto &arg : node.args) {
+                    const TypedValue value = emit_rvalue(*arg);
+                    llvm::Type *param = index < function->getFunctionType()->getNumParams()
+                                            ? function->getFunctionType()->getParamType(index)
+                                            : nullptr;
+                    args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+                    ++index;
+                }
+                remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
+                         method->elem_bool, method->elem_bits, method->elem_unsigned);
+                prepared.decl = method->decl;
+                prepared.elem_float = method->elem_float;
+                prepared.enum_id = method->enum_id;
+                return prepared;
+            }
             const int receiver_enum = enum_value_id(*selector->base);
             if (receiver_enum >= 0 && receiver_enum < static_cast<int>(enums_.size())) {
                 const std::string key = enums_[static_cast<std::size_t>(receiver_enum)].name + "." + selector->field;
@@ -1154,7 +1223,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     break;
                 }
                 auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
-                if (function == nullptr) {
+                if (function == nullptr || (method->decl != nullptr && method->decl->static_method)) {
                     error(node.loc, "type mismatch");
                     return prepared;
                 }
@@ -1245,7 +1314,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 }
             }
             auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
-            if (function == nullptr) {
+            if (function == nullptr || (method->decl != nullptr && method->decl->static_method)) {
                 error(node.loc, "type mismatch");
                 return prepared;
             }

@@ -105,6 +105,8 @@ class Checker {
     struct MethodInfo {
         Type type;
         bool has_body = false;
+        // No `this` parameter. The call is `Type.name(...)`.
+        bool is_static = false;
     };
 
     struct TraitInfo {

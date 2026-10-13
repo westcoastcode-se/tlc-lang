@@ -910,6 +910,48 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                 }
                 if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
+                    // `Point` is a type, not a value, so `lookup` does not see it. `Point.make(...)` is the static call.
+                    if (selector->base != nullptr) {
+                        if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
+                            const Symbol *symbol = lookup(named->text);
+                            const bool shadowed = symbol != nullptr && !symbol->is_type;
+                            if (!shadowed &&
+                                (find_tag(file_id_, named->text) >= 0 || find_enum(file_id_, named->text) >= 0)) {
+                                const MethodInfo *method = find_named_method(named->text, selector->field);
+                                if (method == nullptr || !method->is_static || method->type.kind != TypeKind::Function ||
+                                    method->type.result == nullptr) {
+                                    error(node.loc, method != nullptr && !method->is_static ? "type mismatch"
+                                                                                            : "undeclared identifier");
+                                    for (const auto &arg : node.args) {
+                                        check_expr(*arg, true);
+                                    }
+                                    return type_invalid();
+                                }
+                                if (deferring && method->type.variadic) {
+                                    error(node.loc, "not supported yet");
+                                }
+                                const bool count_ok = method->type.variadic
+                                                          ? node.args.size() >= method->type.params.size()
+                                                          : node.args.size() == method->type.params.size();
+                                if (!count_ok) {
+                                    error(node.loc, "argument count");
+                                }
+                                for (std::size_t i = 0; i < node.args.size(); ++i) {
+                                    if (count_ok && i < method->type.params.size()) {
+                                        check_against(*node.args[i], method->type.params[i]);
+                                    } else {
+                                        const Type arg = check_expr(*node.args[i], true);
+                                        if (arg.kind != TypeKind::Invalid && !is_numeric(arg) &&
+                                            arg.kind != TypeKind::Pointer && arg.kind != TypeKind::Enum &&
+                                            arg.kind != TypeKind::Nullptr) {
+                                            error(expr_loc(*node.args[i]), "not supported yet");
+                                        }
+                                    }
+                                }
+                                return *method->type.result;
+                            }
+                        }
+                    }
                     const SelectorTarget target = resolve_selector(*selector);
                     if (target.kind == SelectorTarget::Kind::Failed) {
                         for (const auto &arg : node.args) {
@@ -991,6 +1033,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     ? enum_types_[static_cast<std::size_t>(enum_id)].name
                                     : std::string{};
                             if (const MethodInfo *method = find_named_method(enum_name, selector->field)) {
+                                if (method->is_static) {
+                                    error(node.loc, "type mismatch");
+                                    for (const auto &arg : node.args) {
+                                        check_expr(*arg, true);
+                                    }
+                                    return type_invalid();
+                                }
                                 if (deferring && method->type.variadic) {
                                     error(node.loc, "not supported yet");
                                 }
@@ -1037,6 +1086,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         bool through_pointer = false;
                         if (dot_object(base, object, through_pointer)) {
                             if (const MethodInfo *method = find_method(object.struct_id, selector->field)) {
+                                if (method->is_static) {
+                                    error(node.loc, "type mismatch");
+                                    for (const auto &arg : node.args) {
+                                        check_expr(*arg, true);
+                                    }
+                                    return type_invalid();
+                                }
                                 if (deferring && method->type.variadic) {
                                     error(node.loc, "not supported yet");
                                 }

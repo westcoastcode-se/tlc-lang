@@ -2,14 +2,22 @@
 
 What the language pages leave out. The compiler reports most of these as `not supported yet`. Diagnostics stay the short English phrases already used (`not supported yet`, `type mismatch`).
 
+## Static functions
+
+A function on a struct or enum with no `this` parameter is called as `Type.name(...)`. These forms are not supported yet:
+
+- `pkg.Type.name(...)`.
+- A call through a type alias, `Alias.name(...)`.
+- A static function on a generic struct, `Vec[int].name(...)`.
+- Using the function as a value, `var f = Point.make`.
+
 ## Language server
 
 `tlc lsp` publishes diagnostics and answers completion, hover, definition, and document symbols. These are not in place:
 
 - Rename, formatting, code actions, and signature help.
 - Incremental document sync. Each change replaces the whole buffer.
-- Completion after a dot when the receiver is a call, an index, or a parenthesized expression. `{.field = ...}` completes the struct's fields.
-- Member completion for a name introduced with `:=`, because that binding does not store a type on its own.
+- Completion after a dot when the receiver is a call, an index, or a parenthesized expression. `{.field = ...}` completes the struct's fields. A name bound with `:=`, `var name = expression`, or `const name = expression` completes from that expression when it is a call, a name, a field, or a cast.
 - Semantic tokens from the server. Colors come from the tree-sitter grammar.
 
 ## `const if`
