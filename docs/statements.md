@@ -182,12 +182,12 @@ func main() i32 {
 
 ### Pointer and array order
 
-A pointer is a leading star in every position, including a parameter, a result, a type alias, a cast, and `sizeof`: `*i32`, `*const u8`, `type Ptr *Point`, `sizeof(*i32)`, `*i32(value)`. A `var`, a field, or a type alias writes an array in front of its element type: `type Pair [2]i32`. A parameter array stays after the element type: `i32[4]`.
+A pointer is a leading star in every position, including a parameter, a result, a type alias, a cast, and `sizeof`: `*i32`, `*const u8`, `type Ptr *Point`, `sizeof(*i32)`, `*i32(value)`. An array with a known length is written in front of its element type in every position: `type Pair [2]i32`, `func head(a [4]i32)`. `i32[4]` is reported as `type mismatch`. An unsized parameter array stays after the element type: `i32[]`.
 
 ```c
 type Pair [2]i32;
 
-func head(a i32[4]) i32 {
+func head(a [4]i32) i32 {
     return a[0];
 }
 

@@ -1708,7 +1708,7 @@ std::string Checker::type_desc(const Type &type) const {
         return text;
     }
     case TypeKind::Array:
-        return type_desc(type.element ? *type.element : type_invalid()) + "[" + std::to_string(type.length) + "]";
+        return "[" + std::to_string(type.length) + "]" + type_desc(type.element ? *type.element : type_invalid());
     case TypeKind::Struct:
         if (type.struct_id >= 0 && type.struct_id < static_cast<int>(structs_.size())) {
             return structs_[static_cast<std::size_t>(type.struct_id)].name;

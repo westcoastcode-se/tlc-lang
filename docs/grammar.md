@@ -134,21 +134,23 @@ A trait method has no body and no receiver.
 
 ## Types
 
-A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. A `var`, a field, or a type alias writes an array in front of its element type: `[4]i32`, `type Pair [2]i32`. A parameter keeps the array after the element type: `i32[4]`.
+A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array with a known length is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. `i32[4]` and `i32[N]` are reported as `type mismatch`.
 
 ```ebnf
 go-type     = func-type
             | { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
-            | "*" [ "const" ] "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ] ;
+            | "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
+            | [ "?" ] "*" [ "const" ] "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ] ;
 
 placed-type = func-type
-            | { [ "?" ] "*" [ "const" ] } base-type [ array | type-args ]
+            | { [ "?" ] "*" [ "const" ] } base-type [ unsized-array | type-args ]
             | go-type ;
 
-array       = "[" [ array-length ] "]" ;
+unsized-array = "[" "]" ;
 array-length = integer-literal | identifier ;
 type-args   = "[" type-arg { "," type-arg } "]" ;
 type-arg    = integer-literal
+            | "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
             | { [ "?" ] "*" } base-type [ type-args ]
             | array-length ;
 
@@ -168,7 +170,7 @@ One `*` before `[` is a pointer to an array, as in `*[4]i32`. An unsized `[]` is
 
 `int`, `uint`, `short`, `long`, `ulong`, `char`, `float`, and `double` are ordinary identifiers. Using one where a type is required is reported as `not supported yet`. `signed` and `unsigned` are reported as `type mismatch`.
 
-A parameter array stays after the element type. A type alias uses `go-type`, the same order as `var`: `type Integer i32`, `type Ptr *Point`, `type Pair [2]i32`, `type BinOp func (i32, i32) i32`. The function-pointer declarator `i32 (*name)(` parameters `)` still parses. A new variable is not written as a C declarator. `i32 value = 1` is reported as `expected var`.
+A known-length array uses `go-type` in every position, including a parameter and a result. An unsized parameter array stays after the element type, `i32[]`. A type alias uses the same order as `var`: `type Integer i32`, `type Ptr *Point`, `type Pair [2]i32`, `type BinOp func (i32, i32) i32`. The function-pointer declarator `i32 (*name)(` parameters `)` still parses. A new variable is not written as a C declarator. `i32 value = 1` is reported as `expected var`.
 
 ## Statements
 

@@ -158,7 +158,7 @@ func main() i32 {
 
 ## Structs and arrays
 
-Structs are passed and returned by value. An array parameter becomes a pointer, both as `a i32[]` and as `a i32[4]`. A function may return an array. The return expression is a local array name, as in `return out` for `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
+Structs are passed and returned by value. An array parameter becomes a pointer, both as `a i32[]` and as `a [4]i32`. A function may return an array. The return expression is a local array name, as in `return out` for `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
 
 ```c
 type Point struct {
@@ -177,7 +177,7 @@ func pair() [2]i32 {
     return out;
 }
 
-func head(a i32[2]) i32 {
+func head(a [2]i32) i32 {
     return a[0];
 }
 

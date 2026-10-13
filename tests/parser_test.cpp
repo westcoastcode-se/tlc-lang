@@ -336,7 +336,7 @@ int run_parser_tests() {
             "var a [4]i32;\n"
             "var b [2]*i32;\n"
             "var s [3]u8;\n"
-            "func f(xs i32[4], t *u8) i32;\n"
+            "func f(xs [4]i32, t *u8) i32;\n"
             "func main() i32 {\n"
             "  return \"hi\"[0];\n"
             "}\n");
@@ -1095,6 +1095,20 @@ int run_parser_tests() {
             "type Name *i32;\n"
             "func main() i32 { return sizeof(i32 *); }\n");
         EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func sized(xs i32[4]) i32 { return 0; }\n"
+            "func named(xs i32[N]) i32 { return 0; }\n"
+            "func result() i32[2] { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source("func open(xs i32[]) i32 { return xs[0]; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn open (params (xs i32[])");
     }
 
     {

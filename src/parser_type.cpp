@@ -635,11 +635,29 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     type.optional = leading_optional;
     type.const_pointee = leading_const;
     if (check(TokenKind::LBracket)) {
-        // `int[4]` and `int[N]` are arrays. `Vec[int]` and `Vec[4]` are type arguments.
-        if (!primitive_type_name(type.type_name) && !type.type_name.empty() && type.type_name != "invalid") {
+        // `Vec[i32]` is a type argument list. `i32[]` is an unsized parameter array.
+        // A known length is prefix only: `[4]i32`, never `i32[4]`.
+        const bool named = !primitive_type_name(type.type_name) && !type.type_name.empty() && type.type_name != "invalid";
+        if (named) {
             type.type_args = parse_type_args();
-        } else if (!allow_array) {
-            error_here("not supported yet");
+        } else if (peek(1).kind == TokenKind::RBracket) {
+            if (!allow_array) {
+                error_here("not supported yet");
+                while (eat(TokenKind::LBracket)) {
+                    while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::Comma) &&
+                           !check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+                        ++pos_;
+                    }
+                    eat(TokenKind::RBracket);
+                }
+            } else {
+                const ArrayMark array = parse_array_suffix(true);
+                type.is_array = array.is_array;
+                type.array_len = array.length;
+                type.array_len_name = array.len_name;
+            }
+        } else {
+            diags_.error(peek().loc, "type mismatch");
             while (eat(TokenKind::LBracket)) {
                 while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::Comma) &&
                        !check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
@@ -647,11 +665,6 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
                 }
                 eat(TokenKind::RBracket);
             }
-        } else {
-            const ArrayMark array = parse_array_suffix(true);
-            type.is_array = array.is_array;
-            type.array_len = array.length;
-            type.array_len_name = array.len_name;
         }
     }
     return type;
