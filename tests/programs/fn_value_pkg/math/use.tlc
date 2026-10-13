@@ -1,0 +1,8 @@
+package math;
+
+var bump = inc;
+var make_ptr = Point.make;
+
+export func total() int {
+    return bump(40) + make_ptr(1, 0);
+}

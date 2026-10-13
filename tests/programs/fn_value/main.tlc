@@ -1,0 +1,84 @@
+func add(a int, b int) int {
+    return a + b;
+}
+
+func inc(n int) int {
+    return n + 1;
+}
+
+var bump = inc;
+var typed_global func (int) int = inc;
+
+func take(op func (int, int) int) int {
+    return op(40, 2);
+}
+
+type Point struct {
+    x int;
+    y int;
+};
+
+func Point::make(x int, y int) int {
+    return x + y;
+}
+
+func Point::sum(self this) int {
+    return self.x + self.y;
+}
+
+type Color enum {
+    Red,
+};
+
+func Color::code() int {
+    return 1;
+}
+
+func pair(n int) (int, int) {
+    return n, n + 1;
+}
+
+func main() int {
+    var free = add;
+    var method = Point.make;
+    var typed func (int, int) int = Point.make;
+    var from_enum = Color.code;
+    var copied = free;
+    var both = pair;
+    if (free(10, 10) != 20) {
+        return 1;
+    }
+    if (method(20, 1) != 21) {
+        return 2;
+    }
+    if (typed(1, 1) != 2) {
+        return 3;
+    }
+    if (from_enum() != 1) {
+        return 4;
+    }
+    if (copied(3, 4) != 7) {
+        return 5;
+    }
+    if (bump(6) != 7) {
+        return 6;
+    }
+    if (typed_global(8) != 9) {
+        return 7;
+    }
+    var lo, hi = both(10);
+    if (lo != 10 || hi != 11) {
+        return 8;
+    }
+    var p Point;
+    p.x = 20;
+    p.y = 22;
+    if (p.sum() != 42) {
+        return 9;
+    }
+    var c = Color.Red;
+    if (c != Color.Red) {
+        return 10;
+    }
+    return take(Point.make);
+}

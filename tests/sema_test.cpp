@@ -1193,6 +1193,96 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func add(a int, b int) int { return a + b; }\n"
+            "func take(op func (int, int) int) int { return op(40, 2); }\n"
+            "type Point struct { x int; y int; };\n"
+            "func Point::make(x int, y int) int { return x + y; }\n"
+            "func Point::sum(self this) int { return self.x + self.y; }\n"
+            "func main() int {\n"
+            "  var method = Point.make;\n"
+            "  var free = add;\n"
+            "  return take(Point.make) + method(0, 0) + free(0, 0);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func add(a int, b int) int { return a + b; }\n"
+            "var ptr = add;\n"
+            "type Point struct { x int; };\n"
+            "func Point::make(x int, y int) int { return x + y; }\n"
+            "var method = Point.make;\n"
+            "func main() int { return ptr(40, 2) + method(0, 0); }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; };\n"
+            "func Point::sum(self this) int { return self.x; }\n"
+            "func main() int {\n"
+            "  var f = Point.sum;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(op func (int) int) int { return op(1); }\n"
+            "type Point struct { x int; };\n"
+            "func Point::sum(self this) int { return self.x; }\n"
+            "func main() int { return take(Point.sum); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(op func (int) int) int { return op(1); }\n"
+            "type Point struct { x int; };\n"
+            "func Point::make(x int, y int) int { return x + y; }\n"
+            "func main() int { return take(Point.make); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; };\n"
+            "func main() int {\n"
+            "  var f = Point.missing;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x int; };\n"
+            "func Point::make(x int) int { return x; }\n"
+            "func main() int {\n"
+            "  var Point int = 1;\n"
+            "  var f = Point.make;\n"
+            "  return Point;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, };\n"
+            "func Color::code() int { return 1; }\n"
+            "func main() int {\n"
+            "  var f = Color.code;\n"
+            "  var c = Color.Red;\n"
+            "  if (c == Color.Red) { return f(); }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Color enum { Red, };\n"
             "func Color::code() int { return 7; }\n"
             "func main() int {\n"

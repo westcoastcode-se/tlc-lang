@@ -65,6 +65,8 @@ func main() int {
 
 The program returns 42. The function is written in the same file as the struct. Every file in the package can call it. It is not exported. An enum uses the same form, `Color.code()`. A missing name, `Point.missing()`, is reported as `undeclared identifier`.
 
+The name without a call is a function pointer. `var ptr = Point.make` and `take(Point.make)` use that pointer, and `ptr(40, 2)` calls it. `var ptr = add` is the same form for a free function. An instance method used as a value, `var ptr = Point.sum`, is reported as `type mismatch`. An enumerator stays a value, so `Color.Red` is not a function pointer.
+
 ## Traits
 
 A trait is a list of methods. The receiver is implicit and is omitted from the trait type.

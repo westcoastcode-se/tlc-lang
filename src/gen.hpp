@@ -36,6 +36,25 @@ inline std::string function_key(const FunctionDecl &fn) {
     return fn.method_struct + "." + fn.name;
 }
 
+inline FnParam fn_param_from_slot(const ResultSlot &slot) {
+    FnParam param;
+    param.type_name = slot.type_name;
+    param.type_package = slot.type_package;
+    param.is_struct = slot.is_struct;
+    param.is_enum = slot.is_enum;
+    param.indirections = slot.indirections;
+    param.optional = slot.optional;
+    param.const_pointee = slot.const_pointee;
+    param.is_fn_ptr = slot.is_fn_ptr;
+    param.ret_indirections = slot.ret_indirections;
+    param.ret_optional = slot.ret_optional;
+    param.ret_const_pointee = slot.ret_const_pointee;
+    param.params = slot.fn_params;
+    param.variadic = slot.fn_variadic;
+    param.results = slot.fn_results;
+    return param;
+}
+
 struct Binding {
     llvm::Value *value = nullptr;
     int depth = 0;
@@ -621,6 +640,15 @@ class CodeGen {
             TypedValue value{binding.value, binding.depth, binding.elem_char, binding.struct_id, false, binding.elem_void,
                              binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};
             value.enum_id = binding.enum_id;
+            if (auto *function = llvm::dyn_cast_or_null<llvm::Function>(binding.value)) {
+                value.fn_ty = function->getFunctionType();
+            }
+            if (binding.decl != nullptr && binding.decl->results.size() > 1) {
+                value.fn_results.reserve(binding.decl->results.size());
+                for (const ResultSlot &slot : binding.decl->results) {
+                    value.fn_results.push_back(fn_param_from_slot(slot));
+                }
+            }
             return value;
         }
         if (binding.is_array) {
@@ -747,6 +775,12 @@ class CodeGen {
     int enum_type_designator(const Expr &expr) const;
     int enum_value_id(const Expr &expr) const;
     llvm::Constant *enum_constant(int enum_id, int64_t value) const;
+    bool type_known(const std::string &name) const;
+    bool unshadowed_type_name(const std::string &name) const;
+    const Binding *function_binding(uint32_t file, const std::string &name) const;
+    const Binding *static_method_binding(uint32_t file, const std::string &type, const std::string &field) const;
+    const Binding *function_designator(uint32_t file, const Expr &expr) const;
+    std::optional<Lowered> function_pointer_type(const Binding &fn) const;
     void describe_enum(const std::string &underlying, EnumLayout &layout) const;
     void note_enum(Alias &base, int id) const;
     void declare_file(const PackageNode &node);

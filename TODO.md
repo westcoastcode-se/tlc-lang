@@ -9,7 +9,6 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 - `pkg.Type.name(...)`.
 - A call through a type alias, `Alias.name(...)`.
 - A static function on a generic struct, `Vec[int].name(...)`.
-- Using the function as a value, `var f = Point.make`.
 
 ## Language server
 

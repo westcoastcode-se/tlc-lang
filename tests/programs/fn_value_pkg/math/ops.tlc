@@ -1,0 +1,14 @@
+package math;
+
+func inc(n int) int {
+    return n + 1;
+}
+
+type Point struct {
+    x int;
+    y int;
+};
+
+func Point::make(x int, y int) int {
+    return x + y;
+}

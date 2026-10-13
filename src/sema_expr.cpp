@@ -1188,12 +1188,23 @@ Type Checker::check_raw(const Expr &expr, bool used) {
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
                 if (node.base != nullptr) {
                     const int enum_id = enum_designator(*node.base);
-                    if (enum_id >= 0) {
-                        if (find_enum_member(enum_id, node.field) == nullptr) {
-                            error(node.loc, "undeclared identifier");
-                            return type_invalid();
-                        }
+                    if (enum_id >= 0 && find_enum_member(enum_id, node.field) != nullptr) {
                         return type_enum(enum_id);
+                    }
+                    // `Point.make` names the static function. An enumerator such as `Color.Red` was returned above.
+                    if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                        const Symbol *symbol = lookup(named->text);
+                        const bool shadowed = symbol != nullptr && !symbol->is_type;
+                        if (!shadowed &&
+                            (find_tag(file_id_, named->text) >= 0 || find_enum(file_id_, named->text) >= 0)) {
+                            const MethodInfo *method = find_named_method(named->text, node.field);
+                            if (method == nullptr || !method->is_static || method->type.kind != TypeKind::Function) {
+                                error(node.loc, method != nullptr && !method->is_static ? "type mismatch"
+                                                                                        : "undeclared identifier");
+                                return type_invalid();
+                            }
+                            return method->type;
+                        }
                     }
                 }
                 const SelectorTarget target = resolve_selector(node);

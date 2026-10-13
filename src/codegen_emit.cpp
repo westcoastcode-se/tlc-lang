@@ -20,6 +20,7 @@
 namespace tlc {
 
 void CodeGen::declare_file(const PackageNode &node) {
+    current_file_ = node.file_id;
     struct Acc {
         const FunctionDecl *fn = nullptr;
         bool exported = false;
@@ -726,6 +727,17 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         file.folded.insert(var.name);
         return;
     }
+    if (const Binding *designator = function_designator(current_file_, *var.init)) {
+        auto *function = llvm::dyn_cast<llvm::Function>(designator->value);
+        if (found_early == file.globals.end() || found_early->second.fn_ty == nullptr ||
+            found_early->second.value == nullptr || function == nullptr) {
+            error(var.loc, "global initializer is not a constant");
+            return;
+        }
+        llvm::cast<llvm::GlobalVariable>(found_early->second.value)->setInitializer(function);
+        file.folded.insert(var.name);
+        return;
+    }
     const auto value = fold(*var.init);
     const auto found = file.globals.find(var.name);
     if (!value || found == file.globals.end()) {
@@ -1163,25 +1175,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 }
             }
             if (!static_type.empty()) {
-                const std::string key = static_type + "." + selector->field;
-                const Binding *method = nullptr;
-                for (const uint32_t id : package_files(current_file_)) {
-                    const auto file = files_.find(id);
-                    if (file == files_.end()) {
-                        continue;
-                    }
-                    const auto found = file->second.functions.find(key);
-                    if (found == file->second.functions.end() || !found->second.is_function) {
-                        continue;
-                    }
-                    if (found->second.is_static && id != current_file_) {
-                        continue;
-                    }
-                    method = &found->second;
-                    break;
-                }
+                const Binding *method = static_method_binding(current_file_, static_type, selector->field);
                 auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
-                if (function == nullptr || method->decl == nullptr || !method->decl->static_method) {
+                if (function == nullptr) {
                     error(node.loc, "type mismatch");
                     return prepared;
                 }
@@ -2440,18 +2436,27 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size())) {
                         const EnumLayout &layout = enums_[static_cast<std::size_t>(enum_id)];
                         const auto member = layout.values.find(node.field);
-                        if (member == layout.values.end()) {
-                            error(node.loc, "undeclared identifier");
-                            return {zero(), 0};
+                        if (member != layout.values.end()) {
+                            TypedValue value;
+                            value.value = enum_constant(enum_id, member->second);
+                            value.enum_id = enum_id;
+                            value.elem_bool = layout.is_bool;
+                            value.elem_char = layout.is_char;
+                            value.elem_unsigned = layout.is_unsigned;
+                            value.elem_bits = layout.is_bool ? 0 : layout.bits;
+                            return value;
                         }
-                        TypedValue value;
-                        value.value = enum_constant(enum_id, member->second);
-                        value.enum_id = enum_id;
-                        value.elem_bool = layout.is_bool;
-                        value.elem_char = layout.is_char;
-                        value.elem_unsigned = layout.is_unsigned;
-                        value.elem_bits = layout.is_bool ? 0 : layout.bits;
-                        return value;
+                    }
+                    if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                        if (unshadowed_type_name(named->text)) {
+                            const Binding *method = static_method_binding(current_file_, named->text, node.field);
+                            auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
+                            if (function == nullptr) {
+                                error(node.loc, "type mismatch");
+                                return {zero(), 0};
+                            }
+                            return value_of_binding(*method);
+                        }
                     }
                 }
                 const auto *base_name = node.base == nullptr ? nullptr : std::get_if<Expr::Name>(&node.base->data);
@@ -3055,6 +3060,26 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             note(name, binding);
             return;
         }
+        // A designator's depth is the return depth. The value itself is already a function pointer.
+        if (auto *function = llvm::dyn_cast_or_null<llvm::Function>(got.value)) {
+            llvm::AllocaInst *slot = alloca_typed(ptr_type(), name);
+            builder_.CreateStore(function, slot);
+            Binding binding;
+            binding.value = slot;
+            binding.depth = 1;
+            binding.fn_ty = got.fn_ty != nullptr ? got.fn_ty : function->getFunctionType();
+            binding.fn_ret_depth = got.depth;
+            binding.fn_ret_float = got.elem_float;
+            binding.fn_ret_bits = got.elem_bits;
+            binding.fn_ret_unsigned = got.elem_unsigned;
+            binding.fn_ret_char = got.elem_char;
+            binding.fn_ret_bool = got.elem_bool;
+            binding.fn_ret_struct = got.struct_id;
+            binding.fn_results = got.fn_results;
+            scopes_.back()[name] = binding;
+            note(name, binding);
+            return;
+        }
         llvm::Type *ty = i32();
         Binding binding;
         if (got.enum_id >= 0 && got.enum_id < static_cast<int>(enums_.size())) {
@@ -3077,6 +3102,15 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.elem_float = got.elem_float;
             binding.ptr_to_array = got.ptr_to_array;
             binding.ptr_array_len = got.ptr_array_len;
+            binding.fn_ty = got.fn_ty;
+            binding.fn_ret_depth = got.fn_ret_depth;
+            binding.fn_ret_float = got.fn_ret_float;
+            binding.fn_ret_bits = got.fn_ret_bits;
+            binding.fn_ret_unsigned = got.fn_ret_unsigned;
+            binding.fn_ret_char = got.fn_ret_char;
+            binding.fn_ret_bool = got.fn_ret_bool;
+            binding.fn_ret_struct = got.fn_ret_struct;
+            binding.fn_results = got.fn_results;
         } else if (got.struct_id >= 0 && got.struct_id < static_cast<int>(structs_.size()) &&
                    structs_[static_cast<std::size_t>(got.struct_id)].type != nullptr) {
             ty = structs_[static_cast<std::size_t>(got.struct_id)].type;

@@ -94,7 +94,7 @@ binding     = "var" name-list "=" expression ";"
 
 `name :=` defines a name that is new in the block and assigns a name that already exists there. At least one name must be new. A `:=` whose names are all already in the block is `type mismatch`. `=` assigns names that already exist. `var` defines every name.
 
-A variable whose type is a function pointer is written with `func` first, then the name:
+A variable whose type is a function pointer is written with `func` first, then the name. `var name = function` infers that pointer from a function or a static function.
 
 ```ebnf
 fn-var      = func-type identifier { "," identifier } ";" ;

@@ -137,7 +137,7 @@ test "add joins its arguments" {
 
 ## Function pointers
 
-A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types. A function name used as a value is a pointer to that function.
+A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types. A function name used as a value is a pointer to that function. The type can be inferred: `var ptr = add` is that pointer, and `ptr(1, 2)` calls it. A static function is the same kind of value, `var ptr = Point.make` and `take(Point.make)`. An instance method used as a value is reported as `type mismatch`.
 
 ```c
 func add(a i32, b i32) i32 {

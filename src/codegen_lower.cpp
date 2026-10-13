@@ -1286,6 +1286,138 @@ const PackageNode *CodeGen::find_node(uint32_t file_id) const {
     return nullptr;
 }
 
+bool CodeGen::type_known(const std::string &name) const {
+    if (name.empty()) {
+        return false;
+    }
+    for (const StructLayout &item : structs_) {
+        if (item.name == name) {
+            return true;
+        }
+    }
+    for (const EnumLayout &item : enums_) {
+        if (item.name == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CodeGen::unshadowed_type_name(const std::string &name) const {
+    if (!type_known(name) || packages_.contains(name) || lookup(name) != nullptr) {
+        return false;
+    }
+    return true;
+}
+
+const Binding *CodeGen::function_binding(uint32_t file, const std::string &name) const {
+    const auto own = files_.find(file);
+    if (own != files_.end()) {
+        const auto it = own->second.functions.find(name);
+        if (it != own->second.functions.end()) {
+            return &it->second;
+        }
+    }
+    return visible(file, name, true);
+}
+
+const Binding *CodeGen::static_method_binding(uint32_t file, const std::string &type, const std::string &field) const {
+    if (type.empty() || field.empty()) {
+        return nullptr;
+    }
+    const std::string key = type + "." + field;
+    for (const uint32_t id : package_files(file)) {
+        const auto found_file = files_.find(id);
+        if (found_file == files_.end()) {
+            continue;
+        }
+        const auto found = found_file->second.functions.find(key);
+        if (found == found_file->second.functions.end() || !found->second.is_function) {
+            continue;
+        }
+        if (found->second.is_static && id != file) {
+            continue;
+        }
+        if (found->second.decl == nullptr || !found->second.decl->static_method) {
+            return nullptr;
+        }
+        return &found->second;
+    }
+    return nullptr;
+}
+
+const Binding *CodeGen::function_designator(uint32_t file, const Expr &expr) const {
+    if (const auto *name = std::get_if<Expr::Name>(&expr.data)) {
+        const Binding *fn = function_binding(file, name->text);
+        if (fn == nullptr || !fn->is_function || fn->is_generic || fn->value == nullptr) {
+            return nullptr;
+        }
+        if (fn->decl != nullptr && !fn->decl->method_struct.empty() && !fn->decl->static_method) {
+            return nullptr;
+        }
+        return fn;
+    }
+    const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+    if (selector == nullptr || selector->base == nullptr) {
+        return nullptr;
+    }
+    const int enum_id = enum_type_designator(*selector->base);
+    if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size()) &&
+        enums_[static_cast<std::size_t>(enum_id)].values.contains(selector->field)) {
+        return nullptr;
+    }
+    const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+    if (base == nullptr || packages_.contains(base->text)) {
+        return nullptr;
+    }
+    if (function_binding(file, base->text) != nullptr) {
+        return nullptr;
+    }
+    const auto own = files_.find(file);
+    if (own != files_.end() && own->second.globals.contains(base->text)) {
+        return nullptr;
+    }
+    if (visible(file, base->text, false) != nullptr || !type_known(base->text)) {
+        return nullptr;
+    }
+    const Binding *method = static_method_binding(file, base->text, selector->field);
+    if (method == nullptr || method->value == nullptr || method->is_generic) {
+        return nullptr;
+    }
+    return method;
+}
+
+std::optional<CodeGen::Lowered> CodeGen::function_pointer_type(const Binding &fn) const {
+    if (!fn.is_function || fn.is_generic || fn.value == nullptr) {
+        return std::nullopt;
+    }
+    auto *function = llvm::dyn_cast<llvm::Function>(fn.value);
+    if (function == nullptr) {
+        return std::nullopt;
+    }
+    if (fn.decl != nullptr && !fn.decl->method_struct.empty() && !fn.decl->static_method) {
+        return std::nullopt;
+    }
+    Lowered low;
+    low.depth = 1;
+    low.type = ptr_type();
+    low.fn_ty = function->getFunctionType();
+    low.fn_ret_depth = fn.depth;
+    low.fn_ret_float = fn.elem_float;
+    low.fn_ret_bits = fn.elem_bits;
+    low.fn_ret_unsigned = fn.elem_unsigned;
+    low.fn_ret_char = fn.elem_char;
+    low.fn_ret_bool = fn.elem_bool;
+    low.fn_ret_struct = fn.struct_id;
+    if (fn.decl != nullptr && fn.decl->results.size() > 1) {
+        low.fn_results.reserve(fn.decl->results.size());
+        for (const ResultSlot &slot : fn.decl->results) {
+            low.fn_results.push_back(fn_param_from_slot(slot));
+        }
+    }
+    return low;
+}
+
 bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const {
     const auto stored = [&](const Binding &binding) {
         Lowered low;
@@ -1462,6 +1594,14 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                 } else if constexpr (std::is_same_v<T, Expr::Name>) {
                     if (const Binding *global = find_global(item.text)) {
                         return stored(*global);
+                    }
+                    if (const Binding *fn = function_designator(file, node)) {
+                        return function_pointer_type(*fn);
+                    }
+                    return std::nullopt;
+                } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    if (const Binding *fn = function_designator(file, node)) {
+                        return function_pointer_type(*fn);
                     }
                     return std::nullopt;
                 } else if constexpr (std::is_same_v<T, Expr::Unary>) {
