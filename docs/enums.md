@@ -29,6 +29,14 @@ type Tiny enum(i8) {
     A,
     B,
 };
+
+func main() int {
+    var v Tiny = Tiny.B;
+    if (v == Tiny.A) {
+        return 0;
+    }
+    return sizeof(Tiny);
+}
 ```
 
 `sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `char`. A value that does not fit is reported as `type mismatch`. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `int`. Other operators are reported as `type mismatch`.
@@ -49,6 +57,12 @@ func Flag::enabled(self this) int {
     }
     return 0;
 }
+
+func main() int {
+    var n int = Flag.On;
+    var f Flag = Flag.On;
+    return n + f.enabled();
+}
 ```
 
 ## Export and methods
@@ -64,14 +78,29 @@ func main() int {
 }
 ```
 
-A method uses the same form as a struct method. `this` is the enum value. A function with no `this` parameter is static and is called as `Color.code()`.
+A method uses the same form as a struct method. `this` is the enum value. A function with no `this` parameter is static and is called as `Color.label()`.
 
 ```c
+type Color enum {
+    Red,
+    Green = 40,
+    Blue,
+};
+
 func Color::code(self this) int {
     if (self == Color.Blue) {
         return 41;
     }
     return 0;
+}
+
+func Color::label() int {
+    return 1;
+}
+
+func main() int {
+    var value = Color.Blue;
+    return value.code() + Color.label();
 }
 ```
 
@@ -80,9 +109,25 @@ func Color::code(self this) int {
 ## Type aliases
 
 ```c
+type Point struct {
+    x int;
+    y int;
+};
+
 type Ptr *Point;
 type Integer int;
 type Pair [2]int;
+
+func main() int {
+    var p Point;
+    p.x = 40;
+    p.y = 2;
+    var q Ptr = &p;
+    var n Integer = 0;
+    var pair Pair;
+    pair[0] = p.x;
+    return (*q).y + n + pair[0];
+}
 ```
 
 `type Integer int` gives another name to a type. `type Point struct`, `type Color enum`, and `type Shape trait` define a new type. `type Point Point` is reported as `redefinition`, because the alias repeats the struct. `type Point int` beside `type Point struct` is reported as `redefinition`. A variable and `sizeof` use the bare name, `var p Point` and `sizeof(Point)`. `struct` in that position, as in `var p struct Point` or `sizeof(struct Point)`, is reported as `expected a type`. An exported type alias is imported as a type name.

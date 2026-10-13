@@ -19,9 +19,8 @@ func make(x int, y int) Point {
 
 func main() int {
     var p Point;
-    var q *Point;
     p = make(40, 2);
-    q = &p;
+    var q *Point = &p;
     return (*q).x + q.y;
 }
 ```
@@ -31,6 +30,22 @@ The program returns 42.
 ## Generics
 
 `type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[int]`. A method is `func Vec[T]::get(self *this, i int) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. `Vec` with no arguments is reported as `type mismatch`. `Vec[int]` and `Vec[char]` are different types. Assigning one to the other, or passing one where the parameter is the other, is reported as `type mismatch`.
+
+```c
+type Vec[T type] struct {
+    n T;
+};
+
+func Vec[T]::get(self this) T {
+    return self.n;
+}
+
+func main() int {
+    var v Vec[int];
+    v.n = 42;
+    return v.get();
+}
+```
 
 ## Layout
 
@@ -69,6 +84,11 @@ type Marker trait {
 func take(value Marker) int {
     return value.id();
 }
+
+func main() int {
+    var value Empty;
+    return take(value);
+}
 ```
 
 `take` on an `Empty` returns 7. `extern type Empty struct {}` has the same size. An empty `extern(abi="c") struct` is a one-byte opaque handle.
@@ -90,12 +110,12 @@ type Box struct {
 };
 
 func main() int {
-    var box Box = {.value = 10, .complex = {.inner_value = 20}};
+    var box Box = {.value = 10, .complex = {.inner_value = 20,},};
     return box.value + box.complex.inner_value;
 }
 ```
 
-The program returns 30. `box = {.complex = {.inner_value = 42}}` replaces the whole value, so `box.value` becomes 0. A global initializer must be a constant, the same rule as any other global. A call in a local initializer is allowed.
+The program returns 30. A trailing comma is allowed. `box = {.complex = {.inner_value = 42}}` replaces the whole value, so `box.value` becomes 0. A global initializer must be a constant, the same rule as any other global. A call in a local initializer is allowed.
 
 ## `extern` structs
 
@@ -148,6 +168,19 @@ type Named union(ShapeType) {
     Circle Circle;
     Rectangle Rectangle;
 };
+
+func main() int {
+    var shape Shape = {.Circle = {.radius = 1.0}};
+    if (ShapeType(shape) != ShapeType.Circle) {
+        return 0;
+    }
+    shape.Rectangle.width = 2.0;
+    shape.Rectangle.height = 3.0;
+    if (ShapeType(shape) == ShapeType.Rectangle) {
+        return 1;
+    }
+    return 0;
+}
 ```
 
 The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `int` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0.
@@ -166,9 +199,15 @@ extern(abi="c") type Word union {
     n int;
     raw [8]char;
 };
+
+func main() int {
+    var u Num;
+    u.n = 4;
+    return u.m;
+}
 ```
 
-`Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory.
+`Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory, so `main` returns 4.
 
 ## Fields and pointers
 

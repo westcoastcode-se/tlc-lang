@@ -16,6 +16,14 @@ func main() int {
 
 A function may be declared first and defined later, with the same type. Two bodies for the same function are reported as `redefinition`.
 
+```c
+func add(a int, b int) int;
+
+func add(a int, b int) int {
+    return a + b;
+}
+```
+
 ## Several results
 
 The result list is parenthesized, and each result is a type. One type in parentheses is the same as writing that type alone. `return` lists one expression per result.
@@ -29,6 +37,10 @@ func add(x int, y int) (int, int) {
 The call is a tuple of its results. One name binds that tuple. Several names unpack it, and the same form unpacks a tuple that is already stored.
 
 ```c
+func add(x int, y int) (int, int) {
+    return x + y, x;
+}
+
 func main() int {
     sum, orig := add(20, 22);
     var extra, base = add(1, 1);
@@ -71,7 +83,35 @@ func repeat[N int, T type](value T) [N]T {
 }
 
 func main() int {
-    return id(40) + repeat[4](2)[0];
+    return id(40) + id[int](0) + repeat[4](2)[0];
+}
+```
+
+`T Shape` requires a type that has the methods of the trait `Shape`.
+
+```c
+type Shape trait {
+    func area() int;
+};
+
+type Rect struct {
+    w int;
+    h int;
+};
+
+func Rect::area(self this) int {
+    return self.w * self.h;
+}
+
+func measure[T Shape](value T) int {
+    return value.area();
+}
+
+func main() int {
+    var r Rect;
+    r.w = 6;
+    r.h = 7;
+    return measure(r);
 }
 ```
 
@@ -92,9 +132,11 @@ func first[...U](args U) typeof(args[0]) {
 
 func main() int {
     var n = keep(40);
+    var written = keep[int](1);
     a, b := keep((40, 2));
     x, y := keep((40, 'a'));
-    return n + a + first((7, 8));
+    u, v := keep[int, char]((1, 'b'));
+    return n + written + a + first((7, 8)) + u + v;
 }
 ```
 
@@ -104,9 +146,48 @@ func main() int {
 
 A result may be `typeof(expression)`. The expression is checked after the parameters exist, so `func id(x int) typeof(x)` has result `int`. That spelling is the result type. An expression `typeof(x)` still has type `Type`.
 
+```c
+func id(x int) typeof(x) {
+    return x;
+}
+
+func main() int {
+    return id(42);
+}
+```
+
 ## Structs and arrays
 
 Structs are passed and returned by value. An array parameter becomes a pointer, both as `a int[]` and as `a int[4]`. A function may return an array. The return expression is a local array name, as in `return out` for `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
+
+```c
+type Point struct {
+    x int;
+    y int;
+};
+
+func sum(p Point) int {
+    return p.x + p.y;
+}
+
+func pair() [2]int {
+    var out [2]int;
+    out[0] = 40;
+    out[1] = 2;
+    return out;
+}
+
+func head(a int[2]) int {
+    return a[0];
+}
+
+func main() int {
+    var p Point;
+    p.x = 20;
+    p.y = 22;
+    return sum(p) + head(pair());
+}
+```
 
 ## Tests
 
@@ -151,6 +232,41 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 
 A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type does too. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
+```c
+func add(a int, b int) int {
+    return a + b;
+}
+
+type Point struct {
+    x int;
+    y int;
+};
+
+func Point::make(x int, y int) Point {
+    var p Point;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+type BinOp func (int, int) int;
+
+type Box struct {
+    op func (int) int;
+};
+
+func main() int {
+    var ptr = add;
+    var maker = Point.make;
+    var typed func (int, int) int = (a, b) { return a + b; };
+    var none func () int = () { return 1; };
+    var alias BinOp = add;
+    var box Box = {.op = (n) { return n + 1; }};
+    var p = maker(40, 1);
+    return ptr(1, 0) + p.x + typed(0, 0) + none() + alias(0, 0);
+}
+```
+
 A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
 
 ```c
@@ -166,7 +282,13 @@ func main() int {
 The short form writes only the parameter names. Their types, and the result type, come from the function pointer:
 
 ```c
-return dosomething((arg1, arg2) { return arg1 + arg2; });
+func dosomething(op func (int, int) int) int {
+    return op(40, 2);
+}
+
+func main() int {
+    return dosomething((arg1, arg2) { return arg1 + arg2; });
+}
 ```
 
 `() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer, including an assignment and the initializer of a typed variable. A call argument whose type is a trait with one method accepts it too. The parameters and the result match that method. Used anywhere else, it is reported as `type mismatch`. A short form whose parameter count does not match is reported as `type mismatch`. It follows the same capture rule as any other anonymous function.

@@ -91,6 +91,18 @@ export func add(a int, b int) int {
 
 File-scope `static` keeps the symbol private to that file.
 
+```c
+static func hidden() int {
+    return 1;
+}
+
+static var slot int = 2;
+
+func main() int {
+    return hidden() + slot;
+}
+```
+
 ## `extern`
 
 `extern` and `extern(abi="tlc")` name a symbol from a tlc library. The symbol is `qualifier.name`. The calling convention is the compiler's own, so the function may return several results.
@@ -98,6 +110,25 @@ File-scope `static` keeps the symbol private to that file.
 `extern(abi="c")` names a symbol from a C library. It keeps the C name and the C calling convention, and it returns one result. Linking a program that uses `extern(abi="c")` requires a C library on the link line, either `-l` or a library file such as `libfoo.a`. `--check` and `--emit-*` do not link, so they accept the declaration. Without that library the link step reports `extern(abi="c") requires a C library`.
 
 A parameter or result of an `extern(abi="c")` function cannot be a function pointer that returns several results. A struct used by such a function, by value or through a pointer, must itself be `extern(abi="c")`. That includes a struct nested inside it. An `extern(abi="c") struct` uses the platform C memory layout, so its fields line up with a static or shared library. `bool` in that struct is one byte. On this host a struct of at most 16 bytes is passed in registers, and a larger struct is passed as a pointer. A function that is not `extern(abi="c")` keeps the compiler's own convention for struct values.
+
+```c
+type Point struct {
+    x int;
+    y int;
+};
+
+extern(abi="tlc") func parts(p Point) (int, int) {
+    return p.x, p.y;
+}
+
+func main() int {
+    var p Point;
+    p.x = 20;
+    p.y = 22;
+    a, b := parts(p);
+    return a + b;
+}
+```
 
 ```c
 extern(abi="c") func printf(fmt *const char, ...) int;

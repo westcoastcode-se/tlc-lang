@@ -85,4 +85,13 @@ The process exits with status 42.
 
 A `//` comment runs to the end of the line. A `/* ... */` comment may span lines. The language has no preprocessor and no `#include`.
 
+```c
+// The process exits with status 42.
+func main() int {
+    /* one
+       main */
+    return 40 + 2;
+}
+```
+
 [Index](README.md) · [Next: Packages](packages.md) · [Grammar](grammar.md)

@@ -20,11 +20,36 @@ Integer layout on `x86_64-pc-linux-gnu` is LP64. `long` and `i64` are both 64 bi
 
 `char`, `i8`, and `u8` are three types. They are assignment-compatible. `*int` and `*uint` are different types.
 
+```c
+func main() int {
+    var a short int = 1;
+    var b long int = 2;
+    var c char = 65;
+    var d i8 = c;
+    var e u8 = c;
+    return a + b + d + e;
+}
+```
+
 ## Pointers
 
 `*T` is a pointer that has a value. `?*T` is that pointer or `null`. `*?*T` and `?**T` are different types. `?` is written immediately before `*`.
 
 `*const T` is a pointer to constant `T`. The variable may be reseated. A store through it, `*p = 1` or `p[i] = 1`, is reported as `type mismatch`. Reading `*p` and `p[i]` is allowed. `*T` may be stored in `*const T`. `*const T` may not be stored in `*T`. `?*const T` is that pointer or `null`. `**const T` is a pointer to a pointer to constant `T`. `*const *T` is a pointer to a constant pointer.
+
+```c
+func main() int {
+    var n int = 1;
+    var p *int = &n;
+    var q ?*int = null;
+    var c *const int = p;
+    var inner *int = &n;
+    var to_const **const int = &inner;
+    var to_ptr *const *int = &inner;
+    q = p;
+    return *p + *c + **to_const + **to_ptr;
+}
+```
 
 ## Fixed-width names
 
@@ -49,6 +74,19 @@ Unsigned arithmetic wraps. A `uint` that is 0 and then decreased by 1 becomes `4
 
 Assignment is allowed among the integer ranks, `char`, and `bool`. A store into `bool` becomes 0 or 1. A store into a narrower integer keeps the low bits.
 
+```c
+func main() int {
+    var n uint = 0;
+    var flag bool = 2;
+    var narrow i8 = 300;
+    n = n - 1;
+    if (n < 1) {
+        return 0;
+    }
+    return flag + narrow;
+}
+```
+
 ## `void`, `bool`, and floating-point types
 
 `void` is a return type and a pointee. It is neither a value nor a variable type.
@@ -56,6 +94,23 @@ Assignment is allowed among the integer ranks, `char`, and `bool`. A store into 
 A `bool` value is 0 or 1.
 
 `float` and `f32` are the same 32-bit type. `double` and `f64` are the same 64-bit type. A literal without a suffix has type `double`. A suffix `f` or `F` makes it `float`. `1.5 + 1` is `double`. Comparisons of floating values yield `int`. `%` and the bitwise operators on a floating value are reported as `type mismatch`.
+
+```c
+func skip() void {
+    return;
+}
+
+func main() int {
+    var a bool = true;
+    var x float = 1.5f;
+    var y double = 20.5;
+    skip();
+    if (a && x < y) {
+        return 1;
+    }
+    return 0;
+}
+```
 
 ## Literals
 
@@ -76,6 +131,25 @@ An unsuffixed number greater than `2147483647` is reported as `type mismatch`. I
 
 A character literal has type `char`. `'A'` is 65 and `'\n'` is 10. A value above 255 is reported as `type mismatch`. The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
 
+An integer literal is decimal, `0x` hex, `0b` binary, or `0` octal. A `'` between digits is a separator. `0x1p+4` is a hexadecimal floating literal. It is `double`, and it needs a binary exponent. A suffix `f` makes a floating literal `float`.
+
+```c
+func main() int {
+    var n = 1'000;
+    var hex = 0x2A;
+    var bits = 0b1010;
+    var oct = 010;
+    var narrow i8 = 20i8;
+    var wide i16 = 42i16;
+    var ch = '\n';
+    var fp = 0x1p+4;
+    if (fp == 16.0 && ch == 10) {
+        return hex;
+    }
+    return n + bits + oct + narrow + wide;
+}
+```
+
 ## Strings
 
 A string between double quotes cannot cross a line. A string between backticks may span lines. Both are arrays of `char`. In a raw string the characters are copied as written: a backslash is not an escape, and a newline in the source is a newline in the string. The next backtick ends the string.
@@ -89,6 +163,18 @@ world`;
 
 `sizeof` produces `int`. `sizeof(char)` is 1, `sizeof(int)` is 4, `sizeof(i64)` is 8, and a pointer is 8. Both `sizeof(int)` and `sizeof n` are accepted. `sizeof(Point)` and `sizeof(enum Color)` name a declared type. `sizeof(struct Point)` is reported as `expected a type`. `sizeof(Type)` is 8.
 
+```c
+type Point struct {
+    x int;
+    y int;
+};
+
+func main() int {
+    var n int = 1;
+    return sizeof(int) + sizeof n + sizeof(Point);
+}
+```
+
 ## The `Type` type
 
 `Type` is the type of a tlc type. `typeof(int)` and `typeof n` produce a `Type`. `typeof(Point)`, `typeof(*int)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)` is reported as `expected a type`. `i32` is `int`, so `typeof(i32)` and `typeof(int)` are the same value. `typeof` does not decay an array. `var t Type` with no value is reported as `type mismatch`.
@@ -96,5 +182,17 @@ world`;
 `typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*Type` uses the value `p` points at. `name` is a method of `Type`. `t.name()` returns `*char`. The text is the spelling diagnostics use: `int`, `*int`, `?*Point`, `int[4]`, `Box.spec.int`. `name` takes no arguments. Another argument is reported as `argument count`. Another method is reported as `undeclared identifier`. `t.name` without the call is reported as `undeclared identifier`.
 
 `==` and `!=` compare two `Type` values and yield `int`, either 0 or 1. Other operators on `Type` are reported as `type mismatch`.
+
+```c
+func main() int {
+    var n int = 1;
+    var t Type = typeof(n);
+    var text *char = t.name();
+    if (t == typeof(int) && t == typeof(i32) && text != null) {
+        return 1;
+    }
+    return 0;
+}
+```
 
 [Index](README.md) · [Previous: Packages](packages.md) · [Next: Expressions](expressions.md) · [Grammar](grammar.md)

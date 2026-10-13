@@ -48,6 +48,17 @@ At most 32 calls are kept. The text is at most 4095 bytes. The pointer refers to
 
 `var f = builtin.trace` is a function pointer. `defer builtin.trace()` runs the call when the deferred calls run.
 
+```c
+import "builtin";
+
+func main() int {
+    var f = builtin.trace;
+    defer f();
+    defer builtin.trace();
+    return 0;
+}
+```
+
 ## `va`
 
 `builtin.va()` reads the extra arguments of the variadic function it is called from. The pointer is the `ap` that `vprintf` takes. Each call reads those arguments from the start.

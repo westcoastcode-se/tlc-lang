@@ -4,6 +4,23 @@
 
 The operators are `+ - * / %`, `& | ^ ~ << >>`, `&& || !`, the comparisons, unary `+` and `-`, assignment `=`, calls, indexing, `.`, address-of `&`, and dereference `*`. Binding and associativity are given in the [grammar](grammar.md#expressions).
 
+```c
+func main() int {
+    var n int = 6;
+    var p *int = &n;
+    n = -n + 8;
+    n = n * 3 / 2 % 5;
+    n = n << 1 >> 1;
+    n = (n & 7) | 1;
+    n = n ^ 1;
+    n = ~n;
+    if (n < 0 && *p != 0) {
+        return 1;
+    }
+    return 0;
+}
+```
+
 ## Logical operators
 
 `&&` and `||` short-circuit. In the program below, `bump` is called twice and `main` returns 2.
@@ -35,6 +52,18 @@ Pointers that point at the same type can be compared with `==` and `!=`, includi
 
 Pointer arithmetic is reported as `type mismatch`. A subscript index has type `int`.
 
+```c
+func main() int {
+    var n int = 1;
+    var p *int = &n;
+    var q ?*int = null;
+    if (p != q && q == null) {
+        return *p;
+    }
+    return 0;
+}
+```
+
 ## Narrowing
 
 A name compared with `null` is `*T` where that comparison shows it has a value. After `if (p == null) { return; }`, `p` is `*T` for the rest of the function. `if (p != null) { use(p); }` narrows `p` inside the block. The `else` of `p == null`, and the `else` of `p != null` when that `else` always leaves, do the same. `while (p != null)` and `for (; p != null;)` narrow the body. The body of `do` runs before the check and stays `?*T`. A field comparison such as `person.home == null` does not narrow. `*p`, `p.field`, and `p[i]` on a `?*T` are reported as `type mismatch` until the name is narrowed. Passing `?*T` where `*T` is required is reported as `type mismatch` until then.
@@ -42,6 +71,26 @@ A name compared with `null` is `*T` where that comparison shows it has a value. 
 Postfix `!` asserts a `?*T` at that use. `pointer!` has type `*T`. `myfunc(pointer!)` passes it where `*T` is required, and `pointer!.value` reads a field. The name stays `?*T` for the next use. `!` on a value that is already `*T`, or on a non-pointer, is reported as `type mismatch`. The compiler does not insert a null check. Prefix `!` is logical not on an integer.
 
 ```c
+func read(p *int) int {
+    return *p;
+}
+
+func main() int {
+    var n int = 40;
+    var p ?*int = &n;
+    return read(p!);
+}
+```
+
+```c
+type Address struct {
+    street int;
+};
+
+type Person struct {
+    home *Address;
+};
+
 func settle(person *Person, home *Address) void {
     person.home = home;
 }
@@ -61,9 +110,30 @@ func bind(person ?*Person, home ?*Address) void {
 
 A condition in `if`, `while`, `do`, and `for` is an integer after promotion. A pointer used as a condition is reported as `compare with null`. `switch` requires exactly `int`.
 
+```c
+func main() int {
+    var n int = 1;
+    if (n) {
+        return n;
+    }
+    return 0;
+}
+```
+
 ## `Type`
 
 `typeof(int)` and `typeof n` have type `Type`. `==` and `!=` compare two `Type` values and yield `int`. `t.name()` returns the diagnostic spelling as `*char`. Other operators on `Type` are reported as `type mismatch`.
+
+```c
+func main() int {
+    var n int = 1;
+    var t Type = typeof(n);
+    if (typeof(int) == typeof(i32) && t.name() != null) {
+        return 1;
+    }
+    return 0;
+}
+```
 
 ## Casts
 
@@ -71,10 +141,39 @@ A cast is the type followed by the value in parentheses: `i32(n)`, `int(n)`, `*c
 
 A cast between integer types is allowed. Signed `int` can be cast to and from a pointer. The cast keeps the type that was written: `*int(p)` is `*int`, and `?*int(p)` is `?*int`. `?*int(null)` is allowed. `*int(null)`, `long(p)`, `uint(p)`, and `int(null)` are reported as `type mismatch`. `int*(p)` is reported as `type mismatch`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type.
 
+```c
+type Integer int;
+
+func main() int {
+    var n int = 42;
+    var p *int = &n;
+    var bytes *char = *char(p);
+    var back *int = *int(bytes);
+    var q ?*int = ?*int(null);
+    var wide = i64(n);
+    var alias = Integer(n);
+    if (q == null && *back == alias && wide == 42) {
+        return *back;
+    }
+    return 0;
+}
+```
+
 ## Tuples and lists
 
 `(40, 2)` is a tuple. The element types are the types of the values before promotion, so `(40, 'a')` is `int` and `char`. `(40)` is the value `40`. `var value = (40, 2)` and `value := (40, 2)` each bind that tuple. `var value1, value2 = value` and `a, b := value` unpack it, one name per element. `var value1, value2 = (40, 2)` unpacks the literal the same way. The number of names matches the tuple. A different count is reported as `type mismatch`. `value[0]` reads one element. The index is a constant.
 
 `{10, 20, 12}` fills an array. Where a struct is expected, that brace list is reported as `type mismatch`. An empty `{}` names no fields.
+
+```c
+func main() int {
+    var value = (40, 2);
+    var value1, value2 = value;
+    a, b := (7, 'a');
+    value1, value2 = (1, 2);
+    var row [3]int = {10, 20, 12};
+    return value[0] + value1 + a + row[2] + b;
+}
+```
 
 [Index](README.md) · [Previous: Types](types.md) · [Next: Statements](statements.md) · [Grammar](grammar.md)

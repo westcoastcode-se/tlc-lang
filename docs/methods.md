@@ -32,6 +32,30 @@ func main() int {
 
 `add` takes a pointer, so `p` must be an lvalue. The compiler passes `&p`. `sum` takes a value. A call on a `*Point` loads the struct. A pointer method on a temporary struct value is reported as `not an lvalue`.
 
+`self ?*this` may be `null`. A `*Point` may be passed to it.
+
+```c
+type Point struct {
+    x int;
+    y int;
+};
+
+func Point::read(self ?*this) int {
+    if (self == null) {
+        return 0;
+    }
+    return self.x;
+}
+
+func main() int {
+    var p Point;
+    p.x = 40;
+    p.y = 2;
+    var q ?*Point = &p;
+    return p.read() + q.read();
+}
+```
+
 The same method name may exist on different structs and as a free function. The call `p.sum(...)` selects the struct's method. A free call `sum(...)` selects the function.
 
 Every file in the package can call the method. It is not exported, so another package cannot call it. `Point::sum(p, 1)` is not a call.
@@ -39,6 +63,31 @@ Every file in the package can call the method. It is not exported, so another pa
 ## Generic methods
 
 A method on a generic struct names that struct's parameters. `func Vec[T]::get(self *this, i int) T` is the method on `type Vec[T type] struct`. `type Buf[N int, T type] struct` uses `func Buf[N, T]::get`. The names match the struct, in the same order. Leaving the list out is reported as `type mismatch`. A different name is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. A struct that is not generic keeps `func Point::sum`. `func Point[T]::sum` is reported as `type mismatch`.
+
+```c
+type Vec[T type] struct {
+    n T;
+};
+
+func Vec[T]::get(self this) T {
+    return self.n;
+}
+
+type Buf[N int, T type] struct {
+    value T;
+};
+
+func Buf[N, T]::len(self this) int {
+    return N;
+}
+
+func main() int {
+    var v Vec[int];
+    v.n = 38;
+    var b Buf[4, int];
+    return v.get() + b.len();
+}
+```
 
 ## Static functions
 
@@ -58,12 +107,14 @@ func Point::make(x int, y int) Point {
 }
 
 func main() int {
-    var p = Point.make(40, 2);
-    return p.x + p.y;
+    var direct = Point.make(40, 1);
+    var ptr = Point.make;
+    var p = ptr(0, 2);
+    return direct.x + p.y;
 }
 ```
 
-The program returns 42. The function is written in the same file as the struct. Every file in the package can call it. It is not exported. An enum uses the same form, `Color.code()`. A missing name, `Point.missing()`, is reported as `undeclared identifier`.
+The program returns 42. The function is written in the same file as the struct. Every file in the package can call it. It is not exported. An enum uses the same form, `Color.label()`. A missing name, `Point.missing()`, is reported as `undeclared identifier`.
 
 The name without a call is a function pointer. `var ptr = Point.make` and `take(Point.make)` use that pointer, and `ptr(40, 2)` calls it. `var ptr = add` is the same form for a free function. An instance method used as a value, `var ptr = Point.sum`, is reported as `type mismatch`. An enumerator stays a value, so `Color.Red` is not a function pointer.
 
@@ -139,7 +190,39 @@ func main() int {
 }
 ```
 
-`twice` calls that function twice. `c.add(func (n int) int { return n; })` is the same argument on a method. `*Adder` takes the anonymous function the same way. One monomorphized copy calls it through a function pointer. A struct argument still gets its own copy and a direct call. Passing the parameter onward, when the next parameter is the same trait, uses that same copy.
+`twice` calls that function twice. The `func` form is the same argument. A method takes it the same way. `*Adder` takes the anonymous function directly. One monomorphized copy calls it through a function pointer. A struct argument still gets its own copy and a direct call. Passing the parameter onward, when the next parameter is the same trait, uses that same copy.
+
+```c
+type Adder trait {
+    func apply(n int) int;
+};
+
+type Counter struct {
+    base int;
+};
+
+func through(a *Adder, n int) int {
+    return a.apply(n);
+}
+
+func Counter::add(self *this, a Adder) int {
+    return self.base + a.apply(1);
+}
+
+func Counter::forward(a *Adder, n int) int {
+    return through(a, n);
+}
+
+func main() int {
+    var c Counter;
+    c.base = 6;
+    var from_method = c.add(func (n int) int { return n; });
+    var from_static = Counter.forward((n) { return n + 1; }, 4);
+    return from_method + from_static;
+}
+```
+
+`c.add` passes the `func` form to a method. `Counter.forward` passes the short form to a static function whose parameter is `*Adder`, and `through` receives that same parameter.
 
 `this` inside a trait method is reported as `type mismatch`. `s.area` without a call is reported as `undeclared identifier`.
 

@@ -29,7 +29,6 @@ declaration = function
             | method
             | var-decl
             | const-decl
-            | fn-var
             | type-decl
             | assert-stmt
             | test-decl ;
@@ -94,11 +93,7 @@ binding     = "var" name-list "=" expression ";"
 
 `name :=` defines a name that is new in the block and assigns a name that already exists there. At least one name must be new. A `:=` whose names are all already in the block is `type mismatch`. `=` assigns names that already exist. `var` defines every name.
 
-A variable whose type is a function pointer is written with `func` first, then the name. `var name = function` infers that pointer from a function or a static function.
-
-```ebnf
-fn-var      = func-type identifier { "," identifier } ";" ;
-```
+A variable whose type is a function pointer is a `var` whose type is a `func-type`, as in `var fp func (int, int) int = add`. `var name = function` infers that pointer from a function or a static function.
 
 ## Structs, enums, traits, and type aliases
 
@@ -242,7 +237,7 @@ postfix-op  = "(" [ argument-list ] ")"
 argument-list = expression { "," expression } ;
 ```
 
-`name[args](` is a generic call, not an index. `ops[i]()` is that call. `(ops[i])()` is the call of an element. An array length may be a file-scope `const` name: `[N]int`.
+`name[args](` is a generic call, not an index. An array length may be a file-scope `const` name: `[N]int`.
 
 Postfix `!` asserts that a `?*T` has a value. `pointer!` has type `*T`. `pointer!.value` reads the field. Prefix `!` remains the integer operator. There is no runtime check.
 
