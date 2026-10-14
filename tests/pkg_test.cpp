@@ -457,5 +457,124 @@ int run_pkg_tests() {
         EXPECT(check, resolved.graph.link_args.empty());
     }
 
+    {
+        TempTree entry;
+        EXPECT(check, entry.ok());
+        entry.write("main.tlc", "import \"builtin/env\";\nfunc main() i32 { return 0; }\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"));
+        EXPECT(check, !resolved.ok);
+        EXPECT_HAS(check, resolved.errors, "unknown package");
+    }
+
+    {
+        TempTree entry;
+        EXPECT(check, entry.ok());
+        entry.write("main.tlc", "import \"builtin/env/consts\";\nfunc main() i32 { return 0; }\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"));
+        EXPECT(check, resolved.ok);
+        const tlc::PackageNode *consts = nullptr;
+        for (const tlc::PackageNode &node : resolved.graph.nodes) {
+            if (node.path == "<builtin/env/consts>") {
+                consts = &node;
+            }
+        }
+        EXPECT(check, consts != nullptr);
+        if (consts != nullptr) {
+            EXPECT_EQ(check, consts->qualifier, "consts");
+            EXPECT_EQ(check, consts->import_spec, "builtin/env/consts");
+            const tlc::VarDecl *family = nullptr;
+            for (const tlc::TopDecl &decl : consts->unit.decls) {
+                const auto *var = std::get_if<tlc::VarDecl>(&decl.data);
+                if (var != nullptr && var->name == "family") {
+                    family = var;
+                }
+            }
+            EXPECT(check, family != nullptr && family->exported && family->is_const_decl);
+            if (family != nullptr && family->init != nullptr) {
+                const auto *text = std::get_if<tlc::Expr::String>(&family->init->data);
+#if defined(_WIN32)
+                const std::string want = "windows";
+#else
+                const std::string want = "unix";
+#endif
+                EXPECT(check, text != nullptr && text->text == want);
+                EXPECT(check, family->indirections == 1 && family->const_pointee == 1 && family->type_name == "u8");
+            }
+        }
+    }
+
+    {
+        TempTree entry;
+        EXPECT(check, entry.ok());
+        entry.write("main.tlc", "import \"builtin/env/consts\";\nfunc main() i32 { return 0; }\n");
+        entry.write("builtin/env/consts/local.tlc",
+                    "package consts;\nexport const family *const u8 = \"local\";\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"));
+        EXPECT(check, resolved.ok);
+        bool synthetic = false;
+        bool local = false;
+        for (const tlc::PackageNode &node : resolved.graph.nodes) {
+            if (node.path == "<builtin/env/consts>") {
+                synthetic = true;
+            }
+            if (node.path.ends_with("/builtin/env/consts/local.tlc")) {
+                local = true;
+                EXPECT_EQ(check, node.qualifier, "consts");
+            }
+        }
+        EXPECT(check, local && !synthetic);
+    }
+
+    {
+        TempTree tree;
+        EXPECT(check, tree.ok());
+        tree.write("main.tlc", "import \"math\";\nfunc main() i32 { return 0; }\n");
+        tree.write("math/base.tlc", "export func base() i32 { return 1; }\n");
+        tree.write("math/extra_unix.tlc", "export func extra() i32 { return 2; }\n");
+        tree.write("math/extra_windows.tlc", "export func extra() i32 { return 9; }\n");
+        tree.write("math/keep_linux.tlc", "export func mark() i32 { return 0; }\n");
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
+        EXPECT(check, resolved.ok);
+        EXPECT(check, find_suffix(resolved.graph, "/math/base.tlc") != nullptr);
+        EXPECT(check, find_suffix(resolved.graph, "/math/keep_linux.tlc") != nullptr);
+#if defined(_WIN32)
+        EXPECT(check, find_suffix(resolved.graph, "/math/extra_windows.tlc") != nullptr);
+        EXPECT(check, find_suffix(resolved.graph, "/math/extra_unix.tlc") == nullptr);
+#else
+        EXPECT(check, find_suffix(resolved.graph, "/math/extra_unix.tlc") != nullptr);
+        EXPECT(check, find_suffix(resolved.graph, "/math/extra_windows.tlc") == nullptr);
+#endif
+    }
+
+    {
+        TempTree tree;
+        EXPECT(check, tree.ok());
+        tree.write("main.tlc", "import \"only\";\nfunc main() i32 { return 0; }\n");
+#if defined(_WIN32)
+        tree.write("only/other_unix.tlc", "export func other() i32 { return 1; }\n");
+#else
+        tree.write("only/other_windows.tlc", "export func other() i32 { return 1; }\n");
+#endif
+        const Resolved resolved = resolve_at(tree.file("main.tlc"));
+        EXPECT(check, !resolved.ok);
+        EXPECT_HAS(check, resolved.errors, "unknown package");
+    }
+
+    {
+        TempTree tree;
+        EXPECT(check, tree.ok());
+#if defined(_WIN32)
+        tree.write("main_unix.tlc", "func main() i32 { return 0; }\n");
+        const Resolved resolved = resolve_at(tree.file("main_unix.tlc"));
+        EXPECT(check, resolved.ok);
+        EXPECT(check, find_suffix(resolved.graph, "/main_unix.tlc") != nullptr);
+#else
+        tree.write("main_windows.tlc", "func main() i32 { return 0; }\n");
+        const Resolved resolved = resolve_at(tree.file("main_windows.tlc"));
+        EXPECT(check, resolved.ok);
+        EXPECT(check, find_suffix(resolved.graph, "/main_windows.tlc") != nullptr);
+#endif
+    }
+
     return check.failed;
 }

@@ -4,6 +4,17 @@
 
 A package is a directory of `.tlc` files. The file named on the command line is its own package: other `.tlc` files beside it are not compiled with it. An import names a directory. Every `.tlc` file directly in that directory belongs to one package. A subdirectory is a different package.
 
+A file whose name ends in `_unix.tlc` is loaded only when the compiler's family is `unix` (Linux, macOS, and every other system that is not Windows). A file whose name ends in `_windows.tlc` is loaded only when the family is `windows`. `util.tlc` and `util_extra.tlc` are loaded on every system. The file named on the command line is loaded even when its name ends in one of those suffixes. A directory whose `.tlc` files are all for the other family is reported as `unknown package`.
+
+```text
+math/
+    add.tlc
+    sep_unix.tlc
+    sep_windows.tlc
+```
+
+On Linux or macOS the package is `add.tlc` and `sep_unix.tlc`. On Windows it is `add.tlc` and `sep_windows.tlc`.
+
 ## The package clause
 
 `package` is the first declaration in a file, before imports. The name is an identifier.
@@ -43,7 +54,7 @@ Search proceeds as follows.
 1. A path that starts with `./` or `../` is resolved from the importing file. It must name a directory.
 2. Every other path is searched in the entry file's directory, then in each `-P` root.
 3. A path `vendor/<name>` that is still missing is loaded from the vendor directory.
-4. A path that is still missing is loaded from the standard library, `lib/tlc` next to the compiler prefix. `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`. `import "builtin"` is the compiler package when no directory of that name was found.
+4. A path that is still missing is loaded from the standard library, `lib/tlc` next to the compiler prefix. `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`. `import "builtin"` is the compiler package when no directory of that name was found. `import "builtin/env/consts"` is the compiler package `consts` in the same situation. It exports `family`.
 
 The first directory that contains a `.tlc` file is the package. The vendor directory holds packages that ship with the compiler, such as a binding to a C library. `import "vendor/sdl3"` loads `<vendor>/sdl3`.
 
@@ -59,7 +70,7 @@ lib/tlc/vendor/sdl3/
 
 ## Libraries
 
-Every `.tlc` file in an imported package is compiled with the program. A static archive (`.a`) and a shared library (`.so`, `.dylib`, or a versioned name such as `libfoo.so.1`) in the same directory is linked into the executable. When one library name has both an archive and a shared library, the archive is linked. Shared libraries are found through an rpath that points at the package directory. A package imported from several files is linked once.
+Every `.tlc` file that belongs to an imported package is compiled with the program. A file for the other OS family is left out. A static archive (`.a`) and a shared library (`.so`, `.dylib`, or a versioned name such as `libfoo.so.1`) in the same directory is linked into the executable. When one library name has both an archive and a shared library, the archive is linked. Shared libraries are found through an rpath that points at the package directory. A package imported from several files is linked once.
 
 A file named `link` adds further linker arguments after those libraries. Each line holds the same flags as the command line: `-l`, `-L`, `-Bstatic`, `-Bdynamic`, `-static`, `-Wl`, and library paths. `#` comments out the rest of the line. A relative path is resolved from the package directory. `$ORIGIN` in an rpath is left as written. `--check`, `--emit-llvm`, and `--emit-obj` load the package and do not link.
 

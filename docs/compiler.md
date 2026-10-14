@@ -61,7 +61,7 @@ Completion offers keywords, built-in types, and names in scope. After a dot it o
 
 Vendor packages are imported as `vendor/<name>`. `TLC_LIB` selects their directory. When that variable is unset, the directory is `lib/tlc/vendor` next to the compiler prefix. Both `bin/tlc` and `build/tlc` use `<prefix>/lib/tlc/vendor`. The entry directory and each `-P` root are searched first, using the path `vendor/<name>`.
 
-Standard packages live in `lib/tlc` beside that vendor directory. `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`. `import "builtin"` is supplied by the compiler. The entry directory and each `-P` root are searched first.
+Standard packages live in `lib/tlc` beside that vendor directory. `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`. `import "builtin"` is supplied by the compiler. `import "builtin/env/consts"` supplies `consts.family`. The entry directory and each `-P` root are searched first.
 
 ## Symbol names
 

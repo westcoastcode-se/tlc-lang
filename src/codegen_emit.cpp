@@ -946,6 +946,14 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
     if (std::holds_alternative<Expr::Nullptr>(cursor->data)) {
         return dest.depth > 0 ? null_ptr() : nullptr;
     }
+    // `const label *const u8 = "unix"` stores the address of this string.
+    if (const auto *text = std::get_if<Expr::String>(&cursor->data)) {
+        if (dest.depth != 1 || (dest.elem_bits != 8 && !dest.elem_char)) {
+            return nullptr;
+        }
+        llvm::Constant *data = llvm::ConstantDataArray::getString(context_, text->text, true);
+        return new llvm::GlobalVariable(module_, data->getType(), true, llvm::GlobalValue::PrivateLinkage, data, ".str");
+    }
     if (const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
         unary != nullptr && unary->op == TokenKind::Amp && unary->expr != nullptr) {
         if (const auto *named = std::get_if<Expr::Name>(&unary->expr->data)) {

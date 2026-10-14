@@ -54,7 +54,8 @@ std::string help_text() {
         "import \"vendor/name\" loads that package. Static and shared libraries beside its\n"
         ".tlc files are linked. A file named link in the package adds further linker arguments.\n"
         "Standard packages live in lib/tlc. import \"std/testing\" loads the testing package.\n"
-        "import \"builtin\" is the compiler package.\n";
+        "import \"builtin\" is the compiler package.\n"
+        "import \"builtin/env/consts\" supplies consts.family, unix or windows.\n";
 }
 
 namespace {

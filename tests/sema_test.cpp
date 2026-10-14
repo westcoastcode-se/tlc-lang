@@ -4338,6 +4338,62 @@ int run_sema_tests() {
     }
 
     {
+        const std::string errors = check_program(
+            "import \"builtin/env/consts\";\n"
+            "import { family } from \"builtin/env/consts\";\n"
+            "func main() i32 {\n"
+            "  var p *const u8 = consts.family;\n"
+            "  var q *const u8 = family;\n"
+            "  return p[0] == q[0];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "import \"builtin/env/consts\";\n"
+            "func main() i32 {\n"
+            "  var p *u8 = consts.family;\n"
+            "  consts.family[0] = 1;\n"
+            "  return p[0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = check_program(
+            "const label *const u8 = \"unix\";\n"
+            "const plain = \"hi\";\n"
+            "func main() i32 {\n"
+            "  var p *const u8 = plain;\n"
+            "  var q *const u8 = label;\n"
+            "  plain[0] = 1;\n"
+            "  return label[0] + p[0] + q[0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = check_program(
+            "const label *const u8 = \"unix\";\n"
+            "const plain = \"hi\";\n"
+            "func main() i32 {\n"
+            "  var p *const u8 = plain;\n"
+            "  var q *const u8 = label;\n"
+            "  return label[0] + p[0] + q[0];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "var n i32 = 1;\n"
+            "const p *i32 = &n;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
         const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var n u8 = 1;\n"

@@ -635,8 +635,11 @@ Type Checker::check_file_const(VarDecl &written) {
         if (got.kind == TypeKind::Invalid || diags_.size() != before) {
             return type_invalid();
         }
-        // `const wide f64 = bias` converts. The stored type is the one that was written.
-        if (!same_type(got, want) && want.kind != TypeKind::Float) {
+        // `const wide f64 = bias` converts. A string decays to `*u8` and may be stored in `*const u8`.
+        // The stored type is the one that was written.
+        const bool string_pointer = want.kind == TypeKind::Pointer &&
+                                    std::holds_alternative<Expr::String>(written.init->data);
+        if (!same_type(got, want) && want.kind != TypeKind::Float && !string_pointer) {
             return type_invalid();
         }
         got = want;
@@ -663,6 +666,15 @@ Type Checker::check_file_const(VarDecl &written) {
     if (got.kind == TypeKind::Float) {
         if (!accept_file_scalar(written, got)) {
             return type_invalid();
+        }
+        return got;
+    }
+    // A string is an array of u8 and decays to a pointer. `const label *const u8 = "unix"` keeps that pointer.
+    // `const label = "hi"` is `*const u8`: the binding is constant, and so are the bytes.
+    if (got.kind == TypeKind::Pointer && written.init != nullptr &&
+        std::holds_alternative<Expr::String>(written.init->data)) {
+        if (written.inferred && got.pointee != nullptr) {
+            got.pointee->is_const = true;
         }
         return got;
     }

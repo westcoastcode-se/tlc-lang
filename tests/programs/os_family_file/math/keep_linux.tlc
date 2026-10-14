@@ -1,0 +1,5 @@
+package math;
+
+export func mark() i32 {
+    return 0;
+}

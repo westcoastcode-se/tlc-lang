@@ -2,7 +2,7 @@
 
 [Index](README.md) · [Previous: Functions](functions.md) · [Next: Structs, pointers, and arrays](structs.md) · [Grammar](grammar.md)
 
-`import "builtin"` loads the compiler package. It exports `trace`, `va`, and `panic`. `trace` returns `*const u8`. `va` returns `*u8`. Both take no arguments. An argument is reported as `argument count`. `panic` takes one message and does not return a value. The import links the C library.
+`import "builtin"` loads the compiler package. It exports `trace`, `va`, and `panic`. `trace` returns `*const u8`. `va` returns `*u8`. Both take no arguments. An argument is reported as `argument count`. `panic` takes one message and does not return a value. The import links the C library. `import "builtin/env/consts"` loads `family`, described at the end of this page.
 
 ```c
 import "builtin";
@@ -121,5 +121,22 @@ main.tlc:12:5: main
 ```
 
 The file name is the source path relative to the entry file's directory, as for `builtin.trace`. `var f = builtin.panic` is a function pointer, and `f("out of memory")` aborts at that call. `defer builtin.panic("out of memory")` aborts when the deferred calls run.
+
+## `builtin/env/consts`
+
+`import "builtin/env/consts"` loads the compiler package `consts`. It exports the constant `family`. The type is `*const u8`. On Windows the text is `windows`. On Linux, macOS, and every other system the text is `unix`. The value is chosen from the system `tlc` is running on. A directory named `builtin/env/consts` on the search path is that package instead. The compiler package is used when the search finds none.
+
+```c
+import "builtin/env/consts";
+
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+func main() i32 {
+    printf("%s\n", consts.family);
+    return 0;
+}
+```
+
+On Linux or macOS the program prints `unix`. On Windows it prints `windows`. `import { family } from "builtin/env/consts"` brings the name into the file. Assigning `consts.family`, or writing `consts.family[0] = 1`, is reported as `type mismatch`.
 
 [Index](README.md) · [Previous: Functions](functions.md) · [Next: Structs, pointers, and arrays](structs.md) · [Grammar](grammar.md)

@@ -1,0 +1,5 @@
+package math;
+
+export func base() i32 {
+    return 40;
+}

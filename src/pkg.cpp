@@ -21,6 +21,33 @@ bool is_importer_relative(std::string_view spec) {
     return spec == "." || spec == ".." || spec.starts_with("./") || spec.starts_with("../");
 }
 
+// Linux and macOS are unix. Windows is windows. The value is fixed when tlc itself is built,
+// which is the system that later compiles a tlc program.
+const char *host_os_family() {
+#if defined(_WIN32)
+    return "windows";
+#else
+    return "unix";
+#endif
+}
+
+bool ends_with(std::string_view text, std::string_view suffix) {
+    return text.size() >= suffix.size() && text.substr(text.size() - suffix.size()) == suffix;
+}
+
+// `path_unix.tlc` and `path_windows.tlc` belong to that family. Any other `.tlc` name is always loaded.
+bool family_source(const fs::path &path) {
+    const std::string name = path.filename().string();
+    const std::string_view family = host_os_family();
+    if (ends_with(name, "_unix.tlc")) {
+        return family == "unix";
+    }
+    if (ends_with(name, "_windows.tlc")) {
+        return family == "windows";
+    }
+    return true;
+}
+
 std::vector<fs::path> source_files(const fs::path &dir) {
     std::vector<fs::path> files;
     std::error_code ec;
@@ -34,16 +61,12 @@ std::vector<fs::path> source_files(const fs::path &dir) {
         if (!it->is_regular_file(file_ec) || file_ec) {
             continue;
         }
-        if (it->path().extension() == ".tlc") {
+        if (it->path().extension() == ".tlc" && family_source(it->path())) {
             files.push_back(it->path());
         }
     }
     std::sort(files.begin(), files.end());
     return files;
-}
-
-bool ends_with(std::string_view text, std::string_view suffix) {
-    return text.size() >= suffix.size() && text.substr(text.size() - suffix.size()) == suffix;
 }
 
 // Filename test, matching the linker's library-file rule used on the command line.
@@ -335,6 +358,9 @@ class Resolver {
         if (spec == "builtin") {
             return {HitKind::Found, fs::path("<builtin>")};
         }
+        if (spec == "builtin/env/consts") {
+            return {HitKind::Found, fs::path("<builtin/env/consts>")};
+        }
         diags_.error(import.loc, "unknown package");
         return {HitKind::Failed, {}};
     }
@@ -611,7 +637,40 @@ class Resolver {
             load_builtin(from_file, import);
             return;
         }
+        if (hit.path == "<builtin/env/consts>") {
+            load_os_family(from_file, import);
+            return;
+        }
         load_directory(hit.path, from_file, import);
+    }
+
+    // `family` is `unix` or `windows`. A directory on the search path is used instead of this package.
+    void load_os_family(uint32_t from_file, const ImportDecl &import) {
+        constexpr const char *kKey = "<builtin/env/consts>";
+        if (by_package_.contains(kKey)) {
+            add_edge(from_file, kKey, import);
+            return;
+        }
+        const std::string source =
+            std::string("package consts;\n\nexport const family *const u8 = \"") + host_os_family() + "\";\n";
+        SourceFile &file = sources_.add(kKey, source);
+        Lexer lexer(file, diags_);
+        Parser parser(lexer.tokenize(), diags_);
+        PackageNode node;
+        node.file_id = file.id();
+        node.path = kKey;
+        node.package_key = kKey;
+        node.unit = parser.parse();
+        node.qualifier = node.unit.package && !node.unit.package->name.empty() ? node.unit.package->name : "consts";
+        node.imported_from = from_file;
+        node.import_spec = import.path;
+        node.import_loc = import.loc;
+        const std::size_t index = graph_.nodes.size();
+        by_path_.emplace(kKey, index);
+        by_package_.emplace(kKey, index);
+        graph_.nodes.push_back(std::move(node));
+        add_edge(from_file, kKey, import);
+        walk_package(kKey);
     }
 
     // `trace`, `va`, and `panic` are compiler intrinsics. They are not read from a .tlc file.
