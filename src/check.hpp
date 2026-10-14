@@ -91,8 +91,12 @@ class Checker {
             std::string name;
             Type type;
             SourceLoc loc{};
+            // `export name` in the struct. Extern structs and unions publish every field.
+            bool exported = false;
         };
         std::vector<Field> fields;
+        bool exported = false;
+        bool anonymous = false;
         bool is_extern = false;
         bool extern_c = false;
         int align = 0;
@@ -273,6 +277,11 @@ class Checker {
     Type lookup_tag(const std::string &name, SourceLoc loc, bool allow_incomplete);
     Type lookup_qualified_type(const std::string &package, const std::string &name, SourceLoc loc);
     bool lookup_field(const Type &object, const std::string &name, Type &out) const;
+    // Another package sees `export` members. A member whose type is a struct that is not
+    // visible stays hidden. The same package sees every member.
+    bool field_visible(int struct_id, const std::string &name) const;
+    bool struct_open(int struct_id, std::unordered_set<int> &seen) const;
+    bool hidden_field(const Type &object, const std::string &name, SourceLoc loc);
     bool dot_object(const Type &base, Type &object, bool &through_pointer) const;
     const MethodInfo *find_method(int struct_id, const std::string &name) const;
     const MethodInfo *find_named_method(const std::string &type_name, const std::string &name) const;

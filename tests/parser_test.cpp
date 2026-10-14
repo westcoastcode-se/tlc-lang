@@ -416,17 +416,28 @@ int run_parser_tests() {
             "type Entity struct {\n"
             "  id i32;\n"
             "  var next i32 = 1;\n"
+            "  const spare = 3;\n"
             "  export var shown = 2;\n"
-            "};\n"
-            "type Box[T type] struct {\n"
-            "  value T;\n"
-            "  var extra i32 = 1;\n"
+            "};\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "export type Entity struct {\n"
+            "  id i32;\n"
+            "  export shown i32;\n"
+            "  body export struct { k i32; export n i32; };\n"
+            "  local struct { n i32; };\n"
             "};\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(field id i32)\n");
-        EXPECT_HAS(check, parsed.dump, "(var Entity::next i32 (int 1))\n");
-        EXPECT_HAS(check, parsed.dump, "(var Entity::shown := (int 2) export)\n");
-        EXPECT_HAS(check, parsed.dump, "(var Box[T]::extra i32 (int 1))\n");
+        EXPECT_HAS(check, parsed.dump, "(field export shown i32)\n");
+        EXPECT_HAS(check, parsed.dump, "(field export body struct\n");
+        EXPECT_HAS(check, parsed.dump, "(field export k i32)\n");
+        EXPECT_HAS(check, parsed.dump, "(field export n i32)\n");
+        EXPECT_HAS(check, parsed.dump, "(field local struct\n");
+        EXPECT_HAS(check, parsed.dump, "(field n i32)\n");
     }
 
     {

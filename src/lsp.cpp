@@ -1868,6 +1868,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 mark_direct(member, field.type_name, field.indirections, field.is_array, field.array_len);
                 member.package_key = node.package_key;
                 member.uri = uri;
+                member.exported = field.exported || item->is_extern || item->extern_c || item->is_union;
                 member.role = Role::Field;
                 member.detail = field.name + " " + spell_field(field);
                 put_loc(member, text, field.loc, field.name);
@@ -2711,6 +2712,9 @@ Json complete(const Doc &doc, const Cursor &cursor) {
                                      base->role == Role::Trait || base->role == Role::Alias;
                 for (const Sym &sym : doc.syms) {
                     if (type.empty() || sym.owner != type) {
+                        continue;
+                    }
+                    if (sym.role == Role::Field && !sym.exported && !document_owns(doc, sym.package_key)) {
                         continue;
                     }
                     if (sym.role == Role::Method && on_type != sym.static_method) {

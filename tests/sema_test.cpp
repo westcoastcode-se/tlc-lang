@@ -521,7 +521,7 @@ int run_sema_tests() {
 "  return geom.sum(p);\n"
 "}\n"},
             {"geom.tlc", "package geom;\n"
-                       "export type Point struct { x i32; y i32; };\n"
+                       "export type Point struct { export x i32; export y i32; };\n"
                        "export func sum(p Point) i32 { return p.x + p.y; }\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -869,7 +869,7 @@ int run_sema_tests() {
 "  return geom.sum(p);\n"
 "}\n"},
             {"geom.tlc", "package geom;\n"
-                       "type Point struct { x i32; y i32; };\n"
+                       "type Point struct { export x i32; export y i32; };\n"
                        "export type Alias Point;\n"
                        "export func sum(p Alias) i32 { return p.x + p.y; }\n"},
         });
@@ -886,7 +886,7 @@ int run_sema_tests() {
 "  return sum(p);\n"
 "}\n"},
             {"geom.tlc", "package geom;\n"
-                       "type Point struct { x i32; y i32; };\n"
+                       "type Point struct { export x i32; export y i32; };\n"
                        "export type Alias Point;\n"
                        "export func sum(p Alias) i32 { return p.x + p.y; }\n"},
         });
@@ -1329,7 +1329,7 @@ int run_sema_tests() {
              "  return math.origin.x;\n"
              "}\n"},
             {"math.tlc",
-             "type Point struct { x i32; y i32; };\n"
+             "type Point struct { export x i32; export y i32; };\n"
              "export const origin Point = {.x = 1, .y = 2};\n"},
         });
         EXPECT_HAS(check, errors, "type mismatch");
@@ -1437,7 +1437,7 @@ int run_sema_tests() {
              "  return p.x + p.y;\n"
              "}\n"},
             {"geom.tlc",
-             "export type Point struct { x i32; y i32; };\n"},
+             "export type Point struct { export x i32; export y i32; };\n"},
         });
         EXPECT_EQ(check, errors, "");
     }
@@ -2527,7 +2527,7 @@ int run_sema_tests() {
 "  return sum(p);\n"
 "}\n"},
             {"geom.tlc", "package geom;\n"
-                       "export type Point struct { x i32; y i32; };\n"
+                       "export type Point struct { export x i32; export y i32; };\n"
                        "export func sum(p Point) i32 { return p.x + p.y; }\n"},
         });
         EXPECT_EQ(check, errors, "");
@@ -5358,7 +5358,7 @@ int run_sema_tests() {
             {"main.tlc", "import { origin, pad } from \"math\";\nfunc main() i32 { return origin.x + origin.y; }\n"},
             {"math.tlc",
              "package math;\n"
-             "type Point struct { x i32; y i32; };\n"
+             "type Point struct { export x i32; export y i32; };\n"
              "export const origin Point = {.x = 40, .y = 2};\n"
              "export const pad = 0.0f;\n"},
         });
@@ -5369,9 +5369,9 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Entity struct {\n"
             "  id i32;\n"
-            "  var next i32 = 40;\n"
-            "  var bias = Entity.next;\n"
             "};\n"
+            "var Entity::next i32 = 40;\n"
+            "var Entity::bias = Entity.next;\n"
             "func main() i32 {\n"
             "  var e Entity;\n"
             "  e.id = 2;\n"
@@ -5385,8 +5385,8 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Entity struct {\n"
             "  next i32;\n"
-            "  var next i32 = 40;\n"
             "};\n"
+            "var Entity::next i32 = 40;\n"
             "func main() i32 {\n"
             "  var e Entity;\n"
             "  e.next = 2;\n"
@@ -5401,17 +5401,16 @@ int run_sema_tests() {
             "  id i32;\n"
             "  var next i32 = 1;\n"
             "};\n"
-            "var Entity::next i32 = 2;\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string errors = diagnose(
             "type Box[T type] struct {\n"
             "  value T;\n"
-            "  var extra i32 = 1;\n"
             "};\n"
+            "var Box[T]::extra i32 = 1;\n"
             "func main() i32 {\n"
             "  Box[i32].extra = 2;\n"
             "  return Box[i32].extra;\n"
@@ -5453,9 +5452,9 @@ int run_sema_tests() {
              "package math;\n"
              "export type Entity struct {\n"
              "  id i32;\n"
-             "  export var next i32 = 20;\n"
-             "  var hidden i32 = 1;\n"
              "};\n"
+             "export var Entity::next i32 = 20;\n"
+             "var Entity::hidden i32 = 1;\n"
              "export var bonus = 4;\n"
              "export spare := 2;\n"
              "export var shown i32 = 6;\n"},
@@ -5470,7 +5469,7 @@ int run_sema_tests() {
              "package math;\n"
              "export type Entity struct {\n"
              "  id i32;\n"
-             "  var hidden i32 = 1;\n"
+             "  hidden i32;\n"
              "};\n"},
         });
         EXPECT_HAS(check, errors, "hidden is not exported");

@@ -1,0 +1,18 @@
+package math;
+
+type Hidden struct {
+    n i32;
+};
+
+export type Box struct {
+    export n i32;
+    secret i32;
+    shown export struct {
+        k i32;
+        export kept i32;
+    };
+    local struct {
+        k i32;
+    };
+    export buried Hidden;
+};

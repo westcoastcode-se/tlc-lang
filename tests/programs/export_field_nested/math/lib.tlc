@@ -1,0 +1,14 @@
+package math;
+
+type Hidden struct {
+    n i32;
+};
+
+export type Mid struct {
+    export n i32;
+    secret Hidden;
+};
+
+export type Outer struct {
+    export mid Mid;
+};

@@ -1,0 +1,9 @@
+package math;
+
+type Hidden struct {
+    n i32;
+};
+
+export type Box struct {
+    export buried Hidden;
+};

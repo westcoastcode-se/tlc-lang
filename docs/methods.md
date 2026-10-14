@@ -291,9 +291,9 @@ func main() i32 {
 
 The program returns 42. `Entity.next` is one variable for `Entity`. `Box[i32].extra` and `Box[Point].extra` are two variables. `Buf[4, Point].count` is `N`, which is 4 for that instantiation. Omitting `=` zeroes the variable, the same as any other file-scope `var`. `var Entity::bias = 0` infers the type. `var Entity::row = [_]i32{1, 2}` and `var Entity::typed [2]i32 = {3, 1}` are that variable. `var Entity::scale = 1.5f` is an `f32` variable for the type. A second `var Entity::next`, or a static function of that name, is reported as `redefinition`. A variable in another file is reported as `method in another file`. An unknown type is reported as `type mismatch`.
 
-The same variable can be written inside the struct. `var next i32 = 40` there is `var Entity::next i32 = 40`. `var next = 40` infers the type. It is not a field, so `sizeof` stays the size of the fields. A field may use the same name: `e.next` is the field and `Entity.next` is the variable.
+`var` inside the struct is reported as `not supported yet`. The variable is written beside the type. A member may use the same name: `e.next` is the member and `Entity.next` is the variable. `sizeof` stays the size of the members.
 
-`export var Entity::next i32 = 40`, or `export var next` inside the struct, publishes that variable. Another package reads and assigns `pkg.Entity.next` when `Entity` is exported. Without `export`, the name is reported as `next is not exported`. `extern` on the variable, and `export` on `var Box[T]::extra` or on `export var extra` inside `Box[T]`, are reported as `not supported yet`.
+`export var Entity::next i32 = 40` publishes that variable. Another package reads and assigns `pkg.Entity.next` when `Entity` is exported. Without `export`, the name is reported as `next is not exported`. `extern` on the variable, and `export var Box[T]::extra`, are reported as `not supported yet`. A member another package can name is `export next i32` inside the struct.
 
 ```c
 package math;

@@ -545,6 +545,12 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             }
             continue;
         }
+        if (hidden_field(dest, field.field, field.loc)) {
+            if (field.value) {
+                check_expr(*field.value, true);
+            }
+            continue;
+        }
         if (field_type.kind == TypeKind::Array) {
             error(field.loc, "not supported yet");
             if (field.value) {
@@ -1544,6 +1550,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_expr(*node.rhs, true);
                         return type_invalid();
                     }
+                    if (hidden_field(object, selector->field, node.loc)) {
+                        check_expr(*node.rhs, true);
+                        return type_invalid();
+                    }
                     if (from_slice_element(selector->base.get()) ||
                         (base.kind == TypeKind::Pointer && base.pointee != nullptr && base.pointee->is_const) ||
                         const_path(*node.lhs)) {
@@ -1968,6 +1978,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 Type field;
                 if (!lookup_field(object, node.field, field)) {
                     error(node.loc, "undeclared identifier");
+                    return type_invalid();
+                }
+                if (hidden_field(object, node.field, node.loc)) {
                     return type_invalid();
                 }
                 if (from_slice_element(node.base.get())) {

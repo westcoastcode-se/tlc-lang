@@ -122,15 +122,16 @@ func main() i32 {
 
 The program returns 42. `math.bias` is the exported constant. `math.Entity.next` is the exported variable on `Entity`. A constant or variable without `export` is reported as `name is not exported`. Assigning `math.bias` is reported as `not an lvalue`. `math.Entity.make()` is reported as `type mismatch` when `make` is a function.
 
-`var next` inside the struct is that same variable. `export var bonus = 4` and `export spare := 2` publish inferred globals. Another package assigns them. `sizeof` still counts only the fields.
+`export id i32` publishes a member. Another package reads and assigns `value.id`. A member without `export` is reported as `name is not exported`. `var` inside the struct is reported as `not supported yet`. `export var bonus = 4` and `export spare := 2` publish inferred globals. Another package assigns them. `sizeof` still counts only the fields.
 
 ```c
 package math;
 
 export type Entity struct {
-    id i32;
-    export var next i32 = 32;
+    export id i32;
 };
+
+export var Entity::next i32 = 32;
 
 export func width() i32 {
     return sizeof(Entity);
@@ -145,12 +146,14 @@ import "math";
 import { spare } from "math";
 
 func main() i32 {
+    var e math.Entity;
+    e.id = 4;
     math.Entity.next = math.Entity.next + math.bonus + spare;
     return math.Entity.next + math.width();
 }
 ```
 
-The program returns 42. `math.width()` is `sizeof(Entity)`, which is 4. `math.Entity.next` started at 32.
+The program returns 42. `math.width()` is `sizeof(Entity)`, which is 4. `e.id` is the exported member. `math.Entity.next` started at 32.
 
 `const Entity::next` is a constant on the type, written beside the struct. `export const` publishes it, including `export const Box[T]::limit` on a generic struct. Another package reads `pkg.Entity.next`, `pkg.Box[i32].limit`, and `pkg.Buf[4, i32].count`. Assigning that constant is reported as `not an lvalue`. A constant without `export` is reported as `name is not exported`. An unexported generic struct is reported as `Box is not exported`. A `const` inside the struct is reported as `not supported yet`.
 

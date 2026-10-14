@@ -1,0 +1,6 @@
+import "math";
+
+func main() i32 {
+    var box math.Box;
+    return box.secret;
+}

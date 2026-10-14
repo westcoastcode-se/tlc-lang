@@ -1,8 +1,8 @@
 package geom;
 
 type Point struct {
-    x i32;
-    y i32;
+    export x i32;
+    export y i32;
 };
 
 export type Alias Point;

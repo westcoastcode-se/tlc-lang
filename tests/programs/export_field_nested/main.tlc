@@ -1,0 +1,6 @@
+import "math";
+
+func main() i32 {
+    var outer math.Outer;
+    return outer.mid.n;
+}

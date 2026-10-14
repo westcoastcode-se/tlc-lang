@@ -1268,6 +1268,8 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     info.name = spec_name;
     info.file_id = owner;
     info.loc = spec.loc;
+    info.exported = spec.exported;
+    info.anonymous = spec.anonymous;
     info.is_extern = spec.is_extern;
     info.extern_c = spec.extern_c;
     info.align = spec.align;
@@ -1287,7 +1289,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                                             false, field.type_package, field.is_struct, field.is_enum, false,
                                             field.optional, field.const_pointee);
         structs_[static_cast<std::size_t>(id)].fields.push_back(
-            StructInfo::Field{field.name, std::move(field_type), field.loc});
+            StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
     }
     structs_[static_cast<std::size_t>(id)].complete = true;
     for (const OwnedFn &owned : owned_fns_) {

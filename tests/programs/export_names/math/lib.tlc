@@ -9,8 +9,8 @@ export type Integer i32;
 export type Color enum { Red, Blue };
 
 type Point struct {
-    x i32;
-    y i32;
+    export x i32;
+    export y i32;
 };
 
 export var Entity::next i32 = 20;

@@ -12,7 +12,7 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 - `const next` inside a struct. The constant is `const Entity::next = 1` or `const Box[T]::limit = 1`, written beside the type.
 - `const Entity::next` inside a function. The constant is file scope.
 - `extern` on `const Entity::next`.
-- `export var Box[T]::extra`, and `export var extra` inside `Box[T]`. `export const Box[T]::limit` is accepted. Another package reads `pkg.Box[i32].limit`.
+- `export var Box[T]::extra`. `var` inside a struct is not a form. A published member is `export name type`. `export const Box[T]::limit` is accepted. Another package reads `pkg.Box[i32].limit`.
 - `var Entity::next` inside a function. The variable is file scope.
 - `Entity::next := 1`. The form is `var Entity::next i32 = 1` or `var Entity::next = 1`.
 

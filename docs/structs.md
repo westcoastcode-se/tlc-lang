@@ -27,22 +27,25 @@ func main() i32 {
 
 The program returns 42.
 
-A `var` inside the struct is one variable for the type, the same as `var Entity::next` written after the struct. It is not a field. `sizeof` counts the fields only. `export var` publishes it to another package.
+A member is a variable of the value. It is written `name type;`, without `var`. `export name type;` publishes that member. Another package can read and assign it. A member without `export` is reported as `name is not exported` from another package. The same package sees every member. `var`, `export var`, and `const` inside the struct are reported as `not supported yet`. A variable for the type is `var Entity::next` written after the struct.
+
+`export item Secret` is not visible outside when `Secret` is a struct that is not visible. A struct is not visible when it is not exported, or when one of its members is a struct that is not visible. An inline struct is visible outside when the member is exported, as in `export body struct { k i32; }` or `body export struct { k i32; }`. Every member inside that inline struct is exported too. Writing `export` on one of them is allowed and changes nothing.
 
 ```c
 type Entity struct {
     id i32;
-    var next i32 = 40;
+    export shown i32;
 };
 
 func main() i32 {
     var e Entity;
     e.id = 2;
-    return Entity.next + e.id;
+    e.shown = 40;
+    return e.shown + e.id;
 }
 ```
 
-The program returns 42. `e.id` is the field. `Entity.next` is the variable.
+The program returns 42. `id` and `shown` are both members. `shown` is the one another package can name.
 
 A constant on the struct is written beside it, `const Entity::next = 40`. It is not a field. `sizeof` still counts the fields only. Assigning it, or taking its address, is reported as `not an lvalue`. A `const` inside the struct is reported as `not supported yet`.
 

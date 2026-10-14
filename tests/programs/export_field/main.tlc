@@ -1,0 +1,9 @@
+import "math";
+
+func main() i32 {
+    var box math.Box;
+    box.n = 40;
+    box.shown.k = 1;
+    box.shown.kept = 1;
+    return box.n + box.shown.k + box.shown.kept;
+}

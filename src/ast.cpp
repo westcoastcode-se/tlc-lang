@@ -76,6 +76,9 @@ void append_many_results(std::string &out, const std::vector<FnParam> &results);
 void dump_field(const FieldDecl &field, std::string &out, int indent) {
     append_indent(out, indent);
     out += "(field ";
+    if (field.exported) {
+        out += "export ";
+    }
     out += field.name;
     if (!field.inline_fields.empty()) {
         out += " struct\n";

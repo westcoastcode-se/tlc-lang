@@ -118,6 +118,14 @@ class Parser {
     // One `name type;` field. False when the next token is not a name.
     bool parse_field(FieldDecl &field);
     std::vector<FieldDecl> parse_fields();
+    struct StructMembers {
+        std::vector<FieldDecl> fields;
+        std::vector<StructDecl> anonymous;
+    };
+    // Members are `name type;` or `export name type;`. `name export struct { ... }` is an inline struct.
+    // `var` and `const` inside the struct are rejected. `publish` marks every member exported,
+    // which is what an exported inline struct does to the members inside it.
+    StructMembers parse_struct_members(const std::string &owner, bool publish = false);
     struct UnionBody {
         std::vector<FieldDecl> fields;
         std::vector<StructDecl> anonymous;

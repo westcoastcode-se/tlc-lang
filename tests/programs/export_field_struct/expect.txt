@@ -1,0 +1,1 @@
+compile-error: buried is not exported

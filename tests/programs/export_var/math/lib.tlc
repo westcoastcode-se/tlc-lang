@@ -2,9 +2,10 @@ package math;
 
 export type Entity struct {
     id i32;
-    export var next i32 = 26;
-    var hidden i32 = 7;
 };
+
+export var Entity::next i32 = 26;
+var Entity::hidden i32 = 7;
 
 export func width() i32 {
     return sizeof(Entity);

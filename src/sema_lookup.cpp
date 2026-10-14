@@ -745,6 +745,66 @@ Type Checker::lookup_qualified_type(const std::string &package, const std::strin
     return member->type;
 }
 
+bool Checker::struct_open(int struct_id, std::unordered_set<int> &seen) const {
+    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+        return false;
+    }
+    const StructInfo &info = structs_[static_cast<std::size_t>(struct_id)];
+    if (info.is_extern || info.is_union) {
+        return true;
+    }
+    if (!info.exported) {
+        return false;
+    }
+    if (!seen.insert(struct_id).second) {
+        return true;
+    }
+    for (const StructInfo::Field &field : info.fields) {
+        if (field.type.kind == TypeKind::Struct && !struct_open(field.type.struct_id, seen)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Checker::field_visible(int struct_id, const std::string &name) const {
+    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+        return true;
+    }
+    const StructInfo &info = structs_[static_cast<std::size_t>(struct_id)];
+    const StructInfo::Field *field = nullptr;
+    for (const StructInfo::Field &item : info.fields) {
+        if (item.name == name) {
+            field = &item;
+            break;
+        }
+    }
+    if (field == nullptr || info.is_extern || info.is_union) {
+        return true;
+    }
+    for (const uint32_t id : files_in_package(file_id_)) {
+        if (id == info.file_id) {
+            return true;
+        }
+    }
+    if (!field->exported) {
+        return false;
+    }
+    if (field->type.kind != TypeKind::Struct) {
+        return true;
+    }
+    std::unordered_set<int> seen;
+    return struct_open(field->type.struct_id, seen);
+}
+
+bool Checker::hidden_field(const Type &object, const std::string &name, SourceLoc loc) {
+    if (object.kind != TypeKind::Struct || field_visible(object.struct_id, name)) {
+        return false;
+    }
+    error(loc, name + " is not exported");
+    return true;
+}
+
 bool Checker::lookup_field(const Type &object, const std::string &name, Type &out) const {
     if (object.kind != TypeKind::Struct || object.struct_id < 0 ||
         object.struct_id >= static_cast<int>(structs_.size())) {
@@ -1223,6 +1283,8 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         created.name = item->name;
         created.file_id = file_id;
         created.loc = item->loc;
+        created.exported = item->exported;
+        created.anonymous = item->anonymous;
         created.is_extern = item->is_extern;
         created.extern_c = item->extern_c;
         created.align = item->align;
@@ -1240,7 +1302,9 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         } else {
             pending_structs_.push_back(PendingStruct{file_id, item, id});
         }
-        publish_tag(*item, id);
+        if (!item->anonymous) {
+            publish_tag(*item, id);
+        }
     }
 }
 
@@ -1446,7 +1510,7 @@ void Checker::define_struct_fields() {
             }
             if (complain_waiting && field_waits(field)) {
                 error(field.loc, "not supported yet");
-                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc});
+                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
                 continue;
             }
             FieldDecl &written = const_cast<FieldDecl &>(field);
@@ -1463,13 +1527,13 @@ void Checker::define_struct_fields() {
                                               field.optional, field.const_pointee);
             if (is_slice(field_type)) {
                 error(field.loc, "not supported yet");
-                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc});
+                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
                 continue;
             }
             if (info.extern_c) {
                 require_extern_struct(field_type, field.loc);
             }
-            info.fields.push_back(StructInfo::Field{field.name, std::move(field_type), field.loc});
+            info.fields.push_back(StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
         }
         if (pending.decl->align > 0) {
             int natural = 1;

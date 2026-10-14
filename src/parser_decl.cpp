@@ -78,6 +78,106 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
     return body;
 }
 
+Parser::StructMembers Parser::parse_struct_members(const std::string &owner, bool publish) {
+    StructMembers body;
+    auto skip_member = [&]() {
+        while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
+            ++pos_;
+        }
+        eat(TokenKind::Semicolon);
+    };
+    auto fill = [](FieldDecl &field, const PlacedType &type) {
+        field.type_name = type.type_name;
+        field.type_package = type.type_package;
+        field.is_struct = type.is_struct;
+        field.is_enum = type.is_enum;
+        field.indirections = type.indirections;
+        field.optional = type.optional;
+        field.const_pointee = type.const_pointee;
+        field.is_array = type.is_array;
+        field.array_len = type.array_len;
+        field.array_len_name = type.array_len_name;
+        field.type_args = type.type_args;
+        field.is_fn_ptr = type.is_fn_ptr;
+        field.ret_indirections = type.ret_indirections;
+        field.ret_optional = type.ret_optional;
+        field.ret_const_pointee = type.ret_const_pointee;
+        field.fn_params = type.fn_params;
+        field.fn_variadic = type.fn_variadic;
+        field.fn_results = type.fn_results;
+    };
+    while (!check(TokenKind::RBrace) && !eof()) {
+        const std::size_t before = pos_;
+        const bool rejected = check(TokenKind::KwVar) || check(TokenKind::KwConst) || check(TokenKind::KwExtern) ||
+                              (check(TokenKind::KwExport) && (peek(1).kind == TokenKind::KwVar ||
+                                                              peek(1).kind == TokenKind::KwConst ||
+                                                              peek(1).kind == TokenKind::KwExtern));
+        if (rejected) {
+            // A member is `name type` or `export name type`. `var` belongs outside: `var Type::name`.
+            diags_.error(peek().loc, "not supported yet");
+            skip_member();
+        } else {
+            // An exported inline struct publishes every member. `export` on one of them changes nothing.
+            bool exported = publish;
+            if (eat(TokenKind::KwExport)) {
+                exported = true;
+            }
+            if (!check(TokenKind::Identifier)) {
+                error_here("expected an identifier");
+                skip_member();
+            } else {
+                FieldDecl field;
+                field.loc = peek().loc;
+                field.name = peek().text;
+                field.exported = exported;
+                ++pos_;
+                if (check(TokenKind::KwExport) && peek(1).kind == TokenKind::KwStruct) {
+                    field.exported = true;
+                    ++pos_;
+                }
+                if (check(TokenKind::KwStruct)) {
+                    const SourceLoc struct_loc = peek().loc;
+                    ++pos_;
+                    if (!eat(TokenKind::LBrace)) {
+                        diags_.error(struct_loc, "expected '{'");
+                        skip_member();
+                    } else {
+                        const std::string anon_name = owner.empty() ? field.name : owner + "." + field.name;
+                        StructMembers nested = parse_struct_members(anon_name, field.exported);
+                        expect(TokenKind::RBrace, "expected '}'");
+                        expect(TokenKind::Semicolon, "expected ';'");
+                        StructDecl anon;
+                        anon.loc = field.loc;
+                        anon.name = anon_name;
+                        anon.fields = nested.fields;
+                        anon.anonymous = true;
+                        anon.exported = field.exported;
+                        field.type_name = anon.name;
+                        // The name is the synthesized struct. `is_struct` is the C form `struct Name`.
+                        field.inline_fields = anon.fields;
+                        body.anonymous.insert(body.anonymous.end(), std::make_move_iterator(nested.anonymous.begin()),
+                                              std::make_move_iterator(nested.anonymous.end()));
+                        body.anonymous.push_back(std::move(anon));
+                        body.fields.push_back(std::move(field));
+                    }
+                } else {
+                    const PlacedType type = parse_go_type();
+                    if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
+                        diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
+                    }
+                    fill(field, type);
+                    expect(TokenKind::Semicolon, "expected ';'");
+                    body.fields.push_back(std::move(field));
+                }
+            }
+        }
+        if (pos_ == before) {
+            ++pos_;
+        }
+    }
+    return body;
+}
+
 void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c, std::string name,
                             SourceLoc name_loc, std::vector<TypeParam> type_params) {
     const TokenKind kind = peek().kind;
@@ -225,60 +325,13 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     const bool as_union = kind == TokenKind::KwUnion;
     UnionBody variants;
     std::vector<FieldDecl> fields;
-    // `var next` inside the struct is `var Name::next`. It is not stored in the value.
-    // A constant is `const Name::value` outside the struct.
-    std::vector<VarDecl> member_vars;
     if (variant_body) {
         variants = parse_union_variants(name);
         fields = std::move(variants.fields);
     } else if (kind == TokenKind::KwStruct) {
-        while (!check(TokenKind::RBrace) && !eof()) {
-            const std::size_t before = pos_;
-            bool member_export = false;
-            bool member_extern = false;
-            bool member_c = false;
-            const SourceLoc storage_loc = peek().loc;
-            while (check(TokenKind::KwExport) || check(TokenKind::KwExtern)) {
-                if (eat(TokenKind::KwExport)) {
-                    member_export = true;
-                    continue;
-                }
-                take_extern(member_extern, member_c);
-            }
-            if (member_export || member_extern || check(TokenKind::KwVar) || check(TokenKind::KwConst)) {
-                if (check(TokenKind::KwConst)) {
-                    // `const value = 1` belongs outside the struct: `const Name::value = 1`.
-                    diags_.error(storage_loc, "not supported yet");
-                    while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
-                        ++pos_;
-                    }
-                    eat(TokenKind::Semicolon);
-                } else if (!check(TokenKind::KwVar)) {
-                    diags_.error(storage_loc, "expected var");
-                    while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
-                        ++pos_;
-                    }
-                    eat(TokenKind::Semicolon);
-                } else {
-                    VarDecl var = parse_typed_var(member_export, false, member_extern, member_c, true);
-                    if (var.owner.empty()) {
-                        var.owner = name;
-                        for (const TypeParam &param : type_params) {
-                            var.owner_params.push_back(param.name);
-                        }
-                    }
-                    member_vars.push_back(std::move(var));
-                }
-            } else {
-                FieldDecl field;
-                if (parse_field(field)) {
-                    fields.push_back(std::move(field));
-                }
-            }
-            if (pos_ == before) {
-                ++pos_;
-            }
-        }
+        StructMembers members = parse_struct_members(name);
+        fields = std::move(members.fields);
+        variants.anonymous = std::move(members.anonymous);
     } else {
         fields = parse_fields();
     }
@@ -311,11 +364,6 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     TopDecl top;
     top.data = std::move(item);
     unit.decls.push_back(std::move(top));
-    for (VarDecl &var : member_vars) {
-        TopDecl member;
-        member.data = std::move(var);
-        unit.decls.push_back(std::move(member));
-    }
 }
 
 void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c) {

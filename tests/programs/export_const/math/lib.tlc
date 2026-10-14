@@ -1,7 +1,7 @@
 package math;
 
 export type Entity struct {
-    id i32;
+    export id i32;
 };
 
 export const Entity::next = 15;

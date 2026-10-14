@@ -280,6 +280,8 @@ struct FieldDecl {
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
+    // `export name` on a struct member. Another package can read and assign it.
+    bool exported = false;
     // Fields of `Name struct { ... }` inside a tlc union. Empty when the variant names a declared struct.
     std::vector<FieldDecl> inline_fields;
 };
