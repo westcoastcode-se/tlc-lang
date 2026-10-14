@@ -1,7 +1,7 @@
 - Language changes should
   - Update the documentation where necessary
   - Update the language server to match the change
-  - Update plugins under `plugins/` that match the change.
+  - Update the Zed extension in `tlc-plugins-zed` when the change affects the editor. Update the grammar in `tlc-tree-sitter` when the change affects highlighting.
   - Add-, Update or Remove examples in the documentation where neccessary
 - Always consider `TOOD.md`
   - New features added should be removed from the TODO 
