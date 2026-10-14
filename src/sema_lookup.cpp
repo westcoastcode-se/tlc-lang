@@ -1249,7 +1249,7 @@ int Checker::min_align_of(const Type &type) const {
         return 8;
     }
     if (type.kind == TypeKind::Array) {
-        // A view is `{ptr, i32}`. The pointer sets the alignment.
+        // A slice is `{ptr, i32}`. The pointer sets the alignment.
         if (type.length < 0) {
             return 8;
         }
@@ -1461,7 +1461,7 @@ void Checker::define_struct_fields() {
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
                                               field.optional, field.const_pointee);
-            if (is_view(field_type)) {
+            if (is_slice(field_type)) {
                 error(field.loc, "not supported yet");
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc});
                 continue;
@@ -1923,7 +1923,7 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             return type_invalid();
         }
         if (parameter && type.kind == TypeKind::Array && type.element) {
-            // `type Row []i32` stays a view. A sized array alias still decays to a pointer.
+            // `type Row []i32` stays a slice. A sized array alias still decays to a pointer.
             if (type.length < 0) {
                 return type;
             }
@@ -1938,15 +1938,15 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         error(loc, "not supported yet");
         return type_invalid();
     }
-    // `[]T` is a view. It does not decay, even as a parameter.
+    // `[]T` is a slice. It does not decay, even as a parameter.
     if (array_len < 0) {
-        if (is_view(type)) {
+        if (is_slice(type)) {
             error(loc, "not supported yet");
             return type_invalid();
         }
         return type_array(std::move(type), -1);
     }
-    if (is_view(type)) {
+    if (is_slice(type)) {
         error(loc, "not supported yet");
         return type_invalid();
     }

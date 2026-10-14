@@ -139,7 +139,7 @@ llvm::DIType *CodeGen::debug_type(const Lowered &low) {
     if (di_builder_ == nullptr || di_unit_ == nullptr) {
         return nullptr;
     }
-    if (low.is_view) {
+    if (low.is_slice) {
         llvm::DIType *pointer = di_builder_->createPointerType(di_builder_->createUnspecifiedType("void"), 64);
         llvm::DIType *length = di_builder_->createBasicType("i32", 32, llvm::dwarf::DW_ATE_signed);
         return di_builder_->createStructType(di_unit_, "[]", debug_file(SourceLoc{}), 0, 128, 64, llvm::DINode::FlagZero,
@@ -252,7 +252,7 @@ void CodeGen::debug_declare(const std::string &name, SourceLoc loc, const Bindin
     low.elem_bits = binding.elem_bits;
     low.elem_unsigned = binding.elem_unsigned;
     low.elem_float = binding.elem_float;
-    low.is_view = binding.is_view;
+    low.is_slice = binding.is_slice;
     llvm::DIType *type = debug_type(low);
     if (type == nullptr) {
         return;

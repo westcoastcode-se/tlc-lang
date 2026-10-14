@@ -111,7 +111,7 @@ llvm::AllocaInst *CodeGen::alloca_typed(llvm::Type *type, const std::string &nam
 }
 
 bool CodeGen::is_struct_value(const Lowered &low) const {
-    return !low.is_view && low.struct_id >= 0 && low.depth == 0 && !low.is_array && low.type != nullptr &&
+    return !low.is_slice && low.struct_id >= 0 && low.depth == 0 && !low.is_array && low.type != nullptr &&
            low.type->isStructTy();
 }
 
@@ -134,7 +134,7 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
         !many && fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty();
     const bool result_array = !many && fn.results.size() == 1 && fn.results.front().is_array &&
                               fn.results.front().array_len > 0 && !fn.results.front().is_fn_ptr;
-    const bool result_view = !many && fn.results.size() == 1 && fn.results.front().is_array &&
+    const bool result_slice = !many && fn.results.size() == 1 && fn.results.front().is_array &&
                              fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
     llvm::Type *ret = many ? aggregate_return(fn, file)
                            : (returns_void ? llvm::Type::getVoidTy(context_)
@@ -149,8 +149,8 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
                                                                           fn.results.front().fn_variadic,
                                                                           fn.results.front().fn_results)
                                                             : lower(file, fn.return_type, fn.type_package, fn.is_struct,
-                                                                    fn.indirections, result_array || result_view,
-                                                                    result_view ? fn.results.front().array_len
+                                                                    fn.indirections, result_array || result_slice,
+                                                                    result_slice ? fn.results.front().array_len
                                                                                 : (result_array ? fn.results.front().array_len : 0),
                                                                     false)));
     std::vector<llvm::Type *> params;
@@ -489,15 +489,15 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     const bool elem_float = have && base.elem_float;
     const int sid = have ? base.struct_id : -1;
     const bool base_array = have && base.is_array;
-    const bool base_view = have && base.is_view;
+    const bool base_slice = have && base.is_slice;
     // `*[]T` and `[N][]T` have no representation. Sema already rejects them.
-    if (base_view && (indirections > 0 || is_array)) {
+    if (base_slice && (indirections > 0 || is_array)) {
         out.type = i32();
         return out;
     }
     // `[]T` and `type Row []T` stay a `{ ptr, i32 }` value. A parameter does not decay.
-    if ((is_array && array_len < 0) || (base_view && indirections == 0 && !is_array)) {
-        out.is_view = true;
+    if ((is_array && array_len < 0) || (base_slice && indirections == 0 && !is_array)) {
+        out.is_slice = true;
         out.is_array = false;
         out.array_len = -1;
         out.depth = base_depth + indirections;
@@ -509,7 +509,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.elem_float = elem_float;
         out.struct_id = sid;
         out.enum_id = have ? base.enum_id : -1;
-        out.type = view_type();
+        out.type = slice_type();
         return out;
     }
     if (base_array && (indirections > 0 || is_array)) {
@@ -733,23 +733,23 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.ptr_array_len = low.ptr_array_len;
     binding.is_tuple = low.is_tuple;
     binding.tuple_parts = low.tuple_parts;
-    binding.is_view = low.is_view;
+    binding.is_slice = low.is_slice;
 }
 
-llvm::StructType *CodeGen::view_type() const {
-    if (view_ty_ != nullptr) {
-        return view_ty_;
+llvm::StructType *CodeGen::slice_type() const {
+    if (slice_ty_ != nullptr) {
+        return slice_ty_;
     }
-    auto *type = llvm::StructType::create(context_, "tlc.view");
+    auto *type = llvm::StructType::create(context_, "tlc.slice");
     type->setBody({ptr_type(), i32()});
-    view_ty_ = type;
+    slice_ty_ = type;
     return type;
 }
 
-llvm::Value *CodeGen::as_view_value(const TypedValue &value, SourceLoc loc) {
-    llvm::StructType *view = view_type();
-    if (value.value != nullptr && (value.is_view || value.value->getType() == view)) {
-        if (value.value->getType() == view) {
+llvm::Value *CodeGen::as_slice_value(const TypedValue &value, SourceLoc loc) {
+    llvm::StructType *slice_ty = slice_type();
+    if (value.value != nullptr && (value.is_slice || value.value->getType() == slice_ty)) {
+        if (value.value->getType() == slice_ty) {
             return value.value;
         }
     }
@@ -759,25 +759,25 @@ llvm::Value *CodeGen::as_view_value(const TypedValue &value, SourceLoc loc) {
             llvm::Value *data =
                 builder_.CreateInBoundsGEP(object, value.value, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(0)});
             const int len = value.array_len > 0 ? value.array_len : static_cast<int>(array->getNumElements());
-            llvm::Value *packed = llvm::ConstantAggregateZero::get(view);
+            llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_ty);
             packed = builder_.CreateInsertValue(packed, data, 0);
             packed = builder_.CreateInsertValue(packed, const_i32(len), 1);
             return packed;
         }
         if (value.array_len > 0 && value.value->getType()->isPointerTy()) {
-            llvm::Value *packed = llvm::ConstantAggregateZero::get(view);
+            llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_ty);
             packed = builder_.CreateInsertValue(packed, value.value, 0);
             packed = builder_.CreateInsertValue(packed, const_i32(value.array_len), 1);
             return packed;
         }
     }
     error(loc, "not supported yet");
-    return llvm::ConstantAggregateZero::get(view);
+    return llvm::ConstantAggregateZero::get(slice_ty);
 }
 
 llvm::Value *CodeGen::adapt(const TypedValue &value, llvm::Type *slot, SourceLoc loc) {
-    if (slot == view_type()) {
-        return as_view_value(value, loc);
+    if (slot == slice_type()) {
+        return as_slice_value(value, loc);
     }
     return as_stored(value.value, value.depth, slot, value.elem_unsigned);
 }
@@ -1172,7 +1172,7 @@ void CodeGen::prepare_aliases() {
             alias.fn_ret_bool = low.fn_ret_bool;
             alias.fn_ret_struct = low.fn_ret_struct;
             alias.fn_results = low.fn_results;
-            alias.is_view = low.is_view;
+            alias.is_slice = low.is_slice;
             aliases_[item.file].emplace(item.item->name, alias);
             progress = true;
         }
@@ -1589,7 +1589,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         low.fn_ret_struct = binding.fn_ret_struct;
         low.fn_results = binding.fn_results;
         low.enum_id = binding.enum_id;
-        low.is_view = binding.is_view;
+        low.is_slice = binding.is_slice;
         if (binding.value != nullptr) {
             if (const auto *global = llvm::dyn_cast<llvm::GlobalVariable>(binding.value)) {
                 low.type = global->getValueType();
@@ -1634,11 +1634,11 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         return low;
     };
     const auto scalar = [](const Lowered &low) {
-        return !low.is_view && low.depth == 0 && !low.is_array && low.struct_id < 0 && low.trait_id < 0 &&
+        return !low.is_slice && low.depth == 0 && !low.is_array && low.struct_id < 0 && low.trait_id < 0 &&
                low.enum_id < 0 && low.fn_ty == nullptr && !low.elem_void;
     };
     const auto promote = [&](Lowered low) {
-        if (low.is_view) {
+        if (low.is_slice) {
             return low;
         }
         if (low.is_array) {
@@ -1691,10 +1691,10 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         if (fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty()) {
             return std::nullopt;
         }
-        const bool result_view = fn.results.size() == 1 && fn.results.front().is_array &&
+        const bool result_slice = fn.results.size() == 1 && fn.results.front().is_array &&
                                  fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
-        return promote(lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, result_view,
-                             result_view ? fn.results.front().array_len : 0, false));
+        return promote(lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, result_slice,
+                             result_slice ? fn.results.front().array_len : 0, false));
     };
 
     std::function<std::optional<Lowered>(const Expr &)> value;

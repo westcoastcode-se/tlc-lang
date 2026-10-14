@@ -93,8 +93,8 @@ struct Binding {
     // A pack of several types, stored as one anonymous struct.
     bool is_tuple = false;
     std::vector<ResultSlot> tuple_parts;
-    // `[]T`. The slot holds `{ data, len }`. `depth` is the element, not the view.
-    bool is_view = false;
+    // `[]T`. The slot holds `{ data, len }`. `depth` is the element, not the slice.
+    bool is_slice = false;
 };
 
 struct TypedValue {
@@ -129,10 +129,10 @@ struct TypedValue {
     // Set when this value is a pointer to an array (`*[4]i32`).
     bool ptr_to_array = false;
     int ptr_array_len = 0;
-    // Length of a sized array that has not decayed. Negative for a view.
+    // Length of a sized array that has not decayed. Negative for a slice.
     int array_len = 0;
     // `[]T`, stored as one `{ ptr, i32 }` value.
-    bool is_view = false;
+    bool is_slice = false;
 };
 
 // How an extern function passes one struct on x86-64 System V.
@@ -213,8 +213,8 @@ class CodeGen {
     int local_seq_ = 0;
     uint32_t entry_file_ = 0;
     bool testing_ = false;
-    // `lower` is const. The struct is created the first time a view is lowered.
-    mutable llvm::StructType *view_ty_ = nullptr;
+    // `lower` is const. The struct is created the first time a slice is lowered.
+    mutable llvm::StructType *slice_ty_ = nullptr;
     // `-g`. Line numbers and variable locations for a debugger.
     bool debug_ = false;
     std::unique_ptr<llvm::DIBuilder> di_builder_;
@@ -337,7 +337,7 @@ class CodeGen {
         int inner_array_len = 0;
         bool is_tuple = false;
         std::vector<ResultSlot> tuple_parts;
-        bool is_view = false;
+        bool is_slice = false;
     };
     struct EnumLayout {
         std::string name;
@@ -369,7 +369,7 @@ class CodeGen {
         int fn_ret_struct = -1;
         std::vector<FnParam> fn_results{};
         int enum_id = -1;
-        bool is_view = false;
+        bool is_slice = false;
     };
     struct Shape {
         llvm::Type *type = nullptr;
@@ -384,7 +384,7 @@ class CodeGen {
         int elem_bits = 0;
         bool elem_unsigned = false;
         bool elem_float = false;
-        bool is_view = false;
+        bool is_slice = false;
     };
     struct CaseArm {
         const Stmt::Case *node = nullptr;
@@ -417,8 +417,8 @@ class CodeGen {
     llvm::Type *i1() const { return llvm::Type::getInt1Ty(context_); }
     llvm::PointerType *ptr_type() const { return llvm::PointerType::get(context_, 0); }
     // Every `[]T` is this one struct. The pointer addresses the first element.
-    llvm::StructType *view_type() const;
-    llvm::Value *as_view_value(const TypedValue &value, SourceLoc loc);
+    llvm::StructType *slice_type() const;
+    llvm::Value *as_slice_value(const TypedValue &value, SourceLoc loc);
     llvm::Value *adapt(const TypedValue &value, llvm::Type *slot, SourceLoc loc);
     llvm::Type *mem_type(int depth, bool elem_char = false) const { return leaf_type(depth, elem_char, -1); }
     llvm::Type *f32_ty() const { return llvm::Type::getFloatTy(context_); }
@@ -680,14 +680,14 @@ class CodeGen {
             }
             return value;
         }
-        if (binding.is_view && binding.value != nullptr) {
+        if (binding.is_slice && binding.value != nullptr) {
             llvm::Type *ty = object_type(binding.value);
             if (ty == nullptr) {
-                ty = view_type();
+                ty = slice_type();
             }
             TypedValue loaded;
             loaded.value = builder_.CreateLoad(ty, binding.value);
-            loaded.is_view = true;
+            loaded.is_slice = true;
             loaded.array_len = -1;
             loaded.depth = binding.depth;
             loaded.elem_char = binding.elem_char;
@@ -872,7 +872,7 @@ class CodeGen {
     void emit_builtin_panic();
     llvm::Value *variadic_arg(const TypedValue &value);
     void apply_initializer(const VarDecl &var);
-    llvm::Constant *constant_view(const Expr &expr, std::unordered_set<std::string> &seen);
+    llvm::Constant *constant_slice(const Expr &expr, std::unordered_set<std::string> &seen);
     llvm::Constant *const_initializer(const Expr &expr, const Binding &dest);
     llvm::Constant *sized_int(const Binding &dest, int32_t value) const;
     llvm::Constant *intern_type_name(const std::string &text);

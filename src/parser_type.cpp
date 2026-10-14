@@ -731,7 +731,7 @@ Parser::PlacedType Parser::parse_go_type() {
     if (type.ptr_to_array && outer_prefix.optional != 0) {
         diags_.error(type.loc, "not supported yet");
     }
-    // `*[]T` is not a pointer to an array. A view has no length to point at.
+    // `*[]T` is not a pointer to an array. A slice has no length to point at.
     if (type.ptr_to_array && type.array_len < 0) {
         diags_.error(type.loc, "not supported yet");
     }
@@ -1104,7 +1104,7 @@ Parser::Declarator Parser::parse_declarator() {
     return decl;
 }
 
-Parser::ArrayMark Parser::parse_array_suffix(bool allow_view) {
+Parser::ArrayMark Parser::parse_array_suffix(bool allow_slice) {
     ArrayMark mark;
     if (!check(TokenKind::LBracket)) {
         return mark;
@@ -1112,11 +1112,11 @@ Parser::ArrayMark Parser::parse_array_suffix(bool allow_view) {
     mark.is_array = true;
     const SourceLoc loc = peek().loc;
     ++pos_;
-    // `[]T` is a view. `name[]` is still the unsupported C form.
+    // `[]T` is a slice. `name[]` is still the unsupported C form.
     if (check(TokenKind::RBracket)) {
         ++pos_;
         mark.length = -1;
-        if (!allow_view) {
+        if (!allow_slice) {
             diags_.error(loc, "not supported yet");
         }
     } else if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&

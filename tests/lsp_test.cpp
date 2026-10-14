@@ -232,7 +232,7 @@ int run_lsp_tests() {
         "\n"
         "func main() i32 {\n"
         "    var p Point;\n"
-        "    var view []Point;\n"
+        "    var slice []Point;\n"
         "    var named Row;\n"
         "    var built = Point.make(1);\n"
         "    q := Point.make(2);\n"
@@ -241,7 +241,7 @@ int run_lsp_tests() {
         "    var kk K = {.value = 10};\n"
         "    var box Box = {.complex = {.inner_value = 1}};\n"
         "    kk = {.value = 2};\n"
-        "    return add(p.x, q.x) + r.x + view.len + named.len;\n"
+        "    return add(p.x, q.x) + r.x + slice.len + named.len;\n"
         "}\n";
 
     int to_child[2] = {-1, -1};
@@ -289,15 +289,15 @@ int run_lsp_tests() {
     EXPECT_HAS(check, members, "\"sum\"");
     EXPECT(check, members.find("\"make\"") == std::string::npos);
 
-    const LineCol view_len = at_needle(source, "view.", true);
-    EXPECT(check, view_len.line >= 0);
+    const LineCol slice_at = at_needle(source, "slice.", true);
+    EXPECT(check, slice_at.line >= 0);
     send_json(to_child[1],
               std::string(R"({"jsonrpc":"2.0","id":17,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
-                  uri + R"("},"position":{"line":)" + std::to_string(view_len.line) + R"(,"character":)" +
-                  std::to_string(view_len.character) + "}}}");
-    const std::string view_items = read_until(from_child[0], "\"id\":17", 3000);
-    EXPECT_HAS(check, view_items, "\"len\"");
-    EXPECT(check, view_items.find("\"x\"") == std::string::npos);
+                  uri + R"("},"position":{"line":)" + std::to_string(slice_at.line) + R"(,"character":)" +
+                  std::to_string(slice_at.character) + "}}}");
+    const std::string slice_items = read_until(from_child[0], "\"id\":17", 3000);
+    EXPECT_HAS(check, slice_items, "\"len\"");
+    EXPECT(check, slice_items.find("\"x\"") == std::string::npos);
 
     const LineCol alias_len = at_needle(source, "named.", true);
     EXPECT(check, alias_len.line >= 0);

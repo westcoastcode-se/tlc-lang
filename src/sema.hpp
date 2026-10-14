@@ -56,10 +56,10 @@ Type type_float(int bits);
 bool uses_many_results(const Type &type);
 bool mentions_trait(const Type &type);
 bool same_type(const Type &lhs, const Type &rhs);
-// `[]T`: an array whose length is unknown. It is a readonly view.
-bool is_view(const Type &type);
-// `[N]T` converts to `[]T` of the same element. Two views match only when they are the same type.
-bool accepts_view(const Type &got, const Type &want);
+// `[]T`: an array whose length is unknown. It is a readonly slice.
+bool is_slice(const Type &type);
+// `[N]T` converts to `[]T` of the same element. Two slices match only when they are the same type.
+bool accepts_slice(const Type &got, const Type &want);
 
 void analyze(const TranslationUnit &unit, DiagnosticEngine &diags);
 void analyze(const PackageGraph &graph, DiagnosticEngine &diags);

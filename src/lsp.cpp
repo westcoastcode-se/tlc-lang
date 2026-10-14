@@ -2599,7 +2599,7 @@ const Sym *find_field(const Doc &doc, const std::string &owner, const std::strin
     return nullptr;
 }
 
-bool alias_view(const Doc &doc, const Sym &sym) {
+bool alias_slice(const Doc &doc, const Sym &sym) {
     if (sym.is_array || sym.indirections != 0 || sym.type_name.empty()) {
         return false;
     }
@@ -2617,7 +2617,7 @@ bool alias_view(const Doc &doc, const Sym &sym) {
     return false;
 }
 
-bool view_receiver(const Doc &doc, const Sym &sym) {
+bool slice_receiver(const Doc &doc, const Sym &sym) {
     if (sym.role != Role::Variable && sym.role != Role::Constant && sym.role != Role::Field) {
         return false;
     }
@@ -2627,7 +2627,7 @@ bool view_receiver(const Doc &doc, const Sym &sym) {
     if (sym.is_array && sym.array_len < 0) {
         return true;
     }
-    return alias_view(doc, sym);
+    return alias_slice(doc, sym);
 }
 
 Json completion_item(const std::string &label, int kind, const std::string &detail, const Doc &doc, const Cursor &cursor) {
@@ -2699,8 +2699,8 @@ Json complete(const Doc &doc, const Cursor &cursor) {
                         push(sym.name, sym.completion_kind, sym.detail);
                     }
                 }
-            } else if (view_receiver(doc, *base)) {
-                // `v.len` is the view length. The element type's fields are `v[i].field`.
+            } else if (slice_receiver(doc, *base)) {
+                // `v.len` is the slice length. The element type's fields are `v[i].field`.
                 push("len", 5, "i32");
             } else {
                 const std::string type = (base->role == Role::StructType || base->role == Role::EnumType ||

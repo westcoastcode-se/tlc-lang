@@ -132,8 +132,8 @@ class Parser {
     // so the result does not take the C declarator `i32 (*name)(`.
     PlacedType parse_func_type(bool as_cast = false);
     void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern, bool extern_c);
-    // `allow_view` accepts `[]T`. A C declarator such as `name[]` stays unsupported.
-    ArrayMark parse_array_suffix(bool allow_view = false);
+    // `allow_slice` accepts `[]T`. A C declarator such as `name[]` stays unsupported.
+    ArrayMark parse_array_suffix(bool allow_slice = false);
     bool bracket_then_paren() const;
     // `func Vec[T]::get`. True when `[...]` is followed by `::`.
     bool bracket_then_colon_colon() const;

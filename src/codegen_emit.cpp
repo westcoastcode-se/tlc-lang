@@ -186,7 +186,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         if (global == nullptr) {
             llvm::Constant *init = nullptr;
             if (!var->is_extern) {
-                if (low.is_view || low.is_array || (low.depth == 0 && (low.struct_id >= 0 || low.trait_id >= 0))) {
+                if (low.is_slice || low.is_array || (low.depth == 0 && (low.struct_id >= 0 || low.trait_id >= 0))) {
                     init = llvm::ConstantAggregateZero::get(ty);
                 } else if (low.depth > 0) {
                     init = null_ptr();
@@ -233,7 +233,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         binding.fn_results = low.fn_results;
         binding.enum_id = low.enum_id;
         binding.inner_array_len = low.inner_array_len;
-        binding.is_view = low.is_view;
+        binding.is_slice = low.is_slice;
         binding.is_static = var->is_static;
         file.globals.emplace(key, binding);
     }
@@ -1028,7 +1028,7 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
     return sized_int(dest, *number);
 }
 
-llvm::Constant *CodeGen::constant_view(const Expr &expr, std::unordered_set<std::string> &seen) {
+llvm::Constant *CodeGen::constant_slice(const Expr &expr, std::unordered_set<std::string> &seen) {
     const auto *name = std::get_if<Expr::Name>(&expr.data);
     if (name == nullptr || !seen.insert(name->text).second) {
         return nullptr;
@@ -1055,16 +1055,16 @@ llvm::Constant *CodeGen::constant_view(const Expr &expr, std::unordered_set<std:
         llvm::Constant *data = llvm::ConstantExpr::getInBoundsGetElementPtr(
             array, global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
         const int len = binding->array_len > 0 ? binding->array_len : static_cast<int>(array->getNumElements());
-        return llvm::ConstantStruct::get(view_type(), {data, const_i32(len)});
+        return llvm::ConstantStruct::get(slice_type(), {data, const_i32(len)});
     }
-    if (!binding->is_view) {
+    if (!binding->is_slice) {
         return nullptr;
     }
     const VarDecl *source = global_decl(name->text);
     if (source == nullptr || source->init == nullptr) {
-        return llvm::ConstantAggregateZero::get(view_type());
+        return llvm::ConstantAggregateZero::get(slice_type());
     }
-    return constant_view(*source->init, seen);
+    return constant_slice(*source->init, seen);
 }
 
 void CodeGen::apply_initializer(const VarDecl &var) {
@@ -1112,9 +1112,9 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         file.folded.insert(key);
         return;
     }
-    if (found_early != file.globals.end() && found_early->second.is_view) {
+    if (found_early != file.globals.end() && found_early->second.is_slice) {
         std::unordered_set<std::string> seen;
-        llvm::Constant *packed = constant_view(*var.init, seen);
+        llvm::Constant *packed = constant_slice(*var.init, seen);
         auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
         if (packed == nullptr || global == nullptr || packed->getType() != global->getValueType()) {
             error(var.loc, "global initializer is not a constant");
@@ -1221,8 +1221,8 @@ void CodeGen::finish_function() {
             fix.CreateRetVoid();
         } else if (returns_void) {
             fix.CreateRetVoid();
-        } else if (return_type_ == view_type()) {
-            fix.CreateRet(llvm::ConstantAggregateZero::get(view_type()));
+        } else if (return_type_ == slice_type()) {
+            fix.CreateRet(llvm::ConstantAggregateZero::get(slice_type()));
         } else if (return_depth_ > 0) {
             fix.CreateRet(null_ptr());
         } else if (return_type_ != nullptr && return_type_->isIntegerTy(32)) {
@@ -1326,13 +1326,13 @@ llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector
     const bool many = fn.results.size() > 1;
     const bool returns_void =
         !many && fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty();
-    const bool result_view = !many && fn.results.size() == 1 && fn.results.front().is_array &&
+    const bool result_slice = !many && fn.results.size() == 1 && fn.results.front().is_array &&
                              fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
     llvm::Type *ret = many ? aggregate_return(fn, current_file_)
                            : (returns_void ? llvm::Type::getVoidTy(context_)
                                            : stored_type(lower(current_file_, fn.return_type, fn.type_package, fn.is_struct,
-                                                               fn.indirections, result_view,
-                                                               result_view ? fn.results.front().array_len : 0, false)));
+                                                               fn.indirections, result_slice,
+                                                               result_slice ? fn.results.front().array_len : 0, false)));
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (std::size_t index = 0; index < fn.params.size(); ++index) {
@@ -2278,10 +2278,10 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         }
         return load_object(call.abi_slot, 0, false, call.abi_struct_id, false, false, 0, false, false);
     }
-    if (inst->getType() == view_type()) {
+    if (inst->getType() == slice_type()) {
         TypedValue result{inst, call.depth, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool,
                           call.elem_bits, call.elem_unsigned};
-        result.is_view = true;
+        result.is_slice = true;
         result.array_len = -1;
         result.elem_float = call.elem_float;
         result.enum_id = call.enum_id;
@@ -2651,7 +2651,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                         binding->fn_ty, binding->fn_ret_depth, binding->fn_ret_float, binding->fn_ret_bits,
                         binding->fn_ret_unsigned, binding->fn_ret_char, binding->fn_ret_bool, binding->fn_ret_struct,
                         binding->fn_results, binding->enum_id};
-        slot.is_view = binding->is_view;
+        slot.is_slice = binding->is_slice;
         return slot;
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {
@@ -2670,7 +2670,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
         }
         const TypedValue base = emit_rvalue(*index->base);
         const TypedValue subscript = emit_rvalue(*index->index);
-        if (base.is_view) {
+        if (base.is_slice) {
             if (base.value == nullptr || subscript.value == nullptr) {
                 error(index->loc, "not an lvalue");
                 return {};
@@ -2822,8 +2822,8 @@ llvm::Value *CodeGen::emit_short_circuit(const Expr::Binary &expr, bool is_and) 
 }
 
 llvm::Type *CodeGen::shape_type(const Shape &shape) const {
-    if (shape.is_view) {
-        return view_type();
+    if (shape.is_slice) {
+        return slice_type();
     }
     if (shape.is_function || (shape.depth == 0 && shape.elem_void && !shape.is_array)) {
         return nullptr;
@@ -2870,7 +2870,7 @@ CodeGen::Shape CodeGen::shape_from_binding(const Binding &binding) const {
     shape.is_array = binding.is_array;
     shape.array_len = binding.array_len;
     shape.is_function = binding.is_function;
-    shape.is_view = binding.is_view;
+    shape.is_slice = binding.is_slice;
     shape.elem_float = binding.elem_float;
     shape.type = shape_type(shape);
     return shape;
@@ -2899,7 +2899,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     shape.struct_id = alias->struct_id;
                     shape.is_array = alias->is_array;
                     shape.array_len = alias->array_len;
-                    shape.is_view = alias->is_view;
+                    shape.is_slice = alias->is_slice;
                     shape.elem_float = alias->elem_float;
                     shape.type = shape_type(shape);
                     return shape;
@@ -3020,9 +3020,9 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     return {};
                 }
                 const Shape base = raw_shape(*node.base);
-                if (base.is_view) {
+                if (base.is_slice) {
                     Shape element = base;
-                    element.is_view = false;
+                    element.is_slice = false;
                     element.array_len = 0;
                     element.type = shape_type(element);
                     return element;
@@ -3366,9 +3366,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 const TypedValue slot = emit_addr(*node.lhs);
                 arm_union_tag_ = false;
                 const TypedValue rhs = emit_rvalue(*node.rhs);
-                if (slot.is_view) {
+                if (slot.is_slice) {
                     if (slot.value != nullptr && rhs.value != nullptr && !terminated()) {
-                        builder_.CreateStore(as_view_value(rhs, node.loc), slot.value);
+                        builder_.CreateStore(as_slice_value(rhs, node.loc), slot.value);
                     }
                     return rhs;
                 }
@@ -3453,9 +3453,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return emit_prepared(prepare_call(node));
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
-                if (node.view_len) {
+                if (node.slice_len) {
                     const TypedValue base = node.base != nullptr ? emit_rvalue(*node.base) : TypedValue{};
-                    if (base.value == nullptr || !base.is_view) {
+                    if (base.value == nullptr || !base.is_slice) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
                     }
@@ -4180,14 +4180,14 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             return;
         }
         // A designator's depth is the return depth. The value itself is already a function pointer.
-        if (got.is_view) {
-            llvm::AllocaInst *slot = alloca_typed(view_type(), name);
-            llvm::Value *stored = got.value != nullptr && got.value->getType() == view_type() ? got.value
-                                                                                              : as_view_value(got, node.loc);
+        if (got.is_slice) {
+            llvm::AllocaInst *slot = alloca_typed(slice_type(), name);
+            llvm::Value *stored = got.value != nullptr && got.value->getType() == slice_type() ? got.value
+                                                                                              : as_slice_value(got, node.loc);
             builder_.CreateStore(stored, slot);
             Binding binding;
             binding.value = slot;
-            binding.is_view = true;
+            binding.is_slice = true;
             binding.array_len = -1;
             binding.depth = got.depth;
             binding.elem_char = got.elem_char;
@@ -4326,8 +4326,8 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             create_scalar(node.names[0], value);
         } else if (dest != nullptr) {
             const Binding *found = lookup(node.names[0]);
-            if (found != nullptr && found->is_view) {
-                builder_.CreateStore(as_view_value(value, node.loc), dest);
+            if (found != nullptr && found->is_slice) {
+                builder_.CreateStore(as_slice_value(value, node.loc), dest);
             } else {
                 llvm::Type *ty = object_type(dest);
                 builder_.CreateStore(as_stored(value.value, value.depth, ty, value.elem_unsigned), dest);
@@ -4602,10 +4602,10 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     builder_.CreateRet(aggregate);
                     return;
                 }
-                if (return_type_ == view_type() && node.value != nullptr) {
+                if (return_type_ == slice_type() && node.value != nullptr) {
                     const TypedValue value = emit_rvalue(*node.value);
-                    llvm::Value *packed = value.value == nullptr ? llvm::ConstantAggregateZero::get(view_type())
-                                                                : as_view_value(value, node.loc);
+                    llvm::Value *packed = value.value == nullptr ? llvm::ConstantAggregateZero::get(slice_type())
+                                                                : as_slice_value(value, node.loc);
                     if (!terminated()) {
                         emit_defers_from(0);
                     }
@@ -4655,8 +4655,8 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     builder_.CreateRetVoid();
                 } else if (node.value) {
                     builder_.CreateRet(ret);
-                } else if (return_type_ == view_type()) {
-                    builder_.CreateRet(llvm::ConstantAggregateZero::get(view_type()));
+                } else if (return_type_ == slice_type()) {
+                    builder_.CreateRet(llvm::ConstantAggregateZero::get(slice_type()));
                 } else if (return_depth_ > 0) {
                     builder_.CreateRet(null_ptr());
                 } else if (return_type_ != nullptr && !return_type_->isIntegerTy(32)) {
@@ -4847,21 +4847,21 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         continue;
                     }
                     const Lowered low = lower_declared(current_file_, var);
-                    if (low.is_view) {
-                        llvm::AllocaInst *slot = alloca_typed(view_type(), var.name);
+                    if (low.is_slice) {
+                        llvm::AllocaInst *slot = alloca_typed(slice_type(), var.name);
                         Binding binding;
                         binding.value = slot;
                         apply_low(binding, low);
-                        binding.is_view = true;
+                        binding.is_slice = true;
                         scopes_.back()[var.name] = binding;
                         alias_capture(var.name, binding);
                         debug_declare(var.name, var.loc, binding, 0);
                         if (var.init == nullptr) {
-                            builder_.CreateStore(llvm::ConstantAggregateZero::get(view_type()), slot);
+                            builder_.CreateStore(llvm::ConstantAggregateZero::get(slice_type()), slot);
                         } else {
                             const TypedValue value = emit_rvalue(*var.init);
                             if (!terminated()) {
-                                builder_.CreateStore(as_view_value(value, var.loc), slot);
+                                builder_.CreateStore(as_slice_value(value, var.loc), slot);
                             }
                         }
                         continue;

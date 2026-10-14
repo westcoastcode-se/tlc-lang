@@ -170,15 +170,15 @@ func main() i32 {
 }
 ```
 
-## Views
+## Slices
 
-`[]T` is a readonly view of contiguous `T` values. Brackets come before the element type, as in `[]i32` and `func head(a []i32) []i32`. `[N]T` converts to `[]T`. `type Row []i32` names that view, and `[N]i32` converts to `Row`. `Row` does not convert to `[]i32`. `type Pair [2]i32` does not convert to `[]i32`. `var v = row` keeps the array. It does not infer a view.
+`[]T` is a readonly slice of contiguous `T` values. Brackets come before the element type, as in `[]i32` and `func head(a []i32) []i32`. `[N]T` converts to `[]T`. `type Row []i32` names that slice, and `[N]i32` converts to `Row`. `Row` does not convert to `[]i32`. `type Pair [2]i32` does not convert to `[]i32`. `var v = row` keeps the array. It does not infer a slice.
 
 `v[i]` reads one element. The index has type `i32`. Storing an element, `v[i] = 1`, is reported as `type mismatch`. `v[i].x` reads a field. Storing that field is reported as `type mismatch`. When the element is `*T`, `*v[i] = 1` writes through the pointer. `v.len` is `i32` and is the number of elements. `var empty []i32` has length 0.
 
 `sizeof v` is 16, the same as `sizeof([]T)`. `typeof([]i32).name()` spells `[]i32`.
 
-`i32[]` is reported as `type mismatch`. `*[]T`, `[][]T`, `[N][]T`, a struct field of view type, and `const v []i32` are reported as `not supported yet`. An array parameter is already a pointer. `return row` from `func open(row [4]i32) []i32` is reported as `return type: expected []i32, found *i32`. A file-scope view is initialized from the name of an array or another view. Another initializer is reported as `global initializer is not a constant`.
+`i32[]` is reported as `type mismatch`. `*[]T`, `[][]T`, `[N][]T`, a struct field of slice type, and `const v []i32` are reported as `not supported yet`. An array parameter is already a pointer. `return row` from `func open(row [4]i32) []i32` is reported as `return type: expected []i32, found *i32`. A file-scope slice is initialized from the name of an array or another slice. Another initializer is reported as `global initializer is not a constant`.
 
 ```c
 func head(v []i32) i32 {

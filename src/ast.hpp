@@ -110,8 +110,8 @@ struct Expr {
         std::vector<TypeArg> type_args;
         // Concrete owner after checking: `Entity` or `Box.spec.i32`.
         mutable std::string resolved_owner;
-        // `view.len`. The length is `i32` and is not a field of a struct.
-        mutable bool view_len = false;
+        // `slice.len`. The length is `i32` and is not a field of a struct.
+        mutable bool slice_len = false;
     };
     struct String {
         SourceLoc loc{};
@@ -123,8 +123,8 @@ struct Expr {
         std::unique_ptr<Expr> index;
         // Set while checking a tuple element. Negative when this is not that index.
         mutable int tuple_index = -1;
-        // The base is a view. The element is readonly.
-        mutable bool view_element = false;
+        // The base is a slice. The element is readonly.
+        mutable bool slice_element = false;
     };
     struct Sizeof {
         SourceLoc loc{};

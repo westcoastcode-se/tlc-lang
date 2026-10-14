@@ -784,13 +784,13 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.field = node.field;
                 copy.type_args = node.type_args;
                 copy.resolved_owner = node.resolved_owner;
-                copy.view_len = node.view_len;
+                copy.slice_len = node.slice_len;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 Expr::Index copy;
                 copy.loc = node.loc;
                 copy.tuple_index = node.tuple_index;
-                copy.view_element = node.view_element;
+                copy.slice_element = node.slice_element;
                 copy.base = node.base ? clone_expr(*node.base) : nullptr;
                 copy.index = node.index ? clone_expr(*node.index) : nullptr;
                 out->data = std::move(copy);
