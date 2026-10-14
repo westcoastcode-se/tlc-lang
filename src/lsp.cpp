@@ -800,7 +800,7 @@ std::string spell_type(const Place &place) {
     }
     std::string core = place.type_name;
     if (place.is_array) {
-        core = "[" + std::to_string(place.array_len) + "]" + core;
+        core = place.array_len < 0 ? "[]" + core : "[" + std::to_string(place.array_len) + "]" + core;
     }
     return stars + core;
 }
@@ -1003,6 +1003,7 @@ struct Sym {
     bool direct_type = false;
     int indirections = 0;
     bool is_array = false;
+    int array_len = 0;
     // A function on a struct or enum with no `this` parameter.
     bool static_method = false;
     uint32_t scope_begin = 0;
@@ -1098,10 +1099,11 @@ int symbol_kind(Role role) {
     return 13;
 }
 
-void mark_direct(Sym &sym, const std::string &type_name, int indirections, bool is_array) {
+void mark_direct(Sym &sym, const std::string &type_name, int indirections, bool is_array, int array_len = 0) {
     sym.type_name = type_name;
     sym.indirections = indirections;
     sym.is_array = is_array;
+    sym.array_len = array_len;
     sym.direct_type = indirections == 0 && !is_array && !type_name.empty() && type_name != "invalid";
 }
 
@@ -1113,7 +1115,7 @@ void apply_result(Sym &sym, const FunctionDecl &fn) {
     if (slot.is_fn_ptr) {
         return;
     }
-    mark_direct(sym, slot.type_name, slot.indirections, slot.is_array);
+    mark_direct(sym, slot.type_name, slot.indirections, slot.is_array, slot.array_len);
 }
 
 void put_loc(Sym &sym, const std::string &text, SourceLoc loc, const std::string &name) {
@@ -1156,6 +1158,7 @@ struct Shape {
     std::string type_name;
     int indirections = 0;
     bool is_array = false;
+    int array_len = 0;
     bool known = false;
 };
 
@@ -1167,6 +1170,7 @@ Shape shape_from_slot(const ResultSlot &slot) {
     shape.type_name = slot.type_name;
     shape.indirections = slot.indirections;
     shape.is_array = slot.is_array;
+    shape.array_len = slot.array_len;
     shape.known = true;
     return shape;
 }
@@ -1179,6 +1183,7 @@ Shape shape_from_sym(const Sym &sym) {
     shape.type_name = sym.type_name;
     shape.indirections = sym.indirections;
     shape.is_array = sym.is_array;
+    shape.array_len = sym.array_len;
     shape.known = true;
     return shape;
 }
@@ -1437,6 +1442,12 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
         } else {
             base = shape_of_expr(*selector->base, index, syms, uri, offset);
         }
+        if (base.known && base.is_array && base.array_len < 0 && selector->field == "len") {
+            Shape length;
+            length.type_name = "i32";
+            length.known = true;
+            return length;
+        }
         if (!base.known || base.is_array) {
             return {};
         }
@@ -1514,11 +1525,12 @@ void note_shape(Sym &sym, const Shape &shape) {
     if (!shape.known) {
         return;
     }
-    mark_direct(sym, shape.type_name, shape.indirections, shape.is_array);
+    mark_direct(sym, shape.type_name, shape.indirections, shape.is_array, shape.array_len);
     Place place;
     place.type_name = shape.type_name;
     place.indirections = shape.indirections;
     place.is_array = shape.is_array;
+    place.array_len = shape.array_len;
     const std::string spelled = spell_type(place);
     if (sym.detail == sym.name || sym.detail == "const " + sym.name) {
         sym.detail += " ";
@@ -1535,7 +1547,7 @@ void add_function_locals(const FunctionDecl &fn, const std::string &text, const 
         Sym sym;
         sym.name = param.name;
         sym.detail = param.name + " " + spell_param(param);
-        mark_direct(sym, param.type_name, param.indirections, param.is_array);
+        mark_direct(sym, param.type_name, param.indirections, param.is_array, param.array_len);
         sym.uri = uri;
         sym.bare = true;
         sym.local = true;
@@ -1569,7 +1581,7 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
         for (const VarDecl &var : decl->vars) {
             Sym sym;
             sym.name = var.name;
-            mark_direct(sym, var.type_name, var.indirections, var.is_array);
+            mark_direct(sym, var.type_name, var.indirections, var.is_array, var.array_len);
             sym.detail = var.name;
             if (!var.type_name.empty()) {
                 sym.detail += " ";
@@ -1779,7 +1791,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
         if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
             Sym sym;
             sym.name = var->name;
-            mark_direct(sym, var->type_name, var->indirections, var->is_array);
+            mark_direct(sym, var->type_name, var->indirections, var->is_array, var->array_len);
             sym.owner = var->owner;
             sym.package_key = node.package_key;
             sym.uri = uri;
@@ -1853,7 +1865,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 Sym member;
                 member.name = field.name;
                 member.owner = item->name;
-                mark_direct(member, field.type_name, field.indirections, field.is_array);
+                mark_direct(member, field.type_name, field.indirections, field.is_array, field.array_len);
                 member.package_key = node.package_key;
                 member.uri = uri;
                 member.role = Role::Field;
@@ -1896,14 +1908,20 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
         if (const auto *item = std::get_if<TypedefDecl>(&decl.data)) {
             Sym sym;
             sym.name = item->name;
-            mark_direct(sym, item->type_name, item->indirections, item->is_array);
+            mark_direct(sym, item->type_name, item->indirections, item->is_array, item->array_len);
             sym.package_key = node.package_key;
             sym.uri = uri;
             sym.exported = item->exported;
             sym.bare = entry;
             sym.outline = entry;
             sym.role = Role::Alias;
-            sym.detail = "type " + item->name + " " + item->type_name;
+            if (item->is_array) {
+                const Place place{item->type_name, item->indirections, item->optional, item->const_pointee, true,
+                                  item->array_len};
+                sym.detail = "type " + item->name + " " + spell_type(place);
+            } else {
+                sym.detail = "type " + item->name + " " + item->type_name;
+            }
             put_loc(sym, text, item->loc, item->name);
             if (!entry && !item->exported) {
                 sym.bare = false;
@@ -1928,7 +1946,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 Sym member;
                 member.name = field.name;
                 member.owner = item->name;
-                mark_direct(member, field.type_name, field.indirections, field.is_array);
+                mark_direct(member, field.type_name, field.indirections, field.is_array, field.array_len);
                 member.package_key = node.package_key;
                 member.uri = uri;
                 member.role = Role::Field;
@@ -2581,6 +2599,37 @@ const Sym *find_field(const Doc &doc, const std::string &owner, const std::strin
     return nullptr;
 }
 
+bool alias_view(const Doc &doc, const Sym &sym) {
+    if (sym.is_array || sym.indirections != 0 || sym.type_name.empty()) {
+        return false;
+    }
+    for (const Sym &other : doc.syms) {
+        if (other.role != Role::Alias || other.name != sym.type_name) {
+            continue;
+        }
+        if (!sym.package_key.empty() && other.package_key != sym.package_key) {
+            continue;
+        }
+        if (other.is_array && other.array_len < 0 && other.indirections == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool view_receiver(const Doc &doc, const Sym &sym) {
+    if (sym.role != Role::Variable && sym.role != Role::Constant && sym.role != Role::Field) {
+        return false;
+    }
+    if (sym.indirections != 0) {
+        return false;
+    }
+    if (sym.is_array && sym.array_len < 0) {
+        return true;
+    }
+    return alias_view(doc, sym);
+}
+
 Json completion_item(const std::string &label, int kind, const std::string &detail, const Doc &doc, const Cursor &cursor) {
     std::vector<std::pair<std::string, Json>> fields;
     fields.emplace_back("label", jstr(label));
@@ -2650,6 +2699,9 @@ Json complete(const Doc &doc, const Cursor &cursor) {
                         push(sym.name, sym.completion_kind, sym.detail);
                     }
                 }
+            } else if (view_receiver(doc, *base)) {
+                // `v.len` is the view length. The element type's fields are `v[i].field`.
+                push("len", 5, "i32");
             } else {
                 const std::string type = (base->role == Role::StructType || base->role == Role::EnumType ||
                                           base->role == Role::Alias || base->role == Role::Trait)

@@ -140,7 +140,7 @@ A trait method has no body and no receiver. A trait field is a name and a type, 
 
 ## Types
 
-A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. `i32[4]`, `i32[N]`, and `i32[]` are reported as `type mismatch`.
+A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. An empty length is a view: `[]i32` and `func head(a []i32) []i32`. `i32[4]`, `i32[N]`, and `i32[]` are reported as `type mismatch`.
 
 ```ebnf
 go-type     = func-type
@@ -152,7 +152,7 @@ placed-type = func-type
             | { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
             | go-type ;
 
-array-length = integer-literal | identifier ;
+array-length = [ integer-literal | identifier ] ;
 type-args   = "[" type-arg { "," type-arg } "]" ;
 type-arg    = integer-literal
             | "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ]

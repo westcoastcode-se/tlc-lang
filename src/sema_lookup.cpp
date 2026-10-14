@@ -792,6 +792,9 @@ bool Checker::needs_nonnull_pointer(const Type &type) const {
         if (current.kind == TypeKind::Pointer) {
             return !current.optional;
         }
+        if (current.kind == TypeKind::Array && current.length < 0) {
+            return false;
+        }
         if (current.kind == TypeKind::Array && current.element != nullptr) {
             return self(self, *current.element);
         }
@@ -1246,6 +1249,10 @@ int Checker::min_align_of(const Type &type) const {
         return 8;
     }
     if (type.kind == TypeKind::Array) {
+        // A view is `{ptr, i32}`. The pointer sets the alignment.
+        if (type.length < 0) {
+            return 8;
+        }
         return type.element == nullptr ? 1 : min_align_of(*type.element);
     }
     if (type.kind == TypeKind::Float) {
@@ -1322,8 +1329,12 @@ std::optional<int> Checker::type_size(const Type &type) const {
             return 8;
         }
         if (current.kind == TypeKind::Array) {
-            if (current.element == nullptr || current.length < 0) {
+            if (current.element == nullptr) {
                 return std::nullopt;
+            }
+            // `{ptr, i32}` with the pointer's alignment is 16 bytes.
+            if (current.length < 0) {
+                return 16;
             }
             if (current.length == 0) {
                 return 0;
@@ -1450,6 +1461,11 @@ void Checker::define_struct_fields() {
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
                                               field.optional, field.const_pointee);
+            if (is_view(field_type)) {
+                error(field.loc, "not supported yet");
+                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc});
+                continue;
+            }
             if (info.extern_c) {
                 require_extern_struct(field_type, field.loc);
             }
@@ -1907,6 +1923,10 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             return type_invalid();
         }
         if (parameter && type.kind == TypeKind::Array && type.element) {
+            // `type Row []i32` stays a view. A sized array alias still decays to a pointer.
+            if (type.length < 0) {
+                return type;
+            }
             return type_pointer(*type.element);
         }
         return type;
@@ -1918,8 +1938,15 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         error(loc, "not supported yet");
         return type_invalid();
     }
-    // `[]T` is a view. A parameter or a result with no length uses that form.
+    // `[]T` is a view. It does not decay, even as a parameter.
     if (array_len < 0) {
+        if (is_view(type)) {
+            error(loc, "not supported yet");
+            return type_invalid();
+        }
+        return type_array(std::move(type), -1);
+    }
+    if (is_view(type)) {
         error(loc, "not supported yet");
         return type_invalid();
     }
@@ -1980,6 +2007,9 @@ std::string Checker::type_desc(const Type &type) const {
         return text;
     }
     case TypeKind::Array:
+        if (type.length < 0) {
+            return "[]" + type_desc(type.element ? *type.element : type_invalid());
+        }
         return "[" + std::to_string(type.length) + "]" + type_desc(type.element ? *type.element : type_invalid());
     case TypeKind::Struct:
         if (type.struct_id >= 0 && type.struct_id < static_cast<int>(structs_.size())) {

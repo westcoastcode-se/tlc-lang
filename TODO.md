@@ -77,7 +77,13 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - An optional pointer to an array: `?*[4]i32`.
 - Two stars outside an array, `**[4]i32`, and a nested array.
 - A pointer to an array as a field. `var p *[4]i32` is fine. `p *[4]i32` inside a struct is not.
-- A view. A parameter or a result with no length is `[]i32`, brackets before the element type: `func head(a []i32) []i32`. It is `not supported yet`. A sized array stays `[N]i32`. `var a []i32` is the same gap. `i32[]` is `type mismatch`.
+- A struct field whose type is a view. `x []i32` inside a struct is `not supported yet`.
+- A pointer to a view, `*[]T`. It is `not supported yet`.
+- A nested view, `[][]T` or `[N][]T`. It is `not supported yet`.
+- A slice, `a[i:j]`.
+- A view taken from an array parameter. The parameter is already a pointer, so `return row` from `func open(row [4]i32) []i32` is `return type: expected []i32, found *i32`.
+- A file-scope view whose initializer is not the name of an array or another view. A literal or a call is `global initializer is not a constant`.
+- `const` on a view. `const v []i32 = row` is `not supported yet`.
 - A cast to `void`.
 - `++`, `--`, compound assignment (`+=` and the rest), `?:`, and `->`.
 - `goto`.

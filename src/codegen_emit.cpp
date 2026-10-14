@@ -186,7 +186,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         if (global == nullptr) {
             llvm::Constant *init = nullptr;
             if (!var->is_extern) {
-                if (low.is_array || (low.depth == 0 && (low.struct_id >= 0 || low.trait_id >= 0))) {
+                if (low.is_view || low.is_array || (low.depth == 0 && (low.struct_id >= 0 || low.trait_id >= 0))) {
                     init = llvm::ConstantAggregateZero::get(ty);
                 } else if (low.depth > 0) {
                     init = null_ptr();
@@ -233,6 +233,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         binding.fn_results = low.fn_results;
         binding.enum_id = low.enum_id;
         binding.inner_array_len = low.inner_array_len;
+        binding.is_view = low.is_view;
         binding.is_static = var->is_static;
         file.globals.emplace(key, binding);
     }
@@ -1027,6 +1028,45 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
     return sized_int(dest, *number);
 }
 
+llvm::Constant *CodeGen::constant_view(const Expr &expr, std::unordered_set<std::string> &seen) {
+    const auto *name = std::get_if<Expr::Name>(&expr.data);
+    if (name == nullptr || !seen.insert(name->text).second) {
+        return nullptr;
+    }
+    const Binding *binding = nullptr;
+    if (const auto file = files_.find(current_file_); file != files_.end()) {
+        const auto found = file->second.globals.find(name->text);
+        if (found != file->second.globals.end()) {
+            binding = &found->second;
+        }
+    }
+    if (binding == nullptr) {
+        binding = visible(current_file_, name->text, false);
+    }
+    if (binding == nullptr || binding->value == nullptr) {
+        return nullptr;
+    }
+    auto *global = llvm::dyn_cast<llvm::GlobalVariable>(binding->value);
+    if (global == nullptr) {
+        return nullptr;
+    }
+    if (binding->is_array && global->getValueType()->isArrayTy()) {
+        auto *array = llvm::cast<llvm::ArrayType>(global->getValueType());
+        llvm::Constant *data = llvm::ConstantExpr::getInBoundsGetElementPtr(
+            array, global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
+        const int len = binding->array_len > 0 ? binding->array_len : static_cast<int>(array->getNumElements());
+        return llvm::ConstantStruct::get(view_type(), {data, const_i32(len)});
+    }
+    if (!binding->is_view) {
+        return nullptr;
+    }
+    const VarDecl *source = global_decl(name->text);
+    if (source == nullptr || source->init == nullptr) {
+        return llvm::ConstantAggregateZero::get(view_type());
+    }
+    return constant_view(*source->init, seen);
+}
+
 void CodeGen::apply_initializer(const VarDecl &var) {
     if (!var.owner_params.empty()) {
         return;
@@ -1069,6 +1109,18 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         }
         auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
         global->setInitializer(intern_type_name(kind->canonical));
+        file.folded.insert(key);
+        return;
+    }
+    if (found_early != file.globals.end() && found_early->second.is_view) {
+        std::unordered_set<std::string> seen;
+        llvm::Constant *packed = constant_view(*var.init, seen);
+        auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
+        if (packed == nullptr || global == nullptr || packed->getType() != global->getValueType()) {
+            error(var.loc, "global initializer is not a constant");
+            return;
+        }
+        global->setInitializer(packed);
         file.folded.insert(key);
         return;
     }
@@ -1169,6 +1221,8 @@ void CodeGen::finish_function() {
             fix.CreateRetVoid();
         } else if (returns_void) {
             fix.CreateRetVoid();
+        } else if (return_type_ == view_type()) {
+            fix.CreateRet(llvm::ConstantAggregateZero::get(view_type()));
         } else if (return_depth_ > 0) {
             fix.CreateRet(null_ptr());
         } else if (return_type_ != nullptr && return_type_->isIntegerTy(32)) {
@@ -1272,10 +1326,13 @@ llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector
     const bool many = fn.results.size() > 1;
     const bool returns_void =
         !many && fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty();
+    const bool result_view = !many && fn.results.size() == 1 && fn.results.front().is_array &&
+                             fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
     llvm::Type *ret = many ? aggregate_return(fn, current_file_)
                            : (returns_void ? llvm::Type::getVoidTy(context_)
                                            : stored_type(lower(current_file_, fn.return_type, fn.type_package, fn.is_struct,
-                                                               fn.indirections, false, 0, false)));
+                                                               fn.indirections, result_view,
+                                                               result_view ? fn.results.front().array_len : 0, false)));
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (std::size_t index = 0; index < fn.params.size(); ++index) {
@@ -1712,7 +1769,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                         llvm::Type *param = index < function->getFunctionType()->getNumParams()
                                                 ? function->getFunctionType()->getParamType(index)
                                                 : nullptr;
-                        args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+                        args.push_back(adapt(value, param, node.loc));
                         ++index;
                     }
                     remember(function, std::move(args), method->depth, method->elem_char, method->struct_id,
@@ -1773,7 +1830,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     llvm::Type *param = index < function->getFunctionType()->getNumParams()
                                             ? function->getFunctionType()->getParamType(index)
                                             : nullptr;
-                    args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+                    args.push_back(adapt(value, param, node.loc));
                     ++index;
                 }
                 remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
@@ -1859,7 +1916,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     llvm::Type *param = index < function->getFunctionType()->getNumParams()
                                             ? function->getFunctionType()->getParamType(index)
                                             : nullptr;
-                    args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+                    args.push_back(adapt(value, param, node.loc));
                     ++index;
                 }
                 remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
@@ -1939,7 +1996,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     llvm::Type *param = index < function->getFunctionType()->getNumParams()
                                             ? function->getFunctionType()->getParamType(index)
                                             : nullptr;
-                    args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+                    args.push_back(adapt(value, param, node.loc));
                     ++index;
                 }
                 remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
@@ -2063,7 +2120,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 llvm::Type *param = index < function->getFunctionType()->getNumParams()
                                         ? function->getFunctionType()->getParamType(index)
                                         : nullptr;
-                args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+                args.push_back(adapt(value, param, node.loc));
                 ++index;
             }
             remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
@@ -2083,7 +2140,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         for (const auto &arg : node.args) {
             const TypedValue value = emit_rvalue(*arg);
             llvm::Type *param = index < callee.fn_ty->getNumParams() ? callee.fn_ty->getParamType(index) : nullptr;
-            args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+            args.push_back(adapt(value, param, node.loc));
             ++index;
         }
         prepared.indirect = callee.value;
@@ -2162,7 +2219,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 llvm::Type *param = attr_index < function->getFunctionType()->getNumParams()
                                         ? function->getFunctionType()->getParamType(attr_index)
                                         : nullptr;
-                args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+                args.push_back(adapt(value, param, node.loc));
                 ++attr_index;
             }
             ++source;
@@ -2180,7 +2237,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         llvm::Type *param = index < function->getFunctionType()->getNumParams()
                                 ? function->getFunctionType()->getParamType(index)
                                 : nullptr;
-        llvm::Value *stored = as_stored(value.value, value.depth, param, value.elem_unsigned);
+        llvm::Value *stored = adapt(value, param, node.loc);
         if (param == nullptr && function->isVarArg()) {
             TypedValue widened = value;
             widened.value = stored;
@@ -2220,6 +2277,15 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
             unpack_return(inst, call.abi_slot, call.abi_ret);
         }
         return load_object(call.abi_slot, 0, false, call.abi_struct_id, false, false, 0, false, false);
+    }
+    if (inst->getType() == view_type()) {
+        TypedValue result{inst, call.depth, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool,
+                          call.elem_bits, call.elem_unsigned};
+        result.is_view = true;
+        result.array_len = -1;
+        result.elem_float = call.elem_float;
+        result.enum_id = call.enum_id;
+        return result;
     }
     if (call.elem_float) {
         return {inst, 0, false, -1, false, false, false, call.elem_bits >= 64 ? 64 : 32, false, -1, true};
@@ -2468,7 +2534,7 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
         llvm::Type *param = index < function->getFunctionType()->getNumParams()
                                 ? function->getFunctionType()->getParamType(index)
                                 : nullptr;
-        out_args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+        out_args.push_back(adapt(value, param, loc));
         ++index;
     }
     return function;
@@ -2522,7 +2588,7 @@ void CodeGen::call_trait_fn(llvm::Value *fnptr, const TypedValue &meta, const Ex
         }
         const TypedValue value = emit_rvalue(*arg);
         llvm::Type *param = index < meta.fn_ty->getNumParams() ? meta.fn_ty->getParamType(index) : nullptr;
-        args.push_back(as_stored(value.value, value.depth, param, value.elem_unsigned));
+        args.push_back(adapt(value, param, node.loc));
         ++index;
     }
     prepared.indirect = fnptr;
@@ -2580,11 +2646,13 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             error(name->loc, binding != nullptr && binding->is_array ? "not supported yet" : "not an lvalue");
             return {};
         }
-        return {binding->value, binding->depth, binding->elem_char, binding->struct_id, false, binding->elem_void,
-                binding->elem_bool, binding->elem_bits, binding->elem_unsigned, binding->trait_id, binding->elem_float,
-                binding->fn_ty, binding->fn_ret_depth, binding->fn_ret_float, binding->fn_ret_bits,
-                binding->fn_ret_unsigned, binding->fn_ret_char, binding->fn_ret_bool, binding->fn_ret_struct,
-                binding->fn_results, binding->enum_id};
+        TypedValue slot{binding->value, binding->depth, binding->elem_char, binding->struct_id, false, binding->elem_void,
+                        binding->elem_bool, binding->elem_bits, binding->elem_unsigned, binding->trait_id, binding->elem_float,
+                        binding->fn_ty, binding->fn_ret_depth, binding->fn_ret_float, binding->fn_ret_bits,
+                        binding->fn_ret_unsigned, binding->fn_ret_char, binding->fn_ret_bool, binding->fn_ret_struct,
+                        binding->fn_results, binding->enum_id};
+        slot.is_view = binding->is_view;
+        return slot;
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {
         const TypedValue inner = emit_rvalue(*star->expr);
@@ -2602,6 +2670,21 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
         }
         const TypedValue base = emit_rvalue(*index->base);
         const TypedValue subscript = emit_rvalue(*index->index);
+        if (base.is_view) {
+            if (base.value == nullptr || subscript.value == nullptr) {
+                error(index->loc, "not an lvalue");
+                return {};
+            }
+            llvm::Value *data = builder_.CreateExtractValue(base.value, 0);
+            llvm::Type *element = leaf_type(base.depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
+                                            base.elem_float);
+            llvm::Value *slot =
+                builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{subscript.value});
+            TypedValue out{slot,       base.depth,     base.elem_char, base.struct_id, false,          base.elem_void,
+                           base.elem_bool, base.elem_bits, base.elem_unsigned, -1,     base.elem_float};
+            out.enum_id = base.enum_id;
+            return out;
+        }
         if (base.depth <= 0 || base.value == nullptr || subscript.value == nullptr) {
             error(index->loc, "not an lvalue");
             return {};
@@ -2739,6 +2822,9 @@ llvm::Value *CodeGen::emit_short_circuit(const Expr::Binary &expr, bool is_and) 
 }
 
 llvm::Type *CodeGen::shape_type(const Shape &shape) const {
+    if (shape.is_view) {
+        return view_type();
+    }
     if (shape.is_function || (shape.depth == 0 && shape.elem_void && !shape.is_array)) {
         return nullptr;
     }
@@ -2784,6 +2870,8 @@ CodeGen::Shape CodeGen::shape_from_binding(const Binding &binding) const {
     shape.is_array = binding.is_array;
     shape.array_len = binding.array_len;
     shape.is_function = binding.is_function;
+    shape.is_view = binding.is_view;
+    shape.elem_float = binding.elem_float;
     shape.type = shape_type(shape);
     return shape;
 }
@@ -2811,6 +2899,8 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     shape.struct_id = alias->struct_id;
                     shape.is_array = alias->is_array;
                     shape.array_len = alias->array_len;
+                    shape.is_view = alias->is_view;
+                    shape.elem_float = alias->elem_float;
                     shape.type = shape_type(shape);
                     return shape;
                 }
@@ -2929,7 +3019,15 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 if (node.base == nullptr) {
                     return {};
                 }
-                const Shape inner = decay_shape(raw_shape(*node.base));
+                const Shape base = raw_shape(*node.base);
+                if (base.is_view) {
+                    Shape element = base;
+                    element.is_view = false;
+                    element.array_len = 0;
+                    element.type = shape_type(element);
+                    return element;
+                }
+                const Shape inner = decay_shape(base);
                 if (inner.depth <= 0) {
                     return {};
                 }
@@ -3268,6 +3366,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 const TypedValue slot = emit_addr(*node.lhs);
                 arm_union_tag_ = false;
                 const TypedValue rhs = emit_rvalue(*node.rhs);
+                if (slot.is_view) {
+                    if (slot.value != nullptr && rhs.value != nullptr && !terminated()) {
+                        builder_.CreateStore(as_view_value(rhs, node.loc), slot.value);
+                    }
+                    return rhs;
+                }
                 llvm::Value *stored = nullptr;
                 if (slot.value != nullptr && rhs.value != nullptr) {
                     stored = stored_value(rhs, slot);
@@ -3349,6 +3453,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return emit_prepared(prepare_call(node));
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.view_len) {
+                    const TypedValue base = node.base != nullptr ? emit_rvalue(*node.base) : TypedValue{};
+                    if (base.value == nullptr || !base.is_view) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    return {builder_.CreateExtractValue(base.value, 1), 0};
+                }
                 if (!node.resolved_owner.empty()) {
                     const std::string key = node.resolved_owner + "." + node.field;
                     const Binding *global = visible(assoc_home(node), key, false);
@@ -3578,7 +3690,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 llvm::Type *measured = nullptr;
                 if (node.on_type) {
                     const Lowered low = lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections,
-                                              false, 0, false);
+                                              node.is_array, node.is_array ? node.array_len : 0, false);
                     if (low.depth == 0 && low.elem_void) {
                         error(node.loc, "not supported yet");
                         return {zero(), 0};
@@ -3732,6 +3844,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     TypedValue value{slot,          low.depth + 1, low.elem_char,     low.struct_id, false,
                                      low.elem_void, low.elem_bool, low.elem_bits,     low.elem_unsigned, -1,
                                      low.elem_float};
+                    value.array_len = low.array_len;
                     value.inner_array_len = low.inner_array_len;
                     value.fn_ty = low.fn_ty;
                     value.fn_ret_depth = low.fn_ret_depth;
@@ -4067,6 +4180,29 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             return;
         }
         // A designator's depth is the return depth. The value itself is already a function pointer.
+        if (got.is_view) {
+            llvm::AllocaInst *slot = alloca_typed(view_type(), name);
+            llvm::Value *stored = got.value != nullptr && got.value->getType() == view_type() ? got.value
+                                                                                              : as_view_value(got, node.loc);
+            builder_.CreateStore(stored, slot);
+            Binding binding;
+            binding.value = slot;
+            binding.is_view = true;
+            binding.array_len = -1;
+            binding.depth = got.depth;
+            binding.elem_char = got.elem_char;
+            binding.struct_id = got.struct_id;
+            binding.elem_void = got.elem_void;
+            binding.elem_bool = got.elem_bool;
+            binding.elem_bits = got.elem_bits;
+            binding.elem_unsigned = got.elem_unsigned;
+            binding.elem_float = got.elem_float;
+            binding.enum_id = got.enum_id;
+            scopes_.back()[name] = binding;
+            alias_capture(name, binding);
+            note(name, binding);
+            return;
+        }
         if (auto *function = llvm::dyn_cast_or_null<llvm::Function>(got.value)) {
             llvm::AllocaInst *slot = alloca_typed(ptr_type(), name);
             builder_.CreateStore(function, slot);
@@ -4189,8 +4325,13 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         if (create) {
             create_scalar(node.names[0], value);
         } else if (dest != nullptr) {
-            llvm::Type *ty = object_type(dest);
-            builder_.CreateStore(as_stored(value.value, value.depth, ty, value.elem_unsigned), dest);
+            const Binding *found = lookup(node.names[0]);
+            if (found != nullptr && found->is_view) {
+                builder_.CreateStore(as_view_value(value, node.loc), dest);
+            } else {
+                llvm::Type *ty = object_type(dest);
+                builder_.CreateStore(as_stored(value.value, value.depth, ty, value.elem_unsigned), dest);
+            }
         }
         return;
     }
@@ -4461,6 +4602,18 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     builder_.CreateRet(aggregate);
                     return;
                 }
+                if (return_type_ == view_type() && node.value != nullptr) {
+                    const TypedValue value = emit_rvalue(*node.value);
+                    llvm::Value *packed = value.value == nullptr ? llvm::ConstantAggregateZero::get(view_type())
+                                                                : as_view_value(value, node.loc);
+                    if (!terminated()) {
+                        emit_defers_from(0);
+                    }
+                    if (!terminated()) {
+                        builder_.CreateRet(packed);
+                    }
+                    return;
+                }
                 if (return_type_ != nullptr && return_type_->isArrayTy() && node.value != nullptr) {
                     const auto *name = std::get_if<Expr::Name>(&node.value->data);
                     const Binding *binding = name == nullptr ? nullptr : lookup(name->text);
@@ -4502,6 +4655,8 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     builder_.CreateRetVoid();
                 } else if (node.value) {
                     builder_.CreateRet(ret);
+                } else if (return_type_ == view_type()) {
+                    builder_.CreateRet(llvm::ConstantAggregateZero::get(view_type()));
                 } else if (return_depth_ > 0) {
                     builder_.CreateRet(null_ptr());
                 } else if (return_type_ != nullptr && !return_type_->isIntegerTy(32)) {
@@ -4692,6 +4847,25 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         continue;
                     }
                     const Lowered low = lower_declared(current_file_, var);
+                    if (low.is_view) {
+                        llvm::AllocaInst *slot = alloca_typed(view_type(), var.name);
+                        Binding binding;
+                        binding.value = slot;
+                        apply_low(binding, low);
+                        binding.is_view = true;
+                        scopes_.back()[var.name] = binding;
+                        alias_capture(var.name, binding);
+                        debug_declare(var.name, var.loc, binding, 0);
+                        if (var.init == nullptr) {
+                            builder_.CreateStore(llvm::ConstantAggregateZero::get(view_type()), slot);
+                        } else {
+                            const TypedValue value = emit_rvalue(*var.init);
+                            if (!terminated()) {
+                                builder_.CreateStore(as_view_value(value, var.loc), slot);
+                            }
+                        }
+                        continue;
+                    }
                     if (!var.ptr_to_array && (var.is_array || low.is_array)) {
                         if (!low.is_array || low.array_len <= 0) {
                             error(var.loc, "not supported yet");

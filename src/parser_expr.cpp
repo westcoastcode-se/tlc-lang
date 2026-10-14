@@ -542,6 +542,8 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         ++pos_;
         // `sizeof(Point)` and `typeof(Point)`. `struct` is not a type spelling here.
         bool on_type = false;
+        bool type_array = false;
+        int type_array_len = 0;
         ParenType spelled;
         std::unique_ptr<Expr> expr;
         std::size_t look = 0;
@@ -569,6 +571,21 @@ std::unique_ptr<Expr> Parser::parse_unary() {
                 }
                 ++pos_;
             } while (depth > 0 && !eof());
+        } else if (peek().kind == TokenKind::LParen && peek(1).kind == TokenKind::LBracket) {
+            // `sizeof([]i32)` and `typeof([4]i32)`. A cast does not take this form.
+            ++pos_;
+            const PlacedType array = parse_go_type();
+            expect(TokenKind::RParen, "expected ')'");
+            on_type = true;
+            type_array = array.is_array;
+            type_array_len = array.array_len;
+            spelled.name = array.type_name;
+            spelled.package = array.type_package;
+            spelled.is_struct = array.is_struct;
+            spelled.is_enum = array.is_enum;
+            spelled.indirections = array.indirections;
+            spelled.optional = array.optional;
+            spelled.const_pointee = array.const_pointee;
         } else if (starts_type_paren()) {
             spelled = parse_paren_type();
             on_type = true;
@@ -596,10 +613,14 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         if (is_sizeof) {
             Expr::Sizeof node;
             fill(node);
+            node.is_array = type_array;
+            node.array_len = type_array_len;
             return make_expr(std::move(node));
         }
         Expr::Typeof node;
         fill(node);
+        node.is_array = type_array;
+        node.array_len = type_array_len;
         return finish_postfix(make_expr(std::move(node)));
     }
     // `*int(p)` is a cast. `*p` and `*f()` stay dereferences, so this comes before unary `*`.

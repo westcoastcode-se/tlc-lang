@@ -814,7 +814,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     error(var->loc, "type mismatch");
                 }
                 if (var->is_array && !var->ptr_to_array && var->init && !var->inferred) {
-                    if (assoc != nullptr && assoc->type.kind == TypeKind::Array) {
+                    if (var->array_len < 0) {
+                        if (assoc != nullptr) {
+                            check_against(*var->init, assoc->type);
+                        }
+                    } else if (assoc != nullptr && assoc->type.kind == TypeKind::Array) {
                         (void)file_array_initializer(const_cast<VarDecl &>(*var), &assoc->type);
                     } else if (assoc == nullptr || assoc->type.kind != TypeKind::Invalid) {
                         error(var->loc, "not supported yet");
@@ -842,7 +846,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 }
             }
             if (var->is_array && !var->ptr_to_array && var->init) {
-                if (!var->is_const_decl) {
+                if (!var->is_const_decl && var->array_len < 0) {
+                    const Symbol *symbol = lookup(var->name);
+                    const Type want = symbol != nullptr ? symbol->type : type_invalid();
+                    check_against(*var->init, want);
+                } else if (!var->is_const_decl) {
                     const Symbol *symbol = lookup(var->name);
                     if (symbol != nullptr && symbol->type.kind == TypeKind::Array) {
                         (void)file_array_initializer(const_cast<VarDecl &>(*var), &symbol->type);

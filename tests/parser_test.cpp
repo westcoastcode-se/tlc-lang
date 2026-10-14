@@ -386,7 +386,8 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source("var a []i32;\n"
 "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var a i32[])");
     }
 
     {
@@ -1248,7 +1249,8 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func head(a []i32) []i32 { return a; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn head (params (a i32[])) i32");
     }
 
     {

@@ -1,0 +1,38 @@
+type Point struct {
+    x i32;
+};
+
+type Row []i32;
+
+var numbers = [_]i32{10, 42};
+var opened []i32 = numbers;
+
+func pick(v []i32) i32 {
+    return v[1];
+}
+
+func pass(v []i32) []i32 {
+    return v;
+}
+
+func main() i32 {
+    var empty []i32;
+    var local = [_]i32{10, 42};
+    var view []i32 = local;
+    var copy []i32 = view;
+    copy = opened;
+    var again = pass(copy);
+    var points = [_]Point{Point{.x = 7}};
+    var elems []Point = points;
+    var alias Row = local;
+    if (opened.len != 2 || view.len != 2 || empty.len != 0 || again.len != 2 || alias.len != 2) {
+        return 1;
+    }
+    if (sizeof(view) != 16 || sizeof([]i32) != 16 || sizeof(opened) != 16) {
+        return 2;
+    }
+    if (alias[0] != 10 || again[1] != 42) {
+        return 3;
+    }
+    return opened[0] + pick(copy) + elems[0].x + 4;
+}

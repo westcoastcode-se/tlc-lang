@@ -176,6 +176,21 @@ ResultSlot slot_from_spelling(const Spelling &spelling) {
     return slot;
 }
 
+// `v[i].x` still names the view element. The element is readonly.
+bool from_view_element(const Expr *expr) {
+    while (expr != nullptr) {
+        if (const auto *index = std::get_if<Expr::Index>(&expr->data)) {
+            return index->view_element;
+        }
+        if (const auto *selector = std::get_if<Expr::Selector>(&expr->data)) {
+            expr = selector->base.get();
+            continue;
+        }
+        break;
+    }
+    return false;
+}
+
 } // namespace
 
 Type Checker::elaborate_inferred(FunctionDecl &fn, const Type &want) {
@@ -630,6 +645,14 @@ void Checker::check_call_arg(const Expr &expr, const Type &want) {
 }
 
 Type Checker::check_against(const Expr &expr, const Type &want) {
+    // `[N]T` converts to `[]T` while the length is still known. A decayed `*T` does not.
+    if (is_view(want)) {
+        const Type got = check_raw(expr, true);
+        if (got.kind != TypeKind::Invalid && !accepts_view(got, want)) {
+            mismatch(expr_loc(expr), want, got);
+        }
+        return got;
+    }
     if (FunctionDecl *fn = inferred_function(expr)) {
         const Type got = elaborate_inferred(*fn, want);
         if (got.kind != TypeKind::Invalid) {
@@ -661,7 +684,8 @@ Type Checker::check_expr(const Expr &expr, bool used) {
     // A const array decays to a pointer to a const element, so `row[0] = n` is rejected.
     const bool array_const = type.kind == TypeKind::Array && type.is_const;
     type.is_const = false;
-    if (type.kind == TypeKind::Array && type.element) {
+    // A view stays a value. Only a sized array decays to a pointer.
+    if (type.kind == TypeKind::Array && type.element && type.length >= 0) {
         Type pointer = type_pointer(*type.element);
         if (array_const && pointer.pointee) {
             pointer.pointee->is_const = true;
@@ -1235,6 +1259,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (inner.kind == TypeKind::Function) {
                         return type_pointer(inner);
                     }
+                    if (const auto *selector = std::get_if<Expr::Selector>(&node.expr->data);
+                        selector != nullptr && selector->view_len) {
+                        error(node.loc, "not an lvalue");
+                        return type_invalid();
+                    }
+                    // `&v` of a view has no representation yet. `&v[i]` is `*const T`.
+                    if (is_view(inner)) {
+                        error(node.loc, "not supported yet");
+                        return type_invalid();
+                    }
+                    if (const auto *index = std::get_if<Expr::Index>(&node.expr->data);
+                        index != nullptr && index->view_element) {
+                        inner.is_const = true;
+                    }
                     if (const auto *named = std::get_if<Expr::Name>(&node.expr->data)) {
                         if (const Symbol *symbol = lookup(named->text); symbol != nullptr && symbol->is_immutable) {
                             inner.is_const = true;
@@ -1391,6 +1429,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     const Type base = check_expr(*index->base, true);
                     const Type subscript = check_expr(*index->index, true);
                     expect(subscript, type_int(), expr_loc(*index->index));
+                    if (is_view(base)) {
+                        error(node.loc, "type mismatch");
+                        check_expr(*node.rhs, true);
+                        return type_invalid();
+                    }
                     if (base.kind == TypeKind::Tuple) {
                         error(node.loc, "not supported yet");
                         check_expr(*node.rhs, true);
@@ -1445,7 +1488,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (target.kind == SelectorTarget::Kind::Package) {
                         if (target.symbol->is_function || target.symbol->is_type || target.symbol->is_constant ||
-                            target.symbol->type.kind == TypeKind::Array) {
+                            (target.symbol->type.kind == TypeKind::Array && !is_view(target.symbol->type))) {
                             error(node.loc, "not an lvalue");
                             check_expr(*node.rhs, true);
                             return type_invalid();
@@ -1501,7 +1544,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_expr(*node.rhs, true);
                         return type_invalid();
                     }
-                    if ((base.kind == TypeKind::Pointer && base.pointee != nullptr && base.pointee->is_const) ||
+                    if (from_view_element(selector->base.get()) ||
+                        (base.kind == TypeKind::Pointer && base.pointee != nullptr && base.pointee->is_const) ||
                         const_path(*node.lhs)) {
                         error(node.loc, "type mismatch");
                         check_expr(*node.rhs, true);
@@ -1526,7 +1570,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 if (!name || !symbol || symbol->is_function || symbol->is_package || symbol->is_constant ||
-                    symbol->type.kind == TypeKind::Array) {
+                    (symbol->type.kind == TypeKind::Array && !is_view(symbol->type))) {
                     if (name && !symbol) {
                         error(expr_loc(*node.lhs), "undeclared identifier");
                     } else {
@@ -1887,6 +1931,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return target.symbol->type;
                 }
                 const Type base = check_expr(*node.base, true);
+                // `view.len` is the length. No other field is part of the view.
+                if (is_view(base)) {
+                    if (node.field == "len") {
+                        node.view_len = true;
+                        return type_int();
+                    }
+                    error(node.loc, "undeclared identifier");
+                    return type_invalid();
+                }
                 Type trait_field;
                 if (as_trait_field(base, node.field, trait_field)) {
                     if (trait_field.kind == TypeKind::Invalid) {
@@ -1917,6 +1970,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "undeclared identifier");
                     return type_invalid();
                 }
+                if (from_view_element(node.base.get())) {
+                    field.is_const = true;
+                }
                 return field;
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 (void)used;
@@ -1933,8 +1989,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 expect(subscript, type_int(), expr_loc(*node.index));
                 if (base.kind == TypeKind::Array && base.element != nullptr) {
                     Type element = *base.element;
-                    if (base.is_const) {
+                    if (base.is_const || is_view(base)) {
                         element.is_const = true;
+                    }
+                    if (is_view(base)) {
+                        node.view_element = true;
                     }
                     return element;
                 }
@@ -1986,7 +2045,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 (void)used;
                 const Type type = operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum,
                                                node.indirections, node.optional, node.expr.get(), node.loc,
-                                               node.const_pointee);
+                                               node.const_pointee, node.is_array, node.array_len);
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
@@ -2155,8 +2214,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
 
 Type Checker::operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                            bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
-                           uint32_t const_pointee) {
+                           uint32_t const_pointee, bool is_array, int array_len) {
     if (on_type) {
+        if (is_array) {
+            return object_type(type_name, indirections, true, array_len, loc, false, type_package, is_struct, is_enum,
+                               false, optional, const_pointee);
+        }
         return spelled_type(type_name, type_package, is_struct, is_enum, indirections, loc, optional, const_pointee);
     }
     if (expr == nullptr) {
@@ -2186,7 +2249,7 @@ Type Checker::operand_type(bool on_type, const std::string &type_name, const std
 
 Type Checker::sizeof_operand(const Expr::Sizeof &node) {
     return operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
-                        node.optional, node.expr.get(), node.loc, node.const_pointee);
+                        node.optional, node.expr.get(), node.loc, node.const_pointee, node.is_array, node.array_len);
 }
 
 void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &message) {
@@ -2568,7 +2631,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     const bool widened = accepts_pointer(got, want);
                     const bool scalar =
                         is_scalar(got) && is_scalar(want) && got.alias_id == 0 && want.alias_id == 0;
-                    if (!null_pointer && !widened && !scalar &&
+                    if (!null_pointer && !widened && !scalar && !accepts_view(got, want) &&
                         (want.kind == TypeKind::Void ||
                          (got.kind != TypeKind::Invalid && want.kind != TypeKind::Invalid && !same_type(got, want)))) {
                         error(node.loc, "return type: expected " + type_desc(want) + ", found " + type_desc(got));
@@ -2839,7 +2902,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                     return &found->second;
                 };
                 auto assignable = [&](const Symbol &symbol, SourceLoc loc, const Type &got) {
-                    if (symbol.is_function || symbol.is_package || symbol.is_constant || symbol.type.kind == TypeKind::Array) {
+                    if (symbol.is_function || symbol.is_package || symbol.is_constant ||
+                        (symbol.type.kind == TypeKind::Array && !is_view(symbol.type))) {
                         error(loc, "not an lvalue");
                         return;
                     }
@@ -2927,7 +2991,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     declare(std::move(symbol), var.loc);
                     const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                     const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
-                    if (var.is_array && !var.ptr_to_array && var.init && !array_list) {
+                    // `var v []i32 = row` converts. A sized array still needs a value list.
+                    const bool view = var.is_array && !var.ptr_to_array && var.array_len < 0;
+                    if (var.is_array && !var.ptr_to_array && var.init && !array_list && !view) {
                         error(var.loc, "not supported yet");
                     } else if (var.init) {
                         check_against(*var.init, type);

@@ -697,7 +697,7 @@ Parser::PlacedType Parser::parse_go_type() {
     } else if (outer == 1) {
         type.ptr_to_array = true;
     }
-    const ArrayMark array = parse_array_suffix();
+    const ArrayMark array = parse_array_suffix(true);
     type.is_array = array.is_array;
     type.array_len = array.length;
     type.array_len_name = array.len_name;
@@ -729,6 +729,10 @@ Parser::PlacedType Parser::parse_go_type() {
         type.type_args = parse_type_args();
     }
     if (type.ptr_to_array && outer_prefix.optional != 0) {
+        diags_.error(type.loc, "not supported yet");
+    }
+    // `*[]T` is not a pointer to an array. A view has no length to point at.
+    if (type.ptr_to_array && type.array_len < 0) {
         diags_.error(type.loc, "not supported yet");
     }
     return type;
@@ -1100,7 +1104,7 @@ Parser::Declarator Parser::parse_declarator() {
     return decl;
 }
 
-Parser::ArrayMark Parser::parse_array_suffix() {
+Parser::ArrayMark Parser::parse_array_suffix(bool allow_view) {
     ArrayMark mark;
     if (!check(TokenKind::LBracket)) {
         return mark;
@@ -1108,11 +1112,13 @@ Parser::ArrayMark Parser::parse_array_suffix() {
     mark.is_array = true;
     const SourceLoc loc = peek().loc;
     ++pos_;
-    // `[]T` is a view. A view is not implemented yet.
+    // `[]T` is a view. `name[]` is still the unsupported C form.
     if (check(TokenKind::RBracket)) {
         ++pos_;
         mark.length = -1;
-        diags_.error(loc, "not supported yet");
+        if (!allow_view) {
+            diags_.error(loc, "not supported yet");
+        }
     } else if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&
                peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value > 0 &&
                peek().int_value <= 2147483647ULL) {
@@ -1420,7 +1426,7 @@ TypeArg Parser::parse_one_type_arg() {
     }
     if (check(TokenKind::LBracket)) {
         arg.is_array = true;
-        const ArrayMark array = parse_array_suffix();
+        const ArrayMark array = parse_array_suffix(true);
         arg.array_len = array.length;
         arg.array_len_name = array.len_name;
         TypeArg element = parse_one_type_arg();

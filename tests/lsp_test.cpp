@@ -228,8 +228,12 @@ int run_lsp_tests() {
         "    value i32;\n"
         "};\n"
         "\n"
+        "type Row []i32;\n"
+        "\n"
         "func main() i32 {\n"
         "    var p Point;\n"
+        "    var view []Point;\n"
+        "    var named Row;\n"
         "    var built = Point.make(1);\n"
         "    q := Point.make(2);\n"
         "    r := Point{};\n"
@@ -237,7 +241,7 @@ int run_lsp_tests() {
         "    var kk K = {.value = 10};\n"
         "    var box Box = {.complex = {.inner_value = 1}};\n"
         "    kk = {.value = 2};\n"
-        "    return add(p.x, q.x) + r.x;\n"
+        "    return add(p.x, q.x) + r.x + view.len + named.len;\n"
         "}\n";
 
     int to_child[2] = {-1, -1};
@@ -284,6 +288,25 @@ int run_lsp_tests() {
     EXPECT_HAS(check, members, "\"x\"");
     EXPECT_HAS(check, members, "\"sum\"");
     EXPECT(check, members.find("\"make\"") == std::string::npos);
+
+    const LineCol view_len = at_needle(source, "view.", true);
+    EXPECT(check, view_len.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":17,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(view_len.line) + R"(,"character":)" +
+                  std::to_string(view_len.character) + "}}}");
+    const std::string view_items = read_until(from_child[0], "\"id\":17", 3000);
+    EXPECT_HAS(check, view_items, "\"len\"");
+    EXPECT(check, view_items.find("\"x\"") == std::string::npos);
+
+    const LineCol alias_len = at_needle(source, "named.", true);
+    EXPECT(check, alias_len.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":18,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(alias_len.line) + R"(,"character":)" +
+                  std::to_string(alias_len.character) + "}}}");
+    const std::string alias_items = read_until(from_child[0], "\"id\":18", 3000);
+    EXPECT_HAS(check, alias_items, "\"len\"");
 
     const LineCol type_call = at_needle(source, "Point.", true);
     EXPECT(check, type_call.line >= 0);

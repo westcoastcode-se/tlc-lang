@@ -289,6 +289,8 @@ func main() i32 {
 
 The array becomes a pointer when it is passed. A string is `*const u8` and can be passed to `*const u8`. It cannot be passed to `*u8`. The index has type `i32`.
 
+`[]T` is a readonly view of an array. `var v []i32 = row` takes a view of `[N]i32`. `v[i]` reads an element, and `v[i] = 1` is reported as `type mismatch`. `v.len` is `i32`. `sizeof([]T)` is 16. A view parameter stays a view. The pointer from an array parameter is not a view.
+
 ## Export
 
 An exported struct is named with the package and without the `struct` keyword.

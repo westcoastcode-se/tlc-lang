@@ -221,6 +221,26 @@ bool same_type(const Type &lhs, const Type &rhs) {
     return true;
 }
 
+bool is_view(const Type &type) {
+    return type.kind == TypeKind::Array && type.length < 0 && type.element != nullptr;
+}
+
+bool accepts_view(const Type &got, const Type &want) {
+    if (!is_view(want) || got.kind != TypeKind::Array || got.element == nullptr || want.element == nullptr) {
+        return false;
+    }
+    if (got.alias_id != 0 && got.alias_id != want.alias_id) {
+        return false;
+    }
+    if (!same_type(*got.element, *want.element)) {
+        return false;
+    }
+    if (is_view(got)) {
+        return same_type(got, want);
+    }
+    return got.length >= 0;
+}
+
 void analyze(const TranslationUnit &unit, DiagnosticEngine &diags) {
     Checker checker(diags);
     checker.analyze(unit);

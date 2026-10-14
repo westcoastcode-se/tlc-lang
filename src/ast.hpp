@@ -110,6 +110,8 @@ struct Expr {
         std::vector<TypeArg> type_args;
         // Concrete owner after checking: `Entity` or `Box.spec.i32`.
         mutable std::string resolved_owner;
+        // `view.len`. The length is `i32` and is not a field of a struct.
+        mutable bool view_len = false;
     };
     struct String {
         SourceLoc loc{};
@@ -121,6 +123,8 @@ struct Expr {
         std::unique_ptr<Expr> index;
         // Set while checking a tuple element. Negative when this is not that index.
         mutable int tuple_index = -1;
+        // The base is a view. The element is readonly.
+        mutable bool view_element = false;
     };
     struct Sizeof {
         SourceLoc loc{};
@@ -134,6 +138,8 @@ struct Expr {
         uint32_t optional = 0;
         // Bit 0 is the outermost `*`. A set bit means that pointer's pointee is `const`.
         uint32_t const_pointee = 0;
+        bool is_array = false;
+        int array_len = 0;
         std::unique_ptr<Expr> expr;
     };
     struct Typeof {
@@ -146,6 +152,8 @@ struct Expr {
         int indirections = 0;
         uint32_t optional = 0;
         uint32_t const_pointee = 0;
+        bool is_array = false;
+        int array_len = 0;
         std::unique_ptr<Expr> expr;
         // Filled while checking. Codegen interns this spelling, so equal types share one value.
         mutable std::string canonical;

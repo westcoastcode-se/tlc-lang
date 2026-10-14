@@ -1132,7 +1132,7 @@ bool Checker::resolve_result_typeof(FunctionDecl &fn) {
         }
         const Type type = operand_type(node->on_type, node->type_name, node->type_package, node->is_struct, node->is_enum,
                                        node->indirections, node->optional, node->expr.get(), node->loc,
-                                       node->const_pointee);
+                                       node->const_pointee, node->is_array, node->array_len);
         if (type.kind == TypeKind::Invalid) {
             ok = false;
             continue;
