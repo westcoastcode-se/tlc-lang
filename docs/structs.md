@@ -292,7 +292,9 @@ func main() i32 {
 
 The array becomes a pointer when it is passed. A string is `*const u8` and can be passed to `*const u8`. It cannot be passed to `*u8`. The index has type `i32`.
 
-`[]T` is a readonly slice of an array. `var v []i32 = row` takes a slice of `[N]i32`. `v[i]` reads an element, and `v[i] = 1` is reported as `type mismatch`. `v.len` is `i32`. `sizeof([]T)` is 16. A slice parameter stays a slice. The pointer from an array parameter is not a slice.
+`[]T` is a readonly slice of an array. `var v []i32 = row` takes a slice of `[N]i32`. `row[i:j]` takes the elements from `i` up to, but not including, `j`, and so does `v[i:j]`. `v[i]` reads an element, and `v[i] = 1` is reported as `type mismatch`. `v.len` is `i32`. `sizeof([]T)` is 16. A slice parameter stays a slice. The pointer from an array parameter is not a slice.
+
+A field may be a slice, `items []i32`. It is stored as the slice header. `sizeof` of `{ n i32; items []i32; }` is 24. Assigning the field replaces that header. The same field in `extern(abi="c")` is reported as `not supported yet`.
 
 ## Export
 

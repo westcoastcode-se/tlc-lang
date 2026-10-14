@@ -785,6 +785,20 @@ bool Checker::constant_operand(const Expr &expr) {
 }
 
 void Checker::check_globals(const TranslationUnit &unit) {
+    // A file-scope slice is the name of an array or another slice. A range is not a constant.
+    auto slice_name = [&](const Expr &expr) {
+        const auto *named = std::get_if<Expr::Name>(&expr.data);
+        if (named == nullptr) {
+            return false;
+        }
+        const Symbol *symbol = lookup(named->text);
+        return symbol != nullptr && symbol->type.kind == TypeKind::Array && symbol->type.element != nullptr;
+    };
+    auto require_slice_name = [&](const Expr &expr, const Type &want, SourceLoc loc, std::size_t before) {
+        if (diags_.size() == before && is_slice(want) && !slice_name(expr)) {
+            error(loc, "global initializer is not a constant");
+        }
+    };
     std::unordered_set<std::string> tests;
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
@@ -816,7 +830,9 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 if (var->is_array && !var->ptr_to_array && var->init && !var->inferred) {
                     if (var->array_len < 0) {
                         if (assoc != nullptr) {
+                            const std::size_t before = diags_.size();
                             check_against(*var->init, assoc->type);
+                            require_slice_name(*var->init, assoc->type, var->loc, before);
                         }
                     } else if (assoc != nullptr && assoc->type.kind == TypeKind::Array) {
                         (void)file_array_initializer(const_cast<VarDecl &>(*var), &assoc->type);
@@ -834,7 +850,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     const std::size_t before = diags_.size();
                     check_against(*var->init, assoc->type);
                     if (diags_.size() == before) {
-                        (void)accept_file_scalar(*var, assoc->type);
+                        if (is_slice(assoc->type)) {
+                            require_slice_name(*var->init, assoc->type, var->loc, before);
+                        } else {
+                            (void)accept_file_scalar(*var, assoc->type);
+                        }
                     }
                 }
                 continue;
@@ -849,7 +869,9 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 if (!var->is_const_decl && var->array_len < 0) {
                     const Symbol *symbol = lookup(var->name);
                     const Type want = symbol != nullptr ? symbol->type : type_invalid();
+                    const std::size_t before = diags_.size();
                     check_against(*var->init, want);
+                    require_slice_name(*var->init, want, var->loc, before);
                 } else if (!var->is_const_decl) {
                     const Symbol *symbol = lookup(var->name);
                     if (symbol != nullptr && symbol->type.kind == TypeKind::Array) {
@@ -869,7 +891,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 const std::size_t before = diags_.size();
                 check_against(*var->init, want);
                 if (diags_.size() == before) {
-                    (void)accept_file_scalar(*var, want);
+                    if (is_slice(want)) {
+                        require_slice_name(*var->init, want, var->loc, before);
+                    } else {
+                        (void)accept_file_scalar(*var, want);
+                    }
                 }
             }
         }

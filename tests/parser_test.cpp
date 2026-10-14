@@ -378,6 +378,17 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source("func main() i32 { return row[1:3]; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(return ([:] (name row) (int 1) (int 3)))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() i32 { return row[1:]; }\n");
+        EXPECT_HAS(check, parsed.errors, "expected an expression");
+    }
+
+    {
         const Parsed parsed = parse_source("func main() i32 { var a [n]i32; return 0; }\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(var a i32[n]");

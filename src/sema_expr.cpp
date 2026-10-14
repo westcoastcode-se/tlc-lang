@@ -551,7 +551,7 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             }
             continue;
         }
-        if (field_type.kind == TypeKind::Array) {
+        if (field_type.kind == TypeKind::Array && !is_slice(field_type)) {
             error(field.loc, "not supported yet");
             if (field.value) {
                 check_expr(*field.value, true);
@@ -1432,6 +1432,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return *pointer.pointee;
                 }
                 if (const auto *index = std::get_if<Expr::Index>(&node.lhs->data)) {
+                    if (index->end != nullptr) {
+                        if (index->base) {
+                            check_expr(*index->base, true);
+                        }
+                        if (index->index) {
+                            check_expr(*index->index, true);
+                        }
+                        check_expr(*index->end, true);
+                        check_expr(*node.rhs, true);
+                        error(node.loc, "not an lvalue");
+                        return type_invalid();
+                    }
                     const Type base = check_expr(*index->base, true);
                     const Type subscript = check_expr(*index->index, true);
                     expect(subscript, type_int(), expr_loc(*index->index));
@@ -1995,6 +2007,30 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_pointer(std::move(bytes));
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 (void)used;
+                // `a[i:j]` is a slice of the elements from i up to, but not including, j.
+                // The base is an array or a slice. A pointer, including an array parameter, is not.
+                if (node.end != nullptr) {
+                    const Type base = node.base ? check_raw(*node.base, true) : type_invalid();
+                    const Type low = node.index ? check_expr(*node.index, true) : type_invalid();
+                    const Type high = check_expr(*node.end, true);
+                    expect(low, type_int(), node.index ? expr_loc(*node.index) : node.loc);
+                    expect(high, type_int(), expr_loc(*node.end));
+                    if (base.kind == TypeKind::Invalid) {
+                        return type_invalid();
+                    }
+                    if (base.kind != TypeKind::Array || base.element == nullptr || base.element->kind == TypeKind::Array) {
+                        error(node.loc, base.element != nullptr && base.element->kind == TypeKind::Array
+                                            ? "not supported yet"
+                                            : "type mismatch");
+                        return type_invalid();
+                    }
+                    Type slice = type_array(*base.element, -1);
+                    // `type Row []i32` stays `Row`. A sized array becomes the plain slice `[]T`.
+                    if (is_slice(base)) {
+                        slice.alias_id = base.alias_id;
+                    }
+                    return slice;
+                }
                 // An array keeps its element, including when that element is an array.
                 // A pointer to an array still means `(*p)[i]`.
                 const Type base = check_raw(*node.base, true);

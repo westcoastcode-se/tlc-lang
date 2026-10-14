@@ -77,12 +77,13 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - An optional pointer to an array: `?*[4]i32`.
 - Two stars outside an array, `**[4]i32`, and a nested array.
 - A pointer to an array as a field. `var p *[4]i32` is fine. `p *[4]i32` inside a struct is not.
-- A struct field whose type is a slice. `x []i32` inside a struct is `not supported yet`.
 - A pointer to a slice, `*[]T`. It is `not supported yet`.
 - A nested slice, `[][]T` or `[N][]T`. It is `not supported yet`.
-- A range written `a[i:j]`.
-- A slice taken from an array parameter. The parameter is already a pointer, so `return row` from `func open(row [4]i32) []i32` is `return type: expected []i32, found *i32`.
-- A file-scope slice whose initializer is not the name of an array or another slice. A literal or a call is `global initializer is not a constant`.
+- A slice taken from an array parameter. The parameter is already a pointer, so `return row` from `func open(row [4]i32) []i32` is `return type: expected []i32, found *i32`. A range on that pointer, `row[0:2]`, is `type mismatch`.
+- Omitted range bounds. `a[i:]`, `a[:j]`, and `a[:]` are not forms. The parser reports `expected an expression`.
+- A range whose element is an array. `grid[0:1]` on `[_][2]i32` is `not supported yet`.
+- A slice field on `extern(abi="c")`. It is `not supported yet`. A tlc union arm that is not a struct stays `type mismatch`.
+- A file-scope slice whose initializer is not the name of an array or another slice. A literal, a call, or `a[i:j]` is `global initializer is not a constant`.
 - `const` on a slice. `const v []i32 = row` is `not supported yet`.
 - A cast to `void`.
 - `++`, `--`, compound assignment (`+=` and the rest), `?:`, and `->`.

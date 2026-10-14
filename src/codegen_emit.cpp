@@ -451,6 +451,10 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
 }
 
 llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) {
+    if (slot.is_slice) {
+        std::unordered_set<std::string> seen;
+        return constant_slice(expr, seen);
+    }
     if (slot.is_array || slot.type == nullptr) {
         return nullptr;
     }
@@ -826,7 +830,11 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
         if (terminated() || rhs.value == nullptr) {
             continue;
         }
-        builder_.CreateStore(stored_value(rhs, addr), addr.value);
+        if (addr.is_slice) {
+            builder_.CreateStore(as_slice_value(rhs, field.loc), addr.value);
+        } else {
+            builder_.CreateStore(stored_value(rhs, addr), addr.value);
+        }
         // The enum tag is stored after the payload.
         store_union_tag(init.struct_id, slot, field.field);
     }
@@ -2664,6 +2672,10 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                 inner.elem_bits, inner.elem_unsigned};
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        if (index->end != nullptr) {
+            error(index->loc, "not an lvalue");
+            return {};
+        }
         if (index->tuple_index >= 0) {
             error(index->loc, "not supported yet");
             return {};
@@ -2992,6 +3004,18 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
                 return node.lhs ? raw_shape(*node.lhs) : Shape{};
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                if (node.end != nullptr && node.base != nullptr) {
+                    Shape base = raw_shape(*node.base);
+                    Shape slice = base;
+                    slice.is_slice = true;
+                    slice.is_array = false;
+                    slice.array_len = -1;
+                    slice.type = slice_type();
+                    if (!base.is_slice && base.depth > 0) {
+                        slice.depth = base.depth - 1;
+                    }
+                    return slice;
+                }
                 if (node.tuple_index >= 0 && node.base != nullptr) {
                     const auto *named = std::get_if<Expr::Name>(&node.base->data);
                     const Binding *binding = named == nullptr ? nullptr : lookup(named->text);
@@ -3139,6 +3163,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.struct_id = field->struct_id;
                 shape.is_array = field->is_array;
                 shape.array_len = field->array_len;
+                shape.is_slice = field->is_slice;
                 shape.type = field->type != nullptr ? field->type : shape_type(shape);
                 return shape;
             } else {
@@ -3146,6 +3171,102 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
             }
         },
         expr.data);
+}
+
+TypedValue CodeGen::load_field(const TypedValue &addr) {
+    if (addr.value == nullptr) {
+        return {zero(), 0};
+    }
+    // A slice field is the `{ ptr, i32 }` header, not the first element.
+    if (addr.is_slice) {
+        TypedValue loaded;
+        loaded.value = builder_.CreateLoad(slice_type(), addr.value);
+        loaded.is_slice = true;
+        loaded.array_len = -1;
+        loaded.depth = addr.depth;
+        loaded.elem_char = addr.elem_char;
+        loaded.struct_id = addr.struct_id;
+        loaded.elem_void = addr.elem_void;
+        loaded.elem_bool = addr.elem_bool;
+        loaded.elem_bits = addr.elem_bits;
+        loaded.elem_unsigned = addr.elem_unsigned;
+        loaded.elem_float = addr.elem_float;
+        return loaded;
+    }
+    // An array field decays to a pointer to its first element. The length stays so a range can use it.
+    if (addr.is_array) {
+        TypedValue value{addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
+                         addr.elem_bool, addr.elem_bits, addr.elem_unsigned};
+        value.array_len = addr.array_len;
+        return value;
+    }
+    return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void, addr.elem_bool,
+                       addr.elem_bits, addr.elem_unsigned, addr.elem_float);
+}
+
+TypedValue CodeGen::emit_range(const Expr::Index &node) {
+    if (node.base == nullptr || node.index == nullptr || node.end == nullptr) {
+        error(node.loc, "type mismatch");
+        return {zero(), 0};
+    }
+    const TypedValue base = emit_rvalue(*node.base);
+    const TypedValue low = emit_rvalue(*node.index);
+    const TypedValue high = emit_rvalue(*node.end);
+    if (base.value == nullptr || low.value == nullptr || high.value == nullptr || terminated()) {
+        return {zero(), 0};
+    }
+    llvm::Value *packed = as_slice_value(base, node.loc);
+    if (terminated() || packed == nullptr) {
+        return {zero(), 0};
+    }
+    llvm::Value *data = builder_.CreateExtractValue(packed, 0);
+    // A slice value's depth is the element. A decayed array's depth is one more.
+    const int elem_depth = base.is_slice ? base.depth : base.depth > 0 ? base.depth - 1 : base.depth;
+    llvm::Type *element =
+        leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
+    auto as_bound = [&](const TypedValue &bound) -> llvm::Value * {
+        if (bound.value == nullptr || !bound.value->getType()->isIntegerTy()) {
+            return nullptr;
+        }
+        if (bound.value->getType() == i32()) {
+            return bound.value;
+        }
+        return resize_int(bound.value, i32(), bound.elem_unsigned);
+    };
+    llvm::Value *start_index = as_bound(low);
+    llvm::Value *end_index = as_bound(high);
+    if (start_index == nullptr || end_index == nullptr) {
+        error(node.loc, "type mismatch");
+        return {zero(), 0};
+    }
+    llvm::Value *start = builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{start_index});
+    llvm::Value *len = builder_.CreateSub(end_index, start_index);
+    llvm::Value *out = llvm::ConstantAggregateZero::get(slice_type());
+    out = builder_.CreateInsertValue(out, start, 0);
+    out = builder_.CreateInsertValue(out, len, 1);
+    TypedValue result;
+    result.value = out;
+    result.is_slice = true;
+    result.array_len = -1;
+    result.depth = elem_depth;
+    result.elem_char = base.elem_char;
+    result.struct_id = base.struct_id;
+    result.elem_void = base.elem_void;
+    result.elem_bool = base.elem_bool;
+    result.elem_bits = base.elem_bits;
+    result.elem_unsigned = base.elem_unsigned;
+    result.elem_float = base.elem_float;
+    result.enum_id = base.enum_id;
+    result.fn_ty = base.fn_ty;
+    result.fn_ret_depth = base.fn_ret_depth;
+    result.fn_ret_float = base.fn_ret_float;
+    result.fn_ret_bits = base.fn_ret_bits;
+    result.fn_ret_unsigned = base.fn_ret_unsigned;
+    result.fn_ret_char = base.fn_ret_char;
+    result.fn_ret_bool = base.fn_ret_bool;
+    result.fn_ret_struct = base.fn_ret_struct;
+    result.fn_results = base.fn_results;
+    return result;
 }
 
 TypedValue CodeGen::emit_rvalue(const Expr &expr) {
@@ -3519,12 +3640,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (addr.value == nullptr) {
                         return {zero(), 0};
                     }
-                    if (addr.is_array) {
-                        return {addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
-                                addr.elem_bool, addr.elem_bits, addr.elem_unsigned};
-                    }
-                    return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,
-                                       addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.elem_float);
+                    return load_field(addr);
                 }
                 const TypedValue base = node.base != nullptr ? emit_rvalue(*node.base) : TypedValue{};
                 if (base.value != nullptr && base.depth == 1 && base.struct_id >= 0) {
@@ -3532,12 +3648,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (addr.value == nullptr) {
                         return {zero(), 0};
                     }
-                    if (addr.is_array) {
-                        return {addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
-                                addr.elem_bool, addr.elem_bits, addr.elem_unsigned};
-                    }
-                    return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,
-                                       addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.elem_float);
+                    return load_field(addr);
                 }
                 if (base.value == nullptr || base.depth != 0 || base.struct_id < 0) {
                     error(node.loc, "type mismatch");
@@ -3571,6 +3682,21 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                        field->elem_bool, field->elem_bits, field->elem_unsigned, field->elem_float);
                 }
                 llvm::Value *extracted = builder_.CreateExtractValue(base.value, static_cast<unsigned>(field_index));
+                if (field->is_slice) {
+                    TypedValue loaded;
+                    loaded.value = extracted;
+                    loaded.is_slice = true;
+                    loaded.array_len = -1;
+                    loaded.depth = field->depth;
+                    loaded.elem_char = field->elem_char;
+                    loaded.struct_id = field->struct_id;
+                    loaded.elem_void = field->elem_void;
+                    loaded.elem_bool = field->elem_bool;
+                    loaded.elem_bits = field->elem_bits;
+                    loaded.elem_unsigned = field->elem_unsigned;
+                    loaded.elem_float = field->elem_float;
+                    return loaded;
+                }
                 if (field->depth == 0 && field->elem_bool) {
                     return {builder_.CreateZExt(extracted, i32()), 0};
                 }
@@ -3602,6 +3728,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 out.elem_unsigned = true;
                 return out;
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                if (node.end != nullptr) {
+                    return emit_range(node);
+                }
                 if (node.tuple_index >= 0) {
                     if (node.base == nullptr) {
                         error(node.loc, "type mismatch");

@@ -1,0 +1,7 @@
+extern(abi="c") type Pair struct {
+    items []i32;
+}
+
+func main() i32 {
+    return 0;
+}

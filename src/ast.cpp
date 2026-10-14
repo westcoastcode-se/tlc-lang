@@ -481,6 +481,10 @@ std::string dump_expr(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 return "(string " + quote_string(node.text) + ")";
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                if (node.end) {
+                    return "([:] " + (node.base ? dump_expr(*node.base) : "(unsupported)") + " " +
+                           (node.index ? dump_expr(*node.index) : "(unsupported)") + " " + dump_expr(*node.end) + ")";
+                }
                 return "([] " + (node.base ? dump_expr(*node.base) : "(unsupported)") + " " +
                        (node.index ? dump_expr(*node.index) : "(unsupported)") + ")";
             } else if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof> ||
@@ -796,6 +800,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.slice_element = node.slice_element;
                 copy.base = node.base ? clone_expr(*node.base) : nullptr;
                 copy.index = node.index ? clone_expr(*node.index) : nullptr;
+                copy.end = node.end ? clone_expr(*node.end) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 Expr::Sizeof copy;

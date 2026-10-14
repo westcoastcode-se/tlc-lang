@@ -807,6 +807,13 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
         return {};
     }
     const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
+    auto placed = [&](llvm::Value *addr) {
+        TypedValue out{addr,       slot->depth,     slot->elem_char, slot->struct_id, slot->is_array, slot->elem_void,
+                       slot->elem_bool, slot->elem_bits, slot->elem_unsigned, -1,         slot->elem_float};
+        out.array_len = slot->array_len;
+        out.is_slice = slot->is_slice;
+        return out;
+    };
     // A C union overlays every field at offset 0. A tlc union does the same, and the enum tag sits after the payload.
     if (layout.is_union) {
         llvm::Value *addr = pointer;
@@ -821,15 +828,13 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
             addr = builder_.CreateInBoundsGEP(layout.type, pointer,
                                                llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(1)});
         }
-        return {addr, slot->depth, slot->elem_char, slot->struct_id, slot->is_array, slot->elem_void, slot->elem_bool,
-                slot->elem_bits, slot->elem_unsigned, -1, slot->elem_float};
+        return placed(addr);
     }
     llvm::Value *zero_index = const_i32(0);
     llvm::Value *member = const_i32(field_index);
     llvm::Value *gep = builder_.CreateInBoundsGEP(structs_[static_cast<std::size_t>(struct_id)].type, pointer,
                                                    llvm::ArrayRef<llvm::Value *>{zero_index, member});
-    return {gep, slot->depth, slot->elem_char, slot->struct_id, slot->is_array, slot->elem_void, slot->elem_bool,
-            slot->elem_bits, slot->elem_unsigned, -1, slot->elem_float};
+    return placed(gep);
 }
 
 bool CodeGen::addressable(const Expr &expr) const {
@@ -841,7 +846,7 @@ bool CodeGen::addressable(const Expr &expr) const {
         return star->op == TokenKind::Star && star->expr != nullptr;
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
-        return index->base != nullptr && index->index != nullptr;
+        return index->end == nullptr && index->base != nullptr && index->index != nullptr;
     }
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         if (selector->base == nullptr) {
@@ -996,6 +1001,7 @@ void CodeGen::prepare_structs() {
                 slot.elem_bits = low.elem_bits;
                 slot.elem_unsigned = low.elem_unsigned;
                 slot.elem_float = low.elem_float;
+                slot.is_slice = low.is_slice;
                 // C _Bool is one byte. An extern(abi="c") struct keeps that layout.
                 if (item->extern_c && low.elem_bool && low.depth == 0) {
                     slot.type = c_memory(c_memory, slot.type);

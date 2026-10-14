@@ -176,11 +176,20 @@ func main() i32 {
 
 `v[i]` reads one element. The index has type `i32`. Storing an element, `v[i] = 1`, is reported as `type mismatch`. `v[i].x` reads a field. Storing that field is reported as `type mismatch`. When the element is `*T`, `*v[i] = 1` writes through the pointer. `v.len` is `i32` and is the number of elements. `var empty []i32` has length 0.
 
+`a[i:j]` takes the elements from `i` up to, but not including, `j`. The base is an array or a slice. The result is `[]T`. A range of `type Row []i32` stays `Row`. A range of `[N]T`, including `type Pair [2]i32`, is the plain slice `[]T`. Both bounds have type `i32`. The length is `j - i`. There is no bounds check. The result is not an lvalue: `row[0:2] = row` and `&row[0:2]` are reported as `not an lvalue`. A pointer, including an array parameter, is reported as `type mismatch`. A range whose element is an array is reported as `not supported yet`. `a[i:]`, `a[:j]`, and `a[:]` are not forms. Each is reported as `expected an expression`.
+
+A field of a tlc struct may be a slice, written `items []i32`. `sizeof` of `{ n i32; items []i32; }` is 24. The same field in `extern(abi="c")` is reported as `not supported yet`. A tlc union arm that is not a struct is reported as `type mismatch`.
+
 `sizeof v` is 16, the same as `sizeof([]T)`. `typeof([]i32).name()` spells `[]i32`.
 
-`i32[]` is reported as `type mismatch`. `*[]T`, `[][]T`, `[N][]T`, a struct field of slice type, and `const v []i32` are reported as `not supported yet`. An array parameter is already a pointer. `return row` from `func open(row [4]i32) []i32` is reported as `return type: expected []i32, found *i32`. A file-scope slice is initialized from the name of an array or another slice. Another initializer is reported as `global initializer is not a constant`.
+`i32[]` is reported as `type mismatch`. `*[]T`, `[][]T`, `[N][]T`, and `const v []i32` are reported as `not supported yet`. An array parameter is already a pointer. `return row` from `func open(row [4]i32) []i32` is reported as `return type: expected []i32, found *i32`. `row[0:2]` in that function is reported as `type mismatch`. A file-scope slice is initialized from the name of an array or another slice. Another initializer, including `a[i:j]`, is reported as `global initializer is not a constant`.
 
 ```c
+type Hold struct {
+    n i32;
+    items []i32;
+};
+
 func head(v []i32) i32 {
     return v[0];
 }
@@ -188,7 +197,10 @@ func head(v []i32) i32 {
 func main() i32 {
     var row = [_]i32{10, 20, 12};
     var v []i32 = row;
-    return head(v) + v.len;
+    var mid = row[1:3];
+    var box Hold;
+    box.items = mid;
+    return head(v) + v.len + mid[0] + box.items.len;
 }
 ```
 

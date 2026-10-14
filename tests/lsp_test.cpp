@@ -233,6 +233,8 @@ int run_lsp_tests() {
         "func main() i32 {\n"
         "    var p Point;\n"
         "    var slice []Point;\n"
+        "    part := slice[0:0];\n"
+        "    var extra = part.len;\n"
         "    var named Row;\n"
         "    var built = Point.make(1);\n"
         "    q := Point.make(2);\n"
@@ -298,6 +300,16 @@ int run_lsp_tests() {
     const std::string slice_items = read_until(from_child[0], "\"id\":17", 3000);
     EXPECT_HAS(check, slice_items, "\"len\"");
     EXPECT(check, slice_items.find("\"x\"") == std::string::npos);
+
+    const LineCol part_at = at_needle(source, "part.", true);
+    EXPECT(check, part_at.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":19,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(part_at.line) + R"(,"character":)" +
+                  std::to_string(part_at.character) + "}}}");
+    const std::string part_items = read_until(from_child[0], "\"id\":19", 3000);
+    EXPECT_HAS(check, part_items, "\"len\"");
+    EXPECT(check, part_items.find("\"x\"") == std::string::npos);
 
     const LineCol alias_len = at_needle(source, "named.", true);
     EXPECT(check, alias_len.line >= 0);

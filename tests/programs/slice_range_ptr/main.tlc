@@ -1,0 +1,6 @@
+func main() i32 {
+    var n i32 = 1;
+    var p *i32 = &n;
+    var v = p[0:1];
+    return v.len;
+}

@@ -1525,7 +1525,8 @@ void Checker::define_struct_fields() {
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
                                               field.optional, field.const_pointee);
-            if (is_slice(field_type)) {
+            // A slice is a tlc value, `{ptr, i32}`. An `extern(abi="c")` struct keeps the C layout.
+            if (is_slice(field_type) && info.extern_c) {
                 error(field.loc, "not supported yet");
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
                 continue;

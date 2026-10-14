@@ -297,6 +297,8 @@ class CodeGen {
         int elem_bits = 0;
         bool elem_unsigned = false;
         bool elem_float = false;
+        // `[]T` stored in the field. The slot is the `{ ptr, i32 }` value.
+        bool is_slice = false;
     };
     struct StructLayout {
         std::string name;
@@ -906,6 +908,10 @@ class CodeGen {
     void emit_case(const Stmt::Case &node);
     void emit_switch(const Stmt::Switch &node);
     TypedValue emit_rvalue(const Expr &expr);
+    // `base[low:high]`. The result is a slice header.
+    TypedValue emit_range(const Expr::Index &node);
+    // Load one field. A slice field is the header. An array field decays to a pointer.
+    TypedValue load_field(const TypedValue &addr);
     // Allocates `[_]T{...}` and stores each value. `low` is the array type.
     llvm::AllocaInst *emit_array_literal(const Expr::Init &init, Lowered &low);
     TypedValue emit_init(const Expr::Init &init);

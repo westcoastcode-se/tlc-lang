@@ -821,6 +821,9 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 if (node.base) {
                     substitute_expr(params, bounds, *node.base);
                 }
+                if (node.end) {
+                    substitute_expr(params, bounds, *node.end);
+                }
                 if (node.index) {
                     substitute_expr(params, bounds, *node.index);
                     // `Box[T].from` is an index. A plain type parameter becomes that type's name.

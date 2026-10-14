@@ -1428,6 +1428,39 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
         }
         return shape_from_sym(*sym);
     }
+    if (const auto *range = std::get_if<Expr::Index>(&expr.data)) {
+        // `a[i]` is left to the element. `a[i:j]` is a slice of that element.
+        if (range->end == nullptr || range->base == nullptr) {
+            return {};
+        }
+        const Shape base = shape_of_expr(*range->base, index, syms, uri, offset);
+        if (!base.known) {
+            return {};
+        }
+        if (base.is_array) {
+            Shape slice = base;
+            slice.is_array = true;
+            slice.array_len = -1;
+            return slice;
+        }
+        // `type Row []i32` stays `Row`. A sized-array alias becomes `[]element`.
+        for (const Sym &sym : syms) {
+            if (sym.role != Role::Alias || sym.name != base.type_name || !sym.is_array) {
+                continue;
+            }
+            if (sym.array_len < 0) {
+                return base;
+            }
+            Shape slice;
+            slice.type_name = sym.type_name;
+            slice.indirections = sym.indirections;
+            slice.is_array = true;
+            slice.array_len = -1;
+            slice.known = true;
+            return slice;
+        }
+        return {};
+    }
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         if (selector->base == nullptr) {
             return {};
