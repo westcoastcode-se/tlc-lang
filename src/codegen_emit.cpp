@@ -2861,11 +2861,10 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 Shape shape;
+                shape.depth = 1;
                 shape.elem_bits = 8;
                 shape.elem_unsigned = true;
-                shape.is_array = true;
-                shape.array_len = static_cast<int>(node.text.size()) + 1;
-                shape.type = shape_type(shape);
+                shape.type = ptr_type();
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 if (node.postfix && node.op == TokenKind::Bang && node.expr) {

@@ -287,7 +287,7 @@ func main() i32 {
 }
 ```
 
-The array becomes a pointer when it is passed. A string is an array of `u8` and can be passed to `*u8`. The index has type `i32`.
+The array becomes a pointer when it is passed. A string is `*const u8` and can be passed to `*const u8`. It cannot be passed to `*u8`. The index has type `i32`.
 
 ## Export
 

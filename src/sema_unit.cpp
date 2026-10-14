@@ -669,7 +669,7 @@ Type Checker::check_file_const(VarDecl &written) {
         }
         return got;
     }
-    // A string is an array of u8 and decays to a pointer. `const label *const u8 = "unix"` keeps that pointer.
+    // A string is `*const u8`. `const label *const u8 = "unix"` keeps that pointer.
     // `const label = "hi"` is `*const u8`: the binding is constant, and so are the bytes.
     if (got.kind == TypeKind::Pointer && written.init != nullptr &&
         std::holds_alternative<Expr::String>(written.init->data)) {

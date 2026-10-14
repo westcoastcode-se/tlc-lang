@@ -331,11 +331,11 @@ type Proc func () void;
 
 type Op func (i32) i32;
 
-func get(name *u8) Proc {
+func get(name *const u8) Proc {
     return Proc(add);
 }
 
-func get_raw(name *u8) *void {
+func get_raw(name *const u8) *void {
     return *void(add);
 }
 

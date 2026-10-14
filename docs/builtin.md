@@ -68,7 +68,7 @@ import "builtin";
 
 extern(abi="c") func vprintf(fmt *const u8, ap *u8) i32;
 
-func log(fmt *u8, ...) i32 {
+func log(fmt *const u8, ...) i32 {
     return vprintf(fmt, builtin.va());
 }
 

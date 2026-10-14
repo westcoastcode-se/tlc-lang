@@ -1,5 +1,5 @@
 package testing;
 
-export func error(fmt *u8) i32 {
+export func error(fmt *const u8) i32 {
     return 3;
 }

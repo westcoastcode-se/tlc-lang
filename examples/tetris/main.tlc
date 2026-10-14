@@ -339,7 +339,7 @@ func shader_status(object u32, pname u32, linked i32) i32 {
     return 1;
 }
 
-func make_shader(kind u32, source *u8) u32 {
+func make_shader(kind u32, source *const u8) u32 {
     var shader = CreateShader(kind);
     ShaderSource(shader, 1, &source, null);
     CompileShader(shader);
@@ -354,7 +354,7 @@ func load_gl() i32 {
         return 0;
     }
 
-    var vertex_source *u8 = `#version 330 core
+    var vertex_source *const u8 = `#version 330 core
 layout(location = 0) in vec2 pos;
 layout(location = 1) in vec3 color;
 out vec3 v_color;
@@ -363,7 +363,7 @@ void main() {
     v_color = color;
 }
 `;
-    var fragment_source *u8 = `#version 330 core
+    var fragment_source *const u8 = `#version 330 core
 in vec3 v_color;
 out vec4 frag;
 void main() {

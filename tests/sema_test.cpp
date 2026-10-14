@@ -406,7 +406,7 @@ int run_sema_tests() {
             "  a[2] = 7;\n"
             "  a[3] = 5;\n"
             "  var q *i32 = a;\n"
-            "  var s *u8 = \"hi\";\n"
+            "  var s *const u8 = \"hi\";\n"
             "  var n i32 = 0;\n"
             "  while (s[n] != 0) {\n"
             "    n = n + 1;\n"
@@ -3812,8 +3812,8 @@ int run_sema_tests() {
             "func add(n i32) i32 { return n + 1; }\n"
             "type Proc func () void;\n"
             "type Op func (i32) i32;\n"
-            "func get(name *u8) Proc { return Proc(add); }\n"
-            "func get_raw(name *u8) *void { return *void(add); }\n"
+            "func get(name *const u8) Proc { return Proc(add); }\n"
+            "func get_raw(name *const u8) *void { return *void(add); }\n"
             "func main() i32 {\n"
             "  var named = Op(get(\"add\"));\n"
             "  var raw = func (i32) i32(get_raw(\"add\"));\n"
@@ -4358,6 +4358,32 @@ int run_sema_tests() {
             "  return p[0];\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = check_program(
+            "func main() i32 {\n"
+            "  var s *u8 = \"hi\";\n"
+            "  var raw *u8 = `hi`;\n"
+            "  var text *const u8 = \"hi\";\n"
+            "  text[0] = 1;\n"
+            "  return s[0] + raw[0] + text[0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = check_program(
+            "func main() i32 {\n"
+            "  var text *const u8 = \"hi\";\n"
+            "  var raw *const u8 = `h\ni`;\n"
+            "  var inferred = \"ab\";\n"
+            "  if (text[0] != 'h' || raw[0] != 'h' || inferred[1] != 'b') {\n"
+            "    return 1;\n"
+            "  }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
     }
 
     {

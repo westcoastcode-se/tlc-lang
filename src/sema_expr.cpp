@@ -1920,7 +1920,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return field;
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 (void)used;
-                return type_array(type_rank(1, true), static_cast<int>(node.text.size()) + 1);
+                // `"hi"` and a raw string are constants. The bytes include a terminating null.
+                Type bytes = type_rank(1, true);
+                bytes.is_const = true;
+                return type_pointer(std::move(bytes));
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 (void)used;
                 // An array keeps its element, including when that element is an array.

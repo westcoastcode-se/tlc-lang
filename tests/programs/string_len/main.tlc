@@ -1,4 +1,4 @@
-func len(s *u8) i32 {
+func len(s *const u8) i32 {
     var n i32 = 0;
     while (s[n] != 0) {
         n = n + 1;

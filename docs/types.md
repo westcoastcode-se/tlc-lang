@@ -117,8 +117,8 @@ func main() i32 {
 | `42i32`, `42u32` | `i32` and `u32`, when the value fits |
 | `42i64`, `42u64` | `i64` and `u64`, when the value fits |
 | `'A'` | `u8` |
-| `"hi"` | array of `u8`, including the terminating null |
-| `` `hi` `` | the same array type; the text may span lines |
+| `"hi"` | `*const u8`, including the terminating null |
+| `` `hi` `` | `*const u8`; the text may span lines |
 | `true`, `false` | `bool` |
 | `null` | null pointer, stored only in `?*T` |
 
@@ -147,10 +147,10 @@ func main() i32 {
 
 ## Strings
 
-A string between double quotes cannot cross a line. A string between backticks may span lines. Both are arrays of `u8`. In a raw string the characters are copied as written: a backslash is not an escape, and a newline in the source is a newline in the string. The next backtick ends the string.
+A string between double quotes cannot cross a line. A string between backticks may span lines. Both are constants of type `*const u8`. The bytes include a terminating null. In a raw string the characters are copied as written: a backslash is not an escape, and a newline in the source is a newline in the string. The next backtick ends the string. `var text = "hi"` has type `*const u8`. `text[0] = 1` and `var p *u8 = "hi"` are reported as `type mismatch`.
 
 ```c
-var text *u8 = `hello
+var text *const u8 = `hello
 world`;
 ```
 

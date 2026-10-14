@@ -7,7 +7,7 @@ i32
 [4]i32
 Box.spec.i32
 Point
-[3]u8
+*const u8
 Type
 f32
 f32
