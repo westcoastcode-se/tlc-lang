@@ -499,6 +499,9 @@ class CodeGen {
         if (value->getType()->isIntegerTy(1)) {
             return value;
         }
+        if (value->getType()->isFloatingPointTy()) {
+            return builder_.CreateFCmpUNE(value, llvm::ConstantFP::get(value->getType(), 0.0));
+        }
         return builder_.CreateICmpNE(value, typed_zero(value));
     }
     int value_bits(const TypedValue &slot) const {

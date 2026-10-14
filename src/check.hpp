@@ -315,9 +315,9 @@ class Checker {
     bool name_taken(const std::string &name) const;
     Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum,
-                          uint32_t optional = 0);
+                          uint32_t optional = 0, uint32_t const_pointee = 0);
     Type published_result(const std::string &name, int indirections, SourceLoc loc, const std::string &package,
-                          bool is_struct, bool is_enum, uint32_t optional = 0);
+                          bool is_struct, bool is_enum, uint32_t optional = 0, uint32_t const_pointee = 0);
     void expect(const Type &got, const Type &want, SourceLoc loc);
     void expect_value(const Type &got, const Type &want, const Expr &expr, SourceLoc loc);
     // `Point{}` and `pkg.Point{}`. A typedef keeps its alias. Anything else is invalid.

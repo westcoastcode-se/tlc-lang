@@ -1,0 +1,71 @@
+func id[T type](value T) T {
+    return value;
+}
+
+type Meas trait {
+    func area() f64;
+};
+
+type Rect struct {
+    w f64;
+    h f64;
+};
+
+func Rect::area(self this) f64 {
+    return self.w * self.h;
+}
+
+func take(m Meas) f64 {
+    return m.area();
+}
+
+func main() i32 {
+    var wide = 2.5;
+    var narrow = 1.5f;
+    n := -3.25;
+    if (wide != 2.5 || narrow != 1.5f || n != -3.25 || wide + narrow != 4.0) {
+        return 1;
+    }
+    wide = 4.5;
+    if (wide != 4.5) {
+        return 2;
+    }
+    var x f64 = 2.5;
+    var p = &x;
+    if (*p != 2.5) {
+        return 3;
+    }
+    *p = 4;
+    if (x != 4.0) {
+        return 4;
+    }
+    var q *f64 = &x;
+    *q = 5;
+    if (x != 5.0) {
+        return 5;
+    }
+    if (id(2.5) != 2.5) {
+        return 6;
+    }
+    var r Rect;
+    r.w = 2.5;
+    r.h = 3.0;
+    var area = take(r);
+    if (area != 7.5) {
+        return 7;
+    }
+    var whole = 20i64;
+    if (whole != 20i64) {
+        return 8;
+    }
+    var viewed = *f64(&x);
+    if (*viewed != 5.0) {
+        return 9;
+    }
+    var flag = 1.5 && 0.0;
+    var other = 0.0 || 2.5;
+    if (flag != 0 || other != 1) {
+        return 10;
+    }
+    return 42;
+}

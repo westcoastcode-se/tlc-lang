@@ -602,51 +602,67 @@ uint32_t offset_at(const std::string &text, int line, int character) {
     return i;
 }
 
-bool in_literal(const std::string &text, uint32_t offset) {
-    bool line_comment = false;
-    bool block = false;
-    bool string = false;
-    bool character = false;
-    for (uint32_t i = 0; i < offset && i < text.size(); ++i) {
-        const char c = text[i];
-        if (line_comment) {
-            if (c == '\n') {
-                line_comment = false;
-            }
-            continue;
-        }
-        if (block) {
-            if (c == '*' && i + 1 < text.size() && text[i + 1] == '/') {
-                block = false;
-                ++i;
-            }
-            continue;
-        }
-        if (string || character) {
-            if (c == '\\' && i + 1 < text.size()) {
-                ++i;
-                continue;
-            }
-            if (string && c == '"') {
-                string = false;
-            } else if (character && c == '\'') {
-                character = false;
-            }
-            continue;
-        }
-        if (c == '/' && i + 1 < text.size() && text[i + 1] == '/') {
-            line_comment = true;
-            ++i;
-        } else if (c == '/' && i + 1 < text.size() && text[i + 1] == '*') {
-            block = true;
-            ++i;
-        } else if (c == '"') {
-            string = true;
-        } else if (c == '\'') {
-            character = true;
-        }
+// Index just past a comment or quote that starts at `i`. A raw string is wrapped in backticks and
+// does not treat `\` as an escape. Returns `i` when the character starts neither.
+uint32_t skip_lex(const std::string &text, uint32_t i) {
+    if (i >= text.size()) {
+        return i;
     }
-    return line_comment || block || string || character;
+    const char c = text[i];
+    if (c == '/' && i + 1 < text.size() && (text[i + 1] == '/' || text[i + 1] == '*')) {
+        if (text[i + 1] == '/') {
+            i += 2;
+            while (i < text.size() && text[i] != '\n') {
+                ++i;
+            }
+            return i;
+        }
+        i += 2;
+        while (i + 1 < text.size() && !(text[i] == '*' && text[i + 1] == '/')) {
+            ++i;
+        }
+        if (i + 1 < text.size()) {
+            i += 2;
+        }
+        return i;
+    }
+    if (c != '"' && c != '\'' && c != '`') {
+        return i;
+    }
+    const char quote = c;
+    ++i;
+    while (i < text.size() && text[i] != quote) {
+        if (quote != '`' && text[i] == '\\' && i + 1 < text.size()) {
+            i += 2;
+            continue;
+        }
+        // Ordinary strings and characters stop at a newline. A raw string may cross lines.
+        if (quote != '`' && text[i] == '\n') {
+            break;
+        }
+        ++i;
+    }
+    if (i < text.size() && text[i] == quote) {
+        ++i;
+    }
+    return i;
+}
+
+bool in_literal(const std::string &text, uint32_t offset) {
+    uint32_t i = 0;
+    const uint32_t end = offset < text.size() ? offset : static_cast<uint32_t>(text.size());
+    while (i < end) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            if (next > end) {
+                return true;
+            }
+            i = next;
+            continue;
+        }
+        ++i;
+    }
+    return false;
 }
 
 uint32_t match_brace(const std::string &text, uint32_t open) {
@@ -656,39 +672,12 @@ uint32_t match_brace(const std::string &text, uint32_t open) {
     int depth = 0;
     uint32_t i = open;
     while (i < text.size()) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            i = next;
+            continue;
+        }
         const char c = text[i];
-        if (c == '/' && i + 1 < text.size() && text[i + 1] == '/') {
-            i += 2;
-            while (i < text.size() && text[i] != '\n') {
-                ++i;
-            }
-            continue;
-        }
-        if (c == '/' && i + 1 < text.size() && text[i + 1] == '*') {
-            i += 2;
-            while (i + 1 < text.size() && !(text[i] == '*' && text[i + 1] == '/')) {
-                ++i;
-            }
-            if (i + 1 < text.size()) {
-                i += 2;
-            }
-            continue;
-        }
-        if (c == '"' || c == '\'') {
-            const char quote = c;
-            ++i;
-            while (i < text.size() && text[i] != quote) {
-                if (text[i] == '\\' && i + 1 < text.size()) {
-                    i += 2;
-                } else {
-                    ++i;
-                }
-            }
-            if (i < text.size()) {
-                ++i;
-            }
-            continue;
-        }
         if (c == '{') {
             ++depth;
         } else if (c == '}') {
@@ -1682,16 +1671,18 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             apply_result(sym, fn);
             put_loc(sym, text, fn.loc, fn.name);
             sym.scope_begin = fn.loc.valid() ? fn.loc.offset : 0;
-            sym.scope_end = end;
+            // The name is visible in the enclosing function. Only the parameters use the body.
+            sym.scope_end = scope_end;
             add_sym(out, std::move(sym));
             add_function_locals(fn, text, uri, end, out, index);
         }
         return;
     }
     if (const auto *block = std::get_if<Stmt::Block>(&stmt.data)) {
+        const uint32_t end = block->loc.valid() ? match_brace(text, block->loc.offset) : scope_end;
         for (const auto &child : block->statements) {
             if (child) {
-                walk_stmt(*child, text, uri, scope_end, out, index);
+                walk_stmt(*child, text, uri, end, out, index);
             }
         }
         return;
@@ -1712,11 +1703,19 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
         return;
     }
     if (const auto *item = std::get_if<Stmt::For>(&stmt.data)) {
+        uint32_t end = scope_end;
+        if (item->body != nullptr) {
+            if (const auto *body = std::get_if<Stmt::Block>(&item->body->data)) {
+                if (body->loc.valid()) {
+                    end = match_brace(text, body->loc.offset);
+                }
+            }
+        }
         if (item->init) {
-            walk_stmt(*item->init, text, uri, scope_end, out, index);
+            walk_stmt(*item->init, text, uri, end, out, index);
         }
         if (item->body) {
-            walk_stmt(*item->body, text, uri, scope_end, out, index);
+            walk_stmt(*item->body, text, uri, end, out, index);
         }
         return;
     }
@@ -2358,39 +2357,12 @@ uint32_t innermost_brace(const std::string &text, uint32_t pos) {
     std::vector<uint32_t> stack;
     uint32_t i = 0;
     while (i < pos && i < text.size()) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            i = next;
+            continue;
+        }
         const char c = text[i];
-        if (c == '/' && i + 1 < text.size() && text[i + 1] == '/') {
-            i += 2;
-            while (i < text.size() && text[i] != '\n') {
-                ++i;
-            }
-            continue;
-        }
-        if (c == '/' && i + 1 < text.size() && text[i + 1] == '*') {
-            i += 2;
-            while (i + 1 < text.size() && !(text[i] == '*' && text[i + 1] == '/')) {
-                ++i;
-            }
-            if (i + 1 < text.size()) {
-                i += 2;
-            }
-            continue;
-        }
-        if (c == '"' || c == '\'') {
-            const char quote = c;
-            ++i;
-            while (i < text.size() && text[i] != quote) {
-                if (text[i] == '\\' && i + 1 < text.size()) {
-                    i += 2;
-                } else {
-                    ++i;
-                }
-            }
-            if (i < text.size()) {
-                ++i;
-            }
-            continue;
-        }
         if (c == '{') {
             stack.push_back(i);
         } else if (c == '}' && !stack.empty()) {
@@ -2573,29 +2545,12 @@ bool field_already_named(const std::string &text, uint32_t brace, uint32_t dot, 
     int depth = 0;
     uint32_t i = brace;
     while (i < dot && i < text.size()) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            i = next;
+            continue;
+        }
         const char c = text[i];
-        if (c == '/' && i + 1 < text.size() && text[i + 1] == '/') {
-            i += 2;
-            while (i < text.size() && text[i] != '\n') {
-                ++i;
-            }
-            continue;
-        }
-        if (c == '"' || c == '\'') {
-            const char quote = c;
-            ++i;
-            while (i < text.size() && text[i] != quote) {
-                if (text[i] == '\\' && i + 1 < text.size()) {
-                    i += 2;
-                } else {
-                    ++i;
-                }
-            }
-            if (i < text.size()) {
-                ++i;
-            }
-            continue;
-        }
         if (c == '{') {
             ++depth;
             ++i;
@@ -2672,7 +2627,8 @@ Json completion_item(const std::string &label, int kind, const std::string &deta
         fields.emplace_back("detail", jstr(detail));
     }
     const Pos start = locate(doc.text, cursor.prefix_begin);
-    const Pos end = locate(doc.text, cursor.offset);
+    const uint32_t word_end = cursor.prefix_begin + static_cast<uint32_t>(cursor.word.size());
+    const Pos end = locate(doc.text, word_end);
     fields.emplace_back("textEdit", jobj({{"range", range_json(start, end)}, {"newText", jstr(label)}}));
     return jobj(std::move(fields));
 }
@@ -2791,9 +2747,9 @@ Json complete(const Doc &doc, const Cursor &cursor) {
     return jobj({{"isIncomplete", jbool(false)}, {"items", jarr(std::move(items))}});
 }
 
-Json hover_of(const Sym &sym) {
+Json hover_of(const Sym &sym, Pos start, Pos end) {
     return jobj({{"contents", jobj({{"kind", jstr("plaintext")}, {"value", jstr(sym.detail.empty() ? sym.name : sym.detail)}})},
-                 {"range", range_json(sym.start, sym.end)}});
+                 {"range", range_json(start, end)}});
 }
 
 std::vector<Json> outline_children(const Doc &doc, const Sym &parent) {
@@ -3055,7 +3011,9 @@ int run_lsp() {
             if (sym == nullptr) {
                 send_json(result_response(*id, jnull()));
             } else if (method == "textDocument/hover") {
-                send_json(result_response(*id, hover_of(*sym)));
+                const Pos start = locate(doc->text, cursor.prefix_begin);
+                const Pos end = locate(doc->text, cursor.prefix_begin + static_cast<uint32_t>(cursor.word.size()));
+                send_json(result_response(*id, hover_of(*sym, start, end)));
             } else if (method == "textDocument/definition") {
                 const Json loc = location_of(*sym);
                 if (loc.kind == Json::Kind::Null) {

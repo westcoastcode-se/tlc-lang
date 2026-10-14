@@ -1,24 +1,39 @@
 [
   {
     "label": "Run TLC program",
-    "command": "$ZED_WORKTREE_ROOT/plugins/zed/tlc.sh",
-    "args": ["run", "$ZED_FILE"],
+    "command": "/bin/sh",
+    "args": [
+      "-c",
+      "root=$1; file=$2; if [ -x \"$root/build/tlc\" ]; then bin=$root/build/tlc; elif command -v tlc >/dev/null 2>&1; then bin=$(command -v tlc); else echo \"tlc was not found. Build it with: cmake --build build --target tlc\" >&2; exit 1; fi; exec \"$bin\" --run \"$file\"",
+      "sh",
+      "$ZED_WORKTREE_ROOT",
+      "$ZED_FILE"
+    ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": ["tlc-main"],
     "reveal": "always"
   },
   {
     "label": "Check TLC program",
-    "command": "$ZED_WORKTREE_ROOT/plugins/zed/tlc.sh",
-    "args": ["check", "$ZED_FILE"],
+    "command": "/bin/sh",
+    "args": [
+      "-c",
+      "root=$1; file=$2; if [ -x \"$root/build/tlc\" ]; then bin=$root/build/tlc; elif command -v tlc >/dev/null 2>&1; then bin=$(command -v tlc); else echo \"tlc was not found. Build it with: cmake --build build --target tlc\" >&2; exit 1; fi; exec \"$bin\" --check \"$file\"",
+      "sh",
+      "$ZED_WORKTREE_ROOT",
+      "$ZED_FILE"
+    ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always"
   },
   {
     "label": "Build TLC debug binary",
-    "command": "$ZED_WORKTREE_ROOT/plugins/zed/tlc.sh",
+    "command": "/bin/sh",
     "args": [
-      "build-debug",
+      "-c",
+      "root=$1; file=$2; out=$3; if [ -x \"$root/build/tlc\" ]; then bin=$root/build/tlc; elif command -v tlc >/dev/null 2>&1; then bin=$(command -v tlc); else echo \"tlc was not found. Build it with: cmake --build build --target tlc\" >&2; exit 1; fi; mkdir -p \"$(dirname \"$out\")\"; exec \"$bin\" -g -o \"$out\" \"$file\"",
+      "sh",
+      "$ZED_WORKTREE_ROOT",
       "$ZED_FILE",
       "$ZED_WORKTREE_ROOT/build/debug/$ZED_RELATIVE_DIR/$ZED_STEM"
     ],

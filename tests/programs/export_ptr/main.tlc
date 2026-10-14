@@ -1,0 +1,11 @@
+import "math";
+
+func main() i32 {
+    if (math.p != null) {
+        return 1;
+    }
+    if (math.row.len != 0) {
+        return 2;
+    }
+    return 42;
+}

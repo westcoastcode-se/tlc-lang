@@ -243,7 +243,18 @@ int run_lsp_tests() {
         "    var kk K = {.value = 10};\n"
         "    var box Box = {.complex = {.inner_value = 1}};\n"
         "    kk = {.value = 2};\n"
-        "    return add(p.x, q.x) + r.x + slice.len + named.len;\n"
+        "    var kept i32 = 1;\n"
+        "    var raw = `}`;\n"
+        "    var tail = kept;\n"
+        "    func inner() i32 {\n"
+        "        return 1;\n"
+        "    }\n"
+        "    {\n"
+        "        var hidden i32 = 1;\n"
+        "    }\n"
+        "    var seen = inner;\n"
+        "    var gone = hidden;\n"
+        "    return add(p.x, q.x) + r.x + slice.len + named.len + tail;\n"
         "}\n";
 
     int to_child[2] = {-1, -1};
@@ -467,6 +478,42 @@ int run_lsp_tests() {
                   std::to_string(exported_var.character) + "}}}");
     const std::string export_def = read_until(from_child[0], "\"id\":16", 4000);
     EXPECT_HAS(check, export_def, "math/lib.tlc");
+
+    const LineCol kept_at = at_needle(source, "tail = kept", true);
+    EXPECT(check, kept_at.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":20,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(kept_at.line) + R"(,"character":)" +
+                  std::to_string(kept_at.character) + "}}}");
+    const std::string kept_items = read_until(from_child[0], "\"id\":20", 3000);
+    EXPECT_HAS(check, kept_items, "\"kept\"");
+
+    const LineCol raw_at = at_needle(source, "var raw = `", true);
+    EXPECT(check, raw_at.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":21,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(raw_at.line) + R"(,"character":)" +
+                  std::to_string(raw_at.character) + "}}}");
+    const std::string raw_items = read_until(from_child[0], "\"id\":21", 3000);
+    EXPECT(check, raw_items.find("\"func\"") == std::string::npos);
+
+    const LineCol inner_at = at_needle(source, "seen = inner", true);
+    EXPECT(check, inner_at.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":22,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(inner_at.line) + R"(,"character":)" +
+                  std::to_string(inner_at.character) + "}}}");
+    const std::string inner_items = read_until(from_child[0], "\"id\":22", 3000);
+    EXPECT_HAS(check, inner_items, "\"inner\"");
+
+    const LineCol hidden_at = at_needle(source, "gone = hidden", true);
+    EXPECT(check, hidden_at.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":23,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(hidden_at.line) + R"(,"character":)" +
+                  std::to_string(hidden_at.character) + "}}}");
+    const std::string hidden_items = read_until(from_child[0], "\"id\":23", 3000);
+    EXPECT(check, hidden_items.find("\"hidden\"") == std::string::npos);
 
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);

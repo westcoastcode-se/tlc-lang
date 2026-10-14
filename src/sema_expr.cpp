@@ -1389,6 +1389,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     case TokenKind::Le:
                     case TokenKind::Ge:
                         return type_int();
+                    case TokenKind::AmpAmp:
+                    case TokenKind::PipePipe:
+                        return type_int();
                     default:
                         if (lhs.alias_id != 0) {
                             return lhs;

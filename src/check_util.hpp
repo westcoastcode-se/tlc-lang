@@ -158,7 +158,8 @@ inline Type usual(const Type &lhs, const Type &rhs) {
 inline Type quiet_indirect(Type type, int count, uint32_t optional = 0, uint32_t const_pointee = 0) {
     for (int i = 0; i < count; ++i) {
         if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool &&
-            type.kind != TypeKind::Pointer && type.kind != TypeKind::Void && type.kind != TypeKind::Meta) {
+            type.kind != TypeKind::Float && type.kind != TypeKind::Pointer && type.kind != TypeKind::Void &&
+            type.kind != TypeKind::Meta) {
             return type_invalid();
         }
         const int level = count - 1 - i;
@@ -183,7 +184,14 @@ inline Type quiet_object(const std::string &name, int indirections, bool is_arra
     if (parameter) {
         return type_pointer(std::move(type));
     }
-    if (array_len <= 0) {
+    // `[]T` is a slice. A nested slice stays invalid, as it does for a local.
+    if (array_len < 0) {
+        if (type.kind == TypeKind::Array && type.length < 0) {
+            return type_invalid();
+        }
+        return type_array(std::move(type), -1);
+    }
+    if (array_len == 0) {
         return type_invalid();
     }
     return type_array(std::move(type), array_len);

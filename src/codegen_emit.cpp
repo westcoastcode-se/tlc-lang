@@ -105,6 +105,9 @@ void CodeGen::declare_file(const PackageNode &node) {
             binding.elem_bool = !returns_void && ret.elem_bool;
             binding.elem_bits = returns_void ? 0 : ret.elem_bits;
             binding.elem_unsigned = !returns_void && ret.elem_unsigned;
+            binding.elem_float = !returns_void && ret.elem_float;
+            binding.trait_id = returns_void ? -1 : ret.trait_id;
+            binding.enum_id = returns_void ? -1 : ret.enum_id;
             file.functions.emplace(name, binding);
             continue;
         }
@@ -856,6 +859,10 @@ llvm::Constant *CodeGen::intern_type_name(const std::string &text) {
 }
 
 llvm::Constant *CodeGen::sized_int(const Binding &dest, int32_t value) const {
+    // f64 is 64 bits wide. That width is an integer only when the slot is not a float.
+    if (dest.depth != 0 || dest.struct_id >= 0 || dest.fn_ty != nullptr || dest.elem_float) {
+        return nullptr;
+    }
     if (dest.elem_bool) {
         return llvm::ConstantInt::get(i1(), value == 0 ? 0 : 1, false);
     }
@@ -867,9 +874,6 @@ llvm::Constant *CodeGen::sized_int(const Binding &dest, int32_t value) const {
     }
     if (dest.elem_bits == 64) {
         return llvm::ConstantInt::get(i64(), static_cast<uint64_t>(static_cast<int64_t>(value)), true);
-    }
-    if (dest.depth != 0 || dest.struct_id >= 0 || dest.fn_ty != nullptr || dest.elem_float) {
-        return nullptr;
     }
     return const_i32(value);
 }
@@ -2642,7 +2646,8 @@ TypedValue CodeGen::emit_generic_call(const Binding &binding, const Expr::Call &
         return {wide, 0};
     }
     TypedValue result{call, meta.depth, meta.elem_char, meta.struct_id, false, meta.elem_void, meta.elem_bool,
-                      meta.elem_bits, meta.elem_unsigned};
+                      meta.elem_bits, meta.elem_unsigned, -1, meta.elem_float};
+    result.enum_id = meta.enum_id;
     attach_returned_fn(result, fn);
     return result;
 }
@@ -2669,7 +2674,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             return {};
         }
         return {inner.value, inner.depth - 1, inner.elem_char, inner.struct_id, false, inner.elem_void, inner.elem_bool,
-                inner.elem_bits, inner.elem_unsigned};
+                inner.elem_bits, inner.elem_unsigned, inner.trait_id, inner.elem_float};
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         if (index->end != nullptr) {
@@ -2720,7 +2725,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             llvm::Value *slot = builder_.CreateInBoundsGEP(
                 array, base.value, llvm::ArrayRef<llvm::Value *>{const_i32(0), offset});
             return {slot, depth, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool, base.elem_bits,
-                    base.elem_unsigned};
+                    base.elem_unsigned, -1, base.elem_float};
         }
         const int depth = base.depth - 1;
         llvm::Value *slot = builder_.CreateInBoundsGEP(
@@ -2780,8 +2785,8 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                 error(selector->loc, found != nullptr && found->is_array ? "not supported yet" : "not an lvalue");
                 return {};
             }
-            return {found->value, found->depth, found->elem_char, found->struct_id, false, found->elem_void, found->elem_bool,
-                    found->elem_bits, found->elem_unsigned};
+            return {found->value, found->depth, found->elem_char, found->struct_id, false, found->elem_void,
+                    found->elem_bool, found->elem_bits, found->elem_unsigned, found->trait_id, found->elem_float};
         }
         if (selector->base == nullptr) {
             error(selector->loc, "not an lvalue");
@@ -2845,7 +2850,7 @@ llvm::Type *CodeGen::shape_type(const Shape &shape) const {
             return nullptr;
         }
         return llvm::ArrayType::get(
-            leaf_type(shape.depth, shape.elem_char, shape.struct_id, shape.elem_bool, shape.elem_bits),
+            leaf_type(shape.depth, shape.elem_char, shape.struct_id, shape.elem_bool, shape.elem_bits, shape.elem_float),
             static_cast<uint64_t>(shape.array_len));
     }
     return leaf_type(shape.depth, shape.elem_char, shape.struct_id, shape.elem_bool, shape.elem_bits);
@@ -3196,7 +3201,7 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
     // An array field decays to a pointer to its first element. The length stays so a range can use it.
     if (addr.is_array) {
         TypedValue value{addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
-                         addr.elem_bool, addr.elem_bits, addr.elem_unsigned};
+                         addr.elem_bool, addr.elem_bits, addr.elem_unsigned, -1, addr.elem_float};
         value.array_len = addr.array_len;
         return value;
     }
@@ -3353,8 +3358,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (addr.value == nullptr) {
                         return {zero(), 0};
                     }
-                    return {addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void, addr.elem_bool,
-                            addr.elem_bits, addr.elem_unsigned};
+                    return {addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
+                            addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.trait_id, addr.elem_float};
                 }
                 const TypedValue inner_value = emit_rvalue(*node.expr);
                 if (node.op == TokenKind::Bang && node.postfix) {
@@ -3904,22 +3909,25 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 if (target.depth > 0 && source.depth > 0) {
                     return {source.value, target.depth, target.elem_char, target.struct_id, false, target.elem_void,
-                            target.elem_bool, target.elem_bits, target.elem_unsigned};
+                            target.elem_bool, target.elem_bits, target.elem_unsigned, target.trait_id, target.elem_float};
                 }
                 if (target.depth > 0 && source.depth == 0) {
                     llvm::IntegerType *intptr = module_.getDataLayout().getIntPtrType(context_, 0);
                     llvm::Value *wide = source.value;
                     if (wide->getType()->isIntegerTy() && wide->getType() != intptr) {
-                        wide = wide->getType()->getIntegerBitWidth() < intptr->getIntegerBitWidth()
-                                   ? builder_.CreateZExt(wide, intptr)
-                                   : builder_.CreateTrunc(wide, intptr);
+                        if (wide->getType()->getIntegerBitWidth() < intptr->getIntegerBitWidth()) {
+                            wide = source.elem_unsigned ? builder_.CreateZExt(wide, intptr)
+                                                        : builder_.CreateSExt(wide, intptr);
+                        } else {
+                            wide = builder_.CreateTrunc(wide, intptr);
+                        }
                     }
                     llvm::Value *pointer = builder_.CreateIntToPtr(wide, ptr_type());
                     if (target.fn_ty != nullptr) {
                         return stamp_fn(pointer);
                     }
                     return {pointer, target.depth, target.elem_char, target.struct_id, false, target.elem_void,
-                            target.elem_bool, target.elem_bits, target.elem_unsigned};
+                            target.elem_bool, target.elem_bits, target.elem_unsigned, target.trait_id, target.elem_float};
                 }
                 if (source.depth > 0 && target.depth == 0 && !target.elem_char && !target.elem_void && target.struct_id < 0 &&
                     !target.elem_bool && target.elem_bits != 8 && target.elem_bits != 16 && target.elem_bits != 64) {
@@ -4387,6 +4395,13 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                    structs_[static_cast<std::size_t>(got.struct_id)].type != nullptr) {
             ty = structs_[static_cast<std::size_t>(got.struct_id)].type;
             binding.struct_id = got.struct_id;
+        } else if (got.elem_float || (got.value != nullptr && got.value->getType()->isFloatingPointTy())) {
+            // An f64 value is 64 bits. Checking the width first stored it as i64.
+            const bool value_is_float = got.value != nullptr && got.value->getType()->isFloatingPointTy();
+            const bool wide = value_is_float ? got.value->getType()->isDoubleTy() : got.elem_bits >= 64;
+            ty = wide ? f64_ty() : f32_ty();
+            binding.elem_float = true;
+            binding.elem_bits = wide ? 64 : 32;
         } else if (got.elem_bits == 64) {
             ty = i64();
             binding.elem_bits = 64;

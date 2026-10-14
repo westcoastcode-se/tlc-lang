@@ -1082,7 +1082,8 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             Symbol symbol;
             symbol.name = var->name;
             symbol.type = published_object(var->type_name, var->indirections, var->is_array, var->array_len, var->loc,
-                                           false, var->type_package, var->is_struct, var->is_enum, var->optional);
+                                           false, var->type_package, var->is_struct, var->is_enum, var->optional,
+                                           var->const_pointee);
             exports_[file_id].emplace(var->name, std::move(symbol));
         }
     }

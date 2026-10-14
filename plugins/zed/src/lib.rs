@@ -2,15 +2,6 @@ use zed_extension_api::{self as zed, Command, LanguageServerId, Result, Worktree
 
 struct TlcExtension;
 
-// Wasm cannot see the project tree, so the path is handed to Zed and started there.
-fn project_binary(root: &str) -> String {
-    if root.ends_with('/') {
-        format!("{root}build/tlc")
-    } else {
-        format!("{root}/build/tlc")
-    }
-}
-
 impl zed::Extension for TlcExtension {
     fn new() -> Self {
         Self
@@ -22,16 +13,24 @@ impl zed::Extension for TlcExtension {
         worktree: &Worktree,
     ) -> Result<Command> {
         let root = worktree.root_path();
-        let command = if root.is_empty() {
-            worktree.which("tlc").ok_or_else(|| {
+        // Wasm cannot see the project tree. The shell prefers <root>/build/tlc, then tlc on PATH.
+        if root.is_empty() {
+            let command = worktree.which("tlc").ok_or_else(|| {
                 "tlc was not found. Build it with: cmake --build build --target tlc".to_string()
-            })?
-        } else {
-            project_binary(&root)
-        };
+            })?;
+            return Ok(Command {
+                command,
+                args: vec!["lsp".into()],
+                env: worktree.shell_env(),
+            });
+        }
+        let script = r#"if [ -n "$1" ] && [ -x "$1/build/tlc" ]; then exec "$1/build/tlc" lsp; fi
+if command -v tlc >/dev/null 2>&1; then exec tlc lsp; fi
+echo "tlc was not found. Build it with: cmake --build build --target tlc" >&2
+exit 1"#;
         Ok(Command {
-            command,
-            args: vec!["lsp".into()],
+            command: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into(), "sh".into(), root],
             env: worktree.shell_env(),
         })
     }

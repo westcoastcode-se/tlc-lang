@@ -1879,28 +1879,30 @@ bool Checker::name_taken(const std::string &name) const {
 
 Type Checker::published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                                bool parameter, const std::string &package, bool is_struct, bool is_enum,
-                               uint32_t optional) {
+                               uint32_t optional, uint32_t const_pointee) {
     Type alias;
     if (is_struct || is_enum || !package.empty() || package_typedef(file_id_, name, alias) || find_tag(file_id_, name) >= 0) {
         return object_type(name, indirections, is_array, array_len, loc, parameter, package, is_struct, is_enum, false,
-                           optional);
+                           optional, const_pointee);
     }
-    return quiet_object(name, indirections, is_array, array_len, parameter, optional);
+    return quiet_object(name, indirections, is_array, array_len, parameter, optional, const_pointee);
 }
 
 Type Checker::published_result(const std::string &name, int indirections, SourceLoc loc, const std::string &package,
-                               bool is_struct, bool is_enum, uint32_t optional) {
+                               bool is_struct, bool is_enum, uint32_t optional, uint32_t const_pointee) {
     if (is_struct || is_enum || !package.empty()) {
-        return object_type(name, indirections, false, 0, loc, false, package, is_struct, is_enum, false, optional);
+        return object_type(name, indirections, false, 0, loc, false, package, is_struct, is_enum, false, optional,
+                           const_pointee);
     }
     Type alias;
     if (package_typedef(file_id_, name, alias)) {
-        return with_indirections(std::move(alias), indirections, loc, optional);
+        return with_indirections(std::move(alias), indirections, loc, optional, const_pointee);
     }
     if (find_tag(file_id_, name) >= 0) {
-        return object_type(name, indirections, false, 0, loc, false, package, false, false, false, optional);
+        return object_type(name, indirections, false, 0, loc, false, package, false, false, false, optional,
+                           const_pointee);
     }
-    return quiet_indirect(quiet_type(name), indirections, optional);
+    return quiet_indirect(quiet_type(name), indirections, optional, const_pointee);
 }
 
 void Checker::note_struct_use(bool is_struct, const std::string &name, SourceLoc loc) {
