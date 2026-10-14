@@ -1,0 +1,30 @@
+type Shape trait {
+    w i32;
+    h i32;
+    func area() i32;
+};
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+func widen(s *Shape) i32 {
+    s.w = s.w + 1;
+    return s.area();
+}
+
+func edges(s Shape) i32 {
+    return s.w + s.h;
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 5;
+    r.h = 6;
+    return widen(&r) + edges(r) - 6;
+}

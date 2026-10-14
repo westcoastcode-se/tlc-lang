@@ -1,0 +1,15 @@
+import "math";
+import { spare } from "math";
+
+type Buf[N i32, T type] struct {
+    value T;
+};
+
+const Buf[N, T]::count = N;
+
+func main() i32 {
+    var e math.Entity;
+    e.id = 10;
+    return math.Entity.next + e.id + math.Box[i32].limit + spare + math.width() + Buf[4, i32].count +
+        (math.Entity.bias == 1.0f);
+}

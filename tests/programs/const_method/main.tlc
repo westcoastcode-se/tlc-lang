@@ -1,0 +1,27 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func Point::read(self *const this) i32 {
+    return self.x + self.y;
+}
+
+func Point::value(self this) i32 {
+    return self.x;
+}
+
+func Point::bump(self *this) void {
+    self.x = self.x + 1;
+}
+
+const origin Point = {.x = 20, .y = 2};
+
+func main() i32 {
+    var live Point;
+    live.x = 9;
+    const p = &live;
+    p.bump();
+    const frozen = live;
+    return origin.read() + frozen.read() + frozen.value();
+}

@@ -88,7 +88,7 @@ func main() i32 {
 
 A `bool` value is 0 or 1.
 
-`f32` is the 32-bit floating type. `f64` is the 64-bit floating type. A literal without a suffix has type `f64`. A suffix `f` or `F` makes it `f32`. `1.5 + 1` is `f64`. Comparisons of floating values yield `i32`. `%` and the bitwise operators on a floating value are reported as `type mismatch`.
+`f32` is the 32-bit floating type. `f64` is the 64-bit floating type. A literal without a suffix has type `f64`. A suffix `f` or `F` makes it `f32`. `1.5 + 1` is `f64`. Comparisons of floating values yield `i32`. `%` and the bitwise operators on a floating value are reported as `type mismatch`. A file-scope `var` or `const` may hold either type, as in `var scale = 1.5f` and `const bias = 0.5f`.
 
 ```c
 func skip() void {

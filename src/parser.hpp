@@ -115,6 +115,8 @@ class Parser {
     // `enum(i32)`. Empty means `int` when the caller saw no parentheses.
     std::string parse_enum_underlying();
     std::vector<Enumerator> parse_enumerators();
+    // One `name type;` field. False when the next token is not a name.
+    bool parse_field(FieldDecl &field);
     std::vector<FieldDecl> parse_fields();
     struct UnionBody {
         std::vector<FieldDecl> fields;
@@ -126,12 +128,16 @@ class Parser {
     void parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, std::vector<FnParam> &params, bool &variadic);
     FnParam fn_param_from(const PlacedType &type) const;
     bool at_func_type(std::size_t ahead = 0) const;
-    PlacedType parse_func_type();
+    // `as_cast` is `func (i32) i32(value)`. The `(` after the result is the operand,
+    // so the result does not take the C declarator `i32 (*name)(`.
+    PlacedType parse_func_type(bool as_cast = false);
     void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern, bool extern_c);
-    ArrayMark parse_array_suffix(bool allow_unsized);
+    ArrayMark parse_array_suffix();
     bool bracket_then_paren() const;
     // `func Vec[T]::get`. True when `[...]` is followed by `::`.
     bool bracket_then_colon_colon() const;
+    // `Buf[4, i32].count`. True when a comma inside `[...]` is followed by `.`.
+    bool bracket_comma_then_dot() const;
     bool looks_like_type_params() const;
     std::vector<TypeParam> parse_type_params();
     // `Vec[T, N]` on a method. The names refer to the struct's parameters.
@@ -140,7 +146,9 @@ class Parser {
     TypeArg parse_one_type_arg();
     bool primitive_type_name(const std::string &name) const;
     bool integer_constraint_name(const std::string &name) const;
-    PlacedType parse_placed_type(bool allow_const, bool allow_array);
+    // `allow_fn_declarator` is the C form `i32 (*name)(`. A cast turns it off
+    // so `func (i32) i32(*void(p))` keeps `*void(p)` as the operand.
+    PlacedType parse_placed_type(bool allow_const, bool allow_fn_declarator = true);
     // `var` and field types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
     // A pointer is prefix in every other position too: `*int`, `*const char`.
     PlacedType parse_go_type();
@@ -173,9 +181,18 @@ class Parser {
     std::unique_ptr<Stmt> parse_const_local();
     bool var_is_bind() const;
     bool var_is_inferred() const;
+    // `const Type::name` or `const Type[T]::name`. A local one is rejected.
+    bool const_on_type() const;
     std::unique_ptr<Stmt> parse_var_or_bind();
-    VarDecl parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c);
-    void parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var);
+    // `var Type::name` and `var Type[T]::name`. The first identifier is the owner.
+    void take_var_owner(VarDecl &var);
+    // `allow_bare_inferred` accepts `var name = expr` before a type is written.
+    // A struct body uses that for `var next = 1`, the same variable as `var Type::next = 1`.
+    VarDecl parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c,
+                            bool allow_bare_inferred = false);
+    // `const name = expr`, `const name Type = expr`, and `const Type::name`.
+    VarDecl parse_const_decl(bool exported);
+    void parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var, bool exported);
     void reject_c_var(SourceLoc loc);
 
     std::unique_ptr<Expr> parse_expr();
@@ -195,12 +212,18 @@ class Parser {
     std::unique_ptr<Expr> parse_postfix();
     std::unique_ptr<Expr> finish_postfix(std::unique_ptr<Expr> expr);
     std::unique_ptr<Expr> parse_primary();
+    // `[_]i32{1, 2, 3}`. `_` is the length, taken from the values, not an unsized type.
+    std::unique_ptr<Expr> parse_array_literal();
     std::unique_ptr<Expr> parse_init();
     std::unique_ptr<Expr> parse_anon_function();
     bool starts_short_function() const;
     std::unique_ptr<Expr> parse_short_function();
     bool starts_type_paren() const;
     bool starts_cast_type() const;
+    // `func (i32) i32(value)`, not an anonymous function `func (n i32) i32 { ... }`.
+    bool starts_func_cast() const;
+    bool skip_balanced(std::size_t &ahead, TokenKind open, TokenKind close) const;
+    bool skip_placed_type(std::size_t &ahead) const;
     // `cast` is a cast or a parenthesized sizeof type. A qualified name is a
     // sizeof type only. A bare name is a pointer cast only after it has been
     // declared, so `*f()` stays a dereference.
@@ -214,6 +237,14 @@ class Parser {
         int indirections = 0;
         uint32_t optional = 0;
         uint32_t const_pointee = 0;
+        // `func (i32) i32` written as the cast type. `name` is the result.
+        bool is_fn_ptr = false;
+        int ret_indirections = 0;
+        uint32_t ret_optional = 0;
+        uint32_t ret_const_pointee = 0;
+        std::vector<FnParam> fn_params;
+        bool fn_variadic = false;
+        std::vector<FnParam> fn_results;
     };
     struct PointerPrefix {
         int count = 0;

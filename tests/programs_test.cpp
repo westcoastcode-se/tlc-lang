@@ -32,6 +32,8 @@ struct Expectation {
     bool run_tests = false;
     bool has_stdout = false;
     std::string stdout_text;
+    bool has_stderr = false;
+    std::string stderr_text;
 };
 
 Expectation parse_expect(const std::string &text) {
@@ -50,6 +52,7 @@ Expectation parse_expect(const std::string &text) {
         constexpr std::string_view kLinkError = "link-error:";
         constexpr std::string_view kLink = "link:";
         constexpr std::string_view kStdout = "stdout:";
+        constexpr std::string_view kStderr = "stderr:";
         constexpr std::string_view kMode = "mode:";
         if (line.starts_with(kExit)) {
             expect.has_exit = true;
@@ -84,11 +87,18 @@ Expectation parse_expect(const std::string &text) {
                 mode.erase(0, first);
             }
             expect.run_tests = mode == "test";
-        } else if (line.starts_with(kStdout)) {
-            expect.has_stdout = true;
-            expect.stdout_text = line.substr(kStdout.size());
-            if (!expect.stdout_text.empty() && expect.stdout_text.front() == ' ') {
-                expect.stdout_text.erase(expect.stdout_text.begin());
+        } else if (line.starts_with(kStdout) || line.starts_with(kStderr)) {
+            const bool err = line.starts_with(kStderr);
+            const std::string_view key = err ? kStderr : kStdout;
+            std::string &body = err ? expect.stderr_text : expect.stdout_text;
+            if (err) {
+                expect.has_stderr = true;
+            } else {
+                expect.has_stdout = true;
+            }
+            body = line.substr(key.size());
+            if (!body.empty() && body.front() == ' ') {
+                body.erase(body.begin());
             }
             std::string rest;
             const auto pos = static_cast<std::streamoff>(lines.tellg());
@@ -96,10 +106,10 @@ Expectation parse_expect(const std::string &text) {
                 rest = text.substr(static_cast<std::size_t>(pos));
             }
             if (!rest.empty()) {
-                if (!expect.stdout_text.empty()) {
-                    expect.stdout_text.push_back('\n');
+                if (!body.empty()) {
+                    body.push_back('\n');
                 }
-                expect.stdout_text += rest;
+                body += rest;
             }
             break;
         }
@@ -155,6 +165,9 @@ int run_program_tests() {
         }
         if (expect.has_stdout && output.program_stdout != expect.stdout_text) {
             check.fail(name + ": stdout [" + output.program_stdout + "] wanted [" + expect.stdout_text + "]");
+        }
+        if (expect.has_stderr && output.program_stderr != expect.stderr_text) {
+            check.fail(name + ": stderr [" + output.program_stderr + "] wanted [" + expect.stderr_text + "]");
         }
     }
     return check.failed;

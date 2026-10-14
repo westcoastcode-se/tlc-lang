@@ -295,7 +295,104 @@ bool Parser::starts_type_paren() const {
     return peek(index).kind == TokenKind::RParen;
 }
 
+bool Parser::skip_balanced(std::size_t &ahead, TokenKind open, TokenKind close) const {
+    if (peek(ahead).kind != open) {
+        return false;
+    }
+    int depth = 0;
+    while (true) {
+        const TokenKind kind = peek(ahead).kind;
+        if (kind == TokenKind::End) {
+            return false;
+        }
+        if (kind == open) {
+            ++depth;
+        } else if (kind == close) {
+            --depth;
+        }
+        ++ahead;
+        if (depth == 0) {
+            return true;
+        }
+    }
+}
+
+bool Parser::skip_placed_type(std::size_t &ahead) const {
+    while (peek(ahead).kind == TokenKind::LBracket) {
+        if (!skip_balanced(ahead, TokenKind::LBracket, TokenKind::RBracket)) {
+            return false;
+        }
+    }
+    while (peek(ahead).kind == TokenKind::Star || peek(ahead).kind == TokenKind::Question) {
+        if (peek(ahead).kind == TokenKind::Question) {
+            if (peek(ahead + 1).kind != TokenKind::Star) {
+                return false;
+            }
+            ++ahead;
+        }
+        if (peek(ahead).kind != TokenKind::Star) {
+            return false;
+        }
+        ++ahead;
+        if (peek(ahead).kind == TokenKind::KwConst) {
+            ++ahead;
+        }
+    }
+    if (peek(ahead).kind == TokenKind::KwFunc && peek(ahead + 1).kind == TokenKind::LParen) {
+        ++ahead;
+        if (!skip_balanced(ahead, TokenKind::LParen, TokenKind::RParen)) {
+            return false;
+        }
+        if (peek(ahead).kind == TokenKind::LParen) {
+            return skip_balanced(ahead, TokenKind::LParen, TokenKind::RParen);
+        }
+        return skip_placed_type(ahead);
+    }
+    if (peek(ahead).kind == TokenKind::KwEnum || peek(ahead).kind == TokenKind::KwStruct) {
+        ++ahead;
+        if (peek(ahead).kind == TokenKind::Identifier) {
+            ++ahead;
+        }
+        return true;
+    }
+    if (peek(ahead).kind == TokenKind::Identifier && peek(ahead + 1).kind == TokenKind::Dot &&
+        peek(ahead + 2).kind == TokenKind::Identifier) {
+        ahead += 3;
+    } else if (peek(ahead).kind == TokenKind::Identifier || peek(ahead).kind == TokenKind::KwVoid ||
+               peek(ahead).kind == TokenKind::KwBool || peek(ahead).kind == TokenKind::KwFloat ||
+               peek(ahead).kind == TokenKind::KwDouble || is_int_spec(peek(ahead).kind)) {
+        ++ahead;
+    } else {
+        return false;
+    }
+    if (peek(ahead).kind == TokenKind::LBracket) {
+        return skip_balanced(ahead, TokenKind::LBracket, TokenKind::RBracket);
+    }
+    return true;
+}
+
+bool Parser::starts_func_cast() const {
+    if (!at_func_type()) {
+        return false;
+    }
+    std::size_t ahead = 1;
+    if (!skip_balanced(ahead, TokenKind::LParen, TokenKind::RParen)) {
+        return false;
+    }
+    if (peek(ahead).kind == TokenKind::LParen) {
+        if (!skip_balanced(ahead, TokenKind::LParen, TokenKind::RParen)) {
+            return false;
+        }
+    } else if (!skip_placed_type(ahead)) {
+        return false;
+    }
+    return peek(ahead).kind == TokenKind::LParen;
+}
+
 bool Parser::starts_cast_type() const {
+    if (starts_func_cast()) {
+        return true;
+    }
     std::size_t index = 0;
     int leading = 0;
     while (peek(index).kind == TokenKind::Star || peek(index).kind == TokenKind::Question) {
@@ -325,6 +422,24 @@ bool Parser::starts_cast_type() const {
 Parser::ParenType Parser::parse_cast_type() {
     ParenType type;
     type.loc = peek().loc;
+    if (at_func_type()) {
+        const PlacedType fn = parse_func_type(true);
+        type.name = fn.type_name;
+        type.package = fn.type_package;
+        type.is_struct = fn.is_struct;
+        type.is_enum = fn.is_enum;
+        type.indirections = fn.indirections;
+        type.optional = fn.optional;
+        type.const_pointee = fn.const_pointee;
+        type.is_fn_ptr = fn.is_fn_ptr;
+        type.ret_indirections = fn.ret_indirections;
+        type.ret_optional = fn.ret_optional;
+        type.ret_const_pointee = fn.ret_const_pointee;
+        type.fn_params = fn.fn_params;
+        type.fn_variadic = fn.fn_variadic;
+        type.fn_results = fn.fn_results;
+        return type;
+    }
     const PointerPrefix prefix = parse_pointer_prefix();
     const int leading = prefix.count;
     if (is_int_spec(peek().kind)) {
@@ -399,6 +514,13 @@ std::unique_ptr<Expr> Parser::parse_cast_expr() {
     node.indirections = type.indirections;
     node.optional = type.optional;
     node.const_pointee = type.const_pointee;
+    node.is_fn_ptr = type.is_fn_ptr;
+    node.ret_indirections = type.ret_indirections;
+    node.ret_optional = type.ret_optional;
+    node.ret_const_pointee = type.ret_const_pointee;
+    node.fn_params = type.fn_params;
+    node.fn_variadic = type.fn_variadic;
+    node.fn_results = type.fn_results;
     expect(TokenKind::LParen, "expected '('");
     if (check(TokenKind::RParen)) {
         error_here("expected an expression");
@@ -481,8 +603,9 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         return finish_postfix(make_expr(std::move(node)));
     }
     // `*int(p)` is a cast. `*p` and `*f()` stay dereferences, so this comes before unary `*`.
+    // `Op(p)(1)` and `func (i32) i32(p)(1)` call the pointer.
     if (starts_cast_type()) {
-        return parse_cast_expr();
+        return finish_postfix(parse_cast_expr());
     }
     if (kind == TokenKind::Plus || kind == TokenKind::Minus || kind == TokenKind::Bang || kind == TokenKind::Tilde ||
         kind == TokenKind::Amp || kind == TokenKind::Star) {
@@ -540,6 +663,27 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             expr = make_expr(std::move(selector));
             continue;
         }
+        // `Buf[4, i32].count` and `pkg.Buf[4, i32].count`. `arr[i].field` has no comma and stays an index.
+        const bool package_type = std::holds_alternative<Expr::Selector>(expr->data) &&
+                                  std::get<Expr::Selector>(expr->data).base != nullptr &&
+                                  std::holds_alternative<Expr::Name>(std::get<Expr::Selector>(expr->data).base->data) &&
+                                  std::get<Expr::Selector>(expr->data).type_args.empty();
+        if (check(TokenKind::LBracket) &&
+            (std::holds_alternative<Expr::Name>(expr->data) || package_type) && bracket_comma_then_dot()) {
+            Expr::Selector selector;
+            selector.loc = expr_loc(*expr);
+            selector.base = std::move(expr);
+            selector.type_args = parse_type_args();
+            expect(TokenKind::Dot, "expected '.'");
+            if (check(TokenKind::Identifier)) {
+                selector.field = peek().text;
+                ++pos_;
+            } else {
+                error_here("expected an identifier");
+            }
+            expr = make_expr(std::move(selector));
+            continue;
+        }
         if (check(TokenKind::LBracket) && bracket_then_paren()) {
             Expr::Call call;
             call.loc = expr_loc(*expr);
@@ -581,6 +725,30 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             ++pos_;
             expr = unsupported_expr(expr_loc(*expr));
             continue;
+        }
+        // `Point{}` and `pkg.Point{}`. A `{` after a call, an index, or `value.field` stays put.
+        if (check(TokenKind::LBrace)) {
+            std::string type_name;
+            std::string type_package;
+            if (const auto *name = std::get_if<Expr::Name>(&expr->data)) {
+                type_name = name->text;
+            } else if (const auto *selector = std::get_if<Expr::Selector>(&expr->data)) {
+                if (selector->base != nullptr && std::holds_alternative<Expr::Name>(selector->base->data)) {
+                    type_package = std::get<Expr::Name>(selector->base->data).text;
+                    type_name = selector->field;
+                }
+            }
+            if (!type_name.empty()) {
+                const SourceLoc loc = expr_loc(*expr);
+                auto init = parse_init();
+                if (auto *node = std::get_if<Expr::Init>(&init->data)) {
+                    node->type_name = std::move(type_name);
+                    node->type_package = std::move(type_package);
+                    node->loc = loc;
+                }
+                expr = std::move(init);
+                continue;
+            }
         }
         break;
     }
@@ -671,6 +839,14 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     if (check(TokenKind::LBrace)) {
         return parse_init();
     }
+    // `[_]i32{1, 2, 3}`. `_` stands for the length, which is the number of values.
+    // A length inside the brackets stays an ordinary expression error.
+    // Empty `[]` is not this form.
+    if (check(TokenKind::LBracket) &&
+        ((peek(1).kind == TokenKind::Identifier && peek(1).text == "_" && peek(2).kind == TokenKind::RBracket) ||
+         peek(1).kind == TokenKind::RBracket)) {
+        return parse_array_literal();
+    }
     const SourceLoc loc = peek().loc;
     error_here("expected an expression");
     if (!eof() && !check(TokenKind::Semicolon) && !check(TokenKind::RParen) && !check(TokenKind::RBrace) &&
@@ -678,6 +854,47 @@ std::unique_ptr<Expr> Parser::parse_primary() {
         ++pos_;
     }
     return unsupported_expr(loc);
+}
+
+std::unique_ptr<Expr> Parser::parse_array_literal() {
+    const SourceLoc loc = peek().loc;
+    expect(TokenKind::LBracket, "expected '['");
+    if (check(TokenKind::Identifier) && peek().text == "_") {
+        ++pos_;
+    } else {
+        error_here("expected '_'");
+    }
+    expect(TokenKind::RBracket, "expected ']'");
+    const PlacedType elem = parse_go_type();
+    if (!check(TokenKind::LBrace)) {
+        error_here("expected '{'");
+        return unsupported_expr(loc);
+    }
+    auto init = parse_init();
+    if (auto *node = std::get_if<Expr::Init>(&init->data)) {
+        node->loc = loc;
+        node->array_literal = true;
+        node->type_name = elem.type_name;
+        node->type_package = elem.type_package;
+        node->is_struct = elem.is_struct;
+        node->is_enum = elem.is_enum;
+        node->indirections = elem.indirections;
+        node->optional = elem.optional;
+        node->const_pointee = elem.const_pointee;
+        node->type_args = elem.type_args;
+        node->elem_is_array = elem.is_array;
+        node->elem_ptr_to_array = elem.ptr_to_array;
+        node->elem_fn = elem.is_fn_ptr;
+        node->elem_array_len = elem.array_len;
+        node->elem_array_len_name = elem.array_len_name;
+        node->elem_ret_indirections = elem.ret_indirections;
+        node->elem_ret_optional = elem.ret_optional;
+        node->elem_ret_const_pointee = elem.ret_const_pointee;
+        node->elem_fn_params = elem.fn_params;
+        node->elem_fn_variadic = elem.fn_variadic;
+        node->elem_fn_results = elem.fn_results;
+    }
+    return init;
 }
 
 std::unique_ptr<Expr> Parser::parse_init() {

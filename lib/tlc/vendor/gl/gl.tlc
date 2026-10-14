@@ -1,17 +1,200 @@
 package gl;
 
-// OpenGL 1.x entry points exported by libGL. Core-profile functions are not
-// in that library; they are loaded at run time, which this binding does not do.
+import { SDL_GL_GetProcAddress } from "vendor/sdl3";
+
+// OpenGL constants and the core-profile entry points both examples call.
+// libGL does not export those entry points. `load` stores each address from
+// SDL_GL_GetProcAddress in `?*void`, because a file-scope function pointer
+// needs an initializer. The functions below cast that address at the call.
+// Shader source, program linking, and vertex layout stay in the program.
+
+extern(abi="c") func printf(fmt *const u8, ...) i32;
 
 export extern(abi="c") type GL enum {
     TRIANGLES = 0x0004,
     COLOR_BUFFER_BIT = 0x00004000,
+    FLOAT = 0x1406,
+    ARRAY_BUFFER = 0x8892,
+    DYNAMIC_DRAW = 0x88E8,
+    FRAGMENT_SHADER = 0x8B30,
+    VERTEX_SHADER = 0x8B31,
+    COMPILE_STATUS = 0x8B81,
+    LINK_STATUS = 0x8B82,
 }
 
-export extern(abi="c") func glViewport(x i32, y i32, width i32, height i32) void;
-export extern(abi="c") func glClearColor(red f32, green f32, blue f32, alpha f32) void;
-export extern(abi="c") func glClear(mask u32) void;
-export extern(abi="c") func glBegin(mode u32) void;
-export extern(abi="c") func glEnd() void;
-export extern(abi="c") func glColor3f(red f32, green f32, blue f32) void;
-export extern(abi="c") func glVertex2f(x f32, y f32) void;
+type FnViewport func (i32, i32, i32, i32) void;
+type FnClearColor func (f32, f32, f32, f32) void;
+type FnClear func (u32) void;
+type FnGen func (i32, *u32) void;
+type FnBindVertexArray func (u32) void;
+type FnBindBuffer func (u32, u32) void;
+type FnBufferData func (u32, i64, *void, u32) void;
+type FnEnableAttrib func (u32) void;
+type FnAttribPointer func (u32, i32, u32, u8, i32, *void) void;
+type FnUseProgram func (u32) void;
+type FnCreateShader func (u32) u32;
+type FnShaderSource func (u32, i32, **u8, ?*i32) void;
+type FnObject func (u32) void;
+type FnGetIv func (u32, u32, *i32) void;
+type FnInfoLog func (u32, i32, ?*i32, *u8) void;
+type FnCreateProgram func () u32;
+type FnAttachShader func (u32, u32) void;
+type FnDrawArrays func (u32, i32, i32) void;
+
+var raw_viewport ?*void;
+var raw_clear_color ?*void;
+var raw_clear ?*void;
+var raw_gen_vertex_arrays ?*void;
+var raw_bind_vertex_array ?*void;
+var raw_gen_buffers ?*void;
+var raw_bind_buffer ?*void;
+var raw_buffer_data ?*void;
+var raw_enable_attrib ?*void;
+var raw_attrib_pointer ?*void;
+var raw_use_program ?*void;
+var raw_create_shader ?*void;
+var raw_shader_source ?*void;
+var raw_compile_shader ?*void;
+var raw_get_shader_iv ?*void;
+var raw_shader_log ?*void;
+var raw_create_program ?*void;
+var raw_attach_shader ?*void;
+var raw_link_program ?*void;
+var raw_get_program_iv ?*void;
+var raw_program_log ?*void;
+var raw_delete_shader ?*void;
+var raw_draw_arrays ?*void;
+
+var missing i32;
+
+func bind(name *const u8) ?*void {
+    var raw = SDL_GL_GetProcAddress(name);
+    if (raw == null) {
+        printf("missing OpenGL entry point %s\n", name);
+        missing = 1;
+    }
+    return raw;
+}
+
+export func load() i32 {
+    missing = 0;
+    raw_viewport = bind("glViewport");
+    raw_clear_color = bind("glClearColor");
+    raw_clear = bind("glClear");
+    raw_gen_vertex_arrays = bind("glGenVertexArrays");
+    raw_bind_vertex_array = bind("glBindVertexArray");
+    raw_gen_buffers = bind("glGenBuffers");
+    raw_bind_buffer = bind("glBindBuffer");
+    raw_buffer_data = bind("glBufferData");
+    raw_enable_attrib = bind("glEnableVertexAttribArray");
+    raw_attrib_pointer = bind("glVertexAttribPointer");
+    raw_use_program = bind("glUseProgram");
+    raw_create_shader = bind("glCreateShader");
+    raw_shader_source = bind("glShaderSource");
+    raw_compile_shader = bind("glCompileShader");
+    raw_get_shader_iv = bind("glGetShaderiv");
+    raw_shader_log = bind("glGetShaderInfoLog");
+    raw_create_program = bind("glCreateProgram");
+    raw_attach_shader = bind("glAttachShader");
+    raw_link_program = bind("glLinkProgram");
+    raw_get_program_iv = bind("glGetProgramiv");
+    raw_program_log = bind("glGetProgramInfoLog");
+    raw_delete_shader = bind("glDeleteShader");
+    raw_draw_arrays = bind("glDrawArrays");
+    if (missing != 0) {
+        return 0;
+    }
+    return 1;
+}
+
+export func Viewport(x i32, y i32, width i32, height i32) void {
+    FnViewport(raw_viewport)(x, y, width, height);
+}
+
+export func ClearColor(red f32, green f32, blue f32, alpha f32) void {
+    FnClearColor(raw_clear_color)(red, green, blue, alpha);
+}
+
+export func Clear(mask u32) void {
+    FnClear(raw_clear)(mask);
+}
+
+export func GenVertexArrays(count i32, arrays *u32) void {
+    FnGen(raw_gen_vertex_arrays)(count, arrays);
+}
+
+export func BindVertexArray(array u32) void {
+    FnBindVertexArray(raw_bind_vertex_array)(array);
+}
+
+export func GenBuffers(count i32, buffers *u32) void {
+    FnGen(raw_gen_buffers)(count, buffers);
+}
+
+export func BindBuffer(target u32, buffer u32) void {
+    FnBindBuffer(raw_bind_buffer)(target, buffer);
+}
+
+export func BufferData(target u32, size i64, data *void, usage u32) void {
+    FnBufferData(raw_buffer_data)(target, size, data, usage);
+}
+
+export func EnableVertexAttribArray(index u32) void {
+    FnEnableAttrib(raw_enable_attrib)(index);
+}
+
+export func VertexAttribPointer(index u32, size i32, kind u32, normalized u8, stride i32, offset *void) void {
+    FnAttribPointer(raw_attrib_pointer)(index, size, kind, normalized, stride, offset);
+}
+
+export func UseProgram(program u32) void {
+    FnUseProgram(raw_use_program)(program);
+}
+
+export func CreateShader(kind u32) u32 {
+    return FnCreateShader(raw_create_shader)(kind);
+}
+
+export func ShaderSource(shader u32, count i32, source **u8, length ?*i32) void {
+    FnShaderSource(raw_shader_source)(shader, count, source, length);
+}
+
+export func CompileShader(shader u32) void {
+    FnObject(raw_compile_shader)(shader);
+}
+
+export func GetShaderiv(shader u32, pname u32, params *i32) void {
+    FnGetIv(raw_get_shader_iv)(shader, pname, params);
+}
+
+export func GetShaderInfoLog(shader u32, size i32, length ?*i32, log *u8) void {
+    FnInfoLog(raw_shader_log)(shader, size, length, log);
+}
+
+export func CreateProgram() u32 {
+    return FnCreateProgram(raw_create_program)();
+}
+
+export func AttachShader(program u32, shader u32) void {
+    FnAttachShader(raw_attach_shader)(program, shader);
+}
+
+export func LinkProgram(program u32) void {
+    FnObject(raw_link_program)(program);
+}
+
+export func GetProgramiv(program u32, pname u32, params *i32) void {
+    FnGetIv(raw_get_program_iv)(program, pname, params);
+}
+
+export func GetProgramInfoLog(program u32, size i32, length ?*i32, log *u8) void {
+    FnInfoLog(raw_program_log)(program, size, length, log);
+}
+
+export func DeleteShader(shader u32) void {
+    FnObject(raw_delete_shader)(shader);
+}
+
+export func DrawArrays(mode u32, first i32, count i32) void {
+    FnDrawArrays(raw_draw_arrays)(mode, first, count);
+}

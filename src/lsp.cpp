@@ -1025,6 +1025,8 @@ struct Cursor {
     std::string prefix;
     std::string word;
     std::string base;
+    // `math.Entity.next` names the package in front of the type.
+    std::string qualifier;
     uint32_t prefix_begin = 0;
     uint32_t offset = 0;
 };
@@ -1301,7 +1303,7 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
 bool type_base(const UnitIndex &index, const std::vector<Sym> &syms, const std::string &uri, const std::string &name,
                uint32_t offset, std::string &owner) {
     const Sym *base = lookup_bare(syms, uri, name, offset);
-    if (base != nullptr && base->role != Role::StructType && base->role != Role::EnumType) {
+    if (base != nullptr && base->role != Role::StructType && base->role != Role::EnumType && base->role != Role::Alias) {
         return false;
     }
     if (base != nullptr) {
@@ -1461,15 +1463,35 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
             ++inner.indirections;
             return inner;
         }
+        if ((unary->op == TokenKind::Plus || unary->op == TokenKind::Minus) && inner.indirections == 0 &&
+            (inner.type_name == "f32" || inner.type_name == "f64")) {
+            return inner;
+        }
         return {};
+    }
+    if (const auto *literal = std::get_if<Expr::Float>(&expr.data)) {
+        Shape shape;
+        shape.type_name = literal->is_f32 ? "f32" : "f64";
+        shape.known = true;
+        return shape;
     }
     if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
         Shape shape;
-        if (cast->type_name.empty() || cast->type_name == "invalid") {
+        // A function-pointer cast is not the result type. `op.` has no fields.
+        if (cast->is_fn_ptr || cast->type_name.empty() || cast->type_name == "invalid") {
             return shape;
         }
         shape.type_name = cast->type_name;
         shape.indirections = cast->indirections;
+        shape.known = true;
+        return shape;
+    }
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
+        Shape shape;
+        if (init->type_name.empty() || init->type_name == "invalid") {
+            return shape;
+        }
+        shape.type_name = init->type_name;
         shape.known = true;
         return shape;
     }
@@ -1758,13 +1780,33 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             Sym sym;
             sym.name = var->name;
             mark_direct(sym, var->type_name, var->indirections, var->is_array);
+            sym.owner = var->owner;
             sym.package_key = node.package_key;
             sym.uri = uri;
             sym.exported = var->exported;
-            sym.bare = entry;
-            sym.outline = entry;
+            sym.bare = entry && var->owner.empty();
+            sym.outline = entry && var->owner.empty();
             sym.role = var->is_const_decl ? Role::Constant : Role::Variable;
-            if (var->is_const_decl) {
+            if (!var->owner.empty()) {
+                std::string detail = (var->is_const_decl ? "const " : "var ") + var->owner;
+                if (!var->owner_params.empty()) {
+                    detail += '[';
+                    for (std::size_t i = 0; i < var->owner_params.size(); ++i) {
+                        if (i != 0) {
+                            detail += ", ";
+                        }
+                        detail += var->owner_params[i];
+                    }
+                    detail += ']';
+                }
+                detail += "::";
+                detail += var->name;
+                if (!var->type_name.empty() || var->is_fn_ptr) {
+                    detail += " ";
+                    detail += spell_var(*var);
+                }
+                sym.detail = std::move(detail);
+            } else if (var->is_const_decl) {
                 sym.detail = var->type_name.empty() && !var->is_fn_ptr ? "const " + var->name
                                                                        : "const " + var->name + " " + spell_var(*var);
             } else if (!var->type_name.empty()) {
@@ -1882,6 +1924,18 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.detail = "type " + item->name + " trait";
             put_loc(sym, text, item->loc, item->name);
             add_sym(out, std::move(sym));
+            for (const FieldDecl &field : item->fields) {
+                Sym member;
+                member.name = field.name;
+                member.owner = item->name;
+                mark_direct(member, field.type_name, field.indirections, field.is_array);
+                member.package_key = node.package_key;
+                member.uri = uri;
+                member.role = Role::Field;
+                member.detail = field.name + " " + spell_field(field);
+                put_loc(member, text, field.loc, field.name);
+                add_sym(out, std::move(member));
+            }
             for (const FunctionDecl &method : item->methods) {
                 Sym member;
                 member.name = method.name;
@@ -2091,6 +2145,23 @@ Cursor cursor_at(const std::string &text, int line, int character) {
         if (base_begin < base_end) {
             cursor.member = true;
             cursor.base = text.substr(base_begin, base_end - base_begin);
+            uint32_t qual_end = base_begin;
+            while (qual_end > 0 && (text[qual_end - 1] == ' ' || text[qual_end - 1] == '\t')) {
+                --qual_end;
+            }
+            if (qual_end > 0 && text[qual_end - 1] == '.') {
+                uint32_t qual_base = qual_end - 1;
+                while (qual_base > 0 && (text[qual_base - 1] == ' ' || text[qual_base - 1] == '\t')) {
+                    --qual_base;
+                }
+                uint32_t qual_begin = qual_base;
+                while (qual_begin > 0 && ident_char(static_cast<unsigned char>(text[qual_begin - 1]))) {
+                    --qual_begin;
+                }
+                if (qual_begin < qual_base) {
+                    cursor.qualifier = text.substr(qual_begin, qual_base - qual_begin);
+                }
+            }
         }
     }
     return cursor;
@@ -2128,6 +2199,50 @@ const Sym *lookup_bare(const std::vector<Sym> &syms, const std::string &uri, con
     return best;
 }
 
+bool document_owns(const Doc &doc, const std::string &package_key) {
+    if (package_key.empty()) {
+        return false;
+    }
+    for (const Sym &sym : doc.syms) {
+        if (sym.uri == doc.uri && !sym.local && sym.role != Role::Module && sym.package_key == package_key) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const Sym *exported_type(const std::vector<Sym> &syms, const std::string &package_key, const std::string &name) {
+    for (const Sym &sym : syms) {
+        if (sym.package_key == package_key && sym.owner.empty() && sym.name == name && sym.exported &&
+            (sym.role == Role::StructType || sym.role == Role::EnumType || sym.role == Role::Alias)) {
+            return &sym;
+        }
+    }
+    return nullptr;
+}
+
+// `math.Entity.next`: an exported variable on the type, or an enumerator.
+const Sym *qualified_member(const std::vector<Sym> &syms, const std::string &uri, const Cursor &cursor) {
+    const Sym *package = lookup_bare(syms, uri, cursor.qualifier, cursor.offset);
+    if (package == nullptr || package->role != Role::Module) {
+        return nullptr;
+    }
+    const Sym *type = exported_type(syms, package->package_key, cursor.base);
+    if (type == nullptr) {
+        return nullptr;
+    }
+    for (const Sym &sym : syms) {
+        if (sym.package_key != type->package_key || sym.owner != type->name || sym.name != cursor.word) {
+            continue;
+        }
+        if (sym.role == Role::EnumMember ||
+            ((sym.role == Role::Variable || sym.role == Role::Constant) && sym.exported)) {
+            return &sym;
+        }
+    }
+    return nullptr;
+}
+
 const Sym *lookup_member(const std::vector<Sym> &syms, const Sym &base, const std::string &name) {
     if (base.role == Role::Module) {
         for (const Sym &sym : syms) {
@@ -2162,8 +2277,8 @@ Json location_of(const Sym &sym) {
 
 const char *kKeywords[] = {"func",    "type",    "var",     "const",   "struct", "enum",    "union",  "trait",
                            "if",      "else",    "while",   "for",     "do",     "switch",  "case",   "default",
-                           "return",  "break",   "continue","defer",   "import", "package", "export", "static",
-                           "extern",  "test",    "assert",  "sizeof",  "typeof", "true",    "false",  "null"};
+                           "return",  "break",   "continue","defer",   "import", "package", "export", "extern",
+                           "test",    "assert",  "sizeof",  "typeof",  "true",    "false",  "null"};
 
 const char *kBuiltinTypes[] = {"bool", "void", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64"};
 
@@ -2509,6 +2624,24 @@ Json complete(const Doc &doc, const Cursor &cursor) {
         return jobj({{"isIncomplete", jbool(false)}, {"items", jarr(std::move(items))}});
     }
     if (!cursor.literal && cursor.member) {
+        if (!cursor.qualifier.empty()) {
+            const Sym *package = lookup_bare(doc.syms, doc.uri, cursor.qualifier, cursor.offset);
+            const Sym *type = package != nullptr && package->role == Role::Module
+                                  ? exported_type(doc.syms, package->package_key, cursor.base)
+                                  : nullptr;
+            if (type != nullptr) {
+                for (const Sym &sym : doc.syms) {
+                    if (sym.package_key != type->package_key || sym.owner != type->name) {
+                        continue;
+                    }
+                    if (sym.role == Role::EnumMember ||
+                        ((sym.role == Role::Variable || sym.role == Role::Constant) && sym.exported)) {
+                        push(sym.name, sym.completion_kind, sym.detail);
+                    }
+                }
+            }
+            return jobj({{"isIncomplete", jbool(false)}, {"items", jarr(std::move(items))}});
+        }
         if (const Sym *base = lookup_bare(doc.syms, doc.uri, cursor.base, cursor.offset)) {
             if (base->role == Role::Module) {
                 for (const Sym &sym : doc.syms) {
@@ -2522,12 +2655,24 @@ Json complete(const Doc &doc, const Cursor &cursor) {
                                           base->role == Role::Alias || base->role == Role::Trait)
                                              ? base->name
                                              : base->type_name;
-                const bool on_type = base->role == Role::StructType || base->role == Role::EnumType || base->role == Role::Trait;
+                const bool on_type = base->role == Role::StructType || base->role == Role::EnumType ||
+                                     base->role == Role::Trait || base->role == Role::Alias;
                 for (const Sym &sym : doc.syms) {
                     if (type.empty() || sym.owner != type) {
                         continue;
                     }
                     if (sym.role == Role::Method && on_type != sym.static_method) {
+                        continue;
+                    }
+                    // A trait field is offered on a value. `Shape.` is the type name.
+                    if (sym.role == Role::Field && on_type && base->role == Role::Trait) {
+                        continue;
+                    }
+                    // `Entity.next` is offered on the type. `e.next` is a field.
+                    // Another package sees the variable only when it is exported.
+                    if ((sym.role == Role::Variable || sym.role == Role::Constant) && !sym.owner.empty() &&
+                        (!on_type || sym.package_key != base->package_key ||
+                         (!sym.exported && !document_owns(doc, base->package_key)))) {
                         continue;
                     }
                     push(sym.name, sym.completion_kind, sym.detail);
@@ -2810,7 +2955,9 @@ int run_lsp() {
             if (const std::string init_type = designated_struct(*doc, cursor); !init_type.empty()) {
                 sym = find_field(*doc, init_type, cursor.word);
             } else if (cursor.member) {
-                if (const Sym *base = lookup_bare(doc->syms, doc->uri, cursor.base, cursor.offset)) {
+                if (!cursor.qualifier.empty()) {
+                    sym = qualified_member(doc->syms, doc->uri, cursor);
+                } else if (const Sym *base = lookup_bare(doc->syms, doc->uri, cursor.base, cursor.offset)) {
                     sym = lookup_member(doc->syms, *base, cursor.word);
                 }
             } else {

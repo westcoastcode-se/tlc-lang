@@ -1,0 +1,76 @@
+type Integer i32;
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Color enum {
+    Red,
+    Blue,
+};
+
+type Entity struct {
+    id i32;
+};
+
+func add(n i32) i32 {
+    return n;
+}
+
+var snap = 1;
+var snapped = [_]i32{snap, 2};
+var n = 4;
+var grid = [_][2]i32{{1, 2}, {3, 4}};
+var ops = [_]func (i32) i32{add};
+var scales = [_]f32{1.0f};
+var ptrs = [_]*i32{&n};
+var origin = [_]Point{Point{.x = 1, .y = 2}};
+var colors = [_]Color{Color.Blue};
+var tags = [_]Integer{Integer(1)};
+var empty = [_]i32{};
+var Entity::row = [_]i32{1, 2};
+var Entity::typed [2]i32 = {3, 1};
+
+const fixed_grid = [_][2]i32{{5, 0}, {0, 0}};
+const const_ops = [_]func (i32) i32{add};
+const const_pts = [_]Point{Point{.x = 1, .y = 0}};
+const const_colors = [_]Color{Color.Red};
+const const_tags = [_]Integer{Integer(1)};
+const const_scales = [_]f32{1.0f};
+const const_ptrs = [_]*i32{&n};
+
+func main() i32 {
+    snap = 9;
+    if (snapped[0] != 1 || snapped[1] != 2) {
+        return 1;
+    }
+    if (sizeof(empty) != 0) {
+        return 2;
+    }
+    var local_empty = [_]i32{};
+    if (sizeof(local_empty) != 0) {
+        return 3;
+    }
+    if (scales[0] != 1.0f || const_scales[0] != 1.0f) {
+        return 4;
+    }
+    if (colors[0] != Color.Blue || const_colors[0] != Color.Red) {
+        return 5;
+    }
+    var q = ptrs[0];
+    var cq = const_ptrs[0];
+    if (*q != 4 || *cq != 4) {
+        return 6;
+    }
+    var f = ops[0];
+    var g = const_ops[0];
+    var local_ops = [_]func (i32) i32{add};
+    var h = local_ops[0];
+    origin[0].x = 1;
+    var local_grid = [_][2]i32{{9, 0}, {0, 0}};
+    return snapped[0] + snapped[1] + grid[0][1] + grid[1][0] + f(1) + *q + origin[0].x +
+        origin[0].y + i32(tags[0]) + Entity.row[0] + Entity.row[1] + Entity.typed[0] +
+        Entity.typed[1] + local_grid[0][0] + h(1) + fixed_grid[0][0] + g(1) + const_pts[0].x +
+        i32(const_tags[0]);
+}

@@ -1,0 +1,14 @@
+import "builtin";
+
+func leaf() void {
+    builtin.panic("out of memory");
+}
+
+func mid() void {
+    leaf();
+}
+
+func main() i32 {
+    mid();
+    return 0;
+}

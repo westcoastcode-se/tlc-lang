@@ -1,0 +1,21 @@
+package math;
+
+export type Entity struct {
+    id i32;
+};
+
+export const Entity::next = 15;
+export const Entity::bias = 1.0f;
+const Entity::hidden = 100;
+
+export func width() i32 {
+    return sizeof(Entity);
+}
+
+export type Box[T type] struct {
+    value T;
+};
+
+export const Box[T]::limit = 6;
+
+export const spare = 2;

@@ -312,7 +312,129 @@ Type Checker::elaborate_inferred(FunctionDecl &fn, const Type &want) {
     return type_pointer(std::move(concrete));
 }
 
+Type Checker::literal_struct_type(const Expr::Init &init) {
+    Type type = type_invalid();
+    // `type Spot Point` stays Spot. A struct tag is the struct itself.
+    const bool alias = init.type_package.empty() && package_typedef(file_id_, init.type_name, type);
+    if (!init.type_package.empty()) {
+        type = lookup_qualified_type(init.type_package, init.type_name, init.loc);
+    } else if (!alias && find_tag(file_id_, init.type_name) >= 0) {
+        type = lookup_tag(init.type_name, init.loc, false);
+    } else if (!alias) {
+        error(init.loc, "type mismatch");
+        return type_invalid();
+    }
+    if (type.kind != TypeKind::Struct) {
+        if (type.kind != TypeKind::Invalid) {
+            error(init.loc, "type mismatch");
+        }
+        return type_invalid();
+    }
+    return type;
+}
+
+Type Checker::check_array_literal(Expr::Init &init) {
+    auto check_loose = [&]() {
+        for (const auto &element : init.elements) {
+            if (element) {
+                check_expr(*element, true);
+            }
+        }
+    };
+    if (!init.fields.empty()) {
+        error(init.loc, "type mismatch");
+        check_loose();
+        return type_invalid();
+    }
+    if (init.elem_ptr_to_array) {
+        error(init.loc, "not supported yet");
+        check_loose();
+        return type_invalid();
+    }
+    Type elem = type_invalid();
+    if (init.elem_fn) {
+        elem = type_of_fn_ptr(init.type_name, init.type_package, init.is_struct, init.is_enum, init.elem_ret_indirections,
+                              init.indirections < 1 ? 1 : init.indirections, init.elem_fn_params, init.elem_fn_variadic,
+                              init.elem_fn_results, init.loc, init.elem_ret_optional, init.elem_ret_const_pointee);
+    } else if (init.elem_is_array) {
+        int length = init.elem_array_len;
+        if (!init.elem_array_len_name.empty()) {
+            const std::optional<int> folded = lookup_const_value(init.elem_array_len_name);
+            if (!folded || *folded <= 0) {
+                error(init.loc, "not supported yet");
+                check_loose();
+                return type_invalid();
+            }
+            length = *folded;
+            init.elem_array_len = length;
+        }
+        if (length <= 0) {
+            error(init.loc, "not supported yet");
+            check_loose();
+            return type_invalid();
+        }
+        elem = object_type(init.type_name, init.indirections, false, 0, init.loc, false, init.type_package, init.is_struct,
+                           init.is_enum, false, init.optional, init.const_pointee);
+        if (elem.kind == TypeKind::Invalid) {
+            check_loose();
+            return type_invalid();
+        }
+        if (elem.kind == TypeKind::Array || elem.kind == TypeKind::Function || elem.kind == TypeKind::Void ||
+            elem.kind == TypeKind::Tuple || elem.kind == TypeKind::Meta) {
+            error(init.loc, "not supported yet");
+            check_loose();
+            return type_invalid();
+        }
+        elem = type_array(std::move(elem), length);
+    } else {
+        bool is_array = false;
+        int array_len = 0;
+        std::string array_len_name;
+        prepare_written(init.type_name, init.type_package, init.is_struct, init.is_enum, init.indirections, init.optional,
+                        is_array, array_len, array_len_name, init.type_args, init.loc);
+        elem = object_type(init.type_name, init.indirections, false, 0, init.loc, false, init.type_package, init.is_struct,
+                           init.is_enum, false, init.optional, init.const_pointee);
+        if (elem.kind == TypeKind::Invalid) {
+            check_loose();
+            return type_invalid();
+        }
+        if (elem.kind == TypeKind::Array || elem.kind == TypeKind::Function || elem.kind == TypeKind::Void ||
+            elem.kind == TypeKind::Tuple || elem.kind == TypeKind::Meta) {
+            error(init.loc, "not supported yet");
+            check_loose();
+            return type_invalid();
+        }
+    }
+    for (const auto &element : init.elements) {
+        if (element) {
+            check_against(*element, elem);
+        }
+    }
+    return type_array(std::move(elem), static_cast<int>(init.elements.size()));
+}
+
 Type Checker::check_init(Expr::Init &init, const Type &want) {
+    if (init.array_literal) {
+        return check_array_literal(init);
+    }
+    // `Other{}` keeps Other. The caller reports a destination that wanted Point.
+    Type dest = want;
+    if (!init.type_name.empty()) {
+        dest = literal_struct_type(init);
+        if (dest.kind == TypeKind::Invalid) {
+            for (const Expr::FieldInit &field : init.fields) {
+                if (field.value) {
+                    check_expr(*field.value, true);
+                }
+            }
+            for (const auto &element : init.elements) {
+                if (element) {
+                    check_expr(*element, true);
+                }
+            }
+            return type_invalid();
+        }
+    }
     if (!init.elements.empty()) {
         auto check_elements = [&]() {
             for (const auto &element : init.elements) {
@@ -327,44 +449,44 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             return type_invalid();
         }
         if (init.is_tuple) {
-            if (want.kind != TypeKind::Tuple) {
+            if (dest.kind != TypeKind::Tuple) {
                 error(init.loc, "type mismatch");
                 check_elements();
                 return type_invalid();
             }
-            if (init.elements.size() != want.results.size()) {
+            if (init.elements.size() != dest.results.size()) {
                 error(init.loc, "type mismatch");
                 check_elements();
                 return type_invalid();
             }
             for (std::size_t i = 0; i < init.elements.size(); ++i) {
                 if (init.elements[i]) {
-                    check_against(*init.elements[i], want.results[i]);
+                    check_against(*init.elements[i], dest.results[i]);
                 }
             }
-            return want;
+            return dest;
         }
-        if (want.kind == TypeKind::Array && want.element != nullptr) {
-            if (static_cast<int>(init.elements.size()) != want.length) {
+        if (dest.kind == TypeKind::Array && dest.element != nullptr) {
+            if (static_cast<int>(init.elements.size()) != dest.length) {
                 error(init.loc, "type mismatch");
                 check_elements();
                 return type_invalid();
             }
             for (const auto &element : init.elements) {
                 if (element) {
-                    check_against(*element, *want.element);
+                    check_against(*element, *dest.element);
                 }
             }
-            return want;
+            return dest;
         }
-        if (want.kind == TypeKind::Struct) {
+        if (dest.kind == TypeKind::Struct) {
             error(init.loc, "type mismatch");
             check_elements();
             return type_invalid();
         }
-        if (init.elements.size() == 1 && init.elements.front() && want.kind != TypeKind::Invalid &&
-            want.kind != TypeKind::Void) {
-            return check_against(*init.elements.front(), want);
+        if (init.elements.size() == 1 && init.elements.front() && dest.kind != TypeKind::Invalid &&
+            dest.kind != TypeKind::Void) {
+            return check_against(*init.elements.front(), dest);
         }
         error(init.loc, "type mismatch");
         check_elements();
@@ -377,18 +499,18 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             }
         }
     };
-    if (want.kind != TypeKind::Struct || want.struct_id < 0 ||
-        want.struct_id >= static_cast<int>(structs_.size())) {
+    if (dest.kind != TypeKind::Struct || dest.struct_id < 0 ||
+        dest.struct_id >= static_cast<int>(structs_.size())) {
         error(init.loc, "type mismatch");
         check_values();
         return type_invalid();
     }
-    if (!structs_[static_cast<std::size_t>(want.struct_id)].complete) {
+    if (!structs_[static_cast<std::size_t>(dest.struct_id)].complete) {
         error(init.loc, "not supported yet");
         check_values();
         return type_invalid();
     }
-    init.struct_id = want.struct_id;
+    init.struct_id = dest.struct_id;
     std::unordered_set<std::string> seen;
     for (const Expr::FieldInit &field : init.fields) {
         if (field.field.empty()) {
@@ -401,7 +523,7 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             error(field.loc, "redefinition");
         }
         Type field_type;
-        if (!lookup_field(want, field.field, field_type)) {
+        if (!lookup_field(dest, field.field, field_type)) {
             error(field.loc, "undeclared identifier");
             if (field.value) {
                 check_expr(*field.value, true);
@@ -419,7 +541,7 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             check_against(*field.value, field_type);
         }
     }
-    const StructInfo &info = structs_[static_cast<std::size_t>(want.struct_id)];
+    const StructInfo &info = structs_[static_cast<std::size_t>(dest.struct_id)];
     if (!info.is_union) {
         for (const StructInfo::Field &field : info.fields) {
             if (seen.contains(field.name)) {
@@ -430,7 +552,7 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             }
         }
     }
-    return want;
+    return dest;
 }
 
 const Type *Checker::sole_trait_method(const Type &want) const {
@@ -446,7 +568,11 @@ const Type *Checker::sole_trait_method(const Type &want) const {
     if (trait->trait_id < 0 || trait->trait_id >= static_cast<int>(traits_.size())) {
         return nullptr;
     }
-    const std::vector<TraitInfo::Method> &methods = traits_[static_cast<std::size_t>(trait->trait_id)].methods;
+    const TraitInfo &info = traits_[static_cast<std::size_t>(trait->trait_id)];
+    if (!info.fields.empty()) {
+        return nullptr;
+    }
+    const std::vector<TraitInfo::Method> &methods = info.methods;
     if (methods.size() != 1 || methods.front().type.kind != TypeKind::Function || methods.front().type.result == nullptr) {
         return nullptr;
     }
@@ -532,14 +658,414 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
 Type Checker::check_expr(const Expr &expr, bool used) {
     Type type = check_raw(expr, used);
     // A loaded value is a copy. `const` stays on a pointee, not on this temporary.
+    // A const array decays to a pointer to a const element, so `row[0] = n` is rejected.
+    const bool array_const = type.kind == TypeKind::Array && type.is_const;
     type.is_const = false;
     if (type.kind == TypeKind::Array && type.element) {
-        return type_pointer(*type.element);
+        Type pointer = type_pointer(*type.element);
+        if (array_const && pointer.pointee) {
+            pointer.pointee->is_const = true;
+        }
+        return pointer;
     }
     if (type.kind == TypeKind::Function) {
         return type_pointer(type);
     }
     return promote(type);
+}
+
+bool Checker::type_arg_from_expr(const Expr &expr, TypeArg &out) const {
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        out.loc = named->loc;
+        out.type_name = named->text;
+        return true;
+    }
+    if (const auto *number = std::get_if<Expr::Int>(&expr.data)) {
+        out.loc = number->loc;
+        out.is_value = true;
+        const bool wide = number->suffix.is_unsigned || number->suffix.bits == 8 || number->suffix.bits == 16 ||
+                          number->suffix.bits == 64 || number->value > 2147483647ULL;
+        if (wide) {
+            return false;
+        }
+        out.has_value = true;
+        out.value = static_cast<int>(number->value);
+        return true;
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+        if (base == nullptr || selector->field.empty()) {
+            return false;
+        }
+        out.loc = selector->loc;
+        out.type_package = base->text;
+        out.type_name = selector->field;
+        return true;
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        const auto *base = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
+        if (base == nullptr || index->index == nullptr) {
+            return false;
+        }
+        TypeArg nested;
+        if (!type_arg_from_expr(*index->index, nested)) {
+            return false;
+        }
+        out.loc = index->loc;
+        out.type_name = base->text;
+        out.args.push_back(std::move(nested));
+        return true;
+    }
+    return false;
+}
+
+uint32_t Checker::assoc_home_file(const Expr::Selector &node) {
+    const Expr *cursor = node.base.get();
+    if (cursor != nullptr) {
+        if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+            cursor = index->base.get();
+        }
+    }
+    const auto *inner = cursor == nullptr ? nullptr : std::get_if<Expr::Selector>(&cursor->data);
+    if (inner == nullptr || inner->base == nullptr) {
+        return file_id_;
+    }
+    const auto *package_name = std::get_if<Expr::Name>(&inner->base->data);
+    if (package_name == nullptr) {
+        return file_id_;
+    }
+    const Symbol *package = lookup(package_name->text);
+    if (package == nullptr || !package->is_package || package->package_file == 0) {
+        return file_id_;
+    }
+    return package->package_file;
+}
+
+bool Checker::selector_is_const(const Expr::Selector &node) {
+    if (node.field.empty()) {
+        return false;
+    }
+    if (!node.resolved_owner.empty()) {
+        const AssocVar *var = find_assoc_in(assoc_home_file(node), node.resolved_owner, node.field);
+        return var != nullptr && var->is_const;
+    }
+    const auto *named = node.base == nullptr ? nullptr : std::get_if<Expr::Name>(&node.base->data);
+    if (named == nullptr) {
+        return false;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol != nullptr && !symbol->is_type && !symbol->is_package) {
+        return false;
+    }
+    const AssocVar *var = find_assoc(named->text, node.field);
+    return var != nullptr && var->is_const;
+}
+
+std::string Checker::same_package_spec(const Expr::Selector &node, bool &failed) {
+    failed = false;
+    if (node.base == nullptr) {
+        return {};
+    }
+    const auto shadowed = [&](const std::string &name) {
+        const Symbol *symbol = lookup(name);
+        return symbol != nullptr && !symbol->is_type;
+    };
+    // `Buf[4, i32].width`. A comma keeps the arguments on the selector.
+    if (!node.type_args.empty()) {
+        const auto *named = std::get_if<Expr::Name>(&node.base->data);
+        if (named == nullptr || shadowed(named->text) || !generic_struct_name(file_id_, named->text)) {
+            error(node.loc, "type mismatch");
+            failed = true;
+            return {};
+        }
+        const std::string spec = specialize_type_app("", named->text, node.type_args, node.loc);
+        failed = spec.empty();
+        return spec;
+    }
+    // `Box[i32].from`. One argument stays an index, the same spelling as `Box[i32].extra`.
+    const auto *index = std::get_if<Expr::Index>(&node.base->data);
+    if (index == nullptr) {
+        return {};
+    }
+    const auto *named = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
+    if (named == nullptr || index->index == nullptr || shadowed(named->text) ||
+        !generic_struct_name(file_id_, named->text)) {
+        return {};
+    }
+    TypeArg arg;
+    if (!type_arg_from_expr(*index->index, arg)) {
+        error(node.loc, "type mismatch");
+        failed = true;
+        return {};
+    }
+    std::vector<TypeArg> args;
+    args.push_back(std::move(arg));
+    const std::string spec = specialize_type_app("", named->text, args, node.loc);
+    failed = spec.empty();
+    return spec;
+}
+
+bool Checker::package_generic_call(const Expr::Selector &node) {
+    if (node.base == nullptr) {
+        return false;
+    }
+    const Expr *type_expr = nullptr;
+    if (!node.type_args.empty()) {
+        type_expr = node.base.get();
+    } else if (const auto *index = std::get_if<Expr::Index>(&node.base->data)) {
+        type_expr = index->base.get();
+    }
+    const auto *inner = type_expr == nullptr ? nullptr : std::get_if<Expr::Selector>(&type_expr->data);
+    if (inner == nullptr || inner->base == nullptr || !inner->type_args.empty()) {
+        return false;
+    }
+    const auto *package_name = std::get_if<Expr::Name>(&inner->base->data);
+    if (package_name == nullptr) {
+        return false;
+    }
+    const Symbol *package = lookup(package_name->text);
+    if (package == nullptr || !package->is_package) {
+        return false;
+    }
+    for (const uint32_t id : files_in_package(package->package_file)) {
+        const auto found = struct_templates_.find(id);
+        if (found != struct_templates_.end() && found->second.contains(inner->field)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+Type Checker::finish_static_call(const Expr::Call &node, const MethodInfo &method, bool deferring) {
+    if (deferring && method.type.variadic) {
+        error(node.loc, "not supported yet");
+    }
+    const bool count_ok = method.type.variadic ? node.args.size() >= method.type.params.size()
+                                                : node.args.size() == method.type.params.size();
+    if (!count_ok) {
+        error(node.loc, "argument count");
+    }
+    for (std::size_t i = 0; i < node.args.size(); ++i) {
+        if (count_ok && i < method.type.params.size()) {
+            check_call_arg(*node.args[i], method.type.params[i]);
+        } else {
+            const Type arg = check_expr(*node.args[i], true);
+            if (arg.alias_id != 0) {
+                error(expr_loc(*node.args[i]), "type mismatch");
+            } else if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&
+                       arg.kind != TypeKind::Enum && arg.kind != TypeKind::Nullptr) {
+                error(expr_loc(*node.args[i]), "not supported yet");
+            }
+        }
+    }
+    if (method.type.result == nullptr) {
+        return type_invalid();
+    }
+    return *method.type.result;
+}
+
+bool Checker::assoc_from_selector(const Expr::Selector &node, Type &out) {
+    if (node.base == nullptr || node.field.empty()) {
+        return false;
+    }
+    // `math.Entity.next`. The type is an export. The variable is too, or the name is not exported.
+    if (node.type_args.empty()) {
+        if (const auto *inner = std::get_if<Expr::Selector>(&node.base->data);
+            inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
+            if (const auto *package_name = std::get_if<Expr::Name>(&inner->base->data)) {
+                const Symbol *package = lookup(package_name->text);
+                if (package != nullptr && package->is_package) {
+                    const Symbol *type = find_export(package->package_file, inner->field);
+                    if (type != nullptr && type->is_type) {
+                        const AssocVar *var = find_assoc_in(package->package_file, inner->field, node.field);
+                        if (var == nullptr || !var->exported) {
+                            error(node.loc, node.field + " is not exported");
+                            out = type_invalid();
+                            return true;
+                        }
+                        out = var->type;
+                        node.resolved_owner = inner->field;
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    const auto shadowed = [&](const std::string &name) {
+        const Symbol *symbol = lookup(name);
+        return symbol != nullptr && !symbol->is_type;
+    };
+    const auto take = [&](const std::string &spec) {
+        if (spec.empty()) {
+            out = type_invalid();
+            return true;
+        }
+        const AssocVar *var = find_assoc(spec, node.field);
+        if (var != nullptr) {
+            out = var->type;
+            node.resolved_owner = spec;
+            return true;
+        }
+        // `Box[i32].from` is the static function. An instance method on the type is `type mismatch`.
+        const MethodInfo *method = find_named_method(spec, node.field);
+        if (method == nullptr || method->type.kind != TypeKind::Function) {
+            error(node.loc, "undeclared identifier");
+            out = type_invalid();
+            return true;
+        }
+        if (!method->is_static) {
+            error(node.loc, "type mismatch");
+            out = type_invalid();
+            return true;
+        }
+        out = method->type;
+        node.resolved_owner = spec;
+        return true;
+    };
+    // `pkg.Box[i32].limit` and `pkg.Buf[4, i32].count`. A value such as `pkg.row[0].x` is not a template.
+    {
+        std::vector<TypeArg> args = node.type_args;
+        const Expr *type_expr = nullptr;
+        const Expr::Index *index = nullptr;
+        if (!args.empty()) {
+            type_expr = node.base.get();
+        } else if (const auto *found = std::get_if<Expr::Index>(&node.base->data)) {
+            index = found;
+            type_expr = found->base.get();
+        }
+        const auto *inner = type_expr == nullptr ? nullptr : std::get_if<Expr::Selector>(&type_expr->data);
+        if (inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
+            if (const auto *package_name = std::get_if<Expr::Name>(&inner->base->data)) {
+                const Symbol *package = lookup(package_name->text);
+                if (package != nullptr && package->is_package) {
+                    uint32_t owner = package->package_file;
+                    const StructDecl *templ = nullptr;
+                    for (const uint32_t id : files_in_package(package->package_file)) {
+                        const auto found = struct_templates_.find(id);
+                        if (found == struct_templates_.end()) {
+                            continue;
+                        }
+                        const auto have = found->second.find(inner->field);
+                        if (have == found->second.end()) {
+                            continue;
+                        }
+                        owner = id;
+                        templ = have->second;
+                        break;
+                    }
+                    if (templ != nullptr) {
+                        if (index != nullptr) {
+                            TypeArg arg;
+                            if (index->index == nullptr || !type_arg_from_expr(*index->index, arg)) {
+                                error(node.loc, "type mismatch");
+                                out = type_invalid();
+                                return true;
+                            }
+                            args.push_back(std::move(arg));
+                        }
+                        if (!templ->exported) {
+                            error(inner->loc, inner->field + " is not exported");
+                            out = type_invalid();
+                            return true;
+                        }
+                        const uint32_t saved = file_id_;
+                        file_id_ = owner;
+                        const std::string spec = specialize_type_app("", inner->field, args, node.loc);
+                        file_id_ = saved;
+                        if (spec.empty()) {
+                            out = type_invalid();
+                            return true;
+                        }
+                        const AssocVar *var = find_assoc_in(package->package_file, spec, node.field);
+                        if (var == nullptr || !var->exported) {
+                            error(node.loc, node.field + " is not exported");
+                            out = type_invalid();
+                            return true;
+                        }
+                        out = var->type;
+                        node.resolved_owner = spec;
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    {
+        bool failed = false;
+        const std::string spec = same_package_spec(node, failed);
+        if (failed) {
+            out = type_invalid();
+            return true;
+        }
+        if (!spec.empty()) {
+            return take(spec);
+        }
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+        if (shadowed(named->text)) {
+            return false;
+        }
+        if (!named_type_owner(named->text)) {
+            return false;
+        }
+        const AssocVar *var = find_assoc(named->text, node.field);
+        if (var == nullptr) {
+            return false;
+        }
+        out = var->type;
+        node.resolved_owner = named->text;
+        return true;
+    }
+    return false;
+}
+
+Type Checker::finish_value_method(const Expr::Call &node, const Expr::Selector &selector, const Checker::MethodInfo &method,
+                                  const Type &base, bool through_pointer) {
+    if (method.is_static) {
+        error(node.loc, "type mismatch");
+        for (const auto &arg : node.args) {
+            check_expr(*arg, true);
+        }
+        return type_invalid();
+    }
+    if (checking_defer_ && method.type.variadic) {
+        error(node.loc, "not supported yet");
+    }
+    const std::size_t arity = method.type.params.size();
+    const bool count_ok = method.type.variadic ? node.args.size() + 1 >= arity : node.args.size() + 1 == arity;
+    if (!count_ok) {
+        error(node.loc, "argument count");
+    }
+    if (!method.type.params.empty()) {
+        const Type &receiver = method.type.params[0];
+        const Type object = through_pointer ? *base.pointee : base;
+        const auto *as_selector = selector.base == nullptr ? nullptr : std::get_if<Expr::Selector>(&selector.base->data);
+        const bool enumerator =
+            as_selector != nullptr && as_selector->base != nullptr && enum_designator(*as_selector->base) >= 0;
+        if (receiver.kind == TypeKind::Pointer) {
+            if (!through_pointer && (selector.base == nullptr || !is_lvalue_form(*selector.base) || enumerator)) {
+                error(node.loc, "not an lvalue");
+            } else {
+                const Type pointer = method_pointer(base, object, through_pointer, *selector.base);
+                if (!accepts_pointer(pointer, receiver)) {
+                    mismatch(expr_loc(*selector.base), receiver, pointer);
+                }
+            }
+        } else if (selector.base != nullptr) {
+            expect(object, receiver, expr_loc(*selector.base));
+        }
+    }
+    for (std::size_t i = 0; i < node.args.size(); ++i) {
+        if (count_ok && i + 1 < arity) {
+            check_call_arg(*node.args[i], method.type.params[i + 1]);
+        } else {
+            check_expr(*node.args[i], true);
+        }
+    }
+    if (method.type.result == nullptr) {
+        return type_invalid();
+    }
+    return *method.type.result;
 }
 
 Type Checker::check_raw(const Expr &expr, bool used) {
@@ -684,6 +1210,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                         error(node.loc, "not an lvalue");
                                         return type_invalid();
                                     }
+                                }
+                            }
+                            Type assoc;
+                            if (assoc_from_selector(*selector, assoc)) {
+                                if (assoc.kind == TypeKind::Invalid || selector_is_const(*selector)) {
+                                    if (assoc.kind != TypeKind::Invalid) {
+                                        error(node.loc, "not an lvalue");
+                                    }
+                                    return type_invalid();
                                 }
                             }
                         }
@@ -889,6 +1424,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_expr(*node.rhs, true);
                         return type_invalid();
                     }
+                    Type assoc;
+                    if (assoc_from_selector(*selector, assoc)) {
+                        if (assoc.kind == TypeKind::Invalid) {
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        if (selector_is_const(*selector) || assoc.kind == TypeKind::Function) {
+                            error(node.loc, "not an lvalue");
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        check_against(*node.rhs, assoc);
+                        return assoc;
+                    }
                     const SelectorTarget target = resolve_selector(*selector);
                     if (target.kind == SelectorTarget::Kind::Failed) {
                         check_expr(*node.rhs, true);
@@ -905,11 +1454,27 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return target.symbol->type;
                     }
                     const Type base = check_expr(*selector->base, true);
-                    if (base.kind == TypeKind::Trait ||
-                        (base.kind == TypeKind::Pointer && base.pointee && base.pointee->kind == TypeKind::Trait)) {
-                        error(node.loc, base.kind == TypeKind::Trait ? "undeclared identifier" : "type mismatch");
-                        check_expr(*node.rhs, true);
-                        return type_invalid();
+                    Type trait_field;
+                    if (as_trait_field(base, selector->field, trait_field)) {
+                        if (trait_field.kind == TypeKind::Invalid) {
+                            error(node.loc, "undeclared identifier");
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        const bool through_pointer = base.kind != TypeKind::Trait;
+                        if (!through_pointer && !is_lvalue_form(*selector->base)) {
+                            error(node.loc, "not an lvalue");
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        if ((through_pointer && base.pointee != nullptr && base.pointee->is_const) ||
+                            const_path(*node.lhs)) {
+                            error(node.loc, "type mismatch");
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        check_against(*node.rhs, trait_field);
+                        return trait_field;
                     }
                     if (base.kind == TypeKind::Pointer && base.optional) {
                         error(node.loc, "type mismatch");
@@ -1019,46 +1584,52 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
                     // `Point` is a type, not a value, so `lookup` does not see it. `Point.make(...)` is the static call.
+                    // `Box[i32].from(...)` and `Buf[4, i32].width()` are the same call on a specialization.
                     if (selector->base != nullptr) {
+                        auto check_args = [&]() {
+                            for (const auto &arg : node.args) {
+                                check_expr(*arg, true);
+                            }
+                        };
+                        if (package_generic_call(*selector)) {
+                            error(node.loc, "not supported yet");
+                            check_args();
+                            return type_invalid();
+                        }
+                        bool failed = false;
+                        const std::string spec = same_package_spec(*selector, failed);
+                        if (failed) {
+                            check_args();
+                            return type_invalid();
+                        }
+                        if (!spec.empty()) {
+                            const AssocVar *var = find_assoc(spec, selector->field);
+                            const MethodInfo *method = find_named_method(spec, selector->field);
+                            if (var == nullptr || (method != nullptr && method->is_static)) {
+                                if (method == nullptr || !method->is_static || method->type.kind != TypeKind::Function ||
+                                    method->type.result == nullptr) {
+                                    error(node.loc, method != nullptr && !method->is_static ? "type mismatch"
+                                                                                            : "undeclared identifier");
+                                    check_args();
+                                    return type_invalid();
+                                }
+                                selector->resolved_owner = spec;
+                                return finish_static_call(node, *method, deferring);
+                            }
+                        }
                         if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
                             const Symbol *symbol = lookup(named->text);
                             const bool shadowed = symbol != nullptr && !symbol->is_type;
-                            if (!shadowed &&
-                                (find_tag(file_id_, named->text) >= 0 || find_enum(file_id_, named->text) >= 0)) {
+                            if (!shadowed && named_type_owner(named->text)) {
                                 const MethodInfo *method = find_named_method(named->text, selector->field);
                                 if (method == nullptr || !method->is_static || method->type.kind != TypeKind::Function ||
                                     method->type.result == nullptr) {
                                     error(node.loc, method != nullptr && !method->is_static ? "type mismatch"
                                                                                             : "undeclared identifier");
-                                    for (const auto &arg : node.args) {
-                                        check_expr(*arg, true);
-                                    }
+                                    check_args();
                                     return type_invalid();
                                 }
-                                if (deferring && method->type.variadic) {
-                                    error(node.loc, "not supported yet");
-                                }
-                                const bool count_ok = method->type.variadic
-                                                          ? node.args.size() >= method->type.params.size()
-                                                          : node.args.size() == method->type.params.size();
-                                if (!count_ok) {
-                                    error(node.loc, "argument count");
-                                }
-                                for (std::size_t i = 0; i < node.args.size(); ++i) {
-                                    if (count_ok && i < method->type.params.size()) {
-                                        check_call_arg(*node.args[i], method->type.params[i]);
-                                    } else {
-                                        const Type arg = check_expr(*node.args[i], true);
-                                        if (arg.alias_id != 0) {
-                                            error(expr_loc(*node.args[i]), "type mismatch");
-                                        } else if (arg.kind != TypeKind::Invalid && !is_numeric(arg) &&
-                                                   arg.kind != TypeKind::Pointer && arg.kind != TypeKind::Enum &&
-                                                   arg.kind != TypeKind::Nullptr) {
-                                            error(expr_loc(*node.args[i]), "not supported yet");
-                                        }
-                                    }
-                                }
-                                return *method->type.result;
+                                return finish_static_call(node, *method, deferring);
                             }
                         }
                     }
@@ -1143,54 +1714,24 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     ? enum_types_[static_cast<std::size_t>(enum_id)].name
                                     : std::string{};
                             if (const MethodInfo *method = find_named_method(enum_name, selector->field)) {
-                                if (method->is_static) {
-                                    error(node.loc, "type mismatch");
-                                    for (const auto &arg : node.args) {
-                                        check_expr(*arg, true);
-                                    }
-                                    return type_invalid();
-                                }
-                                if (deferring && method->type.variadic) {
-                                    error(node.loc, "not supported yet");
-                                }
-                                const std::size_t arity = method->type.params.size();
-                                const bool count_ok = method->type.variadic ? node.args.size() + 1 >= arity
-                                                                            : node.args.size() + 1 == arity;
-                                if (!count_ok) {
-                                    error(node.loc, "argument count");
-                                }
-                                if (!method->type.params.empty()) {
-                                    const Type &receiver = method->type.params[0];
-                                    const Type object = through_pointer ? *base.pointee : base;
-                                    const auto *as_selector = std::get_if<Expr::Selector>(&selector->base->data);
-                                    const bool enumerator =
-                                        as_selector != nullptr && as_selector->base != nullptr &&
-                                        enum_designator(*as_selector->base) >= 0;
-                                    if (receiver.kind == TypeKind::Pointer) {
-                                        if (!through_pointer && (!is_lvalue_form(*selector->base) || enumerator)) {
-                                            error(node.loc, "not an lvalue");
-                                        } else {
-                                            const Type pointer = through_pointer ? base : type_pointer(object);
-                                            if (!accepts_pointer(pointer, receiver)) {
-                                                mismatch(expr_loc(*selector->base), receiver, pointer);
-                                            }
-                                        }
-                                    } else {
-                                        expect(object, receiver, expr_loc(*selector->base));
-                                    }
-                                }
-                                for (std::size_t i = 0; i < node.args.size(); ++i) {
-                                    if (count_ok && i + 1 < arity) {
-                                        check_call_arg(*node.args[i], method->type.params[i + 1]);
-                                    } else {
-                                        check_expr(*node.args[i], true);
-                                    }
-                                }
-                                if (method->type.result == nullptr) {
-                                    return type_invalid();
-                                }
-                                return *method->type.result;
+                                return finish_value_method(node, *selector, *method, base, through_pointer);
                             }
+                        }
+                        bool alias_pointer = false;
+                        if (const Type *alias = scalar_alias(base, alias_pointer)) {
+                            const MethodInfo *method = find_named_method(type_desc(*alias), selector->field);
+                            if (method == nullptr || method->type.kind != TypeKind::Function ||
+                                method->type.result == nullptr) {
+                                error(node.loc, "undeclared identifier");
+                                for (const auto &arg : node.args) {
+                                    check_expr(*arg, true);
+                                }
+                                return type_invalid();
+                            }
+                            if (!method->is_static) {
+                                selector->resolved_owner = type_desc(*alias);
+                            }
+                            return finish_value_method(node, *selector, *method, base, alias_pointer);
                         }
                         Type object;
                         bool through_pointer = false;
@@ -1218,7 +1759,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                         if (!through_pointer && !is_lvalue_form(*selector->base)) {
                                             error(node.loc, "not an lvalue");
                                         } else {
-                                            const Type pointer = through_pointer ? base : type_pointer(object);
+                                            const Type pointer =
+                                                method_pointer(base, object, through_pointer, *selector->base);
                                             if (!accepts_pointer(pointer, receiver)) {
                                                 mismatch(expr_loc(*selector->base), receiver, pointer);
                                             }
@@ -1307,12 +1849,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (enum_id >= 0 && find_enum_member(enum_id, node.field) != nullptr) {
                         return type_enum(enum_id);
                     }
+                    Type assoc;
+                    if (assoc_from_selector(node, assoc)) {
+                        return assoc;
+                    }
                     // `Point.make` names the static function. An enumerator such as `Color.Red` was returned above.
                     if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
                         const Symbol *symbol = lookup(named->text);
                         const bool shadowed = symbol != nullptr && !symbol->is_type;
-                        if (!shadowed &&
-                            (find_tag(file_id_, named->text) >= 0 || find_enum(file_id_, named->text) >= 0)) {
+                        if (!shadowed && named_type_owner(named->text)) {
                             const MethodInfo *method = find_named_method(named->text, node.field);
                             if (method == nullptr || !method->is_static || method->type.kind != TypeKind::Function) {
                                 error(node.loc, method != nullptr && !method->is_static ? "type mismatch"
@@ -1342,10 +1887,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return target.symbol->type;
                 }
                 const Type base = check_expr(*node.base, true);
-                if (base.kind == TypeKind::Trait ||
-                    (base.kind == TypeKind::Pointer && base.pointee && base.pointee->kind == TypeKind::Trait)) {
-                    error(node.loc, "undeclared identifier");
-                    return type_invalid();
+                Type trait_field;
+                if (as_trait_field(base, node.field, trait_field)) {
+                    if (trait_field.kind == TypeKind::Invalid) {
+                        error(node.loc, "undeclared identifier");
+                        return type_invalid();
+                    }
+                    return trait_field;
                 }
                 if (base.kind == TypeKind::Pointer && base.optional) {
                     error(node.loc, "type mismatch");
@@ -1375,9 +1923,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_array(type_rank(1, true), static_cast<int>(node.text.size()) + 1);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 (void)used;
-                const Type base = check_expr(*node.base, true);
+                // An array keeps its element, including when that element is an array.
+                // A pointer to an array still means `(*p)[i]`.
+                const Type base = check_raw(*node.base, true);
                 const Type subscript = check_expr(*node.index, true);
                 expect(subscript, type_int(), expr_loc(*node.index));
+                if (base.kind == TypeKind::Array && base.element != nullptr) {
+                    Type element = *base.element;
+                    if (base.is_const) {
+                        element.is_const = true;
+                    }
+                    return element;
+                }
                 if (base.kind == TypeKind::Tuple) {
                     const std::optional<int> folded = node.index ? fold_int(*node.index) : std::nullopt;
                     if (!folded) {
@@ -1438,8 +1995,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_meta();
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 (void)used;
-                const Type target = spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum,
-                                                  node.indirections, node.loc, node.optional, node.const_pointee);
+                if (node.is_fn_ptr && node.type_name == "invalid") {
+                    if (node.expr) {
+                        check_expr(*node.expr, true);
+                    }
+                    return type_invalid();
+                }
+                const Type target =
+                    node.is_fn_ptr
+                        ? type_of_fn_ptr(node.type_name, node.type_package, node.is_struct, node.is_enum,
+                                         node.ret_indirections, node.indirections < 1 ? 1 : node.indirections,
+                                         node.fn_params, node.fn_variadic, node.fn_results, node.loc, node.ret_optional,
+                                         node.ret_const_pointee)
+                        : spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
+                                       node.loc, node.optional, node.const_pointee);
                 const Type source = node.expr ? check_expr(*node.expr, true) : type_invalid();
                 if (target.kind == TypeKind::Invalid || source.kind == TypeKind::Invalid) {
                     return type_invalid();
@@ -1481,6 +2050,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_invalid();
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
                 (void)used;
+                if (node.array_literal || !node.type_name.empty()) {
+                    return check_init(const_cast<Expr::Init &>(node), type_invalid());
+                }
                 if (!node.elements.empty() && node.fields.empty()) {
                     if (!node.is_tuple) {
                         if (node.elements.size() == 1 && node.elements.front()) {
@@ -1710,19 +2282,41 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 }
                 return std::nullopt;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                const auto folded_assoc = [&](uint32_t file, const std::string &owner) -> std::optional<int> {
+                    const AssocVar *var = find_assoc_in(file, owner, node.field);
+                    if (var == nullptr || !var->is_const || !var->has_const) {
+                        return std::nullopt;
+                    }
+                    return var->const_value;
+                };
                 const auto *base = node.base == nullptr ? nullptr : std::get_if<Expr::Name>(&node.base->data);
-                if (base == nullptr) {
+                if (base != nullptr) {
+                    const Symbol *symbol = lookup(base->text);
+                    if (symbol != nullptr && symbol->is_package) {
+                        const Symbol *member = find_export(symbol->package_file, node.field);
+                        if (member == nullptr || !member->is_constant || !plain_int_constant(member->type)) {
+                            return std::nullopt;
+                        }
+                        return member->const_value;
+                    }
+                    if (symbol == nullptr || symbol->is_type) {
+                        return folded_assoc(file_id_, base->text);
+                    }
                     return std::nullopt;
                 }
-                const Symbol *symbol = lookup(base->text);
-                if (symbol == nullptr || !symbol->is_package) {
-                    return std::nullopt;
+                const auto *inner = node.base == nullptr ? nullptr : std::get_if<Expr::Selector>(&node.base->data);
+                if (inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
+                    if (const auto *package_name = std::get_if<Expr::Name>(&inner->base->data)) {
+                        const Symbol *package = lookup(package_name->text);
+                        if (package != nullptr && package->is_package) {
+                            const Symbol *type = find_export(package->package_file, inner->field);
+                            if (type != nullptr && type->is_type) {
+                                return folded_assoc(package->package_file, inner->field);
+                            }
+                        }
+                    }
                 }
-                const Symbol *member = find_export(symbol->package_file, node.field);
-                if (member == nullptr || !member->is_constant || !plain_int_constant(member->type)) {
-                    return std::nullopt;
-                }
-                return member->const_value;
+                return std::nullopt;
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 return node.value ? 1 : 0;
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
@@ -1898,6 +2492,26 @@ bool Checker::const_path(const Expr &expr) {
         return symbol != nullptr && (symbol->is_immutable || symbol->is_constant) &&
                symbol->type.kind != TypeKind::Pointer;
     }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        if (selector_is_const(*selector)) {
+            return true;
+        }
+        if (selector->base != nullptr) {
+            if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
+                const Symbol *symbol = lookup(named->text);
+                if (symbol != nullptr && symbol->is_package) {
+                    const Symbol *member = find_export(symbol->package_file, selector->field);
+                    if (member == nullptr) {
+                        return false;
+                    }
+                    if (member->type.kind == TypeKind::Pointer) {
+                        return member->type.pointee != nullptr && member->type.pointee->is_const;
+                    }
+                    return member->is_constant;
+                }
+            }
+        }
+    }
     const Expr *base = nullptr;
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         base = selector->base.get();
@@ -1918,6 +2532,18 @@ bool Checker::const_path(const Expr &expr) {
         }
     }
     return const_path(*base);
+}
+
+Type Checker::method_pointer(const Type &base, const Type &object, bool through_pointer, const Expr &source) {
+    if (through_pointer) {
+        return base;
+    }
+    Type value = object;
+    // `const origin` and `*const Point` both pass `*const Point` into the method.
+    if (const_path(source)) {
+        value.is_const = true;
+    }
+    return type_pointer(std::move(value));
 }
 
 void Checker::check_stmt(const Stmt &stmt) {
@@ -2160,7 +2786,17 @@ void Checker::check_stmt(const Stmt &stmt) {
                     error(node.loc, "type mismatch");
                     return;
                 }
-                const Type rhs = check_expr(*node.value, true);
+                Type rhs = type_invalid();
+                // `var row = [_]i32{1, 2}` keeps `[2]i32`. A read of the name still decays to `*i32`.
+                if (node.names.size() == 1) {
+                    if (auto *init = std::get_if<Expr::Init>(&node.value->data); init != nullptr && init->array_literal) {
+                        rhs = check_array_literal(*init);
+                    } else {
+                        rhs = check_expr(*node.value, true);
+                    }
+                } else {
+                    rhs = check_expr(*node.value, true);
+                }
                 if (rhs.kind == TypeKind::Invalid) {
                     return;
                 }
@@ -2275,6 +2911,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                 check_assert(node.loc, node.cond.get(), node.message);
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 for (const VarDecl &var : node.vars) {
+                    if (!var.owner.empty()) {
+                        error(var.loc, "not supported yet");
+                        continue;
+                    }
                     Type type = type_of_var(var);
                     Symbol symbol;
                     symbol.name = var.name;

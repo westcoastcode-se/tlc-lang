@@ -1,0 +1,42 @@
+type Real f32;
+
+type Entity struct {
+    id i32;
+};
+
+const n = 4;
+var scale = 1.5f;
+var wide = 20.0;
+const bias = 0.5f;
+const lifted f64 = bias;
+var neg = -1.0;
+var copied = scale;
+var flipped = -scale;
+var typed f64 = 18.0;
+const from_const f32 = n;
+var from_int f32 = n;
+var from_sum f64 = 1 + 1;
+live := 2.0f;
+const mark = Real(1.0f);
+var spare f32;
+var Entity::scale = 1.5f;
+
+func main() i32 {
+    scale = 9.0f;
+    if (copied != 1.5f) {
+        return 1;
+    }
+    if (wide + bias != 20.5) {
+        return 2;
+    }
+    if (neg != -1.0 || typed != 18.0 || from_sum != 2.0) {
+        return 3;
+    }
+    if (from_int != 4.0f || from_const != 4.0f || live != 2.0f || spare != 0.0f) {
+        return 4;
+    }
+    if (mark != Real(1.0f) || Entity.scale != 1.5f || lifted != 0.5 || flipped != -1.5f) {
+        return 5;
+    }
+    return 42;
+}

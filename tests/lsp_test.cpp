@@ -206,6 +206,7 @@ int run_lsp_tests() {
         "}\n"
         "\n"
         "type Shape trait {\n"
+        "    w i32;\n"
         "    func area() i32;\n"
         "    func grow(n i32) void;\n"
         "};\n"
@@ -231,11 +232,12 @@ int run_lsp_tests() {
         "    var p Point;\n"
         "    var built = Point.make(1);\n"
         "    q := Point.make(2);\n"
+        "    r := Point{};\n"
         "    var n i32 = \"no\";\n"
         "    var kk K = {.value = 10};\n"
         "    var box Box = {.complex = {.inner_value = 1}};\n"
         "    kk = {.value = 2};\n"
-        "    return add(p.x, q.x);\n"
+        "    return add(p.x, q.x) + r.x;\n"
         "}\n";
 
     int to_child[2] = {-1, -1};
@@ -304,6 +306,16 @@ int run_lsp_tests() {
     EXPECT_HAS(check, inferred_items, "\"sum\"");
     EXPECT(check, inferred_items.find("\"make\"") == std::string::npos);
 
+    const LineCol literal = at_needle(source, "r.", true);
+    EXPECT(check, literal.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":14,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(literal.line) + R"(,"character":)" +
+                  std::to_string(literal.character) + "}}}");
+    const std::string literal_items = read_until(from_child[0], "\"id\":14", 3000);
+    EXPECT_HAS(check, literal_items, "\"x\"");
+    EXPECT_HAS(check, literal_items, "\"sum\"");
+
     const LineCol trait_call = at_needle(source, "s.", true);
     EXPECT(check, trait_call.line >= 0);
     send_json(to_child[1],
@@ -313,6 +325,7 @@ int run_lsp_tests() {
     const std::string trait_items = read_until(from_child[0], "\"id\":13", 3000);
     EXPECT_HAS(check, trait_items, "\"area\"");
     EXPECT_HAS(check, trait_items, "\"grow\"");
+    EXPECT_HAS(check, trait_items, "\"w\"");
 
     const LineCol init_field = at_needle(source, "var kk K = {.", true);
     EXPECT(check, init_field.line >= 0);
@@ -388,6 +401,37 @@ int run_lsp_tests() {
     const std::string jumped = read_until(from_child[0], "\"id\":11", 4000);
     EXPECT_HAS(check, jumped, "math/add.tlc");
     EXPECT_HAS(check, jumped, "\"line\":0");
+
+    const std::filesystem::path export_root = "/tmp/tlc-export-lsp";
+    std::filesystem::remove_all(export_root);
+    std::filesystem::create_directories(export_root / "math");
+    {
+        std::ofstream math(export_root / "math" / "lib.tlc");
+        math << "package math;\nexport type Entity struct { id i32; };\nexport var Entity::next i32 = 1;\n"
+                "var Entity::hidden i32 = 2;\nexport type Color enum { Red };\n";
+        std::ofstream entry(export_root / "main.tlc");
+        entry << "import \"math\";\nfunc main() i32 {\n    return math.Entity.next;\n}\n";
+    }
+    const std::string export_source = "import \"math\";\nfunc main() i32 {\n    return math.Entity.next;\n}\n";
+    const std::string export_uri = std::string("file://") + (export_root / "main.tlc").string();
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  export_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(export_source) + R"("}}})");
+    const LineCol exported_var = at_needle(export_source, "math.Entity.", true);
+    EXPECT(check, exported_var.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":15,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  export_uri + R"("},"position":{"line":)" + std::to_string(exported_var.line) + R"(,"character":)" +
+                  std::to_string(exported_var.character) + "}}}");
+    const std::string export_items = read_until(from_child[0], "\"id\":15", 4000);
+    EXPECT_HAS(check, export_items, "\"next\"");
+    EXPECT(check, export_items.find("\"hidden\"") == std::string::npos);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":16,"method":"textDocument/definition","params":{"textDocument":{"uri":")") +
+                  export_uri + R"("},"position":{"line":)" + std::to_string(exported_var.line) + R"(,"character":)" +
+                  std::to_string(exported_var.character) + "}}}");
+    const std::string export_def = read_until(from_child[0], "\"id\":16", 4000);
+    EXPECT_HAS(check, export_def, "math/lib.tlc");
 
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);

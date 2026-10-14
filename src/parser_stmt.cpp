@@ -8,7 +8,7 @@ namespace tlc {
 
 std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
     const std::size_t marker = pos_;
-    while (check(TokenKind::KwExport) || check(TokenKind::KwStatic) || check(TokenKind::KwExtern)) {
+    while (check(TokenKind::KwExport) || check(TokenKind::KwExtern)) {
         if (eat(TokenKind::KwExtern)) {
             if (eat(TokenKind::LParen)) {
                 int depth = 1;
@@ -55,7 +55,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         pos_ = marker;
         bool storage = false;
         const SourceLoc storage_loc = peek().loc;
-        while (check(TokenKind::KwExport) || check(TokenKind::KwStatic) || check(TokenKind::KwExtern)) {
+        while (check(TokenKind::KwExport) || check(TokenKind::KwExtern)) {
             storage = true;
             if (check(TokenKind::KwExtern)) {
                 bool ignored_extern = false;
@@ -76,7 +76,6 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
     if (check(TokenKind::KwFunc)) {
         pos_ = marker;
         bool exported = false;
-        bool is_static = false;
         bool is_extern = false;
         bool extern_c = false;
         const SourceLoc storage_loc = peek().loc;
@@ -85,19 +84,15 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
                 exported = true;
                 continue;
             }
-            if (eat(TokenKind::KwStatic)) {
-                is_static = true;
-                continue;
-            }
             if (take_extern(is_extern, extern_c)) {
                 continue;
             }
             break;
         }
-        if (exported || is_static || is_extern) {
+        if (exported || is_extern) {
             diags_.error(storage_loc, "not supported yet");
         }
-        FunctionDecl fn = parse_function(exported, is_static, is_extern, extern_c, true);
+        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true);
         if (!fn.method_struct.empty()) {
             diags_.error(fn.loc, "not supported yet");
         }
@@ -246,6 +241,12 @@ std::unique_ptr<Stmt> Parser::parse_for() {
     expect(TokenKind::LParen, "expected '('");
     if (eat(TokenKind::Semicolon)) {
         stmt.init = nullptr;
+    } else if (const_on_type()) {
+        diags_.error(peek().loc, "not supported yet");
+        while (!check(TokenKind::Semicolon) && !check(TokenKind::RParen) && !eof()) {
+            ++pos_;
+        }
+        stmt.init = make_stmt(Stmt::Expression{});
     } else if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq) {
         stmt.init = parse_const_local();
     } else if (check(TokenKind::KwVar)) {
@@ -341,7 +342,119 @@ bool Parser::var_is_inferred() const {
     return check(TokenKind::KwVar) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq;
 }
 
-VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c) {
+bool Parser::const_on_type() const {
+    if (!check(TokenKind::KwConst) || peek(1).kind != TokenKind::Identifier) {
+        return false;
+    }
+    if (peek(2).kind == TokenKind::ColonColon) {
+        return true;
+    }
+    if (peek(2).kind != TokenKind::LBracket) {
+        return false;
+    }
+    int depth = 0;
+    for (std::size_t ahead = 2; peek(ahead).kind != TokenKind::End; ++ahead) {
+        const TokenKind kind = peek(ahead).kind;
+        if (kind == TokenKind::LBracket) {
+            ++depth;
+        } else if (kind == TokenKind::RBracket) {
+            --depth;
+            if (depth == 0) {
+                return peek(ahead + 1).kind == TokenKind::ColonColon;
+            }
+        } else if (depth == 0) {
+            return false;
+        }
+        if (ahead > 4096) {
+            return false;
+        }
+    }
+    return false;
+}
+
+void Parser::take_var_owner(VarDecl &var) {
+    // `var Entity::next` and `var Box[T]::extra`. The variable is not a field.
+    if (bracket_then_colon_colon()) {
+        var.owner = std::move(var.name);
+        var.owner_params = parse_method_params();
+        expect(TokenKind::ColonColon, "expected '::'");
+        if (check(TokenKind::Identifier)) {
+            var.name = peek().text;
+            var.loc = peek().loc;
+            ++pos_;
+        } else {
+            var.name.clear();
+            error_here("expected an identifier");
+        }
+        return;
+    }
+    if (!eat(TokenKind::ColonColon)) {
+        return;
+    }
+    var.owner = std::move(var.name);
+    if (check(TokenKind::Identifier)) {
+        var.name = peek().text;
+        var.loc = peek().loc;
+        ++pos_;
+    } else {
+        var.name.clear();
+        error_here("expected an identifier");
+    }
+}
+
+VarDecl Parser::parse_const_decl(bool exported) {
+    VarDecl var;
+    var.is_const_decl = true;
+    var.exported = exported;
+    var.loc = peek().loc;
+    expect(TokenKind::KwConst, "expected 'const'");
+    if (check(TokenKind::Identifier)) {
+        var.name = peek().text;
+        var.loc = peek().loc;
+        ++pos_;
+    } else {
+        error_here("expected an identifier");
+    }
+    take_var_owner(var);
+    // `const name = expr` takes the type from the expression. `const name Type = expr` writes it.
+    if (eat(TokenKind::Eq)) {
+        var.inferred = true;
+        var.init = parse_assignment();
+        expect(TokenKind::Semicolon, "expected ';'");
+        return var;
+    }
+    const PlacedType type = parse_go_type();
+    if (type.struct_definition || type.enum_definition) {
+        diags_.error(type.loc, "not supported yet");
+    }
+    var.type_name = type.type_name;
+    var.type_package = type.type_package;
+    var.is_struct = type.is_struct;
+    var.is_enum = type.is_enum;
+    var.indirections = type.indirections;
+    var.optional = type.optional;
+    var.const_pointee = type.const_pointee;
+    var.is_array = type.is_array;
+    var.array_len = type.array_len;
+    var.array_len_name = type.array_len_name;
+    var.type_args = type.type_args;
+    var.ptr_to_array = type.ptr_to_array;
+    var.is_fn_ptr = type.is_fn_ptr;
+    var.ret_indirections = type.ret_indirections;
+    var.ret_optional = type.ret_optional;
+    var.ret_const_pointee = type.ret_const_pointee;
+    var.fn_params = type.fn_params;
+    var.fn_variadic = type.fn_variadic;
+    var.fn_results = type.fn_results;
+    if (eat(TokenKind::Eq)) {
+        var.init = parse_assignment();
+    }
+    expect(TokenKind::Semicolon, "expected ';'");
+    return var;
+}
+
+VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c,
+                                bool allow_bare_inferred) {
     VarDecl var;
     var.loc = peek().loc;
     var.exported = exported;
@@ -355,6 +468,13 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
         ++pos_;
     } else {
         error_here("expected an identifier");
+    }
+    take_var_owner(var);
+    if ((!var.owner.empty() || allow_bare_inferred) && eat(TokenKind::Eq)) {
+        var.inferred = true;
+        var.init = parse_assignment();
+        expect(TokenKind::Semicolon, "expected ';'");
+        return var;
     }
     if (check(TokenKind::Eq) || check(TokenKind::ColonEq) || check(TokenKind::Comma)) {
         error_here("expected a type");
@@ -382,9 +502,6 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     var.fn_params = type.fn_params;
     var.fn_variadic = type.fn_variadic;
     var.fn_results = type.fn_results;
-    if (var.is_array && var.array_len < 0) {
-        diags_.error(var.loc, "not supported yet");
-    }
     if (eat(TokenKind::Eq)) {
         var.init = parse_assignment();
     }
@@ -402,11 +519,12 @@ std::unique_ptr<Stmt> Parser::parse_var_or_bind() {
     return parse_bind(check(TokenKind::KwVar));
 }
 
-void Parser::parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var) {
+void Parser::parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var, bool exported) {
     VarDecl var;
     var.loc = peek().loc;
     var.inferred = true;
     var.is_static = is_static;
+    var.exported = exported;
     if (from_var) {
         expect(TokenKind::KwVar, "expected 'var'");
     }
@@ -581,6 +699,14 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         stmt.call = parse_expr();
         expect(TokenKind::Semicolon, "expected ';'");
         return make_stmt(std::move(stmt));
+    }
+    if (const_on_type()) {
+        diags_.error(peek().loc, "not supported yet");
+        while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
+            ++pos_;
+        }
+        eat(TokenKind::Semicolon);
+        return make_stmt(Stmt::Expression{});
     }
     if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq) {
         return parse_const_local();

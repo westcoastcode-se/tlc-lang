@@ -112,13 +112,36 @@ class Checker {
         bool is_static = false;
     };
 
+    // `var Entity::next` or `const Entity::next`. One entry per owner and name.
+    // A generic template is not stored here. Each specialization is.
+    struct AssocVar {
+        Type type;
+        // Published as `pkg.Owner.name`. The rest of the package can use it either way.
+        bool exported = false;
+        // `const`. Assignment and `&` are rejected.
+        bool is_const = false;
+        // Folded integer or bool. Codegen uses the value and emits no global.
+        bool has_const = false;
+        int const_value = 0;
+    };
+
     struct TraitInfo {
         std::string name;
+        // File that wrote the trait. Field types are resolved in that file.
+        uint32_t file_id = 0;
         struct Method {
             std::string name;
             Type type;
         };
+        struct Field {
+            std::string name;
+            Type type;
+            SourceLoc loc{};
+        };
         std::vector<Method> methods;
+        std::vector<Field> fields;
+        // Field declarations, typed after structs are complete.
+        std::vector<FieldDecl> pending;
     };
 
     std::vector<Scope> scopes_;
@@ -126,6 +149,8 @@ class Checker {
     std::vector<StructInfo> structs_;
     std::vector<TraitInfo> traits_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::unordered_map<std::string, MethodInfo>>> methods_;
+    // file, owner, field. The owner is the struct name or a specialization such as `Box.spec.i32`.
+    std::unordered_map<uint32_t, std::unordered_map<std::string, std::unordered_map<std::string, AssocVar>>> assoc_vars_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> tags_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> trait_names_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, Type>> typedefs_;
@@ -195,8 +220,10 @@ class Checker {
     std::vector<uint32_t> files_in_package(uint32_t file_id) const;
     int find_tag(uint32_t file, const std::string &name) const;
     int find_enum(uint32_t file, const std::string &name) const;
-    // File that defines this struct or enum. The current file when the type is missing.
+    // File that defines this struct, enum, or typedef. The current file when the type is missing.
     uint32_t defined_in(const std::string &name) const;
+    // A struct, an enum, or a primitive typedef such as `type Integer i32`.
+    bool named_type_owner(const std::string &name) const;
     bool package_has_enum(uint32_t file, const std::string &name) const;
     bool is_c_enum(const Type &type) const;
     const EnumInfo::Member *find_enum_member(int enum_id, const std::string &name) const;
@@ -225,6 +252,8 @@ class Checker {
                       int indirections, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
     // A store through this lvalue would change a `const` binding or a `*const` pointee.
     bool const_path(const Expr &expr);
+    // The pointer passed to a method. A const object is `*const T`.
+    Type method_pointer(const Type &base, const Type &object, bool through_pointer, const Expr &source);
     bool accepts_pointer(const Type &got, const Type &want) const;
     bool needs_nonnull_pointer(const Type &type) const;
     // A `?*T` name in this function becomes `*T`. A package global is left alone.
@@ -247,20 +276,32 @@ class Checker {
     bool dot_object(const Type &base, Type &object, bool &through_pointer) const;
     const MethodInfo *find_method(int struct_id, const std::string &name) const;
     const MethodInfo *find_named_method(const std::string &type_name, const std::string &name) const;
+    // `Integer` or `*Integer` when that alias is a primitive. Null otherwise.
+    const Type *scalar_alias(const Type &base, bool &through_pointer) const;
+    const AssocVar *find_assoc(const std::string &owner, const std::string &name) const;
+    const AssocVar *find_assoc_in(uint32_t file, const std::string &owner, const std::string &name) const;
+    bool assoc_defined(uint32_t file, const std::string &owner, const std::string &name) const;
     const TraitInfo::Method *find_trait_method(int trait_id, const std::string &name) const;
+    const TraitInfo::Field *find_trait_field(int trait_id, const std::string &name) const;
+    // True when `base` is a trait or `*Trait`. `out` is the field type, or invalid when the name is absent.
+    bool as_trait_field(const Type &base, const std::string &name, Type &out) const;
     bool trait_method_matches(const Type &trait_fn, const Type &concrete) const;
     void require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc);
-    // The one method of a trait or `*Trait`. Null when the trait has any other count.
+    // The one method of a trait or `*Trait`. Null when the trait has a field or any other method count.
     const Type *sole_trait_method(const Type &want) const;
     // An anonymous function used as a single-method trait argument. The body is checked
     // against that method, with no receiver.
     bool accept_trait_lambda(const Expr &expr, const Type &want);
     void check_call_arg(const Expr &expr, const Type &want);
+    // Receiver checks shared by an enum value and a primitive alias.
+    Type finish_value_method(const Expr::Call &node, const Expr::Selector &selector, const MethodInfo &method,
+                             const Type &base, bool through_pointer);
     void register_structs(const TranslationUnit &unit, uint32_t file_id);
     void require_extern_struct(const Type &type, SourceLoc loc);
     void register_enums(const TranslationUnit &unit, uint32_t file_id);
     void check_unions();
     void register_traits(const TranslationUnit &unit, uint32_t file_id);
+    void define_trait_fields();
     void register_typedefs(const TranslationUnit &unit, uint32_t file_id);
     bool name_taken(const std::string &name) const;
     Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
@@ -270,6 +311,10 @@ class Checker {
                           bool is_struct, bool is_enum, uint32_t optional = 0);
     void expect(const Type &got, const Type &want, SourceLoc loc);
     void expect_value(const Type &got, const Type &want, const Expr &expr, SourceLoc loc);
+    // `Point{}` and `pkg.Point{}`. A typedef keeps its alias. Anything else is invalid.
+    Type literal_struct_type(const Expr::Init &init);
+    // `[_]T{v, v, v}` has type `[N]T`, where N is the number of values.
+    Type check_array_literal(Expr::Init &init);
     Type check_init(Expr::Init &init, const Type &want);
     void expect_integer(const Type &got, SourceLoc loc);
     void expect_condition(const Type &got, SourceLoc loc);
@@ -304,6 +349,10 @@ class Checker {
         uint32_t file_id = 0;
         FunctionDecl fn;
     };
+    struct OwnedVar {
+        uint32_t file_id = 0;
+        VarDecl var;
+    };
     struct PendingAppend {
         uint32_t file_id = 0;
         TopDecl decl;
@@ -315,6 +364,7 @@ class Checker {
 
     TranslationUnit *primary_unit_ = nullptr;
     std::deque<OwnedFn> owned_fns_;
+    std::deque<OwnedVar> owned_assoc_;
     std::deque<StructDecl> owned_structs_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, FunctionDecl *>> fn_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, StructDecl *>> struct_templates_;
@@ -323,12 +373,26 @@ class Checker {
     std::vector<PendingAppend> pending_appends_;
     std::unordered_set<std::string> spec_checking_;
     std::unordered_set<std::string> spec_ready_;
+    // `file\nSpec` while that specialization's variables are being built.
+    std::unordered_set<std::string> assoc_busy_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, Symbol>> spec_symbols_;
     std::unordered_set<std::string> static_spec_keys_;
 
     void collect_templates(TranslationUnit &unit, uint32_t file_id);
     void fold_early_consts(TranslationUnit &unit, uint32_t file_id);
     void bind_file_const(VarDecl &var);
+    // The type of a file-scope constant. Sets `has_const` when the value folds.
+    // Does not declare the name. Invalid means the constant was rejected.
+    Type check_file_const(VarDecl &var);
+    // `var row = [_]i32{1, 2}`, `var row [3]i32 = {1, 2, 3}`, and `const row = [_]i32{1}`.
+    // `declared` is the symbol type when it was already stored.
+    Type file_array_initializer(VarDecl &var, const Type *declared);
+    enum class FileConst { Yes, Unfolded, No };
+    // A file-scope array element. `allow_var` copies another global's constant initializer.
+    FileConst file_constant(const Expr &expr, std::unordered_set<std::string> &seen, bool allow_var);
+    // A file-scope `f32` or `f64`. A `var` may copy another global's initializer.
+    bool accept_file_scalar(const VarDecl &var, const Type &type);
+    const VarDecl *global_var(const std::string &name);
     void define_constant(const VarDecl &var, Type type, int folded);
     bool integer_const_type(const Type &type) const;
     bool stored_const_type(const Type &type) const;
@@ -362,6 +426,27 @@ class Checker {
     bool generic_struct_name(uint32_t file, const std::string &name) const;
     // `func Vec[T]::get` must name the struct's parameters. A list on a plain struct is rejected.
     void require_method_params(const FunctionDecl &fn);
+    // `var Vec[T]::count` uses the same names. A list on a plain struct is rejected.
+    void require_owner_params(const VarDecl &var);
+    void declare_assoc(const VarDecl &var);
+    // Check `var` as a constant and store it on `var.owner` in `file`.
+    void store_assoc_const(uint32_t file, VarDecl &var);
+    // Package file that holds `pkg.Type.name`, or the current file.
+    uint32_t assoc_home_file(const Expr::Selector &node);
+    // True when the selector is a constant on a type. Does not report a diagnostic.
+    bool selector_is_const(const Expr::Selector &node);
+    // One variable for this specialization. Safe to call again when the struct already exists.
+    void instantiate_assoc(uint32_t owner_file, const StructDecl &templ, const std::string &spec_name,
+                           const std::vector<SpecArg> &bounds);
+    bool type_arg_from_expr(const Expr &expr, TypeArg &out) const;
+    // `Box[i32].from` and `Buf[4, i32].width` in this package. Empty when `node` is not that form.
+    // `failed` means the form was recognized and the arguments did not specialize.
+    std::string same_package_spec(const Expr::Selector &node, bool &failed);
+    // `pkg.Box[i32].name(...)`. A method is not called through a package.
+    bool package_generic_call(const Expr::Selector &node);
+    Type finish_static_call(const Expr::Call &node, const MethodInfo &method, bool deferring);
+    // True when `node` is `Type.name` or `Type[args].name`. The diagnostic is already reported.
+    bool assoc_from_selector(const Expr::Selector &node, Type &out);
 };
 
 } // namespace tlc

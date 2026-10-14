@@ -1,0 +1,15 @@
+package math;
+
+export type Entity struct {
+    id i32;
+    export var next i32 = 26;
+    var hidden i32 = 7;
+};
+
+export func width() i32 {
+    return sizeof(Entity);
+}
+
+export var bonus = 4;
+export spare := 2;
+export var shown i32 = 6;

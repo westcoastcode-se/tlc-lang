@@ -170,6 +170,25 @@ int CodeGen::tag_id(uint32_t file, const std::string &name) const {
     return -1;
 }
 
+uint32_t CodeGen::assoc_home(const Expr::Selector &node) const {
+    const Expr *cursor = node.base.get();
+    if (cursor != nullptr) {
+        if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+            cursor = index->base.get();
+        }
+    }
+    const auto *inner = cursor == nullptr ? nullptr : std::get_if<Expr::Selector>(&cursor->data);
+    if (inner == nullptr || inner->base == nullptr) {
+        return current_file_;
+    }
+    const auto *package_name = std::get_if<Expr::Name>(&inner->base->data);
+    if (package_name == nullptr) {
+        return current_file_;
+    }
+    const uint32_t id = package_file(current_file_, package_name->text);
+    return id == 0 ? current_file_ : id;
+}
+
 uint32_t CodeGen::package_file(uint32_t file, const std::string &package) const {
     const PackageNode *node = find_node(file);
     if (node == nullptr || graph_ == nullptr) {
@@ -389,6 +408,17 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         } else if (const int imported = selective_enum(file, name); imported >= 0) {
             note_enum(base, imported);
             have = true;
+        } else {
+            // A method receiver is marked as a struct. A primitive alias such as `type Integer i32` is not one.
+            const auto scalar = [](const Alias &alias) {
+                return alias.depth == 0 && !alias.is_array && alias.struct_id < 0 && alias.fn_ty == nullptr &&
+                       !alias.elem_void;
+            };
+            if (const Alias *local = find_alias(file, name); local != nullptr && scalar(*local)) {
+                take(*local);
+            } else if (const Alias *imported = selective_alias(file, name); imported != nullptr && scalar(*imported)) {
+                take(*imported);
+            }
         }
     } else if (name == "i8" || name == "i16" || name == "i32" || name == "i64" || name == "u8" || name == "u16" ||
                name == "u32" || name == "u64") {
@@ -614,6 +644,42 @@ CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) co
                  param.array_len, true);
 }
 
+std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, const Expr::Init &item) const {
+    if (!item.array_literal || item.elem_ptr_to_array || (item.type_name.empty() && !item.elem_fn)) {
+        return std::nullopt;
+    }
+    const int count = static_cast<int>(item.elements.size());
+    Lowered elem;
+    if (item.elem_fn) {
+        elem = lower_fnptr(file, item.type_name, item.type_package, item.is_struct, item.is_enum, item.elem_ret_indirections,
+                           item.indirections < 1 ? 1 : item.indirections, item.elem_fn_params, item.elem_fn_variadic,
+                           item.elem_fn_results);
+        if (elem.fn_ty == nullptr || elem.type == nullptr) {
+            return std::nullopt;
+        }
+    } else if (item.elem_is_array) {
+        if (item.elem_array_len <= 0) {
+            return std::nullopt;
+        }
+        elem = lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, true, item.elem_array_len,
+                     false);
+        if (!elem.is_array || elem.type == nullptr || !elem.type->isArrayTy()) {
+            return std::nullopt;
+        }
+    } else {
+        elem = lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, false, 0, false);
+        if (elem.type == nullptr || elem.is_array || elem.elem_void || elem.type->isVoidTy()) {
+            return std::nullopt;
+        }
+    }
+    Lowered low = elem;
+    low.is_array = true;
+    low.array_len = count;
+    low.inner_array_len = item.elem_is_array ? item.elem_array_len : 0;
+    low.type = llvm::ArrayType::get(elem.type, static_cast<uint64_t>(count));
+    return low;
+}
+
 void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.depth = low.depth;
     binding.elem_char = low.elem_char;
@@ -634,6 +700,7 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.fn_ret_struct = low.fn_ret_struct;
     binding.fn_results = low.fn_results;
     binding.enum_id = low.enum_id;
+    binding.inner_array_len = low.inner_array_len;
     binding.ptr_to_array = low.ptr_to_array;
     binding.ptr_array_len = low.ptr_array_len;
     binding.is_tuple = low.is_tuple;
@@ -1292,6 +1359,11 @@ bool CodeGen::type_known(const std::string &name) const {
             return true;
         }
     }
+    for (const auto &file : aliases_) {
+        if (file.second.contains(name)) {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -1352,6 +1424,13 @@ const Binding *CodeGen::function_designator(uint32_t file, const Expr &expr) con
     const auto *selector = std::get_if<Expr::Selector>(&expr.data);
     if (selector == nullptr || selector->base == nullptr) {
         return nullptr;
+    }
+    // `Box[i32].from`. Sema stored the specialization on the selector.
+    if (!selector->resolved_owner.empty()) {
+        const Binding *method = static_method_binding(file, selector->resolved_owner, selector->field);
+        if (method != nullptr && method->value != nullptr && !method->is_generic) {
+            return method;
+        }
     }
     const int enum_id = enum_type_designator(*selector->base);
     if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size()) &&
@@ -1609,6 +1688,11 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     }
                     return value(*item.expr);
                 } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                    if (item.is_fn_ptr) {
+                        return lower_fnptr(file, item.type_name, item.type_package, item.is_struct, item.is_enum,
+                                           item.ret_indirections, item.indirections, item.fn_params, item.fn_variadic,
+                                           item.fn_results);
+                    }
                     return lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, false, 0,
                                  false);
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
@@ -1629,6 +1713,20 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                         return std::nullopt;
                     }
                     return function_result(*fn);
+                } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                    if (item.array_literal) {
+                        // `var row = [_]i32{1, 2}` keeps the array. The elements are filled later.
+                        return lower_array_literal(file, item);
+                    }
+                    if (item.type_name.empty()) {
+                        return std::nullopt;
+                    }
+                    const Lowered low =
+                        lower(file, item.type_name, item.type_package, false, 0, false, 0, false);
+                    if (low.struct_id < 0 || low.depth != 0 || low.is_array || low.enum_id >= 0) {
+                        return std::nullopt;
+                    }
+                    return low;
                 } else {
                     return std::nullopt;
                 }
@@ -1710,6 +1808,15 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         return promote(*got);
     };
 
+    // `var row = [_]i32{1, 2}` keeps the array. A use of that name still decays to a pointer.
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data); init != nullptr && init->array_literal) {
+        const auto got = raw(expr);
+        if (!got || !got->is_array || got->type == nullptr) {
+            return false;
+        }
+        out = *got;
+        return true;
+    }
     const auto got = value(expr);
     if (!got || got->type == nullptr || got->elem_void) {
         return false;

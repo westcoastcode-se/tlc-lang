@@ -2,19 +2,19 @@
 
 [Index](README.md) · [Previous: Functions](functions.md) · [Next: Structs, pointers, and arrays](structs.md) · [Grammar](grammar.md)
 
-`import "builtin"` loads the compiler package. It exports two functions, `trace` and `va`. `trace` returns `*const u8`. `va` returns `*u8`. Both take no arguments. An argument is reported as `argument count`. The import links the C library.
+`import "builtin"` loads the compiler package. It exports `trace`, `va`, and `panic`. `trace` returns `*const u8`. `va` returns `*u8`. Both take no arguments. An argument is reported as `argument count`. `panic` takes one message and does not return a value. The import links the C library.
 
 ```c
 import "builtin";
 import "builtin" as b;
-import { trace, va } from "builtin";
+import { trace, va, panic } from "builtin";
 ```
 
-The first form calls them as `builtin.trace()` and `builtin.va()`. The alias uses the new qualifier. The selective form brings the names into the file. A directory named `builtin` on the search path is that package. The compiler package is used when the search finds none.
+The first form calls them as `builtin.trace()`, `builtin.va()`, and `builtin.panic(message)`. The alias uses the new qualifier. The selective form brings the names into the file. A directory named `builtin` on the search path is that package. The compiler package is used when the search finds none.
 
 ## `trace`
 
-`builtin.trace()` returns `*const u8`. The text lists the calls that have not returned, oldest first. A line is `file:line:column: name`. The name is the function that made the call, and the location is that call. The last line has no newline. Calls of `builtin.trace` and `builtin.va` are omitted. When no such call is still running, the text is empty.
+`builtin.trace()` returns `*const u8`. The text lists the calls that have not returned, newest first. A line is `file:line:column: name`. The name is the function that made the call, and the location is that call. The last line has no newline. Calls of `builtin.trace` and `builtin.va` are omitted. A call of `builtin.panic` is kept. When no such call is still running, the text is empty.
 
 ```c
 import "builtin";
@@ -35,11 +35,11 @@ func main() i32 {
 }
 ```
 
-`main` has called `mid`, and `mid` has called `leaf`. `leaf` is calling `printf`, whose argument is the trace, so the program prints:
+`leaf` is calling `printf`, whose argument is the trace. `mid` has called `leaf`, and `main` has called `mid`, so the program prints:
 
 ```text
-main.tlc:15:12: main
 main.tlc:11:12: mid
+main.tlc:15:12: main
 ```
 
 The file name is the source path relative to the entry file's directory. A source file outside that directory is named by its file name. A method uses the method name. An anonymous function is named `anon`. Inside a `test`, the name is the test's name.
@@ -81,5 +81,45 @@ func main() i32 {
 The program prints `n=40`. An extra argument is an integer, a floating-point value, a pointer, an enum, or `null`. A struct is reported as `not supported yet`. An integer narrower than `i32` is passed as `i32`. `f32` is passed as `f64`.
 
 `builtin.va()` outside a variadic function is reported as `not supported yet`. So is `defer builtin.va()`, and so is using the name without calling it: `builtin.va` and `var p = builtin.va`.
+
+## `panic`
+
+`builtin.panic(message)` prints the message and the call stack, then aborts the process. The message is `*const u8`. A string and a `*u8` may be passed. The text goes to the standard error stream:
+
+```text
+panic: message
+```
+
+The stack follows, newest first, one line per call. A line is `file:line:column: name`. The name is the function that made the call. The first stack line is the function that called `builtin.panic`, at that call. `builtin.trace()` lists the same calls in that order. A null pointer is printed as `(null)`. At most 32 calls are kept.
+
+No argument, or more than one, is reported as `argument count`. A value that is not a pointer to `u8` is reported as `type mismatch`. The call has no result, so `var n = builtin.panic("out of memory")` is `type mismatch`.
+
+```c
+import "builtin";
+
+func leaf() void {
+    builtin.panic("out of memory");
+}
+
+func mid() void {
+    leaf();
+}
+
+func main() i32 {
+    mid();
+    return 0;
+}
+```
+
+`leaf` is calling `panic`, `mid` has called `leaf`, and `main` has called `mid`. The process aborts. `tlc --run` exits with status 128, and the standard error stream is:
+
+```text
+panic: out of memory
+main.tlc:4:5: leaf
+main.tlc:8:5: mid
+main.tlc:12:5: main
+```
+
+The file name is the source path relative to the entry file's directory, as for `builtin.trace`. `var f = builtin.panic` is a function pointer, and `f("out of memory")` aborts at that call. `defer builtin.panic("out of memory")` aborts when the deferred calls run.
 
 [Index](README.md) · [Previous: Functions](functions.md) · [Next: Structs, pointers, and arrays](structs.md) · [Grammar](grammar.md)

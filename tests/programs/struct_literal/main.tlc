@@ -1,0 +1,13 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+const origin = Point{};
+
+func main() i32 {
+    var p = Point{};
+    q := Point{.y = 2};
+    p.x = 40;
+    return p.x + q.y + origin.x;
+}

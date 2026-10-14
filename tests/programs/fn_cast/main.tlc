@@ -1,0 +1,21 @@
+func add(n i32) i32 {
+    return n + 1;
+}
+
+type Proc func () void;
+
+type Op func (i32) i32;
+
+func get(name *u8) Proc {
+    return Proc(add);
+}
+
+func get_raw(name *u8) *void {
+    return *void(add);
+}
+
+func main() i32 {
+    var named = Op(get("add"));
+    var raw = func (i32) i32(get_raw("add"));
+    return named(10) + raw(10) + Op(get("add"))(19);
+}

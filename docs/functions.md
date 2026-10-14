@@ -83,7 +83,7 @@ The program returns 42.
 
 ## Generics
 
-A generic function names its parameters in brackets. `T type` is a type. `N i32` is a compile-time integer. `T Shape` is a type that must have the methods of the trait `Shape`. One body is specialized for each call. There is no `impl` and no runtime table.
+A generic function names its parameters in brackets. `T type` is a type. `N i32` is a compile-time integer. `T Shape` is a type that must have the methods and the fields of the trait `Shape`. One body is specialized for each call. There is no `impl` and no runtime table.
 
 ```c
 func id[T type](value T) T {
@@ -102,7 +102,7 @@ func main() i32 {
 }
 ```
 
-`T Shape` requires a type that has the methods of the trait `Shape`.
+`T Shape` requires a type that has the methods and the fields of the trait `Shape`.
 
 ```c
 type Shape trait {
@@ -173,7 +173,7 @@ func main() i32 {
 
 ## Structs and arrays
 
-Structs are passed and returned by value. An array parameter becomes a pointer, both as `a i32[]` and as `a [4]i32`. A function may return an array. The return expression is a local array name, as in `return out` for `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
+Structs are passed and returned by value. An array parameter or result names its length, as in `a [4]i32` and `[N]T`. The parameter becomes a pointer. A function may return an array. The return expression is a local array name, as in `return out` for `[N]T`. The call decays to a pointer, so `repeat[4](2)[0]` reads the first element.
 
 ```c
 type Point struct {
@@ -210,7 +210,7 @@ func main() i32 {
 
 `import "std/testing"` provides `testing.error`. It returns `1`. The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `f64`.
 
-`testing.error` prints `builtin.trace()`, then the message. `builtin.trace` is the tlc calls that have not returned. Each line is `file:line:column: name`, oldest first, and the last line has no newline. `builtin.va` reads the extra arguments of the variadic function it is called from.
+`testing.error` prints `builtin.trace()`, then the message. `builtin.trace` is the tlc calls that have not returned. Each line is `file:line:column: name`, newest first, and the last line has no newline. `builtin.va` reads the extra arguments of the variadic function it is called from.
 
 ```c
 import "std/testing";
@@ -233,7 +233,7 @@ test "add joins its arguments" {
 
 ## Function pointers
 
-A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types. A function name used as a value is a pointer to that function. The type can be inferred: `var ptr = add` is that pointer, and `ptr(1, 2)` calls it. A static function is the same kind of value, `var ptr = Point.make` and `take(Point.make)`. An instance method used as a value is reported as `type mismatch`.
+A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types. A function name used as a value is a pointer to that function. The type can be inferred: `var ptr = add` is that pointer, and `ptr(1, 2)` calls it. A static function is the same kind of value, `var ptr = Point.make` and `take(Point.make)`. On a generic struct it is `var ptr = Box[i32].from`. An instance method used as a value is reported as `type mismatch`.
 
 ```c
 func add(a i32, b i32) i32 {
@@ -319,6 +319,34 @@ func main() i32 {
     return ptr(1, 0) + p.x + typed(0, 0) + none() + alias(0, 0);
 }
 ```
+
+A cast converts a data pointer, or a function pointer with another signature, into a function pointer you can call. `func (i32) i32(raw)` writes the type in the cast. `Op(raw)` does the same when `Op` is an alias of that function pointer. `Op(raw)(1)` calls it. A loader such as `SDL_GL_GetProcAddress` returns one generic pointer. The cast gives that address the signature of the entry point.
+
+```c
+func add(n i32) i32 {
+    return n + 1;
+}
+
+type Proc func () void;
+
+type Op func (i32) i32;
+
+func get(name *u8) Proc {
+    return Proc(add);
+}
+
+func get_raw(name *u8) *void {
+    return *void(add);
+}
+
+func main() i32 {
+    var named = Op(get("add"));
+    var raw = func (i32) i32(get_raw("add"));
+    return named(10) + raw(10) + Op(get("add"))(19);
+}
+```
+
+The program returns 42.
 
 A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
 

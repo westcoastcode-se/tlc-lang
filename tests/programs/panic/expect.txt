@@ -1,0 +1,5 @@
+exit: 128
+stderr: panic: out of memory
+main.tlc:4:5: leaf
+main.tlc:8:5: mid
+main.tlc:12:5: main

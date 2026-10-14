@@ -45,6 +45,27 @@ struct TypeArg {
     std::vector<TypeArg> args;
 };
 
+// A parameter of a function-pointer type. Nested pointers use the same shape.
+struct FnParam {
+    std::string type_name;
+    std::string type_package;
+    bool is_struct = false;
+    bool is_enum = false;
+    int indirections = 0;
+    uint32_t optional = 0;
+    uint32_t const_pointee = 0;
+    bool is_fn_ptr = false;
+    int ret_indirections = 0;
+    uint32_t ret_optional = 0;
+    uint32_t ret_const_pointee = 0;
+    std::vector<FnParam> params;
+    bool variadic = false;
+    // Set when this function pointer returns more than one result.
+    std::vector<FnParam> results;
+    // `Box[i32]` on this parameter, or on the result when `is_fn_ptr` is set.
+    std::vector<TypeArg> type_args;
+};
+
 struct Expr {
     struct Name {
         SourceLoc loc{};
@@ -85,6 +106,10 @@ struct Expr {
         SourceLoc loc{};
         std::unique_ptr<Expr> base;
         std::string field;
+        // `Buf[4, i32].count`. A single argument stays an index, `Box[i32].extra`.
+        std::vector<TypeArg> type_args;
+        // Concrete owner after checking: `Entity` or `Box.spec.i32`.
+        mutable std::string resolved_owner;
     };
     struct String {
         SourceLoc loc{};
@@ -134,6 +159,14 @@ struct Expr {
         int indirections = 0;
         uint32_t optional = 0;
         uint32_t const_pointee = 0;
+        // `func (i32) i32(value)`. `type_name` is the result. A named cast leaves this unset.
+        bool is_fn_ptr = false;
+        int ret_indirections = 0;
+        uint32_t ret_optional = 0;
+        uint32_t ret_const_pointee = 0;
+        std::vector<FnParam> fn_params;
+        bool fn_variadic = false;
+        std::vector<FnParam> fn_results;
         std::unique_ptr<Expr> expr;
     };
     struct Bool {
@@ -163,7 +196,7 @@ struct Expr {
         std::unique_ptr<Expr> value;
     };
     // `{.field = value}` names struct fields. `{value, value}` fills an array.
-    // `(value, value)` is a tuple.
+    // `(value, value)` is a tuple. `Point{}` and `pkg.Point{}` name the struct.
     struct Init {
         SourceLoc loc{};
         std::vector<FieldInit> fields;
@@ -172,6 +205,33 @@ struct Expr {
         bool is_tuple = false;
         // Filled when the destination struct is known.
         int struct_id = -1;
+        // `Point{}`. Empty when the braces take their type from the destination.
+        // For `[_]i32{1, 2}` this is the element type.
+        std::string type_name;
+        // `pkg` in `pkg.Point{}`. Empty for a name in this package.
+        std::string type_package;
+        // `[_]i32{1, 2, 3}`. The length is the number of elements.
+        bool array_literal = false;
+        // Element spelling of an array literal, besides `type_name` and `type_package`.
+        bool elem_is_array = false;
+        bool elem_ptr_to_array = false;
+        bool elem_fn = false;
+        // `[_][2]i32{...}`. The element is an array of this length.
+        int elem_array_len = 0;
+        std::string elem_array_len_name;
+        // `[_]func (i32) i32{add}`. The element is a function pointer.
+        int elem_ret_indirections = 0;
+        uint32_t elem_ret_optional = 0;
+        uint32_t elem_ret_const_pointee = 0;
+        std::vector<FnParam> elem_fn_params;
+        bool elem_fn_variadic = false;
+        std::vector<FnParam> elem_fn_results;
+        bool is_struct = false;
+        bool is_enum = false;
+        int indirections = 0;
+        uint32_t optional = 0;
+        uint32_t const_pointee = 0;
+        std::vector<TypeArg> type_args;
     };
     struct Unsupported {
         SourceLoc loc{};
@@ -188,25 +248,6 @@ struct Expr {
     Expr &operator=(const Expr &) = delete;
     Expr(Expr &&) noexcept;
     Expr &operator=(Expr &&) noexcept;
-};
-
-// A parameter of a function-pointer type. Nested pointers use the same shape.
-struct FnParam {
-    std::string type_name;
-    std::string type_package;
-    bool is_struct = false;
-    bool is_enum = false;
-    int indirections = 0;
-    uint32_t optional = 0;
-    uint32_t const_pointee = 0;
-    bool is_fn_ptr = false;
-    int ret_indirections = 0;
-    uint32_t ret_optional = 0;
-    uint32_t ret_const_pointee = 0;
-    std::vector<FnParam> params;
-    bool variadic = false;
-    // Set when this function pointer returns more than one result.
-    std::vector<FnParam> results;
 };
 
 struct FieldDecl {
@@ -333,6 +374,10 @@ struct VarDecl {
     bool is_const_decl = false;
     bool has_const = false;
     int const_value = 0;
+    // `var Entity::next`. Empty for an ordinary variable. The variable is not a field.
+    std::string owner;
+    // Names in `var Box[T]::extra` or `var Buf[N, T]::count`. Empty on `var Entity::next`.
+    std::vector<std::string> owner_params;
 };
 
 struct Stmt {
@@ -526,6 +571,8 @@ struct FunctionDecl {
 struct TraitDecl {
     SourceLoc loc{};
     std::string name;
+    // A field the struct must have. It is not stored on the trait.
+    std::vector<FieldDecl> fields;
     std::vector<FunctionDecl> methods;
 };
 
@@ -569,6 +616,7 @@ struct TranslationUnit {
 
 std::unique_ptr<Expr> clone_expr(const Expr &expr);
 std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt);
+VarDecl clone_var(const VarDecl &var);
 FunctionDecl clone_function(const FunctionDecl &fn);
 StructDecl clone_struct(const StructDecl &item);
 

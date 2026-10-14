@@ -11,6 +11,100 @@
 
 namespace tlc {
 
+void Checker::store_assoc_const(uint32_t file, VarDecl &var) {
+    if (var.owner.empty() || var.name.empty() || assoc_defined(file, var.owner, var.name)) {
+        return;
+    }
+    Type got = check_file_const(var);
+    AssocVar entry;
+    entry.exported = var.exported;
+    entry.is_const = true;
+    if (var.has_const) {
+        entry.type = type_int();
+        entry.has_const = true;
+        entry.const_value = var.const_value;
+    } else if (got.kind == TypeKind::Invalid) {
+        entry.type = type_invalid();
+    } else {
+        entry.type = std::move(got);
+    }
+    assoc_vars_[file][var.owner].emplace(var.name, std::move(entry));
+}
+
+void Checker::declare_assoc(const VarDecl &var) {
+    if (var.owner.empty() || var.name.empty()) {
+        return;
+    }
+    if (var.is_extern) {
+        error(var.loc, "not supported yet");
+    }
+    if (package_trait(file_id_, var.owner) >= 0) {
+        error(var.loc, "type mismatch");
+    }
+    require_owner_params(var);
+    const bool generic = generic_struct_name(file_id_, var.owner);
+    // `export var Box[T]::extra` stays unsupported. `export const Box[T]::limit` is `pkg.Box[i32].limit`.
+    if (var.exported && generic && !var.is_const_decl) {
+        error(var.loc, "not supported yet");
+    }
+    const bool known = generic || named_type_owner(var.owner);
+    if (!known) {
+        error(var.loc, "type mismatch");
+        return;
+    }
+    if (!generic && defined_in(var.owner) != file_id_) {
+        error(var.loc, "method in another file");
+        return;
+    }
+    if (generic) {
+        // A static function and a variable on the same generic struct cannot share a name.
+        // The earlier declaration is kept. This one is the redefinition.
+        for (const OwnedFn &owned : owned_fns_) {
+            if (owned.file_id == file_id_ && owned.fn.static_method && owned.fn.method_struct == var.owner &&
+                owned.fn.name == var.name && owned.fn.loc.offset < var.loc.offset) {
+                error(var.loc, "redefinition");
+                break;
+            }
+        }
+        return;
+    }
+    if (const int enum_id = find_enum(file_id_, var.owner); enum_id >= 0 && find_enum_member(enum_id, var.name) != nullptr) {
+        error(var.loc, "redefinition");
+        return;
+    }
+    if (const MethodInfo *method = find_named_method(var.owner, var.name); method != nullptr && method->is_static) {
+        error(var.loc, "redefinition");
+        return;
+    }
+    if (assoc_defined(file_id_, var.owner, var.name)) {
+        error(var.loc, "redefinition");
+        return;
+    }
+    // `check_file_const` is the only check. The variable path below would type the initializer twice.
+    if (var.is_const_decl) {
+        store_assoc_const(file_id_, const_cast<VarDecl &>(var));
+        return;
+    }
+    Type type = type_invalid();
+    if (var.inferred) {
+        if (var.init == nullptr) {
+            error(var.loc, "type mismatch");
+        } else if (const auto *init = std::get_if<Expr::Init>(&var.init->data);
+                   init != nullptr && (init->array_literal || (var.is_array && !var.ptr_to_array))) {
+            type = file_array_initializer(const_cast<VarDecl &>(var), nullptr);
+        } else {
+            type = check_expr(*var.init, true);
+            if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void || type.kind == TypeKind::Nullptr) {
+                error(var.loc, "type mismatch");
+                type = type_invalid();
+            }
+        }
+    } else {
+        type = type_of_var(var);
+    }
+    assoc_vars_[file_id_][var.owner].emplace(var.name, AssocVar{std::move(type), var.exported});
+}
+
 void Checker::declare_globals(const TranslationUnit &unit) {
     std::vector<VarDecl *> pending_consts;
     for (const TopDecl &decl : unit.decls) {
@@ -54,6 +148,18 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (!fn->method_struct.empty()) {
                 require_method_params(*fn);
                 if (generic_struct_name(file_id_, fn->method_struct)) {
+                    if (fn->exported || fn->is_extern) {
+                        error(fn->loc, "not supported yet");
+                    }
+                    if (fn->static_method) {
+                        for (const OwnedVar &owned : owned_assoc_) {
+                            if (owned.file_id == file_id_ && owned.var.owner == fn->method_struct &&
+                                owned.var.name == fn->name && owned.var.loc.offset < fn->loc.offset) {
+                                error(fn->loc, "redefinition");
+                                break;
+                            }
+                        }
+                    }
                     continue;
                 }
             }
@@ -116,14 +222,13 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                                             (receiver_refs == 0 || receiver_refs == 1) && !fn->params.front().is_array &&
                                             fn->params.front().type_package.empty() &&
                                             fn->params.front().type_name == fn->method_struct;
-                const bool known_type =
-                    find_tag(file_id_, fn->method_struct) >= 0 || package_has_enum(file_id_, fn->method_struct);
+                const bool known_type = named_type_owner(fn->method_struct);
                 const bool receiver_ok = receiver_shape && has_param &&
                                          (fn->params.front().is_struct || package_has_enum(file_id_, fn->method_struct));
                 if (!known_type || (!fn->static_method && !receiver_ok)) {
                     error(fn->loc, "type mismatch");
                 }
-                // The method is written beside its struct or enum. Other files in the package can still call it.
+                // The method is written beside its struct, enum, or primitive alias. Other files in the package can still call it.
                 if (defined_in(fn->method_struct) != file_id_) {
                     error(fn->loc, "method in another file");
                     continue;
@@ -139,6 +244,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 } else {
                     const int struct_id = find_tag(file_id_, fn->method_struct);
                     if (struct_id >= 0 && find_method(struct_id, fn->name) != nullptr) {
+                        error(fn->loc, "redefinition");
+                    } else if (fn->static_method && assoc_defined(file_id_, fn->method_struct, fn->name)) {
                         error(fn->loc, "redefinition");
                     } else {
                         table.emplace(fn->name, MethodInfo{std::move(signature), fn->body != nullptr, fn->static_method});
@@ -186,6 +293,10 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 declare(std::move(symbol), fn->loc);
             }
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (!var->owner.empty()) {
+                declare_assoc(*var);
+                continue;
+            }
             if (var->is_const_decl) {
                 if (var->is_extern) {
                     error(var->loc, "not supported yet");
@@ -214,6 +325,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (var->inferred) {
                 if (var->init == nullptr) {
                     error(var->loc, "type mismatch");
+                } else if (const auto *init = std::get_if<Expr::Init>(&var->init->data);
+                           init != nullptr && init->array_literal) {
+                    type = file_array_initializer(const_cast<VarDecl &>(*var), nullptr);
                 } else {
                     type = check_expr(*var->init, true);
                     // `null` has no pointee until a pointer type is written around it.
@@ -228,11 +342,23 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             Symbol symbol;
             symbol.name = var->name;
             symbol.type = std::move(type);
+            bool defined = false;
             if (var->is_static) {
                 statics_[file_id_].insert_or_assign(var->name, symbol);
-                declare(std::move(symbol), var->loc);
+                declare(symbol, var->loc);
+                defined = true;
             } else if (remember_shared(symbol, var->loc)) {
-                declare(std::move(symbol), var->loc);
+                declare(symbol, var->loc);
+                defined = true;
+            }
+            // `export var name = expr` has no written type until this check. publish_exports runs earlier.
+            if (var->inferred && var->exported && !var->is_static && !var->is_extern && !var->name.empty() &&
+                !exports_[file_id_].contains(var->name)) {
+                if (exported_elsewhere(var->name)) {
+                    error(var->loc, "redefinition");
+                } else if (defined) {
+                    exports_[file_id_].emplace(var->name, symbol);
+                }
             }
         }
     }
@@ -283,10 +409,218 @@ void Checker::define_constant(const VarDecl &var, Type type, int folded) {
     }
 }
 
-void Checker::bind_file_const(VarDecl &written) {
+Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
+    if (var.init == nullptr) {
+        error(var.loc, "type mismatch");
+        return type_invalid();
+    }
+    const auto *init = std::get_if<Expr::Init>(&var.init->data);
+    const bool literal = init != nullptr && init->array_literal;
+    const bool values = init != nullptr && !init->is_tuple && init->fields.empty() && !init->elements.empty();
+    Type want = type_invalid();
+    if (!var.inferred) {
+        if (declared != nullptr) {
+            want = *declared;
+        } else {
+            want = type_of_var(var);
+        }
+    }
+    // A typed array stores a value list or `[_]T{...}`. A name or a call is still unsupported.
+    const bool shape = var.inferred ? literal : var.is_array && !var.ptr_to_array && values;
+    if (!shape || init == nullptr) {
+        error(var.loc, "not supported yet");
+        if (!var.inferred && want.kind != TypeKind::Invalid) {
+            check_against(*var.init, want);
+        } else {
+            check_expr(*var.init, true);
+        }
+        return type_invalid();
+    }
+    const std::size_t before = diags_.size();
+    Type got = type_invalid();
+    if (var.inferred) {
+        got = check_array_literal(const_cast<Expr::Init &>(*init));
+    } else {
+        if (want.kind == TypeKind::Invalid) {
+            return type_invalid();
+        }
+        got = check_against(*var.init, want);
+        if (got.kind == TypeKind::Invalid || !same_type(got, want)) {
+            return type_invalid();
+        }
+        got = want;
+    }
+    if (got.kind != TypeKind::Array || got.element == nullptr || diags_.size() != before) {
+        return type_invalid();
+    }
+    std::unordered_set<std::string> seen;
+    bool unfolded = false;
+    bool runtime = false;
+    const auto visit = [&](const auto &self, const Expr &value, const Type &element) -> void {
+        if (const auto *nested = std::get_if<Expr::Init>(&value.data);
+            nested != nullptr && element.kind == TypeKind::Array && element.element != nullptr && nested->fields.empty()) {
+            for (const auto &child : nested->elements) {
+                if (!child) {
+                    runtime = true;
+                    continue;
+                }
+                self(self, *child, *element.element);
+            }
+            return;
+        }
+        const FileConst kind = file_constant(value, seen, !var.is_const_decl);
+        if (kind == FileConst::Unfolded) {
+            unfolded = true;
+        } else if (kind == FileConst::No) {
+            runtime = true;
+        }
+        (void)element;
+    };
+    for (const auto &value : init->elements) {
+        if (!value) {
+            runtime = true;
+            continue;
+        }
+        visit(visit, *value, *got.element);
+    }
+    if (runtime || unfolded) {
+        error(var.loc, runtime ? "global initializer is not a constant" : "not supported yet");
+        return type_invalid();
+    }
+    return got;
+}
+
+bool Checker::accept_file_scalar(const VarDecl &var, const Type &type) {
+    if (type.kind != TypeKind::Float || var.init == nullptr) {
+        return true;
+    }
+    // A sign or a cast does not change whether the value is a constant.
+    const Expr *cursor = var.init.get();
+    while (cursor != nullptr) {
+        if (const auto *unary = std::get_if<Expr::Unary>(&cursor->data)) {
+            if (unary->expr == nullptr || (unary->op != TokenKind::Plus && unary->op != TokenKind::Minus)) {
+                break;
+            }
+            cursor = unary->expr.get();
+            continue;
+        }
+        if (const auto *cast = std::get_if<Expr::Cast>(&cursor->data)) {
+            if (cast->expr == nullptr || cast->indirections != 0 || cast->is_fn_ptr) {
+                break;
+            }
+            cursor = cast->expr.get();
+            continue;
+        }
+        break;
+    }
+    std::unordered_set<std::string> seen;
+    const FileConst kind = file_constant(*cursor, seen, !var.is_const_decl);
+    if (kind == FileConst::Yes) {
+        return true;
+    }
+    error(var.loc, kind == FileConst::Unfolded ? "not supported yet" : "global initializer is not a constant");
+    return false;
+}
+
+const VarDecl *Checker::global_var(const std::string &name) {
+    TranslationUnit *unit = unit_for(file_id_);
+    if (unit == nullptr) {
+        return nullptr;
+    }
+    for (const TopDecl &decl : unit->decls) {
+        const auto *var = std::get_if<VarDecl>(&decl.data);
+        if (var != nullptr && var->owner.empty() && var->name == name) {
+            return var;
+        }
+    }
+    return nullptr;
+}
+
+Checker::FileConst Checker::file_constant(const Expr &expr, std::unordered_set<std::string> &seen, bool allow_var) {
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
+        if (!init->fields.empty() && !init->elements.empty()) {
+            return FileConst::No;
+        }
+        FileConst worst = FileConst::Yes;
+        for (const Expr::FieldInit &field : init->fields) {
+            if (field.value == nullptr) {
+                return FileConst::No;
+            }
+            const FileConst kind = file_constant(*field.value, seen, allow_var);
+            if (kind == FileConst::No) {
+                return FileConst::No;
+            }
+            if (kind == FileConst::Unfolded) {
+                worst = FileConst::Unfolded;
+            }
+        }
+        for (const auto &element : init->elements) {
+            if (!element) {
+                return FileConst::No;
+            }
+            const FileConst kind = file_constant(*element, seen, allow_var);
+            if (kind == FileConst::No) {
+                return FileConst::No;
+            }
+            if (kind == FileConst::Unfolded) {
+                worst = FileConst::Unfolded;
+            }
+        }
+        return worst;
+    }
+    if (std::holds_alternative<Expr::Int>(expr.data) && constant_operand(expr) && !fold_int(expr)) {
+        return FileConst::Unfolded;
+    }
+    if (constant_operand(expr)) {
+        return FileConst::Yes;
+    }
+    if (!allow_var) {
+        return FileConst::No;
+    }
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return FileConst::No;
+    }
+    if (!seen.insert(named->text).second) {
+        return FileConst::No;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->is_auto || symbol->is_function || symbol->is_type || symbol->is_package) {
+        seen.erase(named->text);
+        return FileConst::No;
+    }
+    if (symbol->is_constant) {
+        seen.erase(named->text);
+        return FileConst::Yes;
+    }
+    const VarDecl *var = global_var(named->text);
+    if (var == nullptr) {
+        seen.erase(named->text);
+        return FileConst::No;
+    }
+    if (var->init == nullptr) {
+        seen.erase(named->text);
+        return FileConst::Yes;
+    }
+    const FileConst kind = file_constant(*var->init, seen, allow_var);
+    seen.erase(named->text);
+    return kind;
+}
+
+Type Checker::check_file_const(VarDecl &written) {
     if (written.init == nullptr) {
         error(written.loc, "type mismatch");
-        return;
+        return type_invalid();
+    }
+    const auto *init = std::get_if<Expr::Init>(&written.init->data);
+    const bool literal = init != nullptr && init->array_literal;
+    if (literal || (written.is_array && !written.ptr_to_array)) {
+        Type got = file_array_initializer(written, nullptr);
+        if (got.kind == TypeKind::Invalid) {
+            return type_invalid();
+        }
+        got.is_const = true;
+        return got;
     }
     Type got = type_invalid();
     if (written.inferred) {
@@ -294,20 +628,25 @@ void Checker::bind_file_const(VarDecl &written) {
     } else {
         const Type want = type_of_var(written);
         if (want.kind == TypeKind::Invalid) {
-            return;
+            return type_invalid();
         }
+        const std::size_t before = diags_.size();
         got = check_against(*written.init, want);
-        if (got.kind == TypeKind::Invalid || !same_type(got, want)) {
-            return;
+        if (got.kind == TypeKind::Invalid || diags_.size() != before) {
+            return type_invalid();
+        }
+        // `const wide f64 = bias` converts. The stored type is the one that was written.
+        if (!same_type(got, want) && want.kind != TypeKind::Float) {
+            return type_invalid();
         }
         got = want;
     }
     if (got.kind == TypeKind::Invalid) {
-        return;
+        return type_invalid();
     }
     if (got.kind == TypeKind::Void || got.kind == TypeKind::Tuple || got.kind == TypeKind::Nullptr) {
         error(written.loc, "type mismatch");
-        return;
+        return type_invalid();
     }
     if (integer_const_type(got)) {
         const std::optional<int> value = fold_int(*written.init);
@@ -315,20 +654,37 @@ void Checker::bind_file_const(VarDecl &written) {
             // `const N = 4u32` is a constant tlc does not fold. A call is not a constant.
             error(written.loc, constant_operand(*written.init) ? "not supported yet"
                                                                 : "global initializer is not a constant");
-            return;
+            return type_invalid();
         }
         written.has_const = true;
         written.const_value = *value;
-        const_values_[file_id_][written.name] = ConstBinding{*value, written.is_static};
-        define_constant(written, type_int(), *value);
-        return;
+        return type_int();
+    }
+    if (got.kind == TypeKind::Float) {
+        if (!accept_file_scalar(written, got)) {
+            return type_invalid();
+        }
+        return got;
     }
     if (!stored_const_type(got)) {
         error(written.loc, "type mismatch");
-        return;
+        return type_invalid();
     }
     if (!constant_operand(*written.init)) {
         error(written.loc, "global initializer is not a constant");
+        return type_invalid();
+    }
+    return got;
+}
+
+void Checker::bind_file_const(VarDecl &written) {
+    Type got = check_file_const(written);
+    if (written.has_const) {
+        const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static};
+        define_constant(written, type_int(), written.const_value);
+        return;
+    }
+    if (got.kind == TypeKind::Invalid) {
         return;
     }
     define_constant(written, std::move(got), 0);
@@ -351,6 +707,13 @@ bool Checker::constant_operand(const Expr &expr) {
                 if (node.base == nullptr) {
                     return false;
                 }
+                // `Box[i32].from` after the selector has been checked. The owner is the specialization.
+                if (!node.resolved_owner.empty()) {
+                    const MethodInfo *method = find_named_method(node.resolved_owner, node.field);
+                    if (method != nullptr && method->is_static) {
+                        return true;
+                    }
+                }
                 if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
                     const Symbol *symbol = lookup(named->text);
                     if (symbol != nullptr && symbol->is_package) {
@@ -370,7 +733,7 @@ bool Checker::constant_operand(const Expr &expr) {
                 }
                 return false;
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
-                if (node.indirections != 0 || node.expr == nullptr) {
+                if (node.indirections != 0 || node.is_fn_ptr || node.expr == nullptr) {
                     return false;
                 }
                 return constant_operand(*node.expr);
@@ -426,6 +789,40 @@ void Checker::check_globals(const TranslationUnit &unit) {
         } else if (const auto *item = std::get_if<AssertDecl>(&decl.data)) {
             check_assert(item->loc, item->cond.get(), item->message);
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (!var->owner.empty()) {
+                if (!var->owner_params.empty() || generic_struct_name(file_id_, var->owner)) {
+                    continue;
+                }
+                // The constant was checked while it was declared.
+                if (var->is_const_decl) {
+                    continue;
+                }
+                const AssocVar *assoc = find_assoc(var->owner, var->name);
+                if (!var->init && !var->is_extern && assoc != nullptr && needs_nonnull_pointer(assoc->type)) {
+                    error(var->loc, "type mismatch");
+                }
+                if (var->is_array && !var->ptr_to_array && var->init && !var->inferred) {
+                    if (assoc != nullptr && assoc->type.kind == TypeKind::Array) {
+                        (void)file_array_initializer(const_cast<VarDecl &>(*var), &assoc->type);
+                    } else if (assoc == nullptr || assoc->type.kind != TypeKind::Invalid) {
+                        error(var->loc, "not supported yet");
+                    }
+                } else if (var->init && std::get_if<Expr::Init>(&var->init->data) != nullptr &&
+                           std::get<Expr::Init>(var->init->data).array_literal) {
+                    // `var Entity::row = [_]i32{1}` was checked while declaring it.
+                } else if (var->init && assoc != nullptr) {
+                    if (mentions_trait(assoc->type)) {
+                        error(var->loc, "not supported yet");
+                        continue;
+                    }
+                    const std::size_t before = diags_.size();
+                    check_against(*var->init, assoc->type);
+                    if (diags_.size() == before) {
+                        (void)accept_file_scalar(*var, assoc->type);
+                    }
+                }
+                continue;
+            }
             if (!var->init && !var->is_extern) {
                 const Symbol *symbol = lookup(var->name);
                 if (symbol != nullptr && needs_nonnull_pointer(symbol->type)) {
@@ -433,7 +830,15 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 }
             }
             if (var->is_array && !var->ptr_to_array && var->init) {
-                error(var->loc, "not supported yet");
+                if (!var->is_const_decl) {
+                    const Symbol *symbol = lookup(var->name);
+                    if (symbol != nullptr && symbol->type.kind == TypeKind::Array) {
+                        (void)file_array_initializer(const_cast<VarDecl &>(*var), &symbol->type);
+                    }
+                }
+            } else if (var->init && std::get_if<Expr::Init>(&var->init->data) != nullptr &&
+                       std::get<Expr::Init>(var->init->data).array_literal) {
+                // `var row = [_]i32{1, 2}` and `const row = [_]i32{1}` were checked while declaring them.
             } else if (var->init) {
                 const Symbol *symbol = lookup(var->name);
                 const Type want = symbol != nullptr ? symbol->type : type_invalid();
@@ -441,7 +846,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     error(var->loc, "not supported yet");
                     continue;
                 }
+                const std::size_t before = diags_.size();
                 check_against(*var->init, want);
+                if (diags_.size() == before) {
+                    (void)accept_file_scalar(*var, want);
+                }
             }
         }
     }
@@ -455,6 +864,7 @@ void Checker::analyze(const TranslationUnit &unit) {
     register_typedefs(unit, 0);
     register_traits(unit, 0);
     define_struct_fields();
+    define_trait_fields();
     check_unions();
     publish_exports(unit, 0);
     analyze_unit(unit, 0, nullptr);
@@ -590,6 +1000,13 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 found->second.has_body = true;
             }
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (!var->owner.empty()) {
+                continue;
+            }
+            // Inferred globals are published from declare_globals, after the initializer has a type.
+            if (var->inferred && !var->is_const_decl) {
+                continue;
+            }
             if (var->is_const_decl) {
                 if (!var->exported || var->is_static || var->name.empty() || !var->has_const) {
                     continue;
@@ -770,6 +1187,81 @@ void Checker::check_unit(const TranslationUnit &unit, uint32_t file_id, const Pa
     pop();
 }
 
+namespace {
+
+// Importers are prepared after the packages they import. A stored `export const`
+// is published while its package is prepared, so `import { origin }` can see it.
+std::vector<uint32_t> prepare_order(const PackageGraph &graph) {
+    const auto key_for = [](const PackageNode &node) {
+        if (!node.package_key.empty()) {
+            return node.package_key;
+        }
+        if (!node.path.empty()) {
+            return node.path;
+        }
+        return std::to_string(node.file_id);
+    };
+    std::unordered_map<uint32_t, std::string> key_of;
+    std::unordered_map<std::string, std::vector<uint32_t>> files;
+    std::vector<std::string> packages;
+    for (const PackageNode &node : graph.nodes) {
+        const std::string key = key_for(node);
+        key_of.emplace(node.file_id, key);
+        if (!files.contains(key)) {
+            packages.push_back(key);
+        }
+        files[key].push_back(node.file_id);
+    }
+    std::unordered_map<std::string, std::vector<std::string>> deps;
+    for (const ImportEdge &edge : graph.edges) {
+        const auto from = key_of.find(edge.from_file);
+        const auto to = key_of.find(edge.to_file);
+        if (from == key_of.end() || to == key_of.end() || from->second == to->second) {
+            continue;
+        }
+        std::vector<std::string> &list = deps[from->second];
+        bool seen = false;
+        for (const std::string &have : list) {
+            if (have == to->second) {
+                seen = true;
+            }
+        }
+        if (!seen) {
+            list.push_back(to->second);
+        }
+    }
+    std::unordered_set<std::string> visiting;
+    std::unordered_set<std::string> visited;
+    std::vector<uint32_t> order;
+    const auto visit = [&](auto &&self, const std::string &key) -> void {
+        if (visited.contains(key) || visiting.contains(key)) {
+            return;
+        }
+        visiting.insert(key);
+        const auto dep = deps.find(key);
+        if (dep != deps.end()) {
+            for (const std::string &next : dep->second) {
+                self(self, next);
+            }
+        }
+        visiting.erase(key);
+        visited.insert(key);
+        const auto group = files.find(key);
+        if (group == files.end()) {
+            return;
+        }
+        for (const uint32_t id : group->second) {
+            order.push_back(id);
+        }
+    };
+    for (const std::string &key : packages) {
+        visit(visit, key);
+    }
+    return order;
+}
+
+} // namespace
+
 void Checker::analyze_graph(const PackageGraph &graph) {
     graph_ = &graph;
     for (const PackageNode &node : graph.nodes) {
@@ -845,12 +1337,22 @@ void Checker::analyze_graph(const PackageGraph &graph) {
         register_traits(node.unit, node.file_id);
     }
     define_struct_fields();
+    define_trait_fields();
     check_unions();
     for (const PackageNode &node : graph.nodes) {
         publish_exports(node.unit, node.file_id);
     }
-    for (const PackageNode &node : graph.nodes) {
-        prepare_unit(node.unit, node.file_id, &node);
+    for (const uint32_t id : prepare_order(graph)) {
+        const PackageNode *node = nullptr;
+        for (const PackageNode &item : graph.nodes) {
+            if (item.file_id == id) {
+                node = &item;
+                break;
+            }
+        }
+        if (node != nullptr) {
+            prepare_unit(node->unit, node->file_id, node);
+        }
     }
     for (const PackageNode &node : graph.nodes) {
         check_unit(node.unit, node.file_id, &node);

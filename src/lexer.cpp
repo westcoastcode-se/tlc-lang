@@ -50,7 +50,6 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"restrict", TokenKind::KwRestrict},
     {"return", TokenKind::KwReturn},
     {"sizeof", TokenKind::KwSizeof},
-    {"static", TokenKind::KwStatic},
     {"static_assert", TokenKind::KwStaticAssert},
     {"struct", TokenKind::KwStruct},
     {"switch", TokenKind::KwSwitch},

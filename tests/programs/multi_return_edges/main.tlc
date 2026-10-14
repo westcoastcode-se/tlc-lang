@@ -90,7 +90,7 @@ func Box::both(self *this) (i32, i32) {
     return self.v, self.w;
 }
 
-static func hidden() (i32, i32) {
+func hidden() (i32, i32) {
     return 40, 2;
 }
 

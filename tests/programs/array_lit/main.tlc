@@ -1,0 +1,6 @@
+func main() i32 {
+    var row = [_]i32{10, 20, 12};
+    other := [_]i32{7, 8};
+    var typed [2]i32 = [_]i32{4, 1};
+    return row[0] + row[2] + other[0] + other[1] + typed[0] + typed[1];
+}

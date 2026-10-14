@@ -96,7 +96,7 @@ bool Parser::starts_declaration() const {
     const TokenKind kind = peek().kind;
     const bool typedef_name = kind == TokenKind::Identifier && peek(1).kind != TokenKind::Dot &&
                               (peek(1).kind == TokenKind::Star || peek(1).kind == TokenKind::Identifier);
-    return kind == TokenKind::KwExport || kind == TokenKind::KwStatic || kind == TokenKind::KwExtern ||
+    return kind == TokenKind::KwExport || kind == TokenKind::KwExtern ||
            kind == TokenKind::KwFunc || kind == TokenKind::KwType || is_type_keyword(kind) ||
            starts_qualified_type() || typedef_name;
 }

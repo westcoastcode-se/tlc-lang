@@ -88,6 +88,8 @@ struct Binding {
     int fn_ret_struct = -1;
     std::vector<FnParam> fn_results{};
     int enum_id = -1;
+    // `[2][3]i32`: the element is an array of this length. Zero when the element is not an array.
+    int inner_array_len = 0;
     // A pack of several types, stored as one anonymous struct.
     bool is_tuple = false;
     std::vector<ResultSlot> tuple_parts;
@@ -115,6 +117,10 @@ struct TypedValue {
     int fn_ret_struct = -1;
     std::vector<FnParam> fn_results{};
     int enum_id = -1;
+    // Set on a decayed array whose element is itself an array. Indexing steps by that row.
+    int inner_array_len = 0;
+    // The address is a row of an array of arrays. The caller uses it as a pointer, not a load.
+    bool row_decay = false;
     bool is_tuple = false;
     // Element types of a tuple value, in order. Empty when the value is not a tuple.
     std::vector<ResultSlot> tuple_parts;
@@ -220,6 +226,8 @@ class CodeGen {
     uint32_t current_file_ = 0;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
     std::unordered_map<uint32_t, FileSymbols> files_;
+    // Globals whose constant value is being copied into another initializer.
+    std::unordered_set<std::string> const_names_;
     std::unordered_map<std::string, uint32_t> packages_;
     struct LoopTargets {
         llvm::BasicBlock *step = nullptr;
@@ -259,7 +267,8 @@ class CodeGen {
         CAbi abi_ret{};
         std::vector<AbiMark> abi_attrs;
         SourceLoc loc{};
-        // Push a call-stack frame around this call. `builtin.trace` leaves it off.
+        // Push a call-stack frame around this call. `builtin.trace` and `builtin.va` leave it
+        // off, so those calls are not part of the text. `builtin.panic` keeps the frame.
         bool trace = false;
     };
     struct AbiLeaf {
@@ -317,6 +326,7 @@ class CodeGen {
         int fn_ret_struct = -1;
         std::vector<FnParam> fn_results{};
         int enum_id = -1;
+        int inner_array_len = 0;
         bool is_tuple = false;
         std::vector<ResultSlot> tuple_parts;
     };
@@ -656,8 +666,20 @@ class CodeGen {
             return value;
         }
         if (binding.is_array) {
-            return {binding.value, binding.depth + 1, binding.elem_char, binding.struct_id, false, binding.elem_void,
-                    binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};
+            TypedValue value{binding.value, binding.depth + 1, binding.elem_char, binding.struct_id, false, binding.elem_void,
+                             binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};
+            value.inner_array_len = binding.inner_array_len;
+            value.fn_ty = binding.fn_ty;
+            value.fn_ret_depth = binding.fn_ret_depth;
+            value.fn_ret_float = binding.fn_ret_float;
+            value.fn_ret_bits = binding.fn_ret_bits;
+            value.fn_ret_unsigned = binding.fn_ret_unsigned;
+            value.fn_ret_char = binding.fn_ret_char;
+            value.fn_ret_bool = binding.fn_ret_bool;
+            value.fn_ret_struct = binding.fn_ret_struct;
+            value.fn_results = binding.fn_results;
+            value.enum_id = binding.enum_id;
+            return value;
         }
         if (binding.is_tuple && binding.value != nullptr) {
             llvm::Type *ty = object_type(binding.value);
@@ -743,6 +765,8 @@ class CodeGen {
     void bind_package_globals();
     int tag_id(uint32_t file, const std::string &name) const;
     uint32_t package_file(uint32_t file, const std::string &package) const;
+    // File whose package holds `Entity.next`. `math.Entity.next` is the imported package.
+    uint32_t assoc_home(const Expr::Selector &node) const;
     int selective_tag(uint32_t file, const std::string &name) const;
     const Alias *find_alias(uint32_t file, const std::string &name) const;
     const Alias *selective_alias(uint32_t file, const std::string &name) const;
@@ -802,18 +826,24 @@ class CodeGen {
     void emit_bodies(const PackageNode &node);
     void emit_tests();
     bool is_std_builtin_call(const Expr &callee, const std::string &field) const;
+    llvm::Function *builtin_function(const std::string &name) const;
     void ensure_trace();
     std::string display_path(SourceLoc loc) const;
     llvm::Value *push_trace(SourceLoc loc);
     void pop_trace(llvm::Value *pushed);
     TypedValue emit_builtin_va(SourceLoc loc);
     void emit_builtin_trace();
+    void emit_builtin_panic();
     llvm::Value *variadic_arg(const TypedValue &value);
     void apply_initializer(const VarDecl &var);
     llvm::Constant *const_initializer(const Expr &expr, const Binding &dest);
     llvm::Constant *sized_int(const Binding &dest, int32_t value) const;
     llvm::Constant *intern_type_name(const std::string &text);
     llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
+    llvm::Constant *const_array(const Expr::Init &init, const Binding &dest);
+    llvm::Constant *fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
+    const VarDecl *global_decl(const std::string &name) const;
+    std::optional<Lowered> lower_array_literal(uint32_t file, const Expr::Init &init) const;
     llvm::Constant *const_field(const Expr &expr, const FieldLayout &slot);
     std::optional<int32_t> fold(const Expr &expr) const;
     void emit_function(const FunctionDecl &fn);
@@ -839,6 +869,8 @@ class CodeGen {
     void emit_case(const Stmt::Case &node);
     void emit_switch(const Stmt::Switch &node);
     TypedValue emit_rvalue(const Expr &expr);
+    // Allocates `[_]T{...}` and stores each value. `low` is the array type.
+    llvm::AllocaInst *emit_array_literal(const Expr::Init &init, Lowered &low);
     TypedValue emit_init(const Expr::Init &init);
     TypedValue emit_addr(const Expr &expr);
     llvm::Type *shape_type(const Shape &shape) const;

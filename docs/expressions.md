@@ -137,7 +137,7 @@ func main() i32 {
 
 ## Casts
 
-A cast is the type followed by the value in parentheses: `i32(n)`, `i64(n)`, `*u8(bits)`, `*void(p)`, `*Point(p)`. A name declared as a type in this file is a cast too: `Integer(n)` after `type Integer i32`, and `ShapeType(shape)` to read the tag of a tlc union. That cast is how a value enters or leaves the alias. `Integer(n)` has type `Integer`, and `i32(value)` has type `i32`. A cast between an alias and a value with the same representation is allowed, including `Spot(p)` after `type Spot Point` and `Ptr(&p)` after `type Ptr *Point`. A cast to a different struct is reported as `type mismatch`. From another file in the package, `ShapeType(shape)` still reads that tag.
+A cast is the type followed by the value in parentheses: `i32(n)`, `i64(n)`, `*u8(bits)`, `*void(p)`, `*Point(p)`, or `func (i32) i32(p)`. A name declared as a type in this file is a cast too: `Integer(n)` after `type Integer i32`, and `ShapeType(shape)` to read the tag of a tlc union. `func (i32) i32(p)` and `Op(p)` after `type Op func (i32) i32` convert a data pointer or another function pointer into that function pointer. `Op(p)(1)` calls it. That cast is how a value enters or leaves the alias. `Integer(n)` has type `Integer`, and `i32(value)` has type `i32`. A cast between an alias and a value with the same representation is allowed, including `Spot(p)` after `type Spot Point` and `Ptr(&p)` after `type Ptr *Point`. A cast to a different struct is reported as `type mismatch`. From another file in the package, `ShapeType(shape)` still reads that tag.
 
 A cast between integer types is allowed. Signed `i32` can be cast to and from a pointer. The cast keeps the type that was written: `*i32(p)` is `*i32`, and `?*i32(p)` is `?*i32`. `?*i32(null)` is allowed. `*i32(null)`, `i64(p)`, `u32(p)`, and `i32(null)` are reported as `type mismatch`. `i32*(p)` is reported as `type mismatch`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type.
 
@@ -163,7 +163,16 @@ func main() i32 {
 
 `(40, 2)` is a tuple. The element types are the types of the values before promotion, so `(40, 'a')` is `i32` and `u8`. `(40)` is the value `40`. `var value = (40, 2)` and `value := (40, 2)` each bind that tuple. `var value1, value2 = value` and `a, b := value` unpack it, one name per element. `var value1, value2 = (40, 2)` unpacks the literal the same way. The number of names matches the tuple. A different count is reported as `type mismatch`. `value[0]` reads one element. The index is a constant.
 
-`{10, 20, 12}` fills an array. Where a struct is expected, that brace list is reported as `type mismatch`. An empty `{}` names no fields.
+`{10, 20, 12}` fills an array. Where a struct is expected, that brace list is reported as `type mismatch`. An empty `{}` names no fields. `Point{}` names the struct, so the type is `Point` and the fields are zero.
+
+`[_]i32{10, 20, 12}` is an array value. `_` stands for the length, which is the number of values, so the type is `[3]i32`. `var row = [_]i32{10, 20, 12}` and `row := [_]i32{10, 20, 12}` have that type. `row[0]` reads an element. An empty `[_]i32{}` has length 0. `[_][2]i32{{1, 2}, {3, 4}}` is one nested level, and `grid[0][1]` reads an element. At file scope the same literal initializes the variable when each value is a constant. `const fixed = [_]i32{19, 2}` is that array, and a store of an element is reported as `type mismatch`.
+
+```c
+func main() i32 {
+    var row = [_]i32{10, 20, 12};
+    return row[0] + row[1] + row[2];
+}
+```
 
 ```c
 func main() i32 {

@@ -1,0 +1,23 @@
+type Point struct { x i32; };
+
+type Box trait {
+    p Point;
+    n *i32;
+};
+
+type Wrap struct {
+    p Point;
+    n *i32;
+};
+
+func bump(b *Box) i32 {
+    b.p.x = b.p.x + 1;
+    *b.n = *b.n + b.p.x;
+    return b.p.x + *b.n;
+}
+
+func main() i32 {
+    var live i32 = 10;
+    var w Wrap = {.n = &live, .p = {.x = 15}};
+    return bump(&w);
+}

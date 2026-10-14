@@ -1,0 +1,24 @@
+import "math";
+import { origin, pad } from "math";
+
+func main() i32 {
+    if (origin.x + origin.y != 2) {
+        return 1;
+    }
+    if (pad != 0.0f) {
+        return 2;
+    }
+    if (math.base != 4) {
+        return 3;
+    }
+    if (math.row[0] + math.row[1] != 4) {
+        return 4;
+    }
+    if (math.Entity.bias != 1.0f) {
+        return 5;
+    }
+    math.Entity.next = math.Entity.next + math.Integer.ten;
+    var p *i32 = &math.Entity.next;
+    *p = *p + math.Color.label;
+    return *p + math.base;
+}

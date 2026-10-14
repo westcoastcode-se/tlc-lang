@@ -18,7 +18,7 @@ file:line:column: error: message
 - [Expressions](expressions.md) — operators, casts, tuples, and `null`
 - [Statements](statements.md) — control flow, bindings, and `defer`
 - [Functions](functions.md) — results, generics, tests, and function pointers
-- [Builtin](builtin.md) — `builtin.trace` and `builtin.va`
+- [Builtin](builtin.md) — `builtin.trace`, `builtin.va`, and `builtin.panic`
 - [Structs, pointers, and arrays](structs.md) — layout, initializers, and unions
 - [Methods and traits](methods.md)
 - [Enums and type aliases](enums.md)

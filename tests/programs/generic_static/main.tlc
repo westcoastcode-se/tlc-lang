@@ -1,0 +1,42 @@
+type Box[T type] struct {
+    value T;
+};
+
+func Box[T]::from(value T) Box[T] {
+    var box Box[T];
+    box.value = value;
+    return box;
+}
+
+func Box[T]::zero(value T) Box[T] {
+    return Box[T].from(value);
+}
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Buf[N i32, T type] struct {
+    value T;
+};
+
+func Buf[N, T]::width() i32 {
+    return N;
+}
+
+func take(made func (i32) Box[i32]) i32 {
+    var box = made(1);
+    return box.value;
+}
+
+var made = Box[i32].from;
+
+func main() i32 {
+    var box = Box[i32].from(40);
+    var point = Box[Point].from(Point{});
+    var zero = Box[i32].zero(0);
+    var local = Box[i32].from;
+    var extra = local(0);
+    return box.value + take(made) + Buf[1, i32].width() + zero.value + extra.value + point.value.x + point.value.y;
+}

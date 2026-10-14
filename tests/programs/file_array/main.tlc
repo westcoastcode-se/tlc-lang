@@ -1,0 +1,23 @@
+const N = 3;
+const fixed = [_]i32{19, 2};
+var named [N]i32 = {10, 4, 1};
+listed := [_]i32{6, 1};
+var live [2]i32 = [_]i32{1, 2};
+const flags = [_]bool{true, false};
+var narrow = [_]i8{-1, 2};
+
+func read(p *const i32) i32 {
+    return p[0] + p[1];
+}
+
+func sum(p *i32) i32 {
+    return p[0] + p[2];
+}
+
+func main() i32 {
+    if (flags[0] == 0 || flags[1] != 0) {
+        return 1;
+    }
+    live[0] = 3;
+    return read(fixed) + sum(named) + listed[0] + listed[1] + live[0] + narrow[0] + 1;
+}

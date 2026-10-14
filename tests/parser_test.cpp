@@ -250,6 +250,35 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "func add(n i32) i32 { return n; }\n"
+            "func main() i32 {\n"
+            "  var raw *void = *void(add);\n"
+            "  return func (i32) i32(raw)(41);\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(call (cast i32* fnptr (name raw)) (int 41))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() i32 {\n"
+            "  return func (n i32) i32 { return n; }(41);\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT(check, parsed.dump.find("(cast ") == std::string::npos);
+        EXPECT_HAS(check, parsed.dump, "(call (anon");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() i32 {\n"
+            "  return func (i32) func (i32) i32(raw);\n"
+            "}\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+    }
+
+    {
         const Parsed parsed = parse_source("func main( {\n  return 1\n}\n");
         EXPECT_HAS(check, parsed.errors, "expected ')'");
         EXPECT_HAS(check, parsed.errors, "expected ';'");
@@ -382,6 +411,58 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "type Entity struct {\n"
+            "  id i32;\n"
+            "  var next i32 = 1;\n"
+            "  export var shown = 2;\n"
+            "};\n"
+            "type Box[T type] struct {\n"
+            "  value T;\n"
+            "  var extra i32 = 1;\n"
+            "};\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(field id i32)\n");
+        EXPECT_HAS(check, parsed.dump, "(var Entity::next i32 (int 1))\n");
+        EXPECT_HAS(check, parsed.dump, "(var Entity::shown := (int 2) export)\n");
+        EXPECT_HAS(check, parsed.dump, "(var Box[T]::extra i32 (int 1))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "type Entity struct {\n"
+            "  id i32;\n"
+            "};\n"
+            "const Entity::spare = 3;\n"
+            "type Box[T type] struct {\n"
+            "  value T;\n"
+            "};\n"
+            "const Box[T]::limit i32 = 4;\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(field id i32)\n");
+        EXPECT_HAS(check, parsed.dump, "(var Entity::spare := (int 3))\n");
+        EXPECT_HAS(check, parsed.dump, "(var Box[T]::limit i32 (int 4))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "type Entity struct {\n"
+            "  id i32;\n"
+            "  const next i32 = 1;\n"
+            "  export const shown = 2;\n"
+            "};\n"
+            "type Box[T type] struct {\n"
+            "  value T;\n"
+            "  const extra i32 = 1;\n"
+            "};\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.dump, "(field id i32)\n");
+        EXPECT(check, parsed.dump.find("(var Entity::next") == std::string::npos);
+        EXPECT(check, parsed.dump.find("(var Entity::shown") == std::string::npos);
+        EXPECT(check, parsed.dump.find("(var Box[T]::extra") == std::string::npos);
+    }
+
+    {
         const Parsed parsed = parse_source("func main() i32 { type Point struct { x i32; }; return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
@@ -462,6 +543,7 @@ int run_parser_tests() {
             "extern(abi=\"c\") type Flag enum;\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "expected '{'");
+        EXPECT_HAS(check, parsed.dump, "(struct Node\n");
         EXPECT(check, parsed.dump.find("forward") == std::string::npos);
     }
 
@@ -470,9 +552,9 @@ int run_parser_tests() {
             "extern(abi=\"c\") type Pair struct { a i32; b i32; };\n"
             "export extern(abi=\"c\") type Node struct;\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "expected '{'");
+        EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(struct Pair extern(abi=\"c\")\n");
-        EXPECT(check, parsed.dump.find("(struct Node") == std::string::npos);
+        EXPECT_HAS(check, parsed.dump, "(struct Node export extern(abi=\"c\")\n");
     }
 
     {
@@ -773,6 +855,39 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "func main() i32 {\n"
+            "  var p = Point{};\n"
+            "  var q = Point{.x = 1};\n"
+            "  var r = geom.Point{};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(init Point)");
+        EXPECT_HAS(check, parsed.dump, "(init Point (.x (int 1)))");
+        EXPECT_HAS(check, parsed.dump, "(init geom.Point)");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() i32 {\n"
+            "  var row = [_]i32{10, 20, 12};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(array i32 (int 10) (int 20) (int 12))");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() i32 {\n"
+            "  var row = []i32{10, 20, 12};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, parsed.errors, "expected '_'");
+    }
+
+    {
         const Parsed parsed = parse_source("func keep[...U](args U) U { return args; }\n");
         EXPECT(check, parsed.errors.empty());
     }
@@ -841,6 +956,17 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(trait Shape\n");
         EXPECT_HAS(check, parsed.dump, "(fn area (params) i32");
         EXPECT_HAS(check, parsed.dump, "(fn grow (params (n i32)) void");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "type Shape trait {\n"
+            "  w i32;\n"
+            "  func area() i32;\n"
+            "};\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(field w i32");
+        EXPECT_HAS(check, parsed.dump, "(fn area (params) i32");
     }
 
     {
@@ -1066,6 +1192,20 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "var Entity::next i32 = 1;\n"
+            "var Box[T]::extra i32;\n"
+            "var Buf[N, T]::count = 4;\n"
+            "func main() i32 { return Entity.next + Box[i32].extra + Buf[4, i32].count; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var Entity::next i32 (int 1))");
+        EXPECT_HAS(check, parsed.dump, "(var Box[T]::extra i32)");
+        EXPECT_HAS(check, parsed.dump, "(var Buf[N, T]::count := (int 4))");
+        EXPECT_HAS(check, parsed.dump, "(. (name Entity) next)");
+        EXPECT_HAS(check, parsed.dump, "(. ([] (name Box) (name i32)) extra)");
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "func main() i32 {\n"
             "  var p *i32 = 0;\n"
             "  var buf [32]u8;\n"
@@ -1101,14 +1241,14 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "func sized(xs i32[4]) i32 { return 0; }\n"
             "func named(xs i32[N]) i32 { return 0; }\n"
+            "func open(xs i32[]) i32 { return 0; }\n"
             "func result() i32[2] { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "type mismatch");
     }
 
     {
-        const Parsed parsed = parse_source("func open(xs i32[]) i32 { return xs[0]; }\n");
-        EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(fn open (params (xs i32[])");
+        const Parsed parsed = parse_source("func head(a []i32) []i32 { return a; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
     {

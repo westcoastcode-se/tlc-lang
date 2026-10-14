@@ -109,6 +109,13 @@ void Checker::collect_templates(TranslationUnit &unit, uint32_t file_id) {
             fn_templates_[file_id][fn->name] = &owned_fns_.back().fn;
         }
     }
+    for (const TopDecl &decl : unit.decls) {
+        const auto *var = std::get_if<VarDecl>(&decl.data);
+        if (var == nullptr || var->owner.empty() || var->name.empty() || !generic_structs.contains(var->owner)) {
+            continue;
+        }
+        owned_assoc_.push_back(OwnedVar{file_id, clone_var(*var)});
+    }
 }
 
 namespace {
@@ -138,7 +145,8 @@ void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
     push();
     for (TopDecl &decl : unit.decls) {
         auto *var = std::get_if<VarDecl>(&decl.data);
-        if (var == nullptr || !var->is_const_decl || var->has_const || var->name.empty() || var->init == nullptr) {
+        if (var == nullptr || !var->is_const_decl || var->has_const || var->name.empty() || var->init == nullptr ||
+            !var->owner.empty()) {
             continue;
         }
         if (!early_int_const(*var)) {
@@ -349,6 +357,103 @@ void Checker::require_method_params(const FunctionDecl &fn) {
             return;
         }
     }
+}
+
+void Checker::require_owner_params(const VarDecl &var) {
+    uint32_t owner = file_id_;
+    const StructDecl *templ = find_struct_template(var.owner, owner);
+    if (templ == nullptr) {
+        if (!var.owner_params.empty()) {
+            error(var.loc, "type mismatch");
+        }
+        return;
+    }
+    if (owner != file_id_) {
+        error(var.loc, "method in another file");
+    }
+    if (var.owner_params.empty()) {
+        error(var.loc, "type mismatch");
+        return;
+    }
+    if (var.owner_params.size() != templ->type_params.size()) {
+        error(var.loc, "argument count");
+        return;
+    }
+    for (std::size_t i = 0; i < var.owner_params.size(); ++i) {
+        if (var.owner_params[i] != templ->type_params[i].name) {
+            error(var.loc, "type mismatch");
+            return;
+        }
+    }
+}
+
+void Checker::instantiate_assoc(uint32_t owner_file, const StructDecl &templ, const std::string &spec_name,
+                                const std::vector<SpecArg> &bounds) {
+    const std::string busy = std::to_string(owner_file) + "\n" + spec_name;
+    if (!assoc_busy_.insert(busy).second) {
+        return;
+    }
+    std::vector<const VarDecl *> matches;
+    for (const OwnedVar &owned : owned_assoc_) {
+        if (owned.file_id == owner_file && owned.var.owner == templ.name) {
+            matches.push_back(&owned.var);
+        }
+    }
+    for (const VarDecl *src : matches) {
+        if (src == nullptr || src->name.empty() || assoc_defined(owner_file, spec_name, src->name)) {
+            continue;
+        }
+        VarDecl copy = clone_var(*src);
+        copy.owner = spec_name;
+        copy.owner_params.clear();
+        substitute_type(templ.type_params, bounds, copy.type_name, copy.type_package, copy.is_struct, copy.is_enum,
+                        copy.indirections, copy.optional, copy.is_array, copy.array_len, copy.array_len_name,
+                        copy.type_args, copy.loc);
+        if (copy.init) {
+            substitute_expr(templ.type_params, bounds, *copy.init);
+        }
+        if (copy.is_const_decl) {
+            const std::size_t before = diags_.size();
+            store_assoc_const(owner_file, copy);
+            const AssocVar *stored = find_assoc_in(owner_file, spec_name, copy.name);
+            if (diags_.size() == before && stored != nullptr && stored->type.kind != TypeKind::Invalid) {
+                PendingAppend appended;
+                appended.file_id = owner_file;
+                appended.decl.data = std::move(copy);
+                pending_appends_.push_back(std::move(appended));
+            }
+            continue;
+        }
+        Type type = type_invalid();
+        if (copy.inferred) {
+            if (copy.init == nullptr) {
+                error(copy.loc, "type mismatch");
+            } else {
+                type = check_expr(*copy.init, true);
+                if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void || type.kind == TypeKind::Nullptr) {
+                    error(copy.loc, "type mismatch");
+                    type = type_invalid();
+                }
+            }
+        } else {
+            type = type_of_var(copy);
+            if (copy.init) {
+                if (mentions_trait(type)) {
+                    error(copy.loc, "not supported yet");
+                } else {
+                    check_against(*copy.init, type);
+                }
+            } else if (!copy.is_extern && needs_nonnull_pointer(type)) {
+                error(copy.loc, "type mismatch");
+            }
+        }
+        assoc_vars_[owner_file][spec_name].emplace(copy.name, AssocVar{type, copy.exported});
+        PendingAppend appended;
+        appended.file_id = owner_file;
+        appended.decl.data = std::move(copy);
+        pending_appends_.push_back(std::move(appended));
+    }
+    assoc_busy_.erase(busy);
 }
 
 bool Checker::generic_struct_name(uint32_t file, const std::string &name) const {
@@ -698,18 +803,88 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 if (node.base) {
                     substitute_expr(params, bounds, *node.base);
                 }
+                // `Buf[N, T].width` keeps the arguments on the selector. Substitute them as types.
+                if (!node.type_args.empty()) {
+                    std::string type_name;
+                    std::string type_package;
+                    bool is_struct = false;
+                    bool is_enum = false;
+                    int indirections = 0;
+                    uint32_t optional = 0;
+                    bool is_array = false;
+                    int array_len = 0;
+                    std::string array_len_name;
+                    substitute_type(params, bounds, type_name, type_package, is_struct, is_enum, indirections, optional,
+                                    is_array, array_len, array_len_name, node.type_args, node.loc);
+                }
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 if (node.base) {
                     substitute_expr(params, bounds, *node.base);
                 }
                 if (node.index) {
                     substitute_expr(params, bounds, *node.index);
+                    // `Box[T].from` is an index. A plain type parameter becomes that type's name.
+                    if (auto *named = std::get_if<Expr::Name>(&node.index->data)) {
+                        if (const SpecArg *bound = find_arg(params, bounds, named->text);
+                            bound != nullptr && !bound->is_value && !bound->is_pack && !bound->is_array &&
+                            bound->indirections == 0 && bound->type_package.empty() && !bound->type_name.empty()) {
+                            named->text = bound->type_name;
+                        }
+                    }
                 }
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 if (node.expr) {
                     substitute_expr(params, bounds, *node.expr);
                 }
+                if (node.is_fn_ptr) {
+                    auto subst_spelling = [&](std::string &type_name, std::string &type_package, bool &is_struct,
+                                              bool &is_enum, int &indirections, uint32_t &optional) {
+                        bool is_array = false;
+                        int array_len = 0;
+                        std::string array_len_name;
+                        std::vector<TypeArg> type_args;
+                        substitute_type(params, bounds, type_name, type_package, is_struct, is_enum, indirections,
+                                        optional, is_array, array_len, array_len_name, type_args, node.loc);
+                    };
+                    auto subst_param = [&](auto &&self, FnParam &param) -> void {
+                        bool is_array = false;
+                        int array_len = 0;
+                        std::string array_len_name;
+                        if (param.is_fn_ptr) {
+                            substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct,
+                                            param.is_enum, param.ret_indirections, param.ret_optional, is_array, array_len,
+                                            array_len_name, param.type_args, node.loc);
+                            for (FnParam &inner : param.params) {
+                                self(self, inner);
+                            }
+                            for (FnParam &inner : param.results) {
+                                self(self, inner);
+                            }
+                            return;
+                        }
+                        substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
+                                        param.indirections, param.optional, is_array, array_len, array_len_name,
+                                        param.type_args, node.loc);
+                    };
+                    subst_spelling(node.type_name, node.type_package, node.is_struct, node.is_enum, node.ret_indirections,
+                                   node.ret_optional);
+                    for (FnParam &param : node.fn_params) {
+                        subst_param(subst_param, param);
+                    }
+                    for (FnParam &part : node.fn_results) {
+                        subst_param(subst_param, part);
+                    }
+                }
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                if (node.array_literal) {
+                    bool is_array = node.elem_is_array;
+                    int array_len = 0;
+                    std::string array_len_name;
+                    substitute_type(params, bounds, node.type_name, node.type_package, node.is_struct, node.is_enum,
+                                    node.indirections, node.optional, is_array, array_len, array_len_name, node.type_args,
+                                    node.loc);
+                    node.elem_is_array = is_array || !array_len_name.empty();
+                }
                 for (Expr::FieldInit &field : node.fields) {
                     if (field.value) {
                         substitute_expr(params, bounds, *field.value);
@@ -838,6 +1013,25 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         }
         return bound;
     };
+    auto subst_fn_param = [&](auto &&self, FnParam &param, SourceLoc loc) -> void {
+        bool is_array = false;
+        int array_len = 0;
+        std::string array_len_name;
+        if (param.is_fn_ptr) {
+            substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
+                            param.ret_indirections, param.ret_optional, is_array, array_len, array_len_name,
+                            param.type_args, loc);
+            for (FnParam &inner : param.params) {
+                self(self, inner, loc);
+            }
+            for (FnParam &inner : param.results) {
+                self(self, inner, loc);
+            }
+            return;
+        }
+        substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
+                        param.indirections, param.optional, is_array, array_len, array_len_name, param.type_args, loc);
+    };
     for (Param &param : fn.params) {
         if (const SpecArg *pack = bare_pack(param.type_name, param.type_package, param.indirections, param.is_array,
                                             param.type_args)) {
@@ -852,6 +1046,12 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
                         param.indirections, param.optional, param.is_array, param.array_len, param.array_len_name,
                         param.type_args, param.loc);
+        for (FnParam &inner : param.fn_params) {
+            subst_fn_param(subst_fn_param, inner, param.loc);
+        }
+        for (FnParam &inner : param.fn_results) {
+            subst_fn_param(subst_fn_param, inner, param.loc);
+        }
     }
     if (fn.results.size() == 1) {
         ResultSlot &slot = fn.results.front();
@@ -869,6 +1069,12 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
     for (ResultSlot &slot : fn.results) {
         substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
                         slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, fn.loc);
+        for (FnParam &inner : slot.fn_params) {
+            subst_fn_param(subst_fn_param, inner, fn.loc);
+        }
+        for (FnParam &inner : slot.fn_results) {
+            subst_fn_param(subst_fn_param, inner, fn.loc);
+        }
     }
     if (!fn.results.empty()) {
         const ResultSlot &first = fn.results.front();
@@ -1034,6 +1240,12 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     const std::string spec_name = mangle_spec(templ->name, bounds);
     const std::string key = std::to_string(owner) + "\n" + spec_name;
     if (spec_ready_.contains(key) || find_tag(owner, spec_name) >= 0) {
+        // A value may have specialized the struct before anyone read `Box[i32].extra`.
+        const uint32_t saved_file = file_id_;
+        file_id_ = owner;
+        expose_bounds(owner, bounds);
+        instantiate_assoc(owner, *templ, spec_name, bounds);
+        file_id_ = saved_file;
         return spec_name;
     }
     if (spec_checking_.contains(key)) {
@@ -1113,6 +1325,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             method.name, MethodInfo{std::move(signature), method.body != nullptr, method.static_method});
         deferred_methods_.push_back(OwnedFn{owner, std::move(method)});
     }
+    instantiate_assoc(owner, *templ, spec_name, bounds);
     PendingAppend appended;
     appended.file_id = owner;
     appended.decl.data = std::move(spec);

@@ -1,0 +1,5 @@
+import { take } from "math";
+
+func main() i32 {
+    return take();
+}

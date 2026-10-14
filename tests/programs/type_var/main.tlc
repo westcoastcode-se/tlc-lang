@@ -1,0 +1,41 @@
+type Entity struct {
+    id i32;
+};
+
+var Entity::next i32 = 40;
+var Entity::bias = 0;
+var Entity::spare i32;
+
+func Entity::make() Entity {
+    var e Entity;
+    e.id = Entity.next;
+    Entity.next = Entity.next + 1;
+    return e;
+}
+
+type Point struct {
+    x i32;
+};
+
+type Box[T type] struct {
+    value T;
+};
+
+var Box[T]::extra i32 = 1;
+
+type Buf[N i32, T type] struct {
+    value T;
+};
+
+var Buf[N, T]::count i32 = N;
+
+type Color enum { Red };
+
+var Color::label i32;
+
+func main() i32 {
+    var e = Entity.make();
+    var p = &Entity.next;
+    Box[Point].extra = 9;
+    return e.id + Box[i32].extra + *p + Buf[4, Point].count + Entity.bias + Entity.spare + Color.label - 44;
+}

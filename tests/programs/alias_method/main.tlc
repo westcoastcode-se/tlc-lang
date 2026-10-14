@@ -1,0 +1,68 @@
+type Marker struct;
+
+func Marker::pad(self this) i32 {
+    return 0;
+}
+
+type Integer i32;
+
+func Integer::twice(self this) Integer {
+    return self + self;
+}
+
+func Integer::add(self *this, n Integer) void {
+    *self = *self + n;
+}
+
+func Integer::from(n i32) Integer {
+    return Integer(n);
+}
+
+var Integer::ten Integer = Integer(10);
+
+type Real f32;
+
+func Real::twice(self this) Real {
+    return self + self;
+}
+
+type Byte i8;
+
+func Byte::bump(self *this) void {
+    *self = *self + Byte(1);
+}
+
+type Flag bool;
+
+func Flag::bit(self this) i32 {
+    return i32(self);
+}
+
+func main() i32 {
+    var m Marker;
+    if (sizeof(Marker) != 0 || sizeof(m) != 0) {
+        return 1;
+    }
+    if (Real(1.0f).twice() != Real(2.0f)) {
+        return 2;
+    }
+    var b Byte = Byte(7);
+    b.bump();
+    if (i32(b) != 8) {
+        return 3;
+    }
+    var f = Integer.from;
+    if (i32(f(7)) != 7) {
+        return 4;
+    }
+    if (Flag(true).bit() != 1) {
+        return 5;
+    }
+    var n = Integer.from(i32(Integer.ten));
+    var p *Integer = &n;
+    p.add(Integer(11));
+    if (i32(p.twice()) != 42) {
+        return 6;
+    }
+    return i32(n.twice()) + m.pad();
+}

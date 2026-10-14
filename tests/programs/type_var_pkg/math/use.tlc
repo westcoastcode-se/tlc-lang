@@ -1,0 +1,6 @@
+package math;
+
+export func take() i32 {
+    Entity.next = Entity.next + 2;
+    return Entity.next;
+}

@@ -614,7 +614,7 @@ class Resolver {
         load_directory(hit.path, from_file, import);
     }
 
-    // `trace` and `va` are compiler intrinsics. They are not read from a .tlc file.
+    // `trace`, `va`, and `panic` are compiler intrinsics. They are not read from a .tlc file.
     void load_builtin(uint32_t from_file, const ImportDecl &import) {
         constexpr const char *kKey = "<builtin>";
         if (by_package_.contains(kKey)) {
@@ -644,12 +644,28 @@ class Resolver {
         PackageClause clause;
         clause.name = "builtin";
         node.unit.package = clause;
+        FunctionDecl panic_fn;
+        panic_fn.exported = true;
+        panic_fn.name = "panic";
+        panic_fn.return_type = "void";
+        ResultSlot panic_result;
+        panic_result.type_name = "void";
+        panic_fn.results.push_back(std::move(panic_result));
+        Param message;
+        message.name = "message";
+        message.type_name = "u8";
+        message.indirections = 1;
+        message.const_pointee = 1;
+        panic_fn.params.push_back(std::move(message));
         TopDecl trace;
         trace.data = pointer_char("trace", true);
         TopDecl va;
         va.data = pointer_char("va", false);
+        TopDecl panic;
+        panic.data = std::move(panic_fn);
         node.unit.decls.push_back(std::move(trace));
         node.unit.decls.push_back(std::move(va));
+        node.unit.decls.push_back(std::move(panic));
         node.imported_from = from_file;
         node.import_spec = import.path;
         node.import_loc = import.loc;

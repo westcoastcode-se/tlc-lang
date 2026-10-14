@@ -51,7 +51,7 @@ The executable stays on disk. `gdb app` or `lldb app` can break on a source line
 
 In Zed, hold Ctrl and click a function name to open its definition. That includes a function brought in by `import { name } from "pkg"`.
 
-Completion offers keywords, built-in types, and names in scope. After a dot it offers the fields, methods, and enumerators of a value's type. A parameter of a trait type offers that trait's methods, so `s *Shape` completes `s.` with `area` and `grow`. A type name offers that type's static functions, and an enum name also offers its enumerators. A name bound with `:=`, `var name = expression`, or `const name = expression` uses the type of that expression when the expression is a call, a name, a field, or a cast. `p := Point.make(1)` then completes `p.`. A designated initializer `{.field = value}` completes the fields of that struct. The type is taken from the variable, from the name being assigned, from the result of the enclosing function after `return`, or from the surrounding field when the initializer is nested, as in `{.complex = {.inner = 1}}`. A file-scope `const` is one of the names offered. Zed starts this server from the TLC extension.
+Completion offers keywords, built-in types, and names in scope. After a dot it offers the fields, methods, and enumerators of a value's type. A parameter of a trait type offers that trait's methods and fields, so `s *Shape` completes `s.` with `area`, `grow`, and `w`. A type name offers that type's static functions, and an enum name also offers its enumerators. A name bound with `:=`, `var name = expression`, or `const name = expression` uses the type of that expression when the expression is a call, a name, a field, or a cast. `p := Point.make(1)` then completes `p.`. A designated initializer `{.field = value}` completes the fields of that struct. The type is taken from the variable, from the name being assigned, from the result of the enclosing function after `return`, or from the surrounding field when the initializer is nested, as in `{.complex = {.inner = 1}}`. A file-scope `const` is one of the names offered. Zed starts this server from the TLC extension.
 
 ## Linking
 
@@ -65,7 +65,7 @@ Standard packages live in `lib/tlc` beside that vendor directory. `import "std/t
 
 ## Symbol names
 
-A symbol is named `qualifier.name`. In a package with more than one file, a `static` symbol is named `qualifier.filename.name`, where `filename` is the source file without `.tlc`. `extern` and `extern(abi="tlc")` use that name and are linked from a tlc library. `extern(abi="c")` keeps the C name.
+A symbol is named `qualifier.name`. `extern` and `extern(abi="tlc")` use that name and are linked from a tlc library. `extern(abi="c")` keeps the C name.
 
 ## A program
 

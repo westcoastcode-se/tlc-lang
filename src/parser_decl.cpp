@@ -68,9 +68,6 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
             field.fn_params = type.fn_params;
             field.fn_variadic = type.fn_variadic;
             field.fn_results = type.fn_results;
-            if (field.is_array && field.array_len < 0) {
-                diags_.error(field.loc, "not supported yet");
-            }
             body.fields.push_back(std::move(field));
             expect(TokenKind::Semicolon, "expected ';'");
         }
@@ -148,6 +145,24 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         } while (depth > 0 && !eof());
     }
     if (!eat(TokenKind::LBrace)) {
+        // `type Name struct;` is an empty struct, the same type as `type Name struct {}`.
+        if (kind == TokenKind::KwStruct && eat(TokenKind::Semicolon)) {
+            if (!name.empty()) {
+                type_names_.insert(name);
+            }
+            StructDecl item;
+            item.loc = name_loc;
+            item.name = std::move(name);
+            item.exported = exported;
+            item.is_extern = is_extern;
+            item.extern_c = extern_c;
+            item.align = align;
+            item.type_params = std::move(type_params);
+            TopDecl top;
+            top.data = std::move(item);
+            unit.decls.push_back(std::move(top));
+            return;
+        }
         diags_.error(kind_loc, "expected '{'");
         eat(TokenKind::Semicolon);
         return;
@@ -164,16 +179,21 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         trait.name = std::move(name);
         while (!check(TokenKind::RBrace) && !eof()) {
             const std::size_t before = pos_;
-            if (!check(TokenKind::KwFunc)) {
+            if (check(TokenKind::KwFunc)) {
+                FunctionDecl method = parse_function(false, false, false, false, false);
+                if (!method.method_struct.empty()) {
+                    diags_.error(method.loc, "type mismatch");
+                }
+                trait.methods.push_back(std::move(method));
+            } else if (check(TokenKind::Identifier)) {
+                FieldDecl field;
+                if (parse_field(field)) {
+                    trait.fields.push_back(std::move(field));
+                }
+            } else {
                 error_here("expected a declaration");
                 ++pos_;
-                continue;
             }
-            FunctionDecl method = parse_function(false, false, false, false, false);
-            if (!method.method_struct.empty()) {
-                diags_.error(method.loc, "type mismatch");
-            }
-            trait.methods.push_back(std::move(method));
             if (pos_ == before) {
                 error_here("expected a declaration");
                 ++pos_;
@@ -205,9 +225,60 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     const bool as_union = kind == TokenKind::KwUnion;
     UnionBody variants;
     std::vector<FieldDecl> fields;
+    // `var next` inside the struct is `var Name::next`. It is not stored in the value.
+    // A constant is `const Name::value` outside the struct.
+    std::vector<VarDecl> member_vars;
     if (variant_body) {
         variants = parse_union_variants(name);
         fields = std::move(variants.fields);
+    } else if (kind == TokenKind::KwStruct) {
+        while (!check(TokenKind::RBrace) && !eof()) {
+            const std::size_t before = pos_;
+            bool member_export = false;
+            bool member_extern = false;
+            bool member_c = false;
+            const SourceLoc storage_loc = peek().loc;
+            while (check(TokenKind::KwExport) || check(TokenKind::KwExtern)) {
+                if (eat(TokenKind::KwExport)) {
+                    member_export = true;
+                    continue;
+                }
+                take_extern(member_extern, member_c);
+            }
+            if (member_export || member_extern || check(TokenKind::KwVar) || check(TokenKind::KwConst)) {
+                if (check(TokenKind::KwConst)) {
+                    // `const value = 1` belongs outside the struct: `const Name::value = 1`.
+                    diags_.error(storage_loc, "not supported yet");
+                    while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
+                        ++pos_;
+                    }
+                    eat(TokenKind::Semicolon);
+                } else if (!check(TokenKind::KwVar)) {
+                    diags_.error(storage_loc, "expected var");
+                    while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
+                        ++pos_;
+                    }
+                    eat(TokenKind::Semicolon);
+                } else {
+                    VarDecl var = parse_typed_var(member_export, false, member_extern, member_c, true);
+                    if (var.owner.empty()) {
+                        var.owner = name;
+                        for (const TypeParam &param : type_params) {
+                            var.owner_params.push_back(param.name);
+                        }
+                    }
+                    member_vars.push_back(std::move(var));
+                }
+            } else {
+                FieldDecl field;
+                if (parse_field(field)) {
+                    fields.push_back(std::move(field));
+                }
+            }
+            if (pos_ == before) {
+                ++pos_;
+            }
+        }
     } else {
         fields = parse_fields();
     }
@@ -240,6 +311,11 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     TopDecl top;
     top.data = std::move(item);
     unit.decls.push_back(std::move(top));
+    for (VarDecl &var : member_vars) {
+        TopDecl member;
+        member.data = std::move(var);
+        unit.decls.push_back(std::move(member));
+    }
 }
 
 void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c) {
@@ -308,18 +384,11 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     (void)file_scope_export_ok;
     const std::size_t marker = pos_;
     bool exported = false;
-    bool is_static = false;
     bool is_extern = false;
     bool extern_c = false;
-    const SourceLoc storage_loc = peek().loc;
     while (true) {
         if (check(TokenKind::KwExport)) {
             exported = true;
-            ++pos_;
-            continue;
-        }
-        if (check(TokenKind::KwStatic)) {
-            is_static = true;
             ++pos_;
             continue;
         }
@@ -332,55 +401,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         if (is_extern) {
             diags_.error(peek().loc, "not supported yet");
         }
-        if (exported && is_static) {
-            diags_.error(storage_loc, "export static");
-        }
-        VarDecl var;
-        var.is_const_decl = true;
-        var.exported = exported;
-        var.is_static = is_static;
-        var.loc = peek().loc;
-        ++pos_;
-        var.name = peek().text;
-        var.loc = peek().loc;
-        ++pos_;
-        // `const name = expr` takes the type from the expression. `const name Type = expr` writes it.
-        if (check(TokenKind::Eq)) {
-            var.inferred = true;
-            ++pos_;
-            var.init = parse_assignment();
-        } else {
-            const PlacedType type = parse_go_type();
-            if (type.struct_definition || type.enum_definition) {
-                diags_.error(type.loc, "not supported yet");
-            }
-            var.type_name = type.type_name;
-            var.type_package = type.type_package;
-            var.is_struct = type.is_struct;
-            var.is_enum = type.is_enum;
-            var.indirections = type.indirections;
-            var.optional = type.optional;
-            var.const_pointee = type.const_pointee;
-            var.is_array = type.is_array;
-            var.array_len = type.array_len;
-            var.array_len_name = type.array_len_name;
-            var.type_args = type.type_args;
-            var.ptr_to_array = type.ptr_to_array;
-            var.is_fn_ptr = type.is_fn_ptr;
-            var.ret_indirections = type.ret_indirections;
-            var.ret_optional = type.ret_optional;
-            var.ret_const_pointee = type.ret_const_pointee;
-            var.fn_params = type.fn_params;
-            var.fn_variadic = type.fn_variadic;
-            var.fn_results = type.fn_results;
-            if (var.is_array && var.array_len < 0) {
-                diags_.error(var.loc, "not supported yet");
-            }
-            if (eat(TokenKind::Eq)) {
-                var.init = parse_assignment();
-            }
-        }
-        expect(TokenKind::Semicolon, "expected ';'");
+        VarDecl var = parse_const_decl(exported);
         TopDecl top;
         top.data = std::move(var);
         unit.decls.push_back(std::move(top));
@@ -388,11 +409,8 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         return;
     }
     if (at_func_type()) {
-        if (exported && is_static) {
-            diags_.error(storage_loc, "export static");
-        }
         std::vector<VarDecl> vars;
-        parse_func_vars(vars, exported, is_static, is_extern, extern_c);
+        parse_func_vars(vars, exported, false, is_extern, extern_c);
         for (VarDecl &var : vars) {
             TopDecl top;
             top.data = std::move(var);
@@ -402,29 +420,23 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         return;
     }
     if (check(TokenKind::KwType)) {
-        if (exported && is_static) {
-            diags_.error(storage_loc, "export static");
-        }
         parse_type_decl(unit, exported, is_extern, extern_c);
         saw_decl_ = true;
         return;
     }
     if (check(TokenKind::KwVar)) {
-        if (exported && is_static) {
-            diags_.error(storage_loc, "export static");
-        }
         if (var_is_inferred()) {
-            if (exported || is_extern) {
+            if (is_extern) {
                 diags_.error(peek().loc, "not supported yet");
             }
-            parse_inferred_global(unit, is_static && !exported && !is_extern, true);
+            parse_inferred_global(unit, false, true, exported && !is_extern);
             return;
         }
         if (var_is_bind()) {
             diags_.error(peek().loc, "not supported yet");
             parse_bind(true);
         } else {
-            VarDecl var = parse_typed_var(exported, is_static, is_extern, extern_c);
+            VarDecl var = parse_typed_var(exported, false, is_extern, extern_c);
             TopDecl top;
             top.data = std::move(var);
             unit.decls.push_back(std::move(top));
@@ -433,20 +445,14 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         return;
     }
     if (check(TokenKind::Identifier) && peek(1).kind == TokenKind::ColonEq) {
-        if (exported || is_extern) {
+        if (is_extern) {
             diags_.error(peek().loc, "not supported yet");
         }
-        if (exported && is_static) {
-            diags_.error(storage_loc, "export static");
-        }
-        parse_inferred_global(unit, is_static && !exported && !is_extern, false);
+        parse_inferred_global(unit, false, false, exported && !is_extern);
         return;
     }
     if (check(TokenKind::KwFunc)) {
-        if (exported && is_static) {
-            diags_.error(storage_loc, "export static");
-        }
-        FunctionDecl fn = parse_function(exported, is_static, is_extern, extern_c, true);
+        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true);
         TopDecl top;
         top.data = std::move(fn);
         unit.decls.push_back(std::move(top));

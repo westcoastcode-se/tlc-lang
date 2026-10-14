@@ -136,6 +136,20 @@ std::string quote_string(const std::string &text) {
 void dump_var(const VarDecl &var, std::string &out, int indent) {
     append_indent(out, indent);
     out += "(var ";
+    if (!var.owner.empty()) {
+        out += var.owner;
+        if (!var.owner_params.empty()) {
+            out += '[';
+            for (std::size_t i = 0; i < var.owner_params.size(); ++i) {
+                if (i != 0) {
+                    out += ", ";
+                }
+                out += var.owner_params[i];
+            }
+            out += ']';
+        }
+        out += "::";
+    }
     out += var.name;
     out += ' ';
     if (var.inferred) {
@@ -484,6 +498,11 @@ std::string dump_expr(const Expr &expr) {
                     }
                     spelled += '*';
                 }
+                if constexpr (std::is_same_v<T, Expr::Cast>) {
+                    if (node.is_fn_ptr) {
+                        spelled += " fnptr";
+                    }
+                }
                 if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof>) {
                     const char *op = std::is_same_v<T, Expr::Sizeof> ? "sizeof" : "typeof";
                     if (!node.on_type) {
@@ -509,7 +528,24 @@ std::string dump_expr(const Expr &expr) {
                 dump_function(*node.decl, text, 0);
                 return text;
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
-                std::string text = node.is_tuple ? "(tuple" : "(init";
+                std::string text = node.is_tuple ? "(tuple" : node.array_literal ? "(array" : "(init";
+                if (!node.type_name.empty() || node.array_literal) {
+                    text += ' ';
+                    for (int star = 0; star < node.indirections; ++star) {
+                        if ((node.optional & (1u << star)) != 0) {
+                            text += '?';
+                        }
+                        text += '*';
+                        if ((node.const_pointee & (1u << star)) != 0) {
+                            text += "const ";
+                        }
+                    }
+                    if (!node.type_package.empty()) {
+                        text += node.type_package;
+                        text += '.';
+                    }
+                    text += node.type_name;
+                }
                 for (const Expr::FieldInit &field : node.fields) {
                     text += " (.";
                     text += field.field;
@@ -655,6 +691,9 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             out += "(trait ";
             out += item->name;
             out += "\n";
+            for (const FieldDecl &field : item->fields) {
+                dump_field(field, out, 2);
+            }
             for (const FunctionDecl &method : item->methods) {
                 dump_function(method, out, 2);
             }
@@ -698,6 +737,8 @@ VarDecl clone_var(const VarDecl &var) {
     copy.is_const_decl = var.is_const_decl;
     copy.has_const = var.has_const;
     copy.const_value = var.const_value;
+    copy.owner = var.owner;
+    copy.owner_params = var.owner_params;
     return copy;
 }
 
@@ -741,6 +782,8 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.loc = node.loc;
                 copy.base = node.base ? clone_expr(*node.base) : nullptr;
                 copy.field = node.field;
+                copy.type_args = node.type_args;
+                copy.resolved_owner = node.resolved_owner;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 Expr::Index copy;
@@ -786,6 +829,13 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.indirections = node.indirections;
                 copy.optional = node.optional;
                 copy.const_pointee = node.const_pointee;
+                copy.is_fn_ptr = node.is_fn_ptr;
+                copy.ret_indirections = node.ret_indirections;
+                copy.ret_optional = node.ret_optional;
+                copy.ret_const_pointee = node.ret_const_pointee;
+                copy.fn_params = node.fn_params;
+                copy.fn_variadic = node.fn_variadic;
+                copy.fn_results = node.fn_results;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Func>) {
@@ -800,6 +850,26 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.loc = node.loc;
                 copy.is_tuple = node.is_tuple;
                 copy.struct_id = node.struct_id;
+                copy.type_name = node.type_name;
+                copy.type_package = node.type_package;
+                copy.array_literal = node.array_literal;
+                copy.elem_is_array = node.elem_is_array;
+                copy.elem_ptr_to_array = node.elem_ptr_to_array;
+                copy.elem_fn = node.elem_fn;
+                copy.elem_array_len = node.elem_array_len;
+                copy.elem_array_len_name = node.elem_array_len_name;
+                copy.elem_ret_indirections = node.elem_ret_indirections;
+                copy.elem_ret_optional = node.elem_ret_optional;
+                copy.elem_ret_const_pointee = node.elem_ret_const_pointee;
+                copy.elem_fn_params = node.elem_fn_params;
+                copy.elem_fn_variadic = node.elem_fn_variadic;
+                copy.elem_fn_results = node.elem_fn_results;
+                copy.is_struct = node.is_struct;
+                copy.is_enum = node.is_enum;
+                copy.indirections = node.indirections;
+                copy.optional = node.optional;
+                copy.const_pointee = node.const_pointee;
+                copy.type_args = node.type_args;
                 for (const Expr::FieldInit &field : node.fields) {
                     Expr::FieldInit cloned;
                     cloned.loc = field.loc;

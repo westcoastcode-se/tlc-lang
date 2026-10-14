@@ -27,9 +27,44 @@ func main() i32 {
 
 The program returns 42.
 
+A `var` inside the struct is one variable for the type, the same as `var Entity::next` written after the struct. It is not a field. `sizeof` counts the fields only. `export var` publishes it to another package.
+
+```c
+type Entity struct {
+    id i32;
+    var next i32 = 40;
+};
+
+func main() i32 {
+    var e Entity;
+    e.id = 2;
+    return Entity.next + e.id;
+}
+```
+
+The program returns 42. `e.id` is the field. `Entity.next` is the variable.
+
+A constant on the struct is written beside it, `const Entity::next = 40`. It is not a field. `sizeof` still counts the fields only. Assigning it, or taking its address, is reported as `not an lvalue`. A `const` inside the struct is reported as `not supported yet`.
+
+```c
+type Entity struct {
+    id i32;
+};
+
+const Entity::next = 40;
+
+func main() i32 {
+    var e Entity;
+    e.id = 2;
+    return Entity.next + e.id;
+}
+```
+
+The program returns 42. `Entity.next` is the constant. `e.id` is the field.
+
 ## Generics
 
-`type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[i32]`. A method is `func Vec[T]::get(self *this, i i32) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N i32, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. `Vec` with no arguments is reported as `type mismatch`. `Vec[i32]` and `Vec[u8]` are different types. Assigning one to the other, or passing one where the parameter is the other, is reported as `type mismatch`.
+`type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[i32]`. A method is `func Vec[T]::get(self *this, i i32) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N i32, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. `Vec` with no arguments is reported as `type mismatch`. `Vec[i32]` and `Vec[u8]` are different types. A variable on that struct is `var Vec[T]::count i32`, and `Vec[i32].count` is a different variable from `Vec[u8].count`. A constant is `const Vec[T]::limit`, and `Vec[i32].limit` is a different constant from `Vec[u8].limit`. A static function is `func Vec[T]::make(value T) Vec[T]`, called as `Vec[i32].make(1)` or `Buf[4, i32].width()`. Assigning one to the other, or passing one where the parameter is the other, is reported as `type mismatch`.
 
 ```c
 type Vec[T type] struct {
@@ -68,10 +103,10 @@ type Wide struct(align=16) {
 
 `sizeof(Wide)` is 16.
 
-An empty struct has no fields. `sizeof` is 0. It can have methods, so a generic `type Tag[T type] struct {}` and a trait parameter both accept it.
+An empty struct has no fields. `sizeof` is 0. It can have methods, so a generic `type Tag[T type] struct;` and a trait parameter both accept it. `type Empty struct {}` is the same empty struct.
 
 ```c
-type Empty struct {}
+type Empty struct;
 
 func Empty::id(self this) i32 {
     return 7;
@@ -91,13 +126,13 @@ func main() i32 {
 }
 ```
 
-`take` on an `Empty` returns 7. `extern type Empty struct {}` has the same size. An empty `extern(abi="c") struct` is a one-byte opaque handle.
+`take` on an `Empty` returns 7. `extern type Empty struct;` has the same size. An empty `extern(abi="c") struct` is a one-byte opaque handle.
 
-A struct or an enum is defined by its body. `type Node struct`, `extern(abi="c") type Node struct`, `type Color enum`, and `extern(abi="c") type Color enum` are reported as `expected '{'` without that body. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
+`type Node struct;` is that empty struct. `type Node struct` with neither `{` nor `;`, and `type Color enum` or `type Shape trait` without `{`, are reported as `expected '{'`. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
 
 ## Initializers
 
-A struct value names its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. A field that is left out is zero. Naming a field twice is reported as `redefinition`. An unknown field is reported as `undeclared identifier`. Used where the type is not a struct, the initializer is reported as `type mismatch`. `{10, 20}` is a value list, so where a struct is expected it is reported as `type mismatch`. `(10, 20)` is a tuple, so where a struct is expected it is reported as `type mismatch`. An empty `{}` leaves every field zero. Mixing a named field and a positional value is reported as `type mismatch`. A designated initializer that omits a `*T` field is reported as `type mismatch`. An omitted `?*T` field is `null`.
+A struct value names its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. It also comes from a type name written in front of the braces: `Point{}`, `Point{.x = 1}`, and `geom.Point{}`. A field that is left out is zero. Naming a field twice is reported as `redefinition`. An unknown field is reported as `undeclared identifier`. Used where the type is not a struct, the initializer is reported as `type mismatch`. A name that is not a struct, such as `Integer{}`, is reported as `type mismatch`. `{10, 20}` and `Point{10, 20}` are value lists, so where a struct is expected either one is reported as `type mismatch`. `(10, 20)` is a tuple, so where a struct is expected it is reported as `type mismatch`. An empty `{}` leaves every field zero and still needs a type from the place it is used. Mixing a named field and a positional value is reported as `type mismatch`. A designated initializer that omits a `*T` field is reported as `type mismatch`. An omitted `?*T` field is `null`.
 
 ```c
 type Inner struct {
@@ -116,6 +151,26 @@ func main() i32 {
 ```
 
 The program returns 30. A trailing comma is allowed. `box = {.complex = {.inner_value = 42}}` replaces the whole value, so `box.value` becomes 0. A global initializer must be a constant, the same rule as any other global. A call in a local initializer is allowed.
+
+`Point{}` is a `Point`, so an inferred binding does not write the type again. `var p = Point{}`, `const origin = Point{}`, and `p := Point{}` are that form. `Point{.x = 40}` fills `x` and leaves `y` zero.
+
+```c
+type Point struct {
+    x i32;
+    y i32;
+};
+
+const origin = Point{};
+
+func main() i32 {
+    var p = Point{};
+    q := Point{.y = 2};
+    p.x = 40;
+    return p.x + q.y + origin.x;
+}
+```
+
+The program returns 42. `origin` is a constant, so `origin.x = 1` is reported as `type mismatch`, and `&origin` is reported as `not an lvalue`.
 
 ## `extern` structs
 
@@ -215,7 +270,7 @@ Values and pointers both use `.`. A pointer whose pointee is a struct is derefer
 
 ## Arrays
 
-An array length is a positive decimal `i32` literal.
+An array length is a positive decimal `i32` literal. `[_]i32{10, 20, 12}` writes the values. `_` stands for the length, which is the number of values, so the type is `[3]i32`. A file-scope array takes the same lists, including a struct element: `var named [3]i32 = {10, 4, 1}`, `var row = [_]i32{10, 20, 12}`, and `var origin = [_]Point{Point{.x = 1, .y = 2}}`.
 
 ```c
 func add4(p *i32) i32 {

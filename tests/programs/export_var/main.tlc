@@ -1,0 +1,9 @@
+import "math";
+import { spare } from "math";
+
+func main() i32 {
+    math.Entity.next = math.Entity.next + math.bonus + spare;
+    var p *i32 = &math.Entity.next;
+    *p = *p + math.shown;
+    return *p + math.width();
+}

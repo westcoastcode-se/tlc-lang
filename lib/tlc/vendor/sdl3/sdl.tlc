@@ -1,7 +1,6 @@
 package sdl3;
 
-// The subset of SDL3 used by the examples. The real library is the
-// system libSDL3 named in the link file.
+// A subset of SDL3. The real library is the system libSDL3 named in the link file.
 
 export extern(abi="c") type SDL_Window struct {}
 export extern(abi="c") type SDL_GLContextState struct {}
@@ -86,6 +85,7 @@ export extern(abi="c") type SdlGlAttr enum {
     SDL_GL_CONTEXT_MAJOR_VERSION = 17,
     SDL_GL_CONTEXT_MINOR_VERSION = 18,
     SDL_GL_CONTEXT_PROFILE_MASK = 20,
+    SDL_GL_CONTEXT_PROFILE_CORE = 1,
     SDL_GL_CONTEXT_PROFILE_COMPATIBILITY = 2,
 }
 
@@ -97,6 +97,9 @@ export extern(abi="c") func SDL_DestroyWindow(window *SDL_Window) void;
 export extern(abi="c") func SDL_GL_SetAttribute(attr i32, value i32) bool;
 export extern(abi="c") func SDL_GL_CreateContext(window *SDL_Window) *SDL_GLContextState;
 export extern(abi="c") func SDL_GL_MakeCurrent(window *SDL_Window, context *SDL_GLContextState) bool;
+// SDL3 returns SDL_FunctionPointer, which is `void (*)(void)`. `?*void` is that
+// address or null, so a missing entry point can be checked before the cast.
+export extern(abi="c") func SDL_GL_GetProcAddress(proc *const u8) ?*void;
 export extern(abi="c") func SDL_GL_SwapWindow(window *SDL_Window) bool;
 export extern(abi="c") func SDL_PollEvent(event *SDL_Event) bool;
 export extern(abi="c") func SDL_Delay(ms u32) void;

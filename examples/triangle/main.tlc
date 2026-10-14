@@ -20,32 +20,132 @@ import {
 } from "vendor/sdl3";
 
 import {
-    glViewport,
-    glClearColor,
-    glClear,
-    glBegin,
-    glEnd,
-    glColor3f,
-    glVertex2f,
     GL,
+    load,
+    Viewport,
+    ClearColor,
+    Clear,
+    GenVertexArrays,
+    BindVertexArray,
+    GenBuffers,
+    BindBuffer,
+    BufferData,
+    EnableVertexAttribArray,
+    VertexAttribPointer,
+    UseProgram,
+    CreateShader,
+    ShaderSource,
+    CompileShader,
+    GetShaderiv,
+    GetShaderInfoLog,
+    CreateProgram,
+    AttachShader,
+    LinkProgram,
+    GetProgramiv,
+    GetProgramInfoLog,
+    DeleteShader,
+    DrawArrays,
 } from "vendor/gl";
 
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-func draw_triangle() void {
-    glClear(GL.COLOR_BUFFER_BIT);
-    glBegin(GL.TRIANGLES);
-    glColor3f(0.95f, 0.35f, 0.30f);
-    glVertex2f(-0.6f, -0.5f);
-    glColor3f(0.30f, 0.85f, 0.45f);
-    glVertex2f(0.6f, -0.5f);
-    glColor3f(0.30f, 0.55f, 0.95f);
-    glVertex2f(0.0f, 0.6f);
-    glEnd();
+const width = 960;
+const height = 540;
+
+var gpu_array u32;
+var gpu_buffer u32;
+
+func shader_status(object u32, pname u32, linked i32) i32 {
+    var ok i32 = 0;
+    if (linked == 0) {
+        GetShaderiv(object, pname, &ok);
+    } else {
+        GetProgramiv(object, pname, &ok);
+    }
+    if (ok == 0) {
+        var log [512]u8;
+        if (linked == 0) {
+            GetShaderInfoLog(object, 512, null, log);
+        } else {
+            GetProgramInfoLog(object, 512, null, log);
+        }
+        printf("%s\n", log);
+        return 0;
+    }
+    return 1;
 }
 
-type K struct {
-    value i32;
+func make_shader(kind u32, source *u8) u32 {
+    var shader = CreateShader(kind);
+    ShaderSource(shader, 1, &source, null);
+    CompileShader(shader);
+    if (shader_status(shader, GL.COMPILE_STATUS, 0) == 0) {
+        return 0;
+    }
+    return shader;
+}
+
+func load_gl() i32 {
+    if (load() == 0) {
+        return 0;
+    }
+
+    var vertex_source *u8 = `#version 330 core
+layout(location = 0) in vec2 pos;
+layout(location = 1) in vec3 color;
+out vec3 v_color;
+void main() {
+    gl_Position = vec4(pos, 0.0, 1.0);
+    v_color = color;
+}
+`;
+    var fragment_source *u8 = `#version 330 core
+in vec3 v_color;
+out vec4 frag;
+void main() {
+    frag = vec4(v_color, 1.0);
+}
+`;
+    var vertex = make_shader(GL.VERTEX_SHADER, vertex_source);
+    var fragment = make_shader(GL.FRAGMENT_SHADER, fragment_source);
+    if (vertex == 0 || fragment == 0) {
+        return 0;
+    }
+    var program = CreateProgram();
+    AttachShader(program, vertex);
+    AttachShader(program, fragment);
+    LinkProgram(program);
+    if (shader_status(program, GL.LINK_STATUS, 1) == 0) {
+        return 0;
+    }
+    DeleteShader(vertex);
+    DeleteShader(fragment);
+
+    GenVertexArrays(1, &gpu_array);
+    BindVertexArray(gpu_array);
+    GenBuffers(1, &gpu_buffer);
+    BindBuffer(GL.ARRAY_BUFFER, gpu_buffer);
+    EnableVertexAttribArray(0);
+    VertexAttribPointer(0, 2, GL.FLOAT, 0, 20, *void(0));
+    EnableVertexAttribArray(1);
+    VertexAttribPointer(1, 3, GL.FLOAT, 0, 20, *void(8));
+    UseProgram(program);
+    return 1;
+}
+
+func draw(verts *f32, count i32) void {
+    BufferData(GL.ARRAY_BUFFER, i64(count * 20), *void(verts), GL.DYNAMIC_DRAW);
+    DrawArrays(GL.TRIANGLES, 0, count);
+}
+
+func draw_triangle() void {
+    Clear(GL.COLOR_BUFFER_BIT);
+    var verts [15]f32 = {
+        -0.6f, -0.5f, 0.95f, 0.35f, 0.30f,
+        0.6f, -0.5f, 0.30f, 0.85f, 0.45f,
+        0.0f, 0.6f, 0.30f, 0.55f, 0.95f,
+    };
+    draw(verts, 3);
 }
 
 func main() i32 {
@@ -53,12 +153,11 @@ func main() i32 {
         printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
-    // Compatibility profile so glBegin is a real libGL entry point.
-    SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-    SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MINOR_VERSION, 1);
-    SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_PROFILE_MASK, SdlGlAttr.SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_PROFILE_MASK, SdlGlAttr.SDL_GL_CONTEXT_PROFILE_CORE);
 
-    var window *SDL_Window = SDL_CreateWindow("Triangle", 960, 540, SdlWindow.SDL_WINDOW_OPENGL);
+    var window *SDL_Window = SDL_CreateWindow("Triangle", width, height, SdlWindow.SDL_WINDOW_OPENGL);
     if (window == null) {
         printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
@@ -72,12 +171,18 @@ func main() i32 {
         return 1;
     }
     SDL_GL_MakeCurrent(window, context);
-    glViewport(0, 0, 960, 540);
-    glClearColor(0.08f, 0.09f, 0.12f, 1.0f);
+    if (load_gl() == 0) {
+        printf("OpenGL failed\n");
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+    Viewport(0, 0, width, height);
+    ClearColor(0.08f, 0.09f, 0.12f, 1.0f);
 
     var running i32 = 1;
     while (running != 0) {
-        var event SDL_Event;
+        var event = SDL_Event{};
         while (SDL_PollEvent(&event) != 0) {
             if (event.kind == SdlEventKind.SDL_EVENT_QUIT ||
                 event.kind == SdlEventKind.SDL_EVENT_WINDOW_CLOSE_REQUESTED) {

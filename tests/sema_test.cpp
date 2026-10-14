@@ -30,14 +30,14 @@ std::string check_program(const std::string &source) {
     return output.compiler_stderr;
 }
 
-std::string diagnose(const std::string &source) {
+std::string diagnose(const std::string &source, bool keep_going = false) {
     tlc::SourceSet sources;
     tlc::SourceFile &file = sources.add("mem.tlc", source);
     tlc::DiagnosticEngine diags(sources);
     tlc::Lexer lexer(file, diags);
     tlc::Parser parser(lexer.tokenize(), diags);
     const tlc::TranslationUnit unit = parser.parse();
-    if (!diags.ok()) {
+    if (!diags.ok() && !keep_going) {
         return diags.render();
     }
     tlc::analyze(unit, diags);
@@ -79,7 +79,7 @@ const tlc::PackageNode *find_path(const tlc::PackageGraph &graph, const std::str
     return nullptr;
 }
 
-std::string diagnose_files(const std::vector<std::pair<std::string, std::string>> &files) {
+std::string diagnose_files(const std::vector<std::pair<std::string, std::string>> &files, bool keep_going = false) {
     tlc::SourceSet sources;
     tlc::DiagnosticEngine diags(sources);
     tlc::PackageGraph graph;
@@ -95,7 +95,7 @@ std::string diagnose_files(const std::vector<std::pair<std::string, std::string>
         node.qualifier = stem_qualifier(path, node.unit);
         graph.nodes.push_back(std::move(node));
     }
-    if (!diags.ok()) {
+    if (!diags.ok() && !keep_going) {
         return diags.render();
     }
     for (const tlc::PackageNode &node : graph.nodes) {
@@ -609,6 +609,111 @@ int run_sema_tests() {
             "  return i32(add(value, Integer(2))) + i32(count);\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "type Word Integer;\n"
+            "type Flag bool;\n"
+            "func Integer::twice(self this) Integer { return self + self; }\n"
+            "func Integer::bump(self *this, n Integer) void { *self = *self + n; }\n"
+            "func Integer::make(n i32) Integer { return Integer(n); }\n"
+            "var Integer::ten Integer = Integer(10);\n"
+            "func Word::one(self this) i32 { return i32(self); }\n"
+            "func Flag::on(self this) bool { return bool(self); }\n"
+            "func main() i32 {\n"
+            "  var n = Integer.make(i32(Integer.ten));\n"
+            "  n.bump(Integer(1));\n"
+            "  var w Word = Word(2);\n"
+            "  var flag Flag = Flag(true);\n"
+            "  return i32(n.twice()) + w.one() + i32(flag.on()) - 1;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Tag[T type] struct;\n"
+            "func Tag[T]::id(self this) i32 { return 1; }\n"
+            "func main() i32 {\n"
+            "  var tag Tag[i32];\n"
+            "  return tag.id();\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "func Integer::bump(self *this) void { *self = *self + Integer(1); }\n"
+            "func main() i32 {\n"
+            "  const n = Integer(1);\n"
+            "  n.bump();\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "func Integer::make() Integer { return Integer(1); }\n"
+            "func main() i32 {\n"
+            "  var n Integer = Integer(1);\n"
+            "  return i32(n.make());\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "func main() i32 {\n"
+            "  var n Integer = Integer(1);\n"
+            "  return n.missing();\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Ptr *i32;\n"
+            "func Ptr::get(self this) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Pair [2]i32;\n"
+            "func Pair::len(self this) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "type Spot Point;\n"
+            "func Spot::get(self this) i32 { return self.x; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func i32::abs(self this) i32 { return self; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "func Integer::id[T type](self this) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -1143,6 +1248,198 @@ int run_sema_tests() {
             "  return origin.x;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::read(self *const this) i32 { return self.x; }\n"
+            "func Point::value(self this) i32 { return self.y; }\n"
+            "func Point::bump(self *this) void { self.x = self.x + 1; }\n"
+            "const origin Point = {.x = 20, .y = 2};\n"
+            "func main() i32 {\n"
+            "  var live Point;\n"
+            "  live.x = 10;\n"
+            "  const frozen = live;\n"
+            "  const p = &live;\n"
+            "  p.bump();\n"
+            "  live.bump();\n"
+            "  return origin.read() + frozen.read() + frozen.value();\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::bump(self *this) void { self.x = 1; }\n"
+            "const origin Point = {.x = 1, .y = 2};\n"
+            "func main() i32 {\n"
+            "  origin.bump();\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected *Point, found *const Point");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::bump(self *this) void { self.x = 1; }\n"
+            "func main() i32 {\n"
+            "  var live Point;\n"
+            "  const frozen = live;\n"
+            "  frozen.bump();\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected *Point, found *const Point");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::bump(self *this) void { self.x = 1; }\n"
+            "func main() i32 {\n"
+            "  var live Point;\n"
+            "  var view *const Point = &live;\n"
+            "  (*view).bump();\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected *Point, found *const Point");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "type Box struct { p Point; };\n"
+            "func Point::bump(self *this) void { self.x = 1; }\n"
+            "const box Box = {.p = {.x = 1, .y = 2}};\n"
+            "func main() i32 {\n"
+            "  box.p.bump();\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected *Point, found *const Point");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"math\";\n"
+             "func main() i32 {\n"
+             "  math.origin.x = 3;\n"
+             "  return math.origin.x;\n"
+             "}\n"},
+            {"math.tlc",
+             "type Point struct { x i32; y i32; };\n"
+             "export const origin Point = {.x = 1, .y = 2};\n"},
+        });
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "type Spot Point;\n"
+            "const origin = Point{};\n"
+            "func main() i32 {\n"
+            "  var p = Point{};\n"
+            "  q := Point{.y = 2};\n"
+            "  const frozen = Point{};\n"
+            "  p.x = 40;\n"
+            "  var s = Spot{};\n"
+            "  var back Spot = s;\n"
+            "  return p.x + q.y + origin.x + frozen.x + back.x;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "func main() i32 {\n"
+            "  var n = Integer{};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red };\n"
+            "func main() i32 {\n"
+            "  var c = Color{};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { next *Point; };\n"
+            "func main() i32 {\n"
+            "  var p = Point{};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "type Other struct { x i32; };\n"
+            "func main() i32 {\n"
+            "  var p Point = Other{};\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected Point, found Other");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var p = Point{1, 2};\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::bump(self *this) void { self.x = 1; }\n"
+            "const origin = Point{};\n"
+            "func main() i32 {\n"
+            "  origin.bump();\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected *Point, found *const Point");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "const origin = Point{};\n"
+            "func main() i32 {\n"
+            "  var p *Point = &origin;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"geom\";\n"
+             "func main() i32 {\n"
+             "  var p = geom.Point{};\n"
+             "  p.x = 40;\n"
+             "  p.y = 2;\n"
+             "  return p.x + p.y;\n"
+             "}\n"},
+            {"geom.tlc",
+             "export type Point struct { x i32; y i32; };\n"},
+        });
+        EXPECT_EQ(check, errors, "");
     }
 
     {
@@ -1812,6 +2109,132 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  w i32;\n"
+            "  h i32;\n"
+            "  func area() i32;\n"
+            "};\n"
+            "type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self this) i32 { return self.w * self.h; }\n"
+            "func widen(s *Shape) i32 {\n"
+            "  s.w = s.w + 1;\n"
+            "  return s.area();\n"
+            "}\n"
+            "func edges(s Shape) i32 { return s.w + s.h; }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  r.w = 5;\n"
+            "  r.h = 6;\n"
+            "  return widen(&r) + edges(r) - 6;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { w i32; };\n"
+            "type Rect struct { h i32; };\n"
+            "func read(s Shape) i32 { return s.w; }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  return read(r);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { w i32; };\n"
+            "type Rect struct { w *i32; };\n"
+            "func read(s Shape) i32 { return s.w; }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  return read(r);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  w i32;\n"
+            "  w i32;\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  w i32;\n"
+            "  func w() i32;\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  w i32;\n"
+            "  func area() i32;\n"
+            "};\n"
+            "func use(s Shape) i32 { return s.area(); }\n"
+            "func main() i32 { return use((n) { return n; }); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { w i32; };\n"
+            "type Rect struct { w i32; };\n"
+            "func set(s *const Shape) void { s.w = 1; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "type Box trait { p Point; };\n"
+            "type Wrap struct { p Point; };\n"
+            "func pick(b Box) i32 { return b.p.x; }\n"
+            "func main() i32 {\n"
+            "  var w Wrap;\n"
+            "  w.p.x = 2;\n"
+            "  return pick(w);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { w i32; };\n"
+            "type Rect struct { w i32; };\n"
+            "func read[T Shape](s T) i32 { return s.w; }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  r.w = 4;\n"
+            "  return read(r);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { w i32; };\n"
+            "type Rect struct { h i32; };\n"
+            "func read[T Shape](s T) i32 { return s.w; }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  return read(r);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Point struct { x i32; y i32; };\n"
             "type Holder struct { value Point; link *Point; };\n"
             "func make(a Point) Point {\n"
@@ -1859,7 +2282,17 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("type Point struct;\nfunc main() i32 { return 0; }\n");
+        const std::string errors = diagnose(
+            "type Point struct;\n"
+            "assert(sizeof(Point) == 0, \"empty\");\n"
+            "type Wide struct(align=16);\n"
+            "assert(sizeof(Wide) == 0, \"aligned\");\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose("type Point struct\nfunc main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "expected '{'");
     }
 
@@ -2139,8 +2572,10 @@ int run_sema_tests() {
             {"math/a.tlc", "static func hidden() i32 { return 1; }\n"
                          "export func add() i32 { return hidden(); }\n"},
             {"math/b.tlc", "func use() i32 { return hidden(); }\n"},
-        });
-        EXPECT_HAS(check, errors, "undeclared identifier");
+        }, true);
+        EXPECT_HAS(check, errors, "expected a declaration");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        EXPECT(check, errors.find("undeclared identifier") == std::string::npos);
     }
 
     {
@@ -2159,8 +2594,55 @@ int run_sema_tests() {
                          "export func a() i32 { return hidden(); }\n"},
             {"math/b.tlc", "static func hidden() i32 { return 2; }\n"
                          "export func b() i32 { return hidden(); }\n"},
-        });
+        }, true);
+        EXPECT_HAS(check, errors, "expected a declaration");
+        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func static() i32 { return 42; }\n"
+            "func main() i32 { return static(); }\n");
         EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var static i32 = 42;\n"
+            "  return static;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const static = 42;\n"
+            "func main() i32 { return static; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "static := 42;\n"
+            "func main() i32 { return static; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type static i32;\n"
+            "func main() i32 { return i32(static(40)) + 2; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "static func hidden() i32 { return 1; }\n"
+            "func main() i32 { return hidden(); }\n",
+            true);
+        EXPECT_EQ(check, errors, "mem.tlc:1:1: error: expected a declaration\n");
     }
 
     {
@@ -2205,6 +2687,15 @@ int run_sema_tests() {
         const std::string errors = diagnose_files({
             {"math/color.tlc", "package math;\ntype Color enum { Red, Blue, };\n"},
             {"math/code.tlc", "package math;\nfunc Color::code(self this) i32 { return 0; }\n"},
+        });
+        EXPECT_HAS(check, errors, "method in another file");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"math/int.tlc", "package math;\ntype Integer i32;\n"},
+            {"math/use.tlc", "package math;\nfunc Integer::twice(self this) Integer { return self; }\n"
+                             "var Integer::next i32 = 1;\n"},
         });
         EXPECT_HAS(check, errors, "method in another file");
     }
@@ -2728,8 +3219,9 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "extern(abi=\"c\") type Pair struct;\n"
+            "assert(sizeof(Pair) == 1, \"pair\");\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "expected '{'");
+        EXPECT_EQ(check, errors, "");
     }
 
     {
@@ -2768,7 +3260,7 @@ int run_sema_tests() {
             "  }\n"
             "  return n;\n"
             "}\n"
-            "static func hidden() (i32, i32) { return 1, 2; }\n"
+            "func hidden() (i32, i32) { return 1, 2; }\n"
             "func main() i32 {\n"
             "  var x = id(1);\n"
             "  y := trail(x);\n"
@@ -3317,6 +3809,62 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func add(n i32) i32 { return n + 1; }\n"
+            "type Proc func () void;\n"
+            "type Op func (i32) i32;\n"
+            "func get(name *u8) Proc { return Proc(add); }\n"
+            "func get_raw(name *u8) *void { return *void(add); }\n"
+            "func main() i32 {\n"
+            "  var named = Op(get(\"add\"));\n"
+            "  var raw = func (i32) i32(get_raw(\"add\"));\n"
+            "  return named(10) + raw(10) + Op(get(\"add\"))(19);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "func main() i32 {\n"
+            "  var p Point;\n"
+            "  var f = func (i32) i32(p);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var f = func (i32) i32(null);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func add(n i32) i32 { return n; }\n"
+            "func main() i32 {\n"
+            "  var f = func (i32, i32) i32(*void(add));\n"
+            "  return f(1);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func apply[T type](p *void, n T) T {\n"
+            "  var f = func (T) T(p);\n"
+            "  return f(n);\n"
+            "}\n"
+            "func add(n i32) i32 { return n + 1; }\n"
+            "func main() i32 { return apply[i32](*void(add), 41); }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
             "extern(abi=\"c\") func take(p func (i32) (i32, i32)) i32;\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "extern function cannot use several results");
@@ -3745,6 +4293,51 @@ int run_sema_tests() {
     }
 
     {
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
+            "func boom() void {\n"
+            "  builtin.panic(\"out of memory\");\n"
+            "}\n"
+            "func main() i32 {\n"
+            "  var f = builtin.panic;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "import { panic } from \"builtin\";\n"
+            "func main() i32 {\n"
+            "  panic(\"out of memory\");\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
+            "func main() i32 {\n"
+            "  builtin.panic();\n"
+            "  builtin.panic(\"a\", \"b\");\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
+            "func main() i32 {\n"
+            "  builtin.panic(1);\n"
+            "  var n i32 = builtin.panic(\"out of memory\");\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
         const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var n u8 = 1;\n"
@@ -3872,6 +4465,132 @@ int run_sema_tests() {
             {"math/get.tlc", "package math;\nfunc Vec[T]::get(self this) i32 { return self.n; }\n"},
         });
         EXPECT_HAS(check, errors, "method in another file");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "func Box[T]::from(value T) T { return value; }\n"
+            "func Box[T]::zero() T { return Box[T].from(0); }\n"
+            "type Buf[N i32, T type] struct { value T; };\n"
+            "func Buf[N, T]::width() i32 { return N; }\n"
+            "func take(made func (i32) i32) i32 { return made(1); }\n"
+            "func main() i32 {\n"
+            "  var f = Box[i32].from;\n"
+            "  return f(40) + Box[i32].zero() + take(f) + Buf[4, i32].width();\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"math/box.tlc",
+             "package math;\n"
+             "type Box[T type] struct { value T; };\n"
+             "func Box[T]::from(value T) T { return value; }\n"},
+            {"math/use.tlc", "package math;\nfunc total() i32 { return Box[i32].from(42); }\n"},
+        });
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n i32; };\n"
+            "func Vec[T]::get(self this) i32 { return self.n; }\n"
+            "func main() i32 { return Vec[i32].get(); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n i32; };\n"
+            "func Vec[T]::get(self this) i32 { return self.n; }\n"
+            "func main() i32 { var f = Vec[i32].get; return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "func Box[T]::from(value T) T { return value; }\n"
+            "func main() i32 {\n"
+            "  var box Box[i32];\n"
+            "  return box.from(1);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n i32; };\n"
+            "func main() i32 { return Vec[i32].missing(); }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "func Box[T]::from(value T) T { return value; }\n"
+            "func main() i32 { return Box[i32].from(); }\n");
+        EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n i32; };\n"
+            "var Vec[T]::from i32;\n"
+            "func Vec[T]::from() i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT(check, errors.find("redefinition") == errors.rfind("redefinition"));
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n i32; };\n"
+            "func Vec[T]::from() i32 { return 0; }\n"
+            "var Vec[T]::from i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT(check, errors.find("redefinition") == errors.rfind("redefinition"));
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n i32; };\n"
+            "export func Vec[T]::from() i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n i32; };\n"
+            "extern func Vec[T]::from() i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { return math.Box[i32].from(1); }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Box[T type] struct { value T; };\n"
+             "func Box[T]::from(value T) T { return value; }\n"},
+        });
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { var n = math.Box[i32].from; return 0; }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Box[T type] struct { value T; };\n"
+             "func Box[T]::from(value T) T { return value; }\n"},
+        });
+        EXPECT_HAS(check, errors, "from is not exported");
     }
 
     {
@@ -4057,6 +4776,289 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func take(p *i32) i32 { return p[0]; }\n"
+            "func main() i32 {\n"
+            "  var row = [_]i32{10, 20, 12};\n"
+            "  other := [_]i32{7, 8,};\n"
+            "  const fixed = [_]i32{4, 1};\n"
+            "  var typed [2]i32 = [_]i32{4, 1};\n"
+            "  var n = 3;\n"
+            "  var live = [_]i32{n, 1};\n"
+            "  return row[0] + other[1] + fixed[0] + typed[1] + live[0] + take(row);\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 { var typed [2]i32 = [_]i32{1, 2, 3}; return typed[0]; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 { var n = 1; var row = [_]i32{1, &n}; return row[0]; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose("func main() i32 { var row = [_]i32{}; return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const N = 3;\n"
+            "const fixed = [_]i32{19, 2};\n"
+            "var named [N]i32 = {10, 4, 1};\n"
+            "other := [_]i32{6, 1};\n"
+            "var live [2]i32 = [_]i32{1, 2};\n"
+            "var flags = [_]bool{true, false};\n"
+            "var bytes = [_]u8{1, 2};\n"
+            "func take(p *const i32) i32 { return p[0] + p[1]; }\n"
+            "func main() i32 {\n"
+            "  live[0] = 3;\n"
+            "  return take(fixed) + named[0] + other[1] + live[0] + flags[0] + bytes[0];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const row = [_]i32{1, 2};\n"
+            "func main() i32 { row[0] = 3; return row[0]; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const row = [_]i32{1};\n"
+            "func main() i32 { var p = &row; return 0; }\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const row = [_]i32{4};\n"
+            "func main() i32 { var buf [row]i32; return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var n = 1;\n"
+            "var row = [_]i32{n, 2};\n"
+            "func main() i32 { return row[0]; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose("var row = [_]f32{1.0f};\nfunc main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var scale = 1.5f;\n"
+            "const bias = 0.5f;\n"
+            "const lifted f64 = bias;\n"
+            "var typed f64 = -1.0;\n"
+            "const n = 4;\n"
+            "const from_const f32 = n;\n"
+            "var from_int f32 = n;\n"
+            "func main() i32 { scale = 2.0f; return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose("var x = 1.5f + 0.5f;\nfunc main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose("const x = 1.5f + 0.5f;\nfunc main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose("var x f32 = 1u32;\nfunc main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const x = 1.0f;\n"
+            "func main() i32 { var buf [x]i32; return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const x = 1.0f;\n"
+            "func main() i32 { x = 2.0f; return 0; }\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const x = 1.0f;\n"
+            "func main() i32 { var p = &x; return 0; }\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func one() f32 { return 1.0f; }\n"
+            "var x = one();\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var n = 1;\n"
+            "const x f32 = n;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose("var row [2]i32 = {1};\nfunc main() i32 { return row[0]; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose("var row = [_]i32{};\nfunc main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "var row = [_]Integer{Integer(1)};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var n i32 = 1;\n"
+            "var row = [_]*i32{&n};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 { const row = [_]i32{1, 2}; row[0] = 3; return row[0]; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var inner [2]i32 = {1, 2};\n"
+            "  var row = [_][2]i32{inner};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func add(n i32) i32 { return n; }\n"
+            "func main() i32 { var row = [_]func (i32) i32{add}; return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var grid = [_][2]i32{{1, 2}, {3, 4}};\n"
+            "func add(n i32) i32 { return n; }\n"
+            "var ops = [_]func (i32) i32{add};\n"
+            "type Entity struct { id i32; };\n"
+            "var Entity::row = [_]i32{1, 2};\n"
+            "var Entity::typed [2]i32 = {3, 1};\n"
+            "type Point struct { x i32; y i32; };\n"
+            "const origin = [_]Point{Point{.x = 1, .y = 2}};\n"
+            "func main() i32 {\n"
+            "  var f = ops[0];\n"
+            "  return grid[0][1] + f(1) + Entity.row[0] + Entity.typed[1] + origin[0].x;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var n = 1;\n"
+            "const row = [_]i32{n};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var n = 1;\n"
+            "var row = [_]i32{n + 1};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose("var row = [_]i32{1u32};\nfunc main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var inner [4]i32 = {1, 2, 3, 4};\n"
+            "var row = [_]*[4]i32{&inner};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "const origin = [_]Point{Point{.x = 1, .y = 2}};\n"
+            "func main() i32 { origin[0].x = 1; return origin[0].x; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "func main() i32 { var row = [_]Integer{1, 2}; return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "func main() i32 {\n"
+            "  var row = [_]Integer{Integer(20), Integer(22)};\n"
+            "  return i32(row[0]) + i32(row[1]);\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func first[T type](a T, b T) T {\n"
+            "  var row = [_]T{a, b};\n"
+            "  return row[0];\n"
+            "}\n"
+            "func main() i32 { return first(40, 2); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose("func main() i32 { var n i32 = [_]i32{42}; return n; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
             "func keep[...U](args U) i32 { args[0] = 1; return 0; }\n"
             "func main() i32 { return keep((1, 2)); }\n");
         EXPECT_HAS(check, errors, "not supported yet");
@@ -4100,6 +5102,615 @@ int run_sema_tests() {
             "func keep[...U](args U) U { return args; }\n"
             "func main() i32 { return keep[4](1); }\n");
         EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { next i32; };\n"
+            "var next i32 = 1;\n"
+            "var Entity::next i32 = 40;\n"
+            "func main() i32 {\n"
+            "  var e Entity;\n"
+            "  e.next = 2;\n"
+            "  return e.next + Entity.next;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "var Entity::next i32 = 1;\n"
+            "func main() i32 {\n"
+            "  var e Entity;\n"
+            "  return e.next;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "func Entity::next() i32 { return 1; }\n"
+            "var Entity::next i32 = 1;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "var Entity::next i32 = 1;\n"
+            "func Entity::next() i32 { return 1; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "var Entity::next i32 = 1;\n"
+            "var Entity::next i32 = 2;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose("var Missing::next i32 = 1;\nfunc main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"math/entity.tlc", "package math;\ntype Entity struct { id i32; };\n"},
+            {"math/next.tlc", "package math;\nvar Entity::next i32 = 1;\n"},
+        });
+        EXPECT_HAS(check, errors, "method in another file");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "func main() i32 {\n"
+            "  var Entity::next i32 = 1;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "export var Entity::next i32 = 40;\n"
+            "func main() i32 { return Entity.next + 2; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "export var Entity::next = 40;\n"
+            "func main() i32 { return Entity.next + 2; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "export var Box[T]::extra i32 = 1;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "extern var Entity::next i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"math\";\n"
+             "func main() i32 {\n"
+             "  math.Entity.next = math.Entity.next + 2;\n"
+             "  var p *i32 = &math.Entity.next;\n"
+             "  return *p;\n"
+             "}\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Entity struct { id i32; };\n"
+             "export var Entity::next i32 = 40;\n"},
+        });
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\" as m;\nfunc main() i32 { return m.Entity.next; }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Entity struct { id i32; };\n"
+             "export var Entity::next i32 = 1;\n"},
+        });
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { return math.Entity.hidden; }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Entity struct { id i32; };\n"
+             "var Entity::hidden i32 = 1;\n"},
+        });
+        EXPECT_HAS(check, errors, "hidden is not exported");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { return math.Secret.n; }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "type Secret struct { id i32; };\n"
+             "export var Secret::n i32 = 1;\n"},
+        });
+        EXPECT_HAS(check, errors, "Secret is not exported");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { return math.Entity.make(); }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Entity struct { id i32; };\n"
+             "func Entity::make() i32 { return 1; }\n"},
+        });
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import { origin, pad } from \"math\";\nfunc main() i32 { return origin.x + origin.y; }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "type Point struct { x i32; y i32; };\n"
+             "export const origin Point = {.x = 40, .y = 2};\n"
+             "export const pad = 0.0f;\n"},
+        });
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct {\n"
+            "  id i32;\n"
+            "  var next i32 = 40;\n"
+            "  var bias = Entity.next;\n"
+            "};\n"
+            "func main() i32 {\n"
+            "  var e Entity;\n"
+            "  e.id = 2;\n"
+            "  Entity.next = Entity.bias;\n"
+            "  return e.id + Entity.next + sizeof(Entity);\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct {\n"
+            "  next i32;\n"
+            "  var next i32 = 40;\n"
+            "};\n"
+            "func main() i32 {\n"
+            "  var e Entity;\n"
+            "  e.next = 2;\n"
+            "  return e.next + Entity.next;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct {\n"
+            "  id i32;\n"
+            "  var next i32 = 1;\n"
+            "};\n"
+            "var Entity::next i32 = 2;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct {\n"
+            "  value T;\n"
+            "  var extra i32 = 1;\n"
+            "};\n"
+            "func main() i32 {\n"
+            "  Box[i32].extra = 2;\n"
+            "  return Box[i32].extra;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct {\n"
+            "  value T;\n"
+            "  export var extra i32 = 1;\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct {\n"
+            "  id i32;\n"
+            "  extern var next i32;\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"math\";\n"
+             "import { spare } from \"math\";\n"
+             "func main() i32 {\n"
+             "  math.Entity.next = math.Entity.next + math.bonus + spare;\n"
+             "  var p *i32 = &math.Entity.next;\n"
+             "  return *p + math.shown;\n"
+             "}\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Entity struct {\n"
+             "  id i32;\n"
+             "  export var next i32 = 20;\n"
+             "  var hidden i32 = 1;\n"
+             "};\n"
+             "export var bonus = 4;\n"
+             "export spare := 2;\n"
+             "export var shown i32 = 6;\n"},
+        });
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { return math.Entity.hidden; }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Entity struct {\n"
+             "  id i32;\n"
+             "  var hidden i32 = 1;\n"
+             "};\n"},
+        });
+        EXPECT_HAS(check, errors, "hidden is not exported");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import { bonus } from \"math\";\nfunc main() i32 {\n  bonus = 2.0f;\n  return bonus == 2.0f;\n}\n"},
+            {"math.tlc", "package math;\nexport var bonus = 1.5f;\n"},
+        });
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose("extern var bonus = 1;\nfunc main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose("extern bonus := 1;\nfunc main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "var Point[T]::extra i32 = 1;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "var Box::extra i32 = 1;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Buf[N i32, T type] struct { value T; };\n"
+            "var Buf[N]::count i32 = 1;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red };\n"
+            "var Color::Red i32 = 1;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct {\n"
+            "  id i32;\n"
+            "};\n"
+            "const Entity::next = 40;\n"
+            "func main() i32 {\n"
+            "  var n i32 = Entity.next;\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "const Entity::next = 40;\n"
+            "func main() i32 { Entity.next = 1; return 0; }\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "const Entity::next = 40;\n"
+            "func main() i32 { var p *i32 = &Entity.next; return 0; }\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "const Entity::next = 1;\n"
+            "func main() i32 { return sizeof(Entity); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct {\n"
+            "  next i32;\n"
+            "};\n"
+            "const Entity::next = 40;\n"
+            "func main() i32 {\n"
+            "  var e Entity;\n"
+            "  e.next = 2;\n"
+            "  return e.next + Entity.next;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "const Entity::next = 1;\n"
+            "const Entity::next = 2;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "const Entity::next = 1;\n"
+            "var Entity::next i32 = 2;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct {\n"
+            "  id i32;\n"
+            "  const next = 1;\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
+        const auto at = errors.find("not supported yet");
+        EXPECT(check, at != std::string::npos);
+        if (at != std::string::npos) {
+            EXPECT(check, errors.find("not supported yet", at + 1) == std::string::npos);
+        }
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "const Box[T]::limit = 4;\n"
+            "func main() i32 { return Box[i32].limit; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "const Box[T]::limit = 4;\n"
+            "func main() i32 { Box[i32].limit = 1; return 0; }\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Buf[N i32, T type] struct { value T; };\n"
+            "const Buf[N, T]::count = N;\n"
+            "func main() i32 { return Buf[4, i32].count; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct {\n"
+            "  value T;\n"
+            "};\n"
+            "export const Box[T]::extra = 1;\n"
+            "func main() i32 { return Box[i32].extra; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct {\n"
+            "  id i32;\n"
+            "  extern const next = 1;\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
+        const auto at = errors.find("not supported yet");
+        EXPECT(check, at != std::string::npos);
+        if (at != std::string::npos) {
+            EXPECT(check, errors.find("not supported yet", at + 1) == std::string::npos);
+        }
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "const Entity::bias = 1.0f;\n"
+            "func main() i32 { return Entity.bias == 1.0f; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var n i32 = 1;\n"
+            "type Entity struct { id i32; };\n"
+            "const Entity::next = n;\n"
+            "func main() i32 { return 0; }\n");
+        const auto at = errors.find("global initializer is not a constant");
+        EXPECT(check, at != std::string::npos);
+        if (at != std::string::npos) {
+            EXPECT(check, errors.find("global initializer is not a constant", at + 1) == std::string::npos);
+        }
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  const Entity::next = 1;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "const Point::origin Point = {.x = 40, .y = 2};\n"
+            "func main() i32 {\n"
+            "  var p = Point.origin;\n"
+            "  return p.x + p.y;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "const Point::origin Point = {.x = 40, .y = 2};\n"
+            "func main() i32 { Point.origin.x = 1; return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "const Point::origin Point = {.x = 40, .y = 2};\n"
+            "func main() i32 { var p *Point = &Point.origin; return 0; }\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "const Point::origin Point = {.x = 1, .y = 1};\n"
+            "func main() i32 { Point.origin = Point{}; return 0; }\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "const Entity::next = 40;\n"
+            "const M = Entity.next + 2;\n"
+            "func main() i32 { return M; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"math\";\n"
+             "import { spare } from \"math\";\n"
+             "func main() i32 {\n"
+             "  return math.Entity.next + math.Box[i32].limit + spare + math.Buf[4, i32].count;\n"
+             "}\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Entity struct {\n"
+             "  id i32;\n"
+             "};\n"
+             "export const Entity::next = 15;\n"
+             "export type Box[T type] struct {\n"
+             "  value T;\n"
+             "};\n"
+             "export const Box[T]::limit = 6;\n"
+             "export type Buf[N i32, T type] struct {\n"
+             "  value T;\n"
+             "};\n"
+             "export const Buf[N, T]::count = N;\n"
+             "export const spare = 2;\n"},
+        });
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { return math.Entity.hidden; }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Entity struct {\n"
+             "  id i32;\n"
+             "};\n"
+             "const Entity::hidden = 100;\n"},
+        });
+        EXPECT_HAS(check, errors, "hidden is not exported");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { return math.Box[i32].limit; }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "type Box[T type] struct {\n"
+             "  value T;\n"
+             "};\n"
+             "export const Box[T]::limit = 6;\n"},
+        });
+        EXPECT_HAS(check, errors, "Box is not exported");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { math.Entity.next = 1; return 0; }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Entity struct { id i32; };\n"
+             "export const Entity::next = 15;\n"},
+        });
+        EXPECT_HAS(check, errors, "not an lvalue");
     }
 
     return check.failed;

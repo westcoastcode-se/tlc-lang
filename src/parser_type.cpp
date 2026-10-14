@@ -24,14 +24,6 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             ++pos_;
             continue;
         }
-        if (token.kind == TokenKind::KwStatic) {
-            if (!file_scope) {
-                error_at(token, "static locals are not supported yet");
-            }
-            specs.is_static = true;
-            ++pos_;
-            continue;
-        }
         if (token.kind == TokenKind::KwExtern) {
             take_extern(specs.is_extern, specs.extern_c);
             continue;
@@ -152,9 +144,6 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
     if (!specs.saw_type) {
         error_at(peek(), "expected a type");
         specs.type_name = "invalid";
-    }
-    if (specs.exported && specs.is_static) {
-        diags_.error(specs.loc, "export static");
     }
     if (!specs.type_name.empty() && specs.type_name != "invalid") {
         type_names_.insert(specs.type_name);
@@ -343,50 +332,53 @@ std::vector<Enumerator> Parser::parse_enumerators() {
     return enumerators;
 }
 
-std::vector<FieldDecl> Parser::parse_fields() {
+bool Parser::parse_field(FieldDecl &field) {
     // A field is `name type`, and the type uses the same Go order as `var`.
+    field.loc = peek().loc;
+    if (!check(TokenKind::Identifier)) {
+        error_here("expected an identifier");
+        while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
+            ++pos_;
+        }
+        eat(TokenKind::Semicolon);
+        return false;
+    }
+    field.name = peek().text;
+    field.loc = peek().loc;
+    ++pos_;
+    const PlacedType type = parse_go_type();
+    if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
+        diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
+    }
+    field.type_name = type.type_name;
+    field.type_package = type.type_package;
+    field.is_struct = type.is_struct;
+    field.is_enum = type.is_enum;
+    field.indirections = type.indirections;
+    field.optional = type.optional;
+    field.const_pointee = type.const_pointee;
+    field.is_array = type.is_array;
+    field.array_len = type.array_len;
+    field.array_len_name = type.array_len_name;
+    field.type_args = type.type_args;
+    field.is_fn_ptr = type.is_fn_ptr;
+    field.ret_indirections = type.ret_indirections;
+    field.ret_optional = type.ret_optional;
+    field.ret_const_pointee = type.ret_const_pointee;
+    field.fn_params = type.fn_params;
+    field.fn_variadic = type.fn_variadic;
+    field.fn_results = type.fn_results;
+    expect(TokenKind::Semicolon, "expected ';'");
+    return true;
+}
+
+std::vector<FieldDecl> Parser::parse_fields() {
     std::vector<FieldDecl> fields;
     while (!check(TokenKind::RBrace) && !eof()) {
         FieldDecl field;
-        field.loc = peek().loc;
-        if (!check(TokenKind::Identifier)) {
-            error_here("expected an identifier");
-            while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
-                ++pos_;
-            }
-            eat(TokenKind::Semicolon);
-            continue;
+        if (parse_field(field)) {
+            fields.push_back(std::move(field));
         }
-        field.name = peek().text;
-        field.loc = peek().loc;
-        ++pos_;
-        const PlacedType type = parse_go_type();
-        if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
-            diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
-        }
-        field.type_name = type.type_name;
-        field.type_package = type.type_package;
-        field.is_struct = type.is_struct;
-        field.is_enum = type.is_enum;
-        field.indirections = type.indirections;
-        field.optional = type.optional;
-        field.const_pointee = type.const_pointee;
-        field.is_array = type.is_array;
-        field.array_len = type.array_len;
-        field.array_len_name = type.array_len_name;
-        field.type_args = type.type_args;
-        field.is_fn_ptr = type.is_fn_ptr;
-        field.ret_indirections = type.ret_indirections;
-        field.ret_optional = type.ret_optional;
-        field.ret_const_pointee = type.ret_const_pointee;
-        field.fn_params = type.fn_params;
-        field.fn_variadic = type.fn_variadic;
-        field.fn_results = type.fn_results;
-        if (field.is_array && field.array_len < 0) {
-            diags_.error(field.loc, "not supported yet");
-        }
-        fields.push_back(std::move(field));
-        expect(TokenKind::Semicolon, "expected ';'");
     }
     return fields;
 }
@@ -396,7 +388,7 @@ bool Parser::at_func_type(std::size_t ahead) const {
     return peek(ahead).kind == TokenKind::KwFunc && peek(ahead + 1).kind == TokenKind::LParen;
 }
 
-Parser::PlacedType Parser::parse_func_type() {
+Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     PlacedType type;
     type.loc = peek().loc;
     type.is_fn_ptr = true;
@@ -411,7 +403,7 @@ Parser::PlacedType Parser::parse_func_type() {
             break;
         }
         const std::size_t before = pos_;
-        type.fn_params.push_back(fn_param_from(parse_placed_type(false, false)));
+        type.fn_params.push_back(fn_param_from(parse_placed_type(false)));
         if (pos_ == before) {
             ++pos_;
         }
@@ -434,7 +426,7 @@ Parser::PlacedType Parser::parse_func_type() {
         }
         while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !check(TokenKind::Semicolon) && !eof()) {
             const std::size_t before = pos_;
-            results.push_back(parse_placed_type(false, false));
+            results.push_back(parse_placed_type(false));
             if (pos_ == before) {
                 ++pos_;
             }
@@ -444,7 +436,7 @@ Parser::PlacedType Parser::parse_func_type() {
         }
         expect(TokenKind::RParen, "expected ')'");
     } else {
-        results.push_back(parse_placed_type(false, false));
+        results.push_back(parse_placed_type(false, !as_cast));
     }
     bool reject = false;
     SourceLoc reject_loc = type.loc;
@@ -470,6 +462,11 @@ Parser::PlacedType Parser::parse_func_type() {
     type.ret_indirections = first.indirections;
     type.ret_optional = first.optional;
     type.ret_const_pointee = first.const_pointee;
+    // One result keeps its arguments here. `func (i32) Box[i32]` is that result.
+    // Several results keep each argument list on `fn_results`.
+    if (results.size() == 1) {
+        type.type_args = first.type_args;
+    }
     if (results.size() > 1) {
         type.fn_results.reserve(results.size());
         for (const PlacedType &result : results) {
@@ -507,6 +504,7 @@ void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_
         var.fn_params = type.fn_params;
         var.fn_variadic = type.fn_variadic;
         var.fn_results = type.fn_results;
+        var.type_args = type.type_args;
         var.exported = exported;
         var.is_static = is_static;
         var.is_extern = is_extern;
@@ -554,7 +552,7 @@ Parser::PointerPrefix Parser::parse_pointer_prefix() {
     return prefix;
 }
 
-Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array) {
+Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_fn_declarator) {
     if (check(TokenKind::LBracket)) {
         return parse_go_type();
     }
@@ -612,7 +610,7 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     type.is_const = specs.is_const;
     type.struct_definition = specs.struct_definition;
     type.enum_definition = specs.enum_definition;
-    if (check(TokenKind::LParen) && peek(1).kind == TokenKind::Star) {
+    if (allow_fn_declarator && check(TokenKind::LParen) && peek(1).kind == TokenKind::Star) {
         // `*int (*fp)(int)`. The stars belong to the return type.
         type.is_fn_ptr = true;
         type.ret_indirections = leading;
@@ -635,27 +633,10 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_array)
     type.optional = leading_optional;
     type.const_pointee = leading_const;
     if (check(TokenKind::LBracket)) {
-        // `Vec[i32]` is a type argument list. `i32[]` is an unsized parameter array.
-        // A known length is prefix only: `[4]i32`, never `i32[4]`.
+        // `Vec[i32]` is a type argument list. An array is prefix only: `[4]i32`.
         const bool named = !primitive_type_name(type.type_name) && !type.type_name.empty() && type.type_name != "invalid";
         if (named) {
             type.type_args = parse_type_args();
-        } else if (peek(1).kind == TokenKind::RBracket) {
-            if (!allow_array) {
-                error_here("not supported yet");
-                while (eat(TokenKind::LBracket)) {
-                    while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::Comma) &&
-                           !check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
-                        ++pos_;
-                    }
-                    eat(TokenKind::RBracket);
-                }
-            } else {
-                const ArrayMark array = parse_array_suffix(true);
-                type.is_array = array.is_array;
-                type.array_len = array.length;
-                type.array_len_name = array.len_name;
-            }
         } else {
             diags_.error(peek().loc, "type mismatch");
             while (eat(TokenKind::LBracket)) {
@@ -716,7 +697,7 @@ Parser::PlacedType Parser::parse_go_type() {
     } else if (outer == 1) {
         type.ptr_to_array = true;
     }
-    const ArrayMark array = parse_array_suffix(true);
+    const ArrayMark array = parse_array_suffix();
     type.is_array = array.is_array;
     type.array_len = array.length;
     type.array_len_name = array.len_name;
@@ -833,7 +814,7 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
                 error_here("expected an identifier");
                 break;
             }
-            const PlacedType type = parse_placed_type(allow_const, true);
+            const PlacedType type = parse_placed_type(allow_const);
             if (type.struct_definition || type.enum_definition) {
                 diags_.error(type.loc, "not supported yet");
             }
@@ -899,7 +880,7 @@ void Parser::parse_results(FunctionDecl &fn) {
             ++pos_;
         } else {
             while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !check(TokenKind::Semicolon) && !eof()) {
-                take_result(fn, parse_placed_type(false, false));
+                take_result(fn, parse_placed_type(false));
                 if (!eat(TokenKind::Comma)) {
                     break;
                 }
@@ -913,7 +894,7 @@ void Parser::parse_results(FunctionDecl &fn) {
         fn.result_typeof.resize(fn.results.size());
         fn.result_typeof.back() = parse_unary();
     } else {
-        take_result(fn, parse_placed_type(false, false));
+        take_result(fn, parse_placed_type(false));
     }
     if (fn.results.empty()) {
         fn.return_type = "invalid";
@@ -1018,6 +999,7 @@ FnParam Parser::fn_param_from(const PlacedType &type) const {
     param.params = type.fn_params;
     param.variadic = type.fn_variadic;
     param.results = type.fn_results;
+    param.type_args = type.type_args;
     return param;
 }
 
@@ -1045,7 +1027,7 @@ void Parser::parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, 
                 ++pos_;
                 break;
             }
-            params.push_back(fn_param_from(parse_placed_type(false, false)));
+            params.push_back(fn_param_from(parse_placed_type(false)));
             if (check(TokenKind::Identifier)) {
                 ++pos_;
             }
@@ -1111,14 +1093,14 @@ Parser::Declarator Parser::parse_declarator() {
         return decl;
     }
     if (check(TokenKind::LBracket)) {
-        const ArrayMark array = parse_array_suffix(false);
+        const ArrayMark array = parse_array_suffix();
         decl.is_array = array.is_array;
         decl.array_len = array.length;
     }
     return decl;
 }
 
-Parser::ArrayMark Parser::parse_array_suffix(bool allow_unsized) {
+Parser::ArrayMark Parser::parse_array_suffix() {
     ArrayMark mark;
     if (!check(TokenKind::LBracket)) {
         return mark;
@@ -1126,12 +1108,11 @@ Parser::ArrayMark Parser::parse_array_suffix(bool allow_unsized) {
     mark.is_array = true;
     const SourceLoc loc = peek().loc;
     ++pos_;
+    // `[]T` is a view. A view is not implemented yet.
     if (check(TokenKind::RBracket)) {
         ++pos_;
         mark.length = -1;
-        if (!allow_unsized) {
-            diags_.error(loc, "not supported yet");
-        }
+        diags_.error(loc, "not supported yet");
     } else if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&
                peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value > 0 &&
                peek().int_value <= 2147483647ULL) {
@@ -1192,6 +1173,33 @@ bool Parser::looks_like_type_params() const {
                 return false;
             }
             named = true;
+        }
+        if (ahead > 4096) {
+            return false;
+        }
+    }
+    return false;
+}
+
+bool Parser::bracket_comma_then_dot() const {
+    if (!check(TokenKind::LBracket)) {
+        return false;
+    }
+    int depth = 0;
+    bool comma = false;
+    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
+        const TokenKind kind = peek(ahead).kind;
+        if (kind == TokenKind::LBracket) {
+            ++depth;
+        } else if (kind == TokenKind::RBracket) {
+            --depth;
+            if (depth == 0) {
+                return comma && peek(ahead + 1).kind == TokenKind::Dot;
+            }
+        } else if (depth == 1 && kind == TokenKind::Comma) {
+            comma = true;
+        } else if (depth == 1 && (kind == TokenKind::Semicolon || kind == TokenKind::LBrace || kind == TokenKind::RBrace)) {
+            return false;
         }
         if (ahead > 4096) {
             return false;
@@ -1412,7 +1420,7 @@ TypeArg Parser::parse_one_type_arg() {
     }
     if (check(TokenKind::LBracket)) {
         arg.is_array = true;
-        const ArrayMark array = parse_array_suffix(false);
+        const ArrayMark array = parse_array_suffix();
         arg.array_len = array.length;
         arg.array_len_name = array.len_name;
         TypeArg element = parse_one_type_arg();
