@@ -112,6 +112,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Functions
 
+- Argument polymorphism. One name may have several parameter lists, and a call uses the types of the arguments. `func show(n i32) void` and `func show(text *const u8) void` are both `show`. The same name with a different parameter list is `redefinition`. The receiver is not one of those parameters. `func Point::draw(self *this)` and `func Circle::draw(self *this)` are two methods. `func Point::draw(self this)` beside `func Point::draw(self *this)` stays `redefinition`. `func Point::draw(self *this, n i32)` is another `draw` on `Point`, chosen from the remaining arguments.
 - A `test` inside a function. `test` is file scope.
 - A struct argument to `testing.error`.
 - `builtin.va` outside a variadic function.
