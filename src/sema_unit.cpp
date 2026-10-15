@@ -710,8 +710,14 @@ bool Checker::constant_operand(const Expr &expr) {
                           std::is_same_v<T, Expr::Char> || std::is_same_v<T, Expr::Float> ||
                           std::is_same_v<T, Expr::Nullptr>) {
                 return true;
-            } else if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Binary>) {
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 return fold_int(expr).has_value();
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if (fold_int(expr)) {
+                    return true;
+                }
+                const std::optional<FoldedNumber> number = fold_number(expr);
+                return number.has_value() && number->is_float;
             } else if constexpr (std::is_same_v<T, Expr::Name>) {
                 const Symbol *symbol = lookup(node.text);
                 return symbol != nullptr && (symbol->is_constant || symbol->is_function);

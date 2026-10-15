@@ -4124,6 +4124,23 @@ int run_sema_tests() {
     }
 
     {
+        const std::string errors = diagnose(
+            "assert(typeof(i32) == typeof(i32), \"same\");\n"
+            "assert(typeof(i32) != typeof(i64), \"diff\");\n"
+            "assert(1.5f + 0.5f == 2.0f, \"add\");\n"
+            "assert(1.5f < 2.0f, \"less\");\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "assert(typeof(i32) == typeof(i64), \"diff\");\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "diff");
+    }
+
+    {
         const std::string errors = diagnose("assert(1, 2);\nfunc main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
@@ -4954,16 +4971,38 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("var x = 1.5f + 0.5f;\nfunc main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "global initializer is not a constant");
+        EXPECT(check, errors.empty());
     }
 
     {
         const std::string errors = diagnose("const x = 1.5f + 0.5f;\nfunc main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "global initializer is not a constant");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const bias = 0.5f;\n"
+            "const sum = bias + 1.5f;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
     }
 
     {
         const std::string errors = diagnose("var x f32 = 1u32;\nfunc main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const N = 1u32;\n"
+            "func main() i32 { var buf [N]i32; return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const N = 3000000000u32;\n"
+            "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
@@ -5088,7 +5127,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("var row = [_]i32{1u32};\nfunc main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {

@@ -342,7 +342,17 @@ class Checker {
                       bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
                       uint32_t const_pointee = 0, bool is_array = false, int array_len = 0);
     Type sizeof_operand(const Expr::Sizeof &node);
+    // A folded number. `wide` is f64. An integer is neither.
+    struct FoldedNumber {
+        double value = 0;
+        bool is_float = false;
+        bool wide = false;
+    };
     std::optional<int> fold_int(const Expr &expr);
+    std::optional<FoldedNumber> fold_number(const Expr &expr);
+    std::optional<FoldedNumber> fold_number(const Expr &expr, std::unordered_set<std::string> &seen);
+    // `typeof(...)` after checking. Empty when this expression is not that constant.
+    std::optional<std::string> type_constant(const Expr &expr) const;
     void check_function(const FunctionDecl &fn);
     void declare_globals(const TranslationUnit &unit);
     void check_globals(const TranslationUnit &unit);

@@ -197,7 +197,7 @@ The program returns 42. `row[0]` stays `1` after `n = 9`. `*q` reads the new val
 
 ### `const`
 
-`const name = expr` at file scope takes the type of the expression. `const name Type = expr` writes the type, and the expression has to be that type. A plain integer, such as `const N = 4`, is a compile-time integer. It has no address. The expression is folded the same way as `assert`, including `sizeof`. `const N = 4` can be an array length, `[N]i32`.
+`const name = expr` at file scope takes the type of the expression. `const name Type = expr` writes the type, and the expression has to be that type. A plain integer, such as `const N = 4`, is a compile-time integer. It has no address. The expression is folded the same way as `assert`, including `sizeof`, float arithmetic, and `==` or `!=` of two `typeof` values. A suffix whose value fits in `i32`, such as `1u32`, folds too. `const N = 4` can be an array length, `[N]i32`.
 
 `f32` and `f64` can be that constant too. `const bias = 0.5f` is `f32`. `const lifted f64 = bias` converts the width. `const from_lit f32 = 1` converts a folded integer. The name is not an array length. Assigning it, or taking its address, is reported as `not an lvalue`. Copying a `var` into a const float is reported as `global initializer is not a constant`.
 
@@ -249,7 +249,7 @@ The program returns 42.
 
 ### File scope
 
-At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `export` goes on either form: `export var bonus = 40` and `export extra := 2`. Another package reads and assigns `pkg.bonus` or `import { extra }`. `extern` and `extern(abi="c")` still go on a typed `var`: `extern var slot i32`, `extern(abi="c") var slot i32`. `extern` on `var name = expr` or `name := expr` is reported as `not supported yet`. `export` also goes on a file-scope `const` and on `var Type::name`. A global with no initializer is zero. A float literal is a constant initializer. `var scale = 1.5f` is `f32` and `var wide = 20.0` is `f64`. `var copied = scale` keeps that initializer after `scale` is assigned. `var neg = -1.0` is the negated literal. `var from_int f32 = n` converts a folded integer. `var spare f32` is zero. `var Entity::scale = 1.5f` is that variable on a type. A call, or float arithmetic such as `1.5f + 0.5f`, is reported as `global initializer is not a constant`.
+At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `export` goes on either form: `export var bonus = 40` and `export extra := 2`. Another package reads and assigns `pkg.bonus` or `import { extra }`. `extern` and `extern(abi="c")` still go on a typed `var`: `extern var slot i32`, `extern(abi="c") var slot i32`. `extern` on `var name = expr` or `name := expr` is reported as `not supported yet`. `export` also goes on a file-scope `const` and on `var Type::name`. A global with no initializer is zero. A float literal is a constant initializer. `var scale = 1.5f` is `f32` and `var wide = 20.0` is `f64`. `var copied = scale` keeps that initializer after `scale` is assigned. `var neg = -1.0` is the negated literal. `var added = 1.5f + 0.5f` folds that arithmetic. `var from_int f32 = n` converts a folded integer, and so does `var from_u f32 = 1u32`. `var spare f32` is zero. `var Entity::scale = 1.5f` is that variable on a type. A call is reported as `global initializer is not a constant`.
 
 ```c
 var count = 1;
@@ -347,7 +347,7 @@ func main() i32 {
 
 ## `assert`
 
-`assert` checks a constant integer while compiling. It may stand at file scope or inside a function. The condition is an expression such as `sizeof(i32) == 4`, and the message is a string literal. A false condition is an error, and the diagnostic is that message. A true `assert` produces no code.
+`assert` checks a constant integer while compiling. It may stand at file scope or inside a function. The condition is an expression such as `sizeof(i32) == 4`, `typeof(i32) == typeof(i64)`, or `1.5f < 2.0f`, and the message is a string literal. A false condition is an error, and the diagnostic is that message. A true `assert` produces no code. A condition that is not a constant is reported as `not supported yet`.
 
 ```c
 assert(sizeof(i32) == 4, "i32 must be 4 bytes");

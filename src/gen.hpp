@@ -888,6 +888,14 @@ class CodeGen {
     std::optional<Lowered> lower_array_literal(uint32_t file, const Expr::Init &init) const;
     llvm::Constant *const_field(const Expr &expr, const FieldLayout &slot);
     std::optional<int32_t> fold(const Expr &expr) const;
+    // A constant float or integer. `wide` is an f64 operation. Integers leave `is_float` clear.
+    struct FoldedNumber {
+        double value = 0;
+        bool is_float = false;
+        bool wide = false;
+    };
+    std::optional<FoldedNumber> fold_number(const Expr &expr) const;
+    std::optional<FoldedNumber> fold_number(const Expr &expr, std::unordered_set<std::string> &seen) const;
     void emit_function(const FunctionDecl &fn);
     void emit_local_function(const FunctionDecl &fn);
     void emit_nested_body(const FunctionDecl &fn, llvm::Function *function, int depth, std::vector<Binding> captures);

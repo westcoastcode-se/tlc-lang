@@ -122,7 +122,7 @@ func main() i32 {
 
 ## `Type`
 
-`typeof(i32)` and `typeof n` have type `Type`. `==` and `!=` compare two `Type` values and yield `i32`. `t.name()` returns the diagnostic spelling as `*u8`. Other operators on `Type` are reported as `type mismatch`.
+`typeof(i32)` and `typeof n` have type `Type`. `==` and `!=` compare two `Type` values and yield `i32`. Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` folds while compiling. `t.name()` returns the diagnostic spelling as `*u8`. Other operators on `Type` are reported as `type mismatch`.
 
 ```c
 func main() i32 {

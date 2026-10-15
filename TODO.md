@@ -69,7 +69,9 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 
 ### Constant evaluation
 
-`assert`, `const`, and a compile-time integer parameter share `fold_int`. That folds integers, names of those constants, and `sizeof`. It does not fold `typeof` or a comparison of two `Type` values, so `assert(typeof(i32) == typeof(i64))` is `not supported yet`. A general constant evaluator is not in place. An `assert` whose condition is not a constant integer is the same gap. Float arithmetic in a file-scope initializer, such as `var x = 1.5f + 0.5f` or `const x = 1.5f + 0.5f`, is `global initializer is not a constant`. `var x f32 = 1u32` is `not supported yet`. `const x f32 = n` when `n` is a `var` is `global initializer is not a constant`.
+`assert`, `const`, and a compile-time integer share one evaluator. It folds integers, including a suffix whose value fits in `i32` such as `1u32`, names of those constants, `sizeof`, float arithmetic (`1.5f + 0.5f`), and `==` / `!=` of two `typeof` values. `var x = 1.5f + 0.5f`, `const x = 1.5f + 0.5f`, and `var x f32 = 1u32` are constant initializers.
+
+An `assert` whose condition is not one of those constants is `not supported yet`. A call is not a constant. `const x f32 = n` when `n` is a `var` is `global initializer is not a constant`. A suffix whose value does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
 
 ## Types and operators
 
@@ -95,7 +97,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `extern` on an inferred variable, `var name = expr` or `name := expr`. `export var name = expr` and `export name := expr` are accepted. Another package uses `pkg.name` or `import { name }`.
 - A local `type`, including a local struct or enum.
 - A file-scope array whose element is a pointer to an array, `[_]*[4]i32`. An element may be an integer, `bool`, a float, a pointer, a struct, an enum, a typedef, a function pointer, an empty `[_]T{}`, or one nested level written as `[_][2]i32{{1, 2}}`. A written nested type `[2][3]i32` and a written length `[0]i32` stay `not supported yet`. An element that is an array name, `[_][2]i32{inner}`, is `type mismatch`.
-- A file-scope array element that is a call or an expression such as `n + 1`. That is `global initializer is not a constant`. An integer suffix that does not fold, such as `1u32`, is `not supported yet`. `var row = [_]i32{n}` copies the initializer of `n`. `const row = [_]i32{n}` when `n` is a `var` is `global initializer is not a constant`.
+- A file-scope array element that is a call or an expression such as `n + 1` when `n` is a `var`. That is `global initializer is not a constant`. `var row = [_]i32{1u32}` folds. `var row = [_]i32{n}` copies the initializer of `n`. `const row = [_]i32{n}` when `n` is a `var` is `global initializer is not a constant`.
 - Another abi than `"c"` and `"tlc"`.
 - `export type Name trait`.
 
