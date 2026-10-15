@@ -4046,6 +4046,11 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return {zero(), 0};
                 }
                 return {const_i32(static_cast<int32_t>(bytes)), 0};
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                return emit_new(node);
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                emit_delete(node);
+                return {zero(), 0, false, -1, false, true};
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
                 if (node.canonical.empty()) {
                     error(node.loc, "type mismatch");
@@ -5576,6 +5581,163 @@ void CodeGen::emit_builtin_trace() {
     builder_.SetInsertPoint(done);
     builder_.CreateRet(trace_buffer_);
     builder_.restoreIP(saved);
+}
+
+llvm::Value *CodeGen::allocator_receiver(const Expr &allocator, bool is_pointer) {
+    if (is_pointer) {
+        const TypedValue value = emit_rvalue(allocator);
+        return value.value;
+    }
+    if (!addressable(allocator)) {
+        error(expr_loc(allocator), "not an lvalue");
+        return nullptr;
+    }
+    const TypedValue addr = emit_addr(allocator);
+    if (addr.value == nullptr) {
+        return nullptr;
+    }
+    if (addr.depth > 0) {
+        return builder_.CreateLoad(ptr_type(), addr.value);
+    }
+    return addr.value;
+}
+
+llvm::Function *CodeGen::allocator_method(uint32_t file_id, const std::string &type_name, const std::string &name) {
+    const auto file = files_.find(file_id);
+    if (file == files_.end() || type_name.empty()) {
+        return nullptr;
+    }
+    const auto found = file->second.functions.find(type_name + "." + name);
+    if (found == file->second.functions.end() || found->second.value == nullptr) {
+        return nullptr;
+    }
+    return llvm::dyn_cast<llvm::Function>(found->second.value);
+}
+
+void CodeGen::abort_out_of_memory() {
+    auto *print_type = llvm::FunctionType::get(i32(), {i32(), ptr_type()}, true);
+    llvm::FunctionCallee print = module_.getOrInsertFunction("dprintf", print_type);
+    builder_.CreateCall(print_type, print.getCallee(),
+                        {const_i32(2), builder_.CreateGlobalString("panic: out of memory\n")});
+    auto *abort_type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), false);
+    llvm::FunctionCallee abort_fn = module_.getOrInsertFunction("abort", abort_type);
+    builder_.CreateCall(abort_type, abort_fn.getCallee());
+    builder_.CreateUnreachable();
+}
+
+llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t align) {
+    if (node.builtin_alloc) {
+        uint64_t bytes = size == 0 ? 1 : size;
+        llvm::Value *raw = nullptr;
+        if (align > 16) {
+            bytes = (bytes + align - 1) / align * align;
+            auto *fn_type = llvm::FunctionType::get(ptr_type(), {i64(), i64()}, false);
+            llvm::FunctionCallee fn = module_.getOrInsertFunction("aligned_alloc", fn_type);
+            raw = builder_.CreateCall(fn_type, fn.getCallee(),
+                                     {llvm::ConstantInt::get(i64(), align), llvm::ConstantInt::get(i64(), bytes)});
+        } else {
+            auto *fn_type = llvm::FunctionType::get(ptr_type(), {i64()}, false);
+            llvm::FunctionCallee fn = module_.getOrInsertFunction("malloc", fn_type);
+            raw = builder_.CreateCall(fn_type, fn.getCallee(), {llvm::ConstantInt::get(i64(), bytes)});
+        }
+        return raw;
+    }
+    llvm::Function *method = allocator_method(node.alloc_file, node.alloc_name, "malloc");
+    if (method == nullptr || node.allocator == nullptr) {
+        error(node.loc, "undeclared identifier");
+        return nullptr;
+    }
+    llvm::Value *receiver = allocator_receiver(*node.allocator, node.alloc_is_pointer);
+    if (receiver == nullptr) {
+        return nullptr;
+    }
+    if (size > 2147483647ULL || align > 2147483647ULL) {
+        error(node.loc, "not supported yet");
+        return nullptr;
+    }
+    auto *fn_type = method->getFunctionType();
+    return builder_.CreateCall(fn_type, method,
+                              {receiver, const_i32(static_cast<int32_t>(size)), const_i32(static_cast<int32_t>(align))});
+}
+
+void CodeGen::call_free(const Expr::Delete &node, llvm::Value *pointer) {
+    if (pointer == nullptr) {
+        return;
+    }
+    if (node.builtin_alloc) {
+        auto *fn_type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), {ptr_type()}, false);
+        llvm::FunctionCallee fn = module_.getOrInsertFunction("free", fn_type);
+        builder_.CreateCall(fn_type, fn.getCallee(), {pointer});
+        return;
+    }
+    llvm::Function *method = allocator_method(node.alloc_file, node.alloc_name, "free");
+    if (method == nullptr || node.allocator == nullptr) {
+        error(node.loc, "undeclared identifier");
+        return;
+    }
+    llvm::Value *receiver = allocator_receiver(*node.allocator, node.alloc_is_pointer);
+    if (receiver == nullptr) {
+        return;
+    }
+    builder_.CreateCall(method->getFunctionType(), method, {receiver, pointer});
+}
+
+TypedValue CodeGen::emit_new(const Expr::New &node) {
+    set_loc(node.loc);
+    if (function_ == nullptr) {
+        error(node.loc, "global initializer is not a constant");
+        return {zero(), 0};
+    }
+    const Lowered low = lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections, false,
+                              0, false);
+    if (low.type == nullptr || low.elem_void || low.type->isFunctionTy()) {
+        error(node.loc, "type mismatch");
+        return {zero(), 0};
+    }
+    const uint64_t size = module_.getDataLayout().getTypeAllocSize(low.type).getFixedValue();
+    uint64_t align = module_.getDataLayout().getABITypeAlign(low.type).value();
+    if (align == 0) {
+        align = 1;
+    }
+    llvm::Value *raw = call_malloc(node, size, align);
+    if (raw == nullptr || terminated()) {
+        return {zero(), 0};
+    }
+    llvm::BasicBlock *oom = llvm::BasicBlock::Create(context_, "new.oom", function_);
+    llvm::BasicBlock *ok = llvm::BasicBlock::Create(context_, "new.ok", function_);
+    builder_.CreateCondBr(builder_.CreateICmpEQ(raw, null_ptr()), oom, ok);
+    builder_.SetInsertPoint(oom);
+    abort_out_of_memory();
+    builder_.SetInsertPoint(ok);
+    if (size > 0) {
+        builder_.CreateMemSet(raw, llvm::ConstantInt::get(llvm::Type::getInt8Ty(context_), 0),
+                             llvm::ConstantInt::get(i64(), size), llvm::MaybeAlign(align));
+    }
+    TypedValue result;
+    result.value = raw;
+    result.depth = low.depth + 1;
+    result.elem_char = low.elem_char;
+    result.struct_id = low.struct_id;
+    result.elem_void = low.elem_void;
+    result.elem_bool = low.elem_bool;
+    result.elem_bits = low.elem_bits;
+    result.elem_unsigned = low.elem_unsigned;
+    result.elem_float = low.elem_float;
+    result.enum_id = low.enum_id;
+    return result;
+}
+
+void CodeGen::emit_delete(const Expr::Delete &node) {
+    set_loc(node.loc);
+    if (node.expr == nullptr || function_ == nullptr) {
+        error(node.loc, "type mismatch");
+        return;
+    }
+    const TypedValue value = emit_rvalue(*node.expr);
+    if (value.value == nullptr || terminated()) {
+        return;
+    }
+    call_free(node, value.value);
 }
 
 void CodeGen::emit_builtin_panic() {

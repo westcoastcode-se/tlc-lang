@@ -519,6 +519,26 @@ std::string dump_expr(const Expr &expr) {
                 } else {
                     return "(cast " + spelled + " " + (node.expr ? dump_expr(*node.expr) : "(unsupported)") + ")";
                 }
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                std::string text = "(new";
+                if (node.allocator) {
+                    text += " ";
+                    text += dump_expr(*node.allocator);
+                }
+                text += " ";
+                text += node.type_package.empty() ? node.type_name : node.type_package + "." + node.type_name;
+                text += ")";
+                return text;
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                std::string text = "(delete";
+                if (node.allocator) {
+                    text += " ";
+                    text += dump_expr(*node.allocator);
+                }
+                text += " ";
+                text += node.expr ? dump_expr(*node.expr) : "(unsupported)";
+                text += ")";
+                return text;
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 return node.value ? "(true)" : "(false)";
             } else if constexpr (std::is_same_v<T, Expr::Nullptr>) {
@@ -894,6 +914,29 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 for (const auto &element : node.elements) {
                     copy.elements.push_back(element ? clone_expr(*element) : nullptr);
                 }
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                Expr::New copy;
+                copy.loc = node.loc;
+                copy.allocator = node.allocator ? clone_expr(*node.allocator) : nullptr;
+                copy.type_name = node.type_name;
+                copy.type_package = node.type_package;
+                copy.is_struct = node.is_struct;
+                copy.indirections = node.indirections;
+                copy.builtin_alloc = node.builtin_alloc;
+                copy.alloc_file = node.alloc_file;
+                copy.alloc_name = node.alloc_name;
+                copy.alloc_is_pointer = node.alloc_is_pointer;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                Expr::Delete copy;
+                copy.loc = node.loc;
+                copy.allocator = node.allocator ? clone_expr(*node.allocator) : nullptr;
+                copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
+                copy.builtin_alloc = node.builtin_alloc;
+                copy.alloc_file = node.alloc_file;
+                copy.alloc_name = node.alloc_name;
+                copy.alloc_is_pointer = node.alloc_is_pointer;
                 out->data = std::move(copy);
             } else {
                 out->data = node;

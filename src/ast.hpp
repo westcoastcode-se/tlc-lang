@@ -246,9 +246,36 @@ struct Expr {
     struct Unsupported {
         SourceLoc loc{};
     };
+    // `new T` and `new(allocator) T`. The result is `*T`.
+    struct New {
+        SourceLoc loc{};
+        // Null uses `builtin.allocator`.
+        std::unique_ptr<Expr> allocator;
+        std::string type_name;
+        std::string type_package;
+        bool is_struct = false;
+        int indirections = 0;
+        // Filled while checking. `builtin_alloc` calls libc. Otherwise `alloc_struct` is the allocator.
+        mutable bool builtin_alloc = false;
+        // File and struct name of a custom allocator. Empty when `builtin_alloc` is set.
+        mutable uint32_t alloc_file = 0;
+        mutable std::string alloc_name;
+        // The allocator expression is already a pointer. A struct lvalue is passed by address.
+        mutable bool alloc_is_pointer = false;
+    };
+    // `delete p` and `delete(allocator) p`.
+    struct Delete {
+        SourceLoc loc{};
+        std::unique_ptr<Expr> allocator;
+        std::unique_ptr<Expr> expr;
+        mutable bool builtin_alloc = false;
+        mutable uint32_t alloc_file = 0;
+        mutable std::string alloc_name;
+        mutable bool alloc_is_pointer = false;
+    };
 
     using Data = std::variant<Name, Int, Unary, Binary, Assign, Call, Selector, String, Index, Sizeof, Typeof, Cast, Bool,
-                              Nullptr, Char, Float, Func, Init, Unsupported>;
+                              Nullptr, Char, Float, Func, Init, New, Delete, Unsupported>;
 
     Data data;
 

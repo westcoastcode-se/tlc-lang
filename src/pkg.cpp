@@ -725,6 +725,20 @@ class Resolver {
         node.unit.decls.push_back(std::move(trace));
         node.unit.decls.push_back(std::move(va));
         node.unit.decls.push_back(std::move(panic));
+        // `builtin.allocator` is the libc heap. `new` and `delete` use it when no allocator is written.
+        StructDecl malloc_struct;
+        malloc_struct.exported = true;
+        malloc_struct.name = "Malloc";
+        TopDecl malloc_decl;
+        malloc_decl.data = std::move(malloc_struct);
+        node.unit.decls.push_back(std::move(malloc_decl));
+        VarDecl allocator;
+        allocator.exported = true;
+        allocator.name = "allocator";
+        allocator.type_name = "Malloc";
+        TopDecl allocator_decl;
+        allocator_decl.data = std::move(allocator);
+        node.unit.decls.push_back(std::move(allocator_decl));
         node.imported_from = from_file;
         node.import_spec = import.path;
         node.import_loc = import.loc;

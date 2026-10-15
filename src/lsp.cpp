@@ -2329,7 +2329,8 @@ Json location_of(const Sym &sym) {
 const char *kKeywords[] = {"func",    "type",    "var",     "const",   "struct", "enum",    "union",  "trait",
                            "if",      "else",    "while",   "for",     "do",     "switch",  "case",   "default",
                            "return",  "break",   "continue","defer",   "import", "package", "export", "extern",
-                           "test",    "assert",  "sizeof",  "typeof",  "true",    "false",  "null"};
+                           "test",    "assert",  "sizeof",  "typeof",  "new",     "delete",
+                           "true",    "false",   "null"};
 
 const char *kBuiltinTypes[] = {"bool", "void", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64"};
 

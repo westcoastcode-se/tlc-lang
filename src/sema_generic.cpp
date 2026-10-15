@@ -764,6 +764,26 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         node.expr.reset();
                     }
                 }
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                if (node.allocator) {
+                    substitute_expr(params, bounds, *node.allocator);
+                }
+                if (node.type_package.empty()) {
+                    if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
+                        bound != nullptr && !bound->is_value) {
+                        node.type_name = bound->type_name;
+                        node.type_package = bound->type_package;
+                        node.is_struct = bound->is_struct;
+                        node.indirections += bound->indirections;
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                if (node.allocator) {
+                    substitute_expr(params, bounds, *node.allocator);
+                }
+                if (node.expr) {
+                    substitute_expr(params, bounds, *node.expr);
+                }
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 if (node.expr) {
                     substitute_expr(params, bounds, *node.expr);

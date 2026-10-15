@@ -1022,8 +1022,29 @@ bool Checker::trait_method_matches(const Type &trait_fn, const Type &concrete) c
     return true;
 }
 
+void Checker::ensure_allocator_trait() {
+    if (allocator_trait_id_ >= 0) {
+        return;
+    }
+    // `*u8` and `?*u8`. The optional bit is what lets `malloc` return null.
+    const Type byte = type_rank(1, true);
+    Type pointer = type_pointer(byte);
+    Type optional = pointer;
+    optional.optional = true;
+    const Type size = type_int();
+    TraitInfo info;
+    info.name = "Allocator";
+    info.methods.push_back(TraitInfo::Method{"malloc", type_function(optional, {size, size})});
+    info.methods.push_back(TraitInfo::Method{"free", type_function(type_void(), {pointer})});
+    info.methods.push_back(TraitInfo::Method{"realloc", type_function(optional, {pointer, size, size})});
+    allocator_trait_id_ = static_cast<int>(traits_.size());
+    traits_.push_back(std::move(info));
+}
+
 void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
     file_id_ = file_id;
+    ensure_allocator_trait();
+    trait_names_[file_id].emplace("Allocator", allocator_trait_id_);
     for (const TopDecl &decl : unit.decls) {
         const auto *item = std::get_if<TraitDecl>(&decl.data);
         if (item == nullptr || item->name.empty()) {

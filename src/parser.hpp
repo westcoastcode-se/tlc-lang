@@ -218,6 +218,7 @@ class Parser {
     std::unique_ptr<Expr> parse_additive();
     std::unique_ptr<Expr> parse_multiplicative();
     std::unique_ptr<Expr> parse_unary();
+    std::unique_ptr<Expr> parse_alloc();
     std::unique_ptr<Expr> parse_postfix();
     std::unique_ptr<Expr> finish_postfix(std::unique_ptr<Expr> expr);
     std::unique_ptr<Expr> parse_primary();

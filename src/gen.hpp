@@ -919,6 +919,13 @@ class CodeGen {
     void emit_case(const Stmt::Case &node);
     void emit_switch(const Stmt::Switch &node);
     TypedValue emit_rvalue(const Expr &expr);
+    TypedValue emit_new(const Expr::New &node);
+    void emit_delete(const Expr::Delete &node);
+    llvm::Value *allocator_receiver(const Expr &allocator, bool is_pointer);
+    llvm::Function *allocator_method(uint32_t file, const std::string &type_name, const std::string &name);
+    llvm::Value *call_malloc(const Expr::New &node, uint64_t size, uint64_t align);
+    void call_free(const Expr::Delete &node, llvm::Value *pointer);
+    void abort_out_of_memory();
     // `base[low:high]`. The result is a slice header.
     TypedValue emit_range(const Expr::Index &node);
     // Load one field. A slice field is the header. An array field decays to a pointer.

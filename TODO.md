@@ -16,6 +16,15 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 - `var Entity::next` inside a function. The variable is file scope.
 - `Entity::next := 1`. The form is `var Entity::next i32 = 1` or `var Entity::next = 1`.
 
+## Heap allocation
+
+`new T` and `delete p` allocate one object with `builtin.allocator`. `new(allocator) T` and `delete(allocator) p` use a struct that has `Allocator`'s methods. `malloc` returns `?*u8`. When that is `null`, `new` aborts.
+
+- An initializer on `new`, such as `new Point{.x = 1}`. The fields would be written after the block is reserved.
+- Whether `new` should abort or yield `?*T` when allocation returns `null`.
+- A typed `realloc`. The trait method exists. There is no expression that calls it.
+- `new [n]T`, a writable buffer of `n` elements.
+
 ## Language server
 
 `tlc lsp` publishes diagnostics and answers completion, hover, definition, and document symbols. These are not in place:

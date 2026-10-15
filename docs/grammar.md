@@ -226,7 +226,9 @@ relational  = shift { ( "<" | ">" | "<=" | ">=" ) shift } ;
 shift       = additive { ( "<<" | ">>" ) additive } ;
 additive    = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative = unary { ( "*" | "/" | "%" ) unary } ;
-unary       = ( "+" | "-" | "!" | "~" | "&" | "*" | "sizeof" | "typeof" ) unary
+unary       = new-expr
+            | delete-expr
+            | ( "+" | "-" | "!" | "~" | "&" | "*" | "sizeof" | "typeof" ) unary
             | postfix ;
 postfix     = primary { postfix-op } ;
 postfix-op  = "(" [ argument-list ] ")"
@@ -237,6 +239,8 @@ postfix-op  = "(" [ argument-list ] ")"
             | "!"
             | struct-init ;
 argument-list = expression { "," expression } ;
+new-expr    = "new" [ "(" expression ")" ] { "*" } [ identifier "." ] identifier ;
+delete-expr = "delete" [ "(" expression ")" ] unary ;
 ```
 
 `name[args](` is a generic call, not an index. An array length may be a file-scope `const` name: `[N]i32`.
@@ -324,8 +328,8 @@ A `'` between digits is a separator, not an empty gap and not a trailing mark. A
 These words are keywords and cannot be identifiers:
 
 ```text
-assert bool break case const continue default defer do else enum
-export extern false for func if import null package
+assert bool break case const continue default defer delete do else enum
+export extern false for func if import new null package
 return sizeof struct switch test trait true type typeof union var void while
 ```
 

@@ -2257,6 +2257,88 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 direct_callee_ = as_callee;
                 return signature;
+            } else if constexpr (std::is_same_v<T, Expr::New> || std::is_same_v<T, Expr::Delete>) {
+                (void)used;
+                if (scopes_.size() <= 1) {
+                    error(node.loc, "global initializer is not a constant");
+                    return type_invalid();
+                }
+                const auto resolve_allocator = [&](Expr *allocator, bool &builtin_alloc, uint32_t &alloc_file,
+                                                   std::string &alloc_name, bool &alloc_is_pointer) {
+                    builtin_alloc = allocator == nullptr;
+                    alloc_file = 0;
+                    alloc_name.clear();
+                    alloc_is_pointer = false;
+                    if (allocator == nullptr) {
+                        return;
+                    }
+                    const Type got = check_expr(*allocator, true);
+                    int struct_id = -1;
+                    if (got.kind == TypeKind::Struct) {
+                        struct_id = got.struct_id;
+                        if (!is_lvalue_form(*allocator)) {
+                            error(node.loc, "not an lvalue");
+                        }
+                    } else if (got.kind == TypeKind::Pointer && got.pointee != nullptr &&
+                               got.pointee->kind == TypeKind::Struct) {
+                        struct_id = got.pointee->struct_id;
+                        alloc_is_pointer = true;
+                    } else if (got.kind != TypeKind::Invalid) {
+                        error(node.loc, "type mismatch");
+                    }
+                    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+                        return;
+                    }
+                    const StructInfo &info = structs_[static_cast<std::size_t>(struct_id)];
+                    alloc_file = info.file_id;
+                    alloc_name = info.name;
+                    if (info.name == "Malloc" && is_std_builtin_file(info.file_id)) {
+                        builtin_alloc = true;
+                        return;
+                    }
+                    ensure_allocator_trait();
+                    require_satisfies(struct_id, allocator_trait_id_, true, node.loc);
+                    for (const char *name : {"malloc", "free", "realloc"}) {
+                        const MethodInfo *method = find_method(struct_id, name);
+                        const bool pointer = method != nullptr && method->type.kind == TypeKind::Function &&
+                                             !method->type.params.empty() &&
+                                             method->type.params[0].kind == TypeKind::Pointer;
+                        if (method != nullptr && !pointer) {
+                            error(node.loc, "type mismatch");
+                        }
+                    }
+                };
+                if constexpr (std::is_same_v<T, Expr::Delete>) {
+                    resolve_allocator(node.allocator.get(), node.builtin_alloc, node.alloc_file, node.alloc_name,
+                                      node.alloc_is_pointer);
+                    if (node.expr == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    const Type got = check_expr(*node.expr, true);
+                    if (got.kind != TypeKind::Invalid && got.kind != TypeKind::Pointer) {
+                        error(node.loc, "type mismatch");
+                    }
+                    return type_void();
+                } else {
+                    resolve_allocator(node.allocator.get(), node.builtin_alloc, node.alloc_file, node.alloc_name,
+                                      node.alloc_is_pointer);
+                    if (node.type_name.empty()) {
+                        error(node.loc, "expected a type");
+                        return type_invalid();
+                    }
+                    const Type object = spelled_type(node.type_name, node.type_package, node.is_struct, false,
+                                                     node.indirections, node.loc, 0, 0);
+                    if (object.kind == TypeKind::Invalid) {
+                        return type_invalid();
+                    }
+                    if (object.kind == TypeKind::Void || object.kind == TypeKind::Trait ||
+                        object.kind == TypeKind::Function) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    return type_pointer(object);
+                }
             } else {
                 (void)used;
                 return type_invalid();

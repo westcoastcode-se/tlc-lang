@@ -152,6 +152,9 @@ class Checker {
     int function_seq_ = 0;
     std::vector<StructInfo> structs_;
     std::vector<TraitInfo> traits_;
+    // The built-in `Allocator` trait. Negative until the first unit is registered.
+    int allocator_trait_id_ = -1;
+    void ensure_allocator_trait();
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::unordered_map<std::string, MethodInfo>>> methods_;
     // file, owner, field. The owner is the struct name or a specialization such as `Box.spec.i32`.
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::unordered_map<std::string, AssocVar>>> assoc_vars_;

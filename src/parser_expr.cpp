@@ -534,8 +534,53 @@ std::unique_ptr<Expr> Parser::parse_cast_expr() {
     return make_expr(std::move(node));
 }
 
+std::unique_ptr<Expr> Parser::parse_alloc() {
+    const bool is_new = peek().kind == TokenKind::KwNew;
+    const SourceLoc loc = peek().loc;
+    ++pos_;
+    std::unique_ptr<Expr> allocator;
+    if (check(TokenKind::LParen)) {
+        ++pos_;
+        allocator = parse_expr();
+        expect(TokenKind::RParen, "expected ')'");
+    }
+    if (!is_new) {
+        Expr::Delete node;
+        node.loc = loc;
+        node.allocator = std::move(allocator);
+        node.expr = parse_unary();
+        return make_expr(std::move(node));
+    }
+    Expr::New node;
+    node.loc = loc;
+    node.allocator = std::move(allocator);
+    while (check(TokenKind::Star)) {
+        ++pos_;
+        ++node.indirections;
+    }
+    if (!check(TokenKind::Identifier)) {
+        error_here("expected a type");
+        return make_expr(std::move(node));
+    }
+    node.type_name = peek().text;
+    ++pos_;
+    if (eat(TokenKind::Dot)) {
+        node.type_package = node.type_name;
+        if (!check(TokenKind::Identifier)) {
+            error_here("expected a type");
+            return make_expr(std::move(node));
+        }
+        node.type_name = peek().text;
+        ++pos_;
+    }
+    return make_expr(std::move(node));
+}
+
 std::unique_ptr<Expr> Parser::parse_unary() {
     const TokenKind kind = peek().kind;
+    if (kind == TokenKind::KwNew || kind == TokenKind::KwDelete) {
+        return parse_alloc();
+    }
     if (kind == TokenKind::KwSizeof || kind == TokenKind::KwTypeof) {
         const bool is_sizeof = kind == TokenKind::KwSizeof;
         const SourceLoc loc = peek().loc;

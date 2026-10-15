@@ -4356,6 +4356,53 @@ int run_sema_tests() {
 
     {
         const std::string errors = check_program(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var p *Point = new Point;\n"
+            "  p.x = 40;\n"
+            "  delete p;\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var p = new(builtin.allocator) Point;\n"
+            "  delete(builtin.allocator) p;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Point struct { x i32; };\n"
+            "var p = new Point;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Point struct { x i32; };\n"
+            "type Arena struct { mark i32; };\n"
+            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "func Arena::free(self *this, ptr *u8) void {}\n"
+            "func main() i32 {\n"
+            "  var arena Arena;\n"
+            "  var p *Point = new(arena) Point;\n"
+            "  delete(arena) p;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = check_program(
             "import \"builtin/env/consts\";\n"
             "import { family } from \"builtin/env/consts\";\n"
             "func main() i32 {\n"

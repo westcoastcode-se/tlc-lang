@@ -1,0 +1,36 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+var slot Point;
+var used i32;
+
+type Arena struct {
+    mark i32;
+};
+
+func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    if (used != 0) {
+        return null;
+    }
+    used = size;
+    return ?*u8(&slot);
+}
+
+func Arena::free(self *this, ptr *u8) void {
+}
+
+func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return null;
+}
+
+func main() i32 {
+    var arena Arena;
+    var p *Point = new(arena) Point;
+    p.x = 40;
+    p.y = 2;
+    var sum i32 = p.x + p.y;
+    delete(arena) p;
+    return sum;
+}

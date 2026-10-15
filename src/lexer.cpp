@@ -32,6 +32,7 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"continue", TokenKind::KwContinue},
     {"default", TokenKind::KwDefault},
     {"defer", TokenKind::KwDefer},
+    {"delete", TokenKind::KwDelete},
     {"do", TokenKind::KwDo},
     {"else", TokenKind::KwElse},
     {"enum", TokenKind::KwEnum},
@@ -44,6 +45,7 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"if", TokenKind::KwIf},
     {"import", TokenKind::KwImport},
     {"inline", TokenKind::KwInline},
+    {"new", TokenKind::KwNew},
     {"null", TokenKind::KwNull},
     {"package", TokenKind::KwPackage},
     {"register", TokenKind::KwRegister},
@@ -127,6 +129,7 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::KwContinue: return "continue";
     case TokenKind::KwDefault: return "default";
     case TokenKind::KwDefer: return "defer";
+    case TokenKind::KwDelete: return "delete";
     case TokenKind::KwDo: return "do";
     case TokenKind::KwDouble: return "double";
     case TokenKind::KwElse: return "else";
@@ -143,6 +146,7 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::KwInline: return "inline";
     case TokenKind::KwInt: return "int";
     case TokenKind::KwLong: return "long";
+    case TokenKind::KwNew: return "new";
     case TokenKind::KwNull: return "null";
     case TokenKind::KwPackage: return "package";
     case TokenKind::KwRegister: return "register";
