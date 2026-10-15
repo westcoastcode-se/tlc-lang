@@ -4403,6 +4403,72 @@ int run_sema_tests() {
 
     {
         const std::string errors = check_program(
+            "type Arena struct { hits i32; };\n"
+            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "func Arena::free(self *this, ptr *u8) void {}\n"
+            "func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "func main() i32 {\n"
+            "  var live Arena;\n"
+            "  const frozen = live;\n"
+            "  var p *i32 = new(frozen) i32;\n"
+            "  delete(frozen) p;\n"
+            "  delete(&frozen) p;\n"
+            "  var q *const Arena = &live;\n"
+            "  var r *i32 = new(q) i32;\n"
+            "  delete(q) r;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected *Arena, found *const Arena");
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Arena struct { hits i32; };\n"
+            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "func Arena::free(self *this, ptr *u8) void {}\n"
+            "func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "func main() i32 {\n"
+            "  var live Arena;\n"
+            "  var q ?*Arena = &live;\n"
+            "  var p *i32 = new(q) i32;\n"
+            "  delete(q) p;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected *Arena, found ?*Arena");
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Arena struct { hits i32; };\n"
+            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "func Arena::free(self *this, ptr *u8) void {}\n"
+            "func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "func main() i32 {\n"
+            "  var live Arena;\n"
+            "  const p = &live;\n"
+            "  var n *i32 = new(p) i32;\n"
+            "  delete(p) n;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Point struct { x i32; };\n"
+            "func box[T type]() *T { return new T; }\n"
+            "func main() i32 {\n"
+            "  var p *Point = box[Point]();\n"
+            "  delete p;\n"
+            "  var n *i32 = box[i32]();\n"
+            "  delete n;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
             "import \"builtin/env/consts\";\n"
             "import { family } from \"builtin/env/consts\";\n"
             "func main() i32 {\n"

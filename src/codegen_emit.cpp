@@ -5660,7 +5660,7 @@ llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t
                               {receiver, const_i32(static_cast<int32_t>(size)), const_i32(static_cast<int32_t>(align))});
 }
 
-void CodeGen::call_free(const Expr::Delete &node, llvm::Value *pointer) {
+void CodeGen::call_free(const Expr::Delete &node, llvm::Value *pointer, llvm::Value *receiver) {
     if (pointer == nullptr) {
         return;
     }
@@ -5671,12 +5671,8 @@ void CodeGen::call_free(const Expr::Delete &node, llvm::Value *pointer) {
         return;
     }
     llvm::Function *method = allocator_method(node.alloc_file, node.alloc_name, "free");
-    if (method == nullptr || node.allocator == nullptr) {
+    if (method == nullptr || receiver == nullptr) {
         error(node.loc, "undeclared identifier");
-        return;
-    }
-    llvm::Value *receiver = allocator_receiver(*node.allocator, node.alloc_is_pointer);
-    if (receiver == nullptr) {
         return;
     }
     builder_.CreateCall(method->getFunctionType(), method, {receiver, pointer});
@@ -5733,11 +5729,22 @@ void CodeGen::emit_delete(const Expr::Delete &node) {
         error(node.loc, "type mismatch");
         return;
     }
+    // The allocator is written first, so its side effects run before the pointer.
+    llvm::Value *receiver = nullptr;
+    if (node.allocator != nullptr) {
+        receiver = allocator_receiver(*node.allocator, node.alloc_is_pointer);
+        if (receiver == nullptr || terminated()) {
+            return;
+        }
+    } else if (!node.builtin_alloc) {
+        error(node.loc, "undeclared identifier");
+        return;
+    }
     const TypedValue value = emit_rvalue(*node.expr);
     if (value.value == nullptr || terminated()) {
         return;
     }
-    call_free(node, value.value);
+    call_free(node, value.value, receiver);
 }
 
 void CodeGen::emit_builtin_panic() {

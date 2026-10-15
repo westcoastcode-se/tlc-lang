@@ -1,0 +1,49 @@
+type Point struct {
+    x i32;
+};
+
+type Arena struct {
+    hits i32;
+};
+
+var slot Point;
+var used i32;
+var log i32;
+
+func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    if (used != 0) {
+        return null;
+    }
+    used = 1;
+    return ?*u8(&slot);
+}
+
+func Arena::free(self *this, ptr *u8) void {
+    used = 0;
+}
+
+func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return null;
+}
+
+func touch_alloc(arena *Arena) *Arena {
+    log = log * 10 + 1;
+    return arena;
+}
+
+func touch_ptr(p *Point) *Point {
+    log = log * 10 + 2;
+    return p;
+}
+
+func main() i32 {
+    var arena Arena;
+    var p *Point = new(arena) Point;
+    p.x = 1;
+    var kept i32 = p.x;
+    delete(touch_alloc(&arena)) touch_ptr(p);
+    if (log != 12 || kept != 1) {
+        return 1;
+    }
+    return 0;
+}

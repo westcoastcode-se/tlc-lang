@@ -2307,6 +2307,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             error(node.loc, "type mismatch");
                         }
                     }
+                    // `malloc` takes `*this`. A const allocator is rejected the same way as `arena.malloc(...)`.
+                    const MethodInfo *malloc_method = find_method(struct_id, "malloc");
+                    if (malloc_method != nullptr && malloc_method->type.kind == TypeKind::Function &&
+                        !malloc_method->type.params.empty() &&
+                        malloc_method->type.params[0].kind == TypeKind::Pointer) {
+                        const Type object =
+                            got.kind == TypeKind::Pointer && got.pointee != nullptr ? *got.pointee : got;
+                        const Type passed = method_pointer(got, object, alloc_is_pointer, *allocator);
+                        if (!accepts_pointer(passed, malloc_method->type.params[0])) {
+                            mismatch(expr_loc(*allocator), malloc_method->type.params[0], passed);
+                        }
+                    }
                 };
                 if constexpr (std::is_same_v<T, Expr::Delete>) {
                     resolve_allocator(node.allocator.get(), node.builtin_alloc, node.alloc_file, node.alloc_name,

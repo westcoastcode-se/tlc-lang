@@ -347,14 +347,15 @@ func main() i32 {
 
 ## `new` and `delete`
 
-`new T` reserves space for one `T` and yields `*T`. `delete p` releases that pointer. With no allocator written, both use `builtin.allocator`. `new(allocator) T` and `delete(allocator) p` use another value whose type has the methods of `Allocator`. The allocator is described with `builtin`.
+`new T` reserves space for one `T` and yields `*T`. `delete p` releases that pointer. With no allocator written, both use `builtin.allocator`. `new(allocator) T` and `delete(allocator) p` use another value whose type has the methods of `Allocator`. The allocator is described with `builtin`. It is passed the same way as the receiver of `malloc`: a const value and a `*const` pointer are `type mismatch: expected *Arena, found *const Arena`. `const p = &arena` is a mutable `*Arena`, so `new(p)` uses `arena`.
 
 ```c
 func main() i32 {
     var p *Point = new Point;
     p.x = 40;
+    var x i32 = p.x;
     delete p;
-    return p.x;
+    return x;
 }
 ```
 

@@ -1,0 +1,33 @@
+type Arena struct {
+    hits i32;
+};
+
+var storage i32;
+
+func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    self.hits = self.hits + 1;
+    return ?*u8(&storage);
+}
+
+func Arena::free(self *this, ptr *u8) void {
+    self.hits = self.hits + 10;
+}
+
+func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return null;
+}
+
+func main() i32 {
+    var arena Arena;
+    const p = &arena;
+    var n *i32 = new(p) i32;
+    if (*n != 0) {
+        return 1;
+    }
+    *n = 4;
+    delete(p) n;
+    if (arena.hits != 11) {
+        return 2;
+    }
+    return 0;
+}

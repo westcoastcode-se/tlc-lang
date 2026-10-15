@@ -773,7 +773,8 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         bound != nullptr && !bound->is_value) {
                         node.type_name = bound->type_name;
                         node.type_package = bound->type_package;
-                        node.is_struct = bound->is_struct;
+                        // `is_struct` means the source wrote `struct Name`. A specialized name is an ordinary type.
+                        node.is_struct = false;
                         node.indirections += bound->indirections;
                     }
                 }
