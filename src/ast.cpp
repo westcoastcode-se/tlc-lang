@@ -527,6 +527,10 @@ std::string dump_expr(const Expr &expr) {
                 }
                 text += " ";
                 text += node.type_package.empty() ? node.type_name : node.type_package + "." + node.type_name;
+                if (node.init) {
+                    text += " ";
+                    text += dump_expr(*node.init);
+                }
                 text += ")";
                 return text;
             } else if constexpr (std::is_same_v<T, Expr::Delete>) {
@@ -923,6 +927,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.type_package = node.type_package;
                 copy.is_struct = node.is_struct;
                 copy.indirections = node.indirections;
+                copy.init = node.init ? clone_expr(*node.init) : nullptr;
                 copy.builtin_alloc = node.builtin_alloc;
                 copy.alloc_file = node.alloc_file;
                 copy.alloc_name = node.alloc_name;

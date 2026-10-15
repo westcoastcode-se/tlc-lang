@@ -933,6 +933,8 @@ class CodeGen {
     // Allocates `[_]T{...}` and stores each value. `low` is the array type.
     llvm::AllocaInst *emit_array_literal(const Expr::Init &init, Lowered &low);
     TypedValue emit_init(const Expr::Init &init);
+    // Writes the named fields of `init` through `slot`. Omitted fields are left as they are.
+    void store_init_fields(int struct_id, llvm::Value *slot, const Expr::Init &init);
     TypedValue emit_addr(const Expr &expr);
     llvm::Type *shape_type(const Shape &shape) const;
     Shape decay_shape(Shape shape) const;

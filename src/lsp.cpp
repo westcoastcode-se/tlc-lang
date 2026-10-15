@@ -2450,6 +2450,70 @@ std::string field_direct_type(const Doc &doc, const std::string &owner, const st
     return {};
 }
 
+// Index of the `(` that matches `close`, or -1 when the scan falls off the start.
+uint32_t matching_open(const std::string &text, uint32_t close) {
+    if (close >= text.size() || text[close] != ')') {
+        return static_cast<uint32_t>(-1);
+    }
+    int depth = 0;
+    uint32_t i = close;
+    while (i > 0) {
+        --i;
+        const char c = text[i];
+        if (c == ')') {
+            ++depth;
+        } else if (c == '(') {
+            if (depth == 0) {
+                return i;
+            }
+            --depth;
+        }
+    }
+    return static_cast<uint32_t>(-1);
+}
+
+// `Point{` and `new(allocator) Point{`. A function body `func f() Point {` is not a value.
+std::string type_named_before(const Doc &doc, uint32_t brace) {
+    const std::string &text = doc.text;
+    const uint32_t at = skip_back(text, brace);
+    if (at == 0 || !ident_char(static_cast<unsigned char>(text[at - 1]))) {
+        return {};
+    }
+    uint32_t end = at;
+    uint32_t begin = end;
+    while (begin > 0 && ident_char(static_cast<unsigned char>(text[begin - 1]))) {
+        --begin;
+    }
+    const std::string name = text.substr(begin, end - begin);
+    uint32_t type_start = begin;
+    const uint32_t before_name = skip_back(text, begin);
+    if (before_name > 0 && text[before_name - 1] == '.') {
+        const uint32_t dot = before_name - 1;
+        const uint32_t before_dot = skip_back(text, dot);
+        if (before_dot == 0 || !ident_char(static_cast<unsigned char>(text[before_dot - 1]))) {
+            return {};
+        }
+        uint32_t qualifier = before_dot;
+        while (qualifier > 0 && ident_char(static_cast<unsigned char>(text[qualifier - 1]))) {
+            --qualifier;
+        }
+        type_start = qualifier;
+    }
+    int stars = 0;
+    const uint32_t before_type = skip_type_prefix(text, type_start, stars);
+    if (stars > 0) {
+        return {};
+    }
+    // `new(allocator) Point{` is an initializer. `func f() Point {` is a body.
+    if (before_type > 0 && text[before_type - 1] == ')') {
+        const uint32_t open = matching_open(text, before_type - 1);
+        if (open == static_cast<uint32_t>(-1) || !keyword_back(text, skip_back(text, open), "new")) {
+            return {};
+        }
+    }
+    return struct_owner(doc, name);
+}
+
 std::string type_of_brace(const Doc &doc, uint32_t brace);
 
 std::string type_of_brace(const Doc &doc, uint32_t brace) {
@@ -2463,6 +2527,9 @@ std::string type_of_brace(const Doc &doc, uint32_t brace) {
             return struct_owner(doc, fn->type_name);
         }
         return {};
+    }
+    if (const std::string named = type_named_before(doc, brace); !named.empty()) {
+        return named;
     }
     if (at == 0 || text[at - 1] != '=') {
         return {};

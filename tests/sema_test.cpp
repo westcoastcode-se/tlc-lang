@@ -4368,6 +4368,90 @@ int run_sema_tests() {
 
     {
         const std::string errors = check_program(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var p *Point = new Point{.x = 40, .y = 2};\n"
+            "  var q = new Point{};\n"
+            "  delete p;\n"
+            "  delete q;\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var p *Point = new Point{.x = 1, .x = 2};\n"
+            "  var q *Point = new Point{.z = 1};\n"
+            "  var r *Point = new Point{.x = \"no\"};\n"
+            "  var s *Point = new Point{1, 2};\n"
+            "  var n *i32 = new i32{1};\n"
+            "  var star *Point = new *Point{.x = 1};\n"
+            "  delete p;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Node struct { value i32; next *Node; };\n"
+            "func main() i32 {\n"
+            "  var p *Node = new Node{.value = 1};\n"
+            "  delete p;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Row struct { raw [2]i32; };\n"
+            "func main() i32 {\n"
+            "  var p *Row = new Row{.raw = [_]i32{1, 2}};\n"
+            "  delete p;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Point struct { x i32; };\n"
+            "var p = new Point{.x = 1};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Point struct { x i32; y i32; };\n"
+            "func fill[T type]() *T { return new T{.x = 1}; }\n"
+            "func main() i32 {\n"
+            "  var p *Point = fill[Point]();\n"
+            "  delete p;\n"
+            "  return p.x;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "func fill[T type]() *T { return new T{.x = 1}; }\n"
+            "func main() i32 {\n"
+            "  var n *i32 = fill[i32]();\n"
+            "  delete n;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = check_program(
             "import \"builtin\";\n"
             "type Point struct { x i32; y i32; };\n"
             "func main() i32 {\n"

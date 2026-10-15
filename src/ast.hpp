@@ -247,6 +247,7 @@ struct Expr {
         SourceLoc loc{};
     };
     // `new T` and `new(allocator) T`. The result is `*T`.
+    // `new T{.field = expr}` writes those fields after the block is reserved.
     struct New {
         SourceLoc loc{};
         // Null uses `builtin.allocator`.
@@ -255,6 +256,8 @@ struct Expr {
         std::string type_package;
         bool is_struct = false;
         int indirections = 0;
+        // `{.field = expr}`. Null when the block is only zeroed.
+        std::unique_ptr<Expr> init;
         // Filled while checking. `builtin_alloc` calls libc. Otherwise `alloc_struct` is the allocator.
         mutable bool builtin_alloc = false;
         // File and struct name of a custom allocator. Empty when `builtin_alloc` is set.

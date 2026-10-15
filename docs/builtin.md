@@ -71,7 +71,7 @@ func realloc(self *this, ptr *u8, size i32, align i32) ?*u8;
 
 `import "builtin"` also provides `allocator`, a `Malloc` value. `new T` is `new(builtin.allocator) T`, and `delete p` is `delete(builtin.allocator) p`. `Malloc` calls the C functions `malloc`, `free`, and `realloc`. `malloc` returns `null` when it cannot reserve the bytes. `new` then aborts. That choice is not final.
 
-`new T` reserves `sizeof(T)` bytes, zeroes them, and yields `*T`. `delete` passes that pointer to `free`. A file-scope `new` is reported as `global initializer is not a constant`. An initializer after the type, such as `new Point{.x = 1}`, is not a form yet.
+`new T` reserves `sizeof(T)` bytes, zeroes them, and yields `*T`. `new T{.field = expr}` and `new(allocator) T{.field = expr}` write those fields after the block is reserved. A field that is left out stays zero. `new Point{1, 2}` is a value list and is reported as `type mismatch`. An initializer on a type that is not a struct, such as `new i32{1}`, is reported as `type mismatch`. `delete` passes that pointer to `free`. A file-scope `new` is reported as `global initializer is not a constant`.
 
 ```c
 import "builtin";
@@ -82,9 +82,7 @@ type Point struct {
 };
 
 func main() i32 {
-    var p *Point = new Point;
-    p.x = 40;
-    p.y = 2;
+    var p *Point = new Point{.x = 40, .y = 2};
     var sum i32 = p.x + p.y;
     delete(builtin.allocator) p;
     return sum;

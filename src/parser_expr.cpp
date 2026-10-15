@@ -573,6 +573,10 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         node.type_name = peek().text;
         ++pos_;
     }
+    // `new Point{.x = 1}` writes the named fields after the block is reserved.
+    if (check(TokenKind::LBrace)) {
+        node.init = parse_init();
+    }
     return make_expr(std::move(node));
 }
 

@@ -768,6 +768,9 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 if (node.allocator) {
                     substitute_expr(params, bounds, *node.allocator);
                 }
+                if (node.init) {
+                    substitute_expr(params, bounds, *node.init);
+                }
                 if (node.type_package.empty()) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
                         bound != nullptr && !bound->is_value) {

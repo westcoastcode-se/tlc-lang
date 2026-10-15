@@ -1010,11 +1010,25 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
     // Omitted fields stay zero. A later assignment replaces the whole struct.
     llvm::AllocaInst *slot = alloca_typed(layout.type, "init");
     builder_.CreateStore(llvm::ConstantAggregateZero::get(layout.type), slot);
+    store_init_fields(init.struct_id, slot, init);
+    if (terminated()) {
+        return {zero(), 0};
+    }
+    return load_object(slot, 0, false, init.struct_id);
+}
+
+void CodeGen::store_init_fields(int struct_id, llvm::Value *slot, const Expr::Init &init) {
+    if (slot == nullptr) {
+        return;
+    }
     for (const Expr::FieldInit &field : init.fields) {
+        if (terminated()) {
+            return;
+        }
         if (field.value == nullptr || field.field.empty()) {
             continue;
         }
-        const TypedValue addr = field_addr(init.struct_id, slot, field.field, field.loc);
+        const TypedValue addr = field_addr(struct_id, slot, field.field, field.loc);
         if (addr.value == nullptr) {
             continue;
         }
@@ -1023,7 +1037,10 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
             continue;
         }
         const TypedValue rhs = emit_rvalue(*field.value);
-        if (terminated() || rhs.value == nullptr) {
+        if (terminated()) {
+            return;
+        }
+        if (rhs.value == nullptr) {
             continue;
         }
         if (addr.is_slice) {
@@ -1032,12 +1049,8 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
             builder_.CreateStore(stored_value(rhs, addr), addr.value);
         }
         // The enum tag is stored after the payload.
-        store_union_tag(init.struct_id, slot, field.field);
+        store_union_tag(struct_id, slot, field.field);
     }
-    if (terminated()) {
-        return {zero(), 0};
-    }
-    return load_object(slot, 0, false, init.struct_id);
 }
 
 llvm::Constant *CodeGen::intern_type_name(const std::string &text) {
@@ -5708,6 +5721,18 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     if (size > 0) {
         builder_.CreateMemSet(raw, llvm::ConstantInt::get(llvm::Type::getInt8Ty(context_), 0),
                              llvm::ConstantInt::get(i64(), size), llvm::MaybeAlign(align));
+    }
+    // Named fields are written into the reserved block. Omitted fields stay zero.
+    if (node.init != nullptr) {
+        const auto *init = std::get_if<Expr::Init>(&node.init->data);
+        if (init == nullptr || init->struct_id < 0) {
+            error(node.loc, "type mismatch");
+        } else {
+            store_init_fields(init->struct_id, raw, *init);
+        }
+    }
+    if (terminated()) {
+        return {zero(), 0};
     }
     TypedValue result;
     result.value = raw;

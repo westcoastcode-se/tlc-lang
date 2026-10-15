@@ -2349,6 +2349,27 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
+                    // The fields are checked against the reserved object. A non-struct has no fields.
+                    if (node.init) {
+                        auto *init = std::get_if<Expr::Init>(&node.init->data);
+                        if (init == nullptr || object.kind != TypeKind::Struct) {
+                            error(expr_loc(*node.init), "type mismatch");
+                            if (init != nullptr) {
+                                for (const Expr::FieldInit &field : init->fields) {
+                                    if (field.value) {
+                                        check_expr(*field.value, true);
+                                    }
+                                }
+                                for (const auto &element : init->elements) {
+                                    if (element) {
+                                        check_expr(*element, true);
+                                    }
+                                }
+                            }
+                        } else {
+                            check_init(*init, object);
+                        }
+                    }
                     return type_pointer(object);
                 }
             } else {

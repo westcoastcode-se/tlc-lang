@@ -254,6 +254,7 @@ int run_lsp_tests() {
         "    }\n"
         "    var seen = inner;\n"
         "    var gone = hidden;\n"
+        "    var made *Point = new Point{.x = 1};\n"
         "    return add(p.x, q.x) + r.x + slice.len + named.len + tail;\n"
         "}\n";
 
@@ -514,6 +515,16 @@ int run_lsp_tests() {
                   std::to_string(hidden_at.character) + "}}}");
     const std::string hidden_items = read_until(from_child[0], "\"id\":23", 3000);
     EXPECT(check, hidden_items.find("\"hidden\"") == std::string::npos);
+
+    const LineCol new_field = at_needle(source, "new Point{.", true);
+    EXPECT(check, new_field.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":24,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(new_field.line) + R"(,"character":)" +
+                  std::to_string(new_field.character) + "}}}");
+    const std::string new_items = read_until(from_child[0], "\"id\":24", 3000);
+    EXPECT_HAS(check, new_items, "\"x\"");
+    EXPECT(check, new_items.find("\"sum\"") == std::string::npos);
 
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);

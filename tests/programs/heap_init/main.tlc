@@ -1,0 +1,111 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Inner struct {
+    n i32;
+};
+
+type Outer struct {
+    inner Inner;
+    extra i32;
+};
+
+type Spot Point;
+
+type Node struct {
+    value i32;
+    next *Node;
+};
+
+type Bag struct {
+    n i32;
+    items []i32;
+};
+
+type ShapeType enum {
+    Circle,
+    Rectangle,
+}
+
+type Shape union(ShapeType) {
+    Circle struct {
+        radius i32;
+    };
+    Rectangle struct {
+        width i32;
+        height i32;
+    };
+}
+
+var order i32;
+var slot Point;
+var row = [_]i32{1, 2, 3};
+
+type Arena struct {
+    mark i32;
+};
+
+func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    order = 1;
+    return ?*u8(&slot);
+}
+
+func Arena::free(self *this, ptr *u8) void {
+}
+
+func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return null;
+}
+
+func mark() i32 {
+    order = order * 10 + 2;
+    return 20;
+}
+
+func fresh[T type]() *T {
+    return new T{.x = 8, .y = 8};
+}
+
+func main() i32 {
+    var arena Arena;
+    var p *Point = new(arena) Point{.x = mark(), .y = 2};
+    if (order != 12 || p.x != 20 || p.y != 2) {
+        return 1;
+    }
+    var o *Outer = new Outer{.inner = {.n = 8}};
+    if (o.inner.n != 8 || o.extra != 0) {
+        return 2;
+    }
+    var s *Spot = new Spot{.x = 4};
+    if (s.x != 4 || s.y != 0) {
+        return 3;
+    }
+    var g *Point = fresh[Point]();
+    if (g.x != 8 || g.y != 8) {
+        return 4;
+    }
+    var tail Node = {.value = 0, .next = &tail};
+    var node *Node = new Node{.value = 7, .next = &tail};
+    if (node.value != 7 || node.next.value != 0) {
+        return 5;
+    }
+    var bag *Bag = new Bag{.n = 3, .items = row};
+    if (bag.n != 3 || bag.items.len != 3 || bag.items[1] != 2) {
+        return 6;
+    }
+    var shape *Shape = new Shape{.Rectangle = {.width = 3, .height = 1}};
+    if (ShapeType(*shape) != ShapeType.Rectangle || shape.Rectangle.width != 3 || shape.Rectangle.height != 1) {
+        return 7;
+    }
+    var sum i32 = p.x + p.y + o.inner.n + s.x + g.x;
+    delete(arena) p;
+    delete o;
+    delete s;
+    delete g;
+    delete node;
+    delete bag;
+    delete shape;
+    return sum;
+}
