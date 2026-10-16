@@ -5736,6 +5736,61 @@ void CodeGen::call_free(const Expr::Delete &node, llvm::Value *pointer, llvm::Va
     builder_.CreateCall(method->getFunctionType(), method, {receiver, pointer});
 }
 
+void CodeGen::store_new_element(llvm::Value *raw, llvm::Value *index, const Lowered &low, const TypedValue &value,
+                                SourceLoc loc) {
+    if (raw == nullptr || index == nullptr || value.value == nullptr || low.type == nullptr || terminated()) {
+        return;
+    }
+    llvm::Value *slot = builder_.CreateInBoundsGEP(low.type, raw, llvm::ArrayRef<llvm::Value *>{index});
+    if (low.is_slice) {
+        builder_.CreateStore(as_slice_value(value, loc), slot);
+        return;
+    }
+    builder_.CreateStore(as_stored(value.value, value.depth, low.type, value.elem_unsigned), slot);
+}
+
+void CodeGen::fill_new_buffer(llvm::Value *raw, llvm::Value *count, const Lowered &low, const Expr::Init &init,
+                              bool repeat) {
+    if (repeat) {
+        if (init.elements.size() != 1 || init.elements.front() == nullptr || count == nullptr) {
+            error(init.loc, "type mismatch");
+            return;
+        }
+        const TypedValue value = emit_rvalue(*init.elements.front());
+        if (terminated() || value.value == nullptr) {
+            return;
+        }
+        llvm::AllocaInst *step = alloca_typed(i32(), "new.i");
+        builder_.CreateStore(const_i32(0), step);
+        llvm::BasicBlock *cond = llvm::BasicBlock::Create(context_, "new.rep", function_);
+        llvm::BasicBlock *body = llvm::BasicBlock::Create(context_, "new.rep.body", function_);
+        llvm::BasicBlock *done = llvm::BasicBlock::Create(context_, "new.rep.done", function_);
+        builder_.CreateBr(cond);
+        builder_.SetInsertPoint(cond);
+        llvm::Value *index = builder_.CreateLoad(i32(), step);
+        builder_.CreateCondBr(builder_.CreateICmpSLT(index, count), body, done);
+        builder_.SetInsertPoint(body);
+        store_new_element(raw, index, low, value, expr_loc(*init.elements.front()));
+        builder_.CreateStore(builder_.CreateAdd(index, const_i32(1)), step);
+        builder_.CreateBr(cond);
+        builder_.SetInsertPoint(done);
+        return;
+    }
+    int index = 0;
+    for (const auto &element : init.elements) {
+        if (element == nullptr || terminated()) {
+            ++index;
+            continue;
+        }
+        const TypedValue value = emit_rvalue(*element);
+        if (terminated()) {
+            return;
+        }
+        store_new_element(raw, const_i32(index), low, value, expr_loc(*element));
+        ++index;
+    }
+}
+
 TypedValue CodeGen::emit_new(const Expr::New &node) {
     set_loc(node.loc);
     if (function_ == nullptr) {
@@ -5755,7 +5810,31 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     }
     llvm::Value *raw = nullptr;
     llvm::Value *buffer_bytes = nullptr;
-    if (node.count != nullptr) {
+    llvm::Value *element_count = nullptr;
+    const bool buffer = node.count != nullptr || node.count_inferred;
+    int list_len = 0;
+    if (node.count_inferred && node.init != nullptr) {
+        if (const auto *list = std::get_if<Expr::Init>(&node.init->data)) {
+            list_len = static_cast<int>(list->elements.size());
+        }
+    }
+    if (node.count_inferred) {
+        if (list_len <= 0) {
+            error(node.loc, "type mismatch");
+            return {zero(), 0};
+        }
+        uint64_t total = 1;
+        if (size != 0) {
+            if (static_cast<uint64_t>(list_len) > UINT64_MAX / size) {
+                error(node.loc, "not supported yet");
+                return {zero(), 0};
+            }
+            total = size * static_cast<uint64_t>(list_len);
+        }
+        raw = call_malloc(node, total, align);
+        buffer_bytes = llvm::ConstantInt::get(i64(), total);
+        element_count = const_i32(list_len);
+    } else if (node.count != nullptr) {
         // The allocator is written first, so its side effects run before the count.
         llvm::Value *receiver = nullptr;
         if (!node.builtin_alloc) {
@@ -5774,6 +5853,7 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         }
         llvm::BasicBlock *bad = llvm::BasicBlock::Create(context_, "new.count", function_);
         llvm::BasicBlock *ready = llvm::BasicBlock::Create(context_, "new.ready", function_);
+        element_count = count_value.value;
         builder_.CreateCondBr(builder_.CreateICmpSLE(count_value.value, const_i32(0)), bad, ready);
         builder_.SetInsertPoint(bad);
         abort_now();
@@ -5805,7 +5885,7 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     builder_.SetInsertPoint(oom);
     abort_out_of_memory();
     builder_.SetInsertPoint(ok);
-    if (node.count != nullptr) {
+    if (buffer) {
         builder_.CreateMemSet(raw, llvm::ConstantInt::get(llvm::Type::getInt8Ty(context_), 0), buffer_bytes,
                              llvm::MaybeAlign(align));
     } else if (size > 0) {
@@ -5813,7 +5893,11 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
                              llvm::ConstantInt::get(i64(), size), llvm::MaybeAlign(align));
     }
     // Named fields are written into the reserved block. Omitted fields stay zero.
-    if (node.count == nullptr && node.init != nullptr) {
+    if (buffer && node.init != nullptr) {
+        if (const auto *list = std::get_if<Expr::Init>(&node.init->data)) {
+            fill_new_buffer(raw, element_count, low, *list, node.repeat_init);
+        }
+    } else if (node.init != nullptr) {
         const auto *init = std::get_if<Expr::Init>(&node.init->data);
         if (init == nullptr || init->struct_id < 0) {
             error(node.loc, "type mismatch");
@@ -5835,6 +5919,10 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     result.elem_unsigned = low.elem_unsigned;
     result.elem_float = low.elem_float;
     result.enum_id = low.enum_id;
+    if (node.count_inferred) {
+        result.ptr_to_array = true;
+        result.ptr_array_len = list_len;
+    }
     return result;
 }
 

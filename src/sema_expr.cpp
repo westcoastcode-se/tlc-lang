@@ -2384,13 +2384,49 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                         }
                     };
-                    if (node.count) {
-                        if (needs_nonnull_pointer(object)) {
-                            error(node.loc, "type mismatch");
-                        }
-                        if (node.init) {
-                            error(expr_loc(*node.init), "not supported yet");
+                    if (node.count || node.count_inferred) {
+                        const auto *list = node.init == nullptr ? nullptr : std::get_if<Expr::Init>(&node.init->data);
+                        if (node.init != nullptr && (list == nullptr || !list->fields.empty())) {
+                            error(expr_loc(*node.init), "type mismatch");
                             loose_init();
+                            return type_pointer(object);
+                        }
+                        auto check_element = [&](const Expr &element) { check_against(element, object); };
+                        if (node.count_inferred) {
+                            // `_` takes its length from the list. `...` has no length to repeat.
+                            if (list == nullptr || node.repeat_init || list->elements.empty()) {
+                                error(node.loc, "type mismatch");
+                                return type_invalid();
+                            }
+                            for (const auto &element : list->elements) {
+                                if (element) {
+                                    check_element(*element);
+                                }
+                            }
+                            return type_pointer(type_array(object, static_cast<int>(list->elements.size())));
+                        }
+                        if (list != nullptr) {
+                            if (node.repeat_init) {
+                                if (list->elements.size() != 1 || list->elements.front() == nullptr) {
+                                    error(expr_loc(*node.init), "type mismatch");
+                                } else {
+                                    check_element(*list->elements.front());
+                                }
+                            } else if (list->elements.empty()) {
+                                error(expr_loc(*node.init), "type mismatch");
+                            } else {
+                                const std::optional<int> folded = node.count ? fold_int(*node.count) : std::nullopt;
+                                if (!folded || *folded != static_cast<int>(list->elements.size())) {
+                                    error(expr_loc(*node.init), "type mismatch");
+                                }
+                                for (const auto &element : list->elements) {
+                                    if (element) {
+                                        check_element(*element);
+                                    }
+                                }
+                            }
+                        } else if (needs_nonnull_pointer(object)) {
+                            error(node.loc, "type mismatch");
                         }
                         return type_pointer(object);
                     }

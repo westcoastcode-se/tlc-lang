@@ -526,7 +526,9 @@ std::string dump_expr(const Expr &expr) {
                     text += dump_expr(*node.allocator);
                 }
                 text += " ";
-                if (node.count) {
+                if (node.count_inferred) {
+                    text += "[_] ";
+                } else if (node.count) {
                     text += "[";
                     text += dump_expr(*node.count);
                     text += "] ";
@@ -936,6 +938,8 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.const_pointee = node.const_pointee;
                 copy.type_args = node.type_args;
                 copy.count = node.count ? clone_expr(*node.count) : nullptr;
+                copy.count_inferred = node.count_inferred;
+                copy.repeat_init = node.repeat_init;
                 copy.init = node.init ? clone_expr(*node.init) : nullptr;
                 copy.builtin_alloc = node.builtin_alloc;
                 copy.alloc_file = node.alloc_file;

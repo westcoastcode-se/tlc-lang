@@ -920,6 +920,10 @@ class CodeGen {
     void emit_switch(const Stmt::Switch &node);
     TypedValue emit_rvalue(const Expr &expr);
     TypedValue emit_new(const Expr::New &node);
+    // Stores one element of a `new [n]T` buffer. `index` is an i32.
+    void store_new_element(llvm::Value *raw, llvm::Value *index, const Lowered &low, const TypedValue &value,
+                           SourceLoc loc);
+    void fill_new_buffer(llvm::Value *raw, llvm::Value *count, const Lowered &low, const Expr::Init &init, bool repeat);
     void emit_delete(const Expr::Delete &node);
     llvm::Value *allocator_receiver(const Expr &allocator, bool is_pointer);
     llvm::Function *allocator_method(uint32_t file, const std::string &type_name, const std::string &name);

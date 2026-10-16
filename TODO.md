@@ -23,7 +23,6 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 - Whether `new` and `delete` zero memory. `new` zeroes the block today, then an initializer writes the named fields. `delete` frees the pointer and does not zero it. The latest idea is that `new` does not zero: it writes only the fields named in the initializer, and the other bytes stay uninitialized. This is not decided.
 - Whether `new` should abort or yield `?*T` when allocation returns `null`.
 - A typed `realloc`. The trait method exists. There is no expression that calls it.
-- An initializer on `new [n]T`, such as `new [n]Point{.x = 1}`.
 
 ## Language server
 

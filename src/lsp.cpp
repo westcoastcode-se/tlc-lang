@@ -2561,6 +2561,33 @@ std::string type_of_brace(const Doc &doc, uint32_t brace) {
     if (const std::string named = type_named_before(doc, brace); !named.empty()) {
         return named;
     }
+    // `new [_]Point{{.x` — the inner brace is one element of the list.
+    if (at > 0 && (text[at - 1] == '{' || text[at - 1] == ',')) {
+        uint32_t list = static_cast<uint32_t>(-1);
+        if (text[at - 1] == '{') {
+            list = at - 1;
+        } else {
+            int depth = 0;
+            uint32_t i = at - 1;
+            while (i > 0) {
+                --i;
+                if (text[i] == '}') {
+                    ++depth;
+                } else if (text[i] == '{') {
+                    if (depth == 0) {
+                        list = i;
+                        break;
+                    }
+                    --depth;
+                }
+            }
+        }
+        if (list != static_cast<uint32_t>(-1)) {
+            if (const std::string named = type_named_before(doc, list); !named.empty()) {
+                return named;
+            }
+        }
+    }
     if (at == 0 || text[at - 1] != '=') {
         return {};
     }

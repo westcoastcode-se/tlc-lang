@@ -262,6 +262,10 @@ struct Expr {
         std::vector<TypeArg> type_args;
         // `new [count]T`. The result is `*T`, a pointer to the first element.
         std::unique_ptr<Expr> count;
+        // `new [_]T{...}`. The length is the number of element values. The result is `*[N]T`.
+        bool count_inferred = false;
+        // `new [n]T{value...}`. That one value is stored in every element.
+        bool repeat_init = false;
         // `{.field = expr}`. Null when the block is only zeroed.
         std::unique_ptr<Expr> init;
         // Filled while checking. `builtin_alloc` calls libc. Otherwise `alloc_struct` is the allocator.

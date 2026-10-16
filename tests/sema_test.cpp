@@ -4496,8 +4496,39 @@ int run_sema_tests() {
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
-        EXPECT_HAS(check, errors, "not supported yet");
         EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var n i32 = 3;\n"
+            "  var buf *Point = new [n]Point{{.x = 1}...};\n"
+            "  var row *[2]Point = new [_]Point{{.x = 4, .y = 2}, {.y = 10}};\n"
+            "  var nums *i32 = new [2]i32{6, 8};\n"
+            "  buf[2].y = row[0].x;\n"
+            "  delete buf;\n"
+            "  delete row;\n"
+            "  delete nums;\n"
+            "  return buf[0].x + row[1].y + nums[1];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var n i32 = 3;\n"
+            "  var a *[1]Point = new [_]Point{{.x = 1}...};\n"
+            "  var b *Point = new [n]Point{{.x = 1}, {.y = 2}};\n"
+            "  var c *Point = new [3]Point{{.x = 1}, {.y = 2}};\n"
+            "  var d *Point = new [2]Point{.x = 1};\n"
+            "  delete b;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {

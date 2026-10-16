@@ -260,6 +260,7 @@ int run_lsp_tests() {
         "    var gone = hidden;\n"
         "    var made *Point = new Point{.x = 1};\n"
         "    var boxed *Box[i32] = new Box[i32]{.value = 1};\n"
+        "    var row = new [_]Point{{.x = 1}};\n"
         "    return add(p.x, q.x) + r.x + slice.len + named.len + tail;\n"
         "}\n";
 
@@ -539,6 +540,15 @@ int run_lsp_tests() {
                   std::to_string(box_field.character) + "}}}");
     const std::string box_items = read_until(from_child[0], "\"id\":25", 3000);
     EXPECT_HAS(check, box_items, "\"value\"");
+
+    const LineCol row_field = at_needle(source, "[_]Point{{.", true);
+    EXPECT(check, row_field.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":26,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(row_field.line) + R"(,"character":)" +
+                  std::to_string(row_field.character) + "}}}");
+    const std::string row_items = read_until(from_child[0], "\"id\":26", 3000);
+    EXPECT_HAS(check, row_items, "\"x\"");
 
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);

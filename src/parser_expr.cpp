@@ -554,11 +554,17 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
     Expr::New node;
     node.loc = loc;
     node.allocator = std::move(allocator);
-    // `new [n]T` reserves n elements. `new Vec[i32]` is a type argument list, so the brackets follow the name.
+    // `new [n]T` reserves n elements. `new [_]T` takes the length from the element list.
+    // `new Vec[i32]` is a type argument list, so those brackets follow the name.
     std::unique_ptr<Expr> count;
+    bool inferred = false;
     if (check(TokenKind::LBracket)) {
         ++pos_;
-        if (check(TokenKind::RBracket)) {
+        if (check(TokenKind::Identifier) && peek().text == "_" && peek(1).kind == TokenKind::RBracket) {
+            inferred = true;
+            ++pos_;
+            ++pos_;
+        } else if (check(TokenKind::RBracket)) {
             error_here("expected an expression");
             ++pos_;
         } else {
@@ -573,6 +579,7 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
     if (!check(TokenKind::Identifier)) {
         error_here("expected a type");
         node.count = std::move(count);
+        node.count_inferred = inferred;
         return make_expr(std::move(node));
     }
     node.type_name = peek().text;
@@ -582,6 +589,7 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         if (!check(TokenKind::Identifier)) {
             error_here("expected a type");
             node.count = std::move(count);
+            node.count_inferred = inferred;
             return make_expr(std::move(node));
         }
         node.type_name = peek().text;
@@ -591,11 +599,33 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         node.type_args = parse_type_args();
     }
     // `new Point{.x = 1}` writes the named fields after the block is reserved.
-    // An initializer on `new [n]T` is parsed and rejected while checking.
-    if (check(TokenKind::LBrace)) {
+    // `new [n]Point{{.x = 1}...}` repeats one element. `new [_]Point{{.x = 1}, {.y = 2}}` lists them.
+    // `{.x = 1}` on a buffer is a field list, rejected while checking.
+    if (check(TokenKind::LBrace) && (count || inferred) && peek(1).kind != TokenKind::Dot &&
+        peek(1).kind != TokenKind::RBrace) {
+        Expr::Init list;
+        list.loc = peek().loc;
+        expect(TokenKind::LBrace, "expected '{'");
+        bool repeat = false;
+        while (!check(TokenKind::RBrace) && !eof()) {
+            list.elements.push_back(parse_assignment());
+            if (eat(TokenKind::Ellipsis)) {
+                repeat = true;
+                eat(TokenKind::Comma);
+                break;
+            }
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+        }
+        expect(TokenKind::RBrace, "expected '}'");
+        node.init = make_expr(std::move(list));
+        node.repeat_init = repeat;
+    } else if (check(TokenKind::LBrace)) {
         node.init = parse_init();
     }
     node.count = std::move(count);
+    node.count_inferred = inferred;
     return make_expr(std::move(node));
 }
 
