@@ -27,7 +27,7 @@ A field may be a slice, `items []i32`. It is stored as the slice header. `sizeof
 
 ## Cost
 
-`var a [2]i32` zeroes each element: 2 `movl`. `a[1] = 3` on that local, with a constant index, is 1 `movl` into the element's slot. Reading it back is 1 `movl`. A variable index on a pointer is a sign-extend and a scaled load. `return p[i]` is 8 instructions including the pointer store, the index store, a second sign-extend, and `retq`.
+`var a [2]i32` zeroes each element: 2 `movl`. `var row [3]i32 = {10, 20, 12}` stores those three values and does not store a zero first. `a[1] = 3` on a local, with a constant index, is 1 `movl` into the element's slot. Reading it back is 1 `movl`. A variable index on a pointer is a sign-extend and a scaled load. `return p[i]` is 8 instructions including the pointer store, the index store, a second sign-extend, and `retq`.
 
 Passing `[4]i32` to a function is 1 `leaq` of the first element, plus the traced call. The callee receives a pointer. `return a[0]` there is 4 instructions including the pointer store and `retq`. The elements are not copied.
 

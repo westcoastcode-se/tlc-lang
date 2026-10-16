@@ -11,6 +11,6 @@ world`;
 
 ## Cost
 
-A string literal is one address. `var text *const u8 = "hi"` stores a null pointer and then a `leaq` of the bytes: 2 instructions. The bytes, including the terminating null, sit in the binary and are not copied at the store. A raw string is the same address.
+A string literal is one address. `var text *const u8 = "hi"` is 1 `leaq` of the bytes and 1 store of that address. The bytes, including the terminating null, sit in the binary and are not copied at the store. A raw string is the same address.
 
 [Index](../README.md) · [Previous: Literals](literal.md) · [Next: sizeof](sizeof.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

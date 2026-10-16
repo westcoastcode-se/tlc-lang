@@ -26,6 +26,6 @@ The program returns 42. `break` leaves the innermost loop or `switch`. `continue
 
 ## Cost
 
-`switch (n)` with `case 1` and `default` subtracts 1 from `n` and branches: that dispatch is 2 instructions after `n` is loaded. Each `case` body that stores an `i32` is 1 `movl` and 1 jump to the exit. A function that stores 0 into `x`, switches, and returns `x` is 13 instructions including the parameter store and `retq`. There is no bounds table. `break` is the jump to the exit.
+`switch (n)` with `case 1` and `default` subtracts 1 from `n` and branches: that dispatch is 2 instructions after `n` is loaded. Each `case` body that stores an `i32` is 1 `movl` and 1 jump to the exit. A function that stores 0 into `x`, switches, and returns `x` is 12 instructions including the parameter store and `retq`. There is no bounds table. `break` is the jump to the exit.
 
 [Index](../README.md) · [Previous: for](for.md) · [Next: defer](defer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

@@ -22,8 +22,8 @@ func main() i32 {
 
 ## Cost
 
-A pointer local is 8 bytes. `var p *i32 = &n` stores a null pointer, then stores the address: 2 instructions after `n` has a slot, plus 1 `leaq` for the address. `*const T` is the same pointer. The const check adds no instructions. A store through `*const T` is rejected while compiling.
+A pointer local is 8 bytes. `var p *i32 = &n` is 1 `leaq` of `n` and 1 store of that address. `*const T` is the same pointer. The const check adds no instructions. A store through `*const T` is rejected while compiling.
 
-`?*T` uses the same 8-byte slot. `null` is one store of 0.
+`?*T` uses the same 8-byte slot. `var p ?*i32` with no initializer stores 0. `var p ?*i32 = null` is that same store, and it is the only one.
 
 [Index](../README.md) · [Previous: Numeric types](integer.md) · [Next: void, bool, and floating-point types](float.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

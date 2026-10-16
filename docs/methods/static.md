@@ -90,6 +90,6 @@ func main() i32 {
 
 ## Cost
 
-`Point.make(40, 1)` is a traced call. The two arguments are 2 `movl`. There is no receiver to copy. Taking the function as a value, `var ptr = Point.make`, is 1 `leaq` after a null store. Calling that pointer is the indirect call on [Function pointers](../functions/pointer.md).
+`Point.make(40, 1)` is a traced call. The two arguments are 2 `movl`. There is no receiver to copy. Taking the function as a value, `var ptr = Point.make`, is 1 `leaq` and 1 store of that address. Calling that pointer is the indirect call on [Function pointers](../functions/pointer.md).
 
 [Index](../README.md) · [Previous: Generic methods](generic.md) · [Next: Methods on primitive aliases](alias.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

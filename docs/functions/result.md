@@ -33,6 +33,6 @@ func main() i32 {
 
 `return x + y, x` for two `i32` parameters is 7 instructions. The sum is in `%eax` and the second result is in `%edx`.
 
-The caller of `a, b = pair(20, 22)` pays the traced call and then 2 stores from those registers into `a` and `b`. With both locals declared as `var a i32 = 0` and `var b i32 = 0`, `main` executes 47 instructions on the path where the trace holds fewer than 32 frames. A call used as a statement still calls, and it does not store the results.
+The caller of `a, b = pair(20, 22)` pays the traced call and then 2 stores from those registers into `a` and `b`. With both locals declared as `var a i32 = 0` and `var b i32 = 0`, `main` executes 45 instructions on the path where the trace holds fewer than 32 frames. A call used as a statement still calls, and it does not store the results.
 
 [Index](../README.md) · [Previous: Functions](function.md) · [Next: Nested functions](nested.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

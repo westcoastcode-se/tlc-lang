@@ -248,14 +248,14 @@ func main() i32 {
 
 ## Cost
 
-`var value = 1` is 2 stores, 0 and then 1. `var n i32` with no initializer is 1 store of 0. `extra := 2` is the same 2 stores. A pointer binding adds 1 `leaq` and 1 store of that address after a store of null.
+`var value = 1` is 1 store of 1. `var n i32` with no initializer is 1 store of 0. `extra := 2` is 1 store of 2. `var p *i32 = &n` is 1 `leaq` and 1 store of that address.
 
-A local `const value = 40 + 2` is folded and stored like `var value = 42`: 2 stores. It is not a compile-time integer. A file-scope `const N = 4` used as `return N` is the same 2 instructions as `return 4`. No slot is read.
+A local `const value = 40 + 2` is folded and stored like `var value = 42`: 1 store of 42. It is not a compile-time integer. A file-scope `const N = 4` used as `return N` is the same 2 instructions as `return 4`. No slot is read.
 
 A file-scope `var n i32 = 7` occupies space in the binary. `return n` is 1 `movl` from that address and `retq`. `n = n + 1` in `main` is 5 instructions: load, add 1, store, load again, return.
 
 A tuple local `(40, 2)` is 2 stores. Unpacking it into two names is 2 loads and 2 stores. A `for` whose first clause unpacks a call pays the traced call once per check of the condition.
 
-A local array zeroes every element and then stores each listed value: 1 `movl` each. A file-scope array is initialized in the binary. Reading one element of it is 1 `movl`. A compile-time length such as `[N]i32` adds no instructions beyond the element stores.
+A local array with no initializer zeroes every element. A full list stores each listed value, 1 `movl` each, and does not store a zero first. A file-scope array is initialized in the binary. Reading one element of it is 1 `movl`. A compile-time length such as `[N]i32` adds no instructions beyond the element stores.
 
 [Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

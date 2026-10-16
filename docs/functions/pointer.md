@@ -145,7 +145,7 @@ func main() i32 {
 
 ## Cost
 
-Loading a function pointer is the address of the function, one `leaq` when it is stored into a local, after a null store. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call.
+Loading a function pointer is the address of the function. `var ptr = add` is 1 `leaq` and 1 store of that address. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call.
 
 `return p(20, 22)` where `p` is a `func (i32, i32) i32` parameter executes 42 instructions on the path where the trace holds fewer than 32 frames. The pointer is stored and reloaded, the frame is pushed, the two arguments are moved, and `callq *%rax` runs. The callee is extra. A cast of a pointer to a function pointer is a copy of the address, 1 `movq` once the source is loaded. An anonymous function called directly is a direct traced call, the same as a nested function.
 

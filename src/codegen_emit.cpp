@@ -936,8 +936,21 @@ llvm::AllocaInst *CodeGen::emit_array_literal(const Expr::Init &init, Lowered &l
     low = *got;
     llvm::Type *ty = stored_type(low);
     llvm::AllocaInst *slot = alloca_typed(ty, "array");
-    builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
     auto *array_ty = llvm::cast<llvm::ArrayType>(ty);
+    bool complete = init.elements.size() == array_ty->getNumElements();
+    if (complete && low.inner_array_len > 0) {
+        for (const auto &element : init.elements) {
+            const auto *brace = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
+            if (brace == nullptr || brace->elements.size() != static_cast<std::size_t>(low.inner_array_len)) {
+                complete = false;
+                break;
+            }
+        }
+    }
+    // Every listed element is stored below. The array starts as that list, not as zeros.
+    if (!complete) {
+        builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
+    }
     if (low.inner_array_len > 0) {
         auto *inner = llvm::dyn_cast<llvm::ArrayType>(array_ty->getElementType());
         if (inner == nullptr) {
@@ -5233,7 +5246,14 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         }
                         llvm::Type *ty = stored_type(low);
                         llvm::AllocaInst *slot = alloca_typed(ty, var.name);
-                        builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
+                        // A full initializer is the variable's first value. A shorter list still
+                        // starts from zero so the elements it does not name stay zero.
+                        const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
+                        const bool listed = list != nullptr && ty->isArrayTy() &&
+                                            list->elements.size() == llvm::cast<llvm::ArrayType>(ty)->getNumElements();
+                        if (!listed) {
+                            builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
+                        }
                         Binding binding;
                         binding.value = slot;
                         binding.depth = low.depth;
@@ -5279,23 +5299,6 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     }
                     llvm::Type *ty = stored_type(low);
                     llvm::AllocaInst *slot = alloca_typed(ty, var.name);
-                    llvm::Value *initial = zero();
-                    if (low.depth > 0) {
-                        initial = null_ptr();
-                    } else if (low.elem_float) {
-                        initial = llvm::ConstantFP::get(low.elem_bits >= 64 ? f64_ty() : f32_ty(), 0.0);
-                    } else if (low.elem_bool) {
-                        initial = llvm::ConstantInt::get(i1(), 0, false);
-                    } else if (low.elem_char || low.elem_bits == 8) {
-                        initial = llvm::ConstantInt::get(i8(), 0, false);
-                    } else if (low.elem_bits == 16) {
-                        initial = llvm::ConstantInt::get(i16(), 0, false);
-                    } else if (low.elem_bits == 64) {
-                        initial = llvm::ConstantInt::get(i64(), 0, false);
-                    } else if (low.trait_id >= 0 || low.struct_id >= 0) {
-                        initial = llvm::ConstantAggregateZero::get(ty);
-                    }
-                    builder_.CreateStore(initial, slot);
                     Binding binding;
                     binding.value = slot;
                     binding.depth = low.depth;
@@ -5308,11 +5311,31 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     alias_capture(var.name, binding);
                     debug_declare(var.name, var.loc, binding, 0);
                     if (var.init) {
+                        // The initializer is the first value. Clearing the slot first would store a
+                        // zero the programmer did not write.
                         const TypedValue value = emit_rvalue(*var.init);
                         if (!terminated()) {
                             builder_.CreateStore(
                                 as_stored(value.value, value.depth, object_type(slot), value.elem_unsigned), slot);
                         }
+                    } else {
+                        llvm::Value *initial = zero();
+                        if (low.depth > 0) {
+                            initial = null_ptr();
+                        } else if (low.elem_float) {
+                            initial = llvm::ConstantFP::get(low.elem_bits >= 64 ? f64_ty() : f32_ty(), 0.0);
+                        } else if (low.elem_bool) {
+                            initial = llvm::ConstantInt::get(i1(), 0, false);
+                        } else if (low.elem_char || low.elem_bits == 8) {
+                            initial = llvm::ConstantInt::get(i8(), 0, false);
+                        } else if (low.elem_bits == 16) {
+                            initial = llvm::ConstantInt::get(i16(), 0, false);
+                        } else if (low.elem_bits == 64) {
+                            initial = llvm::ConstantInt::get(i64(), 0, false);
+                        } else if (low.trait_id >= 0 || low.struct_id >= 0) {
+                            initial = llvm::ConstantAggregateZero::get(ty);
+                        }
+                        builder_.CreateStore(initial, slot);
                     }
                 }
             }

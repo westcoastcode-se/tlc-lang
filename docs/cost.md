@@ -4,7 +4,7 @@
 
 `tlc` does not optimize. A count on a feature page is the number of x86-64 instructions that run, taken from the object file `tlc --emit-obj` writes for `x86_64-pc-linux-gnu`. An instruction on a branch the running path does not reach is left out. Alignment `nop` is left out. `callq` is one instruction. The instructions inside the callee are extra and are stated with the callee.
 
-A parameter is stored on entry: one `movl` for an `i32`, one `movq` for a pointer, one `movss` or `movsd` for a float. A local `var n i32 = 1` stores 0 and then stores 1.
+A parameter is stored on entry: one `movl` for an `i32`, one `movq` for a pointer, one `movss` or `movsd` for a float. `var n i32 = 1` stores 1. A local with no initializer stores 0.
 
 ## A call
 

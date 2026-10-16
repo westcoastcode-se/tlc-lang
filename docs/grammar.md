@@ -79,7 +79,7 @@ An inner function uses the same `function` form inside a block, and it has a bod
 
 ## Variables
 
-`var n i32 = 1` stores 0 and then stores 1: 2 instructions. A file-scope integer `const` folds into the instruction that uses it and adds no load. The sequences are on [Bindings](statements/binding.md).
+`var n i32 = 1` stores 1: 1 instruction. A file-scope integer `const` folds into the instruction that uses it and adds no load. The sequences are on [Bindings](statements/binding.md).
 
 A typed variable names the type in Go order, after the name:
 

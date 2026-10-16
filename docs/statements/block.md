@@ -25,8 +25,8 @@ func main() i32 {
 
 ## Cost
 
-`if (n)` is 2 instructions, a compare with 0 and a jump, after `n` has been stored. `var n i32 = 0` is 2 stores and `n = n + 1` is 1 load, 1 `addl $1`, and 1 store: 3 instructions.
+`if (n)` is 2 instructions, a compare with 0 and a jump, after `n` has been stored. `var n i32 = 0` is 1 store of 0, and `n = n + 1` is 1 load, 1 `addl $1`, and 1 store: 3 instructions.
 
-`while (n < 3)` around `n = n + 1`, starting from a zeroed `n`, is 14 instructions for the whole function including `retq`. Each iteration that continues is a compare, a set, a mask, a zero-extend, a compare with 0, the add, the store, and a jump back. `do` runs the body before that test. An empty statement adds no instruction.
+`while (n < 3)` around `n = n + 1`, with `n` starting at 0, is 13 instructions for the whole function including `retq`. Each iteration that continues is a compare, a set, a mask, a zero-extend, a compare with 0, the add, the store, and a jump back. `do` runs the body before that test. An empty statement adds no instruction.
 
 [Index](../README.md) · [Previous: Tuples and lists](../expressions/tuple.md) · [Next: for](for.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

@@ -34,6 +34,6 @@ func main() i32 {
 
 ## Cost
 
-`for (var i i32 = 0; i < 4; i = i + 1)` with a sum in the body executes 19 instructions for the whole function, including both locals being zeroed twice (the declaration zero and the initializer) and `retq`. The condition is the same compare sequence as `while`. The step `i = i + 1` is 3 instructions. `continue` and `break` are one jump each, after any `defer` on the blocks they leave.
+`for (var i i32 = 0; i < 4; i = i + 1)` with a sum in the body executes 17 instructions for the whole function, including one store of 0 into `s`, one store of 0 into `i`, and `retq`. The condition is the same compare sequence as `while`. The step `i = i + 1` is 3 instructions. `continue` and `break` are one jump each, after any `defer` on the blocks they leave.
 
 [Index](../README.md) · [Previous: Statements](block.md) · [Next: switch](switch.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
