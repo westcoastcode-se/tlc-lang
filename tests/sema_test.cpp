@@ -657,6 +657,44 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  const n i32 = 40;\n"
+            "  const m = n + 2;\n"
+            "  return m;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  const n i32;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected '='");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  const n;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected '='");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  const n i32 = 1;\n"
+            "  n = 2;\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Integer i32;\n"
             "func Integer::make() Integer { return Integer(1); }\n"
             "func main() i32 {\n"

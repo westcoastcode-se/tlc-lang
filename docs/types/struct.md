@@ -135,7 +135,7 @@ func main() i32 {
 
 ## Initializers
 
-A struct value names its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. It also comes from a type name written in front of the braces: `Point{}`, `Point{.x = 1}`, and `geom.Point{}`. A field that is left out is zero. Naming a field twice is reported as `redefinition`. An unknown field is reported as `undeclared identifier`. Used where the type is not a struct, the initializer is reported as `type mismatch`. A name that is not a struct, such as `Integer{}`, is reported as `type mismatch`. `{10, 20}` and `Point{10, 20}` are value lists, so where a struct is expected either one is reported as `type mismatch`. `(10, 20)` is a tuple, so where a struct is expected it is reported as `type mismatch`. An empty `{}` leaves every field zero and still needs a type from the place it is used. Mixing a named field and a positional value is reported as `type mismatch`. A designated initializer that omits a `*T` field is reported as `type mismatch`. An omitted `?*T` field is `null`. `new Point{.x = 1}` reserves a `Point` and writes those fields. See [Builtin](../builtin/allocator.md).
+A struct value names its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. It also comes from a type name written in front of the braces: `Point{}`, `Point{.x = 1}`, and `geom.Point{}`. A field that is left out is zero. Naming a field twice is reported as `redefinition`. An unknown field is reported as `undeclared identifier`. Used where the type is not a struct, the initializer is reported as `type mismatch`. A name that is not a struct, such as `Integer{}`, is reported as `type mismatch`. `{10, 20}` and `Point{10, 20}` are value lists, so where a struct is expected either one is reported as `type mismatch`. `(10, 20)` is a tuple, so where a struct is expected it is reported as `type mismatch`. An empty `{}` leaves every field zero and still needs a type from the place it is used. Mixing a named field and a positional value is reported as `type mismatch`. A designated initializer that omits a `*T` field is reported as `type mismatch`. An omitted `?*T` field is `null`. `new Point{.x = 1}` reserves a `Point` and writes those fields. A field that is left out is uninitialized. A `*T` field has to be named. See [Builtin](../builtin/allocator.md).
 
 ```c
 type Inner struct {
@@ -229,7 +229,7 @@ Inside the package the type is written `Point`. `import { Point } from "geom"` m
 
 ## Cost
 
-`var p Point` on a struct of two `i32` fields executes 2 `movl` of 0, one per field. Each later `p.x = 40` is 1 more `movl`. Reading `p.x` is 1 `movl`. `p.x + p.y` is 1 load of `p.x` and 1 `addl` that reads `p.y` from its slot.
+`var p Point` on a struct of two `i32` fields adds no instruction. The fields are uninitialized. Each later `p.x = 40` is 1 `movl`. Reading `p.x` is 1 `movl`. `p.x + p.y` is 1 load of `p.x` and 1 `addl` that reads `p.y` from its slot.
 
 A field through `*Point` reloads the pointer and then loads the field. `return p.x` on a `*Point` parameter is 4 instructions including the pointer store and `retq`.
 

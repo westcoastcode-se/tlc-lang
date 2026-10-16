@@ -149,7 +149,7 @@ func main() i32 {
 
 ## Cost
 
-A trait parameter is specialized. There is no table. `measure(r)` for a struct of two `i32` fields executes 10 instructions in `main` and does not push a trace frame: zero the struct, store the fields, copy them into the argument registers, call. `s.area()` inside that copy is a direct traced call of `Rect.area`, which is 5 instructions for two `i32` fields multiplied.
+A trait parameter is specialized. There is no table. `measure(r)` for a struct of two `i32` fields executes 8 instructions in `main` and does not push a trace frame: store the fields, copy them into the argument registers, call. The struct is not zeroed first. `s.area()` inside that copy is a direct traced call of `Rect.area`, which is 5 instructions for two `i32` fields multiplied.
 
 A field named by the trait is the struct field. Reading it is 1 load. Writing it through `*Shape` reloads the pointer and stores, the same as a field of `*Rect`.
 

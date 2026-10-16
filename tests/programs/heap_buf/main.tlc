@@ -35,7 +35,7 @@ func main() i32 {
     var arena Arena;
     var n i32 = 3;
     var buf *i32 = new(arena) [n + 1]i32;
-    if (used != 16 || buf[0] != 0 || buf[3] != 0) {
+    if (used != 16) {
         return 1;
     }
     buf[0] = 10;
@@ -44,9 +44,6 @@ func main() i32 {
     buf[3] = 4;
 
     var pts *Point = new [2]Point;
-    if (pts[0].y != 0 || pts[1].x != 0) {
-        return 2;
-    }
     pts[0].x = 6;
     pts[1].y = 2;
 
@@ -61,9 +58,7 @@ func main() i32 {
 
     var local i32 = 5;
     var refs *?*i32 = new [2]?*i32;
-    if (refs[0] != null) {
-        return 5;
-    }
+    refs[0] = null;
     refs[1] = &local;
     if (refs[1] == null) {
         return 6;

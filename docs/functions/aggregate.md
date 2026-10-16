@@ -37,7 +37,7 @@ func main() i32 {
 
 Passing a struct of two `i32` fields copies them into the argument registers: 2 `movl`, then the traced call. The callee stores both and can add them in 5 instructions, the same as two `i32` parameters.
 
-An array parameter is 1 `leaq` of the first element at the call. The callee's `return a[0]` is 4 instructions. Returning a local `[2]i32` is 7 instructions in the callee: the elements are zeroed, stored, and returned in `%eax` and `%edx`. The caller receives a pointer to that temporary and pays the traced call.
+An array parameter is 1 `leaq` of the first element at the call. The callee's `return a[0]` is 4 instructions. Returning a local `[2]i32` is 5 instructions in the callee: the elements are stored and returned in `%eax` and `%edx`. The local is not zeroed first. The caller receives a pointer to that temporary and pays the traced call.
 
 A slice parameter is the pointer and the length, passed in two registers. It is not decayed to a bare pointer.
 

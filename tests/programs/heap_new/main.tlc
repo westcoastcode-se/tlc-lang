@@ -5,9 +5,6 @@ type Point struct {
 
 func main() i32 {
     var p *Point = new Point;
-    if (p.y != 0) {
-        return 1;
-    }
     p.x = 40;
     p.y = 2;
     var sum i32 = p.x + p.y;

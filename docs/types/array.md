@@ -27,11 +27,11 @@ A field may be a slice, `items []i32`. It is stored as the slice header. `sizeof
 
 ## Cost
 
-`var a [2]i32` zeroes each element: 2 `movl`. `var row [3]i32 = {10, 20, 12}` stores those three values and does not store a zero first. `a[1] = 3` on a local, with a constant index, is 1 `movl` into the element's slot. Reading it back is 1 `movl`. A variable index on a pointer is a sign-extend and a scaled load. `return p[i]` is 8 instructions including the pointer store, the index store, a second sign-extend, and `retq`.
+`var a [2]i32` with no initializer adds no instruction. The elements are uninitialized. `var row [3]i32 = {10, 20, 12}` stores those three values and does not store a zero first. `a[1] = 3` on a local, with a constant index, is 1 `movl` into the element's slot. Reading it back is 1 `movl`. A variable index on a pointer is a sign-extend and a scaled load. `return p[i]` is 8 instructions including the pointer store, the index store, a second sign-extend, and `retq`.
 
 Passing `[4]i32` to a function is 1 `leaq` of the first element, plus the traced call. The callee receives a pointer. `return a[0]` there is 4 instructions including the pointer store and `retq`. The elements are not copied.
 
-Returning `[2]i32` from a local puts the two elements in `%eax` and `%edx`. Zeroing the local, storing both elements, and returning is 7 instructions.
+Returning `[2]i32` from a local puts the two elements in `%eax` and `%edx`. Storing both elements and returning is 5 instructions. The local is not zeroed first.
 
 `new [n]i32` is the allocation counted on [new and delete](../statements/new.md). There is no bounds check on an index, so the index adds no compare.
 

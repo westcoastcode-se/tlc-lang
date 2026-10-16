@@ -2,9 +2,9 @@
 
 [Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A variable is `var name type`, `var name = expr`, or `name := expr`. `i32 value = 1` is reported as `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`, `var p = Point{}`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *i32`, `var buf [32]u8`, `var ps [2]*i32`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`. `p := Point{}` is the same inferred struct value.
+A variable is `var name type`, `var name = expr`, or `name := expr`. `i32 value = 1` is reported as `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`, `var p = Point{}`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *i32`, `var buf [32]u8`, `var ps [2]*i32`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`. A local with no initializer is uninitialized. It does not store 0. `p := Point{}` is the same inferred struct value.
 
-A `*T`, or a struct or array that contains one, needs an initializer. `var p *i32;` is reported as `type mismatch`. `var p ?*i32;` may be `null`. `extern var p *i32;` is not checked. `name := expr` defines a new name. In a list, it also assigns a name that already exists in the block, and at least one name must be new. A `:=` whose names are all already in the block is reported as `type mismatch`. `var name := expr` is reported as `type mismatch`.
+A `*T`, or a struct or array that contains one, needs an initializer. `var p *i32;` is reported as `type mismatch`. `var p ?*i32;` is uninitialized. `var p ?*i32 = null` is `null`. A local `const` needs an initializer. `const n = 1` and `const n i32 = 1` are that binding. `const n;` and `const n i32;` are reported as `expected '='`. Assigning the local const is reported as `type mismatch`. `extern var p *i32;` is not checked. `name := expr` defines a new name. In a list, it also assigns a name that already exists in the block, and at least one name must be new. A `:=` whose names are all already in the block is reported as `type mismatch`. `var name := expr` is reported as `type mismatch`.
 
 `*[4]i32` is a pointer to an array. `arr[1]` reads and writes the same element as `(*arr)[1]`. `&` of an array has that pointer type.
 
@@ -108,7 +108,7 @@ A string literal is `*const u8`. `const label *const u8 = "unix"` and `const lab
 
 `export const name = expr` and `export const name Type = expr` publish the constant. Another package reads it as `pkg.name` or `import { name }`. Assigning it is rejected the same way as any other constant. A constant without `export` is reported as `name is not exported`. `const Entity::next = expr` is a constant on that type, written beside the struct. See [Methods](../methods/constant.md).
 
-Inside a function, `const name = expr` is an immutable binding. The type is the type of the expression. `name = ...` is reported as `type mismatch`. `&name` has type `*const T`, so a store through that pointer is reported as `type mismatch`. The binding is not a compile-time integer, and it cannot be an array length.
+Inside a function, `const name = expr` is an immutable binding. The type is the type of the expression. `const name Type = expr` writes the type. `name = ...` is reported as `type mismatch`. `&name` has type `*const T`, so a store through that pointer is reported as `type mismatch`. The binding is not a compile-time integer, and it cannot be an array length. A local `const` with no initializer is reported as `expected '='`.
 
 ```c
 const N = 4;
@@ -248,7 +248,7 @@ func main() i32 {
 
 ## Cost
 
-`var value = 1` is 1 store of 1. `var n i32` with no initializer is 1 store of 0. `extra := 2` is 1 store of 2. `var p *i32 = &n` is 1 `leaq` and 1 store of that address.
+`var value = 1` is 1 store of 1. `var n i32` with no initializer adds no instruction. `extra := 2` is 1 store of 2. `var p *i32 = &n` is 1 `leaq` and 1 store of that address.
 
 A local `const value = 40 + 2` is folded and stored like `var value = 42`: 1 store of 42. It is not a compile-time integer. A file-scope `const N = 4` used as `return N` is the same 2 instructions as `return 4`. No slot is read.
 
@@ -256,6 +256,6 @@ A file-scope `var n i32 = 7` occupies space in the binary. `return n` is 1 `movl
 
 A tuple local `(40, 2)` is 2 stores. Unpacking it into two names is 2 loads and 2 stores. A `for` whose first clause unpacks a call pays the traced call once per check of the condition.
 
-A local array with no initializer zeroes every element. A full list stores each listed value, 1 `movl` each, and does not store a zero first. A file-scope array is initialized in the binary. Reading one element of it is 1 `movl`. A compile-time length such as `[N]i32` adds no instructions beyond the element stores.
+A local array with no initializer adds no instruction. A full list stores each listed value, 1 `movl` each, and does not store a zero first. A shorter list still stores a zero for each element it does not name. A file-scope array is initialized in the binary. Reading one element of it is 1 `movl`. A compile-time length such as `[N]i32` adds no instructions beyond the element stores.
 
 [Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

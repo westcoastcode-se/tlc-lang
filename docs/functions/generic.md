@@ -80,7 +80,7 @@ func main() i32 {
 
 A generic function is specialized while compiling. `return id(40)` calls `id` for `i32` and pushes a trace frame. `main` executes 38 instructions when fewer than 32 frames are stored, which is the no-argument frame plus 1 `movl` of the argument. The specialized `id` is 3 instructions: store the parameter, load it, `retq`.
 
-`T Shape` is also specialized. The call of that function does not push a frame. `measure(r)` for a struct of two `i32` fields executes 10 instructions in `main`: the struct is zeroed, the fields are stored, the fields are copied into the argument registers, and `callq` runs. Inside the copy, `value.area()` is an ordinary traced call.
+`T Shape` is also specialized. `measure(r)` for a struct of two `i32` fields stores those fields and copies them into the argument registers. The struct is not zeroed first. `main` executes 44 instructions when fewer than 32 frames are stored. The call pushes a trace frame. Inside the copy, `value.area()` is an ordinary traced call.
 
 A type pack of one type is that value and costs whatever returning it costs. A pack of two integers is the two-result return, 7 instructions in the callee.
 

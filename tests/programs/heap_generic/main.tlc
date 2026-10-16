@@ -9,17 +9,11 @@ func box[T type]() *T {
 
 func main() i32 {
     var n *i32 = box[i32]();
-    if (*n != 0) {
-        return 1;
-    }
     *n = 40;
     var saved i32 = *n;
     delete n;
 
     var p *Point = box[Point]();
-    if (p.x != 0 || p.y != 0) {
-        return 2;
-    }
     p.x = 2;
     saved = saved + p.x;
     delete p;

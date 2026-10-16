@@ -31,6 +31,6 @@ func main() i32 {
 
 ## Cost
 
-A method on a generic struct is specialized with the struct. `v.get()` on `Vec[i32]` copies the `i32` field and makes a traced call. `main` that zeroes the field, stores 40, and returns `v.get()` executes 41 instructions when fewer than 32 frames are stored. The specialized method is 3 instructions: store the field, load it, `retq`. `return N` from a method on `Buf[4, i32]` is an immediate, the same as `return 4`.
+A method on a generic struct is specialized with the struct. `v.get()` on `Vec[i32]` copies the `i32` field and makes a traced call. `main` that stores 40 into the field and returns `v.get()` executes 40 instructions when fewer than 32 frames are stored. The field is not zeroed first. The specialized method is 3 instructions: store the field, load it, `retq`. `return N` from a method on `Buf[4, i32]` is an immediate, the same as `return 4`.
 
 [Index](../README.md) · [Previous: Methods](method.md) · [Next: Static functions](static.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

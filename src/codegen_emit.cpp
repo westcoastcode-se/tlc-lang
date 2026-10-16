@@ -5271,9 +5271,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         scopes_.back()[var.name] = binding;
                         alias_capture(var.name, binding);
                         debug_declare(var.name, var.loc, binding, 0);
-                        if (var.init == nullptr) {
-                            builder_.CreateStore(llvm::ConstantAggregateZero::get(slice_type()), slot);
-                        } else {
+                        if (var.init != nullptr) {
                             const TypedValue value = emit_rvalue(*var.init);
                             if (!terminated()) {
                                 builder_.CreateStore(as_slice_value(value, var.loc), slot);
@@ -5288,12 +5286,12 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         }
                         llvm::Type *ty = stored_type(low);
                         llvm::AllocaInst *slot = alloca_typed(ty, var.name);
-                        // A full initializer is the variable's first value. A shorter list still
+                        // No initializer leaves the array uninitialized. A shorter list still
                         // starts from zero so the elements it does not name stay zero.
                         const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                         const bool listed = list != nullptr && ty->isArrayTy() &&
                                             list->elements.size() == llvm::cast<llvm::ArrayType>(ty)->getNumElements();
-                        if (!listed) {
+                        if (var.init != nullptr && !listed) {
                             builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
                         }
                         Binding binding;
@@ -5360,24 +5358,6 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                             builder_.CreateStore(
                                 as_stored(value.value, value.depth, object_type(slot), value.elem_unsigned), slot);
                         }
-                    } else {
-                        llvm::Value *initial = zero();
-                        if (low.depth > 0) {
-                            initial = null_ptr();
-                        } else if (low.elem_float) {
-                            initial = llvm::ConstantFP::get(low.elem_bits >= 64 ? f64_ty() : f32_ty(), 0.0);
-                        } else if (low.elem_bool) {
-                            initial = llvm::ConstantInt::get(i1(), 0, false);
-                        } else if (low.elem_char || low.elem_bits == 8) {
-                            initial = llvm::ConstantInt::get(i8(), 0, false);
-                        } else if (low.elem_bits == 16) {
-                            initial = llvm::ConstantInt::get(i16(), 0, false);
-                        } else if (low.elem_bits == 64) {
-                            initial = llvm::ConstantInt::get(i64(), 0, false);
-                        } else if (low.trait_id >= 0 || low.struct_id >= 0) {
-                            initial = llvm::ConstantAggregateZero::get(ty);
-                        }
-                        builder_.CreateStore(initial, slot);
                     }
                 }
             }
@@ -5897,7 +5877,6 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
             total = size * static_cast<uint64_t>(list_len);
         }
         raw = call_malloc(node, total, align);
-        buffer_bytes = llvm::ConstantInt::get(i64(), total);
         element_count = const_i32(list_len);
     } else if (node.count != nullptr) {
         // The allocator is written first, so its side effects run before the count.
@@ -5950,14 +5929,7 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     builder_.SetInsertPoint(oom);
     abort_out_of_memory();
     builder_.SetInsertPoint(ok);
-    if (buffer) {
-        builder_.CreateMemSet(raw, llvm::ConstantInt::get(llvm::Type::getInt8Ty(context_), 0), buffer_bytes,
-                             llvm::MaybeAlign(align));
-    } else if (size > 0) {
-        builder_.CreateMemSet(raw, llvm::ConstantInt::get(llvm::Type::getInt8Ty(context_), 0),
-                             llvm::ConstantInt::get(i64(), size), llvm::MaybeAlign(align));
-    }
-    // Named fields are written into the reserved block. Omitted fields stay zero.
+    // The block is not zeroed. Named fields and element values are written below.
     if (buffer && node.init != nullptr) {
         if (const auto *list = std::get_if<Expr::Init>(&node.init->data)) {
             fill_new_buffer(raw, element_count, low, *list, node.repeat_init);

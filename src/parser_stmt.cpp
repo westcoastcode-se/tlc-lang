@@ -247,7 +247,7 @@ std::unique_ptr<Stmt> Parser::parse_for() {
             ++pos_;
         }
         stmt.init = make_stmt(Stmt::Expression{});
-    } else if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq) {
+    } else if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
         stmt.init = parse_const_local();
     } else if (check(TokenKind::KwVar)) {
         stmt.init = parse_var_or_bind();
@@ -549,23 +549,73 @@ void Parser::parse_inferred_global(TranslationUnit &unit, bool is_static, bool f
 }
 
 std::unique_ptr<Stmt> Parser::parse_const_local() {
-    Stmt::Bind stmt;
-    stmt.loc = peek().loc;
-    stmt.is_const = true;
-    stmt.is_var = true;
-    ++pos_;
+    const SourceLoc start = peek().loc;
+    expect(TokenKind::KwConst, "expected 'const'");
+    std::string name;
+    SourceLoc name_loc = start;
     if (check(TokenKind::Identifier)) {
-        stmt.names.push_back(peek().text);
-        stmt.name_locs.push_back(peek().loc);
-        stmt.loc = peek().loc;
+        name = peek().text;
+        name_loc = peek().loc;
         ++pos_;
     } else {
         error_here("expected an identifier");
     }
-    expect(TokenKind::Eq, "expected '='");
-    stmt.value = parse_expr();
+    // `const name = expr` takes the type from the expression.
+    if (eat(TokenKind::Eq)) {
+        Stmt::Bind stmt;
+        stmt.loc = name_loc;
+        stmt.is_const = true;
+        stmt.is_var = true;
+        stmt.names.push_back(std::move(name));
+        stmt.name_locs.push_back(name_loc);
+        stmt.value = parse_expr();
+        expect(TokenKind::Semicolon, "expected ';'");
+        return make_stmt(std::move(stmt));
+    }
+    // A local const has to be initialized. `const name;` and `const name Type;` are rejected.
+    if (check(TokenKind::Semicolon) || check(TokenKind::RBrace) || check(TokenKind::RParen) || eof()) {
+        error_here("expected '='");
+        eat(TokenKind::Semicolon);
+        return make_stmt(Stmt::Expression{});
+    }
+    const PlacedType type = parse_go_type();
+    if (type.struct_definition || type.enum_definition) {
+        diags_.error(type.loc, "not supported yet");
+    }
+    if (!eat(TokenKind::Eq)) {
+        error_here("expected '='");
+        eat(TokenKind::Semicolon);
+        return make_stmt(Stmt::Expression{});
+    }
+    Stmt::Decl decl;
+    decl.loc = name_loc;
+    VarDecl var;
+    var.loc = name_loc;
+    var.name = std::move(name);
+    var.is_const_decl = true;
+    var.type_name = type.type_name;
+    var.type_package = type.type_package;
+    var.is_struct = type.is_struct;
+    var.is_enum = type.is_enum;
+    var.indirections = type.indirections;
+    var.optional = type.optional;
+    var.const_pointee = type.const_pointee;
+    var.is_array = type.is_array;
+    var.array_len = type.array_len;
+    var.array_len_name = type.array_len_name;
+    var.type_args = type.type_args;
+    var.ptr_to_array = type.ptr_to_array;
+    var.is_fn_ptr = type.is_fn_ptr;
+    var.ret_indirections = type.ret_indirections;
+    var.ret_optional = type.ret_optional;
+    var.ret_const_pointee = type.ret_const_pointee;
+    var.fn_params = type.fn_params;
+    var.fn_variadic = type.fn_variadic;
+    var.fn_results = type.fn_results;
+    var.init = parse_assignment();
+    decl.vars.push_back(std::move(var));
     expect(TokenKind::Semicolon, "expected ';'");
-    return make_stmt(std::move(stmt));
+    return make_stmt(std::move(decl));
 }
 
 std::unique_ptr<Stmt> Parser::parse_bind(bool is_var) {
@@ -708,7 +758,7 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         eat(TokenKind::Semicolon);
         return make_stmt(Stmt::Expression{});
     }
-    if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq) {
+    if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
         return parse_const_local();
     }
     if (check(TokenKind::KwVar)) {

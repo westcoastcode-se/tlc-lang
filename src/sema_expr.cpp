@@ -2367,7 +2367,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
-                    // A zeroed `*T` is not a value. A buffer has no place to write each element.
+                    // A non-nullable pointer has to be written. A buffer has no place to name each field.
                     auto loose_init = [&]() {
                         const auto *init = node.init ? std::get_if<Expr::Init>(&node.init->data) : nullptr;
                         if (init == nullptr) {
@@ -3462,13 +3462,19 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.name = var.name;
                     symbol.type = type;
                     symbol.is_auto = true;
+                    symbol.is_immutable = var.is_const_decl;
+                    if (var.is_const_decl) {
+                        symbol.type.is_const = true;
+                    }
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     declare(std::move(symbol), var.loc);
                     const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                     const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
                     // `var v []i32 = row` converts. A sized array still needs a value list.
                     const bool slice = var.is_array && !var.ptr_to_array && var.array_len < 0;
-                    if (var.is_array && !var.ptr_to_array && var.init && !array_list && !slice) {
+                    if (var.is_const_decl && var.init == nullptr) {
+                        error(var.loc, "type mismatch");
+                    } else if (var.is_array && !var.ptr_to_array && var.init && !array_list && !slice) {
                         error(var.loc, "not supported yet");
                     } else if (var.init) {
                         check_against(*var.init, type);

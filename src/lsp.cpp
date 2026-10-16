@@ -1604,7 +1604,7 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             Sym sym;
             sym.name = var.name;
             mark_direct(sym, var.type_name, var.indirections, var.is_array, var.array_len);
-            sym.detail = var.name;
+            sym.detail = var.is_const_decl ? "const " + var.name : var.name;
             if (!var.type_name.empty()) {
                 sym.detail += " ";
                 sym.detail += spell_var(var);
@@ -1612,7 +1612,7 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             sym.uri = uri;
             sym.bare = true;
             sym.local = true;
-            sym.role = Role::Variable;
+            sym.role = var.is_const_decl ? Role::Constant : Role::Variable;
             sym.scope_end = scope_end;
             put_loc(sym, text, var.loc, var.name);
             sym.scope_begin = var.loc.valid() ? var.loc.offset : 0;

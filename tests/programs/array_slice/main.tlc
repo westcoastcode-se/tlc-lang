@@ -16,7 +16,6 @@ func pass(v []i32) []i32 {
 }
 
 func main() i32 {
-    var empty []i32;
     var local = [_]i32{10, 42};
     var slice []i32 = local;
     var copy []i32 = slice;
@@ -25,7 +24,7 @@ func main() i32 {
     var points = [_]Point{Point{.x = 7}};
     var elems []Point = points;
     var alias Row = local;
-    if (opened.len != 2 || slice.len != 2 || empty.len != 0 || again.len != 2 || alias.len != 2) {
+    if (opened.len != 2 || slice.len != 2 || again.len != 2 || alias.len != 2) {
         return 1;
     }
     if (sizeof(slice) != 16 || sizeof([]i32) != 16 || sizeof(opened) != 16) {
