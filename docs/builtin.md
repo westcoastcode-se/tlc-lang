@@ -71,7 +71,11 @@ func realloc(self *this, ptr *u8, size i32, align i32) ?*u8;
 
 `import "builtin"` also provides `allocator`, a `Malloc` value. `new T` is `new(builtin.allocator) T`, and `delete p` is `delete(builtin.allocator) p`. `Malloc` calls the C functions `malloc`, `free`, and `realloc`. `malloc` returns `null` when it cannot reserve the bytes. `new` then aborts. That choice is not final.
 
-`new T` reserves `sizeof(T)` bytes, zeroes them, and yields `*T`. `new T{.field = expr}` and `new(allocator) T{.field = expr}` write those fields after the block is reserved. A field that is left out stays zero. `new Point{1, 2}` is a value list and is reported as `type mismatch`. An initializer on a type that is not a struct, such as `new i32{1}`, is reported as `type mismatch`. `delete` passes that pointer to `free`. A file-scope `new` is reported as `global initializer is not a constant`.
+`new T` reserves `sizeof(T)` bytes, zeroes them, and yields `*T`. `new T{.field = expr}` and `new(allocator) T{.field = expr}` write those fields after the block is reserved. A field that is left out stays zero. `new Point{1, 2}` is a value list and is reported as `type mismatch`. An initializer on a type that is not a struct, such as `new i32{1}`, is reported as `type mismatch`. `new Node` is reported as `type mismatch` when `Node` contains a `*T`, because that pointer would be zero. `delete` passes that pointer to `free`. A file-scope `new` is reported as `global initializer is not a constant`.
+
+`new [n]T` and `new(allocator) [n]T` reserve `n` elements of `T` and yield `*T`, a pointer to the first element. `n` has type `i32`. `buf[i]` reads and writes element `i`. There is no bounds check. The elements are zero. `delete buf` frees the block. A constant `n` that is not positive is reported as `type mismatch`. Any other `n` that is not positive aborts. `new [n]Point{.x = 1}` is reported as `not supported yet`. `new [n]Node` is reported as `type mismatch` when an element would contain a zero `*T`. `new []T` is reported as `expected an expression`.
+
+`new Box[i32]` and `new Box[i32]{.value = 1}` allocate one specialization. The fields are the fields of that specialization. `new i32[4]` is reported as `type mismatch`. The buffer is `new [4]i32`.
 
 ```c
 import "builtin";

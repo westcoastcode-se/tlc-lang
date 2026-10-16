@@ -2339,8 +2339,26 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "expected a type");
                         return type_invalid();
                     }
+                    bool is_enum = false;
+                    bool is_array = false;
+                    int array_len = 0;
+                    std::string array_len_name;
+                    // Specializing `Box[i32]` rewrites the name on the expression.
+                    Expr::New &written = const_cast<Expr::New &>(node);
+                    prepare_written(written.type_name, written.type_package, written.is_struct, is_enum,
+                                    written.indirections, written.optional, is_array, array_len, array_len_name,
+                                    written.type_args, written.loc);
+                    if (node.count) {
+                        const Type got = check_expr(*node.count, true);
+                        if (got.kind != TypeKind::Invalid) {
+                            expect(got, type_int(), expr_loc(*node.count));
+                        }
+                        if (const std::optional<int> folded = fold_int(*node.count); folded && *folded <= 0) {
+                            error(expr_loc(*node.count), "type mismatch");
+                        }
+                    }
                     const Type object = spelled_type(node.type_name, node.type_package, node.is_struct, false,
-                                                     node.indirections, node.loc, 0, 0);
+                                                     node.indirections, node.loc, node.optional, node.const_pointee);
                     if (object.kind == TypeKind::Invalid) {
                         return type_invalid();
                     }
@@ -2349,26 +2367,44 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
+                    // A zeroed `*T` is not a value. A buffer has no place to write each element.
+                    auto loose_init = [&]() {
+                        const auto *init = node.init ? std::get_if<Expr::Init>(&node.init->data) : nullptr;
+                        if (init == nullptr) {
+                            return;
+                        }
+                        for (const Expr::FieldInit &field : init->fields) {
+                            if (field.value) {
+                                check_expr(*field.value, true);
+                            }
+                        }
+                        for (const auto &element : init->elements) {
+                            if (element) {
+                                check_expr(*element, true);
+                            }
+                        }
+                    };
+                    if (node.count) {
+                        if (needs_nonnull_pointer(object)) {
+                            error(node.loc, "type mismatch");
+                        }
+                        if (node.init) {
+                            error(expr_loc(*node.init), "not supported yet");
+                            loose_init();
+                        }
+                        return type_pointer(object);
+                    }
                     // The fields are checked against the reserved object. A non-struct has no fields.
                     if (node.init) {
                         auto *init = std::get_if<Expr::Init>(&node.init->data);
                         if (init == nullptr || object.kind != TypeKind::Struct) {
                             error(expr_loc(*node.init), "type mismatch");
-                            if (init != nullptr) {
-                                for (const Expr::FieldInit &field : init->fields) {
-                                    if (field.value) {
-                                        check_expr(*field.value, true);
-                                    }
-                                }
-                                for (const auto &element : init->elements) {
-                                    if (element) {
-                                        check_expr(*element, true);
-                                    }
-                                }
-                            }
+                            loose_init();
                         } else {
                             check_init(*init, object);
                         }
+                    } else if (needs_nonnull_pointer(object)) {
+                        error(node.loc, "type mismatch");
                     }
                     return type_pointer(object);
                 }

@@ -1,0 +1,79 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Box[T type] struct {
+    value T;
+    extra i32;
+};
+
+var used i32;
+var slot [4]i32;
+
+type Arena struct {
+    mark i32;
+};
+
+func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    used = size;
+    return ?*u8(&slot);
+}
+
+func Arena::free(self *this, ptr *u8) void {
+}
+
+func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return null;
+}
+
+func make[T type](value T) *Box[T] {
+    return new Box[T]{.value = value, .extra = 2};
+}
+
+func main() i32 {
+    var arena Arena;
+    var n i32 = 3;
+    var buf *i32 = new(arena) [n + 1]i32;
+    if (used != 16 || buf[0] != 0 || buf[3] != 0) {
+        return 1;
+    }
+    buf[0] = 10;
+    buf[1] = 12;
+    buf[2] = 8;
+    buf[3] = 4;
+
+    var pts *Point = new [2]Point;
+    if (pts[0].y != 0 || pts[1].x != 0) {
+        return 2;
+    }
+    pts[0].x = 6;
+    pts[1].y = 2;
+
+    var box *Box[i32] = make[i32](40);
+    if (box.value != 40 || box.extra != 2) {
+        return 3;
+    }
+    var direct *Box[i32] = new Box[i32]{.value = 1, .extra = 0};
+    if (direct.value != 1 || direct.extra != 0) {
+        return 4;
+    }
+
+    var local i32 = 5;
+    var refs *?*i32 = new [2]?*i32;
+    if (refs[0] != null) {
+        return 5;
+    }
+    refs[1] = &local;
+    if (refs[1] == null) {
+        return 6;
+    }
+
+    var sum i32 = buf[0] + buf[1] + buf[2] + buf[3] + pts[0].x + pts[1].y;
+    delete(arena) buf;
+    delete pts;
+    delete box;
+    delete direct;
+    delete refs;
+    return sum;
+}

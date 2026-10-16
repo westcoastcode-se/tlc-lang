@@ -5627,15 +5627,60 @@ llvm::Function *CodeGen::allocator_method(uint32_t file_id, const std::string &t
     return llvm::dyn_cast<llvm::Function>(found->second.value);
 }
 
+void CodeGen::abort_now() {
+    auto *abort_type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), false);
+    llvm::FunctionCallee abort_fn = module_.getOrInsertFunction("abort", abort_type);
+    builder_.CreateCall(abort_type, abort_fn.getCallee());
+    builder_.CreateUnreachable();
+}
+
 void CodeGen::abort_out_of_memory() {
     auto *print_type = llvm::FunctionType::get(i32(), {i32(), ptr_type()}, true);
     llvm::FunctionCallee print = module_.getOrInsertFunction("dprintf", print_type);
     builder_.CreateCall(print_type, print.getCallee(),
                         {const_i32(2), builder_.CreateGlobalString("panic: out of memory\n")});
-    auto *abort_type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), false);
-    llvm::FunctionCallee abort_fn = module_.getOrInsertFunction("abort", abort_type);
-    builder_.CreateCall(abort_type, abort_fn.getCallee());
-    builder_.CreateUnreachable();
+    abort_now();
+}
+
+llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, llvm::Value *bytes, uint64_t align) {
+    if (bytes == nullptr) {
+        return nullptr;
+    }
+    if (node.builtin_alloc) {
+        if (align > 16) {
+            llvm::Value *step = llvm::ConstantInt::get(i64(), align);
+            llvm::Value *padded = builder_.CreateAdd(bytes, llvm::ConstantInt::get(i64(), align - 1));
+            bytes = builder_.CreateMul(builder_.CreateUDiv(padded, step), step);
+            auto *fn_type = llvm::FunctionType::get(ptr_type(), {i64(), i64()}, false);
+            llvm::FunctionCallee fn = module_.getOrInsertFunction("aligned_alloc", fn_type);
+            return builder_.CreateCall(fn_type, fn.getCallee(), {step, bytes});
+        }
+        auto *fn_type = llvm::FunctionType::get(ptr_type(), {i64()}, false);
+        llvm::FunctionCallee fn = module_.getOrInsertFunction("malloc", fn_type);
+        return builder_.CreateCall(fn_type, fn.getCallee(), {bytes});
+    }
+    if (receiver == nullptr) {
+        error(node.loc, "undeclared identifier");
+        return nullptr;
+    }
+    // The trait method takes an i32 byte count.
+    llvm::BasicBlock *big = llvm::BasicBlock::Create(context_, "new.big", function_);
+    llvm::BasicBlock *fit = llvm::BasicBlock::Create(context_, "new.fit", function_);
+    builder_.CreateCondBr(builder_.CreateICmpUGT(bytes, llvm::ConstantInt::get(i64(), 2147483647)), big, fit);
+    builder_.SetInsertPoint(big);
+    abort_now();
+    builder_.SetInsertPoint(fit);
+    llvm::Function *method = allocator_method(node.alloc_file, node.alloc_name, "malloc");
+    if (method == nullptr) {
+        error(node.loc, "undeclared identifier");
+        return nullptr;
+    }
+    if (align > 2147483647ULL) {
+        error(node.loc, "not supported yet");
+        return nullptr;
+    }
+    return builder_.CreateCall(method->getFunctionType(), method,
+                              {receiver, builder_.CreateTrunc(bytes, i32()), const_i32(static_cast<int>(align))});
 }
 
 llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t align) {
@@ -5708,7 +5753,49 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     if (align == 0) {
         align = 1;
     }
-    llvm::Value *raw = call_malloc(node, size, align);
+    llvm::Value *raw = nullptr;
+    llvm::Value *buffer_bytes = nullptr;
+    if (node.count != nullptr) {
+        // The allocator is written first, so its side effects run before the count.
+        llvm::Value *receiver = nullptr;
+        if (!node.builtin_alloc) {
+            if (node.allocator == nullptr) {
+                error(node.loc, "undeclared identifier");
+                return {zero(), 0};
+            }
+            receiver = allocator_receiver(*node.allocator, node.alloc_is_pointer);
+            if (receiver == nullptr || terminated()) {
+                return {zero(), 0};
+            }
+        }
+        const TypedValue count_value = emit_rvalue(*node.count);
+        if (count_value.value == nullptr || terminated()) {
+            return {zero(), 0};
+        }
+        llvm::BasicBlock *bad = llvm::BasicBlock::Create(context_, "new.count", function_);
+        llvm::BasicBlock *ready = llvm::BasicBlock::Create(context_, "new.ready", function_);
+        builder_.CreateCondBr(builder_.CreateICmpSLE(count_value.value, const_i32(0)), bad, ready);
+        builder_.SetInsertPoint(bad);
+        abort_now();
+        builder_.SetInsertPoint(ready);
+        llvm::Value *wide = builder_.CreateZExt(count_value.value, i64());
+        if (size == 0) {
+            buffer_bytes = llvm::ConstantInt::get(i64(), 1);
+        } else {
+            const uint64_t limit = UINT64_MAX / size;
+            llvm::BasicBlock *overflow = llvm::BasicBlock::Create(context_, "new.overflow", function_);
+            llvm::BasicBlock *sized = llvm::BasicBlock::Create(context_, "new.sized", function_);
+            llvm::Value *cap = llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(i64()), limit, false);
+            builder_.CreateCondBr(builder_.CreateICmpUGT(wide, cap), overflow, sized);
+            builder_.SetInsertPoint(overflow);
+            abort_now();
+            builder_.SetInsertPoint(sized);
+            buffer_bytes = builder_.CreateMul(wide, llvm::ConstantInt::get(i64(), size));
+        }
+        raw = heap_alloc(node, receiver, buffer_bytes, align);
+    } else {
+        raw = call_malloc(node, size, align);
+    }
     if (raw == nullptr || terminated()) {
         return {zero(), 0};
     }
@@ -5718,12 +5805,15 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     builder_.SetInsertPoint(oom);
     abort_out_of_memory();
     builder_.SetInsertPoint(ok);
-    if (size > 0) {
+    if (node.count != nullptr) {
+        builder_.CreateMemSet(raw, llvm::ConstantInt::get(llvm::Type::getInt8Ty(context_), 0), buffer_bytes,
+                             llvm::MaybeAlign(align));
+    } else if (size > 0) {
         builder_.CreateMemSet(raw, llvm::ConstantInt::get(llvm::Type::getInt8Ty(context_), 0),
                              llvm::ConstantInt::get(i64(), size), llvm::MaybeAlign(align));
     }
     // Named fields are written into the reserved block. Omitted fields stay zero.
-    if (node.init != nullptr) {
+    if (node.count == nullptr && node.init != nullptr) {
         const auto *init = std::get_if<Expr::Init>(&node.init->data);
         if (init == nullptr || init->struct_id < 0) {
             error(node.loc, "type mismatch");

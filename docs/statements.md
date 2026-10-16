@@ -347,7 +347,7 @@ func main() i32 {
 
 ## `new` and `delete`
 
-`new T` reserves space for one `T` and yields `*T`. `delete p` releases that pointer. With no allocator written, both use `builtin.allocator`. `new(allocator) T` and `delete(allocator) p` use another value whose type has the methods of `Allocator`. The allocator is described with `builtin`. It is passed the same way as the receiver of `malloc`: a const value and a `*const` pointer are `type mismatch: expected *Arena, found *const Arena`. `const p = &arena` is a mutable `*Arena`, so `new(p)` uses `arena`. `new Point{.x = 40, .y = 2}` writes those fields after the block is reserved. A field that is left out stays zero. `new Point{1, 2}` and an initializer on a type that is not a struct are reported as `type mismatch`.
+`new T` reserves space for one `T` and yields `*T`. `delete p` releases that pointer. With no allocator written, both use `builtin.allocator`. `new(allocator) T` and `delete(allocator) p` use another value whose type has the methods of `Allocator`. The allocator is described with `builtin`. It is passed the same way as the receiver of `malloc`: a const value and a `*const` pointer are `type mismatch: expected *Arena, found *const Arena`. `const p = &arena` is a mutable `*Arena`, so `new(p)` uses `arena`. `new Point{.x = 40, .y = 2}` writes those fields after the block is reserved. A field that is left out stays zero. `new Point{1, 2}` and an initializer on a type that is not a struct are reported as `type mismatch`. `new [n]T` reserves `n` elements and yields `*T`. `new Box[i32]` allocates one specialization.
 
 ```c
 func main() i32 {

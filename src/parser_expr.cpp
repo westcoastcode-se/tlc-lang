@@ -554,12 +554,25 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
     Expr::New node;
     node.loc = loc;
     node.allocator = std::move(allocator);
-    while (check(TokenKind::Star)) {
+    // `new [n]T` reserves n elements. `new Vec[i32]` is a type argument list, so the brackets follow the name.
+    std::unique_ptr<Expr> count;
+    if (check(TokenKind::LBracket)) {
         ++pos_;
-        ++node.indirections;
+        if (check(TokenKind::RBracket)) {
+            error_here("expected an expression");
+            ++pos_;
+        } else {
+            count = parse_expr();
+            expect(TokenKind::RBracket, "expected ']'");
+        }
     }
+    const PointerPrefix prefix = parse_pointer_prefix();
+    node.indirections = prefix.count;
+    node.optional = prefix.optional;
+    node.const_pointee = prefix.const_pointee;
     if (!check(TokenKind::Identifier)) {
         error_here("expected a type");
+        node.count = std::move(count);
         return make_expr(std::move(node));
     }
     node.type_name = peek().text;
@@ -568,15 +581,21 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         node.type_package = node.type_name;
         if (!check(TokenKind::Identifier)) {
             error_here("expected a type");
+            node.count = std::move(count);
             return make_expr(std::move(node));
         }
         node.type_name = peek().text;
         ++pos_;
     }
+    if (check(TokenKind::LBracket)) {
+        node.type_args = parse_type_args();
+    }
     // `new Point{.x = 1}` writes the named fields after the block is reserved.
+    // An initializer on `new [n]T` is parsed and rejected while checking.
     if (check(TokenKind::LBrace)) {
         node.init = parse_init();
     }
+    node.count = std::move(count);
     return make_expr(std::move(node));
 }
 

@@ -18,12 +18,12 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 ## Heap allocation
 
-`new T` and `delete p` allocate one object with `builtin.allocator`. `new(allocator) T` and `delete(allocator) p` use a struct that has `Allocator`'s methods. `malloc` returns `?*u8`. When that is `null`, `new` aborts.
+`new T` and `delete p` allocate one object with `builtin.allocator`. `new(allocator) T` and `delete(allocator) p` use a struct that has `Allocator`'s methods. `new [n]T` reserves `n` elements and yields `*T`. `new Box[i32]` allocates one specialization. `malloc` returns `?*u8`. When that is `null`, `new` aborts.
 
 - Whether `new` and `delete` zero memory. `new` zeroes the block today, then an initializer writes the named fields. `delete` frees the pointer and does not zero it. The latest idea is that `new` does not zero: it writes only the fields named in the initializer, and the other bytes stay uninitialized. This is not decided.
 - Whether `new` should abort or yield `?*T` when allocation returns `null`.
 - A typed `realloc`. The trait method exists. There is no expression that calls it.
-- `new [n]T`, a writable buffer of `n` elements.
+- An initializer on `new [n]T`, such as `new [n]Point{.x = 1}`.
 
 ## Language server
 

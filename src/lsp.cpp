@@ -2472,10 +2472,40 @@ uint32_t matching_open(const std::string &text, uint32_t close) {
     return static_cast<uint32_t>(-1);
 }
 
+// Index of the `[` that matches `close`, or -1 when the scan falls off the start.
+uint32_t matching_bracket(const std::string &text, uint32_t close) {
+    if (close >= text.size() || text[close] != ']') {
+        return static_cast<uint32_t>(-1);
+    }
+    int depth = 0;
+    uint32_t i = close;
+    while (i > 0) {
+        --i;
+        const char c = text[i];
+        if (c == ']') {
+            ++depth;
+        } else if (c == '[') {
+            if (depth == 0) {
+                return i;
+            }
+            --depth;
+        }
+    }
+    return static_cast<uint32_t>(-1);
+}
+
 // `Point{` and `new(allocator) Point{`. A function body `func f() Point {` is not a value.
 std::string type_named_before(const Doc &doc, uint32_t brace) {
     const std::string &text = doc.text;
-    const uint32_t at = skip_back(text, brace);
+    uint32_t at = skip_back(text, brace);
+    // `Box[i32]{` and `new Box[i32]{`. The name is before the argument list.
+    if (at > 0 && text[at - 1] == ']') {
+        const uint32_t open = matching_bracket(text, at - 1);
+        if (open == static_cast<uint32_t>(-1)) {
+            return {};
+        }
+        at = skip_back(text, open);
+    }
     if (at == 0 || !ident_char(static_cast<unsigned char>(text[at - 1]))) {
         return {};
     }

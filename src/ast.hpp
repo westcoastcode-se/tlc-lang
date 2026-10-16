@@ -256,6 +256,12 @@ struct Expr {
         std::string type_package;
         bool is_struct = false;
         int indirections = 0;
+        uint32_t optional = 0;
+        uint32_t const_pointee = 0;
+        // `new Box[i32]`. Cleared once the name is the specialization.
+        std::vector<TypeArg> type_args;
+        // `new [count]T`. The result is `*T`, a pointer to the first element.
+        std::unique_ptr<Expr> count;
         // `{.field = expr}`. Null when the block is only zeroed.
         std::unique_ptr<Expr> init;
         // Filled while checking. `builtin_alloc` calls libc. Otherwise `alloc_struct` is the allocator.

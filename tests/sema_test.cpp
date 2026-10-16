@@ -4452,6 +4452,68 @@ int run_sema_tests() {
 
     {
         const std::string errors = check_program(
+            "type Point struct { x i32; y i32; };\n"
+            "type Box[T type] struct { value T; extra i32; };\n"
+            "func make[T type](value T) *Box[T] { return new Box[T]{.value = value, .extra = 2}; }\n"
+            "func main() i32 {\n"
+            "  var n i32 = 4;\n"
+            "  var buf *i32 = new [n]i32;\n"
+            "  var wide *i32 = new [n + 1]i32;\n"
+            "  var pts *Point = new [2]Point;\n"
+            "  var box *Box[i32] = new Box[i32]{.value = 40, .extra = 2};\n"
+            "  var made *Box[i32] = make[i32](1);\n"
+            "  var refs *?*i32 = new [2]?*i32;\n"
+            "  buf[0] = 1;\n"
+            "  pts[1].y = wide[0];\n"
+            "  delete buf;\n"
+            "  delete wide;\n"
+            "  delete pts;\n"
+            "  delete box;\n"
+            "  delete made;\n"
+            "  delete refs;\n"
+            "  return box.value + pts[1].y;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Point struct { x i32; };\n"
+            "type Node struct { next *Node; };\n"
+            "type Box[T type] struct { value T; };\n"
+            "func main() i32 {\n"
+            "  var n i32 = 2;\n"
+            "  var a *i32 = new [0]i32;\n"
+            "  var b *i32 = new [-1]i32;\n"
+            "  var c *i32 = new [n]i32;\n"
+            "  var d *Node = new Node;\n"
+            "  var e *Node = new [2]Node;\n"
+            "  var f *i32 = new [2]*i32;\n"
+            "  var g *i32 = new i32[4];\n"
+            "  var h *Point = new [2]Point{.x = 1};\n"
+            "  var i *Box[i32] = new Box[i32, i32];\n"
+            "  delete a;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "argument count");
+    }
+
+    {
+        const std::string errors = diagnose("func main() i32 {\n  var p *i32 = new []i32;\n  return 0;\n}\n");
+        EXPECT_HAS(check, errors, "expected an expression");
+    }
+
+    {
+        const std::string errors = check_program(
+            "var p = new [4]i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = check_program(
             "import \"builtin\";\n"
             "type Point struct { x i32; y i32; };\n"
             "func main() i32 {\n"

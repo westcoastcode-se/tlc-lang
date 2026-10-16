@@ -924,7 +924,10 @@ class CodeGen {
     llvm::Value *allocator_receiver(const Expr &allocator, bool is_pointer);
     llvm::Function *allocator_method(uint32_t file, const std::string &type_name, const std::string &name);
     llvm::Value *call_malloc(const Expr::New &node, uint64_t size, uint64_t align);
+    // `bytes` is an i64. `receiver` is null for `builtin.allocator`.
+    llvm::Value *heap_alloc(const Expr::New &node, llvm::Value *receiver, llvm::Value *bytes, uint64_t align);
     void call_free(const Expr::Delete &node, llvm::Value *pointer, llvm::Value *receiver);
+    void abort_now();
     void abort_out_of_memory();
     // `base[low:high]`. The result is a slice header.
     TypedValue emit_range(const Expr::Index &node);

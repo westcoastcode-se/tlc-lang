@@ -195,6 +195,10 @@ int run_lsp_tests() {
         "    x i32;\n"
         "};\n"
         "\n"
+        "type Box[T type] struct {\n"
+        "    value T;\n"
+        "};\n"
+        "\n"
         "func Point::make(n i32) Point {\n"
         "    var p Point;\n"
         "    p.x = n;\n"
@@ -255,6 +259,7 @@ int run_lsp_tests() {
         "    var seen = inner;\n"
         "    var gone = hidden;\n"
         "    var made *Point = new Point{.x = 1};\n"
+        "    var boxed *Box[i32] = new Box[i32]{.value = 1};\n"
         "    return add(p.x, q.x) + r.x + slice.len + named.len + tail;\n"
         "}\n";
 
@@ -525,6 +530,15 @@ int run_lsp_tests() {
     const std::string new_items = read_until(from_child[0], "\"id\":24", 3000);
     EXPECT_HAS(check, new_items, "\"x\"");
     EXPECT(check, new_items.find("\"sum\"") == std::string::npos);
+
+    const LineCol box_field = at_needle(source, "new Box[i32]{.", true);
+    EXPECT(check, box_field.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":25,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                  uri + R"("},"position":{"line":)" + std::to_string(box_field.line) + R"(,"character":)" +
+                  std::to_string(box_field.character) + "}}}");
+    const std::string box_items = read_until(from_child[0], "\"id\":25", 3000);
+    EXPECT_HAS(check, box_items, "\"value\"");
 
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);

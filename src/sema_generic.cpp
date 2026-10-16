@@ -768,8 +768,29 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 if (node.allocator) {
                     substitute_expr(params, bounds, *node.allocator);
                 }
+                if (node.count) {
+                    substitute_expr(params, bounds, *node.count);
+                }
                 if (node.init) {
                     substitute_expr(params, bounds, *node.init);
+                }
+                for (TypeArg &arg : node.type_args) {
+                    if (!arg.has_value && arg.type_package.empty() && arg.indirections == 0 && !arg.is_array &&
+                        arg.args.empty()) {
+                        if (const SpecArg *bound = find_arg(params, bounds, arg.type_name);
+                            bound != nullptr && bound->is_value) {
+                            arg.is_value = true;
+                            arg.has_value = true;
+                            arg.value = bound->value;
+                            arg.type_name.clear();
+                            continue;
+                        }
+                    }
+                    std::string len_name = arg.array_len_name;
+                    substitute_type(params, bounds, arg.type_name, arg.type_package, arg.is_struct, arg.is_enum,
+                                    arg.indirections, arg.optional, arg.is_array, arg.array_len, len_name, arg.args,
+                                    arg.loc);
+                    arg.array_len_name = std::move(len_name);
                 }
                 if (node.type_package.empty()) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
