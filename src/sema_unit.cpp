@@ -9,6 +9,22 @@
 #include <unordered_set>
 #include <utility>
 
+namespace {
+
+// `var item = call()` and `var item = unsafe call()`. A const stays a constant.
+bool startup_call(const tlc::Expr &expr) {
+    const tlc::Expr *cursor = &expr;
+    while (const auto *unary = std::get_if<tlc::Expr::Unary>(&cursor->data)) {
+        if (unary->op != tlc::TokenKind::KwUnsafe || unary->expr == nullptr) {
+            return false;
+        }
+        cursor = unary->expr.get();
+    }
+    return std::holds_alternative<tlc::Expr::Call>(cursor->data);
+}
+
+} // namespace
+
 namespace tlc {
 
 void Checker::store_assoc_const(uint32_t file, VarDecl &var) {
@@ -133,6 +149,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 symbol.name = fn->name;
                 symbol.is_function = true;
                 symbol.is_template = true;
+                symbol.unsafe_fn = fn->unsafe;
                 symbol.fn_template = stable;
                 symbol.has_body = fn->body != nullptr;
                 symbol.package_file = file_id_;
@@ -210,7 +227,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 error(fn->loc, "not supported yet");
             }
             if (!fn->method_struct.empty()) {
-                if (fn->exported || fn->is_extern) {
+                if (fn->is_extern) {
                     error(fn->loc, "not supported yet");
                 }
                 if (package_trait(file_id_, fn->method_struct) >= 0) {
@@ -228,7 +245,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 if (!known_type || (!fn->static_method && !receiver_ok)) {
                     error(fn->loc, "type mismatch");
                 }
-                // The method is written beside its struct, enum, or primitive alias. Other files in the package can still call it.
+                // The method is written beside its struct, enum, primitive alias, or slice alias.
+                // Other files in the package can still call it.
                 if (defined_in(fn->method_struct) != file_id_) {
                     error(fn->loc, "method in another file");
                     continue;
@@ -236,10 +254,16 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 auto &table = methods_[file_id_][fn->method_struct];
                 const auto found = table.find(fn->name);
                 if (found != table.end()) {
-                    if (!same_type(found->second.type, signature) || (found->second.has_body && fn->body)) {
+                    if (!same_type(found->second.type, signature) || (found->second.has_body && fn->body) ||
+                        found->second.unsafe_fn != fn->unsafe) {
                         error(fn->loc, "redefinition");
-                    } else if (fn->body) {
-                        found->second.has_body = true;
+                    } else {
+                        if (fn->body) {
+                            found->second.has_body = true;
+                        }
+                        if (fn->exported) {
+                            found->second.exported = true;
+                        }
                     }
                 } else {
                     const int struct_id = find_tag(file_id_, fn->method_struct);
@@ -248,7 +272,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     } else if (fn->static_method && assoc_defined(file_id_, fn->method_struct, fn->name)) {
                         error(fn->loc, "redefinition");
                     } else {
-                        table.emplace(fn->name, MethodInfo{std::move(signature), fn->body != nullptr, fn->static_method});
+                        table.emplace(fn->name, MethodInfo{std::move(signature), fn->body != nullptr, fn->static_method,
+                                                           fn->unsafe, fn->exported, file_id_});
                     }
                 }
                 continue;
@@ -259,18 +284,30 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 continue;
             }
             if (Symbol *existing = lookup_scope(fn->name)) {
+                const bool link_clash = !fn->link_name.empty() && !existing->link_name.empty() &&
+                                        existing->link_name != fn->link_name;
                 if (!existing->is_function || !same_type(existing->type, signature) ||
-                    (existing->has_body && fn->body)) {
+                    (existing->has_body && fn->body) || existing->unsafe_fn != fn->unsafe || link_clash) {
                     error(fn->loc, "redefinition");
-                } else if (fn->body) {
-                    existing->has_body = true;
-                    note_body(fn->name);
+                } else {
+                    if (existing->link_name.empty()) {
+                        existing->link_name = fn->link_name;
+                    }
+                    if (fn->body) {
+                        existing->has_body = true;
+                        note_body(fn->name);
+                    }
                     if (fn->is_static) {
                         const auto table = statics_.find(file_id_);
                         if (table != statics_.end()) {
                             const auto prior = table->second.find(fn->name);
                             if (prior != table->second.end()) {
-                                prior->second.has_body = true;
+                                if (fn->body) {
+                                    prior->second.has_body = true;
+                                }
+                                if (prior->second.link_name.empty()) {
+                                    prior->second.link_name = existing->link_name;
+                                }
                             }
                         }
                     }
@@ -285,7 +322,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             symbol.name = fn->name;
             symbol.type = std::move(signature);
             symbol.is_function = true;
+            symbol.unsafe_fn = fn->unsafe;
             symbol.has_body = fn->body != nullptr;
+            symbol.link_name = fn->link_name;
             if (fn->is_static) {
                 statics_[file_id_].insert_or_assign(fn->name, symbol);
                 declare(std::move(symbol), fn->loc);
@@ -342,6 +381,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             Symbol symbol;
             symbol.name = var->name;
             symbol.type = std::move(type);
+            symbol.link_name = var->link_name;
             bool defined = false;
             if (var->is_static) {
                 statics_[file_id_].insert_or_assign(var->name, symbol);
@@ -614,7 +654,10 @@ Type Checker::check_file_const(VarDecl &written) {
     }
     const auto *init = std::get_if<Expr::Init>(&written.init->data);
     const bool literal = init != nullptr && init->array_literal;
-    if (literal || (written.is_array && !written.ptr_to_array)) {
+    // `const label []const u8 = "hi"` is the string slice. Other const slices stay unsupported.
+    const bool string_slice = written.is_array && written.array_len < 0 && written.elem_const &&
+                              std::holds_alternative<Expr::String>(written.init->data);
+    if (!string_slice && (literal || (written.is_array && !written.ptr_to_array))) {
         Type got = file_array_initializer(written, nullptr);
         if (got.kind == TypeKind::Invalid) {
             return type_invalid();
@@ -639,7 +682,9 @@ Type Checker::check_file_const(VarDecl &written) {
         // The stored type is the one that was written.
         const bool string_pointer = want.kind == TypeKind::Pointer &&
                                     std::holds_alternative<Expr::String>(written.init->data);
-        if (!same_type(got, want) && want.kind != TypeKind::Float && !string_pointer) {
+        // `const text string_view = "hi"` keeps the alias. The initializer is still a plain slice.
+        const bool converted_slice = is_slice(want) && accepts_slice(got, want);
+        if (!same_type(got, want) && want.kind != TypeKind::Float && !string_pointer && !converted_slice) {
             return type_invalid();
         }
         got = want;
@@ -669,14 +714,17 @@ Type Checker::check_file_const(VarDecl &written) {
         }
         return got;
     }
-    // A string is `*const u8`. `const label *const u8 = "unix"` keeps that pointer.
-    // `const label = "hi"` is `*const u8`: the binding is constant, and so are the bytes.
-    if (got.kind == TypeKind::Pointer && written.init != nullptr &&
-        std::holds_alternative<Expr::String>(written.init->data)) {
-        if (written.inferred && got.pointee != nullptr) {
-            got.pointee->is_const = true;
+    // `const label *const u8 = "unix"` is the C pointer. `const label = "hi"` is `[]const u8`.
+    if (written.init != nullptr && std::holds_alternative<Expr::String>(written.init->data)) {
+        if (got.kind == TypeKind::Pointer) {
+            if (written.inferred && got.pointee != nullptr) {
+                got.pointee->is_const = true;
+            }
+            return got;
         }
-        return got;
+        if (is_slice(got) && got.element != nullptr && got.element->is_const) {
+            return got;
+        }
     }
     if (!stored_const_type(got)) {
         error(written.loc, "type mismatch");
@@ -770,7 +818,7 @@ bool Checker::constant_operand(const Expr &expr) {
                     return false;
                 }
                 if (node.op == TokenKind::Plus || node.op == TokenKind::Minus || node.op == TokenKind::Tilde ||
-                    node.op == TokenKind::Bang) {
+                    node.op == TokenKind::Bang || node.op == TokenKind::KwUnsafe) {
                     return constant_operand(*node.expr);
                 }
                 if (node.op != TokenKind::Amp) {
@@ -801,7 +849,9 @@ void Checker::check_globals(const TranslationUnit &unit) {
         return symbol != nullptr && symbol->type.kind == TypeKind::Array && symbol->type.element != nullptr;
     };
     auto require_slice_name = [&](const Expr &expr, const Type &want, SourceLoc loc, std::size_t before) {
-        if (diags_.size() == before && is_slice(want) && !slice_name(expr)) {
+        // A string literal is a constant `[]const u8`. Another slice still names an array or a slice.
+        if (diags_.size() == before && is_slice(want) && !slice_name(expr) &&
+            !std::holds_alternative<Expr::String>(expr.data)) {
             error(loc, "global initializer is not a constant");
         }
     };
@@ -838,7 +888,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                         if (assoc != nullptr) {
                             const std::size_t before = diags_.size();
                             check_against(*var->init, assoc->type);
-                            require_slice_name(*var->init, assoc->type, var->loc, before);
+                            if (diags_.size() == before && !var->is_extern && startup_call(*var->init)) {
+                                const_cast<VarDecl *>(var)->runtime_init = true;
+                            } else {
+                                require_slice_name(*var->init, assoc->type, var->loc, before);
+                            }
                         }
                     } else if (assoc != nullptr && assoc->type.kind == TypeKind::Array) {
                         (void)file_array_initializer(const_cast<VarDecl &>(*var), &assoc->type);
@@ -856,7 +910,9 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     const std::size_t before = diags_.size();
                     check_against(*var->init, assoc->type);
                     if (diags_.size() == before) {
-                        if (is_slice(assoc->type)) {
+                        if (!var->is_extern && startup_call(*var->init)) {
+                            const_cast<VarDecl *>(var)->runtime_init = true;
+                        } else if (is_slice(assoc->type)) {
                             require_slice_name(*var->init, assoc->type, var->loc, before);
                         } else {
                             (void)accept_file_scalar(*var, assoc->type);
@@ -877,7 +933,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     const Type want = symbol != nullptr ? symbol->type : type_invalid();
                     const std::size_t before = diags_.size();
                     check_against(*var->init, want);
-                    require_slice_name(*var->init, want, var->loc, before);
+                    if (diags_.size() == before && !var->is_extern && startup_call(*var->init)) {
+                        const_cast<VarDecl *>(var)->runtime_init = true;
+                    } else {
+                        require_slice_name(*var->init, want, var->loc, before);
+                    }
                 } else if (!var->is_const_decl) {
                     const Symbol *symbol = lookup(var->name);
                     if (symbol != nullptr && symbol->type.kind == TypeKind::Array) {
@@ -897,7 +957,9 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 const std::size_t before = diags_.size();
                 check_against(*var->init, want);
                 if (diags_.size() == before) {
-                    if (is_slice(want)) {
+                    if (!var->is_const_decl && !var->is_extern && startup_call(*var->init)) {
+                        const_cast<VarDecl *>(var)->runtime_init = true;
+                    } else if (is_slice(want)) {
                         require_slice_name(*var->init, want, var->loc, before);
                     } else {
                         (void)accept_file_scalar(*var, want);
@@ -1007,6 +1069,7 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 symbol.name = fn->name;
                 symbol.is_function = true;
                 symbol.is_template = true;
+                symbol.unsafe_fn = fn->unsafe;
                 symbol.fn_template = stable;
                 symbol.has_body = fn->body != nullptr;
                 symbol.package_file = file_id;
@@ -1036,7 +1099,9 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             symbol.name = fn->name;
             symbol.type = type_function(std::move(result), std::move(params), fn->variadic);
             symbol.is_function = true;
+            symbol.unsafe_fn = fn->unsafe;
             symbol.has_body = fn->body != nullptr;
+            symbol.link_name = fn->link_name;
             symbol.package_file = file_id;
             auto &table = exports_[file_id];
             const auto found = table.find(fn->name);
@@ -1046,10 +1111,17 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 } else {
                     table.emplace(fn->name, std::move(symbol));
                 }
-            } else if (found->second.is_type || !found->second.is_function) {
+            } else if (found->second.is_type || !found->second.is_function || found->second.unsafe_fn != fn->unsafe ||
+                       (!fn->link_name.empty() && !found->second.link_name.empty() &&
+                        found->second.link_name != fn->link_name)) {
                 error(fn->loc, "redefinition");
             } else if (fn->body) {
                 found->second.has_body = true;
+                if (found->second.link_name.empty()) {
+                    found->second.link_name = fn->link_name;
+                }
+            } else if (found->second.link_name.empty()) {
+                found->second.link_name = fn->link_name;
             }
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
             if (!var->owner.empty()) {

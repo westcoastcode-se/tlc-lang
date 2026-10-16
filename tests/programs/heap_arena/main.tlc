@@ -27,10 +27,10 @@ func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
 
 func main() i32 {
     var arena Arena;
-    var p *Point = new(arena) Point;
+    var p *Point = new(&arena) Point;
     p.x = 40;
     p.y = 2;
     var sum i32 = p.x + p.y;
-    delete(arena) p;
+    delete(&arena) p;
     return sum;
 }

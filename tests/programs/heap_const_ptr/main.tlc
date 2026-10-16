@@ -6,7 +6,7 @@ var storage i32;
 
 func Arena::malloc(self *this, size i32, align i32) ?*u8 {
     self.hits = self.hits + 1;
-    return ?*u8(&storage);
+    return unsafe ?*u8(&storage);
 }
 
 func Arena::free(self *this, ptr *u8) void {
@@ -19,6 +19,7 @@ func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
 
 func main() i32 {
     var arena Arena;
+    arena.hits = 0;
     const p = &arena;
     var n *i32 = new(p) i32;
     if (*n != 0) {

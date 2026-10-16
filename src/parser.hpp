@@ -33,6 +33,8 @@ class Parser {
         bool is_static = false;
         bool is_extern = false;
         bool extern_c = false;
+        // `extern(..., name="symbol")`. Empty keeps the usual object name.
+        std::string link_name;
         // `struct(align=N)`. Zero means the natural alignment.
         int align = 0;
         bool is_const = false;
@@ -89,6 +91,8 @@ class Parser {
         // Bit 0 is the outermost `*`. A set bit means that pointer's pointee is `const`.
         uint32_t const_pointee = 0;
         bool is_array = false;
+        // `[]const u8` and `[4]const u8`. The element type is const.
+        bool elem_const = false;
         int array_len = 0;
         std::string array_len_name;
         std::vector<TypeArg> type_args;
@@ -104,13 +108,19 @@ class Parser {
     };
 
     bool starts_declaration() const;
+    // `unsafe`, `export`, and `extern` in any order, then `func`.
+    bool starts_unsafe_func() const;
+    // `unsafe var` and the other non-function forms. The diagnostic is `not supported yet`.
+    bool unsupported_unsafe_decl() const;
+    void skip_decl_specifiers(std::size_t &ahead, bool &saw_unsafe) const;
+    void reject_unsupported_unsafe();
     bool continues_declarator() const;
     bool starts_qualified_type() const;
     bool is_type_keyword(TokenKind kind) const;
 
     Specifiers parse_specifiers(bool file_scope, bool allow_const = false, bool type_only = false);
-    // `extern` is `abi="tlc"`. `extern(abi="c")` is a C library. Other values are rejected.
-    bool take_extern(bool &is_extern, bool &extern_c);
+    // `extern` is `abi="tlc"`. `extern(abi="c")` is a C library. `name="symbol"` is the object symbol.
+    bool take_extern(bool &is_extern, bool &extern_c, std::string &link_name);
     int parse_struct_align();
     // `enum(i32)`. Empty means `int` when the caller saw no parentheses.
     std::string parse_enum_underlying();
@@ -139,7 +149,8 @@ class Parser {
     // `as_cast` is `func (i32) i32(value)`. The `(` after the result is the operand,
     // so the result does not take the C declarator `i32 (*name)(`.
     PlacedType parse_func_type(bool as_cast = false);
-    void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern, bool extern_c);
+    void parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern, bool extern_c,
+                         std::string link_name = {});
     // `allow_slice` accepts `[]T`. A C declarator such as `name[]` stays unsupported.
     ArrayMark parse_array_suffix(bool allow_slice = false);
     bool bracket_then_paren() const;
@@ -165,10 +176,12 @@ class Parser {
     std::vector<Param> parse_params(bool allow_const, bool &variadic, const std::string &method_struct = {});
     void take_result(FunctionDecl &fn, const PlacedType &type);
     void parse_results(FunctionDecl &fn);
-    FunctionDecl parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body);
+    FunctionDecl parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body,
+                                std::string link_name = {});
     // `type Name struct`, `type Name enum`, `type Name trait`, `type Name union`,
-    // or `type Name go-type` for an alias.
-    void parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c);
+    // or `type Name go-type` for an alias. `link_name` is rejected: a type has no object symbol.
+    void parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c,
+                         std::string link_name = {});
     void parse_type_def(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c, std::string name,
                         SourceLoc name_loc, std::vector<TypeParam> type_params);
     void parse_top_declaration(TranslationUnit &unit, bool file_scope_export_ok);
@@ -198,7 +211,7 @@ class Parser {
     // `allow_bare_inferred` accepts `var name = expr` before a type is written.
     // A struct body uses that for `var next = 1`, the same variable as `var Type::next = 1`.
     VarDecl parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c,
-                            bool allow_bare_inferred = false);
+                            bool allow_bare_inferred = false, std::string link_name = {});
     // `const name = expr`, `const name Type = expr`, and `const Type::name`.
     VarDecl parse_const_decl(bool exported);
     void parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var, bool exported);

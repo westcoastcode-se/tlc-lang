@@ -177,7 +177,8 @@ Type Checker::type_of_var(const VarDecl &var) {
                                      var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
                                      var.ret_optional, var.ret_const_pointee)
                     : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
-                                  var.type_package, var.is_struct, var.is_enum, false, var.optional, var.const_pointee);
+                                  var.type_package, var.is_struct, var.is_enum, false, var.optional, var.const_pointee,
+                                  false, var.elem_const);
     if (!var.ptr_to_array || type.kind == TypeKind::Invalid) {
         return type;
     }
@@ -237,7 +238,7 @@ Type Checker::type_of_param(const Param &param) {
     }
     return object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
                        param.type_package, param.is_struct, param.is_enum, param.is_receiver, param.optional,
-                       param.const_pointee);
+                       param.const_pointee, false, param.elem_const);
 }
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
@@ -251,7 +252,8 @@ Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
     }
     if (slot.is_array) {
         return object_type(slot.type_name, slot.indirections, true, slot.array_len, loc, false, slot.type_package,
-                           slot.is_struct, slot.is_enum, false, slot.optional, slot.const_pointee);
+                           slot.is_struct, slot.is_enum, false, slot.optional, slot.const_pointee, false,
+                           slot.elem_const);
     }
     return slot.is_struct || slot.is_enum || !slot.type_package.empty()
                ? object_type(slot.type_name, slot.indirections, false, 0, loc, false, slot.type_package, slot.is_struct,
@@ -322,7 +324,7 @@ void Checker::check_local_function(const FunctionDecl &fn) {
     if (found != table.end()) {
         Symbol &existing = found->second;
         if (!existing.is_local_function || !same_type(existing.type, signature) ||
-            (existing.has_body && fn.body != nullptr)) {
+            (existing.has_body && fn.body != nullptr) || existing.unsafe_fn != fn.unsafe) {
             error(fn.loc, "redefinition");
         } else if (fn.body != nullptr) {
             existing.has_body = true;
@@ -333,6 +335,7 @@ void Checker::check_local_function(const FunctionDecl &fn) {
         symbol.type = std::move(signature);
         symbol.is_function = true;
         symbol.is_local_function = true;
+        symbol.unsafe_fn = fn.unsafe;
         symbol.has_body = fn.body != nullptr;
         symbol.loc = fn.loc;
         declare(std::move(symbol), fn.loc);
@@ -524,7 +527,8 @@ bool Checker::named_type_owner(const std::string &name) const {
         return true;
     }
     Type alias;
-    return package_typedef(file_id_, name, alias) && alias.alias_id != 0 && is_numeric(alias);
+    return package_typedef(file_id_, name, alias) && alias.alias_id != 0 &&
+           (is_numeric(alias) || is_slice(alias));
 }
 
 const Type *Checker::scalar_alias(const Type &base, bool &through_pointer) const {
@@ -538,6 +542,13 @@ const Type *Checker::scalar_alias(const Type &base, bool &through_pointer) const
         return nullptr;
     }
     return type;
+}
+
+const Type *Checker::slice_alias(const Type &base) const {
+    if (base.alias_id == 0 || !is_slice(base)) {
+        return nullptr;
+    }
+    return &base;
 }
 
 bool Checker::is_c_enum(const Type &type) const {
@@ -949,6 +960,46 @@ const Checker::MethodInfo *Checker::find_named_method(const std::string &type_na
     return nullptr;
 }
 
+const Checker::MethodInfo *Checker::find_visible_method(uint32_t home, const std::string &owner,
+                                                        const std::string &name, bool &hidden) const {
+    hidden = false;
+    if (owner.empty() || name.empty()) {
+        return nullptr;
+    }
+    bool local = home == 0;
+    if (!local) {
+        for (const uint32_t id : files_in_package(file_id_)) {
+            if (id == home) {
+                local = true;
+                break;
+            }
+        }
+    }
+    if (local) {
+        return find_named_method(owner, name);
+    }
+    for (const uint32_t id : files_in_package(home)) {
+        const auto methods = methods_.find(id);
+        if (methods == methods_.end()) {
+            continue;
+        }
+        const auto group = methods->second.find(owner);
+        if (group == methods->second.end()) {
+            continue;
+        }
+        const auto method = group->second.find(name);
+        if (method == group->second.end()) {
+            continue;
+        }
+        if (!method->second.exported) {
+            hidden = true;
+            return nullptr;
+        }
+        return &method->second;
+    }
+    return nullptr;
+}
+
 const Checker::MethodInfo *Checker::find_method(int struct_id, const std::string &name) const {
     if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
         return nullptr;
@@ -1177,7 +1228,7 @@ void Checker::define_trait_fields() {
                                                  field.ret_const_pointee)
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
-                                              field.optional, field.const_pointee);
+                                              field.optional, field.const_pointee, false, field.elem_const);
             if (field_type.kind == TypeKind::Invalid) {
                 continue;
             }
@@ -1545,7 +1596,7 @@ void Checker::define_struct_fields() {
                                                  field.ret_const_pointee)
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
-                                              field.optional, field.const_pointee);
+                                              field.optional, field.const_pointee, false, field.elem_const);
             // A slice is a tlc value, `{ptr, i32}`. An `extern(abi="c")` struct keeps the C layout.
             if (is_slice(field_type) && info.extern_c) {
                 error(field.loc, "not supported yet");
@@ -1841,7 +1892,7 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
                                            item.fn_results, item.loc, item.ret_optional)
                           : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
                                         item.type_package, item.is_struct, item.is_enum, false, item.optional,
-                                        item.const_pointee, true);
+                                        item.const_pointee, true, item.elem_const);
     if (type.kind == TypeKind::Invalid) {
         return;
     }
@@ -1853,6 +1904,7 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
     Type distinct = type;
     distinct.alias_id = next_alias_id_++;
     alias_names_.push_back(item.name);
+    alias_file_.push_back(file_id_);
     typedefs_[file_id_].emplace(item.name, distinct);
     if (!item.exported) {
         return;
@@ -1963,7 +2015,7 @@ Type Checker::spelled_type(const std::string &name, const std::string &package, 
 
 Type Checker::object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum, bool receiver,
-                          uint32_t optional, uint32_t const_pointee, bool allow_incomplete) {
+                          uint32_t optional, uint32_t const_pointee, bool allow_incomplete, bool elem_const) {
     if (!receiver) {
         note_struct_use(is_struct, name, loc);
     }
@@ -1977,11 +2029,12 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         const bool have_alias = tag < 0 && package_typedef(file_id_, name, alias);
         if (tag < 0 && enumeration >= 0) {
             type = with_indirections(type_enum(enumeration), indirections, loc, optional, const_pointee);
-        } else if (receiver && have_alias && alias.alias_id != 0 && is_numeric(alias)) {
-            // `func Integer::twice(self this)` keeps the alias. The parser marks every receiver as a struct.
+        } else if (receiver && have_alias && alias.alias_id != 0 && (is_numeric(alias) || is_slice(alias))) {
+            // `func Integer::twice(self this)` and `func string_view::equals(self this)` keep the alias.
+            // The parser marks every receiver as a struct. A pointer receiver on a slice alias is not supported yet.
             type = with_indirections(std::move(alias), indirections, loc, optional, const_pointee);
         } else if (receiver && have_alias) {
-            // A pointer, array, or struct alias is not a method owner. The declaration is a type mismatch.
+            // A pointer alias, a sized-array alias, or a struct alias is not a method owner.
             type = type_invalid();
         } else {
             type = with_indirections(lookup_tag(name, loc, indirections > 0 || allow_incomplete), indirections, loc,
@@ -2025,6 +2078,10 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     if (type.kind == TypeKind::Void || type.kind == TypeKind::Function) {
         error(loc, "not supported yet");
         return type_invalid();
+    }
+    // `[]const u8` marks the element. A parameter `[N]const u8` decays to `*const u8`.
+    if (elem_const) {
+        type.is_const = true;
     }
     // `[]T` is a slice. It does not decay, even as a parameter.
     if (array_len < 0) {
@@ -2094,11 +2151,17 @@ std::string Checker::type_desc(const Type &type) const {
         text += type_desc(type.pointee ? *type.pointee : type_invalid());
         return text;
     }
-    case TypeKind::Array:
-        if (type.length < 0) {
-            return "[]" + type_desc(type.element ? *type.element : type_invalid());
+    case TypeKind::Array: {
+        std::string element = type_desc(type.element ? *type.element : type_invalid());
+        // `*const u8` already spells its const. `const u8` is written in front of the element.
+        if (type.element != nullptr && type.element->is_const && type.element->kind != TypeKind::Pointer) {
+            element = "const " + element;
         }
-        return "[" + std::to_string(type.length) + "]" + type_desc(type.element ? *type.element : type_invalid());
+        if (type.length < 0) {
+            return "[]" + element;
+        }
+        return "[" + std::to_string(type.length) + "]" + element;
+    }
     case TypeKind::Struct:
         if (type.struct_id >= 0 && type.struct_id < static_cast<int>(structs_.size())) {
             return structs_[static_cast<std::size_t>(type.struct_id)].name;

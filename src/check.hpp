@@ -25,6 +25,8 @@ struct SpecArg {
     // Bit 0 is the outermost `*`. A set bit means that pointer's pointee is `const`.
     uint32_t const_pointee = 0;
     bool is_array = false;
+    // `[]const u8`. The element type is const.
+    bool elem_const = false;
     int array_len = 0;
     int struct_id = -1;
     int enum_id = -1;
@@ -38,7 +40,11 @@ struct Symbol {
     Type type;
     bool has_body = false;
     bool is_function = false;
+    // Object symbol from `extern(..., name="...")`. Empty when that argument was omitted.
+    std::string link_name;
     bool is_local_function = false;
+    // `unsafe func`. A call outside an unsafe context is `unsafe call`. A value use is `type mismatch`.
+    bool unsafe_fn = false;
     // The function reads a function pointer from an enclosing function. A direct call is fine.
     // Using the function as a value is not.
     bool fn_captures = false;
@@ -114,6 +120,11 @@ class Checker {
         bool has_body = false;
         // No `this` parameter. The call is `Type.name(...)`.
         bool is_static = false;
+        bool unsafe_fn = false;
+        // `export func Type::name`. Another package calls `value.name`.
+        bool exported = false;
+        // File that wrote the method. Zero when the method has not been registered.
+        uint32_t file_id = 0;
     };
 
     // `var Entity::next` or `const Entity::next`. One entry per owner and name.
@@ -163,6 +174,8 @@ class Checker {
     std::unordered_map<uint32_t, std::unordered_map<std::string, Type>> typedefs_;
     // alias_names_[id] is the source name of a `type Name T`. Index 0 is unused.
     std::vector<std::string> alias_names_{""};
+    // alias_file_[id] is the file that wrote that alias. Index 0 is unused.
+    std::vector<uint32_t> alias_file_{0};
     int next_alias_id_ = 1;
     struct EnumInfo {
         std::string name;
@@ -198,8 +211,10 @@ class Checker {
     bool quiet_ = false;
     // Set while checking a variadic function body. `builtin.va` is valid only then.
     bool variadic_function_ = false;
-    // The callee of a call is being checked, and that callee is a name or a function expression.
+    // The callee of a call is being checked. That callee is a name, a function expression, or a selector.
     bool direct_callee_ = false;
+    // `unsafe` expressions and the body of an `unsafe func`. Nested functions do not inherit it.
+    int unsafe_depth_ = 0;
     int loop_depth_ = 0;
     bool checking_defer_ = false;
     std::vector<SwitchFrame> switches_;
@@ -207,6 +222,9 @@ class Checker {
     std::vector<FunctionDecl *> checking_;
 
     void error(SourceLoc loc, const std::string &message);
+    void require_unsafe_call(bool unsafe_fn, SourceLoc loc);
+    // False when an unsafe function is used as a value. The caller returns an invalid type.
+    bool allow_unsafe_fn(bool unsafe_fn, SourceLoc loc);
     void push();
     void push_function();
     void pop();
@@ -254,7 +272,7 @@ class Checker {
     Type object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                      bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
                      bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0,
-                     bool allow_incomplete = false);
+                     bool allow_incomplete = false, bool elem_const = false);
     Type spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
                       int indirections, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
     // A store through this lvalue would change a `const` binding or a `*const` pointee.
@@ -288,8 +306,14 @@ class Checker {
     bool dot_object(const Type &base, Type &object, bool &through_pointer) const;
     const MethodInfo *find_method(int struct_id, const std::string &name) const;
     const MethodInfo *find_named_method(const std::string &type_name, const std::string &name) const;
+    // A method on `owner` written in `home`'s package. The current package sees every method.
+    // Another package sees an exported method. `hidden` is set when one exists and is not exported.
+    const MethodInfo *find_visible_method(uint32_t home, const std::string &owner, const std::string &name,
+                                          bool &hidden) const;
     // `Integer` or `*Integer` when that alias is a primitive. Null otherwise.
     const Type *scalar_alias(const Type &base, bool &through_pointer) const;
+    // A slice alias such as `type string_view []const u8`. Not a pointer to one.
+    const Type *slice_alias(const Type &base) const;
     const AssocVar *find_assoc(const std::string &owner, const std::string &name) const;
     const AssocVar *find_assoc_in(uint32_t file, const std::string &owner, const std::string &name) const;
     bool assoc_defined(uint32_t file, const std::string &owner, const std::string &name) const;
@@ -343,7 +367,7 @@ class Checker {
     bool is_builtin_va_call(const Expr &callee);
     Type operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                       bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
-                      uint32_t const_pointee = 0, bool is_array = false, int array_len = 0);
+                      uint32_t const_pointee = 0, bool is_array = false, int array_len = 0, bool elem_const = false);
     Type sizeof_operand(const Expr::Sizeof &node);
     // A folded number. `wide` is f64. An integer is neither.
     struct FoldedNumber {

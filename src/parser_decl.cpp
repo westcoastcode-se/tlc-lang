@@ -60,6 +60,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
             field.optional = type.optional;
             field.const_pointee = type.const_pointee;
             field.is_array = type.is_array;
+            field.elem_const = type.elem_const;
             field.array_len = type.array_len;
             field.array_len_name = type.array_len_name;
             field.type_args = type.type_args;
@@ -95,6 +96,7 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
         field.optional = type.optional;
         field.const_pointee = type.const_pointee;
         field.is_array = type.is_array;
+        field.elem_const = type.elem_const;
         field.array_len = type.array_len;
         field.array_len_name = type.array_len_name;
         field.type_args = type.type_args;
@@ -279,6 +281,10 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         trait.name = std::move(name);
         while (!check(TokenKind::RBrace) && !eof()) {
             const std::size_t before = pos_;
+            if (check(TokenKind::KwUnsafe)) {
+                diags_.error(peek().loc, "not supported yet");
+                ++pos_;
+            }
             if (check(TokenKind::KwFunc)) {
                 FunctionDecl method = parse_function(false, false, false, false, false);
                 if (!method.method_struct.empty()) {
@@ -366,7 +372,11 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     unit.decls.push_back(std::move(top));
 }
 
-void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c) {
+void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c,
+                             std::string link_name) {
+    if (!link_name.empty()) {
+        diags_.error(peek().loc, "not supported yet");
+    }
     eat(TokenKind::KwType);
     std::string name;
     SourceLoc name_loc = peek().loc;
@@ -408,6 +418,7 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.optional = type.optional;
     item.const_pointee = type.const_pointee;
     item.is_array = type.is_array;
+    item.elem_const = type.elem_const;
     item.array_len = type.array_len;
     item.array_len_name = type.array_len_name;
     item.type_args = type.type_args;
@@ -430,17 +441,28 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
 
 void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export_ok) {
     (void)file_scope_export_ok;
+    if (unsupported_unsafe_decl()) {
+        reject_unsupported_unsafe();
+        saw_decl_ = true;
+        return;
+    }
     const std::size_t marker = pos_;
     bool exported = false;
     bool is_extern = false;
     bool extern_c = false;
+    std::string link_name;
+    bool unsafe_fn = false;
     while (true) {
         if (check(TokenKind::KwExport)) {
             exported = true;
             ++pos_;
             continue;
         }
-        if (take_extern(is_extern, extern_c)) {
+        if (take_extern(is_extern, extern_c, link_name)) {
+            continue;
+        }
+        if (eat(TokenKind::KwUnsafe)) {
+            unsafe_fn = true;
             continue;
         }
         break;
@@ -458,7 +480,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     }
     if (at_func_type()) {
         std::vector<VarDecl> vars;
-        parse_func_vars(vars, exported, false, is_extern, extern_c);
+        parse_func_vars(vars, exported, false, is_extern, extern_c, link_name);
         for (VarDecl &var : vars) {
             TopDecl top;
             top.data = std::move(var);
@@ -468,7 +490,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         return;
     }
     if (check(TokenKind::KwType)) {
-        parse_type_decl(unit, exported, is_extern, extern_c);
+        parse_type_decl(unit, exported, is_extern, extern_c, link_name);
         saw_decl_ = true;
         return;
     }
@@ -484,7 +506,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             diags_.error(peek().loc, "not supported yet");
             parse_bind(true);
         } else {
-            VarDecl var = parse_typed_var(exported, false, is_extern, extern_c);
+            VarDecl var = parse_typed_var(exported, false, is_extern, extern_c, false, link_name);
             TopDecl top;
             top.data = std::move(var);
             unit.decls.push_back(std::move(top));
@@ -500,7 +522,8 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         return;
     }
     if (check(TokenKind::KwFunc)) {
-        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true);
+        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true, link_name);
+        fn.unsafe = unsafe_fn;
         TopDecl top;
         top.data = std::move(fn);
         unit.decls.push_back(std::move(top));
@@ -509,6 +532,9 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     }
     pos_ = marker;
     const Specifiers specs = parse_specifiers(true);
+    if (!specs.link_name.empty() && (specs.union_definition || specs.struct_definition || specs.enum_definition)) {
+        diags_.error(specs.loc, "not supported yet");
+    }
     if (specs.union_definition) {
         if (!specs.extern_c) {
             diags_.error(specs.loc, "not supported yet");
@@ -608,6 +634,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         var.is_static = specs.is_static;
         var.is_extern = specs.is_extern;
         var.extern_c = specs.extern_c;
+        var.link_name = specs.link_name;
         if (eat(TokenKind::Eq)) {
             var.init = parse_assignment();
         }

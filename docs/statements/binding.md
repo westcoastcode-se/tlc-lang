@@ -104,7 +104,7 @@ The program returns 42. `row[0]` stays `1` after `n = 9`. `*q` reads the new val
 
 An integer or bool array can be that constant too: `const fixed = [_]i32{19, 2}` and `const flags = [_]bool{true, false}`. A float, a pointer, a struct, an enum, a typedef, or a function pointer can be the element when every value is a constant, as in `const origin = [_]Point{Point{.x = 1, .y = 2}}`. Copying a `var` into that array is reported as `global initializer is not a constant`. A read decays to a pointer to a const element. The name is not an array length, and it has no address. A struct, a function pointer, or a typedef can be that constant too. `const origin Point = {.x = 10, .y = 10}` and `const other = Integer(4)` are those types. `const origin = Point{}` is a `Point` whose fields are zero, and `const origin = Point{.x = 10, .y = 10}` fills those fields. `const op BinOp = BinOp(add)` and `const plain func (i32, i32) i32 = add` name a function. The initializer has to be a constant. A call is reported as `global initializer is not a constant`. Assigning the constant, or a field of a struct constant, is reported as `type mismatch`. A method whose receiver is a non-const pointer is reported as `type mismatch: expected *Point, found *const Point`. `self *const this` can be called on the constant. It has no address. An alias is still a different type, so `var raw i32 = value` is reported as `type mismatch` when `value` is `Integer`. `i32(value)` confirms it. An alias is not an array length.
 
-A string literal is `*const u8`. `const label *const u8 = "unix"` and `const label = "hi"` keep that type. The name has no address. `const p *i32 = &n` is reported as `type mismatch`.
+`var text = "hi"` and `const label = "hi"` are `[]const u8`. The length is 2 and does not count the terminating null. The name of a file-scope `const` has no address. `*const u8` is the pointer a C library takes: `var text *const u8 = "hi"` and `const c_text *const u8 = "unix"`. A `[]const u8` converts to that pointer and drops the length. `const p *i32 = &n` is reported as `type mismatch`. Inside a function, `const text = "hi"` is the same slice, because a local `const` uses the type of the expression.
 
 `export const name = expr` and `export const name Type = expr` publish the constant. Another package reads it as `pkg.name` or `import { name }`. Assigning it is rejected the same way as any other constant. A constant without `export` is reported as `name is not exported`. `const Entity::next = expr` is a constant on that type, written beside the struct. See [Methods](../methods/constant.md).
 
@@ -150,7 +150,7 @@ The program returns 42.
 
 ### File scope
 
-At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `export` goes on either form: `export var bonus = 40` and `export extra := 2`. Another package reads and assigns `pkg.bonus` or `import { extra }`. `extern` and `extern(abi="c")` still go on a typed `var`: `extern var slot i32`, `extern(abi="c") var slot i32`. `extern` on `var name = expr` or `name := expr` is reported as `not supported yet`. `export` also goes on a file-scope `const` and on `var Type::name`. A global with no initializer is zero. A float literal is a constant initializer. `var scale = 1.5f` is `f32` and `var wide = 20.0` is `f64`. `var copied = scale` keeps that initializer after `scale` is assigned. `var neg = -1.0` is the negated literal. `var added = 1.5f + 0.5f` folds that arithmetic. `var from_int f32 = n` converts a folded integer, and so does `var from_u f32 = 1u32`. `var spare f32` is zero. `var Entity::scale = 1.5f` is that variable on a type. A call is reported as `global initializer is not a constant`.
+At file scope, `var name = expr` and `name := expr` both infer the type from the initializer. `export` goes on either form: `export var bonus = 40` and `export extra := 2`. Another package reads and assigns `pkg.bonus` or `import { extra }`. `extern` and `extern(abi="c")` still go on a typed `var`: `extern var slot i32`, `extern(abi="c") var slot i32`. `extern` on `var name = expr` or `name := expr` is reported as `not supported yet`. `export` also goes on a file-scope `const` and on `var Type::name`. A global with no initializer is zero. A float literal is a constant initializer. `var scale = 1.5f` is `f32` and `var wide = 20.0` is `f64`. `var copied = scale` keeps that initializer after `scale` is assigned. `var neg = -1.0` is the negated literal. `var added = 1.5f + 0.5f` folds that arithmetic. `var from_int f32 = n` converts a folded integer, and so does `var from_u f32 = 1u32`. `var spare f32` is zero. `var Entity::scale = 1.5f` is that variable on a type. A call used as the whole initializer of a `var` runs before `main`. `var item = call_func()`, `var item i32 = call_func()`, `item := call_func()`, and `var Entity::item = call_func()` are that form. `unsafe call_func()` is that call when the function is `unsafe func`. A function pointer works the same way: `var fp = call_func` then `var item = fp()`. `const item = call_func()` is reported as `global initializer is not a constant`. The same diagnostic is reported for `var n = call_func() + 1`, for a call inside an array or a struct literal, for `new`, and for `var copied = item` when `item` was initialized by a call. Calls in one file run in source order, so a later call reads an earlier variable that a call already stored. A constant global is already in the binary. An imported package runs before the file that imports it. Files in one package share that place and run in path order.
 
 ```c
 var count = 1;
@@ -166,7 +166,10 @@ func main() i32 {
 ```c
 extern var slot i32;
 extern(abi="c") var errno i32;
+extern(abi="c", name="errno") var last_error i32;
 ```
+
+`name` sets the object symbol. The program reads `last_error`. That argument adds no instructions.
 
 ```c
 type Real f32;
@@ -201,6 +204,25 @@ func main() i32 {
 ```
 
 The program returns 42.
+
+```c
+func call_func() i32 {
+    return 10;
+}
+
+func later() i32 {
+    return item + 1;
+}
+
+var item = call_func();
+var next = later();
+
+func main() i32 {
+    return item + next + 21;
+}
+```
+
+`item` is stored before `next` is called, so `next` reads 10. The program returns 42.
 
 ### Tuples
 
@@ -253,6 +275,8 @@ func main() i32 {
 A local `const value = 40 + 2` is folded and stored like `var value = 42`: 1 store of 42. It is not a compile-time integer. A file-scope `const N = 4` used as `return N` is the same 2 instructions as `return 4`. No slot is read.
 
 A file-scope `var n i32 = 7` occupies space in the binary. `return n` is 1 `movl` from that address and `retq`. `n = n + 1` in `main` is 5 instructions: load, add 1, store, load again, return.
+
+A file-scope `var item = call_func()`, with `call_func` returning 42, runs before `main`. `return item` is 1 `movl` and `retq`. The call and the store run in `tlc.init`: 37 instructions on the path where the trace holds fewer than 32 frames. `call_func` is 2 instructions, `movl $42, %eax` and `retq`. `llvm.global_ctors` is data.
 
 A tuple local `(40, 2)` is 2 stores. Unpacking it into two names is 2 loads and 2 stores. A `for` whose first clause unpacks a call pays the traced call once per check of the condition.
 

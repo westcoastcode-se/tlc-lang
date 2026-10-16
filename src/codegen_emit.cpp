@@ -36,7 +36,7 @@ std::string global_key(const tlc::VarDecl &var) {
 
 namespace tlc {
 
-void CodeGen::declare_file(const PackageNode &node) {
+void CodeGen::declare_functions(const PackageNode &node) {
     current_file_ = node.file_id;
     struct Acc {
         const FunctionDecl *fn = nullptr;
@@ -44,6 +44,7 @@ void CodeGen::declare_file(const PackageNode &node) {
         bool is_static = false;
         bool is_extern = false;
         bool extern_c = false;
+        std::string link_name;
     };
     std::unordered_map<std::string, Acc> functions;
     for (const TopDecl &decl : node.unit.decls) {
@@ -59,6 +60,9 @@ void CodeGen::declare_file(const PackageNode &node) {
         acc.is_static = acc.is_static || fn->is_static;
         acc.is_extern = acc.is_extern || fn->is_extern;
         acc.extern_c = acc.extern_c || fn->extern_c;
+        if (acc.link_name.empty()) {
+            acc.link_name = fn->link_name;
+        }
     }
     FileSymbols &file = files_[node.file_id];
     const bool entry = node.file_id == entry_file_;
@@ -112,11 +116,20 @@ void CodeGen::declare_file(const PackageNode &node) {
             continue;
         }
         const SymbolForm form = symbol_form(node, name, acc.is_extern, acc.extern_c, acc.is_static, acc.exported,
-                                            entry && !testing_ && name == "main");
-        llvm::Function *function = acc.is_extern ? module_.getFunction(form.name) : nullptr;
+                                            entry && !testing_ && name == "main", acc.link_name);
         const ExternLayout layout = acc.extern_c ? extern_layout(*acc.fn, node.file_id) : ExternLayout{};
+        llvm::FunctionType *ftype = layout.active ? layout.type : function_type(*acc.fn, node.file_id);
+        llvm::Function *function = nullptr;
+        if (acc.is_extern) {
+            if (llvm::GlobalValue *named = module_.getNamedValue(form.name)) {
+                function = llvm::dyn_cast<llvm::Function>(named);
+                if (function == nullptr || ftype == nullptr || function->getFunctionType() != ftype) {
+                    error(acc.fn->loc, "redefinition");
+                    continue;
+                }
+            }
+        }
         if (function == nullptr) {
-            llvm::FunctionType *ftype = layout.active ? layout.type : function_type(*acc.fn, node.file_id);
             function = llvm::Function::Create(ftype, form.linkage, form.name, module_);
             function->setCallingConv(llvm::CallingConv::C);
             if (layout.active) {
@@ -153,6 +166,11 @@ void CodeGen::declare_file(const PackageNode &node) {
         binding.decl = acc.fn;
         file.functions.emplace(name, binding);
     }
+}
+
+void CodeGen::declare_globals(const PackageNode &node) {
+    current_file_ = node.file_id;
+    FileSymbols &file = files_[node.file_id];
     for (const TopDecl &decl : node.unit.decls) {
         const auto *var = std::get_if<VarDecl>(&decl.data);
         // A generic template mentions its parameters. Each specialization is appended later.
@@ -172,10 +190,18 @@ void CodeGen::declare_file(const PackageNode &node) {
             file.globals.emplace(key, binding);
             continue;
         }
-        const SymbolForm form =
-            symbol_form(node, key, var->is_extern, var->extern_c, var->is_static, var->exported, false);
+        const SymbolForm form = symbol_form(node, key, var->is_extern, var->extern_c, var->is_static, var->exported,
+                                            false, var->link_name);
         Lowered low;
-        if (var->inferred) {
+        if (var->inferred && var->init != nullptr && std::holds_alternative<Expr::String>(var->init->data)) {
+            // `var text = "hi"` and `const label = "hi"` are `[]const u8`.
+            low.is_slice = true;
+            low.array_len = -1;
+            low.elem_bits = 8;
+            low.elem_unsigned = true;
+            low.elem_char = true;
+            low.type = slice_type();
+        } else if (var->inferred) {
             if (var->init == nullptr || !infer_global(node.file_id, *var->init, low)) {
                 error(var->loc, "type mismatch");
                 low = lower(node.file_id, "i32", "", false, 0, false, 0, false);
@@ -184,7 +210,16 @@ void CodeGen::declare_file(const PackageNode &node) {
             low = lower_declared(node.file_id, *var);
         }
         llvm::Type *ty = stored_type(low);
-        llvm::GlobalVariable *existing = var->is_extern ? module_.getGlobalVariable(form.name) : nullptr;
+        llvm::GlobalVariable *existing = nullptr;
+        if (var->is_extern) {
+            if (llvm::GlobalValue *named = module_.getNamedValue(form.name)) {
+                existing = llvm::dyn_cast<llvm::GlobalVariable>(named);
+                if (existing == nullptr || existing->getValueType() != ty) {
+                    error(var->loc, "redefinition");
+                    continue;
+                }
+            }
+        }
         llvm::GlobalVariable *global = existing;
         if (global == nullptr) {
             llvm::Constant *init = nullptr;
@@ -406,6 +441,9 @@ std::optional<CodeGen::FoldedNumber> CodeGen::fold_number(const Expr &expr, std:
         return FoldedNumber{parsed, true, true};
     }
     if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        if (unary->op == TokenKind::KwUnsafe && unary->expr != nullptr) {
+            return fold_number(*unary->expr, seen);
+        }
         if (unary->postfix || unary->expr == nullptr ||
             (unary->op != TokenKind::Plus && unary->op != TokenKind::Minus)) {
             return std::nullopt;
@@ -543,6 +581,9 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 if (node.postfix || node.expr == nullptr) {
                     return std::nullopt;
+                }
+                if (node.op == TokenKind::KwUnsafe) {
+                    return fold(*node.expr);
                 }
                 if (node.op == TokenKind::Bang) {
                     if (const auto inner = fold(*node.expr)) {
@@ -1265,6 +1306,14 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
 }
 
 llvm::Constant *CodeGen::constant_slice(const Expr &expr, std::unordered_set<std::string> &seen) {
+    if (const auto *text = std::get_if<Expr::String>(&expr.data)) {
+        llvm::Constant *data = llvm::ConstantDataArray::getString(context_, text->text, true);
+        auto *global = new llvm::GlobalVariable(module_, data->getType(), true, llvm::GlobalValue::PrivateLinkage, data,
+                                                ".str");
+        llvm::Constant *pointer = llvm::ConstantExpr::getInBoundsGetElementPtr(
+            data->getType(), global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
+        return llvm::ConstantStruct::get(slice_type(), {pointer, const_i32(static_cast<int32_t>(text->text.size()))});
+    }
     const auto *name = std::get_if<Expr::Name>(&expr.data);
     if (name == nullptr || !seen.insert(name->text).second) {
         return nullptr;
@@ -1316,6 +1365,17 @@ void CodeGen::apply_initializer(const VarDecl &var) {
     if (var.is_const_decl) {
         const auto found = file.globals.find(key);
         auto *global = found == file.globals.end() ? nullptr : llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value);
+        if (found != file.globals.end() && found->second.is_slice && var.init != nullptr && global != nullptr) {
+            std::unordered_set<std::string> seen;
+            llvm::Constant *packed = constant_slice(*var.init, seen);
+            if (packed == nullptr || packed->getType() != global->getValueType()) {
+                error(var.loc, "global initializer is not a constant");
+                return;
+            }
+            global->setInitializer(packed);
+            file.folded.insert(key);
+            return;
+        }
         llvm::Constant *value = var.init == nullptr || global == nullptr ? nullptr : const_initializer(*var.init, found->second);
         if (value == nullptr || value->getType() != global->getValueType()) {
             error(var.loc, "global initializer is not a constant");
@@ -1330,6 +1390,10 @@ void CodeGen::apply_initializer(const VarDecl &var) {
     }
     if (!var.init) {
         file.folded.insert(key);
+        return;
+    }
+    // A call is stored before main. The slot stays zero until that call runs.
+    if (var.runtime_init) {
         return;
     }
     const auto found_early = file.globals.find(key);
@@ -1744,7 +1808,13 @@ void CodeGen::emit_function(const FunctionDecl &fn) {
     if (found == files_.at(current_file_).functions.end() || found->second.is_generic || found->second.value == nullptr) {
         return;
     }
-    emit_function_body(fn, llvm::cast<llvm::Function>(found->second.value), found->second.depth);
+    auto *function = llvm::cast<llvm::Function>(found->second.value);
+    // Two TLC functions can share one object name. The second body would overwrite the first.
+    if (!fn.link_name.empty() && !function->isDeclaration()) {
+        error(fn.loc, "redefinition");
+        return;
+    }
+    emit_function_body(fn, function, found->second.depth);
 }
 
 llvm::FunctionType *CodeGen::function_type_with_captures(const FunctionDecl &fn) const {
@@ -2079,22 +2149,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             const int receiver_enum = enum_value_id(*selector->base);
             if (receiver_enum >= 0 && receiver_enum < static_cast<int>(enums_.size())) {
                 const std::string key = enums_[static_cast<std::size_t>(receiver_enum)].name + "." + selector->field;
-                const Binding *method = nullptr;
-                for (const uint32_t id : package_files(current_file_)) {
-                    const auto file = files_.find(id);
-                    if (file == files_.end()) {
-                        continue;
-                    }
-                    const auto found = file->second.functions.find(key);
-                    if (found == file->second.functions.end() || !found->second.is_function) {
-                        continue;
-                    }
-                    if (found->second.is_static && id != current_file_) {
-                        continue;
-                    }
-                    method = &found->second;
-                    break;
-                }
+                const Binding *method = method_binding(current_file_, selector->resolved_file, key);
                 if (method != nullptr && method->is_generic && method->decl != nullptr && !method->decl->static_method) {
                     const bool receiver_pointer =
                         !method->decl->params.empty() && method->decl->params.front().indirections > 0;
@@ -2164,22 +2219,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             }
             if (!selector->resolved_owner.empty()) {
                 const std::string key = selector->resolved_owner + "." + selector->field;
-                const Binding *method = nullptr;
-                for (const uint32_t id : package_files(current_file_)) {
-                    const auto file = files_.find(id);
-                    if (file == files_.end()) {
-                        continue;
-                    }
-                    const auto found = file->second.functions.find(key);
-                    if (found == file->second.functions.end() || !found->second.is_function) {
-                        continue;
-                    }
-                    if (found->second.is_static && id != current_file_) {
-                        continue;
-                    }
-                    method = &found->second;
-                    break;
-                }
+                const Binding *method = method_binding(current_file_, selector->resolved_file, key);
                 auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
                 if (function == nullptr || (method->decl != nullptr && method->decl->static_method)) {
                     error(node.loc, "type mismatch");
@@ -2280,21 +2320,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             const Binding *method = nullptr;
             if (struct_id >= 0 && struct_id < static_cast<int>(structs_.size())) {
                 const std::string key = structs_[static_cast<std::size_t>(struct_id)].name + "." + selector->field;
-                for (const uint32_t id : package_files(current_file_)) {
-                    const auto file = files_.find(id);
-                    if (file == files_.end()) {
-                        continue;
-                    }
-                    const auto found = file->second.functions.find(key);
-                    if (found == file->second.functions.end() || !found->second.is_function) {
-                        continue;
-                    }
-                    if (found->second.is_static && id != current_file_) {
-                        continue;
-                    }
-                    method = &found->second;
-                    break;
-                }
+                method = method_binding(current_file_, selector->resolved_file, key);
             }
             if (method != nullptr && method->is_generic && method->decl != nullptr && !method->decl->static_method) {
                 const bool receiver_pointer =
@@ -2475,6 +2501,10 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                                 : nullptr;
         llvm::Value *stored = adapt(value, param, node.loc);
         if (param == nullptr && function->isVarArg()) {
+            // A slice in a C variadic slot passes the address, not the header.
+            if (value.is_slice && stored != nullptr && stored->getType() == slice_type()) {
+                stored = builder_.CreateExtractValue(stored, 0);
+            }
             TypedValue widened = value;
             widened.value = stored;
             stored = variadic_arg(widened);
@@ -3192,10 +3222,12 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 Shape shape;
-                shape.depth = 1;
+                shape.is_slice = true;
+                shape.array_len = -1;
                 shape.elem_bits = 8;
                 shape.elem_unsigned = true;
-                shape.type = ptr_type();
+                shape.elem_char = true;
+                shape.type = slice_type();
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 if (node.postfix && node.op == TokenKind::Bang && node.expr) {
@@ -3305,6 +3337,9 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.elem_bits = low.elem_bits;
                 shape.elem_unsigned = low.elem_unsigned;
                 shape.struct_id = low.struct_id;
+                shape.is_slice = low.is_slice;
+                shape.array_len = low.is_slice ? -1 : low.array_len;
+                shape.is_array = low.is_array && !low.is_slice;
                 shape.type = low.depth == 0 && low.elem_void ? nullptr : low.type;
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
@@ -3544,6 +3579,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Char>) {
                 return {const_i32(static_cast<int32_t>(node.value & 0xFFULL)), 0};
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.op == TokenKind::KwUnsafe) {
+                    if (node.expr == nullptr) {
+                        return {zero(), 0};
+                    }
+                    return emit_rvalue(*node.expr);
+                }
                 if (node.op == TokenKind::Star) {
                     const TypedValue inner = emit_rvalue(*node.expr);
                     if (inner.depth <= 0 || inner.value == nullptr) {
@@ -3951,11 +3992,16 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 llvm::Constant *data = llvm::ConstantDataArray::getString(context_, node.text, true);
                 auto *global = new llvm::GlobalVariable(module_, data->getType(), true,
                                                         llvm::GlobalValue::PrivateLinkage, data, ".str");
+                // The value stays the address, so `*const u8` is still one `leaq`.
+                // `is_slice` tells a slice store to pack that address with the byte count.
                 TypedValue out;
                 out.value = global;
                 out.depth = 1;
                 out.elem_bits = 8;
                 out.elem_unsigned = true;
+                out.elem_char = true;
+                out.is_slice = true;
+                out.array_len = static_cast<int>(node.text.size());
                 return out;
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 if (node.end != nullptr) {
@@ -4137,6 +4183,22 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         value.elem_bits = enumeration.is_bool ? 0 : enumeration.bits;
                         return value;
                     }
+                }
+                // `string_view(text)` keeps the `{ ptr, len }` value. The alias is not an integer.
+                if (target.is_slice) {
+                    TypedValue value;
+                    value.value = as_slice_value(source, node.loc);
+                    value.is_slice = true;
+                    value.array_len = -1;
+                    value.depth = target.depth;
+                    value.elem_char = target.elem_char;
+                    value.elem_void = target.elem_void;
+                    value.elem_bool = target.elem_bool;
+                    value.elem_bits = target.elem_bits;
+                    value.elem_unsigned = target.elem_unsigned;
+                    value.elem_float = target.elem_float;
+                    value.struct_id = target.struct_id;
+                    return value;
                 }
                 if (target.depth > 0 && source.depth > 0) {
                     return {source.value, target.depth, target.elem_char, target.struct_id, false, target.elem_void,
@@ -4597,7 +4659,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.value = slot;
             binding.is_slice = true;
             binding.array_len = -1;
-            binding.depth = got.depth;
+            // A string literal is still a pointer here. The slice element is what that pointer addresses.
+            binding.depth = got.value != nullptr && got.value->getType() != slice_type() && got.depth > 0 ? got.depth - 1
+                                                                                                          : got.depth;
             binding.elem_char = got.elem_char;
             binding.struct_id = got.struct_id;
             binding.elem_void = got.elem_void;
@@ -5365,6 +5429,166 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
         stmt.data);
 }
 
+void CodeGen::emit_dynamic_inits() {
+    if (graph_ == nullptr) {
+        return;
+    }
+    struct FileOrder {
+        const PackageNode *node = nullptr;
+        int depth = 0;
+    };
+    // A cycle stores 0 and stops. The walk then numbers the chain from the importer.
+    std::unordered_map<uint32_t, int> memo;
+    auto depth_of = [&](uint32_t id) -> int {
+        const uint32_t start = id;
+        std::vector<uint32_t> chain;
+        while (!memo.contains(id)) {
+            const PackageNode *node = find_node(id);
+            if (node == nullptr || node->imported_from == 0) {
+                memo.emplace(id, 0);
+                break;
+            }
+            memo.emplace(id, 0);
+            chain.push_back(id);
+            id = node->imported_from;
+        }
+        int depth = memo[id];
+        for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+            depth += 1;
+            memo[*it] = depth;
+        }
+        return memo[start];
+    };
+    std::vector<FileOrder> order;
+    for (const PackageNode &node : graph_->nodes) {
+        bool runtime = false;
+        for (const TopDecl &decl : node.unit.decls) {
+            const auto *var = std::get_if<VarDecl>(&decl.data);
+            if (var != nullptr && var->runtime_init && var->init != nullptr && var->owner_params.empty()) {
+                runtime = true;
+                break;
+            }
+        }
+        if (runtime) {
+            order.push_back(FileOrder{&node, depth_of(node.file_id)});
+        }
+    }
+    if (order.empty()) {
+        return;
+    }
+    // An imported package runs before the file that imports it. One package runs in path order.
+    std::stable_sort(order.begin(), order.end(), [](const FileOrder &left, const FileOrder &right) {
+        if (left.depth != right.depth) {
+            return left.depth > right.depth;
+        }
+        return left.node->path < right.node->path;
+    });
+
+    const bool saved_many = return_many_;
+    const bool saved_share = share_function_scope_;
+    const bool saved_extern = extern_struct_ret_;
+    const bool saved_sret = extern_sret_;
+    llvm::Value *saved_sret_ptr = extern_sret_ptr_;
+    const CAbi saved_abi = extern_ret_abi_;
+    llvm::Type *saved_struct = extern_ret_struct_;
+    const std::string saved_trace = trace_name_;
+    const uint32_t saved_file = current_file_;
+    llvm::Function *saved_function = function_;
+    llvm::Type *saved_return = return_type_;
+    const int saved_depth = return_depth_;
+
+    auto *type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), false);
+    auto *init = llvm::Function::Create(type, llvm::GlobalValue::InternalLinkage, "tlc.init", module_);
+    init->setCallingConv(llvm::CallingConv::C);
+    function_ = init;
+    return_type_ = init->getReturnType();
+    return_depth_ = 0;
+    return_many_ = false;
+    share_function_scope_ = true;
+    extern_struct_ret_ = false;
+    extern_sret_ = false;
+    extern_sret_ptr_ = nullptr;
+    extern_ret_abi_ = {};
+    extern_ret_struct_ = nullptr;
+    llvm::BasicBlock *entry = llvm::BasicBlock::Create(context_, "entry", init);
+    builder_.SetInsertPoint(entry);
+
+    for (const FileOrder &item : order) {
+        if (terminated()) {
+            break;
+        }
+        current_file_ = item.node->file_id;
+        packages_.clear();
+        push();
+        bind_package_globals();
+        bind_imports(*item.node);
+        for (const TopDecl &decl : item.node->unit.decls) {
+            if (terminated()) {
+                break;
+            }
+            const auto *var = std::get_if<VarDecl>(&decl.data);
+            if (var == nullptr || !var->runtime_init || var->init == nullptr || var->name.empty() ||
+                !var->owner_params.empty()) {
+                continue;
+            }
+            const auto file = files_.find(current_file_);
+            if (file == files_.end()) {
+                continue;
+            }
+            const auto found = file->second.globals.find(global_key(*var));
+            if (found == file->second.globals.end() || found->second.value == nullptr) {
+                continue;
+            }
+            trace_name_ = var->name;
+            set_loc(var->loc);
+            const TypedValue value = emit_rvalue(*var->init);
+            if (terminated() || value.value == nullptr) {
+                continue;
+            }
+            llvm::Value *dest = found->second.value;
+            if (found->second.is_slice) {
+                llvm::Value *stored = as_slice_value(value, var->loc);
+                if (!terminated() && stored != nullptr) {
+                    builder_.CreateStore(stored, dest);
+                }
+            } else {
+                llvm::Type *slot = object_type(dest);
+                llvm::Value *stored = slot == nullptr ? nullptr : as_stored(value.value, value.depth, slot, value.elem_unsigned);
+                if (stored == nullptr || slot == nullptr || stored->getType() != slot) {
+                    error(var->loc, "type mismatch");
+                } else if (!terminated()) {
+                    builder_.CreateStore(stored, dest);
+                }
+            }
+        }
+        pop();
+    }
+    if (!terminated()) {
+        builder_.CreateRetVoid();
+    }
+
+    auto *ctor_ty = llvm::StructType::get(context_, {i32(), ptr_type(), ptr_type()});
+    auto *array_ty = llvm::ArrayType::get(ctor_ty, 1);
+    llvm::Constant *fields[3] = {const_i32(65535), init, llvm::ConstantPointerNull::get(ptr_type())};
+    llvm::Constant *ctor = llvm::ConstantStruct::get(ctor_ty, fields);
+    new llvm::GlobalVariable(module_, array_ty, false, llvm::GlobalValue::AppendingLinkage,
+                             llvm::ConstantArray::get(array_ty, {ctor}), "llvm.global_ctors");
+
+    function_ = saved_function;
+    return_type_ = saved_return;
+    return_depth_ = saved_depth;
+    return_many_ = saved_many;
+    share_function_scope_ = saved_share;
+    extern_struct_ret_ = saved_extern;
+    extern_sret_ = saved_sret;
+    extern_sret_ptr_ = saved_sret_ptr;
+    extern_ret_abi_ = saved_abi;
+    extern_ret_struct_ = saved_struct;
+    trace_name_ = saved_trace;
+    current_file_ = saved_file;
+    packages_.clear();
+}
+
 void CodeGen::emit(const PackageGraph &graph) {
     if (graph.nodes.empty()) {
         return;
@@ -5378,7 +5602,10 @@ void CodeGen::emit(const PackageGraph &graph) {
     prepare_structs();
     prepare_traits();
     for (const PackageNode &node : graph.nodes) {
-        declare_file(node);
+        declare_functions(node);
+    }
+    for (const PackageNode &node : graph.nodes) {
+        declare_globals(node);
     }
     for (const PackageNode &node : graph.nodes) {
         current_file_ = node.file_id;
@@ -5391,6 +5618,7 @@ void CodeGen::emit(const PackageGraph &graph) {
     for (const PackageNode &node : graph.nodes) {
         emit_bodies(node);
     }
+    emit_dynamic_inits();
     emit_builtin_trace();
     emit_builtin_panic();
     if (testing_) {
@@ -5679,12 +5907,28 @@ void CodeGen::abort_now() {
     builder_.CreateUnreachable();
 }
 
-void CodeGen::abort_out_of_memory() {
-    auto *print_type = llvm::FunctionType::get(i32(), {i32(), ptr_type()}, true);
-    llvm::FunctionCallee print = module_.getOrInsertFunction("dprintf", print_type);
-    builder_.CreateCall(print_type, print.getCallee(),
-                        {const_i32(2), builder_.CreateGlobalString("panic: out of memory\n")});
-    abort_now();
+llvm::Function *CodeGen::panic_function() {
+    if (llvm::Function *existing = builtin_function("panic")) {
+        return existing;
+    }
+    if (llvm::Function *internal = module_.getFunction("tlc.panic")) {
+        return internal;
+    }
+    auto *type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), {ptr_type()}, false);
+    return llvm::Function::Create(type, llvm::Function::InternalLinkage, "tlc.panic", module_);
+}
+
+void CodeGen::abort_out_of_memory(SourceLoc loc) {
+    llvm::Function *panic = panic_function();
+    if (panic == nullptr) {
+        abort_now();
+        return;
+    }
+    // The frame stays. panic does not return.
+    push_trace(loc);
+    llvm::CallInst *call = builder_.CreateCall(panic, {builder_.CreateGlobalString("out of memory")});
+    call->setCallingConv(llvm::CallingConv::C);
+    builder_.CreateUnreachable();
 }
 
 llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, llvm::Value *bytes, uint64_t align) {
@@ -5927,7 +6171,7 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     llvm::BasicBlock *ok = llvm::BasicBlock::Create(context_, "new.ok", function_);
     builder_.CreateCondBr(builder_.CreateICmpEQ(raw, null_ptr()), oom, ok);
     builder_.SetInsertPoint(oom);
-    abort_out_of_memory();
+    abort_out_of_memory(node.loc);
     builder_.SetInsertPoint(ok);
     // The block is not zeroed. Named fields and element values are written below.
     if (buffer && node.init != nullptr) {
@@ -5989,6 +6233,9 @@ void CodeGen::emit_delete(const Expr::Delete &node) {
 
 void CodeGen::emit_builtin_panic() {
     llvm::Function *function = builtin_function("panic");
+    if (function == nullptr) {
+        function = module_.getFunction("tlc.panic");
+    }
     if (function == nullptr || !function->empty() || function->arg_empty()) {
         return;
     }

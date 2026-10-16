@@ -20,6 +20,7 @@ const origin Point = {.x = 20, .y = 2};
 func main() i32 {
     var live Point;
     live.x = 9;
+    live.y = 0;
     const p = &live;
     p.bump();
     const frozen = live;

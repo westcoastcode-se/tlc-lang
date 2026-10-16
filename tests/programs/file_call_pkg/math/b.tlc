@@ -1,0 +1,7 @@
+package math;
+
+func grow() i32 {
+    return ready + 1;
+}
+
+export var grown = grow();

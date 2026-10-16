@@ -79,7 +79,11 @@ int run_abi_tests() {
                "union BigU make_bigu(int n) { union BigU u; u.n = n; return u; }\n"
                "int bigu_n(union BigU u) { return u.n; }\n"
                "union Hold { struct Pair p; int n; };\n"
-               "int hold_a(union Hold h) { return h.p.a; }\n");
+               "int hold_a(union Hold h) { return h.p.a; }\n"
+               "int real_add(int a, int b) { return a + b; }\n"
+               "int lib_errno = 7;\n"
+               "int renamed_add(int a, int b);\n"
+               "int call_renamed(void) { return renamed_add(6, 9); }\n");
     write_file("main.tlc",
                "extern(abi=\"c\") type Pair struct { a i32; b i32; };\n"
                "extern(abi=\"c\") type Tri struct { a i32; b i32; c i32; };\n"
@@ -120,6 +124,12 @@ int run_abi_tests() {
                "extern(abi=\"c\") type Hold union { p Pair; n i32; }\n"
                "extern(abi=\"c\") func hold_a(h Hold) i32;\n"
                "extern(abi=\"c\") func add_pair(p Pair) i32 { return p.a + p.b; }\n"
+               "extern(abi=\"c\", name=\"real_add\") func add(a i32, b i32) i32;\n"
+               "extern(abi=\"c\", name=\"lib_errno\") var last_error i32;\n"
+               "extern(abi=\"c\", name=\"renamed_add\") func renamed(a i32, b i32) i32 {\n"
+               "    return a + b;\n"
+               "}\n"
+               "extern(abi=\"c\") func call_renamed() i32;\n"
                "extern(abi=\"c\") func make_from_tlc(a i32, b i32) Pair {\n"
                "    var p Pair;\n"
                "    p.a = a;\n"
@@ -156,6 +166,7 @@ int run_abi_tests() {
                "    hold.p.a = 20;\n"
                "    hold.p.b = 22;\n"
                "    if (hold.n != 20 || hold_a(hold) != 20) { return 14; }\n"
+               "    if (add(6, 9) != 15 || last_error != 7 || call_renamed() != 15) { return 15; }\n"
                "    return 42;\n"
                "}\n");
 

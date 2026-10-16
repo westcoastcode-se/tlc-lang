@@ -40,6 +40,8 @@ struct TypeArg {
     uint32_t optional = 0;
     uint32_t const_pointee = 0;
     bool is_array = false;
+    // `[]const u8`. The element type is const.
+    bool elem_const = false;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> args;
@@ -110,6 +112,8 @@ struct Expr {
         std::vector<TypeArg> type_args;
         // Concrete owner after checking: `Entity` or `Box.spec.i32`.
         mutable std::string resolved_owner;
+        // File that defines the method. Zero when the call is in that method's package.
+        mutable uint32_t resolved_file = 0;
         // `slice.len`. The length is `i32` and is not a field of a struct.
         mutable bool slice_len = false;
     };
@@ -141,6 +145,8 @@ struct Expr {
         // Bit 0 is the outermost `*`. A set bit means that pointer's pointee is `const`.
         uint32_t const_pointee = 0;
         bool is_array = false;
+        // `[]const u8`. The element type is const.
+        bool elem_const = false;
         int array_len = 0;
         std::unique_ptr<Expr> expr;
     };
@@ -155,6 +161,8 @@ struct Expr {
         uint32_t optional = 0;
         uint32_t const_pointee = 0;
         bool is_array = false;
+        // `[]const u8`. The element type is const.
+        bool elem_const = false;
         int array_len = 0;
         std::unique_ptr<Expr> expr;
         // Filled while checking. Codegen interns this spelling, so equal types share one value.
@@ -273,7 +281,7 @@ struct Expr {
         // File and struct name of a custom allocator. Empty when `builtin_alloc` is set.
         mutable uint32_t alloc_file = 0;
         mutable std::string alloc_name;
-        // The allocator expression is already a pointer. A struct lvalue is passed by address.
+        // The allocator expression is a pointer. A struct value is rejected.
         mutable bool alloc_is_pointer = false;
     };
     // `delete p` and `delete(allocator) p`.
@@ -311,6 +319,8 @@ struct FieldDecl {
     uint32_t optional = 0;
     uint32_t const_pointee = 0;
     bool is_array = false;
+    // `[]const u8`. The element type is const.
+    bool elem_const = false;
     int array_len = 0;
     // `[N]int` when N is a name. Folded into `array_len` before code generation.
     std::string array_len_name;
@@ -377,6 +387,8 @@ struct TypedefDecl {
     uint32_t optional = 0;
     uint32_t const_pointee = 0;
     bool is_array = false;
+    // `[]const u8`. The element type is const.
+    bool elem_const = false;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -401,6 +413,8 @@ struct VarDecl {
     uint32_t optional = 0;
     uint32_t const_pointee = 0;
     bool is_array = false;
+    // `[]const u8`. The element type is const.
+    bool elem_const = false;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -419,6 +433,8 @@ struct VarDecl {
     bool is_extern = false;
     // `extern(abi="c")` is a C symbol. Plain `extern` is a tlc library symbol.
     bool extern_c = false;
+    // `extern(..., name="symbol")`. Empty keeps the usual object name.
+    std::string link_name;
     // `name := expr` at file scope. The type comes from the initializer.
     bool inferred = false;
     // File-scope `const name = expr` or `const name Type = expr`.
@@ -426,6 +442,8 @@ struct VarDecl {
     bool is_const_decl = false;
     bool has_const = false;
     int const_value = 0;
+    // File-scope `var` whose initializer is a call. The call runs before `main`.
+    bool runtime_init = false;
     // `var Entity::next`. Empty for an ordinary variable. The variable is not a field.
     std::string owner;
     // Names in `var Box[T]::extra` or `var Buf[N, T]::count`. Empty on `var Entity::next`.
@@ -535,6 +553,8 @@ struct ResultSlot {
     uint32_t optional = 0;
     uint32_t const_pointee = 0;
     bool is_array = false;
+    // `[]const u8`. The element type is const.
+    bool elem_const = false;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -558,6 +578,8 @@ struct Param {
     uint32_t optional = 0;
     uint32_t const_pointee = 0;
     bool is_array = false;
+    // `[]const u8`. The element type is const.
+    bool elem_const = false;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -595,10 +617,14 @@ struct FunctionDecl {
     std::vector<Param> params;
     std::unique_ptr<Stmt> body;
     bool exported = false;
+    // The body is an unsafe context. A call must be written `unsafe name(...)`.
+    bool unsafe = false;
     bool is_static = false;
     bool is_extern = false;
-    // `extern(abi="c")` uses the C ABI and the C symbol name.
+    // `extern(abi="c")` uses the C ABI. The object name is `link_name` when that is set.
     bool extern_c = false;
+    // `extern(..., name="symbol")`. Empty keeps the C name, or `qualifier.name` for tlc.
+    std::string link_name;
     bool variadic = false;
     std::string method_struct;
     // A function on the struct with no `this` parameter. Called as `Type.name(...)`.

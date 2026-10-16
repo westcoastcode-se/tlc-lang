@@ -1,0 +1,12 @@
+type Row []i32;
+
+func Row::first(self this) i32 {
+    return self[0];
+}
+
+func main() i32 {
+    var row = [_]i32{40, 2};
+    var plain []i32 = row;
+    var view Row = plain;
+    return view.first();
+}

@@ -19,7 +19,7 @@ func main() i32 {
 }
 ```
 
-The array becomes a pointer when it is passed. A string is `*const u8` and can be passed to `*const u8`. It cannot be passed to `*u8`. The index has type `i32`. `new [n]i32` reserves `n` elements and yields `*i32`. `buf[i] = 1` writes an element. `new [n]Point{{.x = 1}...}` stores that value in every element. `new [_]Point{{.x = 1}, {.y = 2}}` is `*[2]Point`. See [Builtin](../builtin/allocator.md).
+The array becomes a pointer when it is passed. A string literal is `[]const u8`. It can be passed to `[]const u8` and to `*const u8`. It cannot be passed to `*u8` or `[]u8`. The index has type `i32`. `new [n]i32` reserves `n` elements and yields `*i32`. `buf[i] = 1` writes an element. `new [n]Point{{.x = 1}...}` stores that value in every element. `new [_]Point{{.x = 1}, {.y = 2}}` is `*[2]Point`. See [Builtin](../builtin/allocator.md).
 
 `[]T` is a readonly slice of an array. `var v []i32 = row` takes a slice of `[N]i32`. `row[i:j]` takes the elements from `i` up to, but not including, `j`, and so does `v[i:j]`. `v[i]` reads an element, and `v[i] = 1` is reported as `type mismatch`. `v.len` is `i32`. `sizeof([]T)` is 16. A slice parameter stays a slice. The pointer from an array parameter is not a slice.
 

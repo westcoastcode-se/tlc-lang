@@ -523,6 +523,42 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "extern(abi=\"c\", name=\"printf\") func print(fmt *const u8, ...) i32;\n"
+            "extern(name=\"printf\", abi=\"c\") func show(fmt *const u8, ...) i32;\n"
+            "extern(name=\"other.add\") func add(a i32, b i32) i32;\n"
+            "extern(abi=\"c\", name=\"errno\") var last_error i32;\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn print (params (fmt const u8*) ...) i32 extern(abi=\"c\", name=\"printf\")\n");
+        EXPECT_HAS(check, parsed.dump, "(fn show (params (fmt const u8*) ...) i32 extern(abi=\"c\", name=\"printf\")\n");
+        EXPECT_HAS(check, parsed.dump, "(fn add (params (a i32) (b i32)) i32 extern(name=\"other.add\")\n");
+        EXPECT_HAS(check, parsed.dump, "(var last_error i32 extern(abi=\"c\", name=\"errno\"))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("extern(name=\"\") func missing() i32;\n");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+    }
+
+    {
+        const Parsed parsed = parse_source("extern(name=\"a\", name=\"b\") func clash() i32;\n");
+        EXPECT_HAS(check, parsed.errors, "redefinition");
+        EXPECT_HAS(check, parsed.dump, "extern(name=\"a\")\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("extern() func f() i32;\n");
+        EXPECT_HAS(check, parsed.errors, "expected 'abi'");
+    }
+
+    {
+        const Parsed parsed = parse_source("extern(name=\"Handle\") type Handle struct { n i32; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.dump, "(struct Handle extern\n");
+        EXPECT(check, parsed.dump.find("name=") == std::string::npos);
+    }
+
+    {
         const Parsed parsed = parse_source("var x const i32;\n"
 "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");

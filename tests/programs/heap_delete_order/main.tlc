@@ -38,7 +38,7 @@ func touch_ptr(p *Point) *Point {
 
 func main() i32 {
     var arena Arena;
-    var p *Point = new(arena) Point;
+    var p *Point = new(&arena) Point;
     p.x = 1;
     var kept i32 = p.x;
     delete(touch_alloc(&arena)) touch_ptr(p);

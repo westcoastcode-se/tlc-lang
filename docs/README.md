@@ -58,6 +58,7 @@ Each feature page ends with the instructions that feature runs. [Cost](cost.md) 
 - [Conditions](expressions/condition.md)
 - [Type values](expressions/type.md)
 - [Casts](expressions/cast.md)
+- [Unsafe](expressions/unsafe.md)
 - [Tuples and lists](expressions/tuple.md)
 
 ### Statements
@@ -98,6 +99,10 @@ Each feature page ends with the instructions that feature runs. [Cost](cost.md) 
 - [`va`](builtin/va.md)
 - [`panic`](builtin/panic.md)
 - [`builtin/env/consts`](builtin/family.md)
+
+### Standard library
+
+- [`string`](std/string.md)
 
 ## Grammar
 

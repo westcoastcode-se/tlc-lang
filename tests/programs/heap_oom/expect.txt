@@ -1,0 +1,3 @@
+exit: 128
+stderr: panic: out of memory
+main.tlc:23:18: main

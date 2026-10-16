@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Narrowing](narrowing.md) · [Next: Type values](type.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A condition in `if`, `while`, `do`, and `for` is an integer after promotion. A pointer used as a condition is reported as `compare with null`. `switch` requires exactly `i32`.
+A condition in `if`, `while`, `do`, and `for` is an integer after promotion, or a `bool`. A pointer used as a condition is reported as `compare with null`. `switch` requires exactly `i32`.
 
 ```c
 func main() i32 {

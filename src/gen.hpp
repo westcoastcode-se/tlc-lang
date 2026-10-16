@@ -564,6 +564,10 @@ class CodeGen {
                 return aggregate;
             }
         }
+        // `[]const u8` passed where C asks for `*const u8` is the data address.
+        if (slot_type != nullptr && slot_type->isPointerTy() && value->getType() == slice_type()) {
+            return builder_.CreateExtractValue(value, 0);
+        }
         if (slot_type != nullptr && slot_type->isPointerTy() && from_depth == 0) {
             // A function designator is already a pointer. Its depth is the return depth, which is 0 for a scalar.
             if (value->getType()->isPointerTy()) {
@@ -801,7 +805,7 @@ class CodeGen {
     llvm::Type *aggregate_return(const FunctionDecl &fn, uint32_t file) const;
     const FunctionDecl *callee_decl(const Expr &callee) const;
     SymbolForm symbol_form(const PackageNode &node, const std::string &name, bool is_extern, bool extern_c,
-                           bool is_static, bool exported, bool entry_main) const;
+                           bool is_static, bool exported, bool entry_main, const std::string &link_name) const;
     const PackageNode *find_node(uint32_t file_id) const;
     std::vector<uint32_t> package_files(uint32_t file) const;
     const Binding *visible(uint32_t file, const std::string &name, bool function) const;
@@ -859,11 +863,19 @@ class CodeGen {
     bool unshadowed_type_name(const std::string &name) const;
     const Binding *function_binding(uint32_t file, const std::string &name) const;
     const Binding *static_method_binding(uint32_t file, const std::string &type, const std::string &field) const;
+    // A function in `home`'s package. A static function in another file of that package is skipped.
+    const Binding *function_named(uint32_t home, const std::string &key, uint32_t caller) const;
+    // A value method. A type defined in another package is found through `resolved_file`.
+    const Binding *method_binding(uint32_t caller, uint32_t resolved_file, const std::string &key) const;
     const Binding *function_designator(uint32_t file, const Expr &expr) const;
+    // Function or method a file-scope call initializer names. Null when it is not one.
+    const Binding *call_callee(uint32_t file, const Expr &callee) const;
     std::optional<Lowered> function_pointer_type(const Binding &fn) const;
     void describe_enum(const std::string &underlying, EnumLayout &layout) const;
     void note_enum(Alias &base, int id) const;
-    void declare_file(const PackageNode &node);
+    void declare_functions(const PackageNode &node);
+    void declare_globals(const PackageNode &node);
+    void emit_dynamic_inits();
     std::optional<int32_t> fold_global(uint32_t file, const std::string &name, bool allow_local_static = true) const;
     void bind_imports(const PackageNode &node);
     void emit_bodies(const PackageNode &node);
@@ -934,7 +946,8 @@ class CodeGen {
     llvm::Value *heap_alloc(const Expr::New &node, llvm::Value *receiver, llvm::Value *bytes, uint64_t align);
     void call_free(const Expr::Delete &node, llvm::Value *pointer, llvm::Value *receiver);
     void abort_now();
-    void abort_out_of_memory();
+    llvm::Function *panic_function();
+    void abort_out_of_memory(SourceLoc loc);
     // `base[low:high]`. The result is a slice header.
     TypedValue emit_range(const Expr::Index &node);
     // Load one field. A slice field is the header. An array field decays to a pointer.

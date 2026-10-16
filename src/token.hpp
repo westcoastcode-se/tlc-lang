@@ -67,6 +67,7 @@ enum class TokenKind {
     KwTypeofUnqual,
     KwUnion,
     KwUnsigned,
+    KwUnsafe,
     KwVar,
     KwVoid,
     KwVolatile,

@@ -1,0 +1,11 @@
+package math;
+
+export type Point struct { export x i32; export y i32; };
+
+export func Point::sum(self this) i32 {
+    return self.x + self.y;
+}
+
+func Point::hidden(self this) i32 {
+    return self.x;
+}

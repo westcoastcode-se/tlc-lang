@@ -70,7 +70,7 @@ func fresh[T type]() *T {
 
 func main() i32 {
     var arena Arena;
-    var p *Point = new(arena) Point{.x = mark(), .y = 2};
+    var p *Point = new(&arena) Point{.x = mark(), .y = 2};
     if (order != 12 || p.x != 20 || p.y != 2) {
         return 1;
     }
@@ -100,7 +100,7 @@ func main() i32 {
         return 7;
     }
     var sum i32 = p.x + p.y + o.inner.n + s.x + g.x;
-    delete(arena) p;
+    delete(&arena) p;
     delete o;
     delete s;
     delete g;

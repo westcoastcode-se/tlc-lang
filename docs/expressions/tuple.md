@@ -1,6 +1,6 @@
 # Tuples and lists
 
-[Index](../README.md) · [Previous: Casts](cast.md) · [Next: Statements](../statements/block.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Unsafe](unsafe.md) · [Next: Statements](../statements/block.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
 `(40, 2)` is a tuple. The element types are the types of the values before promotion, so `(40, 'a')` is `i32` and `u8`. `(40)` is the value `40`. `var value = (40, 2)` and `value := (40, 2)` each bind that tuple. `var value1, value2 = value` and `a, b := value` unpack it, one name per element. `var value1, value2 = (40, 2)` unpacks the literal the same way. The number of names matches the tuple. A different count is reported as `type mismatch`. `value[0]` reads one element. The index is a constant.
 
@@ -34,4 +34,4 @@ Unpacking two `i32` results from a call stores both return registers. After `pai
 
 An array brace list stores one immediate per element, after a zero store per element. A slice built from that array is the header cost on [Slices](../types/slice.md).
 
-[Index](../README.md) · [Previous: Casts](cast.md) · [Next: Statements](../statements/block.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Unsafe](unsafe.md) · [Next: Statements](../statements/block.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

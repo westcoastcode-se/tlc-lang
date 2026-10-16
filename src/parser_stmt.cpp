@@ -7,6 +7,10 @@
 namespace tlc {
 
 std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
+    if (unsupported_unsafe_decl()) {
+        reject_unsupported_unsafe();
+        return make_stmt(Stmt::Expression{});
+    }
     const std::size_t marker = pos_;
     while (check(TokenKind::KwExport) || check(TokenKind::KwExtern)) {
         if (eat(TokenKind::KwExtern)) {
@@ -60,7 +64,8 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
             if (check(TokenKind::KwExtern)) {
                 bool ignored_extern = false;
                 bool ignored_c = false;
-                take_extern(ignored_extern, ignored_c);
+                std::string ignored_name;
+                take_extern(ignored_extern, ignored_c, ignored_name);
                 continue;
             }
             ++pos_;
@@ -73,18 +78,24 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         parse_func_vars(decl.vars, false, false, false, false);
         return make_stmt(std::move(decl));
     }
-    if (check(TokenKind::KwFunc)) {
+    if (check(TokenKind::KwFunc) || starts_unsafe_func()) {
         pos_ = marker;
         bool exported = false;
         bool is_extern = false;
         bool extern_c = false;
+        std::string link_name;
+        bool unsafe_fn = false;
         const SourceLoc storage_loc = peek().loc;
         while (true) {
             if (eat(TokenKind::KwExport)) {
                 exported = true;
                 continue;
             }
-            if (take_extern(is_extern, extern_c)) {
+            if (take_extern(is_extern, extern_c, link_name)) {
+                continue;
+            }
+            if (eat(TokenKind::KwUnsafe)) {
+                unsafe_fn = true;
                 continue;
             }
             break;
@@ -92,7 +103,8 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         if (exported || is_extern) {
             diags_.error(storage_loc, "not supported yet");
         }
-        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true);
+        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true, std::move(link_name));
+        fn.unsafe = unsafe_fn;
         if (!fn.method_struct.empty()) {
             diags_.error(fn.loc, "not supported yet");
         }
@@ -152,6 +164,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         var.is_static = specs.is_static;
         var.is_extern = specs.is_extern;
         var.extern_c = specs.extern_c;
+        var.link_name = specs.link_name;
         if (eat(TokenKind::Eq)) {
             var.init = parse_assignment();
         }
@@ -435,6 +448,7 @@ VarDecl Parser::parse_const_decl(bool exported) {
     var.optional = type.optional;
     var.const_pointee = type.const_pointee;
     var.is_array = type.is_array;
+    var.elem_const = type.elem_const;
     var.array_len = type.array_len;
     var.array_len_name = type.array_len_name;
     var.type_args = type.type_args;
@@ -454,13 +468,14 @@ VarDecl Parser::parse_const_decl(bool exported) {
 }
 
 VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c,
-                                bool allow_bare_inferred) {
+                                bool allow_bare_inferred, std::string link_name) {
     VarDecl var;
     var.loc = peek().loc;
     var.exported = exported;
     var.is_static = is_static;
     var.is_extern = is_extern;
     var.extern_c = extern_c;
+    var.link_name = std::move(link_name);
     expect(TokenKind::KwVar, "expected 'var'");
     if (check(TokenKind::Identifier)) {
         var.name = peek().text;
@@ -491,6 +506,7 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     var.optional = type.optional;
     var.const_pointee = type.const_pointee;
     var.is_array = type.is_array;
+    var.elem_const = type.elem_const;
     var.array_len = type.array_len;
     var.array_len_name = type.array_len_name;
     var.type_args = type.type_args;
@@ -601,6 +617,7 @@ std::unique_ptr<Stmt> Parser::parse_const_local() {
     var.optional = type.optional;
     var.const_pointee = type.const_pointee;
     var.is_array = type.is_array;
+    var.elem_const = type.elem_const;
     var.array_len = type.array_len;
     var.array_len_name = type.array_len_name;
     var.type_args = type.type_args;

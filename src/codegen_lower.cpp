@@ -414,7 +414,9 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
             note_enum(base, imported);
             have = true;
         } else {
-            // A method receiver is marked as a struct. A primitive alias such as `type Integer i32` is not one.
+            // A method receiver is marked as a struct. A primitive alias such as `type Integer i32`,
+            // and a slice alias such as `type string_view []const u8`, are not structs. A sized-array
+            // alias has `is_array` set and stays out.
             const auto scalar = [](const Alias &alias) {
                 return alias.depth == 0 && !alias.is_array && alias.struct_id < 0 && alias.fn_ty == nullptr &&
                        !alias.elem_void;
@@ -758,13 +760,17 @@ llvm::Value *CodeGen::as_slice_value(const TypedValue &value, SourceLoc loc) {
             auto *array = llvm::cast<llvm::ArrayType>(object);
             llvm::Value *data =
                 builder_.CreateInBoundsGEP(object, value.value, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(0)});
-            const int len = value.array_len > 0 ? value.array_len : static_cast<int>(array->getNumElements());
+            // A string literal sets `array_len` to the bytes, which is 0 for `""`.
+            const int len = value.array_len > 0 || (value.is_slice && value.array_len >= 0)
+                                ? value.array_len
+                                : static_cast<int>(array->getNumElements());
             llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_ty);
             packed = builder_.CreateInsertValue(packed, data, 0);
             packed = builder_.CreateInsertValue(packed, const_i32(len), 1);
             return packed;
         }
-        if (value.array_len > 0 && value.value->getType()->isPointerTy()) {
+        if ((value.array_len > 0 || (value.is_slice && value.array_len >= 0)) &&
+            value.value->getType()->isPointerTy()) {
             llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_ty);
             packed = builder_.CreateInsertValue(packed, value.value, 0);
             packed = builder_.CreateInsertValue(packed, const_i32(value.array_len), 1);
@@ -1388,8 +1394,15 @@ llvm::Constant *CodeGen::enum_constant(int enum_id, int64_t value) const {
 }
 
 CodeGen::SymbolForm CodeGen::symbol_form(const PackageNode &node, const std::string &name, bool is_extern,
-                                          bool extern_c, bool is_static, bool exported, bool entry_main) const {
+                                          bool extern_c, bool is_static, bool exported, bool entry_main,
+                                          const std::string &link_name) const {
     SymbolForm form;
+    // `name="symbol"` is the exact object name. The identifier in the program is unchanged.
+    if (!link_name.empty()) {
+        form.name = link_name;
+        form.linkage = llvm::GlobalValue::ExternalLinkage;
+        return form;
+    }
     // A C library symbol keeps the name the C object file exports.
     if (extern_c) {
         form.name = name;
@@ -1488,6 +1501,138 @@ const Binding *CodeGen::static_method_binding(uint32_t file, const std::string &
             return nullptr;
         }
         return &found->second;
+    }
+    return nullptr;
+}
+
+const Binding *CodeGen::function_named(uint32_t home, const std::string &key, uint32_t caller) const {
+    if (home == 0 || key.empty()) {
+        return nullptr;
+    }
+    for (const uint32_t id : package_files(home)) {
+        const auto found_file = files_.find(id);
+        if (found_file == files_.end()) {
+            continue;
+        }
+        const auto found = found_file->second.functions.find(key);
+        if (found == found_file->second.functions.end() || !found->second.is_function) {
+            continue;
+        }
+        if (found->second.is_static && id != caller) {
+            continue;
+        }
+        return &found->second;
+    }
+    return nullptr;
+}
+
+const Binding *CodeGen::method_binding(uint32_t caller, uint32_t resolved_file, const std::string &key) const {
+    auto defined_here = [&](uint32_t file) {
+        if (file == 0 || resolved_file == 0) {
+            return false;
+        }
+        for (const uint32_t id : package_files(file)) {
+            if (id == resolved_file) {
+                return true;
+            }
+        }
+        return false;
+    };
+    // A same-named method in the caller package belongs to a different type.
+    if (resolved_file != 0 && !defined_here(caller)) {
+        return function_named(resolved_file, key, caller);
+    }
+    const Binding *method = function_named(caller, key, caller);
+    if (method == nullptr && resolved_file != 0) {
+        return function_named(resolved_file, key, caller);
+    }
+    return method;
+}
+
+const Binding *CodeGen::call_callee(uint32_t file, const Expr &callee) const {
+    auto usable = [](const Binding *fn) {
+        return fn != nullptr && fn->is_function && !fn->is_generic && fn->decl != nullptr && fn->value != nullptr;
+    };
+    auto selective = [&](const std::string &name) -> const Binding * {
+        const PackageNode *node = find_node(file);
+        if (node == nullptr || graph_ == nullptr) {
+            return nullptr;
+        }
+        for (const ImportDecl &import : node->unit.imports) {
+            if (import.form != ImportDecl::Form::Selective) {
+                continue;
+            }
+            bool wanted = false;
+            for (const std::string &item : import.names) {
+                if (item == name) {
+                    wanted = true;
+                }
+            }
+            if (!wanted) {
+                continue;
+            }
+            const PackageNode *target = nullptr;
+            for (const ImportEdge &edge : graph_->edges) {
+                if (edge.from_file == file && edge.spec == import.path && edge.loc.file == import.loc.file &&
+                    edge.loc.offset == import.loc.offset) {
+                    target = find_node(edge.to_file);
+                    break;
+                }
+            }
+            if (target == nullptr) {
+                continue;
+            }
+            if (const Binding *fn = visible(target->file_id, name, true); usable(fn)) {
+                return fn;
+            }
+        }
+        return nullptr;
+    };
+    if (const auto *name = std::get_if<Expr::Name>(&callee.data)) {
+        if (const Binding *fn = function_binding(file, name->text); usable(fn)) {
+            return fn;
+        }
+        return selective(name->text);
+    }
+    const auto *selector = std::get_if<Expr::Selector>(&callee.data);
+    if (selector == nullptr || selector->base == nullptr) {
+        return nullptr;
+    }
+    if (!selector->resolved_owner.empty()) {
+        const std::string key = selector->resolved_owner + "." + selector->field;
+        if (const Binding *method = method_binding(file, selector->resolved_file, key); usable(method)) {
+            return method;
+        }
+    }
+    const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+    if (base == nullptr) {
+        return nullptr;
+    }
+    if (const uint32_t pkg = package_file(file, base->text); pkg != 0) {
+        if (const Binding *fn = visible(pkg, selector->field, true); usable(fn)) {
+            return fn;
+        }
+    }
+    if (const Binding *method = static_method_binding(file, base->text, selector->field); usable(method)) {
+        return method;
+    }
+    const Binding *receiver = nullptr;
+    if (const auto own = files_.find(file); own != files_.end()) {
+        const auto global = own->second.globals.find(base->text);
+        if (global != own->second.globals.end()) {
+            receiver = &global->second;
+        }
+    }
+    if (receiver == nullptr) {
+        receiver = visible(file, base->text, false);
+    }
+    if (receiver == nullptr || receiver->struct_id < 0 ||
+        static_cast<std::size_t>(receiver->struct_id) >= structs_.size()) {
+        return nullptr;
+    }
+    const std::string key = structs_[static_cast<std::size_t>(receiver->struct_id)].name + "." + selector->field;
+    if (const Binding *method = method_binding(file, selector->resolved_file, key); usable(method)) {
+        return method;
     }
     return nullptr;
 }
@@ -1692,7 +1837,9 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         }
         const FunctionDecl &fn = *binding.decl;
         if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
-            return std::nullopt;
+            const ResultSlot &slot = fn.results.front();
+            return lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
+                               slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results);
         }
         if (fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty()) {
             return std::nullopt;
@@ -1785,6 +1932,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     return lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, false, 0,
                                  false);
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    // `typeof(T).name()` is `*u8`.
                     if (item.type_name) {
                         Lowered low;
                         low.depth = 1;
@@ -1793,15 +1941,37 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                         low.type = ptr_type();
                         return low;
                     }
-                    const auto *name = item.callee == nullptr ? nullptr : std::get_if<Expr::Name>(&item.callee->data);
-                    if (name == nullptr) {
+                    if (item.callee == nullptr) {
                         return std::nullopt;
                     }
-                    const Binding *fn = find_function(name->text);
-                    if (fn == nullptr) {
+                    const Binding *fn = call_callee(file, *item.callee);
+                    if (fn != nullptr) {
+                        return function_result(*fn);
+                    }
+                    // `var n = fp()` when `fp` is a function pointer already declared in this file.
+                    const auto *named = std::get_if<Expr::Name>(&item.callee->data);
+                    if (named == nullptr) {
                         return std::nullopt;
                     }
-                    return function_result(*fn);
+                    const Binding *global = find_global(named->text);
+                    if (global == nullptr || global->fn_ty == nullptr || global->fn_results.size() > 1) {
+                        return std::nullopt;
+                    }
+                    llvm::Type *ret = global->fn_ty->getReturnType();
+                    if (ret == nullptr || ret->isVoidTy()) {
+                        return std::nullopt;
+                    }
+                    Lowered low;
+                    low.depth = global->fn_ret_depth;
+                    low.elem_float = global->fn_ret_float;
+                    low.elem_bits = global->fn_ret_bits;
+                    low.elem_unsigned = global->fn_ret_unsigned;
+                    low.elem_char = global->fn_ret_char;
+                    low.elem_bool = global->fn_ret_bool;
+                    low.struct_id = global->fn_ret_struct;
+                    low.type = ret;
+                    low.is_slice = ret == slice_type();
+                    return promote(low);
                 } else if constexpr (std::is_same_v<T, Expr::Init>) {
                     if (item.array_literal) {
                         // `var row = [_]i32{1, 2}` keeps the array. The elements are filled later.

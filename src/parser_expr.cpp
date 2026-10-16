@@ -631,6 +631,15 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
 
 std::unique_ptr<Expr> Parser::parse_unary() {
     const TokenKind kind = peek().kind;
+    if (kind == TokenKind::KwUnsafe) {
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        Expr::Unary node;
+        node.loc = loc;
+        node.op = TokenKind::KwUnsafe;
+        node.expr = parse_unary();
+        return make_expr(std::move(node));
+    }
     if (kind == TokenKind::KwNew || kind == TokenKind::KwDelete) {
         return parse_alloc();
     }
@@ -641,6 +650,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         // `sizeof(Point)` and `typeof(Point)`. `struct` is not a type spelling here.
         bool on_type = false;
         bool type_array = false;
+        bool type_elem_const = false;
         int type_array_len = 0;
         ParenType spelled;
         std::unique_ptr<Expr> expr;
@@ -676,6 +686,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             expect(TokenKind::RParen, "expected ')'");
             on_type = true;
             type_array = array.is_array;
+            type_elem_const = array.elem_const;
             type_array_len = array.array_len;
             spelled.name = array.type_name;
             spelled.package = array.type_package;
@@ -712,12 +723,14 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             Expr::Sizeof node;
             fill(node);
             node.is_array = type_array;
+            node.elem_const = type_elem_const;
             node.array_len = type_array_len;
             return make_expr(std::move(node));
         }
         Expr::Typeof node;
         fill(node);
         node.is_array = type_array;
+        node.elem_const = type_elem_const;
         node.array_len = type_array_len;
         return finish_postfix(make_expr(std::move(node)));
     }

@@ -38,20 +38,20 @@ declaration = function
             | test-decl ;
 ```
 
-`export` and `extern` may stand, in any order, in front of a function, a method, a variable, or a `type`. `export` may also stand in front of a file-scope `const`, in front of `const Type::name`, in front of `var Type::name`, in front of `var name = expr`, and in front of `name := expr`. `export const Type::name` publishes that constant, including on a generic struct. Another package reads `pkg.Type.name` or `pkg.Box[i32].name`. A `const` inside a struct is reported as `not supported yet`. `extern` on `const Type::name`, and `extern` on `var name = expr` or `name := expr`, are reported as `not supported yet`. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` means `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol.
+`unsafe` may stand with `export` and `extern`, in any order, in front of `func`. `unsafe func` makes the body an unsafe context. A call is `unsafe name(...)`. `export` and `extern` may stand, in any order, in front of a function, a method, a variable, or a `type`. `export` may also stand in front of a file-scope `const`, in front of `const Type::name`, in front of `var Type::name`, in front of `var name = expr`, and in front of `name := expr`. `export const Type::name` publishes that constant, including on a generic struct. Another package reads `pkg.Type.name` or `pkg.Box[i32].name`. A `const` inside a struct is reported as `not supported yet`. `extern` on `const Type::name`, and `extern` on `var name = expr` or `name := expr`, are reported as `not supported yet`. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` means `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol. `name="symbol"` sets the object symbol and leaves the identifier in the program unchanged. The arguments may appear in either order. `name` on a `type` is reported as `not supported yet`. An empty name is `type mismatch`.
 
 ## Functions and methods
 
 A function definition adds the instructions of its body. A call pushes a trace frame: 36 instructions in the caller when fewer than 32 frames are stored, plus the callee. The sequences are on [Functions](functions/function.md).
 
 ```ebnf
-function    = "func" identifier [ type-params ] "(" [ parameters ] ")" result ( block | ";" ) ;
+function    = [ "unsafe" ] "func" identifier [ type-params ] "(" [ parameters ] ")" result ( block | ";" ) ;
 type-params = "[" type-param { "," type-param } "]"
             | "[" "..." identifier "]" ;
 type-param  = identifier "type"
             | identifier integer-name
             | identifier identifier ;
-method      = "func" identifier [ method-params ] "::" identifier "(" [ parameters ] ")" result ( block | ";" ) ;
+method      = [ "unsafe" ] "func" identifier [ method-params ] "::" identifier "(" [ parameters ] ")" result ( block | ";" ) ;
 method-params = "[" identifier { "," identifier } "]" ;
 receiver    = identifier [ "*" ] "this" ;
 
@@ -67,9 +67,9 @@ A function with no body is a prototype and ends with `;`. A body replaces that s
 
 ### Methods
 
-A receiver parameter is written `name this`, `name *this`, `name *const this`, `name ?*this`, or `name ?*const this`. `this` stands for the method's struct or enum, so a pointer is `*this` and an optional pointer is `?*this`. `*const this` is a pointer to a constant value. A const variable cannot call `*this` or `?*this`. Those calls are reported as `type mismatch: expected *Point, found *const Point` and `type mismatch: expected ?*Point, found *const Point`. `this` is an ordinary identifier everywhere else. When the parameter list has no receiver, the function is static and the call is `Type.name(arguments)`. On a generic struct the call is `Vec[i32].name(arguments)` or `Buf[4, i32].name()`.
+A receiver parameter is written `name this`, `name *this`, `name *const this`, `name ?*this`, or `name ?*const this`. `this` stands for the method's struct, enum, or type alias, so a pointer is `*this` and an optional pointer is `?*this`. `*const this` is a pointer to a constant value. A const variable cannot call `*this` or `?*this`. Those calls are reported as `type mismatch: expected *Point, found *const Point` and `type mismatch: expected ?*Point, found *const Point`. `this` is an ordinary identifier everywhere else. When the parameter list has no receiver, the function is static and the call is `Type.name(arguments)`. On a generic struct the call is `Vec[i32].name(arguments)` or `Buf[4, i32].name()`.
 
-The method is written in the same file as that struct or enum. A method in another file is reported as `method in another file`. Every file in the package can call it.
+The method is written in the same file as that struct, enum, or slice alias. A method in another file is reported as `method in another file`. Every file in the package can call it. `export func Type::name` publishes a value method. Another package calls `value.name(...)`. A method without `export` is reported as `name is not exported`. `extern` on a method is reported as `not supported yet`. A slice alias uses a value receiver, `self this`. `self *this` on a slice alias is reported as `not supported yet`.
 
 An inner function uses the same `function` form inside a block, and it has a body.
 
@@ -153,7 +153,7 @@ A trait method has no body and no receiver. A trait field is a name and a type, 
 
 A type spelling adds no instructions. `sizeof` folds to an immediate. The widths and the conversions are on [Numeric types](types/integer.md).
 
-A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. An empty length is a slice: `[]i32` and `func head(a []i32) []i32`. `i32[4]`, `i32[N]`, and `i32[]` are reported as `type mismatch`.
+A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. An empty length is a slice: `[]i32` and `func head(a []i32) []i32`. `const` before the element makes that element constant: `[]const u8` and `[4]const u8`. A string literal is `[]const u8`. `i32[4]`, `i32[N]`, and `i32[]` are reported as `type mismatch`.
 
 ```ebnf
 go-type     = func-type
@@ -242,7 +242,8 @@ relational  = shift { ( "<" | ">" | "<=" | ">=" ) shift } ;
 shift       = additive { ( "<<" | ">>" ) additive } ;
 additive    = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative = unary { ( "*" | "/" | "%" ) unary } ;
-unary       = new-expr
+unary       = "unsafe" unary
+            | new-expr
             | delete-expr
             | ( "+" | "-" | "!" | "~" | "&" | "*" | "sizeof" | "typeof" ) unary
             | postfix ;
@@ -298,11 +299,11 @@ cast        = { "*" } scalar-type "(" expression ")"
 scalar-type = "void" | "bool" | integer-name | float-name ;
 ```
 
-An anonymous function with no result type has result `void`. The short form is accepted where a function pointer is expected, and as a call argument whose type is a trait with one method. Its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)`, `*i32(p)`, `?*i32(p)`, or `func (i32) i32(p)`. A built-in name such as `i32` is always that cast. A name declared as a type in this file is a cast too: `Integer(n)`, `*Point(p)`, `ShapeType(shape)`. A cast to a struct is reported as `type mismatch`. `ShapeType(shape)` reads the tag of a tlc union, including from another file in the package. The cast has the type that was written, so `*i32(p)` is `*i32` and `?*i32(null)` is `?*i32`. `*i32(null)` is reported as `type mismatch`. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type. `i32*(p)` is reported as `type mismatch`. `sizeof` of a parenthesized type is `sizeof(i32)`, `sizeof(*i32)`, `sizeof(enum Color)`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is reported as `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression. `typeof` has the same shape and produces a `Type`. `typeof(i32)`, `typeof(*i32)`, and `typeof n` are accepted. `typeof(struct Point)` is reported as `expected a type`.
+An anonymous function with no result type has result `void`. The short form is accepted where a function pointer is expected, and as a call argument whose type is a trait with one method. Its names and its result come from that type. A cast writes the type, then `(`, as in `i32(n)`, `*i32(p)`, `?*i32(p)`, or `func (i32) i32(p)`. A built-in name such as `i32` is always that cast. A name declared as a type in this file is a cast too: `Integer(n)`, `*Point(p)`, `ShapeType(shape)`. A cast to a struct is reported as `type mismatch`. `ShapeType(shape)` reads the tag of a tlc union, including from another file in the package. The cast has the type that was written, so `*i32(p)` is `*i32` and `?*i32(null)` is `?*i32`. `*i32(null)` is reported as `type mismatch`. A pointer cast that changes the claim is [`unsafe`](expressions/unsafe.md) and is reported as `unsafe cast` without that prefix. `f()` is a call when `f` is not a type. `*f()` dereferences the call when `f` is not a type. `i32*(p)` is reported as `type mismatch`. `sizeof` of a parenthesized type is `sizeof(i32)`, `sizeof(*i32)`, `sizeof(enum Color)`, or `sizeof` of a declared name such as `sizeof(Point)`. `sizeof(struct Point)` is reported as `expected a type`. `sizeof(*p)` is the size of the dereferenced value when `p` is a variable. `sizeof` of a value is `sizeof` followed by a unary expression. `typeof` has the same shape and produces a `Type`. `typeof(i32)`, `typeof(*i32)`, and `typeof n` are accepted. `typeof(struct Point)` is reported as `expected a type`.
 
 A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}}`. The struct type comes from the destination. A field that is left out is zero. A trailing comma is allowed. `{10, 20}` is a value list. Where the destination is an array, it fills that array. Where a struct is expected, the value list is reported as `type mismatch`. An empty `{}` names no fields. Mixing a named field and a positional value is reported as `type mismatch`. `(40, 2)` is a tuple. `(40)` is the value `40`. `var value = (40, 2)` and `value := (40, 2)` bind that tuple. `var value1, value2 = value` and `a, b := value` unpack it. `value[0]` reads an element.
 
-`struct-init` after a name, or after `name.name`, is a struct value: `Point{}`, `Point{.x = 1, .y = 2}`, and `geom.Point{}`. The type is that struct. Fields that are left out are zero. `var p = Point{}`, `const origin = Point{}`, and `p := Point{}` take the type from the name. `Point{1, 2}` is a value list and is reported as `type mismatch`. A name that is not a struct is reported as `type mismatch`. A `{` after a call, an index, or `value.field` is not this form. `new Point{.x = 1}` and `new(allocator) Point{.x = 1}` reserve a `Point` and write those fields. A field that is left out is uninitialized. A `*T` field has to be named, or the initializer is reported as `type mismatch`. `new Point{1, 2}` and `new i32{1}` are reported as `type mismatch`. `new [n]T` reserves `n` elements and yields `*T`. `n` has type `i32`. `new [n]Point{{.x = 1}...}` stores that value in every element. `new [_]Point{{.x = 1}, {.y = 2}}` takes the length from the list, so the object is `[2]Point` and the result is `*[2]Point`. `new Box[i32]` allocates that specialization, and `new Box[i32]{.value = 1}` writes its fields. `new []T` is reported as `expected an expression`.
+`struct-init` after a name, or after `name.name`, is a struct value: `Point{}`, `Point{.x = 1, .y = 2}`, and `geom.Point{}`. The type is that struct. Fields that are left out are zero. `var p = Point{}`, `const origin = Point{}`, and `p := Point{}` take the type from the name. `Point{1, 2}` is a value list and is reported as `type mismatch`. A name that is not a struct is reported as `type mismatch`. A `{` after a call, an index, or `value.field` is not this form. `new Point{.x = 1}` and `new(&arena) Point{.x = 1}` reserve a `Point` and write those fields. The allocator argument is a pointer, and the pointee type is taken from that pointer. `new(arena)` is reported as `type mismatch: expected *Arena, found Arena`. A field that is left out is uninitialized. A `*T` field has to be named, or the initializer is reported as `type mismatch`. `new Point{1, 2}` and `new i32{1}` are reported as `type mismatch`. `new [n]T` reserves `n` elements and yields `*T`. `n` has type `i32`. `new [n]Point{{.x = 1}...}` stores that value in every element. `new [_]Point{{.x = 1}, {.y = 2}}` takes the length from the list, so the object is `[2]Point` and the result is `*[2]Point`. `new Box[i32]` allocates that specialization, and `new Box[i32]{.value = 1}` writes its fields. `new []T` is reported as `expected an expression`.
 
 `[_]i32{10, 20, 12}` is an array literal. `_` stands for the length, which is the number of values, so the type is `[3]i32`. At file scope it initializes a variable when each value is a constant: `var row = [_]i32{10, 20, 12}`, `var grid = [_][2]i32{{1, 2}, {3, 4}}`, and `const fixed = [_]i32{19, 2}`.
 
@@ -352,7 +353,7 @@ These words are keywords and cannot be identifiers:
 ```text
 assert bool break case const continue default defer delete do else enum
 export extern false for func if import new null package
-return sizeof struct switch test trait true type typeof union var void while
+return sizeof struct switch test trait true type typeof union unsafe var void while
 ```
 
 C keywords that tlc reserves but does not use are also keywords: `alignas`, `alignof`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof_unqual`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).

@@ -63,6 +63,7 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"typeof", TokenKind::KwTypeof},
     {"typeof_unqual", TokenKind::KwTypeofUnqual},
     {"union", TokenKind::KwUnion},
+    {"unsafe", TokenKind::KwUnsafe},
     {"var", TokenKind::KwVar},
     {"void", TokenKind::KwVoid},
     {"volatile", TokenKind::KwVolatile},
@@ -168,6 +169,7 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::KwTypeofUnqual: return "typeof_unqual";
     case TokenKind::KwUnion: return "union";
     case TokenKind::KwUnsigned: return "unsigned";
+    case TokenKind::KwUnsafe: return "unsafe";
     case TokenKind::KwVar: return "var";
     case TokenKind::KwVoid: return "void";
     case TokenKind::KwVolatile: return "volatile";

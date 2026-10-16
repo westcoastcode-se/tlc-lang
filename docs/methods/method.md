@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Function pointers](../functions/pointer.md) · [Next: Generic methods](generic.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A method belongs to a struct, an enum, or a primitive type alias such as `type Integer i32`, and it is written in the same file as that type. A method in any other file is reported as `method in another file`. The receiver is the first parameter. It is the name, then `this`: `self this`. `this` stands for that struct, enum, or alias. A pointer receiver is `self *this`, the same order as `*Point`. `self ?*this` may be `null`, and a `*T` value may be passed to it. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value. On `type Integer i32`, the receiver is an `Integer`, not an `i32`. A function with no receiver is a static function. The builtin name `i32` cannot have a method. A pointer alias, an array alias, and a struct alias cannot either.
+A method belongs to a struct, an enum, or a primitive type alias such as `type Integer i32`, and it is written in the same file as that type. A method in any other file is reported as `method in another file`. The receiver is the first parameter. It is the name, then `this`: `self this`. `this` stands for that struct, enum, or alias. A pointer receiver is `self *this`, the same order as `*Point`. `self ?*this` may be `null`, and a `*T` value may be passed to it. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value. On `type Integer i32`, the receiver is an `Integer`, not an `i32`. A function with no receiver is a static function. The builtin name `i32` cannot have a method. A pointer alias, a sized-array alias, and a struct alias cannot either. A slice alias such as `type string_view []const u8` can, and the receiver is the value `self this`. `self *this` on a slice alias is reported as `not supported yet`. The functions on that alias live in [`std/string`](../std/string.md), which is `lib/tlc/std/string`.
 
 The call omits the receiver. The program below returns 42.
 
@@ -92,7 +92,7 @@ func main() i32 {
 
 The same method name may exist on different structs and as a free function. The call `p.sum(...)` selects the struct's method. A free call `sum(...)` selects the function.
 
-Every file in the package can call the method. It is not exported, so another package cannot call it. `Point::sum(p, 1)` is not a call.
+Every file in the package can call the method. `export func Point::sum` publishes that method. Another package calls `value.sum(...)`. A method without `export` is reported as `sum is not exported`. `extern` on a method, `pkg.Point.sum`, and `export` on a generic method are reported as `not supported yet`. `Point::sum(p, 1)` is not a call.
 
 ## Cost
 
@@ -101,5 +101,7 @@ A value method on a struct of two `i32` fields receives those fields in register
 A pointer method receives the address. `self.x = self.x + n` is 6 instructions: store the pointer, store `n`, reload the pointer twice, add, and store. The caller passes the address with 1 `leaq` plus the traced call.
 
 `self ?*this` uses the same pointer. The null test is the pointer compare on [Pointers and null](../expressions/null.md). A const check is rejected while compiling and adds no instruction.
+
+A value method on a slice alias is a traced call of the same shape. The callee's instructions are on [string](../std/string.md). `string_view.equals` does not record a frame of its own. The caller does.
 
 [Index](../README.md) · [Previous: Function pointers](../functions/pointer.md) · [Next: Generic methods](generic.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

@@ -92,7 +92,93 @@ bool Parser::continues_declarator() const {
            (check(TokenKind::LParen) && peek(1).kind == TokenKind::Star);
 }
 
+void Parser::skip_decl_specifiers(std::size_t &ahead, bool &saw_unsafe) const {
+    while (true) {
+        const TokenKind kind = peek(ahead).kind;
+        if (kind == TokenKind::End) {
+            return;
+        }
+        if (kind == TokenKind::KwExport) {
+            ++ahead;
+            continue;
+        }
+        if (kind == TokenKind::KwUnsafe) {
+            saw_unsafe = true;
+            ++ahead;
+            continue;
+        }
+        if (kind == TokenKind::KwExtern) {
+            ++ahead;
+            if (peek(ahead).kind != TokenKind::LParen) {
+                continue;
+            }
+            int depth = 0;
+            while (peek(ahead).kind != TokenKind::End) {
+                if (peek(ahead).kind == TokenKind::LParen) {
+                    ++depth;
+                } else if (peek(ahead).kind == TokenKind::RParen) {
+                    --depth;
+                }
+                ++ahead;
+                if (depth == 0) {
+                    break;
+                }
+            }
+            continue;
+        }
+        return;
+    }
+}
+
+bool Parser::starts_unsafe_func() const {
+    std::size_t ahead = 0;
+    bool saw_unsafe = false;
+    skip_decl_specifiers(ahead, saw_unsafe);
+    return saw_unsafe && peek(ahead).kind == TokenKind::KwFunc;
+}
+
+bool Parser::unsupported_unsafe_decl() const {
+    std::size_t ahead = 0;
+    bool saw_unsafe = false;
+    skip_decl_specifiers(ahead, saw_unsafe);
+    if (!saw_unsafe || peek(ahead).kind == TokenKind::KwFunc) {
+        return false;
+    }
+    const TokenKind next = peek(ahead).kind;
+    return next == TokenKind::KwVar || next == TokenKind::KwConst || next == TokenKind::KwType ||
+           next == TokenKind::KwStruct || next == TokenKind::KwEnum || next == TokenKind::KwUnion ||
+           next == TokenKind::KwTrait || is_type_keyword(next);
+}
+
+void Parser::reject_unsupported_unsafe() {
+    diags_.error(peek().loc, "not supported yet");
+    int depth = 0;
+    while (!eof()) {
+        if (check(TokenKind::LBrace)) {
+            ++depth;
+            ++pos_;
+            continue;
+        }
+        if (check(TokenKind::RBrace)) {
+            if (depth == 0) {
+                break;
+            }
+            --depth;
+            ++pos_;
+            continue;
+        }
+        if (depth == 0 && check(TokenKind::Semicolon)) {
+            ++pos_;
+            break;
+        }
+        ++pos_;
+    }
+}
+
 bool Parser::starts_declaration() const {
+    if (starts_unsafe_func() || unsupported_unsafe_decl()) {
+        return true;
+    }
     const TokenKind kind = peek().kind;
     const bool typedef_name = kind == TokenKind::Identifier && peek(1).kind != TokenKind::Dot &&
                               (peek(1).kind == TokenKind::Star || peek(1).kind == TokenKind::Identifier);

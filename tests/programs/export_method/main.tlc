@@ -1,0 +1,17 @@
+import "math";
+
+type Point struct { x i32; y i32; };
+
+func Point::sum(self this) i32 {
+    return 7;
+}
+
+func main() i32 {
+    var p math.Point;
+    p.x = 40;
+    p.y = 2;
+    var local Point;
+    local.x = 1;
+    local.y = 1;
+    return p.sum() + local.sum();
+}

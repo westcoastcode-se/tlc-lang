@@ -2326,7 +2326,7 @@ Json location_of(const Sym &sym) {
     return jobj({{"uri", jstr(sym.uri)}, {"range", range_json(sym.start, sym.end)}});
 }
 
-const char *kKeywords[] = {"func",    "type",    "var",     "const",   "struct", "enum",    "union",  "trait",
+const char *kKeywords[] = {"func",    "type",    "var",     "const",   "struct", "enum",    "union",  "unsafe", "trait",
                            "if",      "else",    "while",   "for",     "do",     "switch",  "case",   "default",
                            "return",  "break",   "continue","defer",   "import", "package", "export", "extern",
                            "test",    "assert",  "sizeof",  "typeof",  "new",     "delete",
@@ -2717,18 +2717,22 @@ bool alias_slice(const Doc &doc, const Sym &sym) {
     if (sym.is_array || sym.indirections != 0 || sym.type_name.empty()) {
         return false;
     }
+    const Sym *same = nullptr;
+    const Sym *exported = nullptr;
     for (const Sym &other : doc.syms) {
         if (other.role != Role::Alias || other.name != sym.type_name) {
             continue;
         }
-        if (!sym.package_key.empty() && other.package_key != sym.package_key) {
-            continue;
+        if (sym.package_key.empty() || other.package_key == sym.package_key) {
+            same = &other;
+            break;
         }
-        if (other.is_array && other.array_len < 0 && other.indirections == 0) {
-            return true;
+        if (exported == nullptr && other.exported) {
+            exported = &other;
         }
     }
-    return false;
+    const Sym *match = same != nullptr ? same : exported;
+    return match != nullptr && match->is_array && match->array_len < 0 && match->indirections == 0;
 }
 
 bool slice_receiver(const Doc &doc, const Sym &sym) {
@@ -2817,6 +2821,17 @@ Json complete(const Doc &doc, const Cursor &cursor) {
             } else if (slice_receiver(doc, *base)) {
                 // `v.len` is the slice length. The element type's fields are `v[i].field`.
                 push("len", 5, "i32");
+                if (alias_slice(doc, *base)) {
+                    for (const Sym &sym : doc.syms) {
+                        if (sym.role != Role::Method || sym.static_method || sym.owner != base->type_name) {
+                            continue;
+                        }
+                        if (!sym.exported && !document_owns(doc, sym.package_key)) {
+                            continue;
+                        }
+                        push(sym.name, sym.completion_kind, sym.detail);
+                    }
+                }
             } else {
                 const std::string type = (base->role == Role::StructType || base->role == Role::EnumType ||
                                           base->role == Role::Alias || base->role == Role::Trait)
@@ -2832,6 +2847,9 @@ Json complete(const Doc &doc, const Cursor &cursor) {
                         continue;
                     }
                     if (sym.role == Role::Method && on_type != sym.static_method) {
+                        continue;
+                    }
+                    if (sym.role == Role::Method && !sym.exported && !document_owns(doc, sym.package_key)) {
                         continue;
                     }
                     // A trait field is offered on a value. `Shape.` is the type name.

@@ -236,6 +236,10 @@ bool accepts_slice(const Type &got, const Type &want) {
         return false;
     }
     if (is_slice(got)) {
+        // `[]T` converts to `type Name []T`. The alias does not convert back.
+        if (got.alias_id == 0 && want.alias_id != 0) {
+            return true;
+        }
         return same_type(got, want);
     }
     return got.length >= 0;

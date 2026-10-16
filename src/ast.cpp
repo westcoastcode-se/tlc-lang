@@ -24,11 +24,28 @@ void append_indent(std::string &out, int indent) {
     out.append(static_cast<std::size_t>(indent) * 2, ' ');
 }
 
-void append_extern(std::string &out, bool is_extern, bool extern_c) {
+std::string quote_string(const std::string &text);
+
+void append_extern(std::string &out, bool is_extern, bool extern_c, const std::string &link_name = {}) {
     if (!is_extern) {
         return;
     }
-    out += extern_c ? " extern(abi=\"c\")" : " extern";
+    if (!extern_c && link_name.empty()) {
+        out += " extern";
+        return;
+    }
+    out += " extern(";
+    if (extern_c) {
+        out += "abi=\"c\"";
+        if (!link_name.empty()) {
+            out += ", ";
+        }
+    }
+    if (!link_name.empty()) {
+        out += "name=";
+        out += quote_string(link_name);
+    }
+    out += ')';
 }
 
 void dump_stmt(const Stmt &stmt, std::string &out, int indent);
@@ -182,7 +199,7 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
     if (var.is_static) {
         out += " static";
     }
-    append_extern(out, var.is_extern, var.extern_c);
+    append_extern(out, var.is_extern, var.extern_c, var.link_name);
     out += ")\n";
 }
 
@@ -429,10 +446,13 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
     if (fn.exported) {
         out += " export";
     }
+    if (fn.unsafe) {
+        out += " unsafe";
+    }
     if (fn.is_static) {
         out += " static";
     }
-    append_extern(out, fn.is_extern, fn.extern_c);
+    append_extern(out, fn.is_extern, fn.extern_c, fn.link_name);
     out += "\n";
     if (fn.body) {
         dump_stmt(*fn.body, out, indent + 1);
@@ -755,6 +775,7 @@ VarDecl clone_var(const VarDecl &var) {
     copy.optional = var.optional;
     copy.const_pointee = var.const_pointee;
     copy.is_array = var.is_array;
+    copy.elem_const = var.elem_const;
     copy.array_len = var.array_len;
     copy.array_len_name = var.array_len_name;
     copy.type_args = var.type_args;
@@ -771,10 +792,12 @@ VarDecl clone_var(const VarDecl &var) {
     copy.is_static = var.is_static;
     copy.is_extern = var.is_extern;
     copy.extern_c = var.extern_c;
+    copy.link_name = var.link_name;
     copy.inferred = var.inferred;
     copy.is_const_decl = var.is_const_decl;
     copy.has_const = var.has_const;
     copy.const_value = var.const_value;
+    copy.runtime_init = var.runtime_init;
     copy.owner = var.owner;
     copy.owner_params = var.owner_params;
     return copy;
@@ -822,6 +845,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.field = node.field;
                 copy.type_args = node.type_args;
                 copy.resolved_owner = node.resolved_owner;
+                copy.resolved_file = node.resolved_file;
                 copy.slice_len = node.slice_len;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
@@ -845,6 +869,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.optional = node.optional;
                 copy.const_pointee = node.const_pointee;
                 copy.is_array = node.is_array;
+                copy.elem_const = node.elem_const;
                 copy.array_len = node.array_len;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
@@ -860,6 +885,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.optional = node.optional;
                 copy.const_pointee = node.const_pointee;
                 copy.is_array = node.is_array;
+                copy.elem_const = node.elem_const;
                 copy.array_len = node.array_len;
                 copy.canonical = node.canonical;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
@@ -1086,9 +1112,11 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.params = fn.params;
     copy.body = fn.body ? clone_stmt(*fn.body) : nullptr;
     copy.exported = fn.exported;
+    copy.unsafe = fn.unsafe;
     copy.is_static = fn.is_static;
     copy.is_extern = fn.is_extern;
     copy.extern_c = fn.extern_c;
+    copy.link_name = fn.link_name;
     copy.variadic = fn.variadic;
     copy.method_struct = fn.method_struct;
     copy.static_method = fn.static_method;

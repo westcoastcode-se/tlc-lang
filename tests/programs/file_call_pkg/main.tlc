@@ -1,0 +1,9 @@
+import "math";
+import { add } from "math";
+
+var from_pkg = math.add(math.ready, math.grown);
+var from_name = add(10, 11);
+
+func main() i32 {
+    return from_pkg + from_name;
+}

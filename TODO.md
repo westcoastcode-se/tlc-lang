@@ -8,7 +8,7 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 - `pkg.Type.name(...)`.
 - A static function on a generic struct in another package, `pkg.Vec[i32].name(...)`. The same package calls `Vec[i32].name(...)` and `Buf[4, i32].name()`.
-- A call through a type alias that is not a primitive, such as `type Ptr *Point` or `type Spot Point`. `type Integer i32` can use `Integer.name(...)`.
+- A call through a pointer alias, a sized-array alias, or a struct alias, such as `type Ptr *Point`, `type Pair [2]i32`, or `type Spot Point`. `type Integer i32` can use `Integer.name(...)`. A slice alias such as `type Row []i32` can use `Row.first(...)` in its package.
 - `const next` inside a struct. The constant is `const Entity::next = 1` or `const Box[T]::limit = 1`, written beside the type.
 - `const Entity::next` inside a function. The constant is file scope.
 - `extern` on `const Entity::next`.
@@ -18,14 +18,13 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 ## Heap allocation
 
-`new T` and `delete p` allocate one object with `builtin.allocator`. `new(allocator) T` and `delete(allocator) p` use a struct that has `Allocator`'s methods. `new [n]T` reserves `n` elements and yields `*T`. `new Box[i32]` allocates one specialization. `malloc` returns `?*u8`. When that is `null`, `new` aborts. `new` does not zero the block. A field that is not named stays uninitialized. A non-nullable pointer field has to be named. `delete` frees the pointer and does not zero it.
+`new T` and `delete p` allocate one object with `builtin.allocator`. `new(&arena) T` and `delete(&arena) p` take a pointer whose pointee has `Allocator`'s methods. The pointee type is taken from the pointer. `new [n]T` reserves `n` elements and yields `*T`. `new Box[i32]` allocates one specialization. `new` yields `*T`. `delete` frees that pointer and has no result. `malloc` returns `?*u8`. When that is `null`, including from a custom allocator, `new` calls `builtin.panic("out of memory")`. `new` does not zero the block. A field that is not named stays uninitialized. A non-nullable pointer field has to be named. `delete` does not zero the pointer.
 
-- Whether `new` should abort or yield `?*T` when allocation returns `null`.
-- A typed `realloc`. The trait method exists. There is no expression that calls it.
+There is no `realloc` expression. `Allocator.realloc` returns `?*u8`. The caller handles `null`.
 
 ## Unsafe
 
-`unsafe` is not a form. The standard allocator is unsafe, because `new` and `new(builtin.allocator)` can reserve memory and leave fields uninitialized. A non-nullable pointer still has to be written. A later `unsafe` marks that allocation, and other operations that use uninitialized memory.
+`unsafe` on a trait method is `not supported yet`. The method is parsed as an ordinary trait method.
 
 ## Names
 
@@ -66,7 +65,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `typeof(T)` when `T` is an array.
 - `typeof` of a function, a tuple, or a trait.
 - The C qualifier spelling `const i32 x` and `var x const i32`. Inside a function, `const name = expr` is an immutable binding, and `*const T` is a pointer to constant `T`.
-- A file-scope `const` of a pointer, other than a string literal. `const label *const u8 = "unix"` and `const label = "hi"` are `*const u8`. `const p *i32 = &n` is `type mismatch`. A string kept as an array is the same gap. A float, a struct, a function pointer, a typedef, and an array of a constant element are constants. `const bias = 0.5f` is not an array length. `const N = 4` remains the compile-time integer used as an array length. An alias is not an array length. An array constant is not an array length. `const row = [_]i32{n}` when `n` is a `var` is not a constant.
+- A file-scope `const` of a pointer, other than a string passed to C. `const label = "hi"` is `[]const u8`. `const c_text *const u8 = "unix"` is the C pointer. `const p *i32 = &n` is `type mismatch`. A string kept as an array is the same gap. A float, a struct, a function pointer, a typedef, and an array of a constant element are constants. `const bias = 0.5f` is not an array length. `const N = 4` remains the compile-time integer used as an array length. An alias is not an array length. An array constant is not an array length. `const row = [_]i32{n}` when `n` is a `var` is not a constant.
 - A non-positive compile-time length, including `const N = 0` used as `[N]i32`.
 - Returning an array from anything other than a local array name. `return out` works for `[N]T`. Another return expression does not.
 
@@ -95,12 +94,13 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - Two stars outside an array, `**[4]i32`, and a nested array.
 - A pointer to an array as a field. `var p *[4]i32` is fine. `p *[4]i32` inside a struct is not.
 - A pointer to a slice, `*[]T`. It is `not supported yet`.
+- A pointer receiver on a slice alias, `func string_view::at(self *this)`. It is `not supported yet`. A value receiver, `self this`, is the form that works.
 - A nested slice, `[][]T` or `[N][]T`. It is `not supported yet`.
 - A slice taken from an array parameter. The parameter is already a pointer, so `return row` from `func open(row [4]i32) []i32` is `return type: expected []i32, found *i32`. A range on that pointer, `row[0:2]`, is `type mismatch`.
 - Omitted range bounds. `a[i:]`, `a[:j]`, and `a[:]` are not forms. The parser reports `expected an expression`.
 - A range whose element is an array. `grid[0:1]` on `[_][2]i32` is `not supported yet`.
 - A slice field on `extern(abi="c")`. It is `not supported yet`. A tlc union arm that is not a struct stays `type mismatch`.
-- A file-scope slice whose initializer is not the name of an array or another slice. A literal, a call, or `a[i:j]` is `global initializer is not a constant`.
+- A file-scope slice whose initializer is not the name of an array, another slice, or a call. A literal or `a[i:j]` is `global initializer is not a constant`. A call used as the whole initializer runs before `main`.
 - `const` on a slice. `const v []i32 = row` is `not supported yet`.
 - A cast to `void`.
 - `++`, `--`, compound assignment (`+=` and the rest), `?:`, and `->`.
@@ -122,7 +122,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A `test` inside a function. `test` is file scope.
 - A struct argument to `testing.error`.
 - `builtin.va` outside a variadic function.
-- Calling `builtin.panic` when memory runs out, or on another fatal failure. `builtin.panic(message)` prints the message and the call stack, then aborts.
+- Calling `builtin.panic` on a fatal failure other than an allocation that returned `null`. `new` calls `builtin.panic("out of memory")` in that case. A non-positive element count and a size that does not fit abort without that call.
 - A function pointer whose result is itself a function pointer: `func (i32) func (i32) i32`.
 - A variadic `extern` or `extern(abi="tlc")`, and a variadic prototype with no body. `extern(abi="c")` may declare `...`. A function with a body may use `...`, and `builtin.va()` reads the extra arguments.
 - An inner function that uses a local or a parameter from an enclosing function, other than a function pointer it returns or calls. The inner function is called directly. `var f = pass` and passing that function as a value are the same gap. A prototype written before the body is the same gap when the body reads that pointer. It can call functions already in scope and use globals. `export`, `extern`, and a method on a function in a block are the same gap. A short anonymous function follows that function. A full anonymous function called directly can read the function pointer.
@@ -138,7 +138,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Methods and traits
 
-- `export` on a method. A method is visible in its package and is not exported.
+- `extern` on a method. `export` on a generic method. A non-generic method may be exported. Another package calls `value.name(...)`. A method without `export` is reported as `name is not exported`.
 - A receiver with more than one star: `self **this`.
 - A body on a trait method. The trait lists the method and its type.
 - A trait method that returns several results.

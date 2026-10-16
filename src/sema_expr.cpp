@@ -11,6 +11,105 @@
 #include <utility>
 
 namespace tlc {
+namespace {
+
+Type bare_pointee(Type type) {
+    type.alias_id = 0;
+    type.is_const = false;
+    type.optional = false;
+    return type;
+}
+
+// `*void` and `*u8`, including aliases. `const` and `?` are ignored by the caller.
+bool raw_pointee(const Type &type) {
+    if (type.kind == TypeKind::Void) {
+        return true;
+    }
+    return type.kind == TypeKind::Char && type.is_unsigned && !type.plain_char && type.rank <= 1;
+}
+
+// `"Hello"` is `[]const u8`. The length does not count the terminating null.
+Type string_slice() {
+    Type bytes = type_rank(1, true);
+    bytes.is_const = true;
+    return type_array(std::move(bytes), -1);
+}
+
+// `*const u8`, including `type Text *const u8`. `*u8` does not match.
+bool const_u8_pointer(const Type &type) {
+    if (type.kind != TypeKind::Pointer || type.optional || type.pointee == nullptr || !type.pointee->is_const) {
+        return false;
+    }
+    return raw_pointee(*type.pointee);
+}
+
+// A constant string is this slice. C takes the address when it asks for `*const u8`.
+bool slice_of_const_u8(const Type &type) {
+    return is_slice(type) && type.element != nullptr && type.element->is_const && raw_pointee(*type.element);
+}
+
+bool primitive_pointee(const Type &type) {
+    return type.kind == TypeKind::Bool || type.kind == TypeKind::Int || type.kind == TypeKind::Char ||
+           type.kind == TypeKind::Float;
+}
+
+bool same_primitive(const Type &lhs, const Type &rhs) {
+    if (lhs.kind != rhs.kind) {
+        return false;
+    }
+    if (lhs.kind == TypeKind::Float) {
+        return lhs.rank == rhs.rank;
+    }
+    if (lhs.kind == TypeKind::Bool || lhs.kind == TypeKind::Void) {
+        return true;
+    }
+    return lhs.rank == rhs.rank && lhs.is_unsigned == rhs.is_unsigned && lhs.plain_char == rhs.plain_char;
+}
+
+// Both operands are pointers. One pointee level: a pointer pointee is not a primitive or a struct.
+bool unsafe_pointer_cast(const Type &source, const Type &target) {
+    if (source.pointee == nullptr || target.pointee == nullptr) {
+        return false;
+    }
+    const Type from = bare_pointee(*source.pointee);
+    const Type to = bare_pointee(*target.pointee);
+    if (raw_pointee(from) && raw_pointee(to)) {
+        return false;
+    }
+    if (to.kind == TypeKind::Void) {
+        return false;
+    }
+    if (raw_pointee(from) && to.kind == TypeKind::Struct) {
+        return true;
+    }
+    if (from.kind == TypeKind::Void && primitive_pointee(to) && !raw_pointee(to)) {
+        return true;
+    }
+    if (primitive_pointee(from) && primitive_pointee(to) && !same_primitive(from, to)) {
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+void Checker::require_unsafe_call(bool unsafe_fn, SourceLoc loc) {
+    if (unsafe_fn && unsafe_depth_ == 0) {
+        error(loc, "unsafe call");
+    }
+}
+
+bool Checker::allow_unsafe_fn(bool unsafe_fn, SourceLoc loc) {
+    if (!unsafe_fn) {
+        return true;
+    }
+    if (!direct_callee_) {
+        error(loc, "type mismatch");
+        return false;
+    }
+    require_unsafe_call(true, loc);
+    return true;
+}
 
 void Checker::mismatch(SourceLoc loc, const Type &want, const Type &got) {
     error(loc, "type mismatch: expected " + type_desc(want) + ", found " + type_desc(got));
@@ -90,6 +189,9 @@ void Checker::expect_integer(const Type &got, SourceLoc loc) {
 void Checker::expect_condition(const Type &got, SourceLoc loc) {
     if (got.kind == TypeKind::Pointer) {
         error(loc, "compare with null");
+        return;
+    }
+    if (got.kind == TypeKind::Bool) {
         return;
     }
     expect_integer(got, loc);
@@ -652,6 +754,15 @@ void Checker::check_call_arg(const Expr &expr, const Type &want) {
 }
 
 Type Checker::check_against(const Expr &expr, const Type &want) {
+    // `[]const u8` gives C its `*const u8` address. The slice is still the string in TLC.
+    if (const_u8_pointer(want)) {
+        const Type got = check_expr(expr, true);
+        if (slice_of_const_u8(got)) {
+            return want;
+        }
+        expect_value(got, want, expr, expr_loc(expr));
+        return got;
+    }
     // `[N]T` converts to `[]T` while the length is still known. A decayed `*T` does not.
     if (is_slice(want)) {
         const Type got = check_raw(expr, true);
@@ -868,6 +979,7 @@ bool Checker::package_generic_call(const Expr::Selector &node) {
 }
 
 Type Checker::finish_static_call(const Expr::Call &node, const MethodInfo &method, bool deferring) {
+    require_unsafe_call(method.unsafe_fn, node.loc);
     if (deferring && method.type.variadic) {
         error(node.loc, "not supported yet");
     }
@@ -881,6 +993,10 @@ Type Checker::finish_static_call(const Expr::Call &node, const MethodInfo &metho
             check_call_arg(*node.args[i], method.type.params[i]);
         } else {
             const Type arg = check_expr(*node.args[i], true);
+            // A variadic C argument has no written type. A constant string passes its address.
+            if (slice_of_const_u8(arg)) {
+                continue;
+            }
             if (arg.alias_id != 0) {
                 error(expr_loc(*node.args[i]), "type mismatch");
             } else if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&
@@ -946,6 +1062,10 @@ bool Checker::assoc_from_selector(const Expr::Selector &node, Type &out) {
         }
         if (!method->is_static) {
             error(node.loc, "type mismatch");
+            out = type_invalid();
+            return true;
+        }
+        if (!allow_unsafe_fn(method->unsafe_fn, node.loc)) {
             out = type_invalid();
             return true;
         }
@@ -1059,6 +1179,7 @@ Type Checker::finish_value_method(const Expr::Call &node, const Expr::Selector &
         }
         return type_invalid();
     }
+    require_unsafe_call(method.unsafe_fn, node.loc);
     if (checking_defer_ && method.type.variadic) {
         error(node.loc, "not supported yet");
     }
@@ -1135,6 +1256,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
                 }
+                if (!allow_unsafe_fn(symbol->unsafe_fn, node.loc)) {
+                    return type_invalid();
+                }
                 return symbol->type;
             } else if constexpr (std::is_same_v<T, Expr::Int>) {
                 const int bits = node.suffix.bits;
@@ -1189,6 +1313,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 (void)used;
                 return type_float(node.is_f32 ? 32 : 64);
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.op == TokenKind::KwUnsafe) {
+                    if (node.expr == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    ++unsafe_depth_;
+                    const Type inner = check_expr(*node.expr, used);
+                    --unsafe_depth_;
+                    return inner;
+                }
                 if (node.op == TokenKind::Bang && node.postfix) {
                     const Type inner = check_expr(*node.expr, true);
                     if (inner.kind == TypeKind::Invalid) {
@@ -1289,7 +1423,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 const Type inner = check_expr(*node.expr, true);
                 if (node.op == TokenKind::Bang) {
-                    if (is_float(inner)) {
+                    if (is_float(inner) || inner.kind == TypeKind::Bool) {
                         return type_int();
                     }
                     expect_integer(inner, node.loc);
@@ -1783,16 +1917,34 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 enum_id >= 0 && enum_id < static_cast<int>(enum_types_.size())
                                     ? enum_types_[static_cast<std::size_t>(enum_id)].name
                                     : std::string{};
-                            if (const MethodInfo *method = find_named_method(enum_name, selector->field)) {
+                            bool hidden = false;
+                            uint32_t home = 0;
+                            if (enum_id >= 0 && enum_id < static_cast<int>(enum_types_.size())) {
+                                home = enum_types_[static_cast<std::size_t>(enum_id)].file_id;
+                            }
+                            if (const MethodInfo *method = find_visible_method(home, enum_name, selector->field, hidden)) {
+                                selector->resolved_file = method->file_id;
                                 return finish_value_method(node, *selector, *method, base, through_pointer);
+                            }
+                            if (hidden) {
+                                error(node.loc, selector->field + " is not exported");
+                                for (const auto &arg : node.args) {
+                                    check_expr(*arg, true);
+                                }
+                                return type_invalid();
                             }
                         }
                         bool alias_pointer = false;
                         if (const Type *alias = scalar_alias(base, alias_pointer)) {
-                            const MethodInfo *method = find_named_method(type_desc(*alias), selector->field);
+                            bool hidden = false;
+                            uint32_t home = 0;
+                            if (alias->alias_id > 0 && static_cast<std::size_t>(alias->alias_id) < alias_file_.size()) {
+                                home = alias_file_[static_cast<std::size_t>(alias->alias_id)];
+                            }
+                            const MethodInfo *method = find_visible_method(home, type_desc(*alias), selector->field, hidden);
                             if (method == nullptr || method->type.kind != TypeKind::Function ||
                                 method->type.result == nullptr) {
-                                error(node.loc, "undeclared identifier");
+                                error(node.loc, hidden ? selector->field + " is not exported" : "undeclared identifier");
                                 for (const auto &arg : node.args) {
                                     check_expr(*arg, true);
                                 }
@@ -1800,13 +1952,42 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                             if (!method->is_static) {
                                 selector->resolved_owner = type_desc(*alias);
+                                selector->resolved_file = method->file_id;
                             }
                             return finish_value_method(node, *selector, *method, base, alias_pointer);
+                        }
+                        if (const Type *alias = slice_alias(base)) {
+                            bool hidden = false;
+                            uint32_t home = 0;
+                            if (alias->alias_id > 0 && static_cast<std::size_t>(alias->alias_id) < alias_file_.size()) {
+                                home = alias_file_[static_cast<std::size_t>(alias->alias_id)];
+                            }
+                            const MethodInfo *method = find_visible_method(home, type_desc(*alias), selector->field, hidden);
+                            if (method == nullptr || method->type.kind != TypeKind::Function ||
+                                method->type.result == nullptr) {
+                                error(node.loc, hidden ? selector->field + " is not exported" : "undeclared identifier");
+                                for (const auto &arg : node.args) {
+                                    check_expr(*arg, true);
+                                }
+                                return type_invalid();
+                            }
+                            if (!method->is_static) {
+                                selector->resolved_owner = type_desc(*alias);
+                                selector->resolved_file = method->file_id;
+                            }
+                            return finish_value_method(node, *selector, *method, base, false);
                         }
                         Type object;
                         bool through_pointer = false;
                         if (dot_object(base, object, through_pointer)) {
-                            if (const MethodInfo *method = find_method(object.struct_id, selector->field)) {
+                            bool hidden = false;
+                            uint32_t home = 0;
+                            std::string owner;
+                            if (object.struct_id >= 0 && object.struct_id < static_cast<int>(structs_.size())) {
+                                home = structs_[static_cast<std::size_t>(object.struct_id)].file_id;
+                                owner = structs_[static_cast<std::size_t>(object.struct_id)].name;
+                            }
+                            if (const MethodInfo *method = find_visible_method(home, owner, selector->field, hidden)) {
                                 if (method->is_static) {
                                     error(node.loc, "type mismatch");
                                     for (const auto &arg : node.args) {
@@ -1814,6 +1995,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     }
                                     return type_invalid();
                                 }
+                                selector->resolved_file = method->file_id;
+                                require_unsafe_call(method->unsafe_fn, node.loc);
                                 if (deferring && method->type.variadic) {
                                     error(node.loc, "not supported yet");
                                 }
@@ -1851,6 +2034,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 return *method->type.result;
                             }
+                            if (hidden) {
+                                error(node.loc, selector->field + " is not exported");
+                                for (const auto &arg : node.args) {
+                                    check_expr(*arg, true);
+                                }
+                                return type_invalid();
+                            }
                             if (base.kind == TypeKind::Pointer && base.optional) {
                                 error(node.loc, "undeclared identifier");
                                 for (const auto &arg : node.args) {
@@ -1863,7 +2053,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 const bool saved_direct = direct_callee_;
                 direct_callee_ = std::holds_alternative<Expr::Name>(node.callee->data) ||
-                                 std::holds_alternative<Expr::Func>(node.callee->data);
+                                 std::holds_alternative<Expr::Func>(node.callee->data) ||
+                                 std::holds_alternative<Expr::Selector>(node.callee->data);
                 const Type callee = check_expr(*node.callee, true);
                 direct_callee_ = saved_direct;
                 if (callee.kind == TypeKind::Invalid) {
@@ -1904,6 +2095,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_call_arg(*node.args[i], signature->params[i]);
                     } else {
                         const Type arg = check_expr(*node.args[i], true);
+                        // A variadic C argument has no written type. A constant string passes its address.
+                        if (slice_of_const_u8(arg)) {
+                            continue;
+                        }
                         if (arg.alias_id != 0) {
                             error(expr_loc(*node.args[i]), "type mismatch");
                         } else if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&
@@ -1934,6 +2129,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                                                                         : "undeclared identifier");
                                 return type_invalid();
                             }
+                            if (!allow_unsafe_fn(method->unsafe_fn, node.loc)) {
+                                return type_invalid();
+                            }
                             return method->type;
                         }
                     }
@@ -1952,6 +2150,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (target.symbol->is_type) {
                         error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    if (!allow_unsafe_fn(target.symbol->unsafe_fn, node.loc)) {
                         return type_invalid();
                     }
                     return target.symbol->type;
@@ -2005,10 +2206,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return field;
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 (void)used;
-                // `"hi"` and a raw string are constants. The bytes include a terminating null.
-                Type bytes = type_rank(1, true);
-                bytes.is_const = true;
-                return type_pointer(std::move(bytes));
+                // `"Hello"` and a raw string are `[]const u8`. The bytes still end with a null.
+                return string_slice();
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 (void)used;
                 // `a[i:j]` is a slice of the elements from i up to, but not including, j.
@@ -2098,7 +2297,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 (void)used;
                 const Type type = operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum,
                                                node.indirections, node.optional, node.expr.get(), node.loc,
-                                               node.const_pointee, node.is_array, node.array_len);
+                                               node.const_pointee, node.is_array, node.array_len, node.elem_const);
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
@@ -2159,6 +2358,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     (target.kind == TypeKind::Pointer && source.kind == TypeKind::Nullptr) ||
                     (target_int && source.kind == TypeKind::Pointer) ||
                     (target_scalar && source_scalar) || same_type(source_rep, target_rep)) {
+                    if (target.kind == TypeKind::Pointer && source.kind == TypeKind::Pointer &&
+                        unsafe_pointer_cast(source, target) && unsafe_depth_ == 0) {
+                        error(node.loc, "unsafe cast");
+                    }
                     return target;
                 }
                 error(node.loc, "type mismatch");
@@ -2274,15 +2477,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     const Type got = check_expr(*allocator, true);
                     int struct_id = -1;
-                    if (got.kind == TypeKind::Struct) {
-                        struct_id = got.struct_id;
-                        if (!is_lvalue_form(*allocator)) {
-                            error(node.loc, "not an lvalue");
-                        }
-                    } else if (got.kind == TypeKind::Pointer && got.pointee != nullptr &&
-                               got.pointee->kind == TypeKind::Struct) {
+                    // The argument is `*T` where `T` has `Allocator`'s methods. `T` is the pointee.
+                    if (got.kind == TypeKind::Pointer && got.pointee != nullptr &&
+                        got.pointee->kind == TypeKind::Struct) {
                         struct_id = got.pointee->struct_id;
                         alloc_is_pointer = true;
+                    } else if (got.kind == TypeKind::Struct) {
+                        mismatch(expr_loc(*allocator), type_pointer(got), got);
+                        return;
                     } else if (got.kind != TypeKind::Invalid) {
                         error(node.loc, "type mismatch");
                     }
@@ -2454,11 +2656,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
 
 Type Checker::operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                            bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
-                           uint32_t const_pointee, bool is_array, int array_len) {
+                           uint32_t const_pointee, bool is_array, int array_len, bool elem_const) {
     if (on_type) {
         if (is_array) {
             return object_type(type_name, indirections, true, array_len, loc, false, type_package, is_struct, is_enum,
-                               false, optional, const_pointee);
+                               false, optional, const_pointee, false, elem_const);
         }
         return spelled_type(type_name, type_package, is_struct, is_enum, indirections, loc, optional, const_pointee);
     }
@@ -2489,7 +2691,8 @@ Type Checker::operand_type(bool on_type, const std::string &type_name, const std
 
 Type Checker::sizeof_operand(const Expr::Sizeof &node) {
     return operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
-                        node.optional, node.expr.get(), node.loc, node.const_pointee, node.is_array, node.array_len);
+                        node.optional, node.expr.get(), node.loc, node.const_pointee, node.is_array, node.array_len,
+                        node.elem_const);
 }
 
 void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &message) {
@@ -2696,6 +2899,9 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
                 seen.erase(node.text);
                 return inner;
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.op == TokenKind::KwUnsafe && node.expr != nullptr) {
+                    return fold_number(*node.expr, seen);
+                }
                 if (node.postfix || node.expr == nullptr ||
                     (node.op != TokenKind::Plus && node.op != TokenKind::Minus)) {
                     return std::nullopt;
@@ -2854,6 +3060,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 if (node.postfix || node.expr == nullptr) {
                     return std::nullopt;
+                }
+                if (node.op == TokenKind::KwUnsafe) {
+                    return fold_int(*node.expr);
                 }
                 if (node.op == TokenKind::Bang) {
                     if (const std::optional<int> inner = fold_int(*node.expr)) {
@@ -3312,15 +3521,27 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_local_function(*node.decl);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
-                if (node.call == nullptr || !std::holds_alternative<Expr::Call>(node.call->data)) {
+                const Expr *call = node.call.get();
+                int extra = 0;
+                while (call != nullptr) {
+                    const auto *unary = std::get_if<Expr::Unary>(&call->data);
+                    if (unary == nullptr || unary->op != TokenKind::KwUnsafe || unary->expr == nullptr) {
+                        break;
+                    }
+                    call = unary->expr.get();
+                    ++extra;
+                }
+                if (call == nullptr || !std::holds_alternative<Expr::Call>(call->data)) {
                     if (node.call) {
                         check_expr(*node.call, false);
                     }
                     error(node.loc, "type mismatch");
                 } else {
+                    unsafe_depth_ += extra;
                     checking_defer_ = true;
-                    check_expr(*node.call, false);
+                    check_expr(*call, false);
                     checking_defer_ = false;
+                    unsafe_depth_ -= extra;
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
                 if (node.value == nullptr || node.names.empty()) {
@@ -3488,6 +3709,8 @@ void Checker::check_stmt(const Stmt &stmt) {
 }
 
 void Checker::check_function(const FunctionDecl &fn) {
+    const int saved_unsafe = unsafe_depth_;
+    unsafe_depth_ = fn.unsafe ? 1 : 0;
     if (fn.results.size() > 1) {
         for (const ResultSlot &slot : fn.results) {
             if (slot.is_fn_ptr) {
@@ -3533,6 +3756,7 @@ void Checker::check_function(const FunctionDecl &fn) {
     switches_ = std::move(saved_switches);
     loop_depth_ = saved_loops;
     return_type_ = saved;
+    unsafe_depth_ = saved_unsafe;
     pop();
     checking_.pop_back();
 }

@@ -234,6 +234,10 @@ int run_lsp_tests() {
         "\n"
         "type Row []i32;\n"
         "\n"
+        "func Row::width(self this) i32 {\n"
+        "    return self.len;\n"
+        "}\n"
+        "\n"
         "func main() i32 {\n"
         "    var p Point;\n"
         "    var slice []Point;\n"
@@ -318,6 +322,8 @@ int run_lsp_tests() {
     const std::string slice_items = read_until(from_child[0], "\"id\":17", 3000);
     EXPECT_HAS(check, slice_items, "\"len\"");
     EXPECT(check, slice_items.find("\"x\"") == std::string::npos);
+    EXPECT(check, slice_items.find("\"sum\"") == std::string::npos);
+    EXPECT(check, slice_items.find("\"width\"") == std::string::npos);
 
     const LineCol part_at = at_needle(source, "part.", true);
     EXPECT(check, part_at.line >= 0);
@@ -337,6 +343,7 @@ int run_lsp_tests() {
                   std::to_string(alias_len.character) + "}}}");
     const std::string alias_items = read_until(from_child[0], "\"id\":18", 3000);
     EXPECT_HAS(check, alias_items, "\"len\"");
+    EXPECT_HAS(check, alias_items, "\"width\"");
 
     const LineCol type_call = at_needle(source, "Point.", true);
     EXPECT(check, type_call.line >= 0);

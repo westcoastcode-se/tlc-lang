@@ -528,6 +528,37 @@ int run_sema_tests() {
     }
 
     {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"geom\";\n"
+                         "func main() i32 {\n"
+                         "  var p geom.Point;\n"
+                         "  p.x = 40;\n"
+                         "  p.y = 2;\n"
+                         "  return p.sum();\n"
+                         "}\n"},
+            {"geom.tlc", "package geom;\n"
+                         "export type Point struct { export x i32; export y i32; };\n"
+                         "export func Point::sum(self this) i32 { return self.x + self.y; }\n"},
+        });
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"geom\";\n"
+                         "func main() i32 {\n"
+                         "  var p geom.Point;\n"
+                         "  p.x = 1;\n"
+                         "  return p.hidden();\n"
+                         "}\n"},
+            {"geom.tlc", "package geom;\n"
+                         "export type Point struct { export x i32; export y i32; };\n"
+                         "func Point::hidden(self this) i32 { return self.x; }\n"},
+        });
+        EXPECT_HAS(check, errors, "hidden is not exported");
+    }
+
+    {
         const std::string errors = diagnose(
             "extern(abi=\"c\") func printf(fmt *const u8, ...) i32;\n"
             "extern(abi=\"c\") var slot i32;\n"
@@ -737,6 +768,74 @@ int run_sema_tests() {
             "func Spot::get(self this) i32 { return self.x; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var flag bool = true;\n"
+            "  if (flag) {\n"
+            "    return 1;\n"
+            "  }\n"
+            "  if (!flag) {\n"
+            "    return 2;\n"
+            "  }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Row []i32;\n"
+            "func main() i32 {\n"
+            "  var row = [_]i32{1, 2};\n"
+            "  var plain []i32 = row;\n"
+            "  var view Row = plain;\n"
+            "  return view[0];\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Row []i32;\n"
+            "func main() i32 {\n"
+            "  var row = [_]i32{1, 2};\n"
+            "  var view Row = row;\n"
+            "  var plain []i32 = view;\n"
+            "  return plain[0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Row []i32;\n"
+            "type Line []i32;\n"
+            "func main() i32 {\n"
+            "  var row = [_]i32{1, 2};\n"
+            "  var view Row = row;\n"
+            "  var line Line = view;\n"
+            "  return line[0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Text []const u8;\n"
+            "func Text::get(self *this) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "extern func Point::get(self this) i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -1089,9 +1188,9 @@ int run_sema_tests() {
             "  v = *void(c);\n"
             "  n = i32(v);\n"
             "  p = &n;\n"
-            "  c = *u8(p);\n"
+            "  c = unsafe *u8(p);\n"
             "  v = *void(c);\n"
-            "  p = *i32(v);\n"
+            "  p = unsafe *i32(v);\n"
             "  return *p;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -1113,7 +1212,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var v ?*void = null;\n"
-            "  var p *i32 = *i32(v);\n"
+            "  var p *i32 = unsafe *i32(v);\n"
             "  return 0;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -1143,6 +1242,196 @@ int run_sema_tests() {
             "  return 0;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var x f64 = 1.0;\n"
+            "  var p *f64 = &x;\n"
+            "  var q *const f64 = *const f64(p);\n"
+            "  var wide *void = *void(p);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Integer i32;\n"
+            "func main() i32 {\n"
+            "  var n i32 = 42;\n"
+            "  var p *i32 = &n;\n"
+            "  var q *Integer = *Integer(p);\n"
+            "  var back *i32 = *i32(q);\n"
+            "  return *back;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var raw *u8 = *u8(0);\n"
+            "  var p *Point = *Point(raw);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "unsafe cast");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var n i32 = 1;\n"
+            "  var raw *u8 = unsafe *u8(&n);\n"
+            "  var p *Point = unsafe *Point(raw);\n"
+            "  var back *i32 = *i32(&n);\n"
+            "  var other *Point = *Point(&n);\n"
+            "  return p.x + *back + other.x;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var x f64 = 1.0;\n"
+            "  var p *f64 = &x;\n"
+            "  var q *f32 = *f32(p);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "unsafe cast");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "unsafe func point(raw *u8) *i32 {\n"
+            "  return unsafe *i32(raw);\n"
+            "}\n"
+            "func main() i32 {\n"
+            "  var n i32 = 1;\n"
+            "  return *point(unsafe *u8(&n));\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "unsafe call");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "unsafe func point(raw *u8) *i32 {\n"
+            "  return unsafe *i32(raw);\n"
+            "}\n"
+            "func main() i32 {\n"
+            "  var f = unsafe point;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "unsafe func point(raw *u8) *i32 {\n"
+            "  func nested(p *u8) *i32 { return *i32(p); }\n"
+            "  return unsafe *i32(raw);\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "unsafe cast");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "unsafe func f() i32;\n"
+            "func f() i32 { return 1; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Arena struct { mark i32; };\n"
+            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "func Arena::free(self *this, ptr *u8) void {}\n"
+            "func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "func main() i32 {\n"
+            "  var arena Arena;\n"
+            "  var raw *u8 = *u8(0);\n"
+            "  var p ?*u8 = arena.malloc(4, 1);\n"
+            "  arena.free(raw);\n"
+            "  var q ?*u8 = arena.realloc(raw, 8, 1);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const n = unsafe 1;\n"
+            "func main() i32 { return n; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "unsafe func point(n i32) i32 { return n; }\n"
+            "func main() i32 {\n"
+            "  defer unsafe point(1);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "unsafe func point(n i32) i32 { return n; }\n"
+            "func main() i32 {\n"
+            "  defer point(1);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "unsafe call");
+    }
+
+    {
+        const std::string errors = diagnose("func main() i32 { unsafe var n i32 = 1; return n; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  unsafe func draw() void;\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"geom\";\n"
+             "func main() i32 {\n"
+             "  var n i32 = 42;\n"
+             "  return *unsafe geom.point(unsafe *u8(&n));\n"
+             "}\n"},
+            {"geom.tlc",
+             "export unsafe func point(raw *u8) *i32 {\n"
+             "  return unsafe *i32(raw);\n"
+             "}\n"},
+        });
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"geom\";\n"
+             "func main() i32 {\n"
+             "  var f = geom.point;\n"
+             "  return f == null;\n"
+             "}\n"},
+            {"geom.tlc", "export unsafe func point(raw *u8) *i32 { return unsafe *i32(raw); }\n"},
+        });
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
@@ -3120,6 +3409,105 @@ int run_sema_tests() {
     }
 
     {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\", name=\"printf\") func print(fmt *const u8, ...) i32;\n"
+            "func main() i32 {\n"
+            "  print(\"hi\\n\");\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\", name=\"printf\") func print(fmt *const u8, ...) i32;\n"
+            "func main() i32 {\n"
+            "  printf(\"hi\\n\");\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\", name=\"real_add\") func add(a i32, b i32) i32;\n"
+            "extern(abi=\"c\", name=\"real_add\") func add(a i32, b i32) i32 { return a + b; }\n"
+            "func main() i32 { return add(20, 22); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") func add(a i32, b i32) i32;\n"
+            "extern(abi=\"c\", name=\"real_add\") func add(a i32, b i32) i32 { return a + b; }\n"
+            "func main() i32 { return add(1, 2); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\", name=\"real_add\") func add(a i32, b i32) i32;\n"
+            "extern(abi=\"c\", name=\"other\") func add(a i32, b i32) i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::filesystem::path path = std::filesystem::temp_directory_path() / "tlc-link-name.tlc";
+        {
+            std::ofstream out(path);
+            out << "extern(abi=\"c\", name=\"real_add\") func add(a i32, b i32) i32 { return a + b; }\n"
+                   "extern(abi=\"c\", name=\"lib_errno\") var last_error i32;\n"
+                   "func main() i32 { return add(1, 2) + last_error; }\n";
+        }
+        tlc::Options opt;
+        opt.mode = tlc::Mode::EmitLlvm;
+        opt.input = path.string();
+        const tlc::CompileOutput output = tlc::compile_source(opt);
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        EXPECT(check, output.compiler_stderr.empty());
+        EXPECT(check, output.ir.find("@real_add") != std::string::npos);
+        EXPECT(check, output.ir.find("@lib_errno") != std::string::npos);
+        EXPECT(check, output.ir.find("@add") == std::string::npos);
+        EXPECT(check, output.ir.find("last_error") == std::string::npos);
+    }
+
+    {
+        const std::filesystem::path path = std::filesystem::temp_directory_path() / "tlc-link-clash.tlc";
+        {
+            std::ofstream out(path);
+            out << "extern(abi=\"c\", name=\"real_add\") func add(a i32, b i32) i32;\n"
+                   "extern(abi=\"c\", name=\"real_add\") func wide(a i32) i32;\n"
+                   "func main() i32 { return 0; }\n";
+        }
+        tlc::Options opt;
+        opt.mode = tlc::Mode::EmitLlvm;
+        opt.input = path.string();
+        const tlc::CompileOutput output = tlc::compile_source(opt);
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        EXPECT_HAS(check, output.compiler_stderr, "redefinition");
+    }
+
+    {
+        const std::filesystem::path path = std::filesystem::temp_directory_path() / "tlc-link-body.tlc";
+        {
+            std::ofstream out(path);
+            out << "extern(name=\"renamed_add\") func add(a i32, b i32) i32 { return a + b; }\n"
+                   "extern(name=\"renamed_add\") func sum(a i32, b i32) i32 { return a + b; }\n"
+                   "func main() i32 { return add(1, 2); }\n";
+        }
+        tlc::Options opt;
+        opt.mode = tlc::Mode::EmitLlvm;
+        opt.input = path.string();
+        const tlc::CompileOutput output = tlc::compile_source(opt);
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        EXPECT_HAS(check, output.compiler_stderr, "redefinition");
+    }
+
+    {
         const std::string errors = diagnose("extern type Handle struct {}\nfunc main() i32 { return sizeof(Handle); }\n");
         EXPECT(check, errors.empty());
     }
@@ -4586,8 +4974,8 @@ int run_sema_tests() {
             "import \"builtin\";\n"
             "type Point struct { x i32; y i32; };\n"
             "func main() i32 {\n"
-            "  var p = new(builtin.allocator) Point;\n"
-            "  delete(builtin.allocator) p;\n"
+            "  var p = new(&builtin.allocator) Point;\n"
+            "  delete(&builtin.allocator) p;\n"
             "  return 0;\n"
             "}\n");
         EXPECT(check, errors.empty());
@@ -4609,11 +4997,14 @@ int run_sema_tests() {
             "func Arena::free(self *this, ptr *u8) void {}\n"
             "func main() i32 {\n"
             "  var arena Arena;\n"
-            "  var p *Point = new(arena) Point;\n"
-            "  delete(arena) p;\n"
+            "  var p *Point = new(&arena) Point;\n"
+            "  var q *Point = new(arena) Point;\n"
+            "  delete(&arena) p;\n"
+            "  delete(arena) q;\n"
             "  return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "undeclared identifier");
+        EXPECT_HAS(check, errors, "type mismatch: expected *Arena, found Arena");
     }
 
     {
@@ -4661,8 +5052,10 @@ int run_sema_tests() {
             "func main() i32 {\n"
             "  var live Arena;\n"
             "  const p = &live;\n"
-            "  var n *i32 = new(p) i32;\n"
-            "  delete(p) n;\n"
+            "  var n *i32 = new(&live) i32;\n"
+            "  delete(&live) n;\n"
+            "  var m *i32 = new(p) i32;\n"
+            "  delete(p) m;\n"
             "  return 0;\n"
             "}\n");
         EXPECT(check, errors.empty());
@@ -4729,6 +5122,71 @@ int run_sema_tests() {
             "  return 0;\n"
             "}\n");
         EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(s []i32) i32 { return s.len; }\n"
+            "func main() i32 {\n"
+            "  var str = \"Hello\";\n"
+            "  return take(str);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "[]const u8");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var str = \"Hello\";\n"
+            "  str[0] = 1;\n"
+            "  return str.len;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var bytes []u8 = \"Hello\";\n"
+            "  return bytes.len;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::filesystem::path path = std::filesystem::temp_directory_path() / "tlc-string-slice.tlc";
+        {
+            std::ofstream out(path);
+            out << "var greeting = \"Hello\";\n"
+                   "const plain = \"hi\";\n"
+                   "const c_text *const u8 = \"unix\";\n"
+                   "func take(s []const u8) i32 { return s.len; }\n"
+                   "func main() i32 {\n"
+                   "  var str = \"Hello\";\n"
+                   "  var raw = `Hi`;\n"
+                   "  var empty = \"\";\n"
+                   "  var p *const u8 = \"Hello\";\n"
+                   "  var from_slice *const u8 = plain;\n"
+                   "  var typed []const u8 = \"Yo\";\n"
+                   "  if (str.len != 5 || str[0] != 'H' || str[4] != 'o') { return 1; }\n"
+                   "  if (raw.len != 2 || raw[1] != 'i') { return 2; }\n"
+                   "  if (empty.len != 0) { return 3; }\n"
+                   "  if (p[0] != 'H' || p[4] != 'o') { return 4; }\n"
+                   "  if (greeting.len != 5 || greeting[0] != 'H') { return 5; }\n"
+                   "  if (typed.len != 2 || take(typed) != 2 || take(\"x\") != 1) { return 6; }\n"
+                   "  if (plain.len != 2 || plain[0] != 'h' || from_slice[0] != 'h' || from_slice[1] != 'i') { return 7; }\n"
+                   "  if (c_text[0] != 'u' || c_text[3] != 'x') { return 8; }\n"
+                   "  return 42;\n"
+                   "}\n";
+        }
+        tlc::Options opt;
+        opt.mode = tlc::Mode::Run;
+        opt.input = path.string();
+        const tlc::CompileOutput output = tlc::compile_source(opt);
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        EXPECT(check, output.compiler_stderr.empty());
+        EXPECT(check, output.status == 42);
     }
 
     {
@@ -5360,7 +5818,83 @@ int run_sema_tests() {
             "func one() f32 { return 1.0f; }\n"
             "var x = one();\n"
             "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func one() f32 { return 1.0f; }\n"
+            "const x = one();\n"
+            "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func one() f32 { return 1.0f; }\n"
+            "var x = one() + 1.0f;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func one() f32 { return 1.0f; }\n"
+            "var x = one();\n"
+            "var copied = x;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func call_func() i32 { return 1; }\n"
+            "var item i32 = call_func();\n"
+            "named := call_func();\n"
+            "func main() i32 { return item + named; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func call_func() i32 { return 1; }\n"
+            "const item = call_func();\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func call_func() i32 { return 1; }\n"
+            "var row = [_]i32{call_func()};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "unsafe func raw() i32 { return 7; }\n"
+            "var n = unsafe raw();\n"
+            "func main() i32 { return n; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "unsafe func raw() i32 { return 7; }\n"
+            "var n = raw();\n"
+            "func main() i32 { return n; }\n");
+        EXPECT_HAS(check, errors, "unsafe call");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var numbers = [_]i32{3, 4};\n"
+            "func pair() []i32 { return numbers[0:2]; }\n"
+            "var view = pair();\n"
+            "var typed []i32 = pair();\n"
+            "func main() i32 { return view[0] + typed.len; }\n");
+        EXPECT(check, errors.empty());
     }
 
     {

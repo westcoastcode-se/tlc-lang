@@ -14,7 +14,7 @@ func main() i32 {
 }
 ```
 
-A function may be declared first and defined later, with the same type. Two bodies for the same function are reported as `redefinition`.
+A function may be declared first and defined later, with the same type. Two bodies for the same function are reported as `redefinition`. [`unsafe func`](../expressions/unsafe.md) makes the body an unsafe context. The caller writes `unsafe name(...)`.
 
 ```c
 func add(a i32, b i32) i32;

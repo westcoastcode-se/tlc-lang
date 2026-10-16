@@ -10,9 +10,9 @@ func main() i32 {
     bits = i32(v);
     n = 300;
     p = &n;
-    c = *u8(p);
+    c = unsafe *u8(p);
     v = *void(c);
-    p = *i32(v);
+    p = unsafe *i32(v);
     if (*p != 300) {
         return 1;
     }

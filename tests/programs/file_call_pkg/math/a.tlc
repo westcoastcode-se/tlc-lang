@@ -1,0 +1,11 @@
+package math;
+
+func seed() i32 {
+    return 10;
+}
+
+export var ready = seed();
+
+export func add(a i32, b i32) i32 {
+    return a + b;
+}

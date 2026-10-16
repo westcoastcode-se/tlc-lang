@@ -45,7 +45,8 @@ bool same_spec(const SpecArg &lhs, const SpecArg &rhs) {
     }
     return lhs.type_name == rhs.type_name && lhs.type_package == rhs.type_package && lhs.is_struct == rhs.is_struct &&
            lhs.is_enum == rhs.is_enum && lhs.indirections == rhs.indirections && lhs.optional == rhs.optional &&
-           lhs.const_pointee == rhs.const_pointee && lhs.is_array == rhs.is_array && lhs.array_len == rhs.array_len;
+           lhs.const_pointee == rhs.const_pointee && lhs.is_array == rhs.is_array && lhs.elem_const == rhs.elem_const &&
+           lhs.array_len == rhs.array_len;
 }
 
 ResultSlot slot_from_spec(const SpecArg &arg) {
@@ -58,6 +59,7 @@ ResultSlot slot_from_spec(const SpecArg &arg) {
     slot.optional = arg.optional;
     slot.const_pointee = arg.const_pointee;
     slot.is_array = arg.is_array;
+    slot.elem_const = arg.elem_const;
     slot.array_len = arg.array_len;
     return slot;
 }
@@ -71,6 +73,7 @@ void apply_spec(ResultSlot &slot, const SpecArg &arg) {
     slot.optional = arg.optional;
     slot.const_pointee = arg.const_pointee;
     slot.is_array = arg.is_array;
+    slot.elem_const = arg.elem_const;
     slot.array_len = arg.array_len;
 }
 
@@ -220,6 +223,7 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
         }
         out.is_array = true;
         out.array_len = cursor->length;
+        out.elem_const = cursor->element->is_const;
         cursor = cursor->element.get();
     }
     int depth = 0;
@@ -294,6 +298,9 @@ std::string Checker::mangle_spec(const std::string &base, const std::vector<Spec
         }
         if (arg.is_array) {
             name += "arr.";
+            if (arg.elem_const) {
+                name += "const.";
+            }
             name += std::to_string(arg.array_len);
             name += '.';
         }
@@ -563,7 +570,7 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
     }
     const Type type = object_type(concrete.type_name, concrete.indirections, concrete.is_array, concrete.array_len, arg.loc,
                                   false, concrete.type_package, false, concrete.is_enum, false, concrete.optional,
-                                  concrete.const_pointee);
+                                  concrete.const_pointee, false, concrete.elem_const);
     if (type.kind == TypeKind::Invalid) {
         return false;
     }
@@ -1180,7 +1187,7 @@ bool Checker::resolve_result_typeof(FunctionDecl &fn) {
         }
         const Type type = operand_type(node->on_type, node->type_name, node->type_package, node->is_struct, node->is_enum,
                                        node->indirections, node->optional, node->expr.get(), node->loc,
-                                       node->const_pointee, node->is_array, node->array_len);
+                                       node->const_pointee, node->is_array, node->array_len, node->elem_const);
         if (type.kind == TypeKind::Invalid) {
             ok = false;
             continue;
@@ -1372,7 +1379,8 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         }
         Type signature = function_signature(method);
         methods_[owner][spec_name].insert_or_assign(
-            method.name, MethodInfo{std::move(signature), method.body != nullptr, method.static_method});
+            method.name, MethodInfo{std::move(signature), method.body != nullptr, method.static_method, method.unsafe,
+                                     method.exported, owner});
         deferred_methods_.push_back(OwnedFn{owner, std::move(method)});
     }
     instantiate_assoc(owner, *templ, spec_name, bounds);
@@ -1462,6 +1470,9 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     if (templ->body == nullptr || templ->is_extern || templ->extern_c || templ->variadic) {
         error(call.loc, "not supported yet");
         return type_invalid();
+    }
+    if (templ->unsafe && unsafe_depth_ == 0) {
+        error(call.loc, "unsafe call");
     }
     int pack_at = -1;
     for (std::size_t i = 0; i < templ->type_params.size(); ++i) {

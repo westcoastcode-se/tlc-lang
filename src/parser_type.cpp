@@ -25,7 +25,7 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             continue;
         }
         if (token.kind == TokenKind::KwExtern) {
-            take_extern(specs.is_extern, specs.extern_c);
+            take_extern(specs.is_extern, specs.extern_c, specs.link_name);
             continue;
         }
         if (token.kind == TokenKind::KwVoid) {
@@ -198,7 +198,7 @@ std::string Parser::parse_enum_underlying() {
     return out;
 }
 
-bool Parser::take_extern(bool &is_extern, bool &extern_c) {
+bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name) {
     if (!eat(TokenKind::KwExtern)) {
         return false;
     }
@@ -206,54 +206,81 @@ bool Parser::take_extern(bool &is_extern, bool &extern_c) {
     if (!eat(TokenKind::LParen)) {
         return true;
     }
-    auto finish = [&]() {
-        if (check(TokenKind::Comma)) {
-            diags_.error(peek().loc, "not supported yet");
-            while (!check(TokenKind::RParen) && !eof()) {
-                ++pos_;
+    // A later `extern` in the same specifier list must keep a name already stored.
+    bool saw_abi = false;
+    bool saw_name = false;
+    bool any = false;
+    auto skip_arg = [&]() {
+        while (!check(TokenKind::RParen) && !check(TokenKind::Comma) && !eof()) {
+            ++pos_;
+        }
+    };
+    while (!check(TokenKind::RParen) && !eof()) {
+        any = true;
+        if (!check(TokenKind::Identifier)) {
+            error_here("expected 'abi'");
+            skip_arg();
+        } else {
+            const std::string key = peek().text;
+            const SourceLoc key_loc = peek().loc;
+            const bool is_abi = key == "abi";
+            const bool is_name = key == "name";
+            ++pos_;
+            if (!is_abi && !is_name) {
+                diags_.error(key_loc, "not supported yet");
+                skip_arg();
+            } else {
+                const bool duplicate = (is_abi && saw_abi) || (is_name && saw_name);
+                if (duplicate) {
+                    diags_.error(key_loc, "redefinition");
+                }
+                if (is_abi) {
+                    saw_abi = true;
+                } else {
+                    saw_name = true;
+                }
+                if (!eat(TokenKind::Eq)) {
+                    error_here("expected '='");
+                    skip_arg();
+                } else if (!check(TokenKind::StringLiteral)) {
+                    error_here("expected a string");
+                    skip_arg();
+                } else {
+                    if (!duplicate && is_abi) {
+                        if (peek().text == "c") {
+                            extern_c = true;
+                        } else if (peek().text == "tlc") {
+                            extern_c = false;
+                        } else {
+                            diags_.error(peek().loc, "not supported yet");
+                        }
+                    } else if (!duplicate) {
+                        if (peek().text.empty()) {
+                            diags_.error(peek().loc, "type mismatch");
+                        } else if (!link_name.empty() && link_name != peek().text) {
+                            diags_.error(peek().loc, "redefinition");
+                        } else {
+                            link_name = peek().text;
+                        }
+                    }
+                    ++pos_;
+                }
             }
         }
-        expect(TokenKind::RParen, "expected ')'");
-    };
-    if (!check(TokenKind::Identifier) || peek().text != "abi") {
-        if (check(TokenKind::Identifier)) {
-            diags_.error(peek().loc, "not supported yet");
-            ++pos_;
-        } else {
-            error_here("expected 'abi'");
+        if (!check(TokenKind::Comma)) {
+            break;
         }
-        while (!check(TokenKind::RParen) && !check(TokenKind::Comma) && !eof()) {
-            ++pos_;
+        const SourceLoc comma = peek().loc;
+        ++pos_;
+        if (check(TokenKind::RParen) || eof()) {
+            diags_.error(comma, "not supported yet");
+            break;
         }
-        finish();
-        return true;
     }
-    ++pos_;
-    if (!eat(TokenKind::Eq)) {
-        error_here("expected '='");
-        while (!check(TokenKind::RParen) && !eof()) {
-            ++pos_;
-        }
-        expect(TokenKind::RParen, "expected ')'");
-        return true;
+    if (!any) {
+        error_here("expected 'abi'");
     }
-    if (!check(TokenKind::StringLiteral)) {
-        error_here("expected a string");
-        while (!check(TokenKind::RParen) && !check(TokenKind::Comma) && !eof()) {
-            ++pos_;
-        }
-        finish();
-        return true;
-    }
-    if (peek().text == "c") {
-        extern_c = true;
-    } else if (peek().text == "tlc") {
-        extern_c = false;
-    } else {
-        diags_.error(peek().loc, "not supported yet");
-    }
-    ++pos_;
-    finish();
+    expect(TokenKind::RParen, "expected ')'");
     return true;
 }
 
@@ -358,6 +385,7 @@ bool Parser::parse_field(FieldDecl &field) {
     field.optional = type.optional;
     field.const_pointee = type.const_pointee;
     field.is_array = type.is_array;
+    field.elem_const = type.elem_const;
     field.array_len = type.array_len;
     field.array_len_name = type.array_len_name;
     field.type_args = type.type_args;
@@ -477,7 +505,7 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
 }
 
 void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_static, bool is_extern,
-                             bool extern_c) {
+                             bool extern_c, std::string link_name) {
     reject_c_var(peek().loc);
     const PlacedType type = parse_func_type();
     while (true) {
@@ -509,6 +537,7 @@ void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_
         var.is_static = is_static;
         var.is_extern = is_extern;
         var.extern_c = extern_c;
+        var.link_name = link_name;
         if (eat(TokenKind::Eq)) {
             var.init = parse_assignment();
         }
@@ -701,6 +730,11 @@ Parser::PlacedType Parser::parse_go_type() {
     type.is_array = array.is_array;
     type.array_len = array.length;
     type.array_len_name = array.len_name;
+    // `[]const u8` and `[4]const u8`. `*const` stays on the pointer prefix.
+    if (check(TokenKind::KwConst)) {
+        type.elem_const = true;
+        ++pos_;
+    }
     const PointerPrefix inner_prefix = parse_pointer_prefix();
     const int inner = inner_prefix.count;
     if (check(TokenKind::LBracket)) {
@@ -831,6 +865,7 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             param.optional = type.optional;
             param.const_pointee = type.const_pointee;
             param.is_array = type.is_array;
+            param.elem_const = type.elem_const;
             param.array_len = type.array_len;
             param.is_fn_ptr = type.is_fn_ptr;
             param.ret_indirections = type.ret_indirections;
@@ -869,6 +904,7 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
     slot.fn_variadic = type.fn_variadic;
     slot.fn_results = type.fn_results;
     slot.is_array = type.is_array;
+    slot.elem_const = type.elem_const;
     slot.array_len = type.array_len;
     slot.array_len_name = type.array_len_name;
     slot.type_args = type.type_args;
@@ -914,12 +950,14 @@ void Parser::parse_results(FunctionDecl &fn) {
     fn.const_pointee = first.const_pointee;
 }
 
-FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body) {
+FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body,
+                                    std::string link_name) {
     FunctionDecl fn;
     fn.exported = exported;
     fn.is_static = is_static;
     fn.is_extern = is_extern;
     fn.extern_c = extern_c;
+    fn.link_name = std::move(link_name);
     fn.loc = peek().loc;
     expect(TokenKind::KwFunc, "expected 'func'");
     if (check(TokenKind::Identifier)) {
@@ -1429,6 +1467,10 @@ TypeArg Parser::parse_one_type_arg() {
         const ArrayMark array = parse_array_suffix(true);
         arg.array_len = array.length;
         arg.array_len_name = array.len_name;
+        if (check(TokenKind::KwConst)) {
+            arg.elem_const = true;
+            ++pos_;
+        }
         TypeArg element = parse_one_type_arg();
         arg.type_name = std::move(element.type_name);
         arg.type_package = std::move(element.type_package);
