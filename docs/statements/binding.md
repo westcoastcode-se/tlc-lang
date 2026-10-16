@@ -1,105 +1,6 @@
-# Statements
+# Bindings
 
-[Index](README.md) · [Previous: Expressions](expressions.md) · [Next: Functions](functions.md) · [Grammar](grammar.md)
-
-A block is a sequence of statements in braces. `if`, `while`, and `for` take a block. `else` is a block or another `if`. A body without `{` is reported as `expected '{'`. `do` and `switch` take a statement, so their body need not be a block. An empty statement is `;`.
-
-```c
-func main() i32 {
-    var n i32 = 0;
-    if (n) {
-        n = 1;
-    } else if (1) {
-        n = 40;
-    } else {
-        n = 2;
-    }
-    while (n < 42) {
-        n = n + 1;
-    }
-    do n = n + 1; while (0);
-    ;
-    return n;
-}
-```
-
-## `for`
-
-`for` has three clauses, as in C. A declaration in the first clause is visible only inside the loop. That clause may also bind several results with `var`, `:=`, or `=`. A comma in the name list must be followed by another name.
-
-```c
-func main() i32 {
-    var s i32 = 0;
-    for (var i i32 = 1; i <= 4; i = i + 1) {
-        s = s + i;
-    }
-    return s;
-}
-```
-
-`continue` starts the next iteration. `break` leaves the loop.
-
-```c
-func main() i32 {
-    var s i32 = 0;
-    for (var i i32 = 0; i < 5; i = i + 1) {
-        if (i == 2) {
-            continue;
-        }
-        if (i == 4) {
-            break;
-        }
-        s = s + i;
-    }
-    return s;
-}
-```
-
-## `switch`
-
-`switch` falls through until `break`. A `case` label is a constant `i32`. `case 1u32` is reported as `type mismatch`. Each value appears once, and `default` appears once.
-
-```c
-func main() i32 {
-    var n i32 = 1;
-    var x i32 = 0;
-    switch (n) {
-    case 1:
-        x = 2;
-    case 2:
-        x = x + 40;
-        break;
-    default:
-        x = 7;
-        break;
-    }
-    return x;
-}
-```
-
-The program returns 42. `break` leaves the innermost loop or `switch`. `continue` is valid inside loops.
-
-## `defer`
-
-`defer` runs one call when the enclosing block is left. The call can be a function, a method, an inner function, or an anonymous function. Calls in the same block run in reverse order. A `defer` whose statement did not run does not run. `return`, `break`, `continue`, and reaching the end of the block all run the calls of the blocks they leave. A `return` expression is evaluated before those calls. Arguments, and a method receiver, are evaluated at the `defer`.
-
-```c
-func note(n i32) void {
-}
-
-func main() i32 {
-    defer note(1);
-    defer func (value i32) {
-    }(10);
-    return 0;
-}
-```
-
-`note(1)` runs after the anonymous call.
-
-An anonymous function is an expression, `func (parameters) { body }`. The return type may be omitted, and then it is `void`. A return type is written after the parameters when it is present: `func () i32 { return 1; }`. Several results use the same parenthesized list as a named function: `func () (i32, i32) { return 1, 2; }`. The call is the argument list after the body.
-
-## Bindings
+[Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
 A variable is `var name type`, `var name = expr`, or `name := expr`. `i32 value = 1` is reported as `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`, `var p = Point{}`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *i32`, `var buf [32]u8`, `var ps [2]*i32`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`. `p := Point{}` is the same inferred struct value.
 
@@ -205,7 +106,7 @@ An integer or bool array can be that constant too: `const fixed = [_]i32{19, 2}`
 
 A string literal is `*const u8`. `const label *const u8 = "unix"` and `const label = "hi"` keep that type. The name has no address. `const p *i32 = &n` is reported as `type mismatch`.
 
-`export const name = expr` and `export const name Type = expr` publish the constant. Another package reads it as `pkg.name` or `import { name }`. Assigning it is rejected the same way as any other constant. A constant without `export` is reported as `name is not exported`. `const Entity::next = expr` is a constant on that type, written beside the struct. See [Methods](methods.md).
+`export const name = expr` and `export const name Type = expr` publish the constant. Another package reads it as `pkg.name` or `import { name }`. Assigning it is rejected the same way as any other constant. A constant without `export` is reported as `name is not exported`. `const Entity::next = expr` is a constant on that type, written beside the struct. See [Methods](../methods/constant.md).
 
 Inside a function, `const name = expr` is an immutable binding. The type is the type of the expression. `name = ...` is reported as `type mismatch`. `&name` has type `*const T`, so a store through that pointer is reported as `type mismatch`. The binding is not a compile-time integer, and it cannot be an array length.
 
@@ -345,25 +246,16 @@ func main() i32 {
 }
 ```
 
-## `new` and `delete`
+## Cost
 
-`new T` reserves space for one `T` and yields `*T`. `delete p` releases that pointer. With no allocator written, both use `builtin.allocator`. `new(allocator) T` and `delete(allocator) p` use another value whose type has the methods of `Allocator`. The allocator is described with `builtin`. It is passed the same way as the receiver of `malloc`: a const value and a `*const` pointer are `type mismatch: expected *Arena, found *const Arena`. `const p = &arena` is a mutable `*Arena`, so `new(p)` uses `arena`. `new Point{.x = 40, .y = 2}` writes those fields after the block is reserved. A field that is left out stays zero. `new Point{1, 2}` and an initializer on a type that is not a struct are reported as `type mismatch`. `new [n]T` reserves `n` elements and yields `*T`. `new [n]Point{{.x = 1}...}` stores that value in every element. `new [_]Point{{.x = 1}, {.y = 2}}` yields `*[2]Point`. `new Box[i32]` allocates one specialization.
+`var value = 1` is 2 stores, 0 and then 1. `var n i32` with no initializer is 1 store of 0. `extra := 2` is the same 2 stores. A pointer binding adds 1 `leaq` and 1 store of that address after a store of null.
 
-```c
-func main() i32 {
-    var p *Point = new Point{.x = 40};
-    var x i32 = p.x;
-    delete p;
-    return x;
-}
-```
+A local `const value = 40 + 2` is folded and stored like `var value = 42`: 2 stores. It is not a compile-time integer. A file-scope `const N = 4` used as `return N` is the same 2 instructions as `return 4`. No slot is read.
 
-## `assert`
+A file-scope `var n i32 = 7` occupies space in the binary. `return n` is 1 `movl` from that address and `retq`. `n = n + 1` in `main` is 5 instructions: load, add 1, store, load again, return.
 
-`assert` checks a constant integer while compiling. It may stand at file scope or inside a function. The condition is an expression such as `sizeof(i32) == 4`, `typeof(i32) == typeof(i64)`, or `1.5f < 2.0f`, and the message is a string literal. A false condition is an error, and the diagnostic is that message. A true `assert` produces no code. A condition that is not a constant is reported as `not supported yet`.
+A tuple local `(40, 2)` is 2 stores. Unpacking it into two names is 2 loads and 2 stores. A `for` whose first clause unpacks a call pays the traced call once per check of the condition.
 
-```c
-assert(sizeof(i32) == 4, "i32 must be 4 bytes");
-```
+A local array zeroes every element and then stores each listed value: 1 `movl` each. A file-scope array is initialized in the binary. Reading one element of it is 1 `movl`. A compile-time length such as `[N]i32` adds no instructions beyond the element stores.
 
-[Index](README.md) · [Previous: Expressions](expressions.md) · [Next: Functions](functions.md) · [Grammar](grammar.md)
+[Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

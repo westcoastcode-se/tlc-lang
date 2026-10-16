@@ -1,6 +1,6 @@
-# Enums and type aliases
+# Enums
 
-[Index](README.md) · [Previous: Methods](methods.md) · [Grammar](grammar.md)
+[Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
 An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `i32`, and it does not convert to its representation. The semicolon after `}` may be omitted.
 
@@ -106,36 +106,10 @@ func main() i32 {
 
 `value.code()` passes `value`. The method is written in the same file as `type Color enum`. Every file in the package can call it, and it is not exported.
 
-## Type aliases
+## Cost
 
-```c
-type Point struct {
-    x i32;
-    y i32;
-};
+An enumerator is an `i32` immediate, or the width written in parentheses. `return v == Color.Blue` stores the parameter and compares it with 41: 6 instructions including `retq`. The compare is 4 of those, the same shape as an integer compare against an immediate. No table is consulted.
 
-type Ptr *Point;
-type Integer i32;
-type Pair [2]i32;
+A method on the enum is a traced call. The value is passed as that integer. `extern(abi="c")` enum uses the same `i32` and the same compare.
 
-func main() i32 {
-    var p Point;
-    p.x = 40;
-    p.y = 2;
-    var q Ptr = Ptr(&p);
-    var n Integer = Integer(0);
-    var pair Pair;
-    pair[0] = p.x;
-    return (*q).y + i32(n) + pair[0];
-}
-```
-
-`type Integer i32` is a distinct type with the same representation as `i32`. A cast confirms which type a value has: `Integer(10)` and `i32(n)`. `var n Integer = 10`, `var wide i32 = n`, and `n + 1` are reported as `type mismatch`. `n + Integer(1)` has type `Integer`. A condition accepts the alias, as in `if (n)`. Two aliases of `i32`, such as `Integer` and `Count`, are different types. `Ptr` is different from `*Point`, and `Pair` is different from `[2]i32`. `pair[0]` still has the element type. A parameter, a result, and a field can use the name. `sizeof(Integer)` is `sizeof(i32)`. `typeof(Integer).name()` is `Integer`. A file-scope `const value Integer = Integer(10)` and `const value = Integer(10)` have type `Integer`. That name is not an array length. A primitive alias can have methods, static functions, and `var Integer::ten`. `Ptr`, `Pair`, and a struct alias such as `type Spot Point` cannot. The builtin name `i32` cannot either.
-
-`type Point struct`, `type Color enum`, and `type Shape trait` define a new type. `type Point Point` is reported as `redefinition`, because the alias repeats the struct. `type Point i32` beside `type Point struct` is reported as `redefinition`. A variable and `sizeof` use the bare name, `var p Point` and `sizeof(Point)`. `struct` in that position, as in `var p struct Point` or `sizeof(struct Point)`, is reported as `expected a type`. An exported type alias is imported as a type name.
-
-## Keywords
-
-Beyond C, `import`, `export`, `package`, `trait`, `func`, `defer`, `var`, and `type` are keywords. `impl`, `from`, `as`, and `this` are identifiers. The full list is in the [grammar](grammar.md#tokens).
-
-[Index](README.md) · [Previous: Methods](methods.md) · [Grammar](grammar.md)
+[Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

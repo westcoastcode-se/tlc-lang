@@ -24,7 +24,7 @@ build/tlc --test main.tlc
 
 With no mode flag, `tlc` writes an executable. The default name is `a.out`. `cc` links it. `--run` compiles, links, and runs. The exit status is the program's. `-l` and `-L` link shared or static libraries. `-Bstatic` and `-Bdynamic` choose which kind each `-l` uses. A library path, such as `libfoo.a`, `libfoo.so`, or `libfoo.so.1`, is passed to the linker as well.
 
-`import "vendor/sdl3"` loads a package from `lib/tlc/vendor` next to the compiler prefix, or from the directory in `TLC_LIB`. A package there is `.tlc` bindings plus the static and shared libraries beside them. Those libraries are linked when the package is imported. `import "builtin"` is the compiler package. `import "builtin/env/consts"` supplies `consts.family`, the text `unix` or `windows`. `import "std/testing"` loads `lib/tlc/std/testing`. See [Packages](docs/packages.md).
+`import "vendor/sdl3"` loads a package from `lib/tlc/vendor` next to the compiler prefix, or from the directory in `TLC_LIB`. A package there is `.tlc` bindings plus the static and shared libraries beside them. Those libraries are linked when the package is imported. `import "builtin"` is the compiler package. `import "builtin/env/consts"` supplies `consts.family`, the text `unix` or `windows`. `import "std/testing"` loads `lib/tlc/std/testing`. See [Packages](docs/packages/package.md).
 
 `examples/triangle` draws a triangle with SDL3 and OpenGL. `examples/tetris` is a game in the same kind of window:
 

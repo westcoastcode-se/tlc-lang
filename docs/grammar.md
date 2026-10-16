@@ -6,11 +6,15 @@ This page is the syntax of tlc. Meaning, types, and diagnostics are in the [lang
 
 ## Notation
 
+A grammar rule adds no instructions. [Cost](cost.md) is how the counts on the feature pages were measured.
+
 The grammar is EBNF. A name is a rule. `"text"` is a terminal. `[ x ]` is optional, `{ x }` is zero or more, and `( x )` groups. `|` separates alternatives. When two alternatives could match, the parser tries the earlier one.
 
 Spaces, tabs, newlines, `//` comments, and `/* */` comments are ignored between tokens.
 
 ## Source file
+
+A source file, a `package` clause, and an import add no instructions. They are resolved while compiling.
 
 ```ebnf
 file        = [ package ] { import } { declaration } ;
@@ -37,6 +41,8 @@ declaration = function
 `export` and `extern` may stand, in any order, in front of a function, a method, a variable, or a `type`. `export` may also stand in front of a file-scope `const`, in front of `const Type::name`, in front of `var Type::name`, in front of `var name = expr`, and in front of `name := expr`. `export const Type::name` publishes that constant, including on a generic struct. Another package reads `pkg.Type.name` or `pkg.Box[i32].name`. A `const` inside a struct is reported as `not supported yet`. `extern` on `const Type::name`, and `extern` on `var name = expr` or `name := expr`, are reported as `not supported yet`. `extern` may be followed by `(abi="c")` or `(abi="tlc")`. A bare `extern` means `abi="tlc"`. `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file). `extern(abi="tlc")` names a tlc library symbol.
 
 ## Functions and methods
+
+A function definition adds the instructions of its body. A call pushes a trace frame: 36 instructions in the caller when fewer than 32 frames are stored, plus the callee. The sequences are on [Functions](functions/function.md).
 
 ```ebnf
 function    = "func" identifier [ type-params ] "(" [ parameters ] ")" result ( block | ";" ) ;
@@ -73,6 +79,8 @@ An inner function uses the same `function` form inside a block, and it has a bod
 
 ## Variables
 
+`var n i32 = 1` stores 0 and then stores 1: 2 instructions. A file-scope integer `const` folds into the instruction that uses it and adds no load. The sequences are on [Bindings](statements/binding.md).
+
 A typed variable names the type in Go order, after the name:
 
 ```ebnf
@@ -85,7 +93,7 @@ const-decl  = "const" identifier [ go-type ] "=" expression ";"
             | "const" identifier [ "[" name { "," name } "]" ] "::" identifier [ go-type ] "=" expression ";" ;
 ```
 
-`var Entity::next i32 = 1` belongs to the struct or enum `Entity`. It is not a field. On a generic struct the names match the struct, as in `var Box[T]::extra i32` and `var Buf[N, T]::count i32 = N`. The use is `Entity.next`, `Box[i32].extra`, or `Buf[4, i32].count`. `const Entity::next = 1` and `const Box[T]::limit = 4` are constants on the type, written beside it. See [Methods](methods.md).
+`var Entity::next i32 = 1` belongs to the struct or enum `Entity`. It is not a field. On a generic struct the names match the struct, as in `var Box[T]::extra i32` and `var Buf[N, T]::count i32 = N`. The use is `Entity.next`, `Box[i32].extra`, or `Buf[4, i32].count`. `const Entity::next = 1` and `const Box[T]::limit = 4` are constants on the type, written beside it. See [Variables on a type](methods/variable.md) and [Constants on a type](methods/constant.md).
 
 `var name :=` is an error. Inside a function, several names unpack one tuple. A call that returns several results is that tuple:
 
@@ -100,6 +108,8 @@ binding     = "var" name-list "=" expression ";"
 A variable whose type is a function pointer is a `var` whose type is a `func-type`, as in `var fp func (i32, i32) i32 = add`. `var name = function` infers that pointer from a function or a static function.
 
 ## Structs, enums, traits, and type aliases
+
+Declaring a type adds no instructions. A value of the type costs what [Structs](types/struct.md), [Unions](types/union.md), [Enums](types/enum.md), and [Traits](methods/trait.md) measure. A trait parameter is specialized, so the call does not consult a table.
 
 ```ebnf
 type-decl   = "type" identifier [ type-params ] type-body ;
@@ -141,6 +151,8 @@ A trait method has no body and no receiver. A trait field is a name and a type, 
 
 ## Types
 
+A type spelling adds no instructions. `sizeof` folds to an immediate. The widths and the conversions are on [Numeric types](types/integer.md).
+
 A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. An empty length is a slice: `[]i32` and `func head(a []i32) []i32`. `i32[4]`, `i32[N]`, and `i32[]` are reported as `type mismatch`.
 
 ```ebnf
@@ -180,6 +192,8 @@ An array uses `go-type` in every position, including a parameter and a result: `
 
 ## Statements
 
+`if (n)` is a compare and a jump. `while` and `for` repeat that compare. `switch` subtracts and branches. `defer` is a flag and a call without a trace frame. `assert` adds no instructions. The counts are on the statement pages.
+
 ```ebnf
 block       = "{" { statement } "}" ;
 statement   = block
@@ -211,6 +225,8 @@ for-init    = ";" | var-decl | binding | expression ";" ;
 `if`, `while`, and `for` take a block. `else` takes a block or another `if`. A body without `{` is reported as `expected '{'`. `defer` takes one call expression. `assert` checks a constant integer at compile time. The string is the diagnostic when the condition is false. `case` and `default` are statements, so they appear inside the switch body.
 
 ## Expressions
+
+An `i32` add of two locals is 2 instructions. A comparison is 5. A traced call is 36 instructions in the caller when fewer than 32 frames are stored. The operator table is on [Expressions](expressions/operator.md).
 
 Operators bind from the top of this list downward. Assignment is right-associative. The others are left-associative.
 
@@ -291,6 +307,8 @@ A struct initializer names fields: `{.value = 10, .complex = {.inner_value = 20}
 `[_]i32{10, 20, 12}` is an array literal. `_` stands for the length, which is the number of values, so the type is `[3]i32`. At file scope it initializes a variable when each value is a constant: `var row = [_]i32{10, 20, 12}`, `var grid = [_][2]i32{{1, 2}, {3, 4}}`, and `const fixed = [_]i32{19, 2}`.
 
 ## Tokens
+
+A token adds no instructions. Comments are discarded by the lexer.
 
 ```ebnf
 identifier  = ( letter | "_" ) { letter | digit | "_" } ;

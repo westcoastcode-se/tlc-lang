@@ -10,18 +10,94 @@ A diagnostic has this form:
 file:line:column: error: message
 ```
 
+Each feature page ends with the instructions that feature runs. [Cost](cost.md) says how those counts were measured. `tlc` does not optimize, and the counts are for `x86_64-pc-linux-gnu`.
+
 ## Reference
 
-- [The compiler](compiler.md) — invoking `tlc`, debug information, and the language server
-- [Packages](packages.md) — files, imports, visibility, and `extern`
-- [Types](types.md) — integers, floating-point types, pointers, and literals
-- [Expressions](expressions.md) — operators, casts, tuples, and `null`
-- [Statements](statements.md) — control flow, bindings, and `defer`
-- [Functions](functions.md) — results, generics, tests, and function pointers
-- [Builtin](builtin.md) — `builtin.trace`, `builtin.va`, `builtin.panic`, and `consts.family`
-- [Structs, pointers, and arrays](structs.md) — layout, initializers, and unions
-- [Methods and traits](methods.md)
-- [Enums and type aliases](enums.md)
+### Compiler
+
+- [Options](compiler/option.md)
+- [Debug information](compiler/debug.md)
+- [Language server](compiler/lsp.md)
+- [Linking](compiler/link.md)
+- [Symbol names](compiler/symbol.md)
+- [A program](compiler/program.md)
+- [Comments](compiler/comment.md)
+
+### Packages
+
+- [Packages](packages/package.md)
+- [Imports](packages/import.md)
+- [Libraries](packages/library.md)
+- [Visibility](packages/visibility.md)
+- [`extern`](packages/extern.md)
+
+### Types
+
+- [Numeric types](types/integer.md)
+- [Pointers](types/pointer.md)
+- [`void`, `bool`, and floating-point types](types/float.md)
+- [Literals](types/literal.md)
+- [Strings](types/string.md)
+- [`sizeof`](types/sizeof.md)
+- [Slices](types/slice.md)
+- [The Type type](types/type.md)
+- [Structs](types/struct.md)
+- [Unions](types/union.md)
+- [Arrays](types/array.md)
+- [Enums](types/enum.md)
+- [Type aliases](types/alias.md)
+- [Keywords](keyword.md)
+
+### Expressions
+
+- [Expressions](expressions/operator.md)
+- [Logical operators](expressions/logical.md)
+- [Pointers and null](expressions/null.md)
+- [Narrowing](expressions/narrowing.md)
+- [Conditions](expressions/condition.md)
+- [Type values](expressions/type.md)
+- [Casts](expressions/cast.md)
+- [Tuples and lists](expressions/tuple.md)
+
+### Statements
+
+- [Statements](statements/block.md)
+- [`for`](statements/for.md)
+- [`switch`](statements/switch.md)
+- [`defer`](statements/defer.md)
+- [Bindings](statements/binding.md)
+- [`new` and `delete`](statements/new.md)
+- [`assert`](statements/assert.md)
+
+### Functions
+
+- [Functions](functions/function.md)
+- [Several results](functions/result.md)
+- [Nested functions](functions/nested.md)
+- [Generics](functions/generic.md)
+- [`typeof` as a result](functions/typeof.md)
+- [Structs and arrays](functions/aggregate.md)
+- [Tests](functions/test.md)
+- [Function pointers](functions/pointer.md)
+
+### Methods
+
+- [Methods](methods/method.md)
+- [Generic methods](methods/generic.md)
+- [Static functions](methods/static.md)
+- [Methods on primitive aliases](methods/alias.md)
+- [Variables on a type](methods/variable.md)
+- [Constants on a type](methods/constant.md)
+- [Traits](methods/trait.md)
+
+### Builtin
+
+- [`trace`](builtin/trace.md)
+- [`allocator`](builtin/allocator.md)
+- [`va`](builtin/va.md)
+- [`panic`](builtin/panic.md)
+- [`builtin/env/consts`](builtin/family.md)
 
 ## Grammar
 
@@ -49,4 +125,4 @@ func main() i32 {
 tlc --run main.tlc
 ```
 
-The process exits with status 42. There is one `main`, and it belongs to the entry file.
+The process exits with status 42. There is one `main`, and it belongs to the entry file. The sum is folded while compiling, so `main` executes 2 instructions: `movl $42, %eax` and `retq`.

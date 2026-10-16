@@ -1,6 +1,6 @@
-# Structs, pointers, and arrays
+# Structs
 
-[Index](README.md) · [Previous: Builtin](builtin.md) · [Next: Methods](methods.md) · [Grammar](grammar.md)
+[Index](../README.md) · [Previous: The Type type](type.md) · [Next: Unions](union.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
 A struct definition is `type Name struct`. Variables, parameters, results, and fields then use the bare name. A pointer is written `*Point` and `*i32`, in a parameter, a result, and every other type position. `?*Point` may be `null`. `*Point` may not. A field is a name, then its type, in the same order as `var`: `x i32`, `next ?*Node`, `home *Address`, `raw [8]u8`. A field ends with `;`. The semicolon after `}` may be omitted.
 
@@ -135,7 +135,7 @@ func main() i32 {
 
 ## Initializers
 
-A struct value names its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. It also comes from a type name written in front of the braces: `Point{}`, `Point{.x = 1}`, and `geom.Point{}`. A field that is left out is zero. Naming a field twice is reported as `redefinition`. An unknown field is reported as `undeclared identifier`. Used where the type is not a struct, the initializer is reported as `type mismatch`. A name that is not a struct, such as `Integer{}`, is reported as `type mismatch`. `{10, 20}` and `Point{10, 20}` are value lists, so where a struct is expected either one is reported as `type mismatch`. `(10, 20)` is a tuple, so where a struct is expected it is reported as `type mismatch`. An empty `{}` leaves every field zero and still needs a type from the place it is used. Mixing a named field and a positional value is reported as `type mismatch`. A designated initializer that omits a `*T` field is reported as `type mismatch`. An omitted `?*T` field is `null`. `new Point{.x = 1}` reserves a `Point` and writes those fields. See [Builtin](builtin.md).
+A struct value names its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result. It also comes from a type name written in front of the braces: `Point{}`, `Point{.x = 1}`, and `geom.Point{}`. A field that is left out is zero. Naming a field twice is reported as `redefinition`. An unknown field is reported as `undeclared identifier`. Used where the type is not a struct, the initializer is reported as `type mismatch`. A name that is not a struct, such as `Integer{}`, is reported as `type mismatch`. `{10, 20}` and `Point{10, 20}` are value lists, so where a struct is expected either one is reported as `type mismatch`. `(10, 20)` is a tuple, so where a struct is expected it is reported as `type mismatch`. An empty `{}` leaves every field zero and still needs a type from the place it is used. Mixing a named field and a positional value is reported as `type mismatch`. A designated initializer that omits a `*T` field is reported as `type mismatch`. An omitted `?*T` field is `null`. `new Point{.x = 1}` reserves a `Point` and writes those fields. See [Builtin](../builtin/allocator.md).
 
 ```c
 type Inner struct {
@@ -193,108 +193,9 @@ extern(abi="c") func SDL_DestroyWindow(window *SDL_Window) void;
 
 A plain struct in an `extern(abi="c")` function is reported as `struct must be extern(abi="c")`.
 
-## Unions
-
-A tlc union names the enum that selects the active field. The enum is in the same package. Each enumerator is one field, and each field is one enumerator. A field that is not an enumerator is reported as `undeclared identifier`. An enumerator with no field is reported as `type mismatch`. The field's type is a struct. It can be written inline, or it can name a struct that is already declared. A field that is not a struct is reported as `type mismatch`. The name in parentheses is reported as `undeclared identifier` when it names nothing, and as `type mismatch` when it is not an enum.
-
-```c
-type ShapeType enum {
-    Circle,
-    Rectangle,
-};
-
-type Shape union(ShapeType) {
-    Circle struct {
-        radius f32;
-    };
-    Rectangle struct {
-        width f32;
-        height f32;
-    };
-};
-
-type Circle struct {
-    radius f32;
-};
-
-type Rectangle struct {
-    width f32;
-    height f32;
-};
-
-type Named union(ShapeType) {
-    Circle Circle;
-    Rectangle Rectangle;
-};
-
-func main() i32 {
-    var shape Shape = {.Circle = {.radius = 1.0}};
-    if (ShapeType(shape) != ShapeType.Circle) {
-        return 0;
-    }
-    shape.Rectangle.width = 2.0;
-    shape.Rectangle.height = 3.0;
-    if (ShapeType(shape) == ShapeType.Rectangle) {
-        return 1;
-    }
-    return 0;
-}
-```
-
-The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `i32` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0.
-
-### C unions
-
-`extern(abi="c") union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A struct or a union nested inside a C union must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
-
-```c
-extern(abi="c") type Num union {
-    n i32;
-    m i32;
-};
-
-extern(abi="c") type Word union {
-    n i32;
-    raw [8]u8;
-};
-
-func main() i32 {
-    var u Num;
-    u.n = 4;
-    return u.m;
-}
-```
-
-`Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory, so `main` returns 4.
-
 ## Fields and pointers
 
 Values and pointers both use `.`. A pointer whose pointee is a struct is dereferenced once. `**Point` and `*i32` are left as they are, and the access is reported as `type mismatch`. A `?*Point` is reported as `type mismatch` until the name is known to be non-null, or until that use is written `p!.field`. A field reached through a pointer is an lvalue. Assigning a field of a struct value requires the struct to be an lvalue.
-
-## Arrays
-
-An array length is a positive decimal `i32` literal. `[_]i32{10, 20, 12}` writes the values. `_` stands for the length, which is the number of values, so the type is `[3]i32`. A file-scope array takes the same lists, including a struct element: `var named [3]i32 = {10, 4, 1}`, `var row = [_]i32{10, 20, 12}`, and `var origin = [_]Point{Point{.x = 1, .y = 2}}`.
-
-```c
-func add4(p *i32) i32 {
-    return p[0] + p[1] + p[2] + p[3];
-}
-
-func main() i32 {
-    var a [4]i32;
-    a[0] = 10;
-    a[1] = 20;
-    a[2] = 7;
-    a[3] = 5;
-    return add4(a);
-}
-```
-
-The array becomes a pointer when it is passed. A string is `*const u8` and can be passed to `*const u8`. It cannot be passed to `*u8`. The index has type `i32`. `new [n]i32` reserves `n` elements and yields `*i32`. `buf[i] = 1` writes an element. `new [n]Point{{.x = 1}...}` stores that value in every element. `new [_]Point{{.x = 1}, {.y = 2}}` is `*[2]Point`. See [Builtin](builtin.md).
-
-`[]T` is a readonly slice of an array. `var v []i32 = row` takes a slice of `[N]i32`. `row[i:j]` takes the elements from `i` up to, but not including, `j`, and so does `v[i:j]`. `v[i]` reads an element, and `v[i] = 1` is reported as `type mismatch`. `v.len` is `i32`. `sizeof([]T)` is 16. A slice parameter stays a slice. The pointer from an array parameter is not a slice.
-
-A field may be a slice, `items []i32`. It is stored as the slice header. `sizeof` of `{ n i32; items []i32; }` is 24. Assigning the field replaces that header. The same field in `extern(abi="c")` is reported as `not supported yet`.
 
 ## Export
 
@@ -326,4 +227,20 @@ export func sum(p Point) i32 {
 
 Inside the package the type is written `Point`. `import { Point } from "geom"` makes `Point` a type name in the importing file. A struct is visible to every file in the package, so one file can declare `type A struct { b B; }` when `type B struct` is in another file of that package.
 
-[Index](README.md) · [Previous: Builtin](builtin.md) · [Next: Methods](methods.md) · [Grammar](grammar.md)
+## Cost
+
+`var p Point` on a struct of two `i32` fields executes 2 `movl` of 0, one per field. Each later `p.x = 40` is 1 more `movl`. Reading `p.x` is 1 `movl`. `p.x + p.y` is 1 load of `p.x` and 1 `addl` that reads `p.y` from its slot.
+
+A field through `*Point` reloads the pointer and then loads the field. `return p.x` on a `*Point` parameter is 4 instructions including the pointer store and `retq`.
+
+`b = a` for two `i32` fields is 2 loads and 2 stores. Eight `i32` fields are 8 loads and 8 stores. The fields are moved one at a time.
+
+`Point{.x = 40}` zeroes both fields, stores `x`, and copies the two fields into the variable: 2 zero stores, 1 value store, 2 loads, and 2 stores. A missing field stays the zero that was stored. `Point{}` is the zero stores only.
+
+A generic struct is specialized while compiling. `Vec[i32]` then costs the same as a struct whose field is `i32`. `type Wide struct(align=16)` changes the size the zeroes cover. It adds no extra instruction beyond those stores. An empty struct has no field stores.
+
+A by-value method copies every field into the argument registers before the traced call. Two `i32` fields are 2 `movl`. A pointer method passes the address with 1 `leaq`. The call itself is the 36-instruction trace frame when fewer than 32 frames are stored.
+
+A constant on the type, `Entity.next`, is an immediate when it is an integer. It adds no load. A variable on the type is an ordinary global: 1 `movl` to read it.
+
+[Index](../README.md) · [Previous: The Type type](type.md) · [Next: Unions](union.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
