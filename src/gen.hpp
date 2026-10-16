@@ -648,12 +648,14 @@ class CodeGen {
             return {loaded, 0, false, struct_id};
         }
         if (elem_bool) {
-            return {builder_.CreateZExt(loaded, i32()), 0};
+            // The bits are 0 or 1 in an i32. The type stays bool so a later alias cast does not convert them again.
+            return {builder_.CreateZExt(loaded, i32()), 0, false, -1, false, elem_void, true};
         }
         if (elem_char || elem_bits == 8 || elem_bits == 16) {
             const bool zero_extend = elem_unsigned || elem_char;
             llvm::Value *wide = zero_extend ? builder_.CreateZExt(loaded, i32()) : builder_.CreateSExt(loaded, i32());
-            return {wide, 0};
+            const int bits = elem_bits == 0 ? 8 : elem_bits;
+            return {wide, 0, elem_char, -1, false, elem_void, false, bits, elem_unsigned};
         }
         if (elem_float) {
             return {loaded, 0, false, -1, false, false, false, elem_bits >= 64 ? 64 : 32, false, -1, true};

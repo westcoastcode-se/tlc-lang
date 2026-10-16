@@ -30,6 +30,6 @@ func main() i32 {
 
 ## Cost
 
-`type Integer i32` uses the same instructions as `i32`. The cast `Integer(n)` and `i32(n)` between an alias and its representation is a copy of those bits. For `i32` that copy is 1 `movl` once the value is loaded. A distinct alias adds no conversion instruction. A method on the alias is a traced call, the same as a method on a struct of that representation.
+`type Integer i32` uses the same instructions as `i32`. `Integer(n)`, `i32(n)`, `Spot(p)`, and `Ptr(p)` add no instructions. The compiler changes the type and reuses the value. A new variable stores that value once, the same as any other initializer. A cast that changes the width, such as `Byte(n)` when `n` is `i32` and `Byte` is `i8`, keeps the low bits. A method on the alias is a traced call, the same as a method on a struct of that representation.
 
 [Index](../README.md) · [Previous: Enums](enum.md) · [Next: Keywords](../keyword.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

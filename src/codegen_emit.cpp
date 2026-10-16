@@ -3927,13 +3927,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return loaded;
                 }
                 if (field->depth == 0 && field->elem_bool) {
-                    return {builder_.CreateZExt(extracted, i32()), 0};
+                    return {builder_.CreateZExt(extracted, i32()), 0, false, -1, false, field->elem_void, true};
                 }
                 if (field->depth == 0 && (field->elem_char || field->elem_bits == 8 || field->elem_bits == 16)) {
                     const bool zero_extend = field->elem_unsigned || field->elem_char;
                     llvm::Value *wide =
                         zero_extend ? builder_.CreateZExt(extracted, i32()) : builder_.CreateSExt(extracted, i32());
-                    return {wide, 0};
+                    const int bits = field->elem_bits == 0 ? 8 : field->elem_bits;
+                    return {wide, 0, field->elem_char, -1, false, field->elem_void, false, bits, field->elem_unsigned};
                 }
                 if (field->depth == 0 && field->elem_float) {
                     return {extracted, 0, false, -1, false, false, false, field->elem_bits, false, -1, true};
@@ -3984,13 +3985,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         const Lowered part = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct,
                                                    slot.indirections, slot.is_array, slot.array_len, false);
                         if (part.depth == 0 && part.elem_bool) {
-                            return {builder_.CreateZExt(extracted, i32()), 0};
+                            return {builder_.CreateZExt(extracted, i32()), 0, false, -1, false, part.elem_void, true};
                         }
                         if (part.depth == 0 && (part.elem_char || part.elem_bits == 8 || part.elem_bits == 16)) {
                             const bool zero_extend = part.elem_unsigned || part.elem_char;
                             llvm::Value *wide = zero_extend ? builder_.CreateZExt(extracted, i32())
                                                             : builder_.CreateSExt(extracted, i32());
-                            return {wide, 0};
+                            const int bits = part.elem_bits == 0 ? 8 : part.elem_bits;
+                            return {wide, 0, part.elem_char, -1, false, part.elem_void, false, bits, part.elem_unsigned};
                         }
                         if (part.depth == 0 && part.elem_float) {
                             return {extracted, 0, false, -1, false, false, false, part.elem_bits, false, -1, true};
@@ -4164,6 +4166,46 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     llvm::Value *wide = builder_.CreatePtrToInt(source.value, intptr);
                     llvm::Value *narrow = wide->getType() == i32() ? wide : builder_.CreateTrunc(wide, i32());
                     return {narrow, 0};
+                }
+                // An alias and its representation are the same bits. The cast only changes the type.
+                auto scalar_bits = [](int bits, bool is_bool, bool is_char) {
+                    if (is_bool) {
+                        return 1;
+                    }
+                    if (bits == 0 && is_char) {
+                        return 8;
+                    }
+                    if (bits == 0) {
+                        return 32;
+                    }
+                    return bits;
+                };
+                const bool scalar_source = source.depth == 0 && source.struct_id < 0 && !source.elem_float &&
+                                           source.value->getType()->isIntegerTy();
+                const bool scalar_target = target.depth == 0 && target.struct_id < 0 && !target.elem_float &&
+                                           !target.elem_void && target.fn_ty == nullptr;
+                if (scalar_source && scalar_target && source.elem_unsigned == target.elem_unsigned &&
+                    source.elem_bool == target.elem_bool &&
+                    scalar_bits(source.elem_bits, source.elem_bool, source.elem_char) ==
+                        scalar_bits(target.elem_bits, target.elem_bool, target.elem_char)) {
+                    TypedValue value = source;
+                    value.elem_bits = target.elem_bits;
+                    value.elem_bool = target.elem_bool;
+                    value.elem_char = target.elem_char;
+                    value.elem_unsigned = target.elem_unsigned;
+                    value.enum_id = target.enum_id;
+                    return value;
+                }
+                if (target.depth == 0 && source.depth == 0 && target.struct_id >= 0 &&
+                    source.struct_id == target.struct_id && source.value->getType()->isStructTy()) {
+                    return source;
+                }
+                if (target.depth == 0 && source.depth == 0 && target.elem_float && source.elem_float &&
+                    target.elem_bits == source.elem_bits) {
+                    TypedValue value = source;
+                    value.elem_float = true;
+                    value.elem_bits = target.elem_bits;
+                    return value;
                 }
                 if (target.depth == 0 && source.depth == 0 && (target.elem_float || source.elem_float ||
                                                               source.value->getType()->isFloatingPointTy())) {

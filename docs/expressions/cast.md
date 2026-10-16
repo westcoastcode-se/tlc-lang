@@ -26,6 +26,6 @@ func main() i32 {
 
 ## Cost
 
-`i64(n)` from an `i32` parameter is 1 `movslq` after the parameter store. The function is 3 instructions including `retq`. `i8(n)` is a move and `movsbl`: 2 instructions after the store. `u32(n)` from `i32` is 1 `movl`. The bits are not changed. A pointer cast is a copy of the address, 1 `movq` once the pointer is loaded. `ShapeType(shape)` on a tlc union reloads the whole value, which is the byte-wise cost on [Unions](../types/union.md).
+`i64(n)` from an `i32` parameter is 1 `movslq` after the parameter store. The function is 3 instructions including `retq`. `i8(n)` is a move and `movsbl`: 2 instructions after the store. `u32(n)` from `i32` reuses the loaded value. An alias cast of the same representation, such as `Integer(n)` or `Spot(p)`, also reuses it and adds no instructions. A pointer cast reuses the loaded address. `ShapeType(shape)` on a tlc union reloads the whole value, which is the byte-wise cost on [Unions](../types/union.md).
 
 [Index](../README.md) · [Previous: Type values](type.md) · [Next: Tuples and lists](tuple.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

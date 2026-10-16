@@ -32,6 +32,6 @@ The program returns 42. `Integer.from` is the static function. `Integer.ten` is 
 
 ## Cost
 
-`Integer` uses the instructions of `i32`. `return self + self` is the `i32` add, 2 instructions after the parameter is stored, plus `retq`. `*self = *self + n` is a load, an add, and a store through the pointer. `Integer(n)` is a copy. `Integer.ten` is a global, 1 `movl` to read it. `Integer.from` is a traced call with no receiver.
+`Integer` uses the instructions of `i32`. `return self + self` is the `i32` add, 2 instructions after the parameter is stored, plus `retq`. `*self = *self + n` is a load, an add, and a store through the pointer. `Integer(n)` adds no instructions. `Integer.ten` is a global, 1 `movl` to read it. `Integer.from` is a traced call with no receiver.
 
 [Index](../README.md) · [Previous: Static functions](static.md) · [Next: Variables on a type](variable.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
