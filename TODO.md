@@ -94,8 +94,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A nested slice, `[][]T` or `[N][]T`. It is `not supported yet`.
 - A slice taken from an array parameter. The parameter is already a pointer, so `return row` from `func open(row [4]i32) []i32` is `return type: expected []i32, found *i32`. A range on that pointer, `row[0:2]`, is `type mismatch`.
 - A slice field on `extern(abi="c")`. It is `not supported yet`. A tlc union arm that is not a struct stays `type mismatch`.
-- A file-scope slice whose initializer is not the name of an array, another slice, or a call. A literal, `a[i:j]`, `a[i:]`, `a[:j]`, or `a[:]` is `global initializer is not a constant`. A call used as the whole initializer runs before `main`.
-- `const` on a slice. `const v []i32 = row` is `not supported yet`.
+- A file-scope slice whose initializer is not the name of an array, another slice, or a call. A literal, `a[i:j]`, `a[i:]`, `a[:j]`, or `a[:]` is `global initializer is not a constant`. A call used as the whole initializer runs before `main`. `const v []i32 = row` stores that slice. A range, a literal, or a call used as its initializer is `global initializer is not a constant`.
 - A cast to `void`.
 - `++`, `--`, compound assignment (`+=` and the rest), `?:`, and `->`.
 - `goto`.

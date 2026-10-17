@@ -1,0 +1,11 @@
+var row = [_]i32{10, 20};
+
+func pair() []i32 {
+    return row[0:2];
+}
+
+const v []i32 = pair();
+
+func main() i32 {
+    return v.len;
+}

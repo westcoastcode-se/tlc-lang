@@ -782,10 +782,12 @@ Type Checker::check_file_const(VarDecl &written) {
     }
     const auto *init = std::get_if<Expr::Init>(&written.init->data);
     const bool literal = init != nullptr && init->array_literal;
-    // `const label []const u8 = "hi"` is the string slice. Other const slices stay unsupported.
+    // `const label []const u8 = "hi"` is the string slice.
+    // `const v []i32 = row` is a slice of that array, not an array value list.
     const bool string_slice = written.is_array && written.array_len < 0 && written.elem_const &&
                               std::holds_alternative<Expr::String>(written.init->data);
-    if (!string_slice && (literal || (written.is_array && !written.ptr_to_array))) {
+    const bool written_slice = written.is_array && written.array_len < 0 && !written.ptr_to_array;
+    if (!string_slice && !written_slice && (literal || (written.is_array && !written.ptr_to_array))) {
         Type got = file_array_initializer(written, nullptr);
         if (got.kind == TypeKind::Invalid) {
             return type_invalid();
@@ -853,6 +855,41 @@ Type Checker::check_file_const(VarDecl &written) {
         if (is_slice(got) && got.element != nullptr && got.element->is_const) {
             return got;
         }
+    }
+    // A file-scope const slice names an array or another slice. A range, a literal, or a call does not.
+    if (is_slice(got)) {
+        std::unordered_set<std::string> seen;
+        const auto slice_constant = [&](const auto &self, const Expr &expr) -> bool {
+            if (std::holds_alternative<Expr::String>(expr.data)) {
+                return true;
+            }
+            const auto *named = std::get_if<Expr::Name>(&expr.data);
+            if (named == nullptr || !seen.insert(named->text).second) {
+                return false;
+            }
+            const Symbol *symbol = lookup(named->text);
+            if (symbol == nullptr || symbol->type.kind != TypeKind::Array || symbol->type.element == nullptr) {
+                seen.erase(named->text);
+                return false;
+            }
+            if (!is_slice(symbol->type)) {
+                seen.erase(named->text);
+                return true;
+            }
+            const VarDecl *source = global_var(named->text);
+            if (source == nullptr) {
+                seen.erase(named->text);
+                return false;
+            }
+            const bool ok = source->init == nullptr || self(self, *source->init);
+            seen.erase(named->text);
+            return ok;
+        };
+        if (!slice_constant(slice_constant, *written.init)) {
+            error(written.loc, "global initializer is not a constant");
+            return type_invalid();
+        }
+        return got;
     }
     if (!stored_const_type(got)) {
         error(written.loc, "type mismatch");
