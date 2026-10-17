@@ -1,0 +1,3 @@
+func id[T type](value T) T {
+    return value;
+}

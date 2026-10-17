@@ -1,0 +1,7 @@
+func id[T type](value T, extra i32) T {
+    return value + extra;
+}
+
+export func both() i32 {
+    return id(1) + id(1, 1);
+}

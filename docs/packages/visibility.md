@@ -83,7 +83,7 @@ func main() i32 {
 
 The program returns 42. `math.width()` is `sizeof(Entity)`, which is 4. `e.id` is the exported member. `math.Entity.next` started at 32.
 
-`const Entity::next` is a constant on the type, written beside the struct. `export const` publishes it, including `export const Box[T]::limit` on a generic struct. Another package reads `pkg.Entity.next`, `pkg.Box[i32].limit`, and `pkg.Buf[4, i32].count`. Assigning that constant is reported as `not an lvalue`. A constant without `export` is reported as `name is not exported`. An unexported generic struct is reported as `Box is not exported`. A `const` inside the struct is reported as `not supported yet`.
+`const Entity::next` is a constant on the type, written beside the struct. `export const` publishes it, including `export const Box[T]::limit` on a generic struct. Another package reads `pkg.Entity.next`, `pkg.Box[i32].limit`, and `pkg.Buf[4, i32].count`. Assigning that constant is reported as `not an lvalue`. A constant without `export` is reported as `name is not exported`. An unexported generic struct is reported as `Box is not exported`. Another package names an exported generic struct as `pkg.Vec[i32]`. A `const` inside the struct is reported as `not supported yet`.
 
 ```c
 package math;

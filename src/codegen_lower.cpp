@@ -203,6 +203,28 @@ int CodeGen::tag_id(uint32_t file, const std::string &name) const {
     return -1;
 }
 
+int CodeGen::unique_tag(const std::string &name) const {
+    int found = -1;
+    for (const auto &file : tags_) {
+        const auto tag = file.second.find(name);
+        if (tag == file.second.end()) {
+            continue;
+        }
+        if (found >= 0 && found != tag->second) {
+            return -1;
+        }
+        found = tag->second;
+    }
+    return found;
+}
+
+int CodeGen::spec_tag(const std::string &name) const {
+    if (name.find(".spec") == std::string::npos) {
+        return -1;
+    }
+    return unique_tag(name);
+}
+
 uint32_t CodeGen::assoc_home(const Expr::Selector &node) const {
     const Expr *cursor = node.base.get();
     if (cursor != nullptr) {
@@ -432,6 +454,9 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         if (sid < 0) {
             sid = selective_tag(file, name);
         }
+        if (sid < 0) {
+            sid = spec_tag(name);
+        }
         if (sid >= 0) {
             base.struct_id = sid;
             have = true;
@@ -494,6 +519,9 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
             int sid = tag_id(file, name);
             if (sid < 0) {
                 sid = selective_tag(file, name);
+            }
+            if (sid < 0) {
+                sid = spec_tag(name);
             }
             if (sid >= 0) {
                 base.struct_id = sid;
@@ -977,6 +1005,18 @@ void CodeGen::prepare_structs() {
                 continue;
             }
             const uint32_t file = owners[static_cast<std::size_t>(id)];
+            // A type argument from the importing file is not a name in this package.
+            if (item->name.find(".spec") != std::string::npos) {
+                for (const FieldDecl &field : item->fields) {
+                    if (!field.type_package.empty() || field.type_name.empty() || tag_id(file, field.type_name) >= 0) {
+                        continue;
+                    }
+                    const int foreign = unique_tag(field.type_name);
+                    if (foreign >= 0) {
+                        tags_[file][field.type_name] = foreign;
+                    }
+                }
+            }
             bool waiting = false;
             for (const FieldDecl &field : item->fields) {
                 if (field.indirections > 0) {

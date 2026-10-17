@@ -1,0 +1,11 @@
+func show(n i32) i32 {
+    return n;
+}
+
+func show[T type](value T) T {
+    return value;
+}
+
+func main() i32 {
+    return 0;
+}

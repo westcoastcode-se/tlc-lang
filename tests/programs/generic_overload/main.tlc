@@ -1,0 +1,11 @@
+func id[T type](value T) T {
+    return value;
+}
+
+func id[T type](value T, extra i32) T {
+    return value + extra;
+}
+
+func main() i32 {
+    return id(40) + id[i32](1, 1) - 42;
+}

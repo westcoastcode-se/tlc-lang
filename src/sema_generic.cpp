@@ -87,6 +87,303 @@ SpecArg pack_bound(std::vector<SpecArg> parts) {
     return packed;
 }
 
+int type_param_index(const std::vector<TypeParam> &params, const std::string &name) {
+    for (std::size_t i = 0; i < params.size(); ++i) {
+        if (params[i].name == name) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+void append_shaped_name(std::string &out, const std::string &package, const std::string &name,
+                        const std::vector<TypeParam> &params) {
+    if (package.empty()) {
+        const int slot = type_param_index(params, name);
+        if (slot >= 0) {
+            out.push_back('#');
+            out += std::to_string(slot);
+            const TypeParam &param = params[static_cast<std::size_t>(slot)];
+            if (param.is_pack) {
+                out += ":pack";
+            } else if (param.is_value) {
+                out += ":value";
+            } else if (param.is_trait) {
+                out += ":trait:";
+                out += param.constraint;
+            } else {
+                out += ":type";
+            }
+            return;
+        }
+    }
+    if (!package.empty()) {
+        out += package;
+        out.push_back('.');
+    }
+    out += name;
+}
+
+void append_type_arg_shape(std::string &out, const TypeArg &arg, const std::vector<TypeParam> &params);
+void append_type_arg_shape_list(std::string &out, const std::vector<TypeArg> &args, const std::vector<TypeParam> &params);
+void append_fn_shape(std::string &out, const FnParam &param, const std::vector<TypeParam> &params);
+
+void append_type_arg_shape(std::string &out, const TypeArg &arg, const std::vector<TypeParam> &params) {
+    if (arg.has_value || arg.is_value) {
+        out += std::to_string(arg.value);
+        return;
+    }
+    if (arg.is_array) {
+        out.push_back('[');
+        if (!arg.array_len_name.empty()) {
+            append_shaped_name(out, "", arg.array_len_name, params);
+        } else if (arg.array_len >= 0) {
+            out += std::to_string(arg.array_len);
+        }
+        out.push_back(']');
+        if (arg.elem_const) {
+            out += "const.";
+        }
+    }
+    for (int bit = arg.indirections - 1; bit >= 0; --bit) {
+        const uint32_t mask = 1u << static_cast<unsigned>(bit);
+        if ((arg.optional & mask) != 0) {
+            out.push_back('?');
+        }
+        out.push_back('*');
+        if ((arg.const_pointee & mask) != 0) {
+            out += "const";
+        }
+    }
+    append_shaped_name(out, arg.type_package, arg.type_name, params);
+    if (arg.args.empty()) {
+        return;
+    }
+    out.push_back('[');
+    for (std::size_t i = 0; i < arg.args.size(); ++i) {
+        if (i != 0) {
+            out.push_back(',');
+        }
+        append_type_arg_shape(out, arg.args[i], params);
+    }
+    out.push_back(']');
+}
+
+void append_fn_shape(std::string &out, const FnParam &param, const std::vector<TypeParam> &params) {
+    if (param.is_array) {
+        out.push_back('[');
+        if (param.array_len >= 0) {
+            out += std::to_string(param.array_len);
+        }
+        out.push_back(']');
+    }
+    for (int bit = param.indirections - 1; bit >= 0; --bit) {
+        const uint32_t mask = 1u << static_cast<unsigned>(bit);
+        if ((param.optional & mask) != 0) {
+            out.push_back('?');
+        }
+        out.push_back('*');
+        if ((param.const_pointee & mask) != 0) {
+            out += "const";
+        }
+    }
+    if (param.is_fn_ptr) {
+        out += "fn";
+    }
+    append_shaped_name(out, param.type_package, param.type_name, params);
+    append_type_arg_shape_list(out, param.type_args, params);
+    if (!param.is_fn_ptr) {
+        return;
+    }
+    out.push_back('(');
+    for (std::size_t i = 0; i < param.params.size(); ++i) {
+        if (i != 0) {
+            out.push_back(',');
+        }
+        append_fn_shape(out, param.params[i], params);
+    }
+    if (param.variadic) {
+        out += "...";
+    }
+    out.push_back(')');
+}
+
+void append_type_arg_shape_list(std::string &out, const std::vector<TypeArg> &args, const std::vector<TypeParam> &params) {
+    if (args.empty()) {
+        return;
+    }
+    out.push_back('[');
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (i != 0) {
+            out.push_back(',');
+        }
+        append_type_arg_shape(out, args[i], params);
+    }
+    out.push_back(']');
+}
+
+void append_result_shape(std::string &out, const ResultSlot &slot, const std::vector<TypeParam> &params) {
+    if (slot.is_array) {
+        out.push_back('[');
+        if (!slot.array_len_name.empty()) {
+            append_shaped_name(out, "", slot.array_len_name, params);
+        } else if (slot.array_len >= 0) {
+            out += std::to_string(slot.array_len);
+        }
+        out.push_back(']');
+        if (slot.elem_const) {
+            out += "const.";
+        }
+    }
+    for (int bit = slot.indirections - 1; bit >= 0; --bit) {
+        const uint32_t mask = 1u << static_cast<unsigned>(bit);
+        if ((slot.optional & mask) != 0) {
+            out.push_back('?');
+        }
+        out.push_back('*');
+        if ((slot.const_pointee & mask) != 0) {
+            out += "const";
+        }
+    }
+    if (slot.is_fn_ptr) {
+        out += "fn";
+    }
+    append_shaped_name(out, slot.type_package, slot.type_name, params);
+    append_type_arg_shape_list(out, slot.type_args, params);
+    if (!slot.is_fn_ptr) {
+        return;
+    }
+    out.push_back('(');
+    for (std::size_t i = 0; i < slot.fn_params.size(); ++i) {
+        if (i != 0) {
+            out.push_back(',');
+        }
+        append_fn_shape(out, slot.fn_params[i], params);
+    }
+    out.push_back(')');
+}
+
+void append_param_shape(std::string &out, const Param &param, const std::vector<TypeParam> &params) {
+    if (param.is_tuple) {
+        out.push_back('(');
+        for (std::size_t i = 0; i < param.tuple_parts.size(); ++i) {
+            if (i != 0) {
+                out.push_back(',');
+            }
+            append_result_shape(out, param.tuple_parts[i], params);
+        }
+        out.push_back(')');
+        return;
+    }
+    if (param.is_array) {
+        out.push_back('[');
+        if (!param.array_len_name.empty()) {
+            append_shaped_name(out, "", param.array_len_name, params);
+        } else if (param.array_len >= 0) {
+            out += std::to_string(param.array_len);
+        }
+        out.push_back(']');
+        if (param.elem_const) {
+            out += "const.";
+        }
+    }
+    for (int bit = param.indirections - 1; bit >= 0; --bit) {
+        const uint32_t mask = 1u << static_cast<unsigned>(bit);
+        if ((param.optional & mask) != 0) {
+            out.push_back('?');
+        }
+        out.push_back('*');
+        if ((param.const_pointee & mask) != 0) {
+            out += "const";
+        }
+    }
+    if (param.is_fn_ptr) {
+        out += "fn";
+    }
+    append_shaped_name(out, param.type_package, param.type_name, params);
+    append_type_arg_shape_list(out, param.type_args, params);
+    if (!param.is_fn_ptr) {
+        return;
+    }
+    out.push_back('(');
+    for (std::size_t i = 0; i < param.fn_params.size(); ++i) {
+        if (i != 0) {
+            out.push_back(',');
+        }
+        append_fn_shape(out, param.fn_params[i], params);
+    }
+    if (param.fn_variadic) {
+        out += "...";
+    }
+    out.push_back(')');
+}
+
+// The value parameters a call uses. A method omits the receiver. Type-parameter names are indices.
+std::string generic_param_key(const FunctionDecl &fn, const std::vector<TypeParam> &params, bool skip_receiver) {
+    std::string key;
+    if (fn.variadic) {
+        key.push_back('v');
+    }
+    std::size_t start = 0;
+    if (skip_receiver && !fn.params.empty() && fn.params.front().is_receiver) {
+        start = 1;
+    }
+    for (std::size_t i = start; i < fn.params.size(); ++i) {
+        if (!key.empty()) {
+            key.push_back(',');
+        }
+        append_param_shape(key, fn.params[i], params);
+    }
+    return key;
+}
+
+std::string generic_full_key(const FunctionDecl &fn, const std::vector<TypeParam> &params) {
+    std::string key = generic_param_key(fn, params, false);
+    key += "->";
+    if (!fn.results.empty()) {
+        for (std::size_t i = 0; i < fn.results.size(); ++i) {
+            if (i != 0) {
+                key.push_back(',');
+            }
+            append_result_shape(key, fn.results[i], params);
+        }
+        return key;
+    }
+    ResultSlot slot;
+    slot.type_name = fn.return_type;
+    slot.type_package = fn.type_package;
+    slot.is_struct = fn.is_struct;
+    slot.is_enum = fn.is_enum;
+    slot.indirections = fn.indirections;
+    slot.optional = fn.optional;
+    slot.const_pointee = fn.const_pointee;
+    append_result_shape(key, slot, params);
+    return key;
+}
+
+// A suffix that can sit in an object name. Distinct lists stay distinct.
+std::string generic_list_suffix(const FunctionDecl &fn) {
+    std::string raw = generic_param_key(fn, fn.type_params, false);
+    std::string out;
+    for (const char c : raw) {
+        const bool plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+        if (plain) {
+            out.push_back(c);
+        } else if (c == '#' ) {
+            out.push_back('p');
+        } else if (c == ',' || c == ':') {
+            out.push_back('.');
+        } else if (c == '*') {
+            out += "ptr";
+        } else if (c == '?') {
+            out += "opt";
+        } else if (c == '[' || c == '(') {
+            out.push_back('.');
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 void Checker::collect_templates(TranslationUnit &unit, uint32_t file_id) {
@@ -109,7 +406,7 @@ void Checker::collect_templates(TranslationUnit &unit, uint32_t file_id) {
         }
         owned_fns_.push_back(OwnedFn{file_id, clone_function(*fn)});
         if (function_template) {
-            fn_templates_[file_id][fn->name] = &owned_fns_.back().fn;
+            fn_templates_[file_id][fn->name].push_back(&owned_fns_.back().fn);
         }
     }
     for (const TopDecl &decl : unit.decls) {
@@ -513,6 +810,7 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
     const std::string spec = specialize_type_app(type_package, type_name, type_args, loc);
     if (spec.empty()) {
         type_name = "invalid";
+        type_package.clear();
         type_args.clear();
         return;
     }
@@ -1255,15 +1553,48 @@ void Checker::queue_spec(uint32_t file, FunctionDecl fn) {
 
 std::string Checker::specialize_type_app(const std::string &package, const std::string &name, const std::vector<TypeArg> &args,
                                          SourceLoc loc) {
-    if (!package.empty()) {
-        error(loc, "not supported yet");
-        return {};
-    }
+    // `pkg.Vec[i32]` is written in the importing file. The spec is stored on the defining package,
+    // and that file looks the resulting name up among its own tags.
+    const uint32_t caller = file_id_;
     uint32_t owner = file_id_;
-    const StructDecl *templ = find_struct_template(name, owner);
-    if (templ == nullptr) {
-        error(loc, "type mismatch");
-        return {};
+    const StructDecl *templ = nullptr;
+    if (!package.empty()) {
+        const Symbol *symbol = lookup(package);
+        if (symbol == nullptr || !symbol->is_package) {
+            error(loc, "undeclared identifier");
+            return {};
+        }
+        owner = symbol->package_file;
+        for (const uint32_t id : files_in_package(symbol->package_file)) {
+            const auto file = struct_templates_.find(id);
+            if (file == struct_templates_.end()) {
+                continue;
+            }
+            const auto found = file->second.find(name);
+            if (found == file->second.end()) {
+                continue;
+            }
+            owner = id;
+            templ = found->second;
+            break;
+        }
+        if (templ == nullptr || !templ->exported) {
+            if (templ == nullptr) {
+                const Symbol *member = find_export(symbol->package_file, name);
+                if (member != nullptr) {
+                    error(loc, "type mismatch");
+                    return {};
+                }
+            }
+            error(loc, name + " is not exported");
+            return {};
+        }
+    } else {
+        templ = find_struct_template(name, owner);
+        if (templ == nullptr) {
+            error(loc, "type mismatch");
+            return {};
+        }
     }
     if (args.size() != templ->type_params.size()) {
         error(loc, "argument count");
@@ -1281,7 +1612,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                 error(loc, "not supported yet");
                 return {};
             }
-            const int trait_id = package_trait(file_id_, templ->type_params[i].constraint);
+            const int trait_id = package_trait(owner, templ->type_params[i].constraint);
             if (trait_id < 0) {
                 error(loc, "undeclared identifier");
                 return {};
@@ -1297,6 +1628,15 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     }
     const std::string spec_name = mangle_spec(templ->name, bounds);
     const std::string key = std::to_string(owner) + "\n" + spec_name;
+    const auto note_caller = [&](const std::string &spec) {
+        if (caller == owner) {
+            return;
+        }
+        const int id = find_tag(owner, spec);
+        if (id >= 0) {
+            tags_[caller][spec] = id;
+        }
+    };
     if (spec_ready_.contains(key) || find_tag(owner, spec_name) >= 0) {
         // A value may have specialized the struct before anyone read `Box[i32].extra`.
         const uint32_t saved_file = file_id_;
@@ -1304,9 +1644,11 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         expose_bounds(owner, bounds);
         instantiate_assoc(owner, *templ, spec_name, bounds);
         file_id_ = saved_file;
+        note_caller(spec_name);
         return spec_name;
     }
     if (spec_checking_.contains(key)) {
+        note_caller(spec_name);
         return spec_name;
     }
     spec_checking_.insert(key);
@@ -1381,10 +1723,58 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             method.optional = first.optional;
         }
         Type signature = function_signature(method);
-        methods_[owner][spec_name].insert_or_assign(
-            method.name, MethodInfo{std::move(signature), method.body != nullptr, method.static_method, method.unsafe,
-                                     method.exported, owner, nullptr, {}});
+        const bool has_body = method.body != nullptr;
+        const bool is_static = method.static_method;
+        const bool unsafe = method.unsafe;
+        const bool exported = method.exported;
+        const std::string method_name = method.name;
         deferred_methods_.push_back(OwnedFn{owner, std::move(method)});
+        FunctionDecl *stable = &deferred_methods_.back().fn;
+        auto &table = methods_[owner][spec_name];
+        const auto found = table.find(method_name);
+        if (found == table.end()) {
+            MethodInfo info;
+            info.type = std::move(signature);
+            info.has_body = has_body;
+            info.is_static = is_static;
+            info.unsafe_fn = unsafe;
+            info.exported = exported;
+            info.file_id = owner;
+            info.decl = stable;
+            table.emplace(method_name, std::move(info));
+        } else {
+            const bool skip = !is_static;
+            MethodInfo *slot = nullptr;
+            if (same_selection(found->second.type, !found->second.is_static, signature, skip)) {
+                slot = &found->second;
+            } else {
+                for (MethodInfo &extra : found->second.more) {
+                    if (same_selection(extra.type, !extra.is_static, signature, skip)) {
+                        slot = &extra;
+                        break;
+                    }
+                }
+            }
+            if (slot != nullptr) {
+                const bool clash = !same_type(slot->type, signature) || (slot->has_body && has_body) ||
+                                   slot->unsafe_fn != unsafe;
+                if (!clash && has_body) {
+                    slot->has_body = true;
+                    slot->decl = stable;
+                    slot->type = signature;
+                }
+            } else {
+                MethodInfo extra;
+                extra.type = std::move(signature);
+                extra.has_body = has_body;
+                extra.is_static = is_static;
+                extra.unsafe_fn = unsafe;
+                extra.exported = exported;
+                extra.file_id = owner;
+                extra.decl = stable;
+                found->second.more.push_back(std::move(extra));
+            }
+        }
     }
     instantiate_assoc(owner, *templ, spec_name, bounds);
     PendingAppend appended;
@@ -1394,7 +1784,397 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     file_id_ = saved_file;
     spec_checking_.erase(key);
     spec_ready_.insert(key);
+    note_caller(spec_name);
     return spec_name;
+}
+
+void Checker::absorb_template(Symbol &existing, const FunctionDecl &fn, FunctionDecl *stable, bool report) {
+    if (stable == nullptr || !existing.is_function || !existing.is_template) {
+        if (report) {
+            error(fn.loc, "redefinition");
+        }
+        return;
+    }
+    const std::string want = generic_param_key(fn, fn.type_params, false);
+    const std::string full = generic_full_key(fn, fn.type_params);
+    for (std::size_t i = 0; i < existing.fn_templates.size(); ++i) {
+        const FunctionDecl *slot = existing.fn_templates[i];
+        if (slot == nullptr || generic_param_key(*slot, slot->type_params, false) != want) {
+            continue;
+        }
+        if (generic_full_key(*slot, slot->type_params) != full || (slot->body != nullptr && fn.body != nullptr) ||
+            slot->unsafe != fn.unsafe) {
+            if (report) {
+                error(fn.loc, "redefinition");
+            }
+            return;
+        }
+        if (fn.body != nullptr) {
+            existing.fn_templates[i] = stable;
+            existing.has_body = true;
+            existing.fn_template = existing.fn_templates.front();
+        }
+        return;
+    }
+    existing.fn_templates.push_back(stable);
+    if (existing.fn_template == nullptr) {
+        existing.fn_template = stable;
+    }
+}
+
+void Checker::mirror_template(const Symbol &symbol) {
+    if (!symbol.is_template) {
+        return;
+    }
+    if (graph_ != nullptr) {
+        if (const PackageNode *self = find_node(file_id_)) {
+            const auto package = package_syms_.find(self->package_key);
+            if (package != package_syms_.end()) {
+                const auto found = package->second.find(symbol.name);
+                if (found != package->second.end() && found->second.is_template) {
+                    found->second.fn_template = symbol.fn_template;
+                    found->second.fn_templates = symbol.fn_templates;
+                    found->second.has_body = symbol.has_body;
+                    found->second.unsafe_fn = symbol.unsafe_fn;
+                }
+            }
+        }
+    }
+    const auto table = statics_.find(file_id_);
+    if (table == statics_.end()) {
+        return;
+    }
+    const auto prior = table->second.find(symbol.name);
+    if (prior != table->second.end() && prior->second.is_template) {
+        prior->second.fn_template = symbol.fn_template;
+        prior->second.fn_templates = symbol.fn_templates;
+        prior->second.has_body = symbol.has_body;
+        prior->second.unsafe_fn = symbol.unsafe_fn;
+    }
+}
+
+FunctionDecl *Checker::stable_template(uint32_t file, const FunctionDecl &fn) const {
+    const auto files = fn_templates_.find(file);
+    if (files == fn_templates_.end()) {
+        return nullptr;
+    }
+    const auto found = files->second.find(fn.name);
+    if (found == files->second.end()) {
+        return nullptr;
+    }
+    for (FunctionDecl *templ : found->second) {
+        if (templ != nullptr && templ->loc.offset == fn.loc.offset && templ->loc.file == fn.loc.file) {
+            return templ;
+        }
+    }
+    return nullptr;
+}
+
+void Checker::generic_method_clash(const FunctionDecl &fn) {
+    uint32_t owner = file_id_;
+    const StructDecl *templ = find_struct_template(fn.method_struct, owner);
+    const std::vector<TypeParam> empty;
+    const std::vector<TypeParam> &params = templ == nullptr ? empty : templ->type_params;
+    const std::string want = generic_param_key(fn, params, !fn.static_method);
+    const std::string full = generic_full_key(fn, params);
+    for (const OwnedFn &owned : owned_fns_) {
+        if (owned.file_id != file_id_ || owned.fn.method_struct != fn.method_struct || owned.fn.name != fn.name) {
+            continue;
+        }
+        if (owned.fn.loc.offset == fn.loc.offset && owned.fn.loc.file == fn.loc.file) {
+            continue;
+        }
+        if (owned.fn.loc.file == fn.loc.file && owned.fn.loc.offset > fn.loc.offset) {
+            continue;
+        }
+        if (generic_param_key(owned.fn, params, !owned.fn.static_method) != want) {
+            continue;
+        }
+        if (generic_full_key(owned.fn, params) != full || (owned.fn.body != nullptr && fn.body != nullptr) ||
+            owned.fn.unsafe != fn.unsafe) {
+            error(fn.loc, "redefinition");
+            return;
+        }
+    }
+}
+
+std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const FunctionDecl &templ, const Expr::Call &call,
+                                                                  const std::vector<Type> &arg_types) {
+    int pack_at = -1;
+    for (std::size_t i = 0; i < templ.type_params.size(); ++i) {
+        if (!templ.type_params[i].is_pack) {
+            continue;
+        }
+        if (pack_at >= 0 || i + 1 != templ.type_params.size()) {
+            error(call.loc, "not supported yet");
+            return std::nullopt;
+        }
+        pack_at = static_cast<int>(i);
+    }
+    const bool trailing_pack = pack_at >= 0;
+    const std::size_t fixed = trailing_pack ? templ.type_params.size() - 1 : templ.type_params.size();
+    if (!trailing_pack && call.type_args.size() > templ.type_params.size()) {
+        error(call.loc, "argument count");
+        return std::nullopt;
+    }
+    if (call.args.size() != templ.params.size()) {
+        error(call.loc, "argument count");
+        return std::nullopt;
+    }
+    std::vector<SpecArg> bounds(templ.type_params.size());
+    std::vector<char> set(templ.type_params.size(), 0);
+    if (trailing_pack && call.type_args.size() > fixed) {
+        for (std::size_t i = 0; i < fixed; ++i) {
+            if (!bind_type_arg(templ.type_params[i], call.type_args[i], bounds[i], call.type_args[i].loc)) {
+                return std::nullopt;
+            }
+            set[i] = 1;
+        }
+        std::vector<SpecArg> parts;
+        parts.reserve(call.type_args.size() - fixed);
+        TypeParam as_type = templ.type_params[static_cast<std::size_t>(pack_at)];
+        as_type.is_pack = false;
+        as_type.is_type = true;
+        for (std::size_t i = fixed; i < call.type_args.size(); ++i) {
+            SpecArg bound;
+            if (!bind_type_arg(as_type, call.type_args[i], bound, call.type_args[i].loc)) {
+                return std::nullopt;
+            }
+            parts.push_back(std::move(bound));
+        }
+        bounds[static_cast<std::size_t>(pack_at)] = pack_bound(std::move(parts));
+        set[static_cast<std::size_t>(pack_at)] = 1;
+    } else {
+        for (std::size_t i = 0; i < call.type_args.size(); ++i) {
+            if (!bind_type_arg(templ.type_params[i], call.type_args[i], bounds[i], call.type_args[i].loc)) {
+                return std::nullopt;
+            }
+            set[i] = 1;
+        }
+    }
+    auto constrain = [&](int index, const Type &got) {
+        if (index < 0 || got.kind == TypeKind::Invalid) {
+            return true;
+        }
+        SpecArg spelled;
+        if (!spell_type(got, spelled)) {
+            return false;
+        }
+        if (set[static_cast<std::size_t>(index)]) {
+            return same_spec(bounds[static_cast<std::size_t>(index)], spelled);
+        }
+        bounds[static_cast<std::size_t>(index)] = std::move(spelled);
+        set[static_cast<std::size_t>(index)] = 1;
+        return true;
+    };
+    for (std::size_t param_i = 0; param_i < templ.params.size(); ++param_i) {
+        const Param &param = templ.params[param_i];
+        const Type &got = arg_types[param_i];
+        if (param.is_receiver || got.kind == TypeKind::Invalid) {
+            continue;
+        }
+        const int index = param.type_package.empty() ? param_index(templ.type_params, param.type_name) : -1;
+        const bool plain = index >= 0 && param.type_args.empty();
+        if (!plain) {
+            if (got.kind == TypeKind::Struct && !param.type_args.empty()) {
+                const StructInfo &info = structs_[static_cast<std::size_t>(got.struct_id)];
+                if (info.template_name == param.type_name && info.spec_args.size() == param.type_args.size()) {
+                    for (std::size_t arg_i = 0; arg_i < param.type_args.size(); ++arg_i) {
+                        const int slot = param_index(templ.type_params, param.type_args[arg_i].type_name);
+                        if (slot >= 0 && !templ.type_params[static_cast<std::size_t>(slot)].is_value &&
+                            param.type_args[arg_i].indirections == 0 && param.type_args[arg_i].args.empty()) {
+                            const SpecArg &known = info.spec_args[arg_i];
+                            if (set[static_cast<std::size_t>(slot)] &&
+                                !same_spec(bounds[static_cast<std::size_t>(slot)], known)) {
+                                error(call.loc, "type mismatch");
+                                return std::nullopt;
+                            }
+                            bounds[static_cast<std::size_t>(slot)] = known;
+                            set[static_cast<std::size_t>(slot)] = 1;
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+        if (templ.type_params[static_cast<std::size_t>(index)].is_value) {
+            continue;
+        }
+        if (templ.type_params[static_cast<std::size_t>(index)].is_pack && param.indirections == 0 && !param.is_array) {
+            if (got.kind == TypeKind::Tuple) {
+                if (got.results.empty()) {
+                    error(call.loc, "type mismatch");
+                    return std::nullopt;
+                }
+                std::vector<SpecArg> parts;
+                parts.reserve(got.results.size());
+                for (const Type &part : got.results) {
+                    SpecArg spelled;
+                    if (!spell_type(part, spelled)) {
+                        error(call.loc, "type mismatch");
+                        return std::nullopt;
+                    }
+                    parts.push_back(std::move(spelled));
+                }
+                const SpecArg packed = pack_bound(std::move(parts));
+                if (set[static_cast<std::size_t>(index)] &&
+                    !same_spec(bounds[static_cast<std::size_t>(index)], packed)) {
+                    error(call.loc, "type mismatch");
+                    return std::nullopt;
+                }
+                bounds[static_cast<std::size_t>(index)] = packed;
+                set[static_cast<std::size_t>(index)] = 1;
+            } else if (!constrain(index, got)) {
+                error(call.loc, "type mismatch");
+                return std::nullopt;
+            }
+            continue;
+        }
+        const Type *cursor = &got;
+        bool peel_ok = true;
+        for (int star = 0; star < param.indirections; ++star) {
+            if (cursor->kind != TypeKind::Pointer || cursor->pointee == nullptr) {
+                peel_ok = false;
+                break;
+            }
+            const bool want_optional = (param.optional & (1u << star)) != 0;
+            if (!want_optional && cursor->optional) {
+                peel_ok = false;
+                break;
+            }
+            cursor = cursor->pointee.get();
+        }
+        if (!peel_ok) {
+            continue;
+        }
+        if (param.is_array) {
+            if (cursor->kind != TypeKind::Array || cursor->element == nullptr) {
+                continue;
+            }
+            if (!param.array_len_name.empty()) {
+                const int len_index = param_index(templ.type_params, param.array_len_name);
+                if (len_index >= 0 && templ.type_params[static_cast<std::size_t>(len_index)].is_value) {
+                    if (set[static_cast<std::size_t>(len_index)] &&
+                        bounds[static_cast<std::size_t>(len_index)].value != cursor->length) {
+                        error(call.loc, "type mismatch");
+                        return std::nullopt;
+                    }
+                    bounds[static_cast<std::size_t>(len_index)].is_value = true;
+                    bounds[static_cast<std::size_t>(len_index)].value = cursor->length;
+                    set[static_cast<std::size_t>(len_index)] = 1;
+                }
+            }
+            if (!constrain(index, *cursor->element)) {
+                error(call.loc, "type mismatch");
+                return std::nullopt;
+            }
+            continue;
+        }
+        if (!constrain(index, *cursor)) {
+            error(call.loc, "type mismatch");
+            return std::nullopt;
+        }
+    }
+    for (std::size_t i = 0; i < set.size(); ++i) {
+        if (!set[i]) {
+            error(call.loc, "type mismatch");
+            return std::nullopt;
+        }
+        const TypeParam &param = templ.type_params[i];
+        if (!param.is_trait) {
+            continue;
+        }
+        if (!param.constraint_package.empty()) {
+            error(call.loc, "not supported yet");
+            return std::nullopt;
+        }
+        const int trait_id = package_trait(file_id_, param.constraint);
+        if (trait_id < 0) {
+            error(call.loc, "undeclared identifier");
+            return std::nullopt;
+        }
+        const SpecArg &bound = bounds[i];
+        if (bound.is_value || bound.is_array || bound.indirections > 1) {
+            error(call.loc, "type mismatch");
+            return std::nullopt;
+        }
+        const int struct_id = bound.struct_id >= 0 ? bound.struct_id : find_tag(file_id_, bound.type_name);
+        require_satisfies(struct_id, trait_id, bound.indirections == 1, call.loc);
+    }
+    return bounds;
+}
+
+bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::Call &call,
+                                       const std::vector<Type> &arg_types, uint32_t owner) {
+    (void)owner;
+    if (templ.body == nullptr || templ.is_extern || templ.extern_c || templ.variadic || templ.type_params.empty()) {
+        return false;
+    }
+    const std::optional<std::vector<SpecArg>> bounds = infer_generic_bounds(templ, call, arg_types);
+    if (!bounds) {
+        return false;
+    }
+    FunctionDecl spec = clone_function(templ);
+    substitute_function(spec, templ.type_params, *bounds);
+    if (spec.params.size() != arg_types.size()) {
+        return false;
+    }
+    const auto matches = [&](const Param &param, const Type &got) {
+        if (param.is_fn_ptr || param.is_tuple || got.kind == TypeKind::Invalid) {
+            return false;
+        }
+        SpecArg spelled;
+        if (!spell_type(got, spelled)) {
+            return false;
+        }
+        if (spelled.indirections != param.indirections || spelled.optional != param.optional ||
+            spelled.const_pointee != param.const_pointee || spelled.is_array != param.is_array ||
+            spelled.elem_const != param.elem_const || (param.is_array && spelled.array_len != param.array_len)) {
+            return false;
+        }
+        if (!param.type_args.empty()) {
+            const Type *core = &got;
+            for (int depth = 0; depth < param.indirections && core->kind == TypeKind::Pointer && core->pointee != nullptr;
+                 ++depth) {
+                core = core->pointee.get();
+            }
+            if (param.is_array && core->kind == TypeKind::Array && core->element != nullptr) {
+                core = core->element.get();
+            }
+            if (core->kind != TypeKind::Struct || core->struct_id < 0 ||
+                core->struct_id >= static_cast<int>(structs_.size())) {
+                return false;
+            }
+            const StructInfo &info = structs_[static_cast<std::size_t>(core->struct_id)];
+            if (info.template_name != param.type_name || info.spec_args.size() != param.type_args.size()) {
+                return false;
+            }
+            for (std::size_t arg_i = 0; arg_i < param.type_args.size(); ++arg_i) {
+                const TypeArg &arg = param.type_args[arg_i];
+                const SpecArg &bound = info.spec_args[arg_i];
+                if (arg.has_value || arg.is_value || bound.is_value) {
+                    if (!(bound.is_value && (arg.has_value || arg.is_value) && bound.value == arg.value)) {
+                        return false;
+                    }
+                    continue;
+                }
+                if (bound.type_name != arg.type_name || bound.type_package != arg.type_package ||
+                    bound.indirections != arg.indirections || bound.optional != arg.optional ||
+                    bound.const_pointee != arg.const_pointee || bound.is_array != arg.is_array ||
+                    (arg.is_array && bound.array_len != arg.array_len)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return spelled.type_name == param.type_name && spelled.type_package == param.type_package;
+    };
+    for (std::size_t i = 0; i < spec.params.size(); ++i) {
+        if (!matches(spec.params[i], arg_types[i])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
@@ -1403,15 +2183,28 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         return std::nullopt;
     }
     Expr::Call &call = *call_ptr;
-    const FunctionDecl *templ = nullptr;
+    std::vector<const FunctionDecl *> candidates;
     uint32_t owner = file_id_;
     bool selector_call = false;
+    const auto take_template = [&](const Symbol *symbol) {
+        if (symbol == nullptr || !symbol->is_template) {
+            return false;
+        }
+        if (!symbol->fn_templates.empty()) {
+            candidates = symbol->fn_templates;
+        } else if (symbol->fn_template != nullptr) {
+            candidates.push_back(symbol->fn_template);
+        }
+        if (candidates.empty()) {
+            return false;
+        }
+        owner = symbol->package_file != 0 ? symbol->package_file : file_id_;
+        return true;
+    };
     if (const auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
         Symbol *symbol = lookup(named->text);
-        if (symbol != nullptr && symbol->is_template && symbol->fn_template != nullptr) {
-            templ = symbol->fn_template;
-            owner = symbol->package_file != 0 ? symbol->package_file : file_id_;
-        } else if (!call.type_args.empty()) {
+        const bool found_template = take_template(symbol);
+        if (!found_template && !call.type_args.empty()) {
             error(call.loc, "type mismatch");
             for (const auto &arg : call.args) {
                 if (arg) {
@@ -1419,7 +2212,8 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
                 }
             }
             return type_invalid();
-        } else {
+        }
+        if (!found_template) {
             return std::nullopt;
         }
     } else if (const auto *selector = std::get_if<Expr::Selector>(&call.callee->data)) {
@@ -1435,9 +2229,7 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
                 }
                 return type_invalid();
             }
-            if (target.symbol != nullptr && target.symbol->is_template && target.symbol->fn_template != nullptr) {
-                templ = target.symbol->fn_template;
-                owner = target.symbol->package_file != 0 ? target.symbol->package_file : file_id_;
+            if (take_template(target.symbol)) {
                 selector_call = true;
             } else if (!call.type_args.empty()) {
                 error(call.loc, "type mismatch");
@@ -1467,6 +2259,59 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     } else {
         return std::nullopt;
     }
+    const bool several = candidates.size() > 1;
+    const FunctionDecl *templ = candidates.size() == 1 ? candidates.front() : nullptr;
+    if (several) {
+        std::vector<Type> probed;
+        bool arg_invalid = false;
+        probed.reserve(call.args.size());
+        for (const auto &arg : call.args) {
+            if (arg == nullptr) {
+                arg_invalid = true;
+                probed.push_back(type_invalid());
+                continue;
+            }
+            Type got = check_expr(*arg, true);
+            if (got.kind == TypeKind::Invalid) {
+                arg_invalid = true;
+            }
+            probed.push_back(std::move(got));
+        }
+        if (arg_invalid) {
+            return type_invalid();
+        }
+        std::vector<const FunctionDecl *> arity;
+        for (const FunctionDecl *item : candidates) {
+            if (item != nullptr && item->params.size() == call.args.size()) {
+                arity.push_back(item);
+            }
+        }
+        if (arity.empty()) {
+            error(call.loc, "argument count");
+            return type_invalid();
+        }
+        if (arity.size() == 1) {
+            templ = arity.front();
+        } else {
+            const FunctionDecl *winner = nullptr;
+            int wins = 0;
+            for (const FunctionDecl *item : arity) {
+                const bool saved = quiet_;
+                quiet_ = true;
+                const bool ok = generic_candidate_matches(*item, call, probed, owner);
+                quiet_ = saved;
+                if (ok) {
+                    winner = item;
+                    ++wins;
+                }
+            }
+            if (wins != 1 || winner == nullptr) {
+                error(call.loc, "type mismatch");
+                return type_invalid();
+            }
+            templ = winner;
+        }
+    }
     if (templ == nullptr || templ->type_params.empty()) {
         return std::nullopt;
     }
@@ -1476,23 +2321,6 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     }
     if (templ->unsafe && unsafe_depth_ == 0) {
         error(call.loc, "unsafe call");
-    }
-    int pack_at = -1;
-    for (std::size_t i = 0; i < templ->type_params.size(); ++i) {
-        if (!templ->type_params[i].is_pack) {
-            continue;
-        }
-        if (pack_at >= 0 || i + 1 != templ->type_params.size()) {
-            error(call.loc, "not supported yet");
-            return type_invalid();
-        }
-        pack_at = static_cast<int>(i);
-    }
-    const bool trailing_pack = pack_at >= 0;
-    const std::size_t fixed = trailing_pack ? templ->type_params.size() - 1 : templ->type_params.size();
-    if (!trailing_pack && call.type_args.size() > templ->type_params.size()) {
-        error(call.loc, "argument count");
-        return type_invalid();
     }
     std::vector<Type> arg_types;
     bool arg_invalid = false;
@@ -1511,191 +2339,16 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     if (arg_invalid) {
         return type_invalid();
     }
-    if (call.args.size() != templ->params.size()) {
-        error(call.loc, "argument count");
+    const auto inferred = infer_generic_bounds(*templ, call, arg_types);
+    if (!inferred) {
         return type_invalid();
     }
-    std::vector<SpecArg> bounds(templ->type_params.size());
-    std::vector<char> set(templ->type_params.size(), 0);
-    if (trailing_pack && call.type_args.size() > fixed) {
-        for (std::size_t i = 0; i < fixed; ++i) {
-            if (!bind_type_arg(templ->type_params[i], call.type_args[i], bounds[i], call.type_args[i].loc)) {
-                return type_invalid();
-            }
-            set[i] = 1;
-        }
-        std::vector<SpecArg> parts;
-        parts.reserve(call.type_args.size() - fixed);
-        TypeParam as_type = templ->type_params[static_cast<std::size_t>(pack_at)];
-        as_type.is_pack = false;
-        as_type.is_type = true;
-        for (std::size_t i = fixed; i < call.type_args.size(); ++i) {
-            SpecArg bound;
-            if (!bind_type_arg(as_type, call.type_args[i], bound, call.type_args[i].loc)) {
-                return type_invalid();
-            }
-            parts.push_back(std::move(bound));
-        }
-        bounds[static_cast<std::size_t>(pack_at)] = pack_bound(std::move(parts));
-        set[static_cast<std::size_t>(pack_at)] = 1;
-    } else {
-        for (std::size_t i = 0; i < call.type_args.size(); ++i) {
-            if (!bind_type_arg(templ->type_params[i], call.type_args[i], bounds[i], call.type_args[i].loc)) {
-                return type_invalid();
-            }
-            set[i] = 1;
-        }
+    const std::vector<SpecArg> &bounds = *inferred;
+    std::string spec_name = mangle_spec(templ->name, bounds);
+    if (several) {
+        spec_name.push_back('.');
+        spec_name += generic_list_suffix(*templ);
     }
-    auto constrain = [&](int index, const Type &got) {
-        if (index < 0 || got.kind == TypeKind::Invalid) {
-            return true;
-        }
-        SpecArg spelled;
-        if (!spell_type(got, spelled)) {
-            return false;
-        }
-        if (set[static_cast<std::size_t>(index)]) {
-            return same_spec(bounds[static_cast<std::size_t>(index)], spelled);
-        }
-        bounds[static_cast<std::size_t>(index)] = std::move(spelled);
-        set[static_cast<std::size_t>(index)] = 1;
-        return true;
-    };
-    for (std::size_t param_i = 0; param_i < templ->params.size(); ++param_i) {
-        const Param &param = templ->params[param_i];
-        const Type &got = arg_types[param_i];
-        if (param.is_receiver || got.kind == TypeKind::Invalid) {
-            continue;
-        }
-        const int index = param.type_package.empty() ? param_index(templ->type_params, param.type_name) : -1;
-        const bool plain = index >= 0 && param.type_args.empty();
-        if (!plain) {
-            if (got.kind == TypeKind::Struct && !param.type_args.empty()) {
-                const StructInfo &info = structs_[static_cast<std::size_t>(got.struct_id)];
-                if (info.template_name == param.type_name && info.spec_args.size() == param.type_args.size()) {
-                    for (std::size_t arg_i = 0; arg_i < param.type_args.size(); ++arg_i) {
-                        const int slot = param_index(templ->type_params, param.type_args[arg_i].type_name);
-                        if (slot >= 0 && !templ->type_params[static_cast<std::size_t>(slot)].is_value &&
-                            param.type_args[arg_i].indirections == 0 && param.type_args[arg_i].args.empty()) {
-                            const SpecArg &known = info.spec_args[arg_i];
-                            if (set[static_cast<std::size_t>(slot)] &&
-                                !same_spec(bounds[static_cast<std::size_t>(slot)], known)) {
-                                error(call.loc, "type mismatch");
-                                return type_invalid();
-                            }
-                            bounds[static_cast<std::size_t>(slot)] = known;
-                            set[static_cast<std::size_t>(slot)] = 1;
-                        }
-                    }
-                }
-            }
-            continue;
-        }
-        if (templ->type_params[static_cast<std::size_t>(index)].is_value) {
-            continue;
-        }
-        if (templ->type_params[static_cast<std::size_t>(index)].is_pack && param.indirections == 0 && !param.is_array) {
-            if (got.kind == TypeKind::Tuple) {
-                if (got.results.empty()) {
-                    error(call.loc, "type mismatch");
-                    return type_invalid();
-                }
-                std::vector<SpecArg> parts;
-                parts.reserve(got.results.size());
-                for (const Type &part : got.results) {
-                    SpecArg spelled;
-                    if (!spell_type(part, spelled)) {
-                        error(call.loc, "type mismatch");
-                        return type_invalid();
-                    }
-                    parts.push_back(std::move(spelled));
-                }
-                const SpecArg packed = pack_bound(std::move(parts));
-                if (set[static_cast<std::size_t>(index)] &&
-                    !same_spec(bounds[static_cast<std::size_t>(index)], packed)) {
-                    error(call.loc, "type mismatch");
-                    return type_invalid();
-                }
-                bounds[static_cast<std::size_t>(index)] = packed;
-                set[static_cast<std::size_t>(index)] = 1;
-            } else if (!constrain(index, got)) {
-                error(call.loc, "type mismatch");
-                return type_invalid();
-            }
-            continue;
-        }
-        const Type *cursor = &got;
-        bool peel_ok = true;
-        for (int star = 0; star < param.indirections; ++star) {
-            if (cursor->kind != TypeKind::Pointer || cursor->pointee == nullptr) {
-                peel_ok = false;
-                break;
-            }
-            const bool want_optional = (param.optional & (1u << star)) != 0;
-            if (!want_optional && cursor->optional) {
-                peel_ok = false;
-                break;
-            }
-            cursor = cursor->pointee.get();
-        }
-        if (!peel_ok) {
-            continue;
-        }
-        if (param.is_array) {
-            if (cursor->kind != TypeKind::Array || cursor->element == nullptr) {
-                continue;
-            }
-            if (!param.array_len_name.empty()) {
-                const int len_index = param_index(templ->type_params, param.array_len_name);
-                if (len_index >= 0 && templ->type_params[static_cast<std::size_t>(len_index)].is_value) {
-                    if (set[static_cast<std::size_t>(len_index)] &&
-                        bounds[static_cast<std::size_t>(len_index)].value != cursor->length) {
-                        error(call.loc, "type mismatch");
-                        return type_invalid();
-                    }
-                    bounds[static_cast<std::size_t>(len_index)].is_value = true;
-                    bounds[static_cast<std::size_t>(len_index)].value = cursor->length;
-                    set[static_cast<std::size_t>(len_index)] = 1;
-                }
-            }
-            if (!constrain(index, *cursor->element)) {
-                error(call.loc, "type mismatch");
-                return type_invalid();
-            }
-            continue;
-        }
-        if (!constrain(index, *cursor)) {
-            error(call.loc, "type mismatch");
-            return type_invalid();
-        }
-    }
-    for (std::size_t i = 0; i < set.size(); ++i) {
-        if (!set[i]) {
-            error(call.loc, "type mismatch");
-            return type_invalid();
-        }
-        const TypeParam &param = templ->type_params[i];
-        if (!param.is_trait) {
-            continue;
-        }
-        if (!param.constraint_package.empty()) {
-            error(call.loc, "not supported yet");
-            return type_invalid();
-        }
-        const int trait_id = package_trait(file_id_, param.constraint);
-        if (trait_id < 0) {
-            error(call.loc, "undeclared identifier");
-            return type_invalid();
-        }
-        const SpecArg &bound = bounds[i];
-        if (bound.is_value || bound.is_array || bound.indirections > 1) {
-            error(call.loc, "type mismatch");
-            return type_invalid();
-        }
-        const int struct_id = bound.struct_id >= 0 ? bound.struct_id : find_tag(file_id_, bound.type_name);
-        require_satisfies(struct_id, trait_id, bound.indirections == 1, call.loc);
-    }
-    const std::string spec_name = mangle_spec(templ->name, bounds);
     const std::string key = std::to_string(owner) + "\n" + spec_name;
     auto rewrite = [&]() {
         if (selector_call) {
@@ -1768,23 +2421,284 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
 }
 
 void Checker::drain_deferred() {
-    while (!deferred_methods_.empty()) {
-        OwnedFn item = std::move(deferred_methods_.front());
-        deferred_methods_.pop_front();
+    std::size_t index = 0;
+    while (index < deferred_methods_.size()) {
+        OwnedFn &item = deferred_methods_[index];
+        ++index;
         check_isolated(item.file_id, item.fn);
-        queue_spec(item.file_id, std::move(item.fn));
     }
 }
 
-void Checker::flush_appends() {
-    for (PendingAppend &item : pending_appends_) {
-        TranslationUnit *unit = unit_for(item.file_id);
-        if (unit == nullptr) {
-            continue;
+namespace {
+
+void relocate_expr(Expr &expr, const std::unordered_map<const FunctionDecl *, const FunctionDecl *> &moved);
+
+void relocate_stmt(Stmt &stmt, const std::unordered_map<const FunctionDecl *, const FunctionDecl *> &moved) {
+    std::visit(
+        [&](auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child) {
+                        relocate_stmt(*child, moved);
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                if (node.value) {
+                    relocate_expr(*node.value, moved);
+                }
+                for (const auto &extra : node.extra) {
+                    if (extra) {
+                        relocate_expr(*extra, moved);
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                if (node.expr) {
+                    relocate_expr(*node.expr, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (node.cond) {
+                    relocate_expr(*node.cond, moved);
+                }
+                if (node.then_arm) {
+                    relocate_stmt(*node.then_arm, moved);
+                }
+                if (node.else_arm) {
+                    relocate_stmt(*node.else_arm, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::While>) {
+                if (node.cond) {
+                    relocate_expr(*node.cond, moved);
+                }
+                if (node.body) {
+                    relocate_stmt(*node.body, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.init) {
+                    relocate_stmt(*node.init, moved);
+                }
+                if (node.cond) {
+                    relocate_expr(*node.cond, moved);
+                }
+                if (node.step) {
+                    relocate_expr(*node.step, moved);
+                }
+                if (node.body) {
+                    relocate_stmt(*node.body, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
+                if (node.body) {
+                    relocate_stmt(*node.body, moved);
+                }
+                if (node.cond) {
+                    relocate_expr(*node.cond, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                if (node.cond) {
+                    relocate_expr(*node.cond, moved);
+                }
+                if (node.body) {
+                    relocate_stmt(*node.body, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (node.value) {
+                    relocate_expr(*node.value, moved);
+                }
+                if (node.stmt) {
+                    relocate_stmt(*node.stmt, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                for (VarDecl &var : node.vars) {
+                    if (var.init) {
+                        relocate_expr(*var.init, moved);
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Func>) {
+                if (node.decl && node.decl->body) {
+                    relocate_stmt(*node.decl->body, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                if (node.call) {
+                    relocate_expr(*node.call, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                if (node.value) {
+                    relocate_expr(*node.value, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                if (node.cond) {
+                    relocate_expr(*node.cond, moved);
+                }
+            }
+        },
+        stmt.data);
+}
+
+void relocate_expr(Expr &expr, const std::unordered_map<const FunctionDecl *, const FunctionDecl *> &moved) {
+    std::visit(
+        [&](auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.expr) {
+                    relocate_expr(*node.expr, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if (node.lhs) {
+                    relocate_expr(*node.lhs, moved);
+                }
+                if (node.rhs) {
+                    relocate_expr(*node.rhs, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                if (node.lhs) {
+                    relocate_expr(*node.lhs, moved);
+                }
+                if (node.rhs) {
+                    relocate_expr(*node.rhs, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (node.selected != nullptr) {
+                    const auto found = moved.find(node.selected);
+                    if (found != moved.end()) {
+                        node.selected = found->second;
+                    }
+                }
+                if (node.callee) {
+                    relocate_expr(*node.callee, moved);
+                }
+                for (const auto &arg : node.args) {
+                    if (arg) {
+                        relocate_expr(*arg, moved);
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.base) {
+                    relocate_expr(*node.base, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                if (node.base) {
+                    relocate_expr(*node.base, moved);
+                }
+                if (node.index) {
+                    relocate_expr(*node.index, moved);
+                }
+                if (node.end) {
+                    relocate_expr(*node.end, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof> ||
+                                 std::is_same_v<T, Expr::Cast>) {
+                if (node.expr) {
+                    relocate_expr(*node.expr, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Func>) {
+                if (node.decl && node.decl->body) {
+                    relocate_stmt(*node.decl->body, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                for (Expr::FieldInit &field : node.fields) {
+                    if (field.value) {
+                        relocate_expr(*field.value, moved);
+                    }
+                }
+                for (const auto &element : node.elements) {
+                    if (element) {
+                        relocate_expr(*element, moved);
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                if (node.allocator) {
+                    relocate_expr(*node.allocator, moved);
+                }
+                if (node.count) {
+                    relocate_expr(*node.count, moved);
+                }
+                if (node.init) {
+                    relocate_expr(*node.init, moved);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                if (node.allocator) {
+                    relocate_expr(*node.allocator, moved);
+                }
+                if (node.expr) {
+                    relocate_expr(*node.expr, moved);
+                }
+            }
+        },
+        expr.data);
+}
+
+void relocate_function(FunctionDecl &fn, const std::unordered_map<const FunctionDecl *, const FunctionDecl *> &moved) {
+    if (fn.body) {
+        relocate_stmt(*fn.body, moved);
+    }
+    for (const auto &expr : fn.result_typeof) {
+        if (expr) {
+            relocate_expr(*expr, moved);
         }
-        unit->decls.push_back(std::move(item.decl));
+    }
+}
+
+void relocate_unit(TranslationUnit &unit, const std::unordered_map<const FunctionDecl *, const FunctionDecl *> &moved) {
+    for (TopDecl &decl : unit.decls) {
+        if (auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+            relocate_function(*fn, moved);
+        } else if (auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (var->init) {
+                relocate_expr(*var->init, moved);
+            }
+        } else if (auto *test = std::get_if<TestDecl>(&decl.data)) {
+            if (test->body) {
+                relocate_stmt(*test->body, moved);
+            }
+        } else if (auto *item = std::get_if<AssertDecl>(&decl.data)) {
+            if (item->cond) {
+                relocate_expr(*item->cond, moved);
+            }
+        }
+    }
+}
+
+} // namespace
+
+void Checker::flush_appends() {
+    // Specialized methods were addressed while they lived in `deferred_methods_`.
+    // Moving them into the unit keeps one object for codegen, so calls learn the new address.
+    std::unordered_map<const FunctionDecl *, const FunctionDecl *> moved;
+    auto append_one = [&](uint32_t file, TopDecl decl, const FunctionDecl *from) {
+        TranslationUnit *unit = unit_for(file);
+        if (unit == nullptr) {
+            return;
+        }
+        unit->decls.push_back(std::move(decl));
+        if (from == nullptr) {
+            return;
+        }
+        if (const auto *fn = std::get_if<FunctionDecl>(&unit->decls.back().data)) {
+            moved.emplace(from, fn);
+        }
+    };
+    for (OwnedFn &item : deferred_methods_) {
+        const FunctionDecl *from = &item.fn;
+        TopDecl decl;
+        decl.data = std::move(item.fn);
+        append_one(item.file_id, std::move(decl), from);
+    }
+    deferred_methods_.clear();
+    for (PendingAppend &item : pending_appends_) {
+        append_one(item.file_id, std::move(item.decl), nullptr);
     }
     pending_appends_.clear();
+    if (moved.empty()) {
+        return;
+    }
+    if (primary_unit_ != nullptr) {
+        relocate_unit(*primary_unit_, moved);
+    }
+    if (graph_ != nullptr) {
+        for (PackageNode &node : const_cast<PackageGraph *>(graph_)->nodes) {
+            relocate_unit(node.unit, moved);
+        }
+    }
 }
 
 TranslationUnit *Checker::unit_for(uint32_t file_id) {

@@ -76,12 +76,16 @@ func main() i32 {
 
 `keep[i32](40)` and `keep[i32, u8]((40, 'a'))` write the types. A value in that list, such as `keep[4]`, is reported as `type mismatch`. `head(40, (1, 2))` infers `T` and `U`. `head[i32, i32](40, 2)` writes them. The type arguments before `...U` bind the parameters in front of the pack, and the rest fill `U`. `first(40)` is reported as `type mismatch`: `args` is `i32`, and `args[0]` reads a tuple. The index is a constant. `return args` returns the tuple, and so does `return keep((1, 2))` from a function with those two results. `a, b :=` unpacks them, and so does `var value1, value2 = value` when `value` holds that tuple. `var value = (40, 2)` binds the tuple itself. `[...U]` is not the `...` that `builtin.va()` reads.
 
+One generic name may have several parameter lists. A call uses the types of the arguments, the same way as a function that is not generic. `func id[T type](value T) T` and `func id[T type](value T, extra i32) T` are both `id`. Type-parameter names are not part of that list, so `id[T type](value T)` and `id[U type](value U)` are one list. The same parameter list is `redefinition`. A generic function and a concrete function of the same name are `redefinition`. A call that matches none or more than one list is `type mismatch` or `argument count`.
+
+A method on a generic struct follows the same rule. The receiver is not one of those parameters. `func Box[T]::get(self *this) T` and `func Box[T]::get(self *this, n i32) T` are two methods, chosen from the remaining arguments. `func Box[T]::get(self this)` beside `func Box[T]::get(self *this)` stays `redefinition`.
+
 ## Cost
 
 A generic function is specialized while compiling. `return id(40)` calls `id` for `i32` and pushes a trace frame. `main` executes 38 instructions when fewer than 32 frames are stored, which is the no-argument frame plus 1 `movl` of the argument. The specialized `id` is 3 instructions: store the parameter, load it, `retq`.
 
 `T Shape` is also specialized. `measure(r)` for a struct of two `i32` fields stores those fields and copies them into the argument registers. The struct is not zeroed first. `main` executes 44 instructions when fewer than 32 frames are stored. The call pushes a trace frame. Inside the copy, `value.area()` is an ordinary traced call.
 
-A type pack of one type is that value and costs whatever returning it costs. A pack of two integers is the two-result return, 7 instructions in the callee.
+A type pack of one type is that value and costs whatever returning it costs. A pack of two integers is the two-result return, 7 instructions in the callee. Choosing a parameter list adds no instructions. The call runs the selected function.
 
 [Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: typeof as a result](typeof.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

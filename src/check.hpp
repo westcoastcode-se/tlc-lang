@@ -71,7 +71,10 @@ struct Symbol {
     bool is_typedef = false;
     bool is_struct_tag = false;
     bool is_template = false;
+    // The first template. One template keeps today's call path.
     const FunctionDecl *fn_template = nullptr;
+    // Every value-parameter list of this generic name. One entry is the usual template.
+    std::vector<const FunctionDecl *> fn_templates;
     int const_value = 0;
     int function_id = 0;
     uint32_t package_file = 0;
@@ -330,6 +333,17 @@ class Checker {
     // Another parameter list of an existing function. The same list merges, or is `redefinition`.
     void absorb_function(Symbol &existing, const FunctionDecl &fn, Type signature);
     void mirror_function(const Symbol &symbol);
+    // Another value-parameter list of a generic function. The same list merges, or is `redefinition`.
+    // `report` is false while publishing, so a clash is recorded once in declare_globals.
+    void absorb_template(Symbol &existing, const FunctionDecl &fn, FunctionDecl *stable, bool report);
+    void mirror_template(const Symbol &symbol);
+    FunctionDecl *stable_template(uint32_t file, const FunctionDecl &fn) const;
+    // `self this` beside `self *this`, or two bodies of the same remaining list.
+    void generic_method_clash(const FunctionDecl &fn);
+    std::optional<std::vector<SpecArg>> infer_generic_bounds(const FunctionDecl &templ, const Expr::Call &call,
+                                                            const std::vector<Type> &arg_types);
+    bool generic_candidate_matches(const FunctionDecl &templ, const Expr::Call &call, const std::vector<Type> &arg_types,
+                                   uint32_t owner);
     FnList function_list(const FunctionDecl &fn, Type signature) const;
     // Picks the parameter list a call uses. Null when none matches or more than one matches.
     const MethodInfo *choose_method(const Expr::Call &node, const MethodInfo &head, bool want_static, bool foreign,
@@ -437,7 +451,7 @@ class Checker {
     std::deque<OwnedFn> owned_fns_;
     std::deque<OwnedVar> owned_assoc_;
     std::deque<StructDecl> owned_structs_;
-    std::unordered_map<uint32_t, std::unordered_map<std::string, FunctionDecl *>> fn_templates_;
+    std::unordered_map<uint32_t, std::unordered_map<std::string, std::vector<FunctionDecl *>>> fn_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, StructDecl *>> struct_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, ConstBinding>> const_values_;
     std::deque<OwnedFn> deferred_methods_;

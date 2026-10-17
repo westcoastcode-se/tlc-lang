@@ -1,0 +1,12 @@
+func pick[T type](value T, n i32) i32 {
+    return n;
+}
+
+func pick[T type](value T, wide i64) i32 {
+    return 10;
+}
+
+func main() i32 {
+    var wide i64 = 1;
+    return pick(1, 2) + pick(3, wide) - 12;
+}

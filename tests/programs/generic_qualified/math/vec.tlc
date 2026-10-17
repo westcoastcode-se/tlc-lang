@@ -1,0 +1,13 @@
+package math;
+
+export type Point struct {
+    export x i32;
+};
+
+export type Vec[T type] struct {
+    export n T;
+};
+
+export type Buf[N i32, T type] struct {
+    export n T;
+};

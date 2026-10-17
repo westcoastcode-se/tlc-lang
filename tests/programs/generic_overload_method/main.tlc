@@ -1,0 +1,31 @@
+type Box[T type] struct {
+    value T;
+};
+
+func Box[T]::get(self *this) T {
+    return self.value;
+}
+
+func Box[T]::get(self *this, extra i32) T {
+    return self.value + extra;
+}
+
+func Box[T]::make(value T) T {
+    return value;
+}
+
+func Box[T]::make(value T, extra i32) T {
+    return value + extra;
+}
+
+func main() i32 {
+    var box Box[i32];
+    box.value = 4;
+    if (box.get() + box.get(1) != 9) {
+        return 1;
+    }
+    if (Box[i32].make(4) + Box[i32].make(1, 1) != 6) {
+        return 2;
+    }
+    return 0;
+}

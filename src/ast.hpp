@@ -2,6 +2,7 @@
 
 #include "token.hpp"
 
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -694,7 +695,22 @@ struct PackageClause {
 struct TranslationUnit {
     std::optional<PackageClause> package;
     std::vector<ImportDecl> imports;
-    std::vector<TopDecl> decls;
+    // A specialization is appended after sema has taken pointers into this list.
+    // The move swaps that block map, so those pointers stay valid. It is noexcept
+    // because a throwing move makes vector copy the unit, and TopDecl is not copyable.
+    std::deque<TopDecl> decls;
+
+    TranslationUnit() = default;
+    TranslationUnit(const TranslationUnit &) = delete;
+    TranslationUnit &operator=(const TranslationUnit &) = delete;
+    TranslationUnit(TranslationUnit &&other) noexcept
+        : package(std::move(other.package)), imports(std::move(other.imports)), decls(std::move(other.decls)) {}
+    TranslationUnit &operator=(TranslationUnit &&other) noexcept {
+        package = std::move(other.package);
+        imports = std::move(other.imports);
+        decls = std::move(other.decls);
+        return *this;
+    }
 };
 
 std::unique_ptr<Expr> clone_expr(const Expr &expr);

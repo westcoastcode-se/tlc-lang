@@ -4019,6 +4019,18 @@ void Checker::check_function(const FunctionDecl &fn) {
     variadic_function_ = fn.variadic;
     resolve_result_typeof(const_cast<FunctionDecl &>(fn));
     return_type_ = function_result(fn);
+    // Codegen reads `return_type`. Preparing the result slot rewrites `Vec[i32]` to the specialization.
+    if (fn.results.size() == 1 && !fn.results.front().is_fn_ptr) {
+        FunctionDecl &written = const_cast<FunctionDecl &>(fn);
+        const ResultSlot &first = written.results.front();
+        written.return_type = first.type_name;
+        written.type_package = first.type_package;
+        written.is_struct = first.is_struct;
+        written.is_enum = first.is_enum;
+        written.indirections = first.indirections;
+        written.optional = first.optional;
+        written.const_pointee = first.const_pointee;
+    }
     for (const Param &param : fn.params) {
         Type type = type_of_param(param);
         Symbol symbol;

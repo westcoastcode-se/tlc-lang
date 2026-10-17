@@ -57,7 +57,6 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `count(U)` and `const for`.
 - A type-parameter list after the method name: `func Vec[T]::get[U type]`. `func Vec[T]::get` names the struct's parameters.
 - Type parameters on an alias, an enum, a trait, or a union. Only `type Name[T type] struct` takes the list.
-- A qualified type application: `pkg.Vec[i32]`.
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.
 - An array type parameter under a pointer, or a pointer to an array, as in `*T` when `T` is `[4]i32`.

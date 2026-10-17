@@ -1032,6 +1032,9 @@ class CodeGen {
     const Binding *binding_for_decl(const FunctionDecl *decl) const;
     void bind_package_globals();
     int tag_id(uint32_t file, const std::string &name) const;
+    // A specialization is stored on the package that defines the generic struct.
+    int spec_tag(const std::string &name) const;
+    int unique_tag(const std::string &name) const;
     uint32_t package_file(uint32_t file, const std::string &package) const;
     // File whose package holds `Entity.next`. `math.Entity.next` is the imported package.
     uint32_t assoc_home(const Expr::Selector &node) const;

@@ -232,13 +232,23 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 if (!fn->method_struct.empty()) {
                     require_method_params(*fn);
                 }
-                FunctionDecl *stable = nullptr;
-                const auto file = fn_templates_.find(file_id_);
-                if (file != fn_templates_.end()) {
-                    const auto found = file->second.find(fn->name);
-                    if (found != file->second.end()) {
-                        stable = found->second;
+                FunctionDecl *stable = stable_template(file_id_, *fn);
+                Symbol *existing = lookup_scope(fn->name);
+                if (existing == nullptr && !fn->is_static) {
+                    existing = lookup(fn->name);
+                }
+                if (existing != nullptr) {
+                    if (!existing->is_template || !existing->is_function) {
+                        error(fn->loc, "redefinition");
+                    } else {
+                        absorb_template(*existing, *fn, stable, true);
+                        mirror_template(*existing);
                     }
+                    continue;
+                }
+                if (shared_has(fn->name)) {
+                    error(fn->loc, "redefinition");
+                    continue;
                 }
                 Symbol symbol;
                 symbol.name = fn->name;
@@ -246,6 +256,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 symbol.is_template = true;
                 symbol.unsafe_fn = fn->unsafe;
                 symbol.fn_template = stable;
+                if (stable != nullptr) {
+                    symbol.fn_templates.push_back(stable);
+                }
                 symbol.has_body = fn->body != nullptr;
                 symbol.package_file = file_id_;
                 symbol.type = type_function(type_invalid(), {});
@@ -272,6 +285,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                             }
                         }
                     }
+                    generic_method_clash(*fn);
                     continue;
                 }
             }
@@ -1169,24 +1183,32 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 if (!fn->exported || fn->is_static || fn->name.empty()) {
                     continue;
                 }
-                FunctionDecl *stable = nullptr;
-                const auto file = fn_templates_.find(file_id);
-                if (file != fn_templates_.end()) {
-                    const auto found = file->second.find(fn->name);
-                    if (found != file->second.end()) {
-                        stable = found->second;
+                FunctionDecl *stable = stable_template(file_id, *fn);
+                auto &table = exports_[file_id];
+                const auto found = table.find(fn->name);
+                if (found == table.end()) {
+                    if (exported_elsewhere(fn->name)) {
+                        error(fn->loc, "redefinition");
+                    } else {
+                        Symbol symbol;
+                        symbol.name = fn->name;
+                        symbol.is_function = true;
+                        symbol.is_template = true;
+                        symbol.unsafe_fn = fn->unsafe;
+                        symbol.fn_template = stable;
+                        if (stable != nullptr) {
+                            symbol.fn_templates.push_back(stable);
+                        }
+                        symbol.has_body = fn->body != nullptr;
+                        symbol.package_file = file_id;
+                        symbol.type = type_function(type_invalid(), {});
+                        table.emplace(fn->name, std::move(symbol));
                     }
+                } else if (!found->second.is_template || !found->second.is_function) {
+                    error(fn->loc, "redefinition");
+                } else {
+                    absorb_template(found->second, *fn, stable, false);
                 }
-                Symbol symbol;
-                symbol.name = fn->name;
-                symbol.is_function = true;
-                symbol.is_template = true;
-                symbol.unsafe_fn = fn->unsafe;
-                symbol.fn_template = stable;
-                symbol.has_body = fn->body != nullptr;
-                symbol.package_file = file_id;
-                symbol.type = type_function(type_invalid(), {});
-                exports_[file_id].insert_or_assign(fn->name, std::move(symbol));
                 continue;
             }
             if (!fn->exported || fn->is_static || fn->name.empty()) {

@@ -67,7 +67,7 @@ The program returns 42. `Entity.next` is the constant. `e.id` is the field.
 
 ## Generics
 
-`type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[i32]`. A method is `func Vec[T]::get(self *this, i i32) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N i32, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. `Vec` with no arguments is reported as `type mismatch`. `Vec[i32]` and `Vec[u8]` are different types. A variable on that struct is `var Vec[T]::count i32`, and `Vec[i32].count` is a different variable from `Vec[u8].count`. A constant is `const Vec[T]::limit`, and `Vec[i32].limit` is a different constant from `Vec[u8].limit`. A static function is `func Vec[T]::make(value T) Vec[T]`, called as `Vec[i32].make(1)` or `Buf[4, i32].width()`. Assigning one to the other, or passing one where the parameter is the other, is reported as `type mismatch`.
+`type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[i32]`. Another package writes `pkg.Vec[i32]` when the struct is exported. A struct that is not exported is reported as `name is not exported`. A method is `func Vec[T]::get(self *this, i i32) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order. `type Buf[N i32, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. `Vec` with no arguments is reported as `type mismatch`. `Vec[i32]` and `Vec[u8]` are different types. A variable on that struct is `var Vec[T]::count i32`, and `Vec[i32].count` is a different variable from `Vec[u8].count`. A constant is `const Vec[T]::limit`, and `Vec[i32].limit` is a different constant from `Vec[u8].limit`. A static function is `func Vec[T]::make(value T) Vec[T]`, called as `Vec[i32].make(1)` or `Buf[4, i32].width()`. Assigning one to the other, or passing one where the parameter is the other, is reported as `type mismatch`.
 
 ```c
 type Vec[T type] struct {
@@ -237,7 +237,7 @@ A field through `*Point` reloads the pointer and then loads the field. `return p
 
 `Point{.x = 40}` zeroes both fields, stores `x`, and copies the two fields into the variable: 2 zero stores, 1 value store, 2 loads, and 2 stores. A missing field stays the zero that was stored. `Point{}` is the zero stores only.
 
-A generic struct is specialized while compiling. `Vec[i32]` then costs the same as a struct whose field is `i32`. `type Wide struct(align=16)` changes the size the zeroes cover. It adds no extra instruction beyond those stores. An empty struct has no field stores.
+A generic struct is specialized while compiling. `Vec[i32]` then costs the same as a struct whose field is `i32`. `pkg.Vec[i32]` is that same specialization. `type Wide struct(align=16)` changes the size the zeroes cover. It adds no extra instruction beyond those stores. An empty struct has no field stores.
 
 A by-value method copies every field into the argument registers before the traced call. Two `i32` fields are 2 `movl`. A pointer method passes the address with 1 `leaq`. The call itself is the 36-instruction trace frame when fewer than 32 frames are stored.
 

@@ -1,0 +1,5 @@
+package math;
+
+type Vec[T type] struct {
+    n T;
+};
