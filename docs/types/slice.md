@@ -6,13 +6,15 @@
 
 `v[i]` reads one element. The index has type `i32`. Storing an element, `v[i] = 1`, is reported as `type mismatch`. `v[i].x` reads a field. Storing that field is reported as `type mismatch`. When the element is `*T`, `*v[i] = 1` writes through the pointer. `v.len` is `i32` and is the number of elements. A local `var empty []i32` is uninitialized. It does not store a length of 0. A file-scope slice with no initializer is zero, the same as any other global.
 
+`[][]T` is a slice of `[]T` headers. `[N][]T` is that many headers. `v[i]` has type `[]T`, and `v[i][j]` reads one `T`. `v.len` is the number of headers. `v[i].len` is the number of elements in that header. Storing through the slice, `v[i] = row` or `v[i][j] = 1`, is reported as `type mismatch`. The array is the storage that can change: `rows[i] = other` copies one header, and a `[][]T` view of `rows` sees that store. `var rows = [_][]i32{a[:], b[:]}` keeps `[2][]i32`. `var view [][]i32 = rows` converts that array to `[][]T`. `var copy = rows` decays to a pointer, the same as any other array name. `type Row []i32` makes `[]Row` and `[N]Row` the same types as `[][]i32` and `[N][]i32`. `[][]const u8` is that slice with a const element. `const` stays in front of the innermost name. A range of `[N][]T` is `[][]T`. A range of `[][]T` stays `[][]T`. `sizeof([][]i32)` is 16 and `sizeof([2][]i32)` is 32. A parameter `[][]T` stays a slice. A parameter `[N][]T` decays to a pointer to one header, so `rows.len` there is reported as `type mismatch`. A field may be `items [][]i32`. A file-scope `[_][]i32{a[:], b[:]}` is reported as `global initializer is not a constant`.
+
 `a[i:j]` takes the elements from `i` up to, but not including, `j`. The base is an array or a slice. The result is `[]T`. A range of `type Row []i32` stays `Row`. A range of `[N]T`, including `type Pair [2]i32`, is the plain slice `[]T`. Both bounds have type `i32`. A missing low bound is `0`. A missing high bound is the length, so `a[i:]` is `a[i:a.len]`, `a[:j]` is `a[0:j]`, and `a[:]` is the whole slice. The length is `j - i`. There is no bounds check. The result is not an lvalue: `row[0:2] = row`, `row[1:] = row`, and `&row[0:2]` are reported as `not an lvalue`. A pointer, including an array parameter, is reported as `type mismatch`. A range of `[_][2]i32` is a slice of `[2]i32`. `var view = grid[0:1]` keeps that slice. `view.len` is the number of rows. `view[0].len` is 2. `view[0][1]` reads one element. `view[0]` and `grid[1]` are `[2]i32`, so each converts to `[]i32`, and `grid[1][0:2]` is that slice. `grid[1:]`, `grid[:1]`, and `grid[:]` are that slice. A range of `view` stays a slice of `[2]i32`. Storing `view[0][1]` is reported as `type mismatch`. `a[]` is reported as `expected an expression`.
 
 A field of a tlc struct may be a slice, written `items []i32`. `sizeof` of `{ n i32; items []i32; }` is 24. The same field in `extern(abi="c")` is reported as `not supported yet`. A tlc union arm that is not a struct is reported as `type mismatch`.
 
 `sizeof v` is 16, the same as `sizeof([]T)`. `typeof([]i32).name()` spells `[]i32`.
 
-`i32[]` is reported as `type mismatch`. `*[]T`, `[][]T`, and `[N][]T` are reported as `not supported yet`. `const v []i32 = row` stores a slice of that file-scope array. `const again []i32 = v` copies that header. A slice alias stays that alias, as in `const named Row = row`. `v[0]` reads one element. `v.len` is the length. Assigning `v`, or taking `&v`, is reported as `not an lvalue`. A range, an array literal, or a call is reported as `global initializer is not a constant`. `const v = row` is reported as `type mismatch`. An array parameter is already a pointer. `return row` from `func open(row [4]i32) []i32` is reported as `return type: expected []i32, found *i32`. `row[0:2]` in that function is reported as `type mismatch`. A file-scope slice is initialized from the name of an array, another slice, a string literal, or a call. `var view = pair()` and `var view []i32 = pair()` run `pair` before `main` when that call is the whole initializer. `var text = "hi"` and `const label = "hi"` store that slice in the binary. An array literal, `a[i:j]`, `a[i:]`, `a[:j]`, or `a[:]` is reported as `global initializer is not a constant`.
+`i32[]` is reported as `type mismatch`. `*[]T`, `*[][]T`, and `*[N][]T` are reported as `not supported yet`. `[][][]T`, `[N][][]T`, and `[_][][]T` are reported as `not supported yet`. `type Grid [][]i32` then `[]Grid` or `[N]Grid` is that same rejection, including as a parameter. `Vec[[][]i32]` is reported as `not supported yet`. A second length, `[N][M]T` or `[][N]T`, is reported as `not supported yet`. `const v []i32 = row` stores a slice of that file-scope array. `const again []i32 = v` copies that header. A slice alias stays that alias, as in `const named Row = row`. `v[0]` reads one element. `v.len` is the length. Assigning `v`, or taking `&v`, is reported as `not an lvalue`. A range, an array literal, or a call is reported as `global initializer is not a constant`. `const v = row` is reported as `type mismatch`. An array parameter is already a pointer. `return row` from `func open(row [4]i32) []i32` is reported as `return type: expected []i32, found *i32`. `row[0:2]` in that function is reported as `type mismatch`. A file-scope slice is initialized from the name of an array, another slice, a string literal, or a call. `var view = pair()` and `var view []i32 = pair()` run `pair` before `main` when that call is the whole initializer. `var text = "hi"` and `const label = "hi"` store that slice in the binary. An array literal, `a[i:j]`, `a[i:]`, `a[:j]`, or `a[:]` is reported as `global initializer is not a constant`.
 
 ```c
 type Hold struct {
@@ -34,6 +36,20 @@ func main() i32 {
 }
 ```
 
+```c
+func sum(rows [][]i32) i32 {
+    return rows[0][0] + rows[1][0];
+}
+
+func main() i32 {
+    var a = [_]i32{10, 20};
+    var b = [_]i32{12};
+    var rows = [_][]i32{a[:], b[:]};
+    var view [][]i32 = rows;
+    return sum(view);
+}
+```
+
 ## Cost
 
 A slice is a pointer and an `i32` length, 16 bytes. Building one from a local array is 1 `leaq` of the first element and 1 `movl` of the length, after the array's own stores. `var text = "hi"` is 1 `leaq`, 1 `movq` of the address, and 1 `movl` of the length 2.
@@ -47,5 +63,11 @@ A file-scope `var view = pair()`, when `pair` returns `numbers[0:2]` and `number
 `v[:]` copies that header: 1 load of the pointer and 1 load of the length. `v[:2]` is 1 load of the pointer and 1 `movl` of the length 2. `v[1:]` reloads the length, reloads the pointer, adds 4, and decrements the length: 4 instructions. On a local `[4]i32`, `row[:]` is 1 `leaq` of the first element and 1 `movl` of the length 4, after the array's own stores. `row[:2]` is that `leaq` and 1 `movl` of the length 2. `row[1:]` is 1 `leaq` of the second element and 1 `movl` of the length 3. On a local `[3][2]i32`, `grid[1:3]` is 1 `leaq` of the second row and 1 `movl` of the length 2, after the array's own stores. The row is 8 bytes. `return view[0][1]` loads that `i32` from offset 4.
 
 A value method on a slice alias is a traced call. The callee is the method body. [`string_view.equals`](../std/string.md) measures that shape. The caller records a trace frame, 36 instructions when fewer than 32 frames are stored, plus the copies of the two slice headers.
+
+`[][]T` is still one header, 16 bytes. `[N][]T` is N headers. `sizeof([][]i32)` and `sizeof([2][]i32)` fold to the immediates 16 and 32. Storing one `[]T` into a local `[N][]T`, from `a[:]`, is 1 `leaq` of the first element, 1 `movq` of that address, and 1 `movl` of the length, after that row's own stores. `var view [][]i32 = rows` is those same three instructions for the outer header. `rows[1] = other` copies a header that is already stored: 1 load of the pointer, 1 load of the length, 1 store of the length, and 1 store of the pointer.
+
+`return v.len` on a `[][]i32` parameter is 5 instructions: the two parameter stores, 1 load of the length, 1 load of the pointer, and `retq`. `return v[0].len` is 6: those two stores, 1 reload of the pointer, 1 load of the inner length, 1 load of the inner pointer, and `retq`. `return v[0][1]` is 7: the two stores, 1 reload of the pointer, 1 load of the inner length, 1 load of the inner pointer, 1 load of that `i32`, and `retq`. `return v[i][j]` is 14 instructions, including the four parameter stores and `retq`. One instruction sign-extends `i` and one shifts it by 4, because a header is 16 bytes. The inner length and the inner pointer are loaded. `j` is sign-extended twice, and the element uses a scaled load. `return rows[0][1]` on a `[2][]i32` parameter is 6 instructions: 1 store of the decayed pointer, 1 reload, 1 load of the inner length, 1 load of the inner pointer, 1 load of the `i32`, and `retq`.
+
+`return v[:]` copies the outer header: the two parameter stores, 1 load of the pointer, 1 load of the length, and `retq`. `return v[:1]` is those stores, 1 load of the pointer, 1 `movl` of the length 1, and `retq`. `return v[1:]` is the two stores, 1 reload of the length, 1 reload of the pointer, 1 `addq` of 16, 1 `decl`, and `retq`. On a local `[2][]i32`, `rows[0:1]` is 1 `leaq` of the first header, 1 `movq` of that address, and 1 `movl` of the length 1, after the array's own stores.
 
 [Index](../README.md) · [Previous: sizeof](sizeof.md) · [Next: The Type type](type.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

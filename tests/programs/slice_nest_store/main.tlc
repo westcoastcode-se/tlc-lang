@@ -1,0 +1,8 @@
+func main() i32 {
+    var a = [_]i32{1, 2};
+    var b = [_]i32{3};
+    var rows = [_][]i32{a[:], b[:]};
+    var view [][]i32 = rows;
+    view[0] = b[:];
+    return 0;
+}

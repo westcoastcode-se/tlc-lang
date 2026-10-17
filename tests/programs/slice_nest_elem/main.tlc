@@ -1,0 +1,7 @@
+func main() i32 {
+    var a = [_]i32{1, 2};
+    var rows = [_][]i32{a[:]};
+    var view [][]i32 = rows;
+    view[0][0] = 3;
+    return 0;
+}

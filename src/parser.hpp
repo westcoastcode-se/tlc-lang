@@ -61,6 +61,8 @@ class Parser {
         bool is_array = false;
         std::string len_name;
         int length = 0;
+        // One empty `[]` after the outer brackets: `[][]T` and `[N][]T`.
+        bool elem_slice = false;
     };
 
     std::vector<Token> tokens_;
@@ -93,6 +95,8 @@ class Parser {
         bool is_array = false;
         // `[]const u8` and `[4]const u8`. The element type is const.
         bool elem_const = false;
+        // `[][]T` and `[N][]T`. The element is one slice. A third pair stays rejected.
+        bool elem_slice = false;
         int array_len = 0;
         std::string array_len_name;
         std::vector<TypeArg> type_args;

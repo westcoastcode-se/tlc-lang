@@ -91,7 +91,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A pointer to an array as a field. `var p *[4]i32` is fine. `p *[4]i32` inside a struct is not.
 - A pointer to a slice, `*[]T`. It is `not supported yet`.
 - A pointer receiver on a slice alias, `func string_view::at(self *this)`. It is `not supported yet`. A value receiver, `self this`, is the form that works.
-- A nested slice, `[][]T` or `[N][]T`. It is `not supported yet`.
+- A slice nested more than once: `[][][]T`, `[N][][]T`, `[_][][]T`, and `[]Grid` or `[N]Grid` when `Grid` is already `[][]T`. It is `not supported yet`, including as a parameter. A nested slice as a type argument, `Vec[[][]i32]`, is `not supported yet`.
 - A slice taken from an array parameter. The parameter is already a pointer, so `return row` from `func open(row [4]i32) []i32` is `return type: expected []i32, found *i32`. A range on that pointer, `row[0:2]`, is `type mismatch`.
 - A slice field on `extern(abi="c")`. It is `not supported yet`. A tlc union arm that is not a struct stays `type mismatch`.
 - A file-scope slice whose initializer is not the name of an array, another slice, or a call. A literal, `a[i:j]`, `a[i:]`, `a[:j]`, or `a[:]` is `global initializer is not a constant`. A call used as the whole initializer runs before `main`. `const v []i32 = row` stores that slice. A range, a literal, or a call used as its initializer is `global initializer is not a constant`.

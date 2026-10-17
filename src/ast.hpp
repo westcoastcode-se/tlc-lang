@@ -60,6 +60,8 @@ struct FnParam {
     // `[]T` on a parameter or on one result of several. A sized array is not carried here.
     bool is_array = false;
     int array_len = 0;
+    // `[][]T`. The element of this slice is one slice.
+    bool elem_slice = false;
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
@@ -157,6 +159,8 @@ struct Expr {
         bool is_array = false;
         // `[]const u8`. The element type is const.
         bool elem_const = false;
+        // `[][]T` and `[N][]T`. The element is one slice.
+        bool elem_slice = false;
         int array_len = 0;
         std::unique_ptr<Expr> expr;
     };
@@ -173,6 +177,8 @@ struct Expr {
         bool is_array = false;
         // `[]const u8`. The element type is const.
         bool elem_const = false;
+        // `[][]T` and `[N][]T`. The element is one slice.
+        bool elem_slice = false;
         int array_len = 0;
         std::unique_ptr<Expr> expr;
         // Filled while checking. Codegen interns this spelling, so equal types share one value.
@@ -245,7 +251,12 @@ struct Expr {
         bool elem_ptr_to_array = false;
         bool elem_fn = false;
         // `[_][2]i32{...}`. The element is an array of this length.
+        // Negative means the element is a slice, as in `[_][]i32{...}`.
         int elem_array_len = 0;
+        // `[_][][]T`. The element slice is itself a slice. That form stays rejected.
+        bool elem_slice = false;
+        // `[_][]const u8`. The leaf is const. A sized row does not use this flag.
+        bool elem_const = false;
         std::string elem_array_len_name;
         // `[_]func (i32) i32{add}`. The element is a function pointer.
         int elem_ret_indirections = 0;
@@ -332,6 +343,8 @@ struct FieldDecl {
     bool is_array = false;
     // `[]const u8`. The element type is const.
     bool elem_const = false;
+    // `[][]T` and `[N][]T`. The element is one slice.
+    bool elem_slice = false;
     int array_len = 0;
     // `[N]int` when N is a name. Folded into `array_len` before code generation.
     std::string array_len_name;
@@ -400,6 +413,8 @@ struct TypedefDecl {
     bool is_array = false;
     // `[]const u8`. The element type is const.
     bool elem_const = false;
+    // `[][]T` and `[N][]T`. The element is one slice.
+    bool elem_slice = false;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -426,6 +441,8 @@ struct VarDecl {
     bool is_array = false;
     // `[]const u8`. The element type is const.
     bool elem_const = false;
+    // `[][]T` and `[N][]T`. The element is one slice.
+    bool elem_slice = false;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -566,6 +583,8 @@ struct ResultSlot {
     bool is_array = false;
     // `[]const u8`. The element type is const.
     bool elem_const = false;
+    // `[][]T` and `[N][]T`. The element is one slice.
+    bool elem_slice = false;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -591,6 +610,8 @@ struct Param {
     bool is_array = false;
     // `[]const u8`. The element type is const.
     bool elem_const = false;
+    // `[][]T` and `[N][]T`. The element is one slice.
+    bool elem_slice = false;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;

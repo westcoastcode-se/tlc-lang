@@ -309,6 +309,7 @@ void CodeGen::declare_globals(const PackageNode &node) {
         binding.enum_id = low.enum_id;
         binding.inner_array_len = low.inner_array_len;
         binding.is_slice = low.is_slice;
+        binding.elem_slice = low.elem_slice;
         binding.is_static = var->is_static;
         file.globals.emplace(key, binding);
     }
@@ -1090,8 +1091,14 @@ llvm::AllocaInst *CodeGen::emit_array_literal(const Expr::Init &init, Lowered &l
         }
         llvm::Value *slot_i =
             builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(static_cast<int>(index))});
-        llvm::Value *stored = value.value == nullptr ? llvm::Constant::getNullValue(elem)
-                                                     : as_stored(value.value, value.depth, elem, value.elem_unsigned);
+        llvm::Value *stored = nullptr;
+        if (value.value == nullptr) {
+            stored = llvm::Constant::getNullValue(elem);
+        } else if (elem == slice_type()) {
+            stored = as_slice_value(value, init.loc);
+        } else {
+            stored = as_stored(value.value, value.depth, elem, value.elem_unsigned);
+        }
         builder_.CreateStore(stored, slot_i);
         ++index;
     }
@@ -1679,7 +1686,8 @@ llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector
                            : (returns_void ? llvm::Type::getVoidTy(context_)
                                            : stored_type(lower(current_file_, fn.return_type, fn.type_package, fn.is_struct,
                                                                fn.indirections, result_slice,
-                                                               result_slice ? fn.results.front().array_len : 0, false)));
+                                                               result_slice ? fn.results.front().array_len : 0, false,
+                                                               result_slice && fn.results.front().elem_slice)));
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (std::size_t index = 0; index < fn.params.size(); ++index) {
@@ -2627,6 +2635,11 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         result.array_len = -1;
         result.elem_float = call.elem_float;
         result.enum_id = call.enum_id;
+        if (call.decl != nullptr && call.decl->results.size() == 1) {
+            result.elem_slice = call.decl->results.front().elem_slice;
+        } else if (call.fn_results.size() == 1) {
+            result.elem_slice = call.fn_results.front().elem_slice;
+        }
         return result;
     }
     if (call.elem_float) {
@@ -2677,6 +2690,7 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
                 slot.const_pointee = part.const_pointee;
                 slot.is_array = part.is_array && part.array_len != 0;
                 slot.array_len = slot.is_array ? part.array_len : 0;
+                slot.elem_slice = part.elem_slice;
                 result.tuple_parts.push_back(std::move(slot));
             }
         }
@@ -2996,6 +3010,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                         binding->fn_ret_unsigned, binding->fn_ret_char, binding->fn_ret_bool, binding->fn_ret_struct,
                         binding->fn_results, binding->enum_id};
         slot.is_slice = binding->is_slice;
+        slot.elem_slice = binding->elem_slice;
         return slot;
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {
@@ -3042,6 +3057,16 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             llvm::Type *element = leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
                                             base.elem_float);
             // `view[i]` on a slice of `[M]T` is that row, the same pointer `grid[i]` yields.
+            if (base.elem_slice) {
+                llvm::Value *slot =
+                    builder_.CreateInBoundsGEP(slice_type(), data, llvm::ArrayRef<llvm::Value *>{subscript.value});
+                TypedValue out{slot,       elem_depth, base.elem_char, base.struct_id, false,          base.elem_void,
+                               base.elem_bool, base.elem_bits, base.elem_unsigned, -1,         base.elem_float};
+                out.is_slice = true;
+                out.array_len = -1;
+                out.enum_id = base.enum_id;
+                return out;
+            }
             if (base.inner_array_len > 0) {
                 llvm::Type *row = llvm::ArrayType::get(element, static_cast<uint64_t>(base.inner_array_len));
                 llvm::Value *slot = builder_.CreateInBoundsGEP(row, data, llvm::ArrayRef<llvm::Value *>{subscript.value});
@@ -3064,6 +3089,16 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             return {};
         }
         llvm::Value *offset = subscript.value;
+        if (base.elem_slice) {
+            llvm::Value *slot =
+                builder_.CreateInBoundsGEP(slice_type(), base.value, llvm::ArrayRef<llvm::Value *>{offset});
+            TypedValue out{slot, base.depth > 0 ? base.depth - 1 : 0, base.elem_char, base.struct_id, false,
+                           base.elem_void, base.elem_bool, base.elem_bits, base.elem_unsigned, -1, base.elem_float};
+            out.is_slice = true;
+            out.array_len = -1;
+            out.enum_id = base.enum_id;
+            return out;
+        }
         if (base.inner_array_len > 0) {
             llvm::Type *leaf =
                 leaf_type(base.depth - 1, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
@@ -3208,9 +3243,11 @@ llvm::Type *CodeGen::shape_type(const Shape &shape) const {
         if (shape.array_len < 0) {
             return nullptr;
         }
-        return llvm::ArrayType::get(
-            leaf_type(shape.depth, shape.elem_char, shape.struct_id, shape.elem_bool, shape.elem_bits, shape.elem_float),
-            static_cast<uint64_t>(shape.array_len));
+        llvm::Type *element =
+            shape.elem_slice ? static_cast<llvm::Type *>(slice_type())
+                             : leaf_type(shape.depth, shape.elem_char, shape.struct_id, shape.elem_bool, shape.elem_bits,
+                                         shape.elem_float);
+        return llvm::ArrayType::get(element, static_cast<uint64_t>(shape.array_len));
     }
     return leaf_type(shape.depth, shape.elem_char, shape.struct_id, shape.elem_bool, shape.elem_bits);
 }
@@ -3247,6 +3284,7 @@ CodeGen::Shape CodeGen::shape_from_binding(const Binding &binding) const {
     shape.array_len = binding.array_len;
     shape.is_function = binding.is_function;
     shape.is_slice = binding.is_slice;
+    shape.elem_slice = binding.elem_slice;
     shape.elem_float = binding.elem_float;
     shape.type = shape_type(shape);
     return shape;
@@ -3276,6 +3314,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     shape.is_array = alias->is_array;
                     shape.array_len = alias->array_len;
                     shape.is_slice = alias->is_slice;
+                    shape.elem_slice = alias->elem_slice;
                     shape.elem_float = alias->elem_float;
                     shape.type = shape_type(shape);
                     return shape;
@@ -3376,6 +3415,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     slice.is_slice = true;
                     slice.is_array = false;
                     slice.array_len = -1;
+                    slice.elem_slice = base.elem_slice;
                     slice.type = slice_type();
                     if (!base.is_slice && base.depth > 0) {
                         slice.depth = base.depth - 1;
@@ -3389,7 +3429,8 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                         node.tuple_index < static_cast<int>(binding->tuple_parts.size())) {
                         const ResultSlot &slot = binding->tuple_parts[static_cast<std::size_t>(node.tuple_index)];
                         const Lowered low = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct,
-                                                  slot.indirections, slot.is_array, slot.array_len, false);
+                                                  slot.indirections, slot.is_array, slot.array_len, false,
+                                                  slot.elem_slice);
                         Shape shape;
                         shape.depth = low.depth;
                         shape.elem_char = low.elem_char;
@@ -3402,6 +3443,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                         shape.is_array = low.is_array;
                         shape.array_len = low.array_len;
                         shape.is_slice = low.is_slice;
+                        shape.elem_slice = low.elem_slice;
                         shape.type = low.type;
                         return shape;
                     }
@@ -3411,6 +3453,18 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     return {};
                 }
                 const Shape base = raw_shape(*node.base);
+                if (base.elem_slice) {
+                    Shape element = base;
+                    element.is_slice = true;
+                    element.elem_slice = false;
+                    element.is_array = false;
+                    element.array_len = -1;
+                    if (!base.is_slice && element.depth > 0) {
+                        element.depth -= 1;
+                    }
+                    element.type = slice_type();
+                    return element;
+                }
                 if (base.is_slice) {
                     Shape element = base;
                     element.is_slice = false;
@@ -3444,6 +3498,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.elem_unsigned = low.elem_unsigned;
                 shape.struct_id = low.struct_id;
                 shape.is_slice = low.is_slice;
+                shape.elem_slice = low.elem_slice;
                 shape.array_len = low.is_slice ? -1 : low.array_len;
                 shape.is_array = low.is_array && !low.is_slice;
                 shape.type = low.depth == 0 && low.elem_void ? nullptr : low.type;
@@ -3536,6 +3591,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.is_array = field->is_array;
                 shape.array_len = field->array_len;
                 shape.is_slice = field->is_slice;
+                shape.elem_slice = field->elem_slice;
                 shape.type = field->type != nullptr ? field->type : shape_type(shape);
                 return shape;
             } else {
@@ -3554,6 +3610,7 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         TypedValue loaded;
         loaded.value = builder_.CreateLoad(slice_type(), addr.value);
         loaded.is_slice = true;
+        loaded.elem_slice = addr.elem_slice;
         loaded.array_len = -1;
         loaded.depth = addr.depth;
         loaded.elem_char = addr.elem_char;
@@ -3570,6 +3627,7 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         TypedValue value{addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
                          addr.elem_bool, addr.elem_bits, addr.elem_unsigned, -1, addr.elem_float};
         value.array_len = addr.array_len;
+        value.elem_slice = addr.elem_slice;
         return value;
     }
     return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void, addr.elem_bool,
@@ -3627,8 +3685,10 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         };
         llvm::Value *start = data;
         llvm::Value *len = nullptr;
-        // A row `[M]T` steps by that row. The length counts rows, not elements of `T`.
-        if (base.inner_array_len > 0) {
+        // A header element steps by `tlc.slice`. A row `[M]T` steps by that row.
+        if (base.elem_slice) {
+            element = slice_type();
+        } else if (base.inner_array_len > 0) {
             element = llvm::ArrayType::get(element, static_cast<uint64_t>(base.inner_array_len));
         }
         if (low_omitted) {
@@ -3658,9 +3718,10 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     TypedValue result;
     result.value = out;
     result.is_slice = true;
+    result.elem_slice = base.elem_slice;
     result.array_len = -1;
     result.depth = elem_depth;
-    result.inner_array_len = base.inner_array_len;
+    result.inner_array_len = base.elem_slice ? 0 : base.inner_array_len;
     result.elem_char = base.elem_char;
     result.struct_id = base.struct_id;
     result.elem_void = base.elem_void;
@@ -4107,6 +4168,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     TypedValue loaded;
                     loaded.value = extracted;
                     loaded.is_slice = true;
+                    loaded.elem_slice = field->elem_slice;
                     loaded.array_len = -1;
                     loaded.depth = field->depth;
                     loaded.elem_char = field->elem_char;
@@ -4186,11 +4248,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     }
                     if (slot != nullptr) {
                         const Lowered part = lower(current_file_, slot->type_name, slot->type_package, slot->is_struct,
-                                                   slot->indirections, slot->is_array, slot->array_len, false);
+                                                   slot->indirections, slot->is_array, slot->array_len, false,
+                                                   slot->elem_slice);
                         if (part.is_slice) {
                             TypedValue loaded;
                             loaded.value = extracted;
                             loaded.is_slice = true;
+                            loaded.elem_slice = part.elem_slice;
                             loaded.array_len = -1;
                             loaded.depth = part.depth;
                             loaded.elem_char = part.elem_char;
@@ -4257,6 +4321,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     row.row_decay = false;
                     return row;
                 }
+                if (addr.is_slice) {
+                    return load_field(addr);
+                }
                 TypedValue loaded = load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,
                                                 addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.elem_float);
                 loaded.fn_ty = addr.fn_ty;
@@ -4276,7 +4343,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 llvm::Type *measured = nullptr;
                 if (node.on_type) {
                     const Lowered low = lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections,
-                                              node.is_array, node.is_array ? node.array_len : 0, false);
+                                              node.is_array, node.is_array ? node.array_len : 0, false, node.elem_slice);
                     if (low.depth == 0 && low.elem_void) {
                         error(node.loc, "not supported yet");
                         return {zero(), 0};
@@ -4369,6 +4436,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     TypedValue value;
                     value.value = as_slice_value(source, node.loc);
                     value.is_slice = true;
+                    value.elem_slice = target.elem_slice;
                     value.array_len = -1;
                     value.depth = target.depth;
                     value.elem_char = target.elem_char;
@@ -4872,6 +4940,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.elem_float = got.elem_float;
             binding.enum_id = got.enum_id;
             binding.inner_array_len = got.inner_array_len;
+            binding.elem_slice = got.elem_slice;
             scopes_.back()[name] = binding;
             alias_capture(name, binding);
             note(name, binding);
@@ -4919,6 +4988,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.elem_float = got.elem_float;
             binding.ptr_to_array = got.ptr_to_array;
             binding.ptr_array_len = got.ptr_array_len;
+            binding.elem_slice = got.elem_slice;
             binding.fn_ty = got.fn_ty;
             binding.fn_ret_depth = got.fn_ret_depth;
             binding.fn_ret_float = got.fn_ret_float;
@@ -5045,14 +5115,14 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         for (const FnParam &part : fn_results) {
             const bool array = part.is_array && !part.is_fn_ptr && part.array_len != 0;
             parts.push_back(lower(current_file_, part.type_name, part.type_package, part.is_struct, part.indirections,
-                                  array, array ? part.array_len : 0, false));
+                                  array, array ? part.array_len : 0, false, part.elem_slice));
         }
     } else if (value.is_tuple && value.value != nullptr && value.value->getType()->isStructTy() &&
                value.tuple_parts.size() == node.names.size()) {
         parts.reserve(value.tuple_parts.size());
         for (const ResultSlot &slot : value.tuple_parts) {
             parts.push_back(lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                  slot.is_array, slot.array_len, false));
+                                  slot.is_array, slot.array_len, false, slot.elem_slice));
         }
     } else if (value.value != nullptr && value.value->getType()->isStructTy() && value.tuple_parts.empty()) {
         auto *aggregate = llvm::cast<llvm::StructType>(value.value->getType());
@@ -5601,6 +5671,8 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         binding.elem_unsigned = low.elem_unsigned;
                         binding.elem_float = low.elem_float;
                         binding.enum_id = low.enum_id;
+                        binding.elem_slice = low.elem_slice;
+                        binding.inner_array_len = low.inner_array_len;
                         scopes_.back()[var.name] = binding;
                         alias_capture(var.name, binding);
                         debug_declare(var.name, var.loc, binding, 0);
@@ -5621,9 +5693,14 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                                     }
                                     llvm::Value *slot_i = builder_.CreateInBoundsGEP(
                                         array_ty, slot, {const_i32(0), const_i32(static_cast<int>(index))});
-                                    llvm::Value *stored = value.value == nullptr
-                                                              ? llvm::Constant::getNullValue(elem)
-                                                              : as_stored(value.value, value.depth, elem, value.elem_unsigned);
+                                    llvm::Value *stored = nullptr;
+                                    if (value.value == nullptr) {
+                                        stored = llvm::Constant::getNullValue(elem);
+                                    } else if (elem == slice_type()) {
+                                        stored = as_slice_value(value, var.loc);
+                                    } else {
+                                        stored = as_stored(value.value, value.depth, elem, value.elem_unsigned);
+                                    }
                                     builder_.CreateStore(stored, slot_i);
                                     ++index;
                                 }

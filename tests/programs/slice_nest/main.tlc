@@ -1,0 +1,102 @@
+type Row []i32;
+
+type Hold struct {
+    items [][]i32;
+};
+
+type Box[T type] struct {
+    items [][]i32;
+    value T;
+};
+
+func sum(rows [][]i32) i32 {
+    var total i32 = 0;
+    var i i32 = 0;
+    while (i < rows.len) {
+        var row = rows[i];
+        var j i32 = 0;
+        while (j < row.len) {
+            total = total + row[j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return total;
+}
+
+func pass(rows [][]i32) [][]i32 {
+    return rows;
+}
+
+func window(rows [][]i32) [][]i32 {
+    return rows[0:1];
+}
+
+func at(rows [2][]i32) i32 {
+    return rows[0][1];
+}
+
+func main() i32 {
+    var a = [_]i32{10, 20};
+    var b = [_]i32{12};
+    var rows = [_][]i32{a[:], b[:]};
+    var view [][]i32 = rows;
+    var named []Row = rows;
+    var table [2]Row = [_][]i32{a[:], b[:]};
+    if (rows.len != 2 || view.len != 2 || named.len != 2 || table.len != 2) {
+        return 1;
+    }
+    if (view[0].len != 2 || view[0][1] != 20 || view[1][0] != 12 || named[0][0] != 10) {
+        return 2;
+    }
+    if (sum(view) != 42 || sum(named) != 42 || at(rows) != 20) {
+        return 3;
+    }
+    var part = rows[0:1];
+    var tail = view[1:];
+    if (part.len != 1 || part[0][0] != 10 || tail.len != 1 || tail[0][0] != 12) {
+        return 4;
+    }
+    var back = pass(view);
+    var head = window(view);
+    if (back.len != 2 || back[0][1] != 20 || back[1][0] != 12 || head.len != 1 || head[0][1] != 20) {
+        return 5;
+    }
+    if (sizeof(view) != 16 || sizeof(rows) != 32 || sizeof([][]i32) != 16 || sizeof([2][]i32) != 32) {
+        return 6;
+    }
+    var box Hold;
+    box.items = view;
+    if (box.items.len != 2 || box.items[0][1] != 20) {
+        return 7;
+    }
+    rows[1] = a[:];
+    if (view[1].len != 2 || view[1][0] != 10 || back[1][1] != 20 || box.items[1][0] != 10) {
+        return 8;
+    }
+    var lines = [_][]const u8{"ab", "c"};
+    var text [][]const u8 = lines;
+    if (text.len != 2 || text[0].len != 2 || text[0][1] != 'b' || text[1][0] != 'c') {
+        return 9;
+    }
+    var n i32 = 7;
+    var m i32 = 9;
+    var one = [_]*i32{&n};
+    var two = [_]*i32{&m};
+    var ptrs = [_][]*i32{one[:], two[:]};
+    var pview [][]*i32 = ptrs;
+    if (*pview[0][0] != 7 || *pview[1][0] != 9) {
+        return 10;
+    }
+    *pview[0][0] = 8;
+    if (n != 8) {
+        return 11;
+    }
+    var box_g Box[i32];
+    box_g.value = 1;
+    box_g.items = view;
+    if (box_g.items[0][1] != 20 || box_g.value != 1) {
+        return 12;
+    }
+    return 0;
+}

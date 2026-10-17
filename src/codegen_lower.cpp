@@ -142,7 +142,7 @@ CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) co
     // A slice is `array_len < 0`. A sized array keeps its length. Zero is not an array.
     const bool array = slot.is_array && !slot.is_fn_ptr && slot.array_len != 0;
     return lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, array,
-                 array ? slot.array_len : 0, false);
+                 array ? slot.array_len : 0, false, slot.elem_slice);
 }
 
 llvm::Type *CodeGen::aggregate_return(const FunctionDecl &fn, uint32_t file) const {
@@ -181,7 +181,9 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
                                                                     fn.indirections, result_array || result_slice,
                                                                     result_slice ? fn.results.front().array_len
                                                                                 : (result_array ? fn.results.front().array_len : 0),
-                                                                    false)));
+                                                                    false,
+                                                                    (result_array || result_slice) &&
+                                                                        fn.results.front().elem_slice)));
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (const Param &param : fn.params) {
@@ -456,7 +458,7 @@ bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
 }
 
 CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct,
-                                 int indirections, bool is_array, int array_len, bool parameter) const {
+                                 int indirections, bool is_array, int array_len, bool parameter, bool elem_slice) const {
     Lowered out;
     Alias base;
     bool have = false;
@@ -576,25 +578,62 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     const int sid = have ? base.struct_id : -1;
     const bool base_array = have && base.is_array;
     const bool base_slice = have && base.is_slice;
-    // `*[]T` and `[N][]T` have no representation. Sema already rejects them.
-    if (base_slice && (indirections > 0 || is_array)) {
+    const bool base_headers = have && base.elem_slice;
+    // `[]Row` when `Row` is `[]i32`. The written flag is the second empty `[]`.
+    const bool nest_slice = elem_slice || (base_slice && is_array && !base_headers);
+    auto fill = [&](Lowered &dest, int depth) {
+        dest.depth = depth;
+        dest.elem_char = elem_char;
+        dest.elem_void = elem_void;
+        dest.elem_bool = elem_bool;
+        dest.elem_bits = elem_bits;
+        dest.elem_unsigned = elem_unsigned;
+        dest.elem_float = elem_float;
+        dest.struct_id = sid;
+        dest.enum_id = have ? base.enum_id : -1;
+    };
+    // A third slice, or a pointer to a slice that is already nested, has no representation.
+    if ((base_headers && (indirections > 0 || is_array)) || (elem_slice && (base_slice || base_array))) {
         out.type = i32();
         return out;
     }
-    // `[]T` and `type Row []T` stay a `{ ptr, i32 }` value. A parameter does not decay.
-    if ((is_array && array_len < 0) || (base_slice && indirections == 0 && !is_array)) {
+    // `*[]T` and `*Row` stay rejected. The name of a slice alias does not.
+    if (base_slice && indirections > 0) {
+        out.type = i32();
+        return out;
+    }
+    // `[][]T` and `[]Row` are one header whose element is a header.
+    if (nest_slice && is_array && array_len < 0) {
         out.is_slice = true;
+        out.elem_slice = true;
         out.is_array = false;
         out.array_len = -1;
-        out.depth = base_depth + indirections;
-        out.elem_char = elem_char;
-        out.elem_void = elem_void;
-        out.elem_bool = elem_bool;
-        out.elem_bits = elem_bits;
-        out.elem_unsigned = elem_unsigned;
-        out.elem_float = elem_float;
-        out.struct_id = sid;
-        out.enum_id = have ? base.enum_id : -1;
+        fill(out, base_depth + indirections);
+        out.type = slice_type();
+        return out;
+    }
+    // `[N][]T` decays to a pointer that steps by one header.
+    if (nest_slice && is_array && array_len > 0 && parameter) {
+        out.elem_slice = true;
+        fill(out, base_depth + indirections + 1);
+        out.type = ptr_type();
+        return out;
+    }
+    if (nest_slice && is_array && array_len > 0) {
+        out.is_array = true;
+        out.elem_slice = true;
+        out.array_len = array_len;
+        fill(out, base_depth + indirections);
+        out.type = llvm::ArrayType::get(slice_type(), static_cast<uint64_t>(array_len));
+        return out;
+    }
+    // `[]T` and `type Rows [][]i32` stay a `{ ptr, i32 }` value. A parameter does not decay.
+    if ((is_array && array_len < 0) || (base_slice && indirections == 0 && !is_array)) {
+        out.is_slice = true;
+        out.elem_slice = base_headers;
+        out.is_array = false;
+        out.array_len = -1;
+        fill(out, base_depth + indirections);
         out.type = slice_type();
         return out;
     }
@@ -603,30 +642,15 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         return out;
     }
     if (parameter && (is_array || base_array)) {
-        out.depth = base_depth + indirections + 1;
-        out.elem_char = elem_char;
-        out.elem_void = elem_void;
-        out.elem_bool = elem_bool;
-        out.elem_bits = elem_bits;
-        out.elem_unsigned = elem_unsigned;
-        out.elem_float = elem_float;
-        out.struct_id = sid;
-        out.enum_id = have ? base.enum_id : -1;
+        out.elem_slice = base_headers;
+        fill(out, base_depth + indirections + 1);
         out.type = ptr_type();
         return out;
     }
     if (is_array && array_len > 0) {
         out.is_array = true;
         out.array_len = array_len;
-        out.depth = base_depth + indirections;
-        out.elem_char = elem_char;
-        out.elem_void = elem_void;
-        out.elem_bool = elem_bool;
-        out.elem_bits = elem_bits;
-        out.elem_unsigned = elem_unsigned;
-        out.elem_float = elem_float;
-        out.struct_id = sid;
-        out.enum_id = have ? base.enum_id : -1;
+        fill(out, base_depth + indirections);
         out.type = llvm::ArrayType::get(leaf_type(out.depth, elem_char, sid, elem_bool, elem_bits, elem_float),
                                         static_cast<uint64_t>(array_len));
         return out;
@@ -634,17 +658,11 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     if (base_array && base.array_len > 0) {
         out.is_array = true;
         out.array_len = base.array_len;
-        out.depth = base_depth;
-        out.elem_char = elem_char;
-        out.elem_void = elem_void;
-        out.elem_bool = elem_bool;
-        out.elem_bits = elem_bits;
-        out.elem_unsigned = elem_unsigned;
-        out.elem_float = elem_float;
-        out.struct_id = sid;
-        out.enum_id = have ? base.enum_id : -1;
-        out.type = llvm::ArrayType::get(leaf_type(base_depth, elem_char, sid, elem_bool, elem_bits, elem_float),
-                                        static_cast<uint64_t>(base.array_len));
+        out.elem_slice = base_headers;
+        fill(out, base_depth);
+        llvm::Type *element = base_headers ? static_cast<llvm::Type *>(slice_type())
+                                           : leaf_type(base_depth, elem_char, sid, elem_bool, elem_bits, elem_float);
+        out.type = llvm::ArrayType::get(element, static_cast<uint64_t>(base.array_len));
         return out;
     }
     out.depth = base_depth + indirections;
@@ -677,7 +695,7 @@ CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) cons
                            var.indirections, var.fn_params, var.fn_variadic, var.fn_results);
     }
     Lowered low = lower(file, var.type_name, var.type_package, var.is_struct, var.indirections, var.is_array,
-                        var.array_len, false);
+                        var.array_len, false, var.elem_slice);
     if (!var.ptr_to_array) {
         return low;
     }
@@ -704,7 +722,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
         }
         const bool slice = part.is_array && part.array_len < 0;
         return lower(file, part.type_name, part.type_package, part.is_struct, part.indirections, slice,
-                     slice ? part.array_len : 0, parameter);
+                     slice ? part.array_len : 0, parameter, part.elem_slice);
     };
     for (const FnParam &param : params) {
         args.push_back(stored_type(lower_part(param, true)));
@@ -743,7 +761,7 @@ CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) co
         out.tuple_parts = param.tuple_parts;
         for (const ResultSlot &slot : param.tuple_parts) {
             const Lowered part = lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                       slot.is_array, slot.array_len, false);
+                                       slot.is_array, slot.array_len, false, slot.elem_slice);
             fields.push_back(stored_type(part));
         }
         if (fields.empty()) {
@@ -757,7 +775,7 @@ CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) co
                            param.indirections, param.fn_params, param.fn_variadic, param.fn_results);
     }
     return lower(file, param.type_name, param.type_package, param.is_struct, param.indirections, param.is_array,
-                 param.array_len, true);
+                 param.array_len, true, param.elem_slice);
 }
 
 std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, const Expr::Init &item) const {
@@ -773,13 +791,20 @@ std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, cons
         if (elem.fn_ty == nullptr || elem.type == nullptr) {
             return std::nullopt;
         }
+    } else if (item.elem_slice) {
+        return std::nullopt;
     } else if (item.elem_is_array) {
-        if (item.elem_array_len <= 0) {
+        const bool element_slice = item.elem_array_len_name.empty() && item.elem_array_len < 0;
+        if (!element_slice && item.elem_array_len <= 0) {
             return std::nullopt;
         }
-        elem = lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, true, item.elem_array_len,
-                     false);
-        if (!elem.is_array || elem.type == nullptr || !elem.type->isArrayTy()) {
+        elem = lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, true,
+                     element_slice ? -1 : item.elem_array_len, false, false);
+        if (element_slice) {
+            if (!elem.is_slice || elem.type == nullptr) {
+                return std::nullopt;
+            }
+        } else if (!elem.is_array || elem.type == nullptr || !elem.type->isArrayTy()) {
             return std::nullopt;
         }
     } else {
@@ -790,8 +815,10 @@ std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, cons
     }
     Lowered low = elem;
     low.is_array = true;
+    low.is_slice = false;
     low.array_len = count;
-    low.inner_array_len = item.elem_is_array ? item.elem_array_len : 0;
+    low.elem_slice = elem.is_slice;
+    low.inner_array_len = item.elem_is_array && !elem.is_slice ? item.elem_array_len : 0;
     low.type = llvm::ArrayType::get(elem.type, static_cast<uint64_t>(count));
     return low;
 }
@@ -822,6 +849,7 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.is_tuple = low.is_tuple;
     binding.tuple_parts = low.tuple_parts;
     binding.is_slice = low.is_slice;
+    binding.elem_slice = low.elem_slice;
     binding.is_array = low.is_array;
     binding.array_len = low.array_len;
 }
@@ -906,6 +934,7 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
                        slot->elem_bool, slot->elem_bits, slot->elem_unsigned, -1,         slot->elem_float};
         out.array_len = slot->array_len;
         out.is_slice = slot->is_slice;
+        out.elem_slice = slot->elem_slice;
         return out;
     };
     // A C union overlays every field at offset 0. A tlc union does the same, and the enum tag sits after the payload.
@@ -1053,7 +1082,7 @@ void CodeGen::prepare_structs() {
                     continue;
                 }
                 const Lowered low = lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
-                                          field.is_array, field.array_len, false);
+                                          field.is_array, field.array_len, false, field.elem_slice);
                 if (low.depth == 0 && !low.is_array && low.struct_id >= 0 &&
                     !structs_[static_cast<std::size_t>(low.struct_id)].ready) {
                     waiting = true;
@@ -1093,7 +1122,7 @@ void CodeGen::prepare_structs() {
                                                   field.ret_indirections, field.indirections, field.fn_params,
                                                   field.fn_variadic, field.fn_results)
                                    : lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
-                                           field.is_array, field.array_len, false);
+                                           field.is_array, field.array_len, false, field.elem_slice);
                 FieldLayout slot;
                 slot.name = field.name;
                 slot.type = stored_type(low);
@@ -1108,6 +1137,7 @@ void CodeGen::prepare_structs() {
                 slot.elem_unsigned = low.elem_unsigned;
                 slot.elem_float = low.elem_float;
                 slot.is_slice = low.is_slice;
+                slot.elem_slice = low.elem_slice;
                 // C _Bool is one byte. An extern(abi="c") struct keeps that layout.
                 if (item->extern_c && low.elem_bool && low.depth == 0) {
                     slot.type = c_memory(c_memory, slot.type);
@@ -1315,7 +1345,8 @@ void CodeGen::prepare_aliases() {
                                   item.item->is_enum, item.item->ret_indirections, item.item->indirections,
                                   item.item->fn_params, item.item->fn_variadic, item.item->fn_results)
                     : lower(item.file, item.item->type_name, item.item->type_package, item.item->is_struct,
-                            item.item->indirections, item.item->is_array, item.item->array_len, false);
+                            item.item->indirections, item.item->is_array, item.item->array_len, false,
+                            item.item->elem_slice);
             Alias alias;
             alias.depth = low.depth;
             alias.elem_char = low.elem_char;
@@ -1337,6 +1368,7 @@ void CodeGen::prepare_aliases() {
             alias.fn_ret_struct = low.fn_ret_struct;
             alias.fn_results = low.fn_results;
             alias.is_slice = low.is_slice;
+            alias.elem_slice = low.elem_slice;
             aliases_[item.file].emplace(item.item->name, alias);
             progress = true;
         }
@@ -1911,6 +1943,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         low.fn_results = binding.fn_results;
         low.enum_id = binding.enum_id;
         low.is_slice = binding.is_slice;
+        low.elem_slice = binding.elem_slice;
         if (binding.value != nullptr) {
             if (const auto *global = llvm::dyn_cast<llvm::GlobalVariable>(binding.value)) {
                 low.type = global->getValueType();
@@ -2017,7 +2050,8 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         const bool result_slice = fn.results.size() == 1 && fn.results.front().is_array &&
                                  fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
         return promote(lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, result_slice,
-                             result_slice ? fn.results.front().array_len : 0, false));
+                             result_slice ? fn.results.front().array_len : 0, false,
+                             result_slice && fn.results.front().elem_slice));
     };
 
     std::function<std::optional<Lowered>(const Expr &)> value;

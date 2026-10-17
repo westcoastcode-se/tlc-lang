@@ -172,26 +172,43 @@ inline Type quiet_indirect(Type type, int count, uint32_t optional = 0, uint32_t
     return type;
 }
 
+inline bool nested_slice(const Type &type) {
+    return is_slice(type) && type.element != nullptr && type.element->kind == TypeKind::Array;
+}
+
 inline Type quiet_object(const std::string &name, int indirections, bool is_array, int array_len, bool parameter,
-                         uint32_t optional = 0, uint32_t const_pointee = 0) {
+                         uint32_t optional = 0, uint32_t const_pointee = 0, bool elem_slice = false) {
     Type type = quiet_indirect(quiet_type(name), indirections, optional, const_pointee);
-    if (!is_array) {
+    if (!is_array && !elem_slice) {
         return type;
     }
     if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Void || type.kind == TypeKind::Function) {
         return type_invalid();
     }
+    // One empty `[]` makes the element a slice. A slice of a slice stays invalid.
+    if (elem_slice) {
+        if (type.kind == TypeKind::Array) {
+            return type_invalid();
+        }
+        type = type_array(std::move(type), -1);
+    }
+    if (!is_array) {
+        return type;
+    }
     if (parameter) {
+        if (nested_slice(type)) {
+            return type_invalid();
+        }
         return type_pointer(std::move(type));
     }
-    // `[]T` is a slice. A nested slice stays invalid, as it does for a local.
+    // `[]T` is a slice. One more slice is `[][]T`. A third level stays invalid.
     if (array_len < 0) {
-        if (type.kind == TypeKind::Array && type.length < 0) {
+        if (nested_slice(type)) {
             return type_invalid();
         }
         return type_array(std::move(type), -1);
     }
-    if (array_len == 0) {
+    if (nested_slice(type) || array_len == 0) {
         return type_invalid();
     }
     return type_array(std::move(type), array_len);

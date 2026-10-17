@@ -651,6 +651,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         bool on_type = false;
         bool type_array = false;
         bool type_elem_const = false;
+        bool type_elem_slice = false;
         int type_array_len = 0;
         ParenType spelled;
         std::unique_ptr<Expr> expr;
@@ -687,6 +688,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             on_type = true;
             type_array = array.is_array;
             type_elem_const = array.elem_const;
+            type_elem_slice = array.elem_slice;
             type_array_len = array.array_len;
             spelled.name = array.type_name;
             spelled.package = array.type_package;
@@ -724,6 +726,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             fill(node);
             node.is_array = type_array;
             node.elem_const = type_elem_const;
+            node.elem_slice = type_elem_slice;
             node.array_len = type_array_len;
             return make_expr(std::move(node));
         }
@@ -731,6 +734,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         fill(node);
         node.is_array = type_array;
         node.elem_const = type_elem_const;
+        node.elem_slice = type_elem_slice;
         node.array_len = type_array_len;
         return finish_postfix(make_expr(std::move(node)));
     }
@@ -1055,6 +1059,8 @@ std::unique_ptr<Expr> Parser::parse_array_literal() {
         node->const_pointee = elem.const_pointee;
         node->type_args = elem.type_args;
         node->elem_is_array = elem.is_array;
+        node->elem_slice = elem.elem_slice;
+        node->elem_const = elem.elem_const;
         node->elem_ptr_to_array = elem.ptr_to_array;
         node->elem_fn = elem.is_fn_ptr;
         node->elem_array_len = elem.array_len;

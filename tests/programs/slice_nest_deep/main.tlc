@@ -1,0 +1,4 @@
+func main() i32 {
+    var x [][][]i32;
+    return 0;
+}

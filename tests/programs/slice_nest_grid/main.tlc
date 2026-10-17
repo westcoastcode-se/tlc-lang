@@ -1,0 +1,10 @@
+type Grid [][]i32;
+
+func take(rows []Grid) i32 {
+    return 0;
+}
+
+func main() i32 {
+    var x []Grid;
+    return take(x);
+}

@@ -449,6 +449,7 @@ VarDecl Parser::parse_const_decl(bool exported) {
     var.const_pointee = type.const_pointee;
     var.is_array = type.is_array;
     var.elem_const = type.elem_const;
+    var.elem_slice = type.elem_slice;
     var.array_len = type.array_len;
     var.array_len_name = type.array_len_name;
     var.type_args = type.type_args;
@@ -507,6 +508,7 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     var.const_pointee = type.const_pointee;
     var.is_array = type.is_array;
     var.elem_const = type.elem_const;
+    var.elem_slice = type.elem_slice;
     var.array_len = type.array_len;
     var.array_len_name = type.array_len_name;
     var.type_args = type.type_args;
@@ -618,6 +620,7 @@ std::unique_ptr<Stmt> Parser::parse_const_local() {
     var.const_pointee = type.const_pointee;
     var.is_array = type.is_array;
     var.elem_const = type.elem_const;
+    var.elem_slice = type.elem_slice;
     var.array_len = type.array_len;
     var.array_len_name = type.array_len_name;
     var.type_args = type.type_args;

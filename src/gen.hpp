@@ -255,6 +255,7 @@ inline FnParam fn_param_from_slot(const ResultSlot &slot) {
     param.const_pointee = slot.const_pointee;
     param.is_array = slot.is_array && slot.array_len < 0;
     param.array_len = param.is_array ? slot.array_len : 0;
+    param.elem_slice = param.is_array && slot.elem_slice;
     param.is_fn_ptr = slot.is_fn_ptr;
     param.ret_indirections = slot.ret_indirections;
     param.ret_optional = slot.ret_optional;
@@ -305,6 +306,8 @@ struct Binding {
     std::vector<ResultSlot> tuple_parts;
     // `[]T`. The slot holds `{ data, len }`. `depth` is the element, not the slice.
     bool is_slice = false;
+    // The element of this slice or array is one `[]E`. A further slice stays rejected.
+    bool elem_slice = false;
 };
 
 struct TypedValue {
@@ -343,6 +346,8 @@ struct TypedValue {
     int array_len = 0;
     // `[]T`, stored as one `{ ptr, i32 }` value.
     bool is_slice = false;
+    // The element is one `[]E`. Indexing loads a header, not `E`.
+    bool elem_slice = false;
 };
 
 // How an extern function passes one struct on x86-64 System V.
@@ -517,6 +522,8 @@ class CodeGen {
         bool elem_float = false;
         // `[]T` stored in the field. The slot is the `{ ptr, i32 }` value.
         bool is_slice = false;
+        // The element of this slice or array field is one `[]E`.
+        bool elem_slice = false;
     };
     struct StructLayout {
         std::string name;
@@ -558,6 +565,8 @@ class CodeGen {
         bool is_tuple = false;
         std::vector<ResultSlot> tuple_parts;
         bool is_slice = false;
+        // The element is one `[]E`. `[N][]T` is `[N x tlc.slice]`.
+        bool elem_slice = false;
     };
     struct EnumLayout {
         std::string name;
@@ -590,6 +599,8 @@ class CodeGen {
         std::vector<FnParam> fn_results{};
         int enum_id = -1;
         bool is_slice = false;
+        // `type Rows [][]i32`. A use of the name keeps this on the header.
+        bool elem_slice = false;
     };
     struct Shape {
         llvm::Type *type = nullptr;
@@ -605,6 +616,8 @@ class CodeGen {
         bool elem_unsigned = false;
         bool elem_float = false;
         bool is_slice = false;
+        // The element is one `[]E`. `sizeof` of `[N][]T` is `N` headers.
+        bool elem_slice = false;
     };
     struct CaseArm {
         const Stmt::Case *node = nullptr;
@@ -928,6 +941,7 @@ class CodeGen {
             loaded.elem_float = binding.elem_float;
             loaded.enum_id = binding.enum_id;
             loaded.inner_array_len = binding.inner_array_len;
+            loaded.elem_slice = binding.elem_slice;
             return loaded;
         }
         if (binding.is_array) {
@@ -935,6 +949,7 @@ class CodeGen {
                              binding.elem_bool, binding.elem_bits, binding.elem_unsigned, -1, binding.elem_float};
             value.array_len = binding.array_len;
             value.inner_array_len = binding.inner_array_len;
+            value.elem_slice = binding.elem_slice;
             value.fn_ty = binding.fn_ty;
             value.fn_ret_depth = binding.fn_ret_depth;
             value.fn_ret_float = binding.fn_ret_float;
@@ -962,6 +977,9 @@ class CodeGen {
                                         binding.elem_bool, binding.elem_bits, binding.elem_unsigned, binding.elem_float);
         loaded.ptr_to_array = binding.ptr_to_array;
         loaded.ptr_array_len = binding.ptr_array_len;
+        // A `[N][]T` parameter is a pointer that steps by one header.
+        loaded.elem_slice = binding.elem_slice;
+        loaded.inner_array_len = binding.inner_array_len;
         loaded.fn_ty = binding.fn_ty;
         loaded.fn_ret_depth = binding.fn_ret_depth;
         loaded.fn_ret_float = binding.fn_ret_float;
@@ -1047,7 +1065,7 @@ class CodeGen {
     bool has_typedef(uint32_t file, const std::string &name) const;
     bool alias_base_ready(uint32_t file, const TypedefDecl &item) const;
     Lowered lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct, int indirections,
-                  bool is_array, int array_len, bool parameter) const;
+                  bool is_array, int array_len, bool parameter, bool elem_slice = false) const;
     Lowered lower_declared(uint32_t file, const VarDecl &var) const;
     Lowered lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package, bool ret_struct,
                         bool ret_enum, int ret_indirections, int fn_depth, const std::vector<FnParam> &params,

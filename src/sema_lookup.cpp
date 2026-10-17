@@ -126,7 +126,8 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, array_len_name, written.type_args, loc);
     return object_type(param.type_name, param.indirections, param.is_array, param.array_len, loc, true, param.type_package,
-                       param.is_struct, param.is_enum, false, param.optional, param.const_pointee);
+                       param.is_struct, param.is_enum, false, param.optional, param.const_pointee, false, false,
+                       param.elem_slice);
 }
 
 Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
@@ -146,7 +147,7 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
             Type one = part.is_array
                            ? object_type(part.type_name, part.indirections, true, part.array_len, loc, false,
                                          part.type_package, part.is_struct, part.is_enum, false, part.optional,
-                                         part.const_pointee)
+                                         part.const_pointee, false, false, part.elem_slice)
                            : (part.is_struct || part.is_enum || !part.type_package.empty()
                                   ? object_type(part.type_name, part.indirections, false, 0, loc, false, part.type_package,
                                                 part.is_struct, part.is_enum, false, part.optional, part.const_pointee)
@@ -190,7 +191,7 @@ Type Checker::type_of_var(const VarDecl &var) {
                                      var.ret_optional, var.ret_const_pointee)
                     : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
                                   var.type_package, var.is_struct, var.is_enum, false, var.optional, var.const_pointee,
-                                  false, var.elem_const);
+                                  false, var.elem_const, var.elem_slice);
     if (!var.ptr_to_array || type.kind == TypeKind::Invalid) {
         return type;
     }
@@ -215,7 +216,12 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
         return false;
     }
     // `arr[1]` on a pointer to an array is `(*arr)[1]`.
+    // A decayed `[N][]T` points at slice headers. The step is one header, not one `T`.
     if (pointee.kind == TypeKind::Array) {
+        if (pointee.length < 0) {
+            out = pointee;
+            return true;
+        }
         if (pointee.element == nullptr) {
             return false;
         }
@@ -250,7 +256,7 @@ Type Checker::type_of_param(const Param &param) {
     }
     return object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
                        param.type_package, param.is_struct, param.is_enum, param.is_receiver, param.optional,
-                       param.const_pointee, false, param.elem_const);
+                       param.const_pointee, false, param.elem_const, param.elem_slice);
 }
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
@@ -265,7 +271,7 @@ Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
     if (slot.is_array) {
         return object_type(slot.type_name, slot.indirections, true, slot.array_len, loc, false, slot.type_package,
                            slot.is_struct, slot.is_enum, false, slot.optional, slot.const_pointee, false,
-                           slot.elem_const);
+                           slot.elem_const, slot.elem_slice);
     }
     return slot.is_struct || slot.is_enum || !slot.type_package.empty()
                ? object_type(slot.type_name, slot.indirections, false, 0, loc, false, slot.type_package, slot.is_struct,
@@ -1339,7 +1345,8 @@ void Checker::define_trait_fields() {
                                                  field.ret_const_pointee)
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
-                                              field.optional, field.const_pointee, false, field.elem_const);
+                                              field.optional, field.const_pointee, false, field.elem_const,
+                                              field.elem_slice);
             if (field_type.kind == TypeKind::Invalid) {
                 continue;
             }
@@ -1707,7 +1714,8 @@ void Checker::define_struct_fields() {
                                                  field.ret_const_pointee)
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
-                                              field.optional, field.const_pointee, false, field.elem_const);
+                                              field.optional, field.const_pointee, false, field.elem_const,
+                                              field.elem_slice);
             // A slice is a tlc value, `{ptr, i32}`. An `extern(abi="c")` struct keeps the C layout.
             if (is_slice(field_type) && info.extern_c) {
                 error(field.loc, "not supported yet");
@@ -2003,7 +2011,7 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
                                            item.fn_results, item.loc, item.ret_optional)
                           : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
                                         item.type_package, item.is_struct, item.is_enum, false, item.optional,
-                                        item.const_pointee, true, item.elem_const);
+                                        item.const_pointee, true, item.elem_const, item.elem_slice);
     if (type.kind == TypeKind::Invalid) {
         return;
     }
@@ -2063,13 +2071,13 @@ bool Checker::name_taken(const std::string &name) const {
 
 Type Checker::published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                                bool parameter, const std::string &package, bool is_struct, bool is_enum,
-                               uint32_t optional, uint32_t const_pointee) {
+                               uint32_t optional, uint32_t const_pointee, bool elem_const, bool elem_slice) {
     Type alias;
     if (is_struct || is_enum || !package.empty() || package_typedef(file_id_, name, alias) || find_tag(file_id_, name) >= 0) {
         return object_type(name, indirections, is_array, array_len, loc, parameter, package, is_struct, is_enum, false,
-                           optional, const_pointee);
+                           optional, const_pointee, false, elem_const, elem_slice);
     }
-    return quiet_object(name, indirections, is_array, array_len, parameter, optional, const_pointee);
+    return quiet_object(name, indirections, is_array, array_len, parameter, optional, const_pointee, elem_slice);
 }
 
 Type Checker::published_result(const std::string &name, int indirections, SourceLoc loc, const std::string &package,
@@ -2126,7 +2134,8 @@ Type Checker::spelled_type(const std::string &name, const std::string &package, 
 
 Type Checker::object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum, bool receiver,
-                          uint32_t optional, uint32_t const_pointee, bool allow_incomplete, bool elem_const) {
+                          uint32_t optional, uint32_t const_pointee, bool allow_incomplete, bool elem_const,
+                          bool elem_slice) {
     if (!receiver) {
         note_struct_use(is_struct, name, loc);
     }
@@ -2165,9 +2174,24 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         type = with_indirections(type_of_name(name, loc, indirections > 0 || allow_incomplete), indirections, loc,
                                  optional, const_pointee);
     }
-    if (mentions_trait(type) && (is_array || !parameter)) {
+    if (mentions_trait(type) && (is_array || elem_slice || !parameter)) {
         error(loc, "not supported yet");
         return type_invalid();
+    }
+    // One empty `[]` makes the named type a slice. `[][][]T` and `[][]Row` stay rejected.
+    if (elem_slice) {
+        if (type.kind == TypeKind::Invalid) {
+            return type;
+        }
+        if (type.kind == TypeKind::Array || type.kind == TypeKind::Function || type.kind == TypeKind::Void ||
+            type.kind == TypeKind::Tuple || type.kind == TypeKind::Meta) {
+            error(loc, "not supported yet");
+            return type_invalid();
+        }
+        if (elem_const) {
+            type.is_const = true;
+        }
+        type = type_array(std::move(type), -1);
     }
     if (!is_array) {
         if (type.kind == TypeKind::Void) {
@@ -2190,19 +2214,24 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         error(loc, "not supported yet");
         return type_invalid();
     }
-    // `[]const u8` marks the element. A parameter `[N]const u8` decays to `*const u8`.
-    if (elem_const) {
+    // `[]const u8` marks the leaf. The inner slice of `[][]const u8` already did.
+    if (elem_const && !elem_slice) {
         type.is_const = true;
     }
-    // `[]T` is a slice. It does not decay, even as a parameter.
+    // `type Row []i32` used as `[]Row` or `[N]Row` is the same type as `[][]i32` or `[N][]i32`.
+    if (is_slice(type)) {
+        type.alias_id = 0;
+    }
+    // `[]T` is a slice. It does not decay, even as a parameter. One more slice is `[][]T`.
     if (array_len < 0) {
-        if (is_slice(type)) {
+        if (nested_slice(type)) {
             error(loc, "not supported yet");
             return type_invalid();
         }
         return type_array(std::move(type), -1);
     }
-    if (is_slice(type)) {
+    // `[N][][]T`, including through an alias that is already two slices, stays rejected.
+    if (nested_slice(type)) {
         error(loc, "not supported yet");
         return type_invalid();
     }

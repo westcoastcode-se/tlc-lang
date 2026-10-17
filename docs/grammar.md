@@ -153,12 +153,12 @@ A trait method has no body and no receiver. A trait field is a name and a type, 
 
 A type spelling adds no instructions. `sizeof` folds to an immediate. The widths and the conversions are on [Numeric types](types/integer.md).
 
-A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. An empty length is a slice: `[]i32` and `func head(a []i32) []i32`. `const` before the element makes that element constant: `[]const u8` and `[4]const u8`. A string literal is `[]const u8`. `i32[4]`, `i32[N]`, and `i32[]` are reported as `type mismatch`.
+A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. An empty length is a slice: `[]i32` and `func head(a []i32) []i32`. One more empty pair is a slice of those headers: `[][]i32`, `[N][]i32`, and `func sum(rows [][]i32) [][]i32`. `const` before the element makes that element constant: `[]const u8`, `[4]const u8`, and `[][]const u8`. A string literal is `[]const u8`. `i32[4]`, `i32[N]`, and `i32[]` are reported as `type mismatch`. A second length, `[N][M]T` or `[][N]T`, and a third pair, `[][][]T`, are reported as `not supported yet`.
 
 ```ebnf
 go-type     = func-type
             | { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
-            | "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
+            | "[" array-length "]" [ "[]" ] { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
             | [ "?" ] "*" [ "const" ] "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ] ;
 
 placed-type = func-type
@@ -184,7 +184,7 @@ integer-name = "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" ;
 float-name   = "f32" | "f64" ;
 ```
 
-One `*` before `[` is a pointer to an array, as in `*[4]i32`. `*const T` is a pointer to constant `T`. A store through it is reported as `type mismatch`. `*T` may be passed where `*const T` is required.
+One `*` before `[` is a pointer to an array, as in `*[4]i32`. `*[]T`, `*[][]T`, and `*[N][]T` are reported as `not supported yet`. `*const T` is a pointer to constant `T`. A store through it is reported as `type mismatch`. `*T` may be passed where `*const T` is required. A type argument keeps one bracket pair. `Vec[[][]i32]` is reported as `not supported yet`.
 
 `int`, `uint`, `short`, `long`, `ulong`, `char`, `float`, and `double` are ordinary identifiers. Using one where a type is required is reported as `not supported yet`. `signed` and `unsigned` are reported as `type mismatch`.
 

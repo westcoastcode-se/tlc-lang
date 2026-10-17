@@ -386,6 +386,7 @@ bool Parser::parse_field(FieldDecl &field) {
     field.const_pointee = type.const_pointee;
     field.is_array = type.is_array;
     field.elem_const = type.elem_const;
+    field.elem_slice = type.elem_slice;
     field.array_len = type.array_len;
     field.array_len_name = type.array_len_name;
     field.type_args = type.type_args;
@@ -730,6 +731,7 @@ Parser::PlacedType Parser::parse_go_type() {
     type.is_array = array.is_array;
     type.array_len = array.length;
     type.array_len_name = array.len_name;
+    type.elem_slice = array.elem_slice;
     // `[]const u8` and `[4]const u8`. `*const` stays on the pointer prefix.
     if (check(TokenKind::KwConst)) {
         type.elem_const = true;
@@ -737,6 +739,7 @@ Parser::PlacedType Parser::parse_go_type() {
     }
     const PointerPrefix inner_prefix = parse_pointer_prefix();
     const int inner = inner_prefix.count;
+    // `parse_array_suffix` already took one empty `[]` element. A further pair is a third level.
     if (check(TokenKind::LBracket)) {
         diags_.error(peek().loc, "not supported yet");
         while (eat(TokenKind::LBracket)) {
@@ -766,7 +769,8 @@ Parser::PlacedType Parser::parse_go_type() {
         diags_.error(type.loc, "not supported yet");
     }
     // `*[]T` is not a pointer to an array. A slice has no length to point at.
-    if (type.ptr_to_array && type.array_len < 0) {
+    // `*[N][]T` is the same gap: a pointer to an array of headers.
+    if (type.ptr_to_array && (type.array_len < 0 || type.elem_slice)) {
         diags_.error(type.loc, "not supported yet");
     }
     return type;
@@ -866,6 +870,7 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             param.const_pointee = type.const_pointee;
             param.is_array = type.is_array;
             param.elem_const = type.elem_const;
+            param.elem_slice = type.elem_slice;
             param.array_len = type.array_len;
             param.is_fn_ptr = type.is_fn_ptr;
             param.ret_indirections = type.ret_indirections;
@@ -905,6 +910,7 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
     slot.fn_results = type.fn_results;
     slot.is_array = type.is_array;
     slot.elem_const = type.elem_const;
+    slot.elem_slice = type.elem_slice;
     slot.array_len = type.array_len;
     slot.array_len_name = type.array_len_name;
     slot.type_args = type.type_args;
@@ -1036,6 +1042,7 @@ FnParam Parser::fn_param_from(const PlacedType &type) const {
     param.const_pointee = type.const_pointee;
     param.is_array = type.is_array && type.array_len < 0;
     param.array_len = param.is_array ? type.array_len : 0;
+    param.elem_slice = param.is_array && type.elem_slice;
     param.is_fn_ptr = type.is_fn_ptr;
     param.ret_indirections = type.ret_indirections;
     param.ret_optional = type.ret_optional;
@@ -1177,6 +1184,12 @@ Parser::ArrayMark Parser::parse_array_suffix(bool allow_slice) {
         }
         eat(TokenKind::RBracket);
         mark.length = -1;
+    }
+    // One empty `[]` after the outer brackets is `[][]T` or `[N][]T`.
+    // A length, a name, or a third pair stays rejected. A C declarator rejects every extra pair.
+    if (allow_slice && check(TokenKind::LBracket) && peek(1).kind == TokenKind::RBracket) {
+        mark.elem_slice = true;
+        pos_ += 2;
     }
     if (check(TokenKind::LBracket)) {
         diags_.error(peek().loc, "not supported yet");
@@ -1506,7 +1519,7 @@ TypeArg Parser::parse_one_type_arg() {
         arg.optional = element.optional;
         arg.const_pointee = element.const_pointee;
         arg.args = std::move(element.args);
-        if (element.is_array) {
+        if (element.is_array || array.elem_slice) {
             diags_.error(arg.loc, "not supported yet");
         }
         return arg;

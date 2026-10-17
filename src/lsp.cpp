@@ -774,6 +774,8 @@ struct Place {
     uint32_t const_pointee = 0;
     bool is_array = false;
     int array_len = 0;
+    // One extra empty `[]` before the named type: `[][]i32` and `[2][]i32`.
+    bool elem_slice = false;
 };
 
 std::string spell_type(const Place &place) {
@@ -788,6 +790,9 @@ std::string spell_type(const Place &place) {
         }
     }
     std::string core = place.type_name;
+    if (place.elem_slice) {
+        core = "[]" + core;
+    }
     if (place.is_array) {
         core = place.array_len < 0 ? "[]" + core : "[" + std::to_string(place.array_len) + "]" + core;
     }
@@ -795,19 +800,23 @@ std::string spell_type(const Place &place) {
 }
 
 Place place_of_slot(const ResultSlot &slot) {
-    return Place{slot.type_name, slot.indirections, slot.optional, slot.const_pointee, slot.is_array, slot.array_len};
+    return Place{slot.type_name, slot.indirections, slot.optional, slot.const_pointee, slot.is_array, slot.array_len,
+                 slot.elem_slice};
 }
 
 Place place_of_param(const Param &param) {
-    return Place{param.type_name, param.indirections, param.optional, param.const_pointee, param.is_array, param.array_len};
+    return Place{param.type_name, param.indirections, param.optional, param.const_pointee, param.is_array, param.array_len,
+                 param.elem_slice};
 }
 
 Place place_of_var(const VarDecl &var) {
-    return Place{var.type_name, var.indirections, var.optional, var.const_pointee, var.is_array, var.array_len};
+    return Place{var.type_name, var.indirections, var.optional, var.const_pointee, var.is_array, var.array_len,
+                 var.elem_slice};
 }
 
 Place place_of_field(const FieldDecl &field) {
-    return Place{field.type_name, field.indirections, field.optional, field.const_pointee, field.is_array, field.array_len};
+    return Place{field.type_name, field.indirections, field.optional, field.const_pointee, field.is_array, field.array_len,
+                 field.elem_slice};
 }
 
 std::string spell_fn_param(const FnParam &param);
@@ -850,7 +859,7 @@ std::string spell_fn_results(const std::string &type_name, int indirections, uin
 std::string spell_fn_param(const FnParam &param) {
     if (!param.is_fn_ptr) {
         return spell_type(Place{param.type_name, param.indirections, param.optional, param.const_pointee, param.is_array,
-                                param.array_len});
+                                param.array_len, param.elem_slice});
     }
     return "func (" + spell_fn_params(param.params, param.variadic) + ") " +
            spell_fn_results(param.type_name, param.ret_indirections, param.ret_optional, param.ret_const_pointee, param.results);
@@ -884,7 +893,7 @@ std::string spell_array_element(const Expr::Init &init) {
         return "[" + init.elem_array_len_name + "]" + core;
     }
     if (init.elem_array_len < 0) {
-        return "[]" + core;
+        return std::string(init.elem_slice ? "[]" : "") + "[]" + core;
     }
     return "[" + std::to_string(init.elem_array_len) + "]" + core;
 }
@@ -2019,7 +2028,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.role = Role::Alias;
             if (item->is_array) {
                 const Place place{item->type_name, item->indirections, item->optional, item->const_pointee, true,
-                                  item->array_len};
+                                  item->array_len, item->elem_slice};
                 sym.detail = "type " + item->name + " " + spell_type(place);
             } else {
                 sym.detail = "type " + item->name + " " + item->type_name;

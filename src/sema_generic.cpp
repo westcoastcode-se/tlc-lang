@@ -1527,7 +1527,8 @@ bool Checker::resolve_result_typeof(FunctionDecl &fn) {
         }
         const Type type = operand_type(node->on_type, node->type_name, node->type_package, node->is_struct, node->is_enum,
                                        node->indirections, node->optional, node->expr.get(), node->loc,
-                                       node->const_pointee, node->is_array, node->array_len, node->elem_const);
+                                       node->const_pointee, node->is_array, node->array_len, node->elem_const,
+                                       node->elem_slice);
         if (type.kind == TypeKind::Invalid) {
             ok = false;
             continue;
@@ -1729,7 +1730,8 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                                                field.fn_results, field.loc, field.ret_optional, field.ret_const_pointee)
                               : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                             false, field.type_package, field.is_struct, field.is_enum, false,
-                                            field.optional, field.const_pointee);
+                                            field.optional, field.const_pointee, false, field.elem_const,
+                                            field.elem_slice);
         structs_[static_cast<std::size_t>(id)].fields.push_back(
             StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
     }

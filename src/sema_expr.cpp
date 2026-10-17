@@ -474,22 +474,30 @@ Type Checker::check_array_literal(Expr::Init &init) {
         elem = type_of_fn_ptr(init.type_name, init.type_package, init.is_struct, init.is_enum, init.elem_ret_indirections,
                               init.indirections < 1 ? 1 : init.indirections, init.elem_fn_params, init.elem_fn_variadic,
                               init.elem_fn_results, init.loc, init.elem_ret_optional, init.elem_ret_const_pointee);
+    } else if (init.elem_slice) {
+        // `[_][][]T` is a third slice. The element of `[_][]T` is one slice.
+        error(init.loc, "not supported yet");
+        check_loose();
+        return type_invalid();
     } else if (init.elem_is_array) {
+        const bool element_slice = init.elem_array_len_name.empty() && init.elem_array_len < 0;
         int length = init.elem_array_len;
-        if (!init.elem_array_len_name.empty()) {
-            const std::optional<int> folded = lookup_const_value(init.elem_array_len_name);
-            if (!folded || *folded <= 0) {
+        if (!element_slice) {
+            if (!init.elem_array_len_name.empty()) {
+                const std::optional<int> folded = lookup_const_value(init.elem_array_len_name);
+                if (!folded || *folded <= 0) {
+                    error(init.loc, "not supported yet");
+                    check_loose();
+                    return type_invalid();
+                }
+                length = *folded;
+                init.elem_array_len = length;
+            }
+            if (length <= 0) {
                 error(init.loc, "not supported yet");
                 check_loose();
                 return type_invalid();
             }
-            length = *folded;
-            init.elem_array_len = length;
-        }
-        if (length <= 0) {
-            error(init.loc, "not supported yet");
-            check_loose();
-            return type_invalid();
         }
         elem = object_type(init.type_name, init.indirections, false, 0, init.loc, false, init.type_package, init.is_struct,
                            init.is_enum, false, init.optional, init.const_pointee);
@@ -503,7 +511,15 @@ Type Checker::check_array_literal(Expr::Init &init) {
             check_loose();
             return type_invalid();
         }
-        elem = type_array(std::move(elem), length);
+        if (element_slice) {
+            // `[_][]const u8`. `const` stays on the leaf, not on the header.
+            if (init.elem_const) {
+                elem.is_const = true;
+            }
+            elem = type_array(std::move(elem), -1);
+        } else {
+            elem = type_array(std::move(elem), length);
+        }
     } else {
         bool is_array = false;
         int array_len = 0;
@@ -2704,10 +2720,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
-                    // `[][]T` stays rejected. A sized row `[M]T` becomes the slice of that row.
-                    if (base.element->kind == TypeKind::Array &&
-                        (base.element->length <= 0 ||
-                         (base.element->element != nullptr && base.element->element->kind == TypeKind::Array))) {
+                    // A slice element `[]T` and a sized row `[M]T` both range. `[][][]T` does not.
+                    if (base.element->kind == TypeKind::Array && base.element->element != nullptr &&
+                        base.element->element->kind == TypeKind::Array) {
                         error(node.loc, "not supported yet");
                         return type_invalid();
                     }
@@ -2781,7 +2796,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 (void)used;
                 const Type type = operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum,
                                                node.indirections, node.optional, node.expr.get(), node.loc,
-                                               node.const_pointee, node.is_array, node.array_len, node.elem_const);
+                                               node.const_pointee, node.is_array, node.array_len, node.elem_const,
+                                               node.elem_slice);
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
@@ -3161,11 +3177,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
 
 Type Checker::operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                            bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
-                           uint32_t const_pointee, bool is_array, int array_len, bool elem_const) {
+                           uint32_t const_pointee, bool is_array, int array_len, bool elem_const, bool elem_slice) {
     if (on_type) {
-        if (is_array) {
-            return object_type(type_name, indirections, true, array_len, loc, false, type_package, is_struct, is_enum,
-                               false, optional, const_pointee, false, elem_const);
+        if (is_array || elem_slice) {
+            return object_type(type_name, indirections, is_array, array_len, loc, false, type_package, is_struct, is_enum,
+                               false, optional, const_pointee, false, elem_const, elem_slice);
         }
         return spelled_type(type_name, type_package, is_struct, is_enum, indirections, loc, optional, const_pointee);
     }
@@ -3197,7 +3213,7 @@ Type Checker::operand_type(bool on_type, const std::string &type_name, const std
 Type Checker::sizeof_operand(const Expr::Sizeof &node) {
     return operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
                         node.optional, node.expr.get(), node.loc, node.const_pointee, node.is_array, node.array_len,
-                        node.elem_const);
+                        node.elem_const, node.elem_slice);
 }
 
 void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &message) {

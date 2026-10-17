@@ -27,6 +27,8 @@ struct SpecArg {
     bool is_array = false;
     // `[]const u8`. The element type is const.
     bool elem_const = false;
+    // `[][]T` and `[N][]T`. The element is one slice.
+    bool elem_slice = false;
     int array_len = 0;
     int struct_id = -1;
     int enum_id = -1;
@@ -291,7 +293,7 @@ class Checker {
     Type object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                      bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
                      bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0,
-                     bool allow_incomplete = false, bool elem_const = false);
+                     bool allow_incomplete = false, bool elem_const = false, bool elem_slice = false);
     Type spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
                       int indirections, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
     // A store through this lvalue would change a `const` binding or a `*const` pointee.
@@ -383,7 +385,8 @@ class Checker {
     bool name_taken(const std::string &name) const;
     Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum,
-                          uint32_t optional = 0, uint32_t const_pointee = 0);
+                          uint32_t optional = 0, uint32_t const_pointee = 0, bool elem_const = false,
+                          bool elem_slice = false);
     Type published_result(const std::string &name, int indirections, SourceLoc loc, const std::string &package,
                           bool is_struct, bool is_enum, uint32_t optional = 0, uint32_t const_pointee = 0);
     void expect(const Type &got, const Type &want, SourceLoc loc);
@@ -410,7 +413,8 @@ class Checker {
     bool is_builtin_va_call(const Expr &callee);
     Type operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                       bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
-                      uint32_t const_pointee = 0, bool is_array = false, int array_len = 0, bool elem_const = false);
+                      uint32_t const_pointee = 0, bool is_array = false, int array_len = 0, bool elem_const = false,
+                      bool elem_slice = false);
     Type sizeof_operand(const Expr::Sizeof &node);
     // A folded number. `wide` is f64. An integer is neither.
     struct FoldedNumber {
