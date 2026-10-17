@@ -14,7 +14,7 @@ Close the window to exit. The context is an OpenGL 3.3 core profile. After the c
 
 ## Tetris
 
-`examples/tetris` is a playable game in the same window. It calls the same `vendor/gl` functions and compiles its own shader. Blocks are colored quads. The board is a `[200]i32`. Piece cells are the file-scope tables `shape_x` and `shape_y`, each a `[28]i32`. Pieces rotate in the program, and `SDL_GetTicks` times the drop.
+`examples/tetris` is a playable game in the same window. It calls the same `vendor/gl` functions and compiles its own shader. Blocks are colored quads. The board is a `[200]i32`. Piece cells are the file-scope constants `shape_x` and `shape_y`, each a `[28]i32`. A piece reads four cells with `shape_x[start:start + 4]`. Pieces rotate in the program, and `SDL_GetTicks` times the drop.
 
 Left, right, and down move. Up rotates clockwise, Z rotates the other way, and space drops the piece. R starts again after the stack reaches the top. Escape or closing the window quits. Line clears and the score are printed in the terminal. A column of marks on the left counts cleared lines, and the next piece is shown on the right.
 

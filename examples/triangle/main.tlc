@@ -10,8 +10,6 @@ import {
     SDL_GL_SwapWindow,
     SDL_PollEvent,
     SDL_Delay,
-    SDL_Window,
-    SDL_GLContextState,
     SDL_Event,
     SdlInit,
     SdlWindow,
@@ -52,44 +50,46 @@ extern(abi="c") func printf(fmt *const u8, ...) i32;
 const width = 960;
 const height = 540;
 
-var gpu_array u32;
-var gpu_buffer u32;
+var gpu_array = 0u32;
+var gpu_buffer = 0u32;
 
-func shader_status(object u32, pname u32, linked i32) i32 {
+func shader_status(object u32, pname u32, linked bool) bool {
     var ok i32 = 0;
-    if (linked == 0) {
-        GetShaderiv(object, pname, &ok);
-    } else {
+    if (linked) {
         GetProgramiv(object, pname, &ok);
+    } else {
+        GetShaderiv(object, pname, &ok);
     }
-    if (ok == 0) {
+    if (!ok) {
         var log [512]u8;
-        if (linked == 0) {
-            GetShaderInfoLog(object, 512, null, log);
-        } else {
+        if (linked) {
             GetProgramInfoLog(object, 512, null, log);
+        } else {
+            GetShaderInfoLog(object, 512, null, log);
         }
         printf("%s\n", log);
-        return 0;
+        return false;
     }
-    return 1;
+    return true;
 }
 
 func make_shader(kind u32, source *const u8) u32 {
     var shader = CreateShader(kind);
     ShaderSource(shader, 1, &source, null);
     CompileShader(shader);
-    if (shader_status(shader, GLenum.COMPILE_STATUS, 0) == 0) {
+    if (!shader_status(shader, GLenum.COMPILE_STATUS, false)) {
         return 0;
     }
     return shader;
 }
 
-func load_gl() i32 {
+func load_gl() bool {
     if (!load()) {
-        return 0;
+        return false;
     }
 
+    // ShaderSource wants a pointer to a C string. A string literal is []const u8
+    // and converts to *const u8, which is the pointer that address is taken of.
     var vertex_source *const u8 = `#version 330 core
 layout(location = 0) in vec2 pos;
 layout(location = 1) in vec3 color;
@@ -109,14 +109,14 @@ void main() {
     var vertex = make_shader(GLenum.VERTEX_SHADER, vertex_source);
     var fragment = make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
     if (vertex == 0 || fragment == 0) {
-        return 0;
+        return false;
     }
     var program = CreateProgram();
     AttachShader(program, vertex);
     AttachShader(program, fragment);
     LinkProgram(program);
-    if (shader_status(program, GLenum.LINK_STATUS, 1) == 0) {
-        return 0;
+    if (!shader_status(program, GLenum.LINK_STATUS, true)) {
+        return false;
     }
     DeleteShader(vertex);
     DeleteShader(fragment);
@@ -130,7 +130,7 @@ void main() {
     EnableVertexAttribArray(1);
     VertexAttribPointer(1, 3, GLenum.FLOAT, 0, 20, *void(8));
     UseProgram(program);
-    return 1;
+    return true;
 }
 
 func draw(verts *f32, count i32) void {
@@ -140,7 +140,7 @@ func draw(verts *f32, count i32) void {
 
 func draw_triangle() void {
     Clear(GLenum.COLOR_BUFFER_BIT);
-    var verts [15]f32 = {
+    var verts = [_]f32{
         -0.6f, -0.5f, 0.95f, 0.35f, 0.30f,
         0.6f, -0.5f, 0.30f, 0.85f, 0.45f,
         0.0f, 0.6f, 0.30f, 0.55f, 0.95f,
@@ -149,52 +149,48 @@ func draw_triangle() void {
 }
 
 func main() i32 {
-    if (SDL_Init(SdlInit.SDL_INIT_VIDEO) == 0) {
+    if (!SDL_Init(SdlInit.SDL_INIT_VIDEO)) {
         printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
+    defer SDL_Quit();
+
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_PROFILE_MASK, SdlGlAttr.SDL_GL_CONTEXT_PROFILE_CORE);
 
-    var window *SDL_Window = SDL_CreateWindow("Triangle", width, height, SdlWindow.SDL_WINDOW_OPENGL);
+    var window = SDL_CreateWindow("Triangle", width, height, SdlWindow.SDL_WINDOW_OPENGL);
     if (window == null) {
         printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
-        SDL_Quit();
         return 1;
     }
-    var context *SDL_GLContextState = SDL_GL_CreateContext(window);
+    defer SDL_DestroyWindow(window);
+
+    var context = SDL_GL_CreateContext(window);
     if (context == null) {
         printf("SDL_GL_CreateContext failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
         return 1;
     }
     SDL_GL_MakeCurrent(window, context);
-    if (load_gl() == 0) {
+    if (!load_gl()) {
         printf("OpenGL failed\n");
-        SDL_DestroyWindow(window);
-        SDL_Quit();
         return 1;
     }
     Viewport(0, 0, width, height);
     ClearColor(0.08f, 0.09f, 0.12f, 1.0f);
 
-    var running i32 = 1;
-    while (running != 0) {
+    var running = true;
+    while (running) {
         var event = SDL_Event{};
-        while (SDL_PollEvent(&event) != 0) {
+        while (SDL_PollEvent(&event)) {
             if (event.kind == SdlEventKind.SDL_EVENT_QUIT ||
                 event.kind == SdlEventKind.SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-                running = 0;
+                running = false;
             }
         }
         draw_triangle();
         SDL_GL_SwapWindow(window);
         SDL_Delay(16);
     }
-
-    SDL_DestroyWindow(window);
-    SDL_Quit();
     return 0;
 }
