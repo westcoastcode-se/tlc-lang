@@ -1,0 +1,6 @@
+import "math";
+
+func main() i32 {
+    var box math.Vec[i32];
+    return box.hidden();
+}

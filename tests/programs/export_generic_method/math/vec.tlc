@@ -1,0 +1,31 @@
+package math;
+
+export type Vec[T type] struct {
+    n T;
+};
+
+export type Buf[N i32, T type] struct {
+    value T;
+};
+
+export func Vec[T]::get(self *this) T {
+    return self.n;
+}
+
+export func Vec[T]::set(self *this, value T) void {
+    self.n = value;
+}
+
+export func Buf[N, T]::len(self this) i32 {
+    return N;
+}
+
+func Vec[T]::hidden(self *this) T {
+    return self.n;
+}
+
+export func through() i32 {
+    var box Vec[i32];
+    box.set(11);
+    return box.get();
+}

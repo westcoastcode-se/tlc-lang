@@ -1,0 +1,6 @@
+func main() i32 {
+    var grid = [_][2]i32{{1, 2}, {3, 4}};
+    var row = grid[0:1];
+    row[0][1] = 9;
+    return row[0][1];
+}

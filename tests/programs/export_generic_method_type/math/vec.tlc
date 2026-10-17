@@ -1,0 +1,9 @@
+package math;
+
+export type Vec[T type] struct {
+    n T;
+};
+
+export func Vec[T]::get(self *this) T {
+    return self.n;
+}

@@ -1,5 +1,38 @@
+var global = [_][2]i32{{7, 8}, {9, 1}};
+
 func main() i32 {
-    var grid = [_][2]i32{{1, 2}, {3, 4}};
+    var grid = [_][2]i32{{1, 2}, {3, 4}, {5, 6}};
     var row = grid[0:1];
-    return row.len;
+    if (row.len != 1 || row[0].len != 2 || row[0][0] != 1 || row[0][1] != 2) {
+        return 1;
+    }
+    var mid = grid[1:3];
+    if (mid.len != 2 || mid[0][0] != 3 || mid[0][1] != 4 || mid[1][0] != 5 || mid[1][1] != 6) {
+        return 2;
+    }
+    var rest = grid[1:];
+    var head = grid[:1];
+    var all = grid[:];
+    if (rest.len != 2 || rest[0][0] != 3 || rest[1][1] != 6 || head.len != 1 || head[0][1] != 2 || all.len != 3 ||
+        all[2][0] != 5) {
+        return 3;
+    }
+    var again = mid[1:];
+    if (again.len != 1 || again[0][0] != 5 || again[0][1] != 6) {
+        return 4;
+    }
+    var i i32 = 1;
+    var picked = grid[i:i + 1];
+    if (picked.len != 1 || picked[0][0] != 3) {
+        return 5;
+    }
+    grid[1][0] = 30;
+    if (mid[0][0] != 30 || rest[0][0] != 30) {
+        return 6;
+    }
+    var from = global[1:2];
+    if (from.len != 1 || from[0][0] != 9 || from[0][1] != 1) {
+        return 7;
+    }
+    return 0;
 }

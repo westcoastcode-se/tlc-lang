@@ -5445,7 +5445,7 @@ int run_sema_tests() {
             "type Vec[T type] struct { n i32; };\n"
             "export func Vec[T]::get(self *this) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_EQ(check, errors, "");
     }
 
     {

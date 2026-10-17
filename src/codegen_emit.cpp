@@ -3026,6 +3026,16 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             llvm::Value *data = builder_.CreateExtractValue(base.value, 0);
             llvm::Type *element = leaf_type(base.depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
                                             base.elem_float);
+            // `view[i]` on a slice of `[M]T` is that row, the same pointer `grid[i]` yields.
+            if (base.inner_array_len > 0) {
+                llvm::Type *row = llvm::ArrayType::get(element, static_cast<uint64_t>(base.inner_array_len));
+                llvm::Value *slot = builder_.CreateInBoundsGEP(row, data, llvm::ArrayRef<llvm::Value *>{subscript.value});
+                TypedValue out{slot, base.depth + 1, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool,
+                               base.elem_bits, base.elem_unsigned, -1, base.elem_float};
+                out.row_decay = true;
+                out.enum_id = base.enum_id;
+                return out;
+            }
             llvm::Value *slot =
                 builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{subscript.value});
             TypedValue out{slot,       base.depth,     base.elem_char, base.struct_id, false,          base.elem_void,
@@ -3597,6 +3607,10 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         };
         llvm::Value *start = data;
         llvm::Value *len = nullptr;
+        // A row `[M]T` steps by that row. The length counts rows, not elements of `T`.
+        if (base.inner_array_len > 0) {
+            element = llvm::ArrayType::get(element, static_cast<uint64_t>(base.inner_array_len));
+        }
         if (low_omitted) {
             len = as_bound(high);
         } else {
@@ -3626,6 +3640,7 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     result.is_slice = true;
     result.array_len = -1;
     result.depth = elem_depth;
+    result.inner_array_len = base.inner_array_len;
     result.elem_char = base.elem_char;
     result.struct_id = base.struct_id;
     result.elem_void = base.elem_void;
@@ -4836,6 +4851,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.elem_unsigned = got.elem_unsigned;
             binding.elem_float = got.elem_float;
             binding.enum_id = got.enum_id;
+            binding.inner_array_len = got.inner_array_len;
             scopes_.back()[name] = binding;
             alias_capture(name, binding);
             note(name, binding);

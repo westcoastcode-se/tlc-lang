@@ -93,7 +93,6 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A pointer receiver on a slice alias, `func string_view::at(self *this)`. It is `not supported yet`. A value receiver, `self this`, is the form that works.
 - A nested slice, `[][]T` or `[N][]T`. It is `not supported yet`.
 - A slice taken from an array parameter. The parameter is already a pointer, so `return row` from `func open(row [4]i32) []i32` is `return type: expected []i32, found *i32`. A range on that pointer, `row[0:2]`, is `type mismatch`.
-- A range whose element is an array. `grid[0:1]` on `[_][2]i32` is `not supported yet`.
 - A slice field on `extern(abi="c")`. It is `not supported yet`. A tlc union arm that is not a struct stays `type mismatch`.
 - A file-scope slice whose initializer is not the name of an array, another slice, or a call. A literal, `a[i:j]`, `a[i:]`, `a[:j]`, or `a[:]` is `global initializer is not a constant`. A call used as the whole initializer runs before `main`.
 - `const` on a slice. `const v []i32 = row` is `not supported yet`.
@@ -133,7 +132,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Methods and traits
 
-- `extern` on a method. `export` on a generic instance method. A non-generic method may be exported. Another package calls `value.name(...)`. `export` on a static function publishes `pkg.Type.name(...)`. A method without `export` is reported as `name is not exported`.
+- `extern` on a method. A method may be exported, including `export func Vec[T]::get`. Another package calls `value.name(...)`. `export` on a static function publishes `pkg.Type.name(...)`. A method without `export` is reported as `name is not exported`.
 - A receiver with more than one star: `self **this`.
 - A body on a trait method. The trait lists the method and its type.
 - A trait method that returns several results.

@@ -927,6 +927,7 @@ class CodeGen {
             loaded.elem_unsigned = binding.elem_unsigned;
             loaded.elem_float = binding.elem_float;
             loaded.enum_id = binding.enum_id;
+            loaded.inner_array_len = binding.inner_array_len;
             return loaded;
         }
         if (binding.is_array) {

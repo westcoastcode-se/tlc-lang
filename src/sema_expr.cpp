@@ -2700,10 +2700,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (base.kind == TypeKind::Invalid) {
                         return type_invalid();
                     }
-                    if (base.kind != TypeKind::Array || base.element == nullptr || base.element->kind == TypeKind::Array) {
-                        error(node.loc, base.element != nullptr && base.element->kind == TypeKind::Array
-                                            ? "not supported yet"
-                                            : "type mismatch");
+                    if (base.kind != TypeKind::Array || base.element == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    // `[][]T` stays rejected. A sized row `[M]T` becomes the slice of that row.
+                    if (base.element->kind == TypeKind::Array &&
+                        (base.element->length <= 0 ||
+                         (base.element->element != nullptr && base.element->element->kind == TypeKind::Array))) {
+                        error(node.loc, "not supported yet");
                         return type_invalid();
                     }
                     Type slice = type_array(*base.element, -1);
