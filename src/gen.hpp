@@ -45,6 +45,8 @@ inline FnParam fn_param_from_slot(const ResultSlot &slot) {
     param.indirections = slot.indirections;
     param.optional = slot.optional;
     param.const_pointee = slot.const_pointee;
+    param.is_array = slot.is_array && slot.array_len < 0;
+    param.array_len = param.is_array ? slot.array_len : 0;
     param.is_fn_ptr = slot.is_fn_ptr;
     param.ret_indirections = slot.ret_indirections;
     param.ret_optional = slot.ret_optional;
@@ -803,6 +805,8 @@ class CodeGen {
     llvm::Value *pack_return(llvm::Value *slot, const CAbi &abi);
     void unpack_return(llvm::Value *returned, llvm::Value *slot, const CAbi &abi);
     llvm::Type *aggregate_return(const FunctionDecl &fn, uint32_t file) const;
+    // `[]T` among several results. A sized array stays the element type.
+    Lowered lower_result(uint32_t file, const ResultSlot &slot) const;
     const FunctionDecl *callee_decl(const Expr &callee) const;
     SymbolForm symbol_form(const PackageNode &node, const std::string &name, bool is_extern, bool extern_c,
                            bool is_static, bool exported, bool entry_main, const std::string &link_name) const;

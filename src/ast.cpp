@@ -126,8 +126,8 @@ void append_many_results(std::string &out, const std::vector<FnParam> &results) 
             out += ", ";
         }
         const FnParam &part = results[i];
-        out += type_text(part.type_name, part.type_package, part.is_struct, part.is_enum, part.indirections, false, 0,
-                         part.optional, {}, part.const_pointee);
+        out += type_text(part.type_name, part.type_package, part.is_struct, part.is_enum, part.indirections,
+                         part.is_array, part.array_len, part.optional, {}, part.const_pointee);
     }
     out += ')';
 }
@@ -427,8 +427,8 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
                 out += ", ";
             }
             const ResultSlot &slot = fn.results[i];
-            out += type_text(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections, false,
-                             0, slot.optional, {}, slot.const_pointee);
+            out += type_text(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
+                             slot.is_array, slot.array_len, slot.optional, slot.array_len_name, slot.const_pointee);
             if (slot.is_fn_ptr) {
                 out += " fnptr";
                 append_many_results(out, slot.fn_results);

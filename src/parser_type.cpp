@@ -1034,6 +1034,8 @@ FnParam Parser::fn_param_from(const PlacedType &type) const {
     param.indirections = type.indirections;
     param.optional = type.optional;
     param.const_pointee = type.const_pointee;
+    param.is_array = type.is_array && type.array_len < 0;
+    param.array_len = param.is_array ? type.array_len : 0;
     param.is_fn_ptr = type.is_fn_ptr;
     param.ret_indirections = type.ret_indirections;
     param.ret_optional = type.ret_optional;

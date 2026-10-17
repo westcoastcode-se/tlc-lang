@@ -115,12 +115,17 @@ bool CodeGen::is_struct_value(const Lowered &low) const {
            low.type->isStructTy();
 }
 
+CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) const {
+    const bool slice = slot.is_array && slot.array_len < 0 && !slot.is_fn_ptr;
+    return lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slice,
+                 slice ? slot.array_len : 0, false);
+}
+
 llvm::Type *CodeGen::aggregate_return(const FunctionDecl &fn, uint32_t file) const {
     std::vector<llvm::Type *> fields;
     fields.reserve(fn.results.size());
     for (const ResultSlot &slot : fn.results) {
-        fields.push_back(stored_type(
-            lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, false, 0, false)));
+        fields.push_back(stored_type(lower_result(file, slot)));
     }
     if (fields.empty()) {
         fields.push_back(i32());
@@ -613,14 +618,17 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
     (void)ret_enum;
     std::vector<llvm::Type *> args;
     args.reserve(params.size());
+    auto lower_part = [&](const FnParam &part, bool parameter) {
+        if (part.is_fn_ptr) {
+            return lower_fnptr(file, part.type_name, part.type_package, part.is_struct, part.is_enum,
+                               part.ret_indirections, part.indirections, part.params, part.variadic, part.results);
+        }
+        const bool slice = part.is_array && part.array_len < 0;
+        return lower(file, part.type_name, part.type_package, part.is_struct, part.indirections, slice,
+                     slice ? part.array_len : 0, parameter);
+    };
     for (const FnParam &param : params) {
-        const Lowered arg = param.is_fn_ptr
-                                ? lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum,
-                                              param.ret_indirections, param.indirections, param.params, param.variadic,
-                                              param.results)
-                                : lower(file, param.type_name, param.type_package, param.is_struct, param.indirections, false,
-                                        0, true);
-        args.push_back(stored_type(arg));
+        args.push_back(stored_type(lower_part(param, true)));
     }
     Lowered out;
     out.depth = fn_depth < 1 ? 1 : fn_depth;
@@ -629,8 +637,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
         std::vector<llvm::Type *> fields;
         fields.reserve(results.size());
         for (const FnParam &part : results) {
-            fields.push_back(stored_type(
-                lower(file, part.type_name, part.type_package, part.is_struct, part.indirections, false, 0, false)));
+            fields.push_back(stored_type(lower_part(part, false)));
         }
         out.fn_ty = llvm::FunctionType::get(llvm::StructType::get(context_, fields), args, variadic);
         out.fn_results = results;

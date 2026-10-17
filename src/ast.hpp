@@ -56,6 +56,9 @@ struct FnParam {
     int indirections = 0;
     uint32_t optional = 0;
     uint32_t const_pointee = 0;
+    // `[]T` on a parameter or on one result of several. A sized array is not carried here.
+    bool is_array = false;
+    int array_len = 0;
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;

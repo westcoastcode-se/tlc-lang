@@ -1,0 +1,114 @@
+type Point struct {
+    x i32;
+};
+
+type Row []i32;
+
+func both(v []i32) ([]i32, i32) {
+    return v[0:2], v.len;
+}
+
+func paren(v []i32) ([]i32, i32) {
+    return (v[0:2], v.len);
+}
+
+func text() ([]const u8, i32) {
+    return "ab", 2;
+}
+
+func take(v []i32) i32 {
+    return v[0] + v.len;
+}
+
+func points(v []Point) ([]Point, i32) {
+    return v[0:1], v.len;
+}
+
+func Row::head(self this) (Row, i32) {
+    return self[0:2], self.len;
+}
+
+func Point::span(self *this, v []i32) ([]i32, i32) {
+    return v[0:2], self.x;
+}
+
+func main() i32 {
+    var row = [_]i32{10, 20, 30};
+    var left, count = both(row);
+    if (left.len != 2 || left[0] != 10 || left[1] != 20 || count != 3) {
+        return 1;
+    }
+    if (sizeof(left) != 16) {
+        return 2;
+    }
+    row[1] = 7;
+    if (left[1] != 7) {
+        return 3;
+    }
+    left, count = both(row);
+    if (left[0] != 10 || left[1] != 7 || left.len != 2 || count != 3) {
+        return 4;
+    }
+    if (take(left) != 12) {
+        return 5;
+    }
+    var pair = both(row);
+    if (pair[0].len != 2 || pair[0][0] != 10 || pair[1] != 3) {
+        return 6;
+    }
+    var a, b = pair;
+    if (a[1] != 7 || a.len != 2 || b != 3) {
+        return 7;
+    }
+    var view Row = row;
+    var head, n = view.head();
+    if (head.len != 2 || head[0] != 10 || n != 3) {
+        return 8;
+    }
+    var again = head[0:1];
+    if (again.len != 1 || again[0] != 10) {
+        return 9;
+    }
+    var origin Point;
+    origin.x = 8;
+    var window, mark = origin.span(row);
+    if (window.len != 2 || window[1] != 7 || mark != 8) {
+        return 10;
+    }
+    func inner(v []i32) ([]i32, i32) {
+        return v[1:3], 4;
+    }
+    var mid, tag = inner(row);
+    if (mid.len != 2 || mid[0] != 7 || mid[1] != 30 || tag != 4) {
+        return 11;
+    }
+    var anon, kind = func(v []i32) ([]i32, i32) {
+        return v[0:1], 9;
+    }(row);
+    if (anon.len != 1 || anon[0] != 10 || kind != 9) {
+        return 12;
+    }
+    var bytes, blen = text();
+    if (bytes.len != 2 || bytes[0] != 'a' || bytes[1] != 'b' || blen != 2) {
+        return 13;
+    }
+    var pts = [_]Point{Point{.x = 6}, Point{.x = 1}};
+    var ps, pn = points(pts);
+    if (ps.len != 1 || ps[0].x != 6 || pn != 2) {
+        return 14;
+    }
+    var quoted, qn = paren(row);
+    if (quoted.len != 2 || quoted[0] != 10 || qn != 3) {
+        return 15;
+    }
+    var lit, ln = (row[0:2], 5);
+    if (lit.len != 2 || lit[1] != 7 || ln != 5) {
+        return 16;
+    }
+    var fp func ([]i32) ([]i32, i32) = both;
+    var through, tn = fp(row);
+    if (through.len != 2 || through[0] != 10 || tn != 3) {
+        return 17;
+    }
+    return 0;
+}

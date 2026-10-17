@@ -114,9 +114,9 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
                               param.ret_const_pointee);
     }
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
-                    written.optional, is_array, array_len, array_len_name, written.type_args, loc);
-    return object_type(param.type_name, param.indirections, false, 0, loc, true, param.type_package, param.is_struct,
-                       param.is_enum, false, param.optional, param.const_pointee);
+                    written.optional, written.is_array, written.array_len, array_len_name, written.type_args, loc);
+    return object_type(param.type_name, param.indirections, param.is_array, param.array_len, loc, true, param.type_package,
+                       param.is_struct, param.is_enum, false, param.optional, param.const_pointee);
 }
 
 Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
@@ -129,17 +129,19 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
         parts.reserve(results.size());
         for (const FnParam &part : results) {
             FnParam &written = const_cast<FnParam &>(part);
-            bool is_array = false;
-            int array_len = 0;
             std::string array_len_name;
             prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
-                            written.indirections, written.optional, is_array, array_len, array_len_name, written.type_args,
-                            loc);
-            Type one = part.is_struct || part.is_enum || !part.type_package.empty()
-                           ? object_type(part.type_name, part.indirections, false, 0, loc, false, part.type_package,
-                                         part.is_struct, part.is_enum, false, part.optional, part.const_pointee)
-                           : with_indirections(type_of_name(part.type_name, loc, part.indirections > 0), part.indirections,
-                                               loc, part.optional, part.const_pointee);
+                            written.indirections, written.optional, written.is_array, written.array_len, array_len_name,
+                            written.type_args, loc);
+            Type one = part.is_array
+                           ? object_type(part.type_name, part.indirections, true, part.array_len, loc, false,
+                                         part.type_package, part.is_struct, part.is_enum, false, part.optional,
+                                         part.const_pointee)
+                           : (part.is_struct || part.is_enum || !part.type_package.empty()
+                                  ? object_type(part.type_name, part.indirections, false, 0, loc, false, part.type_package,
+                                                part.is_struct, part.is_enum, false, part.optional, part.const_pointee)
+                                  : with_indirections(type_of_name(part.type_name, loc, part.indirections > 0),
+                                                      part.indirections, loc, part.optional, part.const_pointee));
             if (one.kind == TypeKind::Void) {
                 error(loc, "type mismatch");
             }

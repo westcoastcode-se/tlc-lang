@@ -849,7 +849,8 @@ std::string spell_fn_results(const std::string &type_name, int indirections, uin
 
 std::string spell_fn_param(const FnParam &param) {
     if (!param.is_fn_ptr) {
-        return spell_type(Place{param.type_name, param.indirections, param.optional, param.const_pointee, false, 0});
+        return spell_type(Place{param.type_name, param.indirections, param.optional, param.const_pointee, param.is_array,
+                                param.array_len});
     }
     return "func (" + spell_fn_params(param.params, param.variadic) + ") " +
            spell_fn_results(param.type_name, param.ret_indirections, param.ret_optional, param.ret_const_pointee, param.results);

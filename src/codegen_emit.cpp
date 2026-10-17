@@ -2599,7 +2599,8 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
                 slot.indirections = part.indirections;
                 slot.optional = part.optional;
                 slot.const_pointee = part.const_pointee;
-                slot.is_array = false;
+                slot.is_array = part.is_array && part.array_len < 0;
+                slot.array_len = slot.is_array ? part.array_len : 0;
                 result.tuple_parts.push_back(std::move(slot));
             }
         }
@@ -3296,6 +3297,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                         shape.struct_id = low.struct_id;
                         shape.is_array = low.is_array;
                         shape.array_len = low.array_len;
+                        shape.is_slice = low.is_slice;
                         shape.type = low.type;
                         return shape;
                     }
@@ -4024,12 +4026,34 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return {zero(), 0};
                     }
                     llvm::Value *extracted = builder_.CreateExtractValue(base.value, index);
-                    const auto *named = std::get_if<Expr::Name>(&node.base->data);
-                    const Binding *binding = named == nullptr ? nullptr : lookup(named->text);
-                    if (binding != nullptr && index < binding->tuple_parts.size()) {
-                        const ResultSlot &slot = binding->tuple_parts[index];
-                        const Lowered part = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct,
-                                                   slot.indirections, slot.is_array, slot.array_len, false);
+                    const ResultSlot *slot = nullptr;
+                    if (base.is_tuple && index < base.tuple_parts.size()) {
+                        slot = &base.tuple_parts[index];
+                    } else if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                        const Binding *binding = lookup(named->text);
+                        if (binding != nullptr && index < binding->tuple_parts.size()) {
+                            slot = &binding->tuple_parts[index];
+                        }
+                    }
+                    if (slot != nullptr) {
+                        const Lowered part = lower(current_file_, slot->type_name, slot->type_package, slot->is_struct,
+                                                   slot->indirections, slot->is_array, slot->array_len, false);
+                        if (part.is_slice) {
+                            TypedValue loaded;
+                            loaded.value = extracted;
+                            loaded.is_slice = true;
+                            loaded.array_len = -1;
+                            loaded.depth = part.depth;
+                            loaded.elem_char = part.elem_char;
+                            loaded.struct_id = part.struct_id;
+                            loaded.elem_void = part.elem_void;
+                            loaded.elem_bool = part.elem_bool;
+                            loaded.elem_bits = part.elem_bits;
+                            loaded.elem_unsigned = part.elem_unsigned;
+                            loaded.elem_float = part.elem_float;
+                            loaded.enum_id = part.enum_id;
+                            return loaded;
+                        }
                         if (part.depth == 0 && part.elem_bool) {
                             return {builder_.CreateZExt(extracted, i32()), 0, false, -1, false, part.elem_void, true};
                         }
@@ -4053,6 +4077,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                 part.elem_bool, part.elem_bits, part.elem_unsigned, -1, part.elem_float};
                     }
                     llvm::Type *field_ty = extracted->getType();
+                    if (field_ty == slice_type()) {
+                        TypedValue loaded;
+                        loaded.value = extracted;
+                        loaded.is_slice = true;
+                        loaded.array_len = -1;
+                        return loaded;
+                    }
                     if (field_ty->isIntegerTy(1) || field_ty->isIntegerTy(8) || field_ty->isIntegerTy(16)) {
                         return {builder_.CreateZExt(extracted, i32()), 0};
                     }
@@ -4392,6 +4423,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                 }
                             }
                         }
+                        // A string is still a pointer here. The tuple element is the slice.
+                        if (value.is_slice && value.value->getType() != slice_type()) {
+                            if (value.depth > 0) {
+                                value.depth -= 1;
+                            }
+                            value.value = as_slice_value(value, node.loc);
+                        }
                         fields.push_back(value.value);
                         types.push_back(value.value->getType());
                         element_values.push_back(std::move(value));
@@ -4427,6 +4465,20 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             }
                             return "i32";
                         };
+                        if (element.is_slice) {
+                            slot.is_array = true;
+                            slot.array_len = -1;
+                            slot.indirections = element.depth;
+                            if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
+                                slot.is_struct = true;
+                                slot.type_name = structs_[static_cast<std::size_t>(element.struct_id)].name;
+                            } else if (element.elem_void) {
+                                slot.type_name = "void";
+                            } else {
+                                slot.type_name = scalar();
+                            }
+                            return slot;
+                        }
                         if (element.depth > 0) {
                             slot.indirections = element.depth;
                             if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
@@ -4835,15 +4887,15 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         value.value->getType()->isStructTy()) {
         parts.reserve(decl->results.size());
         for (const ResultSlot &slot : decl->results) {
-            parts.push_back(lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                  false, 0, false));
+            parts.push_back(lower_result(current_file_, slot));
         }
     } else if (decl == nullptr && value.value != nullptr && fn_results.size() == node.names.size() &&
                value.value->getType()->isStructTy()) {
         parts.reserve(fn_results.size());
         for (const FnParam &part : fn_results) {
+            const bool slice = part.is_array && part.array_len < 0 && !part.is_fn_ptr;
             parts.push_back(lower(current_file_, part.type_name, part.type_package, part.is_struct, part.indirections,
-                                  false, 0, false));
+                                  slice, slice ? part.array_len : 0, false));
         }
     } else if (value.is_tuple && value.value != nullptr && value.value->getType()->isStructTy() &&
                value.tuple_parts.size() == node.names.size()) {
@@ -4879,6 +4931,10 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                 low.elem_float = true;
                 low.elem_bits = ty->isDoubleTy() ? 64 : 32;
                 low.type = leaf_type(0, false, -1, false, low.elem_bits, true);
+            } else if (ty == slice_type()) {
+                low.is_slice = true;
+                low.array_len = -1;
+                low.type = ty;
             } else if (ty != nullptr && ty->isPointerTy()) {
                 low.depth = 1;
                 low.type = ptr_type();
@@ -4910,6 +4966,11 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             llvm::Value *stored = field;
             if (stored == nullptr) {
                 stored = llvm::Constant::getNullValue(ty);
+            } else if (low.is_slice && stored->getType() != ty) {
+                TypedValue part;
+                part.value = stored;
+                part.is_slice = true;
+                stored = as_slice_value(part, node.loc);
             } else if (stored->getType() != ty) {
                 stored = as_stored(stored, low.depth, ty, low.elem_unsigned);
             }
@@ -4921,8 +4982,19 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             alias_capture(node.names[index], binding);
             note(node.names[index], binding);
         } else if (dest != nullptr) {
-            llvm::Type *ty = object_type(dest);
-            builder_.CreateStore(as_stored(field, low.depth, ty, low.elem_unsigned), dest);
+            if (low.is_slice) {
+                llvm::Value *stored = field;
+                if (stored == nullptr || stored->getType() != slice_type()) {
+                    TypedValue part;
+                    part.value = stored == nullptr ? llvm::ConstantAggregateZero::get(slice_type()) : stored;
+                    part.is_slice = true;
+                    stored = as_slice_value(part, node.loc);
+                }
+                builder_.CreateStore(stored, dest);
+            } else {
+                llvm::Type *ty = object_type(dest);
+                builder_.CreateStore(as_stored(field, low.depth, ty, low.elem_unsigned), dest);
+            }
         }
         if (terminated()) {
             return;
@@ -5015,6 +5087,24 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     auto *aggregate_type = llvm::cast<llvm::StructType>(return_type_);
                     llvm::Value *aggregate = llvm::ConstantAggregateZero::get(aggregate_type);
                     const unsigned count = aggregate_type->getNumElements();
+                    auto fit_piece = [&](llvm::Type *field, const TypedValue &value) -> llvm::Value * {
+                        if (value.value == nullptr || field == nullptr) {
+                            return field == nullptr ? zero() : llvm::Constant::getNullValue(field);
+                        }
+                        if (field == slice_type()) {
+                            return as_slice_value(value, node.loc);
+                        }
+                        if (field->isPointerTy()) {
+                            return value.depth > 0 && value.value->getType()->isPointerTy() ? value.value : null_ptr();
+                        }
+                        if (field->isIntegerTy() && value.value->getType()->isIntegerTy()) {
+                            return resize_int(value.value, field, value.elem_unsigned);
+                        }
+                        if (value.value->getType() == field) {
+                            return value.value;
+                        }
+                        return llvm::Constant::getNullValue(field);
+                    };
                     // `return args` and `return (40, 'a')` are one tuple. Spread it across the results.
                     if (exprs.size() == 1 && exprs[0] != nullptr) {
                         const TypedValue value = emit_rvalue(*exprs[0]);
@@ -5030,18 +5120,8 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                                 aggregate = converted;
                             }
                         } else if (count > 0) {
-                            llvm::Type *field = aggregate_type->getElementType(0);
-                            llvm::Value *piece = llvm::Constant::getNullValue(field);
-                            if (value.value != nullptr) {
-                                if (field->isPointerTy()) {
-                                    piece = value.depth > 0 && value.value->getType()->isPointerTy() ? value.value : null_ptr();
-                                } else if (field->isIntegerTy() && value.value->getType()->isIntegerTy()) {
-                                    piece = resize_int(value.value, field, value.elem_unsigned);
-                                } else if (value.value->getType() == field) {
-                                    piece = value.value;
-                                }
-                            }
-                            aggregate = builder_.CreateInsertValue(aggregate, piece, 0);
+                            aggregate = builder_.CreateInsertValue(aggregate, fit_piece(aggregate_type->getElementType(0), value),
+                                                                   0);
                         }
                         if (!terminated()) {
                             emit_defers_from(0);
@@ -5054,23 +5134,14 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     }
                     for (unsigned index = 0; index < count; ++index) {
                         llvm::Type *field = aggregate_type->getElementType(index);
-                        llvm::Value *piece = llvm::Constant::getNullValue(field);
+                        TypedValue value;
                         if (index < exprs.size() && exprs[index] != nullptr) {
-                            const TypedValue value = emit_rvalue(*exprs[index]);
-                            if (value.value != nullptr) {
-                                if (field->isPointerTy()) {
-                                    piece = value.depth > 0 && value.value->getType()->isPointerTy() ? value.value : null_ptr();
-                                } else if (field->isIntegerTy() && value.value->getType()->isIntegerTy()) {
-                                    piece = resize_int(value.value, field, value.elem_unsigned);
-                                } else if (value.value->getType() == field) {
-                                    piece = value.value;
-                                }
-                            }
+                            value = emit_rvalue(*exprs[index]);
                         }
                         if (terminated()) {
                             return;
                         }
-                        aggregate = builder_.CreateInsertValue(aggregate, piece, index);
+                        aggregate = builder_.CreateInsertValue(aggregate, fit_piece(field, value), index);
                     }
                     if (!terminated()) {
                         emit_defers_from(0);

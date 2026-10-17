@@ -902,10 +902,10 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                                         optional, is_array, array_len, array_len_name, type_args, node.loc);
                     };
                     auto subst_param = [&](auto &&self, FnParam &param) -> void {
-                        bool is_array = false;
-                        int array_len = 0;
-                        std::string array_len_name;
                         if (param.is_fn_ptr) {
+                            bool is_array = false;
+                            int array_len = 0;
+                            std::string array_len_name;
                             substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct,
                                             param.is_enum, param.ret_indirections, param.ret_optional, is_array, array_len,
                                             array_len_name, param.type_args, node.loc);
@@ -917,8 +917,9 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                             }
                             return;
                         }
+                        std::string array_len_name;
                         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
-                                        param.indirections, param.optional, is_array, array_len, array_len_name,
+                                        param.indirections, param.optional, param.is_array, param.array_len, array_len_name,
                                         param.type_args, node.loc);
                     };
                     subst_spelling(node.type_name, node.type_package, node.is_struct, node.is_enum, node.ret_indirections,
@@ -1069,10 +1070,10 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         return bound;
     };
     auto subst_fn_param = [&](auto &&self, FnParam &param, SourceLoc loc) -> void {
-        bool is_array = false;
-        int array_len = 0;
-        std::string array_len_name;
         if (param.is_fn_ptr) {
+            bool is_array = false;
+            int array_len = 0;
+            std::string array_len_name;
             substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
                             param.ret_indirections, param.ret_optional, is_array, array_len, array_len_name,
                             param.type_args, loc);
@@ -1084,8 +1085,10 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
             }
             return;
         }
+        std::string array_len_name;
         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
-                        param.indirections, param.optional, is_array, array_len, array_len_name, param.type_args, loc);
+                        param.indirections, param.optional, param.is_array, param.array_len, array_len_name,
+                        param.type_args, loc);
     };
     for (Param &param : fn.params) {
         if (const SpecArg *pack = bare_pack(param.type_name, param.type_package, param.indirections, param.is_array,
