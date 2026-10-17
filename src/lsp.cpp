@@ -862,6 +862,33 @@ std::string spell_fn_value(const std::string &type_name, int ret_indirections, u
            spell_fn_results(type_name, ret_indirections, ret_optional, ret_const, results);
 }
 
+// `[_]T{...}` is `[N]T`. Pointers and one nested array belong to the element, inside the outer brackets.
+// A function element is already a pointer, so its stored indirection is not another star.
+std::string spell_array_element(const Expr::Init &init) {
+    std::string core;
+    if (init.elem_fn) {
+        core = spell_fn_value(init.type_name, init.elem_ret_indirections, init.elem_ret_optional, init.elem_ret_const_pointee,
+                              init.elem_fn_params, init.elem_fn_variadic, init.elem_fn_results);
+    } else {
+        Place pointed;
+        pointed.type_name = init.type_name;
+        pointed.indirections = init.indirections;
+        pointed.optional = init.optional;
+        pointed.const_pointee = init.const_pointee;
+        core = spell_type(pointed);
+    }
+    if (!init.elem_is_array) {
+        return core;
+    }
+    if (!init.elem_array_len_name.empty() && init.elem_array_len <= 0) {
+        return "[" + init.elem_array_len_name + "]" + core;
+    }
+    if (init.elem_array_len < 0) {
+        return "[]" + core;
+    }
+    return "[" + std::to_string(init.elem_array_len) + "]" + core;
+}
+
 std::string spell_slot(const ResultSlot &slot) {
     if (slot.is_fn_ptr) {
         return spell_fn_value(slot.type_name, slot.ret_indirections, slot.ret_optional, slot.ret_const_pointee, slot.fn_params,
@@ -1535,6 +1562,19 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
     }
     if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
         Shape shape;
+        if (init->array_literal) {
+            if ((init->type_name.empty() || init->type_name == "invalid") && !init->elem_fn) {
+                return shape;
+            }
+            shape.type_name = spell_array_element(*init);
+            if (shape.type_name.empty() || shape.type_name == "invalid") {
+                return shape;
+            }
+            shape.is_array = true;
+            shape.array_len = static_cast<int>(init->elements.size());
+            shape.known = true;
+            return shape;
+        }
         if (init->type_name.empty() || init->type_name == "invalid") {
             return shape;
         }

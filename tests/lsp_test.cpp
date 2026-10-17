@@ -272,6 +272,11 @@ int run_lsp_tests() {
         "    var made *Point = new Point{.x = 1};\n"
         "    var boxed *Box[i32] = new Box[i32]{.value = 1};\n"
         "    var row = new [_]Point{{.x = 1}};\n"
+        "    var verts = [_]f32{-0.6f, -0.5f, 0.95f};\n"
+        "    var copied = verts;\n"
+        "    var grid = [_][2]i32{{1, 2}, {3, 4}};\n"
+        "    var ptrs = [_]*i32{&kept};\n"
+        "    var ops = [_]func (i32) i32{add};\n"
         "    return add(p.x, q.x) + r.x + slice.len + named.len + tail;\n"
         "}\n";
 
@@ -563,6 +568,31 @@ int run_lsp_tests() {
                   std::to_string(row_field.character) + "}}}");
     const std::string row_items = read_until(from_child[0], "\"id\":26", 3000);
     EXPECT_HAS(check, row_items, "\"x\"");
+
+    const LineCol verts_at = at_needle(source, "verts", false);
+    EXPECT(check, verts_at.line >= 0);
+    const std::string verts_hover = request_at(to_child[1], from_child[0], 27, "textDocument/hover", uri, verts_at);
+    EXPECT_HAS(check, verts_hover, "verts [3]f32");
+
+    const LineCol copied_at = at_needle(source, "copied", false);
+    EXPECT(check, copied_at.line >= 0);
+    const std::string copied_hover = request_at(to_child[1], from_child[0], 28, "textDocument/hover", uri, copied_at);
+    EXPECT_HAS(check, copied_hover, "copied [3]f32");
+
+    const LineCol grid_at = at_needle(source, "grid", false);
+    EXPECT(check, grid_at.line >= 0);
+    const std::string grid_hover = request_at(to_child[1], from_child[0], 29, "textDocument/hover", uri, grid_at);
+    EXPECT_HAS(check, grid_hover, "grid [2][2]i32");
+
+    const LineCol ptrs_at = at_needle(source, "ptrs", false);
+    EXPECT(check, ptrs_at.line >= 0);
+    const std::string ptrs_hover = request_at(to_child[1], from_child[0], 30, "textDocument/hover", uri, ptrs_at);
+    EXPECT_HAS(check, ptrs_hover, "ptrs [1]*i32");
+
+    const LineCol ops_at = at_needle(source, "ops", false);
+    EXPECT(check, ops_at.line >= 0);
+    const std::string ops_hover = request_at(to_child[1], from_child[0], 31, "textDocument/hover", uri, ops_at);
+    EXPECT_HAS(check, ops_hover, "ops [1]func (i32) i32");
 
     const std::string over_source =
         "func once(n i32) i32;\n"
