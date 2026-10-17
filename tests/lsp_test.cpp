@@ -605,6 +605,21 @@ int run_lsp_tests() {
     const std::string count_hover = request_at(to_child[1], from_child[0], 33, "textDocument/hover", uri, count_at);
     EXPECT_HAS(check, count_hover, "count i32");
 
+    const LineCol verts_len_at = at_needle(source, "verts.", true);
+    EXPECT(check, verts_len_at.line >= 0);
+    const std::string verts_len_hover = request_at(to_child[1], from_child[0], 34, "textDocument/hover", uri, verts_len_at);
+    EXPECT_HAS(check, verts_len_hover, "len i32");
+
+    const LineCol slice_len_at = at_needle(source, "slice.", true);
+    EXPECT(check, slice_len_at.line >= 0);
+    const std::string slice_len_hover = request_at(to_child[1], from_child[0], 35, "textDocument/hover", uri, slice_len_at);
+    EXPECT_HAS(check, slice_len_hover, "len i32");
+
+    const LineCol named_len_at = at_needle(source, "named.", true);
+    EXPECT(check, named_len_at.line >= 0);
+    const std::string named_len_hover = request_at(to_child[1], from_child[0], 36, "textDocument/hover", uri, named_len_at);
+    EXPECT_HAS(check, named_len_hover, "len i32");
+
     const std::string over_source =
         "func once(n i32) i32;\n"
         "\n"

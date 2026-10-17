@@ -3159,9 +3159,12 @@ Json complete(const Doc &doc, const Cursor &cursor) {
     return jobj({{"isIncomplete", jbool(false)}, {"items", jarr(std::move(items))}});
 }
 
+Json hover_text(const std::string &value, Pos start, Pos end) {
+    return jobj({{"contents", jobj({{"kind", jstr("plaintext")}, {"value", jstr(value)}})}, {"range", range_json(start, end)}});
+}
+
 Json hover_of(const Sym &sym, Pos start, Pos end) {
-    return jobj({{"contents", jobj({{"kind", jstr("plaintext")}, {"value", jstr(sym.detail.empty() ? sym.name : sym.detail)}})},
-                 {"range", range_json(start, end)}});
+    return hover_text(sym.detail.empty() ? sym.name : sym.detail, start, end);
 }
 
 std::vector<Json> outline_children(const Doc &doc, const Sym &parent) {
@@ -3422,6 +3425,16 @@ int run_lsp() {
                                        false);
             }
             if (sym == nullptr) {
+                // `len` is the element count. It is not a field, so it has no symbol of its own.
+                if (method == "textDocument/hover" && cursor.member && cursor.qualifier.empty() && cursor.word == "len") {
+                    if (const Sym *base = lookup_bare(doc->syms, doc->uri, cursor.base, cursor.offset);
+                        base != nullptr && (slice_receiver(*doc, *base) || sized_array_receiver(*doc, *base))) {
+                        const Pos start = locate(doc->text, cursor.prefix_begin);
+                        const Pos end = locate(doc->text, cursor.prefix_begin + static_cast<uint32_t>(cursor.word.size()));
+                        send_json(result_response(*id, hover_text("len i32", start, end)));
+                        continue;
+                    }
+                }
                 send_json(result_response(*id, jnull()));
             } else if (method == "textDocument/hover") {
                 const Pos start = locate(doc->text, cursor.prefix_begin);
