@@ -940,7 +940,7 @@ bool CodeGen::addressable(const Expr &expr) const {
         return star->op == TokenKind::Star && star->expr != nullptr;
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
-        return index->end == nullptr && index->base != nullptr && index->index != nullptr;
+        return !index->is_range && index->base != nullptr && index->index != nullptr;
     }
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         if (selector->base == nullptr) {

@@ -3008,7 +3008,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                 inner.elem_bits, inner.elem_unsigned, inner.trait_id, inner.elem_float};
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
-        if (index->end != nullptr) {
+        if (index->is_range) {
             error(index->loc, "not an lvalue");
             return {};
         }
@@ -3342,7 +3342,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
                 return node.lhs ? raw_shape(*node.lhs) : Shape{};
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
-                if (node.end != nullptr && node.base != nullptr) {
+                if (node.is_range && node.base != nullptr) {
                     Shape base = raw_shape(*node.base);
                     Shape slice = base;
                     slice.is_slice = true;
@@ -3549,45 +3549,78 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
 }
 
 TypedValue CodeGen::emit_range(const Expr::Index &node) {
-    if (node.base == nullptr || node.index == nullptr || node.end == nullptr) {
+    if (node.base == nullptr) {
         error(node.loc, "type mismatch");
         return {zero(), 0};
     }
     const TypedValue base = emit_rvalue(*node.base);
-    const TypedValue low = emit_rvalue(*node.index);
-    const TypedValue high = emit_rvalue(*node.end);
-    if (base.value == nullptr || low.value == nullptr || high.value == nullptr || terminated()) {
+    if (base.value == nullptr || terminated()) {
         return {zero(), 0};
+    }
+    // An omitted low bound is 0. An omitted high bound is the length already in the slice.
+    const bool low_omitted = node.index == nullptr;
+    const bool high_omitted = node.end == nullptr;
+    TypedValue low;
+    TypedValue high;
+    if (!low_omitted) {
+        low = emit_rvalue(*node.index);
+        if (low.value == nullptr || terminated()) {
+            return {zero(), 0};
+        }
+    }
+    if (!high_omitted) {
+        high = emit_rvalue(*node.end);
+        if (high.value == nullptr || terminated()) {
+            return {zero(), 0};
+        }
     }
     llvm::Value *packed = as_slice_value(base, node.loc);
     if (terminated() || packed == nullptr) {
         return {zero(), 0};
     }
-    llvm::Value *data = builder_.CreateExtractValue(packed, 0);
     // A slice value's depth is the element. A decayed array's depth is one more.
     const int elem_depth = base.is_slice ? base.depth : base.depth > 0 ? base.depth - 1 : base.depth;
-    llvm::Type *element =
-        leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
-    auto as_bound = [&](const TypedValue &bound) -> llvm::Value * {
-        if (bound.value == nullptr || !bound.value->getType()->isIntegerTy()) {
-            return nullptr;
+    llvm::Value *out = packed;
+    // `a[:]` is that header. One omitted bound builds a new header from it.
+    if (!low_omitted || !high_omitted) {
+        llvm::Value *data = builder_.CreateExtractValue(packed, 0);
+        llvm::Type *element =
+            leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
+        auto as_bound = [&](const TypedValue &bound) -> llvm::Value * {
+            if (bound.value == nullptr || !bound.value->getType()->isIntegerTy()) {
+                return nullptr;
+            }
+            if (bound.value->getType() == i32()) {
+                return bound.value;
+            }
+            return resize_int(bound.value, i32(), bound.elem_unsigned);
+        };
+        llvm::Value *start = data;
+        llvm::Value *len = nullptr;
+        if (low_omitted) {
+            len = as_bound(high);
+        } else {
+            llvm::Value *start_index = as_bound(low);
+            if (start_index == nullptr) {
+                error(node.loc, "type mismatch");
+                return {zero(), 0};
+            }
+            start = builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{start_index});
+            llvm::Value *end_index = high_omitted ? builder_.CreateExtractValue(packed, 1) : as_bound(high);
+            if (end_index == nullptr) {
+                error(node.loc, "type mismatch");
+                return {zero(), 0};
+            }
+            len = builder_.CreateSub(end_index, start_index);
         }
-        if (bound.value->getType() == i32()) {
-            return bound.value;
+        if (len == nullptr) {
+            error(node.loc, "type mismatch");
+            return {zero(), 0};
         }
-        return resize_int(bound.value, i32(), bound.elem_unsigned);
-    };
-    llvm::Value *start_index = as_bound(low);
-    llvm::Value *end_index = as_bound(high);
-    if (start_index == nullptr || end_index == nullptr) {
-        error(node.loc, "type mismatch");
-        return {zero(), 0};
+        out = llvm::ConstantAggregateZero::get(slice_type());
+        out = builder_.CreateInsertValue(out, start, 0);
+        out = builder_.CreateInsertValue(out, len, 1);
     }
-    llvm::Value *start = builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{start_index});
-    llvm::Value *len = builder_.CreateSub(end_index, start_index);
-    llvm::Value *out = llvm::ConstantAggregateZero::get(slice_type());
-    out = builder_.CreateInsertValue(out, start, 0);
-    out = builder_.CreateInsertValue(out, len, 1);
     TypedValue result;
     result.value = out;
     result.is_slice = true;
@@ -4087,7 +4120,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 out.array_len = static_cast<int>(node.text.size());
                 return out;
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
-                if (node.end != nullptr) {
+                if (node.is_range) {
                     return emit_range(node);
                 }
                 if (node.tuple_index >= 0) {

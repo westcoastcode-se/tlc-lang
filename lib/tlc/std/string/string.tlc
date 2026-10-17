@@ -81,7 +81,7 @@ export func string_view::starts_with(self this, prefix string_view) bool {
     if (self.len < prefix.len) {
         return false;
     }
-    return self[0:prefix.len].equals(prefix);
+    return self[:prefix.len].equals(prefix);
 }
 
 export func string_view::ends_with(self this, suffix string_view) bool {
@@ -89,5 +89,5 @@ export func string_view::ends_with(self this, suffix string_view) bool {
         return false;
     }
     var start i32 = self.len - suffix.len;
-    return self[start:self.len].equals(suffix);
+    return self[start:].equals(suffix);
 }

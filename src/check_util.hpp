@@ -203,7 +203,7 @@ inline bool lvalue_form(const Expr &expr) {
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `a[i:j]` is a slice value. It is not a place to store into.
-        return index->end == nullptr;
+        return !index->is_range;
     }
     if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
         return unary->op == TokenKind::Star;

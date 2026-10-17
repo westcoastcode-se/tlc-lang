@@ -1459,8 +1459,8 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
         return shape_from_sym(*sym);
     }
     if (const auto *range = std::get_if<Expr::Index>(&expr.data)) {
-        // `a[i]` is left to the element. `a[i:j]` is a slice of that element.
-        if (range->end == nullptr || range->base == nullptr) {
+        // `a[i]` is left to the element. `a[i:j]`, `a[i:]`, `a[:j]`, and `a[:]` are slices.
+        if (!range->is_range || range->base == nullptr) {
             return {};
         }
         const Shape base = shape_of_expr(*range->base, index, syms, uri, offset);

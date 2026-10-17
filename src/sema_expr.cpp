@@ -1973,14 +1973,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return *pointer.pointee;
                 }
                 if (const auto *index = std::get_if<Expr::Index>(&node.lhs->data)) {
-                    if (index->end != nullptr) {
+                    if (index->is_range) {
                         if (index->base) {
                             check_expr(*index->base, true);
                         }
                         if (index->index) {
                             check_expr(*index->index, true);
                         }
-                        check_expr(*index->end, true);
+                        if (index->end) {
+                            check_expr(*index->end, true);
+                        }
                         check_expr(*node.rhs, true);
                         error(node.loc, "not an lvalue");
                         return type_invalid();
@@ -2683,13 +2685,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 (void)used;
                 // `a[i:j]` is a slice of the elements from i up to, but not including, j.
+                // A missing low bound is 0. A missing high bound is the length.
                 // The base is an array or a slice. A pointer, including an array parameter, is not.
-                if (node.end != nullptr) {
+                if (node.is_range) {
                     const Type base = node.base ? check_raw(*node.base, true) : type_invalid();
-                    const Type low = node.index ? check_expr(*node.index, true) : type_invalid();
-                    const Type high = check_expr(*node.end, true);
-                    expect(low, type_int(), node.index ? expr_loc(*node.index) : node.loc);
-                    expect(high, type_int(), expr_loc(*node.end));
+                    if (node.index) {
+                        const Type low = check_expr(*node.index, true);
+                        expect(low, type_int(), expr_loc(*node.index));
+                    }
+                    if (node.end) {
+                        const Type high = check_expr(*node.end, true);
+                        expect(high, type_int(), expr_loc(*node.end));
+                    }
                     if (base.kind == TypeKind::Invalid) {
                         return type_invalid();
                     }

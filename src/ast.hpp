@@ -133,8 +133,10 @@ struct Expr {
         SourceLoc loc{};
         std::unique_ptr<Expr> base;
         std::unique_ptr<Expr> index;
-        // High bound of `base[index:end]`. Null when this reads one element.
+        // High bound of `base[index:end]`. Null when this reads one element, or when that bound is omitted.
         std::unique_ptr<Expr> end;
+        // `base[index:end]`, including an omitted bound. An omitted low bound is 0. An omitted high bound is the length.
+        bool is_range = false;
         // Set while checking a tuple element. Negative when this is not that index.
         mutable int tuple_index = -1;
         // The base is a slice. The element is readonly.

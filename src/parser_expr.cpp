@@ -863,9 +863,21 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             index.loc = expr_loc(*expr);
             index.base = std::move(expr);
             // `a[i]` reads one element. `a[i:j]` is the slice from i up to, but not including, j.
-            index.index = parse_expr();
-            if (eat(TokenKind::Colon)) {
-                index.end = parse_expr();
+            // A missing low bound is 0. A missing high bound is the length. `a[]` is not a range.
+            if (check(TokenKind::Colon)) {
+                index.is_range = true;
+                ++pos_;
+                if (!check(TokenKind::RBracket)) {
+                    index.end = parse_expr();
+                }
+            } else {
+                index.index = parse_expr();
+                if (eat(TokenKind::Colon)) {
+                    index.is_range = true;
+                    if (!check(TokenKind::RBracket)) {
+                        index.end = parse_expr();
+                    }
+                }
             }
             expect(TokenKind::RBracket, "expected ']'");
             expr = make_expr(std::move(index));

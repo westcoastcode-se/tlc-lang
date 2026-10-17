@@ -1,0 +1,106 @@
+type Point struct {
+    x i32;
+};
+
+type Row []i32;
+
+type Grid struct {
+    cells [4]i32;
+};
+
+var numbers = [_]i32{10, 20, 30, 40};
+var calls i32;
+
+func source() []i32 {
+    calls = calls + 1;
+    return numbers;
+}
+
+func take_row(v Row) i32 {
+    return v[0] + v.len;
+}
+
+func tail[T type](v []T) []T {
+    return v[1:];
+}
+
+func lead[T type](v []T, n i32) []T {
+    return v[:n];
+}
+
+func whole[T type](v []T) []T {
+    return v[:];
+}
+
+func main() i32 {
+    var row = [_]i32{10, 20, 30, 40};
+    var rest = row[1:];
+    var head = row[:2];
+    var all = row[:];
+    if (rest.len != 3 || rest[0] != 20 || rest[2] != 40) {
+        return 1;
+    }
+    if (head.len != 2 || head[0] != 10 || head[1] != 20) {
+        return 2;
+    }
+    if (all.len != 4 || all[3] != 40) {
+        return 3;
+    }
+    var named Row = row;
+    var part = named[2:];
+    if (take_row(part) != 32 || take_row(named[:]) != 14) {
+        return 4;
+    }
+    var text = "hello";
+    var tail_text = text[1:];
+    var lead_text = text[:4];
+    var same = text[:];
+    if (tail_text.len != 4 || tail_text[0] != 'e' || lead_text.len != 4 || lead_text[3] != 'l') {
+        return 5;
+    }
+    if (same.len != 5 || same[0] != 'h' || same[4] != 'o') {
+        return 6;
+    }
+    var cut = source()[1:];
+    if (calls != 1 || cut.len != 3 || cut[0] != 20 || cut[2] != 40) {
+        return 7;
+    }
+    var again = source()[:2];
+    if (calls != 2 || again.len != 2 || again[1] != 20) {
+        return 8;
+    }
+    var full = source()[:];
+    if (calls != 3 || full.len != 4 || full[0] != 10) {
+        return 9;
+    }
+    row[0] = 8;
+    if (all[0] != 8 || head[0] != 8 || rest[0] != 20) {
+        return 10;
+    }
+    var grid Grid;
+    grid.cells[0] = 1;
+    grid.cells[1] = 2;
+    grid.cells[2] = 3;
+    grid.cells[3] = 4;
+    var view = grid.cells[1:];
+    var front = grid.cells[:3];
+    if (view.len != 3 || view[0] != 2 || view[2] != 4 || front.len != 3 || front[0] != 1) {
+        return 11;
+    }
+    var points = [_]Point{Point{.x = 7}, Point{.x = 9}, Point{.x = 1}};
+    var end = points[1:];
+    if (end.len != 2 || end[0].x != 9 || end[1].x != 1) {
+        return 12;
+    }
+    var generic = tail[i32](all);
+    var pre = lead[i32](all, 2);
+    var kept = whole[i32](all);
+    if (generic.len != 3 || generic[0] != 20 || pre.len != 2 || pre[0] != 8 || kept.len != 4 || kept[0] != 8) {
+        return 13;
+    }
+    var mid = rest[:2];
+    if (mid.len != 2 || mid[0] != 20 || mid[1] != 30) {
+        return 14;
+    }
+    return rest[0] + head.len;
+}
