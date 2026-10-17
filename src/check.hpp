@@ -395,6 +395,8 @@ class Checker {
     void expect_condition(const Type &got, SourceLoc loc);
     bool is_lvalue_form(const Expr &expr) const;
     Type check_raw(const Expr &expr, bool used);
+    // The type of a loaded value. A sized array becomes a pointer. A slice stays a slice.
+    Type value_type(Type type);
     Type check_expr(const Expr &expr, bool used);
     FunctionDecl *inferred_function(const Expr &expr) const;
     Type elaborate_inferred(FunctionDecl &fn, const Type &want);

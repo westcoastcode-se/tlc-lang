@@ -796,8 +796,7 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
     return got;
 }
 
-Type Checker::check_expr(const Expr &expr, bool used) {
-    Type type = check_raw(expr, used);
+Type Checker::value_type(Type type) {
     // A loaded value is a copy. `const` stays on a pointee, not on this temporary.
     // A const array decays to a pointer to a const element, so `row[0] = n` is rejected.
     const bool array_const = type.kind == TypeKind::Array && type.is_const;
@@ -815,6 +814,8 @@ Type Checker::check_expr(const Expr &expr, bool used) {
     }
     return promote(type);
 }
+
+Type Checker::check_expr(const Expr &expr, bool used) { return value_type(check_raw(expr, used)); }
 
 bool Checker::type_arg_from_expr(const Expr &expr, TypeArg &out) const {
     if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
@@ -2424,13 +2425,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     return target.symbol->type;
                 }
-                const Type base = check_expr(*node.base, true);
-                // `slice.len` is the length. No other field is part of the slice.
-                if (is_slice(base)) {
-                    if (node.field == "len") {
-                        node.slice_len = true;
-                        return type_int();
+                const Type raw = check_raw(*node.base, true);
+                // `name.len` is the number of elements, for a slice and for a sized array.
+                // The array decays to a pointer only when the field is not `len`.
+                if (raw.kind == TypeKind::Array && raw.element != nullptr && node.field == "len") {
+                    node.slice_len = true;
+                    if (raw.length >= 0) {
+                        node.len_value = raw.length;
                     }
+                    return type_int();
+                }
+                const Type base = value_type(raw);
+                if (is_slice(base)) {
                     error(node.loc, "undeclared identifier");
                     return type_invalid();
                 }
@@ -3298,6 +3304,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 }
                 return std::nullopt;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.len_value >= 0) {
+                    return node.len_value;
+                }
                 const auto folded_assoc = [&](uint32_t file, const std::string &owner) -> std::optional<int> {
                     const AssocVar *var = find_assoc_in(file, owner, node.field);
                     if (var == nullptr || !var->is_const || !var->has_const) {

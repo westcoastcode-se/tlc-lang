@@ -613,6 +613,9 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 }
                 return std::nullopt;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.len_value >= 0) {
+                    return node.len_value;
+                }
                 const auto *base = node.base == nullptr ? nullptr : std::get_if<Expr::Name>(&node.base->data);
                 if (base == nullptr) {
                     return std::nullopt;
@@ -3923,6 +3926,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 return emit_prepared(prepare_call(node));
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
                 if (node.slice_len) {
+                    if (node.len_value >= 0) {
+                        return {const_i32(node.len_value), 0};
+                    }
                     const TypedValue base = node.base != nullptr ? emit_rvalue(*node.base) : TypedValue{};
                     if (base.value == nullptr || !base.is_slice) {
                         error(node.loc, "type mismatch");

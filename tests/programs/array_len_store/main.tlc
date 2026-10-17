@@ -1,0 +1,5 @@
+func main() i32 {
+    var row = [_]i32{10, 20, 12};
+    row.len = 1;
+    return 0;
+}

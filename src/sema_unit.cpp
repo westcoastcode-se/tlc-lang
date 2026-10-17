@@ -896,6 +896,9 @@ bool Checker::constant_operand(const Expr &expr) {
                 const Symbol *symbol = lookup(node.text);
                 return symbol != nullptr && (symbol->is_constant || symbol->is_function);
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.len_value >= 0) {
+                    return true;
+                }
                 if (node.base == nullptr) {
                     return false;
                 }

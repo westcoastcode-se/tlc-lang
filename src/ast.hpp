@@ -120,8 +120,10 @@ struct Expr {
         mutable std::string resolved_owner;
         // File that defines the method. Zero when the call is in that method's package.
         mutable uint32_t resolved_file = 0;
-        // `slice.len`. The length is `i32` and is not a field of a struct.
+        // `name.len` on a slice or a sized array. The length is `i32` and is not a field.
         mutable bool slice_len = false;
+        // A sized array's `.len`. Negative when the length is loaded from a slice.
+        mutable int len_value = -1;
     };
     struct String {
         SourceLoc loc{};

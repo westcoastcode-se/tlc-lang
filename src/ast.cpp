@@ -847,6 +847,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.resolved_owner = node.resolved_owner;
                 copy.resolved_file = node.resolved_file;
                 copy.slice_len = node.slice_len;
+                copy.len_value = node.len_value;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 Expr::Index copy;

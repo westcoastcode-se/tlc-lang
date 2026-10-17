@@ -1,0 +1,27 @@
+type Pair [2]i32;
+
+type Hold struct {
+    items [2]i32;
+};
+
+var global = [_]i32{4, 5, 6, 7};
+const N = global.len;
+
+func two() [2]i32 {
+    var a [2]i32;
+    return a;
+}
+
+func main() i32 {
+    var verts = [_]f32{-0.6f, -0.5f, 0.95f};
+    var row = [_]i32{10, 20, 12};
+    var grid = [_][2]i32{{1, 2}, {3, 4}};
+    var empty = [_]i32{};
+    const fixed = [_]i32{19, 2};
+    var view []i32 = row;
+    var pair Pair;
+    var hold Hold;
+    var sized [N]i32;
+    return verts.len + row.len + grid.len + grid[0].len + empty.len + fixed.len + global.len + pair.len +
+           two().len + view.len + hold.items.len + sized.len - 29;
+}

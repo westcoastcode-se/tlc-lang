@@ -21,7 +21,7 @@ func main() i32 {
 
 A local array takes a brace list with one value per element: `var row [3]i32 = {10, 20, 12}`. A different count is reported as `type mismatch`. `row[0]` reads an element.
 
-`[_]i32{10, 20, 12}` is an array. `_` stands for the length, which is the number of values, so the type is `[3]i32`. `var row = [_]i32{10, 20, 12}`, `row := [_]i32{10, 20, 12}`, and a local `const row = [_]i32{10, 20, 12}` take that type. `var typed [2]i32 = [_]i32{4, 1}` matches the written length. A different length or a different element type is reported as `type mismatch`. Assigning an element of the const binding is reported as `type mismatch`.
+`[_]i32{10, 20, 12}` is an array. `_` stands for the length, which is the number of values, so the type is `[3]i32`. `var row = [_]i32{10, 20, 12}`, `row := [_]i32{10, 20, 12}`, and a local `const row = [_]i32{10, 20, 12}` take that type. `var typed [2]i32 = [_]i32{4, 1}` matches the written length. A different length or a different element type is reported as `type mismatch`. Assigning an element of the const binding is reported as `type mismatch`. `row.len` is `i32`, the number of elements, the same spelling as a slice.
 
 ```c
 func main() i32 {

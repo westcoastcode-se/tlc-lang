@@ -1496,20 +1496,33 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
             return {};
         }
         Shape base;
+        const Sym *named_sym = nullptr;
         if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
-            const Sym *sym = lookup_bare(syms, uri, named->text, offset);
-            if (sym == nullptr) {
+            named_sym = lookup_bare(syms, uri, named->text, offset);
+            if (named_sym == nullptr) {
                 return {};
             }
-            base = shape_from_sym(*sym);
+            base = shape_from_sym(*named_sym);
         } else {
             base = shape_of_expr(*selector->base, index, syms, uri, offset);
         }
-        if (base.known && base.is_array && base.array_len < 0 && selector->field == "len") {
-            Shape length;
-            length.type_name = "i32";
-            length.known = true;
-            return length;
+        if (selector->field == "len") {
+            bool array = base.known && base.is_array;
+            if (!array && named_sym != nullptr && !named_sym->type_name.empty()) {
+                for (const Sym &other : syms) {
+                    if (other.role == Role::Alias && other.name == named_sym->type_name && other.is_array &&
+                        other.indirections == 0) {
+                        array = true;
+                        break;
+                    }
+                }
+            }
+            if (array) {
+                Shape length;
+                length.type_name = "i32";
+                length.known = true;
+                return length;
+            }
         }
         if (!base.known || base.is_array) {
             return {};
@@ -2969,6 +2982,41 @@ bool slice_receiver(const Doc &doc, const Sym &sym) {
     return alias_slice(doc, sym);
 }
 
+bool alias_sized_array(const Doc &doc, const Sym &sym) {
+    if (sym.is_array || sym.indirections != 0 || sym.type_name.empty()) {
+        return false;
+    }
+    const Sym *same = nullptr;
+    const Sym *exported = nullptr;
+    for (const Sym &other : doc.syms) {
+        if (other.role != Role::Alias || other.name != sym.type_name) {
+            continue;
+        }
+        if (sym.package_key.empty() || other.package_key == sym.package_key) {
+            same = &other;
+            break;
+        }
+        if (exported == nullptr && other.exported) {
+            exported = &other;
+        }
+    }
+    const Sym *match = same != nullptr ? same : exported;
+    return match != nullptr && match->is_array && match->array_len >= 0 && match->indirections == 0;
+}
+
+bool sized_array_receiver(const Doc &doc, const Sym &sym) {
+    if (sym.role != Role::Variable && sym.role != Role::Constant && sym.role != Role::Field) {
+        return false;
+    }
+    if (sym.indirections != 0) {
+        return false;
+    }
+    if (sym.is_array && sym.array_len >= 0) {
+        return true;
+    }
+    return alias_sized_array(doc, sym);
+}
+
 Json completion_item(const std::string &label, int kind, const std::string &detail, const Doc &doc, const Cursor &cursor) {
     std::vector<std::pair<std::string, Json>> fields;
     fields.emplace_back("label", jstr(label));
@@ -3039,8 +3087,8 @@ Json complete(const Doc &doc, const Cursor &cursor) {
                         push(sym.name, sym.completion_kind, sym.detail);
                     }
                 }
-            } else if (slice_receiver(doc, *base)) {
-                // `v.len` is the slice length. The element type's fields are `v[i].field`.
+            } else if (slice_receiver(doc, *base) || sized_array_receiver(doc, *base)) {
+                // `v.len` is the number of elements. The element type's fields are `v[i].field`.
                 push("len", 5, "i32");
                 if (alias_slice(doc, *base)) {
                     for (const Sym &sym : doc.syms) {

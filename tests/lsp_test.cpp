@@ -273,6 +273,7 @@ int run_lsp_tests() {
         "    var boxed *Box[i32] = new Box[i32]{.value = 1};\n"
         "    var row = new [_]Point{{.x = 1}};\n"
         "    var verts = [_]f32{-0.6f, -0.5f, 0.95f};\n"
+        "    var count = verts.len;\n"
         "    var copied = verts;\n"
         "    var grid = [_][2]i32{{1, 2}, {3, 4}};\n"
         "    var ptrs = [_]*i32{&kept};\n"
@@ -593,6 +594,16 @@ int run_lsp_tests() {
     EXPECT(check, ops_at.line >= 0);
     const std::string ops_hover = request_at(to_child[1], from_child[0], 31, "textDocument/hover", uri, ops_at);
     EXPECT_HAS(check, ops_hover, "ops [1]func (i32) i32");
+
+    const LineCol verts_dot = at_needle(source, "verts.", true);
+    EXPECT(check, verts_dot.line >= 0);
+    const std::string verts_len = request_at(to_child[1], from_child[0], 32, "textDocument/completion", uri, verts_dot);
+    EXPECT_HAS(check, verts_len, "\"len\"");
+
+    const LineCol count_at = at_needle(source, "count", false);
+    EXPECT(check, count_at.line >= 0);
+    const std::string count_hover = request_at(to_child[1], from_child[0], 33, "textDocument/hover", uri, count_at);
+    EXPECT_HAS(check, count_hover, "count i32");
 
     const std::string over_source =
         "func once(n i32) i32;\n"
