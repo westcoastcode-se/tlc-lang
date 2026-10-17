@@ -3023,23 +3023,39 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                 error(index->loc, "not an lvalue");
                 return {};
             }
-            llvm::Value *data = builder_.CreateExtractValue(base.value, 0);
-            llvm::Type *element = leaf_type(base.depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
+            // A packed slice stores `{ ptr, len }` and `depth` is the element.
+            // A string literal is still the array. Its depth is one above the byte.
+            const bool packed = base.value->getType() == slice_type();
+            llvm::Value *data = base.value;
+            int elem_depth = base.depth;
+            if (packed) {
+                data = builder_.CreateExtractValue(base.value, 0);
+            } else {
+                if (llvm::Type *object = object_type(base.value); object != nullptr && object->isArrayTy()) {
+                    data = builder_.CreateInBoundsGEP(object, base.value,
+                                                      llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(0)});
+                }
+                if (elem_depth > 0) {
+                    --elem_depth;
+                }
+            }
+            llvm::Type *element = leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
                                             base.elem_float);
             // `view[i]` on a slice of `[M]T` is that row, the same pointer `grid[i]` yields.
             if (base.inner_array_len > 0) {
                 llvm::Type *row = llvm::ArrayType::get(element, static_cast<uint64_t>(base.inner_array_len));
                 llvm::Value *slot = builder_.CreateInBoundsGEP(row, data, llvm::ArrayRef<llvm::Value *>{subscript.value});
-                TypedValue out{slot, base.depth + 1, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool,
+                TypedValue out{slot, elem_depth + 1, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool,
                                base.elem_bits, base.elem_unsigned, -1, base.elem_float};
                 out.row_decay = true;
+                out.array_len = base.inner_array_len;
                 out.enum_id = base.enum_id;
                 return out;
             }
             llvm::Value *slot =
                 builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{subscript.value});
-            TypedValue out{slot,       base.depth,     base.elem_char, base.struct_id, false,          base.elem_void,
-                           base.elem_bool, base.elem_bits, base.elem_unsigned, -1,     base.elem_float};
+            TypedValue out{slot,       elem_depth, base.elem_char, base.struct_id, false,          base.elem_void,
+                           base.elem_bool, base.elem_bits, base.elem_unsigned, -1,         base.elem_float};
             out.enum_id = base.enum_id;
             return out;
         }
@@ -3055,7 +3071,9 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             llvm::Value *slot = builder_.CreateInBoundsGEP(row, base.value, llvm::ArrayRef<llvm::Value *>{offset});
             TypedValue out{slot, base.depth, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool,
                            base.elem_bits, base.elem_unsigned, -1, base.elem_float};
+            // The address is the row `[M]T`. The length stays so the row converts to `[]T`.
             out.row_decay = true;
+            out.array_len = base.inner_array_len;
             return out;
         }
         if (base.ptr_to_array) {
@@ -3588,8 +3606,10 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     if (terminated() || packed == nullptr) {
         return {zero(), 0};
     }
-    // A slice value's depth is the element. A decayed array's depth is one more.
-    const int elem_depth = base.is_slice ? base.depth : base.depth > 0 ? base.depth - 1 : base.depth;
+    // A packed slice stores the element depth. A string literal and a decayed array
+    // are one level above that element: the literal is still the array address.
+    const bool packed_slice = base.is_slice && base.value != nullptr && base.value->getType() == slice_type();
+    const int elem_depth = packed_slice ? base.depth : base.depth > 0 ? base.depth - 1 : base.depth;
     llvm::Value *out = packed;
     // `a[:]` is that header. One omitted bound builds a new header from it.
     if (!low_omitted || !high_omitted) {

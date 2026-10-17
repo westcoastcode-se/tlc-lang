@@ -1,0 +1,51 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func sum(v []i32) i32 {
+    return v[0] + v.len * 100 + v[1];
+}
+
+func pair(v []Point) i32 {
+    return v[0].x + v[1].y * 10;
+}
+
+func main() i32 {
+    var grid = [_][2]i32{{10, 20}, {30, 40}, {50, 60}};
+    if (sum(grid[1]) != 30 + 200 + 40) {
+        return 1;
+    }
+    var row = grid[1][0:2];
+    if (row.len != 2 || row[0] != 30 || row[1] != 40) {
+        return 2;
+    }
+    var tail = grid[0][1:];
+    if (tail.len != 1 || tail[0] != 20) {
+        return 3;
+    }
+    var all = grid[2][:];
+    if (all.len != 2 || all[0] != 50 || all[1] != 60) {
+        return 4;
+    }
+    var view = grid[0:3];
+    if (sum(view[2]) != 50 + 200 + 60) {
+        return 5;
+    }
+    var from_view = view[1][0:2];
+    var rest = view[1][1:];
+    if (from_view.len != 2 || from_view[0] != 30 || from_view[1] != 40 || rest.len != 1 || rest[0] != 40) {
+        return 6;
+    }
+    grid[1][0] = 7;
+    if (row[0] != 7 || from_view[0] != 7) {
+        return 7;
+    }
+    var points = [_][2]Point{{Point{.x = 1, .y = 2}, Point{.x = 3, .y = 4}},
+                             {Point{.x = 5, .y = 6}, Point{.x = 7, .y = 8}}};
+    var point_row = points[1][0:2];
+    if (pair(points[1]) != 5 + 80 || point_row.len != 2 || point_row[0].x != 5 || point_row[1].y != 8) {
+        return 8;
+    }
+    return 0;
+}
