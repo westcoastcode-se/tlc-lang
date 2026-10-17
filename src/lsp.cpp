@@ -996,6 +996,9 @@ struct Sym {
     int array_len = 0;
     // A function on a struct or enum with no `this` parameter.
     bool static_method = false;
+    // Remaining parameters. The receiver is not one of them. -1 when this symbol is not a function.
+    int arity = -1;
+    bool variadic = false;
     uint32_t scope_begin = 0;
     uint32_t scope_end = 0;
     Role role = Role::Variable;
@@ -1106,6 +1109,16 @@ void apply_result(Sym &sym, const FunctionDecl &fn) {
         return;
     }
     mark_direct(sym, slot.type_name, slot.indirections, slot.is_array, slot.array_len);
+}
+
+// The receiver is not a parameter the call uses to choose a list.
+void note_params(Sym &sym, const FunctionDecl &fn) {
+    std::size_t count = fn.params.size();
+    if (!fn.params.empty() && fn.params.front().is_receiver) {
+        --count;
+    }
+    sym.arity = static_cast<int>(count);
+    sym.variadic = fn.variadic;
 }
 
 void put_loc(Sym &sym, const std::string &text, SourceLoc loc, const std::string &name) {
@@ -1670,6 +1683,7 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             sym.role = fn.method_struct.empty() ? Role::Function : Role::Method;
             sym.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
             apply_result(sym, fn);
+            note_params(sym, fn);
             put_loc(sym, text, fn.loc, fn.name);
             sym.scope_begin = fn.loc.valid() ? fn.loc.offset : 0;
             // The name is visible in the enclosing function. Only the parameters use the body.
@@ -1813,6 +1827,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.role = fn->method_struct.empty() ? Role::Function : Role::Method;
             sym.static_method = !fn->method_struct.empty() && (fn->params.empty() || !fn->params.front().is_receiver);
             apply_result(sym, *fn);
+            note_params(sym, *fn);
             put_loc(sym, text, fn->loc, fn->name);
             sym.scope_end = end;
             add_sym(out, std::move(sym));
@@ -1997,6 +2012,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 member.uri = uri;
                 member.role = Role::Method;
                 apply_result(member, method);
+                note_params(member, method);
                 put_loc(member, text, method.loc, method.name);
                 add_sym(out, std::move(member));
             }
@@ -2295,31 +2311,6 @@ const Sym *qualified_member(const std::vector<Sym> &syms, const std::string &uri
     return nullptr;
 }
 
-const Sym *lookup_member(const std::vector<Sym> &syms, const Sym &base, const std::string &name) {
-    if (base.role == Role::Module) {
-        for (const Sym &sym : syms) {
-            if (sym.package_key == base.package_key && sym.name == name && sym.owner.empty() &&
-                (sym.exported || sym.uri == base.uri)) {
-                return &sym;
-            }
-        }
-        return nullptr;
-    }
-    const std::string type = (base.role == Role::StructType || base.role == Role::EnumType || base.role == Role::Alias ||
-                              base.role == Role::Trait)
-                                 ? base.name
-                                 : base.type_name;
-    if (type.empty()) {
-        return nullptr;
-    }
-    for (const Sym &sym : syms) {
-        if (sym.owner == type && sym.name == name) {
-            return &sym;
-        }
-    }
-    return nullptr;
-}
-
 Json location_of(const Sym &sym) {
     if (!sym.has_loc || sym.uri.empty()) {
         return jnull();
@@ -2376,6 +2367,195 @@ uint32_t innermost_brace(const std::string &text, uint32_t pos) {
         return static_cast<uint32_t>(-1);
     }
     return stack.back();
+}
+
+std::vector<const Sym *> bare_candidates(const std::vector<Sym> &syms, const std::string &uri, const std::string &name,
+                                         uint32_t offset) {
+    std::vector<const Sym *> found;
+    int best_rank = 100;
+    for (const Sym &sym : syms) {
+        if (sym.name != name || !sym.bare) {
+            continue;
+        }
+        int rank = 2;
+        if (sym.local) {
+            if (sym.uri != uri || offset < sym.scope_begin || offset > sym.scope_end) {
+                continue;
+            }
+            rank = 0;
+        } else if (sym.uri == uri) {
+            rank = 1;
+        }
+        if (rank < best_rank) {
+            best_rank = rank;
+            found.clear();
+        }
+        if (rank == best_rank) {
+            found.push_back(&sym);
+        }
+    }
+    return found;
+}
+
+std::vector<const Sym *> member_candidates(const std::vector<Sym> &syms, const Sym &base, const std::string &name) {
+    std::vector<const Sym *> found;
+    if (base.role == Role::Module) {
+        for (const Sym &sym : syms) {
+            if (sym.package_key == base.package_key && sym.name == name && sym.owner.empty() &&
+                (sym.exported || sym.uri == base.uri)) {
+                found.push_back(&sym);
+            }
+        }
+        return found;
+    }
+    const std::string type = (base.role == Role::StructType || base.role == Role::EnumType || base.role == Role::Alias ||
+                              base.role == Role::Trait)
+                                 ? base.name
+                                 : base.type_name;
+    if (type.empty()) {
+        return found;
+    }
+    for (const Sym &sym : syms) {
+        if (sym.owner == type && sym.name == name) {
+            found.push_back(&sym);
+        }
+    }
+    return found;
+}
+
+const Sym *latest_sym(const std::vector<const Sym *> &cands) {
+    const Sym *best = nullptr;
+    uint32_t begin = 0;
+    for (const Sym *sym : cands) {
+        if (best == nullptr || sym->scope_begin >= begin) {
+            best = sym;
+            begin = sym->scope_begin;
+        }
+    }
+    return best;
+}
+
+// Arguments of the call that follows the name. -1 when the next token is not `(`.
+int call_nargs(const std::string &text, uint32_t word_end) {
+    uint32_t i = word_end;
+    while (i < text.size() && is_space(text[i])) {
+        ++i;
+    }
+    if (i >= text.size() || text[i] != '(') {
+        return -1;
+    }
+    ++i;
+    int depth = 1;
+    int commas = 0;
+    bool any = false;
+    while (i < text.size() && depth > 0) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            if (depth == 1 && text[i] != '/') {
+                any = true;
+            }
+            i = next;
+            continue;
+        }
+        const char c = text[i];
+        if (c == '(' || c == '[' || c == '{') {
+            ++depth;
+        } else if (c == ')' || c == ']' || c == '}') {
+            --depth;
+            if (depth == 0) {
+                break;
+            }
+        } else if (c == ',' && depth == 1) {
+            ++commas;
+        } else if (depth == 1 && !is_space(c)) {
+            any = true;
+        }
+        ++i;
+    }
+    if (depth != 0) {
+        return -1;
+    }
+    if (!any && commas == 0) {
+        return 0;
+    }
+    return commas + 1;
+}
+
+// One parameter list returns its body. Several lists use the call's argument count, or the declaration under the cursor.
+const Sym *refine_overloads(const std::vector<const Sym *> &cands, const std::string &text, const Cursor &cursor,
+                            bool prefer_first) {
+    if (cands.empty()) {
+        return nullptr;
+    }
+    bool all_fn = true;
+    for (const Sym *sym : cands) {
+        if (sym->role != Role::Function && sym->role != Role::Method) {
+            all_fn = false;
+            break;
+        }
+    }
+    if (!all_fn) {
+        return prefer_first ? cands.front() : latest_sym(cands);
+    }
+    struct Group {
+        std::string detail;
+        bool static_method = false;
+        Role role = Role::Function;
+        std::string owner;
+        const Sym *last = nullptr;
+        uint32_t begin = 0;
+    };
+    std::vector<Group> groups;
+    for (const Sym *sym : cands) {
+        Group *group = nullptr;
+        for (Group &have : groups) {
+            if (have.detail == sym->detail && have.static_method == sym->static_method && have.role == sym->role &&
+                have.owner == sym->owner) {
+                group = &have;
+                break;
+            }
+        }
+        if (group == nullptr) {
+            groups.push_back(Group{sym->detail, sym->static_method, sym->role, sym->owner, sym, sym->scope_begin});
+            continue;
+        }
+        if (sym->scope_begin >= group->begin) {
+            group->last = sym;
+            group->begin = sym->scope_begin;
+        }
+    }
+    if (groups.size() == 1) {
+        return groups.front().last;
+    }
+    for (const Sym *sym : cands) {
+        const uint32_t end = sym->scope_begin + static_cast<uint32_t>(sym->name.size());
+        if (cursor.offset >= sym->scope_begin && cursor.offset < end) {
+            return sym;
+        }
+    }
+    const uint32_t word_end = cursor.prefix_begin + static_cast<uint32_t>(cursor.word.size());
+    const int nargs = call_nargs(text, word_end);
+    if (nargs < 0) {
+        return nullptr;
+    }
+    const Group *matched = nullptr;
+    int matches = 0;
+    for (const Group &group : groups) {
+        const Sym *sym = group.last;
+        if (sym->arity < 0) {
+            continue;
+        }
+        const bool ok = sym->variadic ? nargs >= sym->arity : nargs == sym->arity;
+        if (!ok) {
+            continue;
+        }
+        ++matches;
+        matched = &group;
+    }
+    if (matches == 1) {
+        return matched->last;
+    }
+    return nullptr;
 }
 
 // Walk back over `*`, `?`, and `const`. `stars` counts pointer levels. Returns the index after the token before that prefix.
@@ -3147,10 +3327,11 @@ int run_lsp() {
                 if (!cursor.qualifier.empty()) {
                     sym = qualified_member(doc->syms, doc->uri, cursor);
                 } else if (const Sym *base = lookup_bare(doc->syms, doc->uri, cursor.base, cursor.offset)) {
-                    sym = lookup_member(doc->syms, *base, cursor.word);
+                    sym = refine_overloads(member_candidates(doc->syms, *base, cursor.word), doc->text, cursor, true);
                 }
             } else {
-                sym = lookup_bare(doc->syms, doc->uri, cursor.word, cursor.offset);
+                sym = refine_overloads(bare_candidates(doc->syms, doc->uri, cursor.word, cursor.offset), doc->text, cursor,
+                                       false);
             }
             if (sym == nullptr) {
                 send_json(result_response(*id, jnull()));

@@ -63,6 +63,29 @@ std::vector<uint32_t> CodeGen::package_files(uint32_t file) const {
     return ids;
 }
 
+const Binding *CodeGen::binding_for_decl(const FunctionDecl *decl) const {
+    if (decl == nullptr) {
+        return nullptr;
+    }
+    const auto local = local_fns_.find(decl);
+    if (local != local_fns_.end()) {
+        return &local->second;
+    }
+    const auto key = decl_keys_.find(decl);
+    if (key == decl_keys_.end()) {
+        return nullptr;
+    }
+    const auto file = files_.find(key->second.file_id);
+    if (file == files_.end()) {
+        return nullptr;
+    }
+    const auto found = file->second.functions.find(key->second.key);
+    if (found == file->second.functions.end()) {
+        return nullptr;
+    }
+    return &found->second;
+}
+
 const Binding *CodeGen::visible(uint32_t file, const std::string &name, bool function) const {
     for (const uint32_t id : package_files(file)) {
         const auto found = files_.find(id);
@@ -1951,7 +1974,8 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     if (item.callee == nullptr) {
                         return std::nullopt;
                     }
-                    const Binding *fn = call_callee(file, *item.callee);
+                    const Binding *fn = item.selected != nullptr ? binding_for_decl(item.selected)
+                                                                : call_callee(file, *item.callee);
                     if (fn != nullptr) {
                         return function_result(*fn);
                     }

@@ -40,19 +40,38 @@ void CodeGen::declare_functions(const PackageNode &node) {
     current_file_ = node.file_id;
     struct Acc {
         const FunctionDecl *fn = nullptr;
+        std::vector<const FunctionDecl *> decls;
         bool exported = false;
         bool is_static = false;
         bool is_extern = false;
         bool extern_c = false;
         std::string link_name;
+        std::string plain;
     };
+    std::unordered_map<std::string, std::unordered_set<std::string>> kinds;
+    for (const TopDecl &decl : node.unit.decls) {
+        const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+        if (fn == nullptr || fn->name.empty() || !fn->type_params.empty()) {
+            continue;
+        }
+        kinds[function_key(*fn)].insert(param_list_key(*fn));
+    }
     std::unordered_map<std::string, Acc> functions;
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
         if (fn == nullptr || fn->name.empty()) {
             continue;
         }
-        Acc &acc = functions[function_key(*fn)];
+        const std::string plain = function_key(*fn);
+        std::string map_key = plain;
+        const auto kind = kinds.find(plain);
+        if (kind != kinds.end() && kind->second.size() > 1) {
+            map_key.push_back('.');
+            map_key += param_list_key(*fn);
+        }
+        Acc &acc = functions[map_key];
+        acc.plain = plain;
+        acc.decls.push_back(fn);
         if (acc.fn == nullptr || fn->body != nullptr) {
             acc.fn = fn;
         }
@@ -66,6 +85,13 @@ void CodeGen::declare_functions(const PackageNode &node) {
     }
     FileSymbols &file = files_[node.file_id];
     const bool entry = node.file_id == entry_file_;
+    std::unordered_map<std::string, int> exported_lists;
+    for (const auto &[name, acc] : functions) {
+        (void)name;
+        if (acc.fn != nullptr && acc.fn->type_params.empty() && acc.exported && !acc.is_static) {
+            exported_lists[acc.plain] += 1;
+        }
+    }
     for (const auto &[name, acc] : functions) {
         if (!acc.fn->type_params.empty()) {
             continue;
@@ -115,8 +141,9 @@ void CodeGen::declare_functions(const PackageNode &node) {
             file.functions.emplace(name, binding);
             continue;
         }
-        const SymbolForm form = symbol_form(node, name, acc.is_extern, acc.extern_c, acc.is_static, acc.exported,
-                                            entry && !testing_ && name == "main", acc.link_name);
+        const std::string object = acc.extern_c ? acc.plain : name;
+        const SymbolForm form = symbol_form(node, object, acc.is_extern, acc.extern_c, acc.is_static, acc.exported,
+                                            entry && !testing_ && acc.plain == "main" && name == acc.plain, acc.link_name);
         const ExternLayout layout = acc.extern_c ? extern_layout(*acc.fn, node.file_id) : ExternLayout{};
         llvm::FunctionType *ftype = layout.active ? layout.type : function_type(*acc.fn, node.file_id);
         llvm::Function *function = nullptr;
@@ -165,6 +192,16 @@ void CodeGen::declare_functions(const PackageNode &node) {
         binding.is_static = acc.is_static;
         binding.decl = acc.fn;
         file.functions.emplace(name, binding);
+        for (const FunctionDecl *decl : acc.decls) {
+            if (decl != nullptr && decl->type_params.empty()) {
+                decl_keys_[decl] = DeclKey{node.file_id, name};
+            }
+        }
+        const auto exported = exported_lists.find(acc.plain);
+        if (exported != exported_lists.end() && exported->second == 1 && acc.exported && !acc.is_static &&
+            name != acc.plain) {
+            file.functions.emplace(acc.plain, binding);
+        }
     }
 }
 
@@ -319,8 +356,15 @@ void CodeGen::emit_bodies(const PackageNode &node) {
     std::unordered_set<std::string> emitted;
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
-        if (fn == nullptr || fn->body == nullptr || function_is_generic(node.file_id, *fn) ||
-            !emitted.insert(function_key(*fn)).second) {
+        if (fn == nullptr || fn->body == nullptr || function_is_generic(node.file_id, *fn)) {
+            continue;
+        }
+        std::string key = function_key(*fn);
+        const auto recorded = decl_keys_.find(fn);
+        if (recorded != decl_keys_.end()) {
+            key = recorded->second.key;
+        }
+        if (!emitted.insert(key).second) {
             continue;
         }
         emit_function(*fn);
@@ -1803,7 +1847,11 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
 }
 
 void CodeGen::emit_function(const FunctionDecl &fn) {
-    const std::string key = function_key(fn);
+    std::string key = function_key(fn);
+    const auto recorded = decl_keys_.find(&fn);
+    if (recorded != decl_keys_.end()) {
+        key = recorded->second.key;
+    }
     const auto found = files_.at(current_file_).functions.find(key);
     if (found == files_.at(current_file_).functions.end() || found->second.is_generic || found->second.value == nullptr) {
         return;
@@ -1900,11 +1948,14 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
         return;
     }
     llvm::Function *function = nullptr;
+    const std::string list = param_list_key(fn);
     const auto found = scopes_.back().find(fn.name);
-    if (found != scopes_.back().end()) {
-        if (!found->second.is_function) {
-            return;
-        }
+    const bool same_list = found != scopes_.back().end() && found->second.is_function && found->second.decl != nullptr &&
+                           param_list_key(*found->second.decl) == list;
+    if (found != scopes_.back().end() && !found->second.is_function) {
+        return;
+    }
+    if (same_list) {
         function = llvm::dyn_cast_or_null<llvm::Function>(found->second.value);
         found->second.decl = &fn;
     }
@@ -1943,7 +1994,12 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
         binding.trait_id = returns_void ? -1 : ret.trait_id;
         binding.enum_id = returns_void ? -1 : ret.enum_id;
         binding.decl = &fn;
-        scopes_.back()[fn.name] = binding;
+        if (found == scopes_.back().end()) {
+            scopes_.back()[fn.name] = binding;
+        }
+        local_fns_.insert_or_assign(&fn, binding);
+    } else if (same_list) {
+        local_fns_.insert_or_assign(&fn, found->second);
     }
     if (function != nullptr && !fn.captures.empty() &&
         function->arg_size() != fn.params.size() + fn.captures.size()) {
@@ -2041,6 +2097,12 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         return prepared;
     }
     prepared.trace = !is_std_builtin_call(*node.callee, "trace") && !is_std_builtin_call(*node.callee, "va");
+    auto selected_binding = [&](const Binding *found) -> const Binding * {
+        if (node.selected == nullptr) {
+            return found;
+        }
+        return binding_for_decl(node.selected);
+    };
     auto remember = [&](llvm::Function *function, std::vector<llvm::Value *> args, int depth, bool elem_char, int struct_id,
                         bool elem_void, bool elem_bool, int elem_bits, bool elem_unsigned) {
         prepared.function = function;
@@ -2060,7 +2122,8 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         if (!package_call) {
             // `Box[i32].from(...)`. The owner is the specialization, and the call passes no receiver.
             if (!selector->resolved_owner.empty()) {
-                const Binding *method = static_method_binding(current_file_, selector->resolved_owner, selector->field);
+                const Binding *method = selected_binding(
+                    static_method_binding(current_file_, selector->resolved_owner, selector->field));
                 if (method != nullptr && method->decl != nullptr && method->decl->static_method) {
                     auto *function = llvm::dyn_cast<llvm::Function>(method->value);
                     if (function == nullptr) {
@@ -2118,7 +2181,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 }
             }
             if (!static_type.empty()) {
-                const Binding *method = static_method_binding(current_file_, static_type, selector->field);
+                const Binding *method = selected_binding(static_method_binding(current_file_, static_type, selector->field));
                 if (method != nullptr && method->is_generic && method->decl != nullptr) {
                     generic_method_call(*method, nullptr, node, prepared);
                     return prepared;
@@ -2149,7 +2212,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             const int receiver_enum = enum_value_id(*selector->base);
             if (receiver_enum >= 0 && receiver_enum < static_cast<int>(enums_.size())) {
                 const std::string key = enums_[static_cast<std::size_t>(receiver_enum)].name + "." + selector->field;
-                const Binding *method = method_binding(current_file_, selector->resolved_file, key);
+                const Binding *method = selected_binding(method_binding(current_file_, selector->resolved_file, key));
                 if (method != nullptr && method->is_generic && method->decl != nullptr && !method->decl->static_method) {
                     const bool receiver_pointer =
                         !method->decl->params.empty() && method->decl->params.front().indirections > 0;
@@ -2219,7 +2282,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             }
             if (!selector->resolved_owner.empty()) {
                 const std::string key = selector->resolved_owner + "." + selector->field;
-                const Binding *method = method_binding(current_file_, selector->resolved_file, key);
+                const Binding *method = selected_binding(method_binding(current_file_, selector->resolved_file, key));
                 auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
                 if (function == nullptr || (method->decl != nullptr && method->decl->static_method)) {
                     error(node.loc, "type mismatch");
@@ -2320,7 +2383,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             const Binding *method = nullptr;
             if (struct_id >= 0 && struct_id < static_cast<int>(structs_.size())) {
                 const std::string key = structs_[static_cast<std::size_t>(struct_id)].name + "." + selector->field;
-                method = method_binding(current_file_, selector->resolved_file, key);
+                method = selected_binding(method_binding(current_file_, selector->resolved_file, key));
             }
             if (method != nullptr && method->is_generic && method->decl != nullptr && !method->decl->static_method) {
                 const bool receiver_pointer =
@@ -2392,8 +2455,19 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             return prepared;
         }
     }
-    prepared.decl = node.callee == nullptr ? nullptr : callee_decl(*node.callee);
-    const TypedValue callee = emit_rvalue(*node.callee);
+    TypedValue callee;
+    if (node.selected != nullptr) {
+        const Binding *chosen = binding_for_decl(node.selected);
+        if (chosen == nullptr || chosen->value == nullptr) {
+            error(node.loc, "type mismatch");
+            return prepared;
+        }
+        prepared.decl = chosen->decl != nullptr ? chosen->decl : node.selected;
+        callee = value_of_binding(*chosen);
+    } else {
+        prepared.decl = node.callee == nullptr ? nullptr : callee_decl(*node.callee);
+        callee = emit_rvalue(*node.callee);
+    }
     prepared.enum_id = callee.enum_id;
     if (callee.fn_ty != nullptr && callee.value != nullptr && !llvm::isa<llvm::Function>(callee.value)) {
         std::vector<llvm::Value *> args;
@@ -3357,7 +3431,9 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     return {};
                 }
                 const Binding *binding = nullptr;
-                if (const auto *name = std::get_if<Expr::Name>(&node.callee->data)) {
+                if (node.selected != nullptr) {
+                    binding = binding_for_decl(node.selected);
+                } else if (const auto *name = std::get_if<Expr::Name>(&node.callee->data)) {
                     binding = lookup(name->text);
                 } else if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
                     const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);

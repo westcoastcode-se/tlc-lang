@@ -1383,7 +1383,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         Type signature = function_signature(method);
         methods_[owner][spec_name].insert_or_assign(
             method.name, MethodInfo{std::move(signature), method.body != nullptr, method.static_method, method.unsafe,
-                                     method.exported, owner});
+                                     method.exported, owner, nullptr, {}});
         deferred_methods_.push_back(OwnedFn{owner, std::move(method)});
     }
     instantiate_assoc(owner, *templ, spec_name, bounds);

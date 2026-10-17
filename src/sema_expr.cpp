@@ -978,6 +978,199 @@ bool Checker::package_generic_call(const Expr::Selector &node) {
     return false;
 }
 
+const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const MethodInfo &head, bool want_static,
+                                                  bool foreign, const std::string &name) {
+    std::vector<const MethodInfo *> forms;
+    int hidden = 0;
+    auto consider = [&](const MethodInfo &info) {
+        if (info.is_static != want_static || info.type.kind != TypeKind::Function) {
+            return;
+        }
+        if (foreign && !info.exported) {
+            ++hidden;
+            return;
+        }
+        forms.push_back(&info);
+    };
+    consider(head);
+    for (const MethodInfo &extra : head.more) {
+        consider(extra);
+    }
+    if (forms.empty()) {
+        error(node.loc, hidden > 0 ? name + " is not exported" : "type mismatch");
+        for (const auto &arg : node.args) {
+            if (arg) {
+                check_expr(*arg, true);
+            }
+        }
+        return nullptr;
+    }
+    if (forms.size() == 1) {
+        node.selected = forms.front()->decl;
+        return forms.front();
+    }
+    std::vector<Type> args;
+    bool bad = false;
+    args.reserve(node.args.size());
+    for (const auto &arg : node.args) {
+        if (!arg) {
+            bad = true;
+            args.push_back(type_invalid());
+            continue;
+        }
+        const Type got = check_expr(*arg, true);
+        if (got.kind == TypeKind::Invalid) {
+            bad = true;
+        }
+        args.push_back(got);
+    }
+    if (bad) {
+        return nullptr;
+    }
+    const auto fixed_count = [](const Type &signature, bool skip_receiver) {
+        const std::size_t skip = skip_receiver && !signature.params.empty() ? 1 : 0;
+        return signature.params.size() - skip;
+    };
+    const auto count_ok = [&](const Type &signature) {
+        const std::size_t fixed = fixed_count(signature, !want_static);
+        return signature.variadic ? args.size() >= fixed : args.size() == fixed;
+    };
+    const auto exact = [&](const Type &signature) {
+        if (!count_ok(signature)) {
+            return false;
+        }
+        const std::size_t skip = !want_static && !signature.params.empty() ? 1 : 0;
+        const std::size_t fixed = signature.params.size() - skip;
+        for (std::size_t i = 0; i < fixed && i < args.size(); ++i) {
+            if (!same_type(args[i], signature.params[skip + i])) {
+                return false;
+            }
+        }
+        return true;
+    };
+    const MethodInfo *winner = nullptr;
+    int matches = 0;
+    int visible_counts = 0;
+    for (const MethodInfo *form : forms) {
+        if (!count_ok(form->type)) {
+            continue;
+        }
+        ++visible_counts;
+        if (exact(form->type)) {
+            ++matches;
+            winner = form;
+        }
+    }
+    int hidden_counts = 0;
+    if (foreign) {
+        auto hidden_count = [&](const MethodInfo &info) {
+            if (info.is_static != want_static || info.exported || info.type.kind != TypeKind::Function) {
+                return;
+            }
+            if (count_ok(info.type)) {
+                ++hidden_counts;
+            }
+        };
+        hidden_count(head);
+        for (const MethodInfo &extra : head.more) {
+            hidden_count(extra);
+        }
+    }
+    if (matches == 1 && winner != nullptr) {
+        node.selected = winner->decl;
+        return winner;
+    }
+    if (matches == 0 && visible_counts == 0 && hidden_counts > 0) {
+        error(node.loc, name + " is not exported");
+        return nullptr;
+    }
+    error(node.loc, visible_counts == 0 ? "argument count" : "type mismatch");
+    return nullptr;
+}
+
+Type Checker::finish_overloaded(const Expr::Call &node, const Symbol &symbol, bool deferring) {
+    std::vector<Type> args;
+    bool bad = false;
+    args.reserve(node.args.size());
+    for (const auto &arg : node.args) {
+        if (!arg) {
+            bad = true;
+            args.push_back(type_invalid());
+            continue;
+        }
+        const Type got = check_expr(*arg, true);
+        if (got.kind == TypeKind::Invalid) {
+            bad = true;
+        }
+        args.push_back(got);
+    }
+    if (bad) {
+        return type_invalid();
+    }
+    const FnList *winner = nullptr;
+    int matches = 0;
+    int counts = 0;
+    for (const FnList &list : symbol.lists) {
+        if (list.type.kind != TypeKind::Function || list.type.result == nullptr) {
+            continue;
+        }
+        const bool count_ok = list.type.variadic ? args.size() >= list.type.params.size()
+                                                 : args.size() == list.type.params.size();
+        if (!count_ok) {
+            continue;
+        }
+        ++counts;
+        bool same = true;
+        for (std::size_t i = 0; i < list.type.params.size() && i < args.size(); ++i) {
+            if (!same_type(args[i], list.type.params[i])) {
+                same = false;
+                break;
+            }
+        }
+        if (same) {
+            ++matches;
+            winner = &list;
+        }
+    }
+    if (matches != 1 || winner == nullptr || winner->type.result == nullptr) {
+        error(node.loc, counts == 0 ? "argument count" : "type mismatch");
+        return type_invalid();
+    }
+    node.selected = winner->decl;
+    require_unsafe_call(winner->unsafe_fn, node.loc);
+    const Type &signature = winner->type;
+    if (deferring) {
+        bool generic = signature.variadic;
+        for (const Type &param : signature.params) {
+            if (mentions_trait(param)) {
+                generic = true;
+            }
+        }
+        if (generic) {
+            error(node.loc, "not supported yet");
+        }
+    }
+    const bool count_ok = signature.variadic ? node.args.size() >= signature.params.size()
+                                             : node.args.size() == signature.params.size();
+    for (std::size_t i = 0; i < node.args.size(); ++i) {
+        if (count_ok && i < signature.params.size()) {
+            check_call_arg(*node.args[i], signature.params[i]);
+        } else if (node.args[i]) {
+            const Type arg = check_expr(*node.args[i], true);
+            if (slice_of_const_u8(arg)) {
+                continue;
+            }
+            if (arg.alias_id != 0) {
+                error(expr_loc(*node.args[i]), "type mismatch");
+            } else if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&
+                       arg.kind != TypeKind::Enum && arg.kind != TypeKind::Nullptr) {
+                error(expr_loc(*node.args[i]), "not supported yet");
+            }
+        }
+    }
+    return *signature.result;
+}
+
 Type Checker::finish_static_call(const Expr::Call &node, const MethodInfo &method, bool deferring) {
     require_unsafe_call(method.unsafe_fn, node.loc);
     if (deferring && method.type.variadic) {
@@ -1057,6 +1250,11 @@ bool Checker::assoc_from_selector(const Expr::Selector &node, Type &out) {
         const MethodInfo *method = find_named_method(spec, node.field);
         if (method == nullptr || method->type.kind != TypeKind::Function) {
             error(node.loc, "undeclared identifier");
+            out = type_invalid();
+            return true;
+        }
+        if (!method->more.empty()) {
+            error(node.loc, "not supported yet");
             out = type_invalid();
             return true;
         }
@@ -1253,6 +1451,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 if (symbol->is_function && symbol->name == "va" && is_std_builtin_file(symbol->package_file)) {
+                    error(node.loc, "not supported yet");
+                    return type_invalid();
+                }
+                if (symbol->is_function && symbol->lists.size() > 1) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
                 }
@@ -1809,7 +2011,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (!spec.empty()) {
                             const AssocVar *var = find_assoc(spec, selector->field);
                             const MethodInfo *method = find_named_method(spec, selector->field);
-                            if (var == nullptr || (method != nullptr && method->is_static)) {
+                            if (var == nullptr || (method != nullptr && (method->is_static || !method->more.empty()))) {
+                                if (method != nullptr && !method->more.empty()) {
+                                    method = choose_method(node, *method, true, !package_owns(method->file_id),
+                                                           selector->field);
+                                    if (method == nullptr) {
+                                        return type_invalid();
+                                    }
+                                }
                                 if (method == nullptr || !method->is_static || method->type.kind != TypeKind::Function ||
                                     method->type.result == nullptr) {
                                     error(node.loc, method != nullptr && !method->is_static ? "type mismatch"
@@ -1826,6 +2035,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             const bool shadowed = symbol != nullptr && !symbol->is_type;
                             if (!shadowed && named_type_owner(named->text)) {
                                 const MethodInfo *method = find_named_method(named->text, selector->field);
+                                if (method != nullptr && !method->more.empty()) {
+                                    method = choose_method(node, *method, true, !package_owns(method->file_id),
+                                                           selector->field);
+                                    if (method == nullptr) {
+                                        return type_invalid();
+                                    }
+                                }
                                 if (method == nullptr || !method->is_static || method->type.kind != TypeKind::Function ||
                                     method->type.result == nullptr) {
                                     error(node.loc, method != nullptr && !method->is_static ? "type mismatch"
@@ -1923,6 +2139,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 home = enum_types_[static_cast<std::size_t>(enum_id)].file_id;
                             }
                             if (const MethodInfo *method = find_visible_method(home, enum_name, selector->field, hidden)) {
+                                if (!method->more.empty()) {
+                                    method = choose_method(node, *method, false, !package_owns(home), selector->field);
+                                    if (method == nullptr) {
+                                        return type_invalid();
+                                    }
+                                }
                                 selector->resolved_file = method->file_id;
                                 return finish_value_method(node, *selector, *method, base, through_pointer);
                             }
@@ -1942,6 +2164,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 home = alias_file_[static_cast<std::size_t>(alias->alias_id)];
                             }
                             const MethodInfo *method = find_visible_method(home, type_desc(*alias), selector->field, hidden);
+                            if (method != nullptr && !method->more.empty()) {
+                                method = choose_method(node, *method, false, !package_owns(home), selector->field);
+                                if (method == nullptr) {
+                                    return type_invalid();
+                                }
+                            }
                             if (method == nullptr || method->type.kind != TypeKind::Function ||
                                 method->type.result == nullptr) {
                                 error(node.loc, hidden ? selector->field + " is not exported" : "undeclared identifier");
@@ -1963,6 +2191,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 home = alias_file_[static_cast<std::size_t>(alias->alias_id)];
                             }
                             const MethodInfo *method = find_visible_method(home, type_desc(*alias), selector->field, hidden);
+                            if (method != nullptr && !method->more.empty()) {
+                                method = choose_method(node, *method, false, !package_owns(home), selector->field);
+                                if (method == nullptr) {
+                                    return type_invalid();
+                                }
+                            }
                             if (method == nullptr || method->type.kind != TypeKind::Function ||
                                 method->type.result == nullptr) {
                                 error(node.loc, hidden ? selector->field + " is not exported" : "undeclared identifier");
@@ -1988,6 +2222,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 owner = structs_[static_cast<std::size_t>(object.struct_id)].name;
                             }
                             if (const MethodInfo *method = find_visible_method(home, owner, selector->field, hidden)) {
+                                if (!method->more.empty()) {
+                                    method = choose_method(node, *method, false, !package_owns(home), selector->field);
+                                    if (method == nullptr) {
+                                        return type_invalid();
+                                    }
+                                }
                                 if (method->is_static) {
                                     error(node.loc, "type mismatch");
                                     for (const auto &arg : node.args) {
@@ -2047,6 +2287,25 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     check_expr(*arg, true);
                                 }
                                 return type_invalid();
+                            }
+                        }
+                    }
+                }
+                if (node.callee != nullptr) {
+                    if (const auto *named = std::get_if<Expr::Name>(&node.callee->data)) {
+                        if (const Symbol *symbol = lookup(named->text);
+                            symbol != nullptr && symbol->is_function && !symbol->is_template && symbol->lists.size() > 1) {
+                            return finish_overloaded(node, *symbol, deferring);
+                        }
+                    } else if (const auto *called = std::get_if<Expr::Selector>(&node.callee->data)) {
+                        if (const auto *base = called->base == nullptr ? nullptr : std::get_if<Expr::Name>(&called->base->data)) {
+                            const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+                            if (package != nullptr && package->is_package) {
+                                const Symbol *member = find_export(package->package_file, called->field);
+                                if (member != nullptr && member->is_function && !member->is_template &&
+                                    member->lists.size() > 1) {
+                                    return finish_overloaded(node, *member, deferring);
+                                }
                             }
                         }
                     }
@@ -2124,6 +2383,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         const bool shadowed = symbol != nullptr && !symbol->is_type;
                         if (!shadowed && named_type_owner(named->text)) {
                             const MethodInfo *method = find_named_method(named->text, node.field);
+                            if (method != nullptr && !method->more.empty()) {
+                                error(node.loc, "not supported yet");
+                                return type_invalid();
+                            }
                             if (method == nullptr || !method->is_static || method->type.kind != TypeKind::Function) {
                                 error(node.loc, method != nullptr && !method->is_static ? "type mismatch"
                                                                                         : "undeclared identifier");
@@ -2150,6 +2413,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (target.symbol->is_type) {
                         error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    if (target.symbol->is_function && target.symbol->lists.size() > 1) {
+                        error(node.loc, "not supported yet");
                         return type_invalid();
                     }
                     if (!allow_unsafe_fn(target.symbol->unsafe_fn, node.loc)) {
@@ -2500,8 +2767,29 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     ensure_allocator_trait();
                     require_satisfies(struct_id, allocator_trait_id_, true, node.loc);
-                    for (const char *name : {"malloc", "free", "realloc"}) {
+                    auto trait_form = [&](const char *name) -> const MethodInfo * {
                         const MethodInfo *method = find_method(struct_id, name);
+                        if (method == nullptr || method->more.empty()) {
+                            return method;
+                        }
+                        const TraitInfo::Method *wanted = find_trait_method(allocator_trait_id_, name);
+                        if (wanted == nullptr) {
+                            return method;
+                        }
+                        const MethodInfo *matched = nullptr;
+                        auto consider = [&](const MethodInfo &info) {
+                            if (trait_method_matches(wanted->type, info.type)) {
+                                matched = &info;
+                            }
+                        };
+                        consider(*method);
+                        for (const MethodInfo &extra : method->more) {
+                            consider(extra);
+                        }
+                        return matched != nullptr ? matched : method;
+                    };
+                    for (const char *name : {"malloc", "free", "realloc"}) {
+                        const MethodInfo *method = trait_form(name);
                         const bool pointer = method != nullptr && method->type.kind == TypeKind::Function &&
                                              !method->type.params.empty() &&
                                              method->type.params[0].kind == TypeKind::Pointer;
@@ -2510,7 +2798,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                     }
                     // `malloc` takes `*this`. A const allocator is rejected the same way as `arena.malloc(...)`.
-                    const MethodInfo *malloc_method = find_method(struct_id, "malloc");
+                    const MethodInfo *malloc_method = trait_form("malloc");
                     if (malloc_method != nullptr && malloc_method->type.kind == TypeKind::Function &&
                         !malloc_method->type.params.empty() &&
                         malloc_method->type.params[0].kind == TypeKind::Pointer) {

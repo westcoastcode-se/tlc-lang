@@ -34,8 +34,18 @@ void Checker::pop() {
     if (!scopes_.empty()) {
         for (const auto &[name, symbol] : scopes_.back().symbols) {
             (void)name;
-            if (symbol.is_local_function && !symbol.has_body) {
-                error(symbol.loc, "not supported yet");
+            if (symbol.is_local_function) {
+                if (symbol.lists.empty()) {
+                    if (!symbol.has_body) {
+                        error(symbol.loc, "not supported yet");
+                    }
+                } else {
+                    for (const FnList &list : symbol.lists) {
+                        if (!list.has_body) {
+                            error(list.loc, "not supported yet");
+                        }
+                    }
+                }
             }
         }
     }
@@ -325,21 +335,21 @@ void Checker::check_local_function(const FunctionDecl &fn) {
     const auto found = table.find(fn.name);
     if (found != table.end()) {
         Symbol &existing = found->second;
-        if (!existing.is_local_function || !same_type(existing.type, signature) ||
-            (existing.has_body && fn.body != nullptr) || existing.unsafe_fn != fn.unsafe) {
+        if (!existing.is_local_function) {
             error(fn.loc, "redefinition");
-        } else if (fn.body != nullptr) {
-            existing.has_body = true;
+        } else {
+            absorb_function(existing, fn, std::move(signature));
         }
     } else {
         Symbol symbol;
         symbol.name = fn.name;
-        symbol.type = std::move(signature);
+        symbol.type = signature;
         symbol.is_function = true;
         symbol.is_local_function = true;
         symbol.unsafe_fn = fn.unsafe;
         symbol.has_body = fn.body != nullptr;
         symbol.loc = fn.loc;
+        symbol.lists.push_back(function_list(fn, std::move(signature)));
         declare(std::move(symbol), fn.loc);
     }
     if (fn.body != nullptr) {
@@ -993,13 +1003,41 @@ const Checker::MethodInfo *Checker::find_visible_method(uint32_t home, const std
         if (method == group->second.end()) {
             continue;
         }
-        if (!method->second.exported) {
+        if (method->second.more.empty()) {
+            if (!method->second.exported) {
+                hidden = true;
+                return nullptr;
+            }
+            return &method->second;
+        }
+        bool exported = method->second.exported;
+        if (!exported) {
+            for (const MethodInfo &extra : method->second.more) {
+                if (extra.exported) {
+                    exported = true;
+                    break;
+                }
+            }
+        }
+        if (!exported) {
             hidden = true;
             return nullptr;
         }
         return &method->second;
     }
     return nullptr;
+}
+
+bool Checker::package_owns(uint32_t home) const {
+    if (home == 0) {
+        return true;
+    }
+    for (const uint32_t id : files_in_package(file_id_)) {
+        if (id == home) {
+            return true;
+        }
+    }
+    return false;
 }
 
 const Checker::MethodInfo *Checker::find_method(int struct_id, const std::string &name) const {
@@ -1168,7 +1206,26 @@ void Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
         return;
     }
     for (const TraitInfo::Method &method : traits_[static_cast<std::size_t>(trait_id)].methods) {
-        const MethodInfo *concrete = find_method(struct_id, method.name);
+        const MethodInfo *head = find_method(struct_id, method.name);
+        const MethodInfo *concrete = head;
+        if (head != nullptr && !head->more.empty()) {
+            concrete = nullptr;
+            bool body = false;
+            auto consider = [&](const MethodInfo &info) {
+                body = body || info.has_body;
+                if (info.has_body && trait_method_matches(method.type, info.type)) {
+                    concrete = &info;
+                }
+            };
+            consider(*head);
+            for (const MethodInfo &extra : head->more) {
+                consider(extra);
+            }
+            if (concrete == nullptr) {
+                error(loc, body ? "type mismatch" : "undeclared identifier");
+                continue;
+            }
+        }
         if (concrete == nullptr || !concrete->has_body) {
             error(loc, "undeclared identifier");
             continue;

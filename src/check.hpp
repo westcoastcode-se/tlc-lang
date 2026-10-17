@@ -35,11 +35,24 @@ struct SpecArg {
     std::vector<SpecArg> parts;
 };
 
+// One parameter list of a function name. The receiver is not part of the list.
+struct FnList {
+    Type type;
+    bool has_body = false;
+    bool unsafe_fn = false;
+    bool extern_c = false;
+    std::string link_name;
+    const FunctionDecl *decl = nullptr;
+    SourceLoc loc{};
+};
+
 struct Symbol {
     std::string name;
     Type type;
     bool has_body = false;
     bool is_function = false;
+    // Every parameter list. Empty on a symbol that is not a function. One entry is the usual function.
+    std::vector<FnList> lists;
     // Object symbol from `extern(..., name="...")`. Empty when that argument was omitted.
     std::string link_name;
     bool is_local_function = false;
@@ -125,6 +138,9 @@ class Checker {
         bool exported = false;
         // File that wrote the method. Zero when the method has not been registered.
         uint32_t file_id = 0;
+        const FunctionDecl *decl = nullptr;
+        // Further parameter lists of this name. Empty when the fields above are the only list.
+        std::vector<MethodInfo> more;
     };
 
     // `var Entity::next` or `const Entity::next`. One entry per owner and name.
@@ -310,6 +326,15 @@ class Checker {
     // Another package sees an exported method. `hidden` is set when one exists and is not exported.
     const MethodInfo *find_visible_method(uint32_t home, const std::string &owner, const std::string &name,
                                           bool &hidden) const;
+    bool package_owns(uint32_t home) const;
+    // Another parameter list of an existing function. The same list merges, or is `redefinition`.
+    void absorb_function(Symbol &existing, const FunctionDecl &fn, Type signature);
+    void mirror_function(const Symbol &symbol);
+    FnList function_list(const FunctionDecl &fn, Type signature) const;
+    // Picks the parameter list a call uses. Null when none matches or more than one matches.
+    const MethodInfo *choose_method(const Expr::Call &node, const MethodInfo &head, bool want_static, bool foreign,
+                                    const std::string &name);
+    Type finish_overloaded(const Expr::Call &node, const Symbol &symbol, bool deferring);
     // `Integer` or `*Integer` when that alias is a primitive. Null otherwise.
     const Type *scalar_alias(const Type &base, bool &through_pointer) const;
     // A slice alias such as `type string_view []const u8`. Not a pointer to one.

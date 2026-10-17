@@ -221,6 +221,23 @@ bool same_type(const Type &lhs, const Type &rhs) {
     return true;
 }
 
+bool same_selection(const Type &lhs, bool skip_lhs, const Type &rhs, bool skip_rhs) {
+    if (lhs.kind != TypeKind::Function || rhs.kind != TypeKind::Function || lhs.variadic != rhs.variadic) {
+        return false;
+    }
+    const std::size_t left = skip_lhs && !lhs.params.empty() ? 1 : 0;
+    const std::size_t right = skip_rhs && !rhs.params.empty() ? 1 : 0;
+    if (lhs.params.size() - left != rhs.params.size() - right) {
+        return false;
+    }
+    for (std::size_t i = 0; i < lhs.params.size() - left; ++i) {
+        if (!same_type(lhs.params[left + i], rhs.params[right + i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool is_slice(const Type &type) {
     return type.kind == TypeKind::Array && type.length < 0 && type.element != nullptr;
 }

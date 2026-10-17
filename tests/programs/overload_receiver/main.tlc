@@ -1,0 +1,13 @@
+type Point struct { x i32; };
+
+func Point::draw(self this) i32 {
+    return self.x;
+}
+
+func Point::draw(self *this) i32 {
+    return self.x;
+}
+
+func main() i32 {
+    return 0;
+}

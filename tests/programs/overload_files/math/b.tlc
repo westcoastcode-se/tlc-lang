@@ -1,0 +1,8 @@
+func show(text *const u8) i32 {
+    return 2;
+}
+
+export func both() i32 {
+    var text *const u8 = *const u8(0);
+    return show(1) + show(text);
+}

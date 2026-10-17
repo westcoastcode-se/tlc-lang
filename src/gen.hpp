@@ -36,6 +36,214 @@ inline std::string function_key(const FunctionDecl &fn) {
     return fn.method_struct + "." + fn.name;
 }
 
+inline void append_type_args_key(std::string &out, const std::vector<TypeArg> &args);
+
+inline void append_fn_param_key(std::string &out, const FnParam &param) {
+    if (param.is_array) {
+        out.push_back('[');
+        if (param.array_len >= 0) {
+            out += std::to_string(param.array_len);
+        }
+        out.push_back(']');
+    }
+    for (int bit = param.indirections - 1; bit >= 0; --bit) {
+        const uint32_t mask = 1u << static_cast<unsigned>(bit);
+        if ((param.optional & mask) != 0) {
+            out.push_back('?');
+        }
+        out.push_back('*');
+        if ((param.const_pointee & mask) != 0) {
+            out += "const";
+        }
+    }
+    if (param.is_fn_ptr) {
+        out += "fn";
+        for (int bit = param.ret_indirections - 1; bit >= 0; --bit) {
+            const uint32_t mask = 1u << static_cast<unsigned>(bit);
+            if ((param.ret_optional & mask) != 0) {
+                out.push_back('?');
+            }
+            out.push_back('*');
+            if ((param.ret_const_pointee & mask) != 0) {
+                out += "const";
+            }
+        }
+    }
+    if (!param.type_package.empty()) {
+        out += param.type_package;
+        out.push_back('.');
+    }
+    out += param.type_name;
+    append_type_args_key(out, param.type_args);
+    if (!param.is_fn_ptr) {
+        return;
+    }
+    out.push_back('(');
+    for (std::size_t i = 0; i < param.params.size(); ++i) {
+        if (i != 0) {
+            out.push_back(',');
+        }
+        append_fn_param_key(out, param.params[i]);
+    }
+    if (param.variadic) {
+        out += "...";
+    }
+    out.push_back(')');
+    if (param.results.empty()) {
+        return;
+    }
+    out.push_back('(');
+    for (std::size_t i = 0; i < param.results.size(); ++i) {
+        if (i != 0) {
+            out.push_back(',');
+        }
+        append_fn_param_key(out, param.results[i]);
+    }
+    out.push_back(')');
+}
+
+inline void append_type_args_key(std::string &out, const std::vector<TypeArg> &args) {
+    if (args.empty()) {
+        return;
+    }
+    out.push_back('[');
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (i != 0) {
+            out.push_back(',');
+        }
+        const TypeArg &arg = args[i];
+        if (arg.has_value || arg.is_value) {
+            out += std::to_string(arg.value);
+            continue;
+        }
+        if (arg.is_array) {
+            out.push_back('[');
+            if (!arg.array_len_name.empty()) {
+                out += arg.array_len_name;
+            } else if (arg.array_len >= 0) {
+                out += std::to_string(arg.array_len);
+            }
+            out.push_back(']');
+        }
+        for (int bit = arg.indirections - 1; bit >= 0; --bit) {
+            const uint32_t mask = 1u << static_cast<unsigned>(bit);
+            if ((arg.optional & mask) != 0) {
+                out.push_back('?');
+            }
+            out.push_back('*');
+            if ((arg.const_pointee & mask) != 0) {
+                out += "const";
+            }
+        }
+        if (arg.elem_const) {
+            out += "const.";
+        }
+        if (!arg.type_package.empty()) {
+            out += arg.type_package;
+            out.push_back('.');
+        }
+        out += arg.type_name;
+        append_type_args_key(out, arg.args);
+    }
+    out.push_back(']');
+}
+
+inline void append_param_key(std::string &out, const Param &param) {
+    if (param.is_tuple) {
+        out.push_back('(');
+        for (std::size_t i = 0; i < param.tuple_parts.size(); ++i) {
+            if (i != 0) {
+                out.push_back(',');
+            }
+            const ResultSlot &slot = param.tuple_parts[i];
+            FnParam part;
+            part.type_name = slot.type_name;
+            part.type_package = slot.type_package;
+            part.is_struct = slot.is_struct;
+            part.is_enum = slot.is_enum;
+            part.indirections = slot.indirections;
+            part.optional = slot.optional;
+            part.const_pointee = slot.const_pointee;
+            part.is_array = slot.is_array;
+            part.array_len = slot.array_len;
+            part.is_fn_ptr = slot.is_fn_ptr;
+            part.ret_indirections = slot.ret_indirections;
+            part.ret_optional = slot.ret_optional;
+            part.ret_const_pointee = slot.ret_const_pointee;
+            part.params = slot.fn_params;
+            part.variadic = slot.fn_variadic;
+            part.results = slot.fn_results;
+            part.type_args = slot.type_args;
+            append_fn_param_key(out, part);
+        }
+        out.push_back(')');
+        return;
+    }
+    if (param.is_array) {
+        out.push_back('[');
+        if (!param.array_len_name.empty()) {
+            out += param.array_len_name;
+        } else if (param.array_len >= 0) {
+            out += std::to_string(param.array_len);
+        }
+        out.push_back(']');
+        if (param.elem_const) {
+            out += "const.";
+        }
+    }
+    for (int bit = param.indirections - 1; bit >= 0; --bit) {
+        const uint32_t mask = 1u << static_cast<unsigned>(bit);
+        if ((param.optional & mask) != 0) {
+            out.push_back('?');
+        }
+        out.push_back('*');
+        if ((param.const_pointee & mask) != 0) {
+            out += "const";
+        }
+    }
+    if (param.is_fn_ptr) {
+        FnParam fn;
+        fn.type_name = param.type_name;
+        fn.type_package = param.type_package;
+        fn.indirections = 0;
+        fn.is_fn_ptr = true;
+        fn.ret_indirections = param.ret_indirections;
+        fn.ret_optional = param.ret_optional;
+        fn.ret_const_pointee = param.ret_const_pointee;
+        fn.params = param.fn_params;
+        fn.variadic = param.fn_variadic;
+        fn.results = param.fn_results;
+        fn.type_args = param.type_args;
+        append_fn_param_key(out, fn);
+        return;
+    }
+    if (!param.type_package.empty()) {
+        out += param.type_package;
+        out.push_back('.');
+    }
+    out += param.type_name;
+    append_type_args_key(out, param.type_args);
+}
+
+// The parameters a call uses. The receiver is omitted. One list keeps `function_key`.
+inline std::string param_list_key(const FunctionDecl &fn) {
+    std::string key;
+    if (fn.variadic) {
+        key.push_back('v');
+    }
+    std::size_t start = 0;
+    if (!fn.method_struct.empty() && !fn.static_method && !fn.params.empty() && fn.params.front().is_receiver) {
+        start = 1;
+    }
+    for (std::size_t i = start; i < fn.params.size(); ++i) {
+        if (!key.empty()) {
+            key.push_back(',');
+        }
+        append_param_key(key, fn.params[i]);
+    }
+    return key;
+}
+
 inline FnParam fn_param_from_slot(const ResultSlot &slot) {
     FnParam param;
     param.type_name = slot.type_name;
@@ -213,6 +421,14 @@ class CodeGen {
     bool arm_union_tag_ = false;
     std::unordered_map<const llvm::Function *, ExternLayout> extern_abis_;
     int local_seq_ = 0;
+    struct DeclKey {
+        uint32_t file_id = 0;
+        std::string key;
+    };
+    // Every declaration of a function, including a prototype and its body.
+    std::unordered_map<const FunctionDecl *, DeclKey> decl_keys_;
+    // Local functions that do not own the scope name. The first list still does.
+    std::unordered_map<const FunctionDecl *, Binding> local_fns_;
     uint32_t entry_file_ = 0;
     bool testing_ = false;
     // `lower` is const. The struct is created the first time a slice is lowered.
@@ -813,6 +1029,7 @@ class CodeGen {
     const PackageNode *find_node(uint32_t file_id) const;
     std::vector<uint32_t> package_files(uint32_t file) const;
     const Binding *visible(uint32_t file, const std::string &name, bool function) const;
+    const Binding *binding_for_decl(const FunctionDecl *decl) const;
     void bind_package_globals();
     int tag_id(uint32_t file, const std::string &name) const;
     uint32_t package_file(uint32_t file, const std::string &package) const;

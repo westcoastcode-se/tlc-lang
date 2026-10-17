@@ -1,0 +1,73 @@
+func show(n i32) i32 {
+    return n;
+}
+
+func show(text *const u8) i32 {
+    return show(2);
+}
+
+type Point struct { x i32; };
+type Circle struct { x i32; };
+
+func Point::draw(self *this) i32 {
+    return self.x;
+}
+
+func Point::draw(self *this, n i32) i32 {
+    return self.x + n;
+}
+
+func Circle::draw(self *this) i32 {
+    return self.x + 10;
+}
+
+func Point::label(n i32) i32 {
+    return n;
+}
+
+func Point::label(text *const u8) i32 {
+    return 9;
+}
+
+func main() i32 {
+    var text *const u8 = *const u8(0);
+    if (show(1) != 1) {
+        return 1;
+    }
+    if (show(text) != 2) {
+        return 2;
+    }
+    var point Point;
+    point.x = 3;
+    if (point.draw() != 3) {
+        return 3;
+    }
+    if (point.draw(4) != 7) {
+        return 4;
+    }
+    var circle Circle;
+    circle.x = 5;
+    if (circle.draw() != 15) {
+        return 5;
+    }
+    if (Point.label(4) != 4) {
+        return 6;
+    }
+    if (Point.label(text) != 9) {
+        return 7;
+    }
+    func local(n i32) i32 {
+        return n + 1;
+    }
+    func local(wide i64) i32 {
+        return 8;
+    }
+    if (local(1) != 2) {
+        return 8;
+    }
+    var wide i64 = 1;
+    if (local(wide) != 8) {
+        return 9;
+    }
+    return 0;
+}

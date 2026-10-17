@@ -106,6 +106,8 @@ struct Expr {
         std::vector<std::unique_ptr<Expr>> args;
         // Set while checking when the callee is `Type.name()`.
         mutable bool type_name = false;
+        // The parameter list selected for this call. Null when the name has one list.
+        mutable const FunctionDecl *selected = nullptr;
     };
     struct Selector {
         SourceLoc loc{};

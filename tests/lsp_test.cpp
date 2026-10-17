@@ -149,6 +149,13 @@ struct LineCol {
     int character = 0;
 };
 
+std::string request_at(int to_fd, int from_fd, int id, const std::string &method, const std::string &uri, LineCol pos) {
+    send_json(to_fd, std::string(R"({"jsonrpc":"2.0","id":)") + std::to_string(id) + R"(,"method":")" + method +
+                         R"(","params":{"textDocument":{"uri":")" + uri + R"("},"position":{"line":)" +
+                         std::to_string(pos.line) + R"(,"character":)" + std::to_string(pos.character) + "}}}");
+    return read_until(from_fd, "\"id\":" + std::to_string(id), 3000);
+}
+
 LineCol at_needle(const std::string &text, std::string_view needle, bool after) {
     const std::size_t found = text.find(needle);
     LineCol pos;
@@ -556,6 +563,104 @@ int run_lsp_tests() {
                   std::to_string(row_field.character) + "}}}");
     const std::string row_items = read_until(from_child[0], "\"id\":26", 3000);
     EXPECT_HAS(check, row_items, "\"x\"");
+
+    const std::string over_source =
+        "func once(n i32) i32;\n"
+        "\n"
+        "func once(n i32) i32 {\n"
+        "    return n;\n"
+        "}\n"
+        "\n"
+        "func zero() i32 {\n"
+        "    return 1;\n"
+        "}\n"
+        "\n"
+        "func zero(n i32) i32 {\n"
+        "    return n;\n"
+        "}\n"
+        "\n"
+        "func twin(n i32) i32 {\n"
+        "    return n;\n"
+        "}\n"
+        "\n"
+        "func twin(text *const u8) i32 {\n"
+        "    return 2;\n"
+        "}\n"
+        "\n"
+        "type Point struct { x i32; };\n"
+        "\n"
+        "func Point::draw(self *this) i32 {\n"
+        "    return 1;\n"
+        "}\n"
+        "\n"
+        "func Point::draw(self *this, n i32) i32 {\n"
+        "    return n;\n"
+        "}\n"
+        "\n"
+        "func main() i32 {\n"
+        "    func local() i32 {\n"
+        "        return 1;\n"
+        "    }\n"
+        "    func local(n i32) i32 {\n"
+        "        return n;\n"
+        "    }\n"
+        "    var p Point;\n"
+        "    var text *const u8 = *const u8(0);\n"
+        "    return once(1) + zero() + zero(1) + twin(1) + twin(text) + p.draw() + p.draw(1) + local() + local(1);\n"
+        "}\n";
+    const std::string over_uri = "file:///tmp/tlc-overload-lsp.tlc";
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  over_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(over_source) + R"("}}})");
+
+    const LineCol once_call = at_needle(over_source, "once(1)", false);
+    const std::string once_def = request_at(to_child[1], from_child[0], 40, "textDocument/definition", over_uri, once_call);
+    EXPECT_HAS(check, once_def, "\"line\":2,");
+    EXPECT(check, once_def.find("\"line\":0,") == std::string::npos);
+
+    const LineCol zero_call = at_needle(over_source, "zero() +", false);
+    const std::string zero_def = request_at(to_child[1], from_child[0], 41, "textDocument/definition", over_uri, zero_call);
+    EXPECT_HAS(check, zero_def, "\"line\":6,");
+    const std::string zero_hover = request_at(to_child[1], from_child[0], 42, "textDocument/hover", over_uri, zero_call);
+    EXPECT_HAS(check, zero_hover, "func zero() i32");
+
+    const LineCol zero_n = at_needle(over_source, "zero(1)", false);
+    const std::string zero_n_def = request_at(to_child[1], from_child[0], 43, "textDocument/definition", over_uri, zero_n);
+    EXPECT_HAS(check, zero_n_def, "\"line\":10,");
+    const std::string zero_n_hover = request_at(to_child[1], from_child[0], 44, "textDocument/hover", over_uri, zero_n);
+    EXPECT_HAS(check, zero_n_hover, "func zero(n i32) i32");
+
+    const LineCol twin_decl = at_needle(over_source, "twin(n", false);
+    const std::string twin_decl_def =
+        request_at(to_child[1], from_child[0], 45, "textDocument/definition", over_uri, twin_decl);
+    EXPECT_HAS(check, twin_decl_def, "\"line\":14,");
+    EXPECT(check, twin_decl_def.find("\"line\":18,") == std::string::npos);
+
+    const LineCol twin_call = at_needle(over_source, "twin(1)", false);
+    const std::string twin_def = request_at(to_child[1], from_child[0], 46, "textDocument/definition", over_uri, twin_call);
+    EXPECT_HAS(check, twin_def, "\"result\":null");
+    const std::string twin_hover = request_at(to_child[1], from_child[0], 47, "textDocument/hover", over_uri, twin_call);
+    EXPECT_HAS(check, twin_hover, "\"result\":null");
+
+    const LineCol draw_call = at_needle(over_source, "draw()", false);
+    const std::string draw_def = request_at(to_child[1], from_child[0], 48, "textDocument/definition", over_uri, draw_call);
+    EXPECT_HAS(check, draw_def, "\"line\":24,");
+    const std::string draw_hover = request_at(to_child[1], from_child[0], 49, "textDocument/hover", over_uri, draw_call);
+    EXPECT_HAS(check, draw_hover, "func Point.draw(self *Point) i32");
+
+    const LineCol draw_n = at_needle(over_source, "draw(1)", false);
+    const std::string draw_n_def = request_at(to_child[1], from_child[0], 50, "textDocument/definition", over_uri, draw_n);
+    EXPECT_HAS(check, draw_n_def, "\"line\":28,");
+    const std::string draw_n_hover = request_at(to_child[1], from_child[0], 51, "textDocument/hover", over_uri, draw_n);
+    EXPECT_HAS(check, draw_n_hover, "func Point.draw(self *Point, n i32) i32");
+
+    const LineCol local_call = at_needle(over_source, "local() +", false);
+    const std::string local_def = request_at(to_child[1], from_child[0], 52, "textDocument/definition", over_uri, local_call);
+    EXPECT_HAS(check, local_def, "\"line\":33,");
+
+    const LineCol local_n = at_needle(over_source, "local(1)", false);
+    const std::string local_n_def = request_at(to_child[1], from_child[0], 53, "textDocument/definition", over_uri, local_n);
+    EXPECT_HAS(check, local_n_def, "\"line\":36,");
 
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);

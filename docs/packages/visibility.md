@@ -4,7 +4,7 @@
 
 ## Names inside a package
 
-Every file in a package can use a name declared in another file of that directory. The same name in two files is `redefinition`. A method is written in the file that defines its struct or enum. The other files of the package can call it.
+Every file in a package can use a name declared in another file of that directory. A variable, a type, or the same parameter list in two files is `redefinition`. Another parameter list of a function may be written in a second file of the package. Two `export` declarations of one name are `redefinition`. A method is written in the file that defines its struct or enum. The other files of the package can call it.
 
 ## Visibility
 

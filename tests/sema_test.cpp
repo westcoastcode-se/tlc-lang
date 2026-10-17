@@ -3151,7 +3151,7 @@ int run_sema_tests() {
             "  func f(n i32) i32 { return n; }\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {

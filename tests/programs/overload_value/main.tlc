@@ -1,0 +1,12 @@
+func show(n i32) i32 {
+    return n;
+}
+
+func show(text *const u8) i32 {
+    return 2;
+}
+
+func main() i32 {
+    var f = show;
+    return f(1);
+}

@@ -121,6 +121,101 @@ void Checker::declare_assoc(const VarDecl &var) {
     assoc_vars_[file_id_][var.owner].emplace(var.name, AssocVar{std::move(type), var.exported});
 }
 
+FnList Checker::function_list(const FunctionDecl &fn, Type signature) const {
+    FnList list;
+    list.type = std::move(signature);
+    list.has_body = fn.body != nullptr;
+    list.unsafe_fn = fn.unsafe;
+    list.extern_c = fn.extern_c;
+    list.link_name = fn.link_name;
+    list.decl = &fn;
+    list.loc = fn.loc;
+    return list;
+}
+
+void Checker::mirror_function(const Symbol &symbol) {
+    if (graph_ != nullptr) {
+        if (const PackageNode *self = find_node(file_id_)) {
+            const auto package = package_syms_.find(self->package_key);
+            if (package != package_syms_.end()) {
+                const auto found = package->second.find(symbol.name);
+                if (found != package->second.end() && found->second.is_function && !found->second.is_template) {
+                    found->second.type = symbol.type;
+                    found->second.has_body = symbol.has_body;
+                    found->second.unsafe_fn = symbol.unsafe_fn;
+                    found->second.link_name = symbol.link_name;
+                    found->second.lists = symbol.lists;
+                }
+            }
+        }
+    }
+    const auto table = statics_.find(file_id_);
+    if (table == statics_.end()) {
+        return;
+    }
+    const auto prior = table->second.find(symbol.name);
+    if (prior != table->second.end() && prior->second.is_function) {
+        prior->second.type = symbol.type;
+        prior->second.has_body = symbol.has_body;
+        prior->second.unsafe_fn = symbol.unsafe_fn;
+        prior->second.link_name = symbol.link_name;
+        prior->second.lists = symbol.lists;
+    }
+}
+
+void Checker::absorb_function(Symbol &existing, const FunctionDecl &fn, Type signature) {
+    if (!existing.is_function || existing.is_template) {
+        error(fn.loc, "redefinition");
+        return;
+    }
+    if (existing.lists.empty()) {
+        FnList primary;
+        primary.type = existing.type;
+        primary.has_body = existing.has_body;
+        primary.unsafe_fn = existing.unsafe_fn;
+        primary.link_name = existing.link_name;
+        primary.loc = existing.loc;
+        existing.lists.push_back(std::move(primary));
+    }
+    FnList *slot = nullptr;
+    for (FnList &list : existing.lists) {
+        if (same_selection(list.type, false, signature, false)) {
+            slot = &list;
+            break;
+        }
+    }
+    if (slot != nullptr) {
+        const bool link_clash = !fn.link_name.empty() && !slot->link_name.empty() && slot->link_name != fn.link_name;
+        if (!same_type(slot->type, signature) || (slot->has_body && fn.body != nullptr) || slot->unsafe_fn != fn.unsafe ||
+            link_clash) {
+            error(fn.loc, "redefinition");
+            return;
+        }
+        if (slot->link_name.empty()) {
+            slot->link_name = fn.link_name;
+        }
+        if (existing.link_name.empty()) {
+            existing.link_name = fn.link_name;
+        }
+        if (fn.body != nullptr) {
+            slot->has_body = true;
+            slot->decl = &fn;
+            if (slot == &existing.lists.front()) {
+                existing.has_body = true;
+            }
+        }
+        return;
+    }
+    for (const FnList &list : existing.lists) {
+        if ((fn.extern_c && list.extern_c) ||
+            (!fn.link_name.empty() && !list.link_name.empty() && list.link_name == fn.link_name)) {
+            error(fn.loc, "redefinition");
+            return;
+        }
+    }
+    existing.lists.push_back(function_list(fn, std::move(signature)));
+}
+
 void Checker::declare_globals(const TranslationUnit &unit) {
     std::vector<VarDecl *> pending_consts;
     for (const TopDecl &decl : unit.decls) {
@@ -254,16 +349,42 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 auto &table = methods_[file_id_][fn->method_struct];
                 const auto found = table.find(fn->name);
                 if (found != table.end()) {
-                    if (!same_type(found->second.type, signature) || (found->second.has_body && fn->body) ||
-                        found->second.unsafe_fn != fn->unsafe) {
-                        error(fn->loc, "redefinition");
+                    // The receiver is not a parameter. `self this` and `self *this` share the remaining list.
+                    MethodInfo *slot = nullptr;
+                    const bool skip_new = !fn->static_method;
+                    if (same_selection(found->second.type, !found->second.is_static, signature, skip_new)) {
+                        slot = &found->second;
                     } else {
-                        if (fn->body) {
-                            found->second.has_body = true;
+                        for (MethodInfo &extra : found->second.more) {
+                            if (same_selection(extra.type, !extra.is_static, signature, skip_new)) {
+                                slot = &extra;
+                                break;
+                            }
                         }
-                        if (fn->exported) {
-                            found->second.exported = true;
+                    }
+                    if (slot != nullptr) {
+                        if (!same_type(slot->type, signature) || (slot->has_body && fn->body) ||
+                            slot->unsafe_fn != fn->unsafe) {
+                            error(fn->loc, "redefinition");
+                        } else {
+                            if (fn->body) {
+                                slot->has_body = true;
+                                slot->decl = fn;
+                            }
+                            if (fn->exported) {
+                                slot->exported = true;
+                            }
                         }
+                    } else {
+                        MethodInfo extra;
+                        extra.type = std::move(signature);
+                        extra.has_body = fn->body != nullptr;
+                        extra.is_static = fn->static_method;
+                        extra.unsafe_fn = fn->unsafe;
+                        extra.exported = fn->exported;
+                        extra.file_id = file_id_;
+                        extra.decl = fn;
+                        found->second.more.push_back(std::move(extra));
                     }
                 } else {
                     const int struct_id = find_tag(file_id_, fn->method_struct);
@@ -272,8 +393,15 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     } else if (fn->static_method && assoc_defined(file_id_, fn->method_struct, fn->name)) {
                         error(fn->loc, "redefinition");
                     } else {
-                        table.emplace(fn->name, MethodInfo{std::move(signature), fn->body != nullptr, fn->static_method,
-                                                           fn->unsafe, fn->exported, file_id_});
+                        MethodInfo info;
+                        info.type = std::move(signature);
+                        info.has_body = fn->body != nullptr;
+                        info.is_static = fn->static_method;
+                        info.unsafe_fn = fn->unsafe;
+                        info.exported = fn->exported;
+                        info.file_id = file_id_;
+                        info.decl = fn;
+                        table.emplace(fn->name, std::move(info));
                     }
                 }
                 continue;
@@ -284,35 +412,17 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 continue;
             }
             if (Symbol *existing = lookup_scope(fn->name)) {
-                const bool link_clash = !fn->link_name.empty() && !existing->link_name.empty() &&
-                                        existing->link_name != fn->link_name;
-                if (!existing->is_function || !same_type(existing->type, signature) ||
-                    (existing->has_body && fn->body) || existing->unsafe_fn != fn->unsafe || link_clash) {
-                    error(fn->loc, "redefinition");
-                } else {
-                    if (existing->link_name.empty()) {
-                        existing->link_name = fn->link_name;
-                    }
-                    if (fn->body) {
-                        existing->has_body = true;
-                        note_body(fn->name);
-                    }
-                    if (fn->is_static) {
-                        const auto table = statics_.find(file_id_);
-                        if (table != statics_.end()) {
-                            const auto prior = table->second.find(fn->name);
-                            if (prior != table->second.end()) {
-                                if (fn->body) {
-                                    prior->second.has_body = true;
-                                }
-                                if (prior->second.link_name.empty()) {
-                                    prior->second.link_name = existing->link_name;
-                                }
-                            }
-                        }
-                    }
-                }
+                absorb_function(*existing, *fn, signature);
+                mirror_function(*existing);
                 continue;
+            }
+            // Another file in the package already has this name. A static stays in its file.
+            if (!fn->is_static) {
+                if (Symbol *shared = lookup(fn->name)) {
+                    absorb_function(*shared, *fn, std::move(signature));
+                    mirror_function(*shared);
+                    continue;
+                }
             }
             if (shared_has(fn->name)) {
                 error(fn->loc, "redefinition");
@@ -320,11 +430,13 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             }
             Symbol symbol;
             symbol.name = fn->name;
-            symbol.type = std::move(signature);
+            symbol.type = signature;
             symbol.is_function = true;
             symbol.unsafe_fn = fn->unsafe;
             symbol.has_body = fn->body != nullptr;
             symbol.link_name = fn->link_name;
+            symbol.loc = fn->loc;
+            symbol.lists.push_back(function_list(*fn, std::move(signature)));
             if (fn->is_static) {
                 statics_[file_id_].insert_or_assign(fn->name, symbol);
                 declare(std::move(symbol), fn->loc);
@@ -1109,19 +1221,51 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 if (exported_elsewhere(fn->name)) {
                     error(fn->loc, "redefinition");
                 } else {
+                    symbol.lists.push_back(function_list(*fn, symbol.type));
                     table.emplace(fn->name, std::move(symbol));
                 }
-            } else if (found->second.is_type || !found->second.is_function || found->second.unsafe_fn != fn->unsafe ||
-                       (!fn->link_name.empty() && !found->second.link_name.empty() &&
-                        found->second.link_name != fn->link_name)) {
+            } else if (found->second.is_type || !found->second.is_function) {
                 error(fn->loc, "redefinition");
-            } else if (fn->body) {
-                found->second.has_body = true;
-                if (found->second.link_name.empty()) {
-                    found->second.link_name = fn->link_name;
+            } else {
+                Type signature = symbol.type;
+                if (found->second.lists.empty()) {
+                    FnList primary;
+                    primary.type = found->second.type;
+                    primary.has_body = found->second.has_body;
+                    primary.unsafe_fn = found->second.unsafe_fn;
+                    primary.link_name = found->second.link_name;
+                    found->second.lists.push_back(std::move(primary));
                 }
-            } else if (found->second.link_name.empty()) {
-                found->second.link_name = fn->link_name;
+                FnList *slot = nullptr;
+                for (FnList &list : found->second.lists) {
+                    if (same_selection(list.type, false, signature, false)) {
+                        slot = &list;
+                        break;
+                    }
+                }
+                if (slot == nullptr) {
+                    found->second.lists.push_back(function_list(*fn, std::move(signature)));
+                } else if (slot->unsafe_fn != fn->unsafe ||
+                           (!fn->link_name.empty() && !slot->link_name.empty() && slot->link_name != fn->link_name)) {
+                    error(fn->loc, "redefinition");
+                } else if (fn->body) {
+                    slot->has_body = true;
+                    slot->decl = fn;
+                    if (slot == &found->second.lists.front()) {
+                        found->second.has_body = true;
+                    }
+                    if (slot->link_name.empty()) {
+                        slot->link_name = fn->link_name;
+                    }
+                    if (found->second.link_name.empty()) {
+                        found->second.link_name = fn->link_name;
+                    }
+                } else if (slot->link_name.empty()) {
+                    slot->link_name = fn->link_name;
+                    if (found->second.link_name.empty()) {
+                        found->second.link_name = fn->link_name;
+                    }
+                }
             }
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
             if (!var->owner.empty()) {
