@@ -1,0 +1,9 @@
+package geom;
+
+type Shape trait {
+    func area() i32;
+};
+
+export func measure[T Shape](value T) i32 {
+    return value.area();
+}

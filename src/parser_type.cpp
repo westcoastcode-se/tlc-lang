@@ -1340,6 +1340,30 @@ bool Parser::bracket_then_paren() const {
     return false;
 }
 
+bool Parser::bracket_then_brace() const {
+    if (!check(TokenKind::LBracket)) {
+        return false;
+    }
+    int depth = 0;
+    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
+        const TokenKind kind = peek(ahead).kind;
+        if (kind == TokenKind::LBracket) {
+            ++depth;
+        } else if (kind == TokenKind::RBracket) {
+            --depth;
+            if (depth == 0) {
+                return peek(ahead + 1).kind == TokenKind::LBrace;
+            }
+        } else if (depth == 1 && (kind == TokenKind::Semicolon || kind == TokenKind::LBrace || kind == TokenKind::RBrace)) {
+            return false;
+        }
+        if (ahead > 4096) {
+            return false;
+        }
+    }
+    return false;
+}
+
 bool Parser::primitive_type_name(const std::string &name) const {
     return name == "void" || name == "bool" || name == "i8" || name == "u8" || name == "i16" || name == "u16" ||
            name == "i32" || name == "u32" || name == "i64" || name == "u64" || name == "f32" || name == "f64" ||

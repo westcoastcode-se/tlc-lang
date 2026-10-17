@@ -1059,6 +1059,9 @@ class CodeGen {
     bool write_constant_bytes(llvm::Constant *value, uint64_t offset, std::vector<uint8_t> &bytes) const;
     bool addressable(const Expr &expr) const;
     void prepare_structs();
+    // A specialized function is stored on the package that defines the generic.
+    // A type argument written by the caller is not a name in that package.
+    void publish_spec_types();
     void prepare_traits();
     int trait_named(uint32_t file, const std::string &name) const;
     bool param_is_trait(uint32_t file, const Param &param) const;
@@ -1087,6 +1090,8 @@ class CodeGen {
     bool unshadowed_type_name(const std::string &name) const;
     const Binding *function_binding(uint32_t file, const std::string &name) const;
     const Binding *static_method_binding(uint32_t file, const std::string &type, const std::string &field) const;
+    // `Type.name` or `pkg.Type.name`. `resolved_file` selects a method in another package.
+    const Binding *static_selector_binding(uint32_t file, const Expr::Selector &selector) const;
     // A function in `home`'s package. A static function in another file of that package is skipped.
     const Binding *function_named(uint32_t home, const std::string &key, uint32_t caller) const;
     // A value method. A type defined in another package is found through `resolved_file`.

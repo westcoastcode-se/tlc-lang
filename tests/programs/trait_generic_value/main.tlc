@@ -1,0 +1,21 @@
+type Shape trait {
+    func area() i32;
+};
+
+type Rect struct {
+    w i32;
+};
+
+func Rect::area(self *this) i32 {
+    return self.w;
+}
+
+func measure[T Shape](value T) i32 {
+    return value.area();
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 4;
+    return measure(r);
+}

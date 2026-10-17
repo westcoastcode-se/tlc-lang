@@ -5443,7 +5443,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Vec[T type] struct { n i32; };\n"
-            "export func Vec[T]::from() i32 { return 0; }\n"
+            "export func Vec[T]::get(self *this) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
@@ -5464,7 +5464,7 @@ int run_sema_tests() {
              "export type Box[T type] struct { value T; };\n"
              "func Box[T]::from(value T) T { return value; }\n"},
         });
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "from is not exported");
     }
 
     {
@@ -6251,7 +6251,7 @@ int run_sema_tests() {
              "export type Entity struct { id i32; };\n"
              "func Entity::make() i32 { return 1; }\n"},
         });
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "make is not exported");
     }
 
     {

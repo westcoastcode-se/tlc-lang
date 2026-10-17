@@ -1195,6 +1195,58 @@ void CodeGen::prepare_structs() {
             layout.ready = true;
         }
     }
+    publish_spec_types();
+}
+
+void CodeGen::publish_spec_types() {
+    if (graph_ == nullptr) {
+        return;
+    }
+    auto note = [&](uint32_t file, const std::string &name, const std::string &package) {
+        if (!package.empty() || name.empty() || tag_id(file, name) >= 0) {
+            return;
+        }
+        const int foreign = unique_tag(name);
+        if (foreign >= 0) {
+            tags_[file][name] = foreign;
+        }
+    };
+    auto note_args = [&](auto &&self, uint32_t file, const std::vector<TypeArg> &args) -> void {
+        for (const TypeArg &arg : args) {
+            if (arg.has_value || arg.is_value) {
+                continue;
+            }
+            note(file, arg.type_name, arg.type_package);
+            self(self, file, arg.args);
+        }
+    };
+    auto note_slot = [&](uint32_t file, const ResultSlot &slot) {
+        note(file, slot.type_name, slot.type_package);
+        note_args(note_args, file, slot.type_args);
+    };
+    for (const PackageNode &node : graph_->nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+            if (fn == nullptr) {
+                continue;
+            }
+            // `measure.spec.Rect` and `func Box.spec.i32::get` both carry a concrete type.
+            if (fn->name.find(".spec") == std::string::npos && fn->method_struct.find(".spec") == std::string::npos) {
+                continue;
+            }
+            for (const Param &param : fn->params) {
+                note(node.file_id, param.type_name, param.type_package);
+                note_args(note_args, node.file_id, param.type_args);
+                for (const ResultSlot &part : param.tuple_parts) {
+                    note_slot(node.file_id, part);
+                }
+            }
+            note(node.file_id, fn->return_type, fn->type_package);
+            for (const ResultSlot &slot : fn->results) {
+                note_slot(node.file_id, slot);
+            }
+        }
+    }
 }
 
 void CodeGen::prepare_aliases() {
@@ -1575,6 +1627,24 @@ const Binding *CodeGen::static_method_binding(uint32_t file, const std::string &
     return nullptr;
 }
 
+const Binding *CodeGen::static_selector_binding(uint32_t file, const Expr::Selector &selector) const {
+    if (selector.resolved_owner.empty()) {
+        return nullptr;
+    }
+    const std::string key = selector.resolved_owner + "." + selector.field;
+    const Binding *method = nullptr;
+    if (selector.resolved_file != 0) {
+        method = method_binding(file, selector.resolved_file, key);
+    }
+    if (method == nullptr) {
+        method = static_method_binding(file, selector.resolved_owner, selector.field);
+    }
+    if (method != nullptr && method->decl != nullptr && !method->decl->static_method) {
+        return nullptr;
+    }
+    return method;
+}
+
 const Binding *CodeGen::function_named(uint32_t home, const std::string &key, uint32_t caller) const {
     if (home == 0 || key.empty()) {
         return nullptr;
@@ -1724,7 +1794,7 @@ const Binding *CodeGen::function_designator(uint32_t file, const Expr &expr) con
     }
     // `Box[i32].from`. Sema stored the specialization on the selector.
     if (!selector->resolved_owner.empty()) {
-        const Binding *method = static_method_binding(file, selector->resolved_owner, selector->field);
+        const Binding *method = static_selector_binding(file, *selector);
         if (method != nullptr && method->value != nullptr && !method->is_generic) {
             return method;
         }

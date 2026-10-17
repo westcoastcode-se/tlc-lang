@@ -834,6 +834,30 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             expr = make_expr(std::move(call));
             continue;
         }
+        // `Vec[i32]{}` and `pkg.Vec[i32]{}`. `a[i]` and `(f())[i]` stay indexes.
+        if (check(TokenKind::LBracket) &&
+            (std::holds_alternative<Expr::Name>(expr->data) || package_type) && bracket_then_brace()) {
+            std::string type_name;
+            std::string type_package;
+            if (const auto *name = std::get_if<Expr::Name>(&expr->data)) {
+                type_name = name->text;
+            } else {
+                const auto &selector = std::get<Expr::Selector>(expr->data);
+                type_package = std::get<Expr::Name>(selector.base->data).text;
+                type_name = selector.field;
+            }
+            const SourceLoc loc = expr_loc(*expr);
+            std::vector<TypeArg> type_args = parse_type_args();
+            auto init = parse_init();
+            if (auto *node = std::get_if<Expr::Init>(&init->data); node != nullptr && !type_name.empty()) {
+                node->type_name = std::move(type_name);
+                node->type_package = std::move(type_package);
+                node->type_args = std::move(type_args);
+                node->loc = loc;
+            }
+            expr = std::move(init);
+            continue;
+        }
         if (eat(TokenKind::LBracket)) {
             Expr::Index index;
             index.loc = expr_loc(*expr);

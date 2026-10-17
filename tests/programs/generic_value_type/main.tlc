@@ -1,0 +1,6 @@
+type Integer i32;
+
+func main() i32 {
+    var v = Integer[i32]{};
+    return 0;
+}

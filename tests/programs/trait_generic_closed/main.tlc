@@ -1,0 +1,7 @@
+import "geom";
+
+func main() i32 {
+    var b geom.Box;
+    b.n = 4;
+    return geom.measure(b);
+}

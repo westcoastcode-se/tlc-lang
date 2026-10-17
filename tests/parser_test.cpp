@@ -930,6 +930,34 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "func main() i32 {\n"
+            "  var p = Vec[i32]{};\n"
+            "  var q = Vec[i32]{.n = 1};\n"
+            "  var r = geom.Vec[i32]{};\n"
+            "  var b = Buf[4, i32]{};\n"
+            "  var n = Box[Vec[i32]]{};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(init Vec[i32])");
+        EXPECT_HAS(check, parsed.dump, "(init Vec[i32] (.n (int 1)))");
+        EXPECT_HAS(check, parsed.dump, "(init geom.Vec[i32])");
+        EXPECT_HAS(check, parsed.dump, "(init Buf[4, i32])");
+        EXPECT_HAS(check, parsed.dump, "(init Box[Vec[i32]])");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() i32 {\n"
+            "  var x = (f())[0]{};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, parsed.dump, "([] (call (name f)) (int 0))");
+        EXPECT(check, parsed.dump.find("(init") == std::string::npos);
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() i32 {\n"
             "  var row = [_]i32{10, 20, 12};\n"
             "  return 0;\n"
             "}\n");

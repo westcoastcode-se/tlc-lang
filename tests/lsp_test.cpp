@@ -481,11 +481,15 @@ int run_lsp_tests() {
     {
         std::ofstream math(export_root / "math" / "lib.tlc");
         math << "package math;\nexport type Entity struct { id i32; };\nexport var Entity::next i32 = 1;\n"
-                "var Entity::hidden i32 = 2;\nexport type Color enum { Red };\n";
+                "var Entity::hidden i32 = 2;\nexport func Entity::make() i32 { return 1; }\n"
+                "func Entity::buried() i32 { return 2; }\n"
+                "export func Entity::total(self this) i32 { return self.id; }\n"
+                "export type Color enum { Red };\n";
         std::ofstream entry(export_root / "main.tlc");
-        entry << "import \"math\";\nfunc main() i32 {\n    return math.Entity.next;\n}\n";
+        entry << "import \"math\";\nfunc main() i32 {\n    return math.Entity.next + math.Entity.make();\n}\n";
     }
-    const std::string export_source = "import \"math\";\nfunc main() i32 {\n    return math.Entity.next;\n}\n";
+    const std::string export_source =
+        "import \"math\";\nfunc main() i32 {\n    return math.Entity.next + math.Entity.make();\n}\n";
     const std::string export_uri = std::string("file://") + (export_root / "main.tlc").string();
     send_json(to_child[1],
               std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
@@ -498,7 +502,18 @@ int run_lsp_tests() {
                   std::to_string(exported_var.character) + "}}}");
     const std::string export_items = read_until(from_child[0], "\"id\":15", 4000);
     EXPECT_HAS(check, export_items, "\"next\"");
+    EXPECT_HAS(check, export_items, "\"make\"");
     EXPECT(check, export_items.find("\"hidden\"") == std::string::npos);
+    EXPECT(check, export_items.find("\"buried\"") == std::string::npos);
+    EXPECT(check, export_items.find("\"total\"") == std::string::npos);
+    const LineCol make_at = at_needle(export_source, "make", false);
+    EXPECT(check, make_at.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":25,"method":"textDocument/hover","params":{"textDocument":{"uri":")") +
+                  export_uri + R"("},"position":{"line":)" + std::to_string(make_at.line) + R"(,"character":)" +
+                  std::to_string(make_at.character) + "}}}");
+    const std::string make_hover = read_until(from_child[0], "\"id\":25", 4000);
+    EXPECT_HAS(check, make_hover, "func Entity.make() i32");
     send_json(to_child[1],
               std::string(R"({"jsonrpc":"2.0","id":16,"method":"textDocument/definition","params":{"textDocument":{"uri":")") +
                   export_uri + R"("},"position":{"line":)" + std::to_string(exported_var.line) + R"(,"character":)" +

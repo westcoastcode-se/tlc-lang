@@ -273,7 +273,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (!fn->method_struct.empty()) {
                 require_method_params(*fn);
                 if (generic_struct_name(file_id_, fn->method_struct)) {
-                    if (fn->exported || fn->is_extern) {
+                    // `export` on a static function publishes `pkg.Vec[i32].name(...)`.
+                    // An instance method and `extern` stay rejected.
+                    if (fn->is_extern || (fn->exported && !fn->static_method)) {
                         error(fn->loc, "not supported yet");
                     }
                     if (fn->static_method) {

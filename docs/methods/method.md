@@ -92,7 +92,7 @@ func main() i32 {
 
 The same method name may exist on different structs and as a free function. The call `p.sum(...)` selects the struct's method. A free call `sum(...)` selects the function.
 
-Every file in the package can call the method. `export func Point::sum` publishes that method. Another package calls `value.sum(...)`. A method without `export` is reported as `sum is not exported`. `extern` on a method, `pkg.Point.sum`, and `export` on a generic method are reported as `not supported yet`. `Point::sum(p, 1)` is not a call.
+Every file in the package can call the method. `export func Point::sum` publishes that method. Another package calls `value.sum(...)`. A method without `export` is reported as `sum is not exported`. `extern` on a method and `pkg.Point.sum` are reported as `not supported yet`. `export` on a generic instance method is reported as `not supported yet`. `export` on a static function publishes `pkg.Type.name(...)`, including `pkg.Vec[i32].name(...)`. `Point::sum(p, 1)` is not a call.
 
 ## Cost
 

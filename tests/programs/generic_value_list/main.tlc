@@ -1,0 +1,8 @@
+type Vec[T type] struct {
+    n T;
+};
+
+func main() i32 {
+    var v = Vec[i32]{10, 20};
+    return 0;
+}

@@ -1,0 +1,29 @@
+import "geom";
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+export func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+type Square struct {
+    n i32;
+};
+
+export func Square::area(self *this) i32 {
+    return self.n;
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 6;
+    r.h = 7;
+    var s Square;
+    s.n = 3;
+    var b geom.Box;
+    b.n = 1;
+    return geom.measure(r) + geom.measure_at(&s) + geom.measure(b) + geom.measure_at(&r) - 88;
+}

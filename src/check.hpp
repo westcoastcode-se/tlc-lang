@@ -529,8 +529,11 @@ class Checker {
     // `Box[i32].from` and `Buf[4, i32].width` in this package. Empty when `node` is not that form.
     // `failed` means the form was recognized and the arguments did not specialize.
     std::string same_package_spec(const Expr::Selector &node, bool &failed);
-    // `pkg.Box[i32].name(...)`. A method is not called through a package.
-    bool package_generic_call(const Expr::Selector &node);
+    // `pkg.Type.name(...)` and `pkg.Vec[i32].name(...)`. True when that call was handled.
+    bool package_static_call(const Expr::Call &node, const Expr::Selector &selector, bool deferring, Type &out);
+    // A static function used as a value on a type from another package.
+    // True when the name is a method. False leaves the caller's diagnostic in place.
+    bool static_method_value(const Expr::Selector &node, uint32_t home, const std::string &owner, Type &out);
     Type finish_static_call(const Expr::Call &node, const MethodInfo &method, bool deferring);
     // True when `node` is `Type.name` or `Type[args].name`. The diagnostic is already reported.
     bool assoc_from_selector(const Expr::Selector &node, Type &out);

@@ -2125,8 +2125,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         if (!package_call) {
             // `Box[i32].from(...)`. The owner is the specialization, and the call passes no receiver.
             if (!selector->resolved_owner.empty()) {
-                const Binding *method = selected_binding(
-                    static_method_binding(current_file_, selector->resolved_owner, selector->field));
+                const Binding *method = selected_binding(static_selector_binding(current_file_, *selector));
                 if (method != nullptr && method->decl != nullptr && method->decl->static_method) {
                     auto *function = llvm::dyn_cast<llvm::Function>(method->value);
                     if (function == nullptr) {
@@ -3467,7 +3466,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     if (global != nullptr) {
                         return shape_from_binding(*global);
                     }
-                    const Binding *method = static_method_binding(current_file_, node.resolved_owner, node.field);
+                    const Binding *method = static_selector_binding(current_file_, node);
                     if (method != nullptr) {
                         return shape_from_binding(*method);
                     }
@@ -3942,7 +3941,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (global != nullptr && (global->value != nullptr || global->immediate)) {
                         return value_of_binding(*global);
                     }
-                    const Binding *method = static_method_binding(current_file_, node.resolved_owner, node.field);
+                    const Binding *method = static_selector_binding(current_file_, node);
                     if (method != nullptr && method->value != nullptr) {
                         return value_of_binding(*method);
                     }

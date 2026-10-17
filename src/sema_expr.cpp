@@ -537,7 +537,34 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
     }
     // `Other{}` keeps Other. The caller reports a destination that wanted Point.
     Type dest = want;
+    // `Vec[i32]{}` is that specialization. The field rules stay those of `Point{}`.
+    bool applied = false;
+    if (!init.type_name.empty() && !init.type_args.empty()) {
+        bool is_struct = false;
+        bool is_enum = false;
+        int indirections = 0;
+        uint32_t optional = 0;
+        bool is_array = false;
+        int array_len = 0;
+        std::string array_len_name;
+        prepare_written(init.type_name, init.type_package, is_struct, is_enum, indirections, optional, is_array,
+                        array_len, array_len_name, init.type_args, init.loc);
+        applied = true;
+    }
     if (!init.type_name.empty()) {
+        if (applied && init.type_name == "invalid") {
+            for (const Expr::FieldInit &field : init.fields) {
+                if (field.value) {
+                    check_expr(*field.value, true);
+                }
+            }
+            for (const auto &element : init.elements) {
+                if (element) {
+                    check_expr(*element, true);
+                }
+            }
+            return type_invalid();
+        }
         dest = literal_struct_type(init);
         if (dest.kind == TypeKind::Invalid) {
             for (const Expr::FieldInit &field : init.fields) {
@@ -948,35 +975,192 @@ std::string Checker::same_package_spec(const Expr::Selector &node, bool &failed)
     return spec;
 }
 
-bool Checker::package_generic_call(const Expr::Selector &node) {
-    if (node.base == nullptr) {
+bool Checker::static_method_value(const Expr::Selector &node, uint32_t home, const std::string &owner, Type &out) {
+    bool hidden = false;
+    const MethodInfo *method = find_visible_method(home, owner, node.field, hidden);
+    if (method == nullptr) {
+        if (!hidden) {
+            return false;
+        }
+        error(node.loc, node.field + " is not exported");
+        out = type_invalid();
+        return true;
+    }
+    bool any_static = method->is_static;
+    if (!any_static) {
+        for (const MethodInfo &extra : method->more) {
+            if (extra.is_static) {
+                any_static = true;
+                break;
+            }
+        }
+    }
+    // An instance method is `not supported yet`. Several lists are too, used as a value.
+    if (!any_static || !method->more.empty() || method->type.kind != TypeKind::Function) {
+        error(node.loc, !any_static || !method->more.empty() ? "not supported yet" : "type mismatch");
+        out = type_invalid();
+        return true;
+    }
+    if (!allow_unsafe_fn(method->unsafe_fn, node.loc)) {
+        out = type_invalid();
+        return true;
+    }
+    out = method->type;
+    node.resolved_owner = owner;
+    node.resolved_file = method->file_id;
+    return true;
+}
+
+bool Checker::package_static_call(const Expr::Call &node, const Expr::Selector &selector, bool deferring, Type &out) {
+    if (selector.base == nullptr || selector.field.empty()) {
         return false;
     }
-    const Expr *type_expr = nullptr;
-    if (!node.type_args.empty()) {
-        type_expr = node.base.get();
-    } else if (const auto *index = std::get_if<Expr::Index>(&node.base->data)) {
-        type_expr = index->base.get();
+    auto check_args = [&]() {
+        for (const auto &arg : node.args) {
+            if (arg) {
+                check_expr(*arg, true);
+            }
+        }
+    };
+    auto reject = [&](const std::string &message) {
+        error(node.loc, message);
+        check_args();
+        out = type_invalid();
+        return true;
+    };
+
+    uint32_t home = 0;
+    std::string owner;
+    // `pkg.Vec[i32].name` and `pkg.Buf[4, i32].name`. A value such as `pkg.row[0].x` is not a template.
+    {
+        std::vector<TypeArg> args = selector.type_args;
+        const Expr *type_expr = nullptr;
+        const Expr::Index *index = nullptr;
+        if (!args.empty()) {
+            type_expr = selector.base.get();
+        } else if (const auto *found = std::get_if<Expr::Index>(&selector.base->data)) {
+            index = found;
+            type_expr = found->base.get();
+        }
+        const auto *inner = type_expr == nullptr ? nullptr : std::get_if<Expr::Selector>(&type_expr->data);
+        if (inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
+            if (const auto *package_name = std::get_if<Expr::Name>(&inner->base->data)) {
+                const Symbol *package = lookup(package_name->text);
+                if (package != nullptr && package->is_package) {
+                    uint32_t templ_file = package->package_file;
+                    const StructDecl *templ = nullptr;
+                    for (const uint32_t id : files_in_package(package->package_file)) {
+                        const auto found = struct_templates_.find(id);
+                        if (found == struct_templates_.end()) {
+                            continue;
+                        }
+                        const auto have = found->second.find(inner->field);
+                        if (have == found->second.end()) {
+                            continue;
+                        }
+                        templ_file = id;
+                        templ = have->second;
+                        break;
+                    }
+                    if (templ != nullptr) {
+                        if (index != nullptr) {
+                            TypeArg arg;
+                            if (index->index == nullptr || !type_arg_from_expr(*index->index, arg)) {
+                                error(node.loc, "type mismatch");
+                                check_args();
+                                out = type_invalid();
+                                return true;
+                            }
+                            args.push_back(std::move(arg));
+                        }
+                        if (!templ->exported) {
+                            error(inner->loc, inner->field + " is not exported");
+                            check_args();
+                            out = type_invalid();
+                            return true;
+                        }
+                        const uint32_t saved = file_id_;
+                        file_id_ = templ_file;
+                        const std::string spec = specialize_type_app("", inner->field, args, selector.loc);
+                        file_id_ = saved;
+                        if (spec.empty()) {
+                            check_args();
+                            out = type_invalid();
+                            return true;
+                        }
+                        home = templ_file;
+                        owner = spec;
+                    }
+                }
+            }
+        }
     }
-    const auto *inner = type_expr == nullptr ? nullptr : std::get_if<Expr::Selector>(&type_expr->data);
-    if (inner == nullptr || inner->base == nullptr || !inner->type_args.empty()) {
-        return false;
+    if (owner.empty()) {
+        // The generic form did not match. An index that is not a template stays a value.
+        if (!selector.type_args.empty() || std::holds_alternative<Expr::Index>(selector.base->data)) {
+            return false;
+        }
+        const auto *inner = std::get_if<Expr::Selector>(&selector.base->data);
+        if (inner == nullptr || inner->base == nullptr || !inner->type_args.empty()) {
+            return false;
+        }
+        const auto *package_name = std::get_if<Expr::Name>(&inner->base->data);
+        if (package_name == nullptr) {
+            return false;
+        }
+        const Symbol *package = lookup(package_name->text);
+        if (package == nullptr || !package->is_package) {
+            return false;
+        }
+        const Symbol *type = find_export(package->package_file, inner->field);
+        if (type == nullptr || !type->is_type) {
+            return false;
+        }
+        // `math.Color.Red()` keeps the diagnostic it had. A static function on the enum does not.
+        if (type->type.kind == TypeKind::Enum && find_enum_member(type->type.enum_id, selector.field) != nullptr) {
+            return false;
+        }
+        home = package->package_file;
+        owner = inner->field;
     }
-    const auto *package_name = std::get_if<Expr::Name>(&inner->base->data);
-    if (package_name == nullptr) {
-        return false;
+
+    const AssocVar *var = find_assoc_in(home, owner, selector.field);
+    if (var != nullptr) {
+        return reject(var->exported ? "type mismatch" : selector.field + " is not exported");
     }
-    const Symbol *package = lookup(package_name->text);
-    if (package == nullptr || !package->is_package) {
-        return false;
+    bool hidden = false;
+    const MethodInfo *method = find_visible_method(home, owner, selector.field, hidden);
+    if (method == nullptr) {
+        return reject(hidden ? selector.field + " is not exported" : "undeclared identifier");
     }
-    for (const uint32_t id : files_in_package(package->package_file)) {
-        const auto found = struct_templates_.find(id);
-        if (found != struct_templates_.end() && found->second.contains(inner->field)) {
+    bool any_static = method->is_static;
+    if (!any_static) {
+        for (const MethodInfo &extra : method->more) {
+            if (extra.is_static) {
+                any_static = true;
+                break;
+            }
+        }
+    }
+    // `pkg.Point.sum` is an instance method. The call is not that method.
+    if (!any_static) {
+        return reject("not supported yet");
+    }
+    if (!method->more.empty()) {
+        method = choose_method(node, *method, true, !package_owns(home), selector.field);
+        if (method == nullptr) {
+            out = type_invalid();
             return true;
         }
     }
-    return false;
+    if (!method->is_static || method->type.kind != TypeKind::Function || method->type.result == nullptr) {
+        return reject(method->is_static ? "undeclared identifier" : "type mismatch");
+    }
+    node.selected = method->decl;
+    selector.resolved_owner = owner;
+    selector.resolved_file = method->file_id;
+    out = finish_static_call(node, *method, deferring);
+    return true;
 }
 
 const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const MethodInfo &head, bool want_static,
@@ -1219,13 +1403,21 @@ bool Checker::assoc_from_selector(const Expr::Selector &node, Type &out) {
                     const Symbol *type = find_export(package->package_file, inner->field);
                     if (type != nullptr && type->is_type) {
                         const AssocVar *var = find_assoc_in(package->package_file, inner->field, node.field);
-                        if (var == nullptr || !var->exported) {
-                            error(node.loc, node.field + " is not exported");
-                            out = type_invalid();
+                        if (var != nullptr) {
+                            if (!var->exported) {
+                                error(node.loc, node.field + " is not exported");
+                                out = type_invalid();
+                                return true;
+                            }
+                            out = var->type;
+                            node.resolved_owner = inner->field;
                             return true;
                         }
-                        out = var->type;
-                        node.resolved_owner = inner->field;
+                        if (static_method_value(node, package->package_file, inner->field, out)) {
+                            return true;
+                        }
+                        error(node.loc, node.field + " is not exported");
+                        out = type_invalid();
                         return true;
                     }
                 }
@@ -1327,13 +1519,21 @@ bool Checker::assoc_from_selector(const Expr::Selector &node, Type &out) {
                             return true;
                         }
                         const AssocVar *var = find_assoc_in(package->package_file, spec, node.field);
-                        if (var == nullptr || !var->exported) {
-                            error(node.loc, node.field + " is not exported");
-                            out = type_invalid();
+                        if (var != nullptr) {
+                            if (!var->exported) {
+                                error(node.loc, node.field + " is not exported");
+                                out = type_invalid();
+                                return true;
+                            }
+                            out = var->type;
+                            node.resolved_owner = spec;
                             return true;
                         }
-                        out = var->type;
-                        node.resolved_owner = spec;
+                        if (static_method_value(node, owner, spec, out)) {
+                            return true;
+                        }
+                        error(node.loc, node.field + " is not exported");
+                        out = type_invalid();
                         return true;
                     }
                 }
@@ -1998,10 +2198,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 check_expr(*arg, true);
                             }
                         };
-                        if (package_generic_call(*selector)) {
-                            error(node.loc, "not supported yet");
-                            check_args();
-                            return type_invalid();
+                        Type foreign;
+                        if (package_static_call(node, *selector, deferring, foreign)) {
+                            return foreign;
                         }
                         bool failed = false;
                         const std::string spec = same_package_spec(*selector, failed);

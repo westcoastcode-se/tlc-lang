@@ -25,11 +25,11 @@ func main() i32 {
 }
 ```
 
-The program returns 42. The function is written in the same file as the struct. Every file in the package can call it. It is not exported. `export` in front of a static function does not publish `pkg.Type.name`. That call is reported as `not supported yet`. An enum uses the same form, `Color.label()`. A missing name, `Point.missing()`, is reported as `undeclared identifier`.
+The program returns 42. The function is written in the same file as the struct. Every file in the package can call it. `export` publishes `pkg.Type.name(...)`. Without `export` that call is reported as `name is not exported`. `var ptr = pkg.Point.make` is that function. An enum uses the same form, `Color.label()` and `pkg.Color.code()`. A missing name, `Point.missing()`, is reported as `undeclared identifier`.
 
 The name without a call is a function pointer. `var ptr = Point.make` and `take(Point.make)` use that pointer, and `ptr(40, 2)` calls it. `var ptr = add` is the same form for a free function. An instance method used as a value, `var ptr = Point.sum`, is reported as `type mismatch`. An enumerator stays a value, so `Color.Red` is not a function pointer.
 
-A static function on a generic struct uses the same call. `Box[i32].from(40)` and `Buf[1, i32].width()` name the specialization. `var ptr = Box[i32].from` and `take(Box[i32].from)` are that function. A call written in the method, `Box[T].from(0)`, uses the same specialization. An instance method on the specialization, `Vec[i32].get()`, is reported as `type mismatch`. A missing name is reported as `undeclared identifier`.
+A static function on a generic struct uses the same call. `Box[i32].from(40)` and `Buf[1, i32].width()` name the specialization. `var ptr = Box[i32].from` and `take(Box[i32].from)` are that function. A call written in the method, `Box[T].from(0)`, uses the same specialization. Another package calls `pkg.Box[i32].from(40)` and `pkg.Buf[1, i32].width()` when the function is exported. Without `export` that call is reported as `name is not exported`. An instance method on the specialization, `Vec[i32].get()`, is reported as `type mismatch`. A missing name is reported as `undeclared identifier`.
 
 ```c
 type Box[T type] struct {
@@ -90,6 +90,6 @@ func main() i32 {
 
 ## Cost
 
-`Point.make(40, 1)` is a traced call. The two arguments are 2 `movl`. There is no receiver to copy. Taking the function as a value, `var ptr = Point.make`, is 1 `leaq` and 1 store of that address. Calling that pointer is the indirect call on [Function pointers](../functions/pointer.md).
+`Point.make(40, 1)` is a traced call. The two arguments are 2 `movl`. There is no receiver to copy. `pkg.Point.make(40, 1)` is that same traced call. Taking the function as a value, `var ptr = Point.make`, is 1 `leaq` and 1 store of that address. Calling that pointer is the indirect call on [Function pointers](../functions/pointer.md).
 
 [Index](../README.md) · [Previous: Generic methods](generic.md) · [Next: Methods on primitive aliases](alias.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

@@ -1,0 +1,9 @@
+package math;
+
+export type Vec[T type] struct {
+    export n T;
+};
+
+export type Buf[N i32, T type] struct {
+    export n T;
+};

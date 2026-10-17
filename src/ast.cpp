@@ -461,6 +461,30 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
     out += ")\n";
 }
 
+void append_type_args(std::string &text, const std::vector<TypeArg> &args) {
+    if (args.empty()) {
+        return;
+    }
+    text += '[';
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (i != 0) {
+            text += ", ";
+        }
+        const TypeArg &arg = args[i];
+        if (arg.has_value) {
+            text += std::to_string(arg.value);
+            continue;
+        }
+        if (!arg.type_package.empty()) {
+            text += arg.type_package;
+            text += '.';
+        }
+        text += arg.type_name;
+        append_type_args(text, arg.args);
+    }
+    text += ']';
+}
+
 } // namespace
 
 std::string dump_expr(const Expr &expr) {
@@ -603,6 +627,7 @@ std::string dump_expr(const Expr &expr) {
                         text += '.';
                     }
                     text += node.type_name;
+                    append_type_args(text, node.type_args);
                 }
                 for (const Expr::FieldInit &field : node.fields) {
                     text += " (.";

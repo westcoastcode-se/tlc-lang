@@ -154,6 +154,8 @@ class Parser {
     // `allow_slice` accepts `[]T`. A C declarator such as `name[]` stays unsupported.
     ArrayMark parse_array_suffix(bool allow_slice = false);
     bool bracket_then_paren() const;
+    // `Vec[i32]{}`. True when `[...]` is followed by `{`.
+    bool bracket_then_brace() const;
     // `func Vec[T]::get`. True when `[...]` is followed by `::`.
     bool bracket_then_colon_colon() const;
     // `Buf[4, i32].count`. True when a comma inside `[...]` is followed by `.`.

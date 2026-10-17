@@ -2357,7 +2357,8 @@ const Sym *qualified_member(const std::vector<Sym> &syms, const std::string &uri
             continue;
         }
         if (sym.role == Role::EnumMember ||
-            ((sym.role == Role::Variable || sym.role == Role::Constant) && sym.exported)) {
+            ((sym.role == Role::Variable || sym.role == Role::Constant) && sym.exported) ||
+            (sym.role == Role::Method && sym.static_method && sym.exported)) {
             return &sym;
         }
     }
@@ -3072,7 +3073,8 @@ Json complete(const Doc &doc, const Cursor &cursor) {
                         continue;
                     }
                     if (sym.role == Role::EnumMember ||
-                        ((sym.role == Role::Variable || sym.role == Role::Constant) && sym.exported)) {
+                        ((sym.role == Role::Variable || sym.role == Role::Constant) && sym.exported) ||
+                        (sym.role == Role::Method && sym.static_method && sym.exported)) {
                         push(sym.name, sym.completion_kind, sym.detail);
                     }
                 }

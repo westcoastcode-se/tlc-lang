@@ -1205,10 +1205,19 @@ void Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
         error(loc, "type mismatch");
         return;
     }
+    const bool known_struct = struct_id < static_cast<int>(structs_.size());
+    const StructInfo *info = known_struct ? &structs_[static_cast<std::size_t>(struct_id)] : nullptr;
     for (const TraitInfo::Method &method : traits_[static_cast<std::size_t>(trait_id)].methods) {
-        const MethodInfo *head = find_method(struct_id, method.name);
+        // A struct from another package satisfies the trait through an exported method.
+        bool hidden = false;
+        const MethodInfo *head =
+            info == nullptr ? nullptr : find_visible_method(info->file_id, info->name, method.name, hidden);
+        if (head == nullptr) {
+            error(loc, hidden ? method.name + " is not exported" : "undeclared identifier");
+            continue;
+        }
         const MethodInfo *concrete = head;
-        if (head != nullptr && !head->more.empty()) {
+        if (!head->more.empty()) {
             concrete = nullptr;
             bool body = false;
             auto consider = [&](const MethodInfo &info) {

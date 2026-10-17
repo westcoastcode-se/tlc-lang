@@ -222,7 +222,7 @@ struct Expr {
         std::unique_ptr<Expr> value;
     };
     // `{.field = value}` names struct fields. `{value, value}` fills an array.
-    // `(value, value)` is a tuple. `Point{}` and `pkg.Point{}` name the struct.
+    // `(value, value)` is a tuple. `Point{}`, `pkg.Point{}`, and `Vec[i32]{}` name the struct.
     struct Init {
         SourceLoc loc{};
         std::vector<FieldInit> fields;
@@ -257,6 +257,7 @@ struct Expr {
         int indirections = 0;
         uint32_t optional = 0;
         uint32_t const_pointee = 0;
+        // `Vec[i32]{}`, or the element of `[_]Box[i32]{...}`.
         std::vector<TypeArg> type_args;
     };
     struct Unsupported {

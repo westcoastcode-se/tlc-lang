@@ -1898,6 +1898,28 @@ void Checker::generic_method_clash(const FunctionDecl &fn) {
     }
 }
 
+namespace {
+
+// `value *T` is the pointer form. A by-value `T` in the same list keeps the value rule.
+bool constraint_through_pointer(const FunctionDecl &templ, const TypeParam &param) {
+    bool value = false;
+    bool pointer = false;
+    for (const Param &slot : templ.params) {
+        if (slot.is_receiver || slot.is_array || !slot.type_args.empty() || !slot.type_package.empty() ||
+            slot.type_name != param.name) {
+            continue;
+        }
+        if (slot.indirections == 0) {
+            value = true;
+        } else if (slot.indirections == 1) {
+            pointer = true;
+        }
+    }
+    return pointer && !value;
+}
+
+} // namespace
+
 std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const FunctionDecl &templ, const Expr::Call &call,
                                                                   const std::vector<Type> &arg_types) {
     int pack_at = -1;
@@ -2088,7 +2110,16 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
             error(call.loc, "not supported yet");
             return std::nullopt;
         }
-        const int trait_id = package_trait(file_id_, param.constraint);
+        // The clone is stored under the file id `collect_templates` used. A lone unit
+        // registers its trait at 0, while `loc.file` is the source file.
+        uint32_t home = file_id_;
+        for (const OwnedFn &owned : owned_fns_) {
+            if (&owned.fn == &templ) {
+                home = owned.file_id;
+                break;
+            }
+        }
+        const int trait_id = package_trait(home, param.constraint);
         if (trait_id < 0) {
             error(call.loc, "undeclared identifier");
             return std::nullopt;
@@ -2099,7 +2130,8 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
             return std::nullopt;
         }
         const int struct_id = bound.struct_id >= 0 ? bound.struct_id : find_tag(file_id_, bound.type_name);
-        require_satisfies(struct_id, trait_id, bound.indirections == 1, call.loc);
+        const bool through_pointer = bound.indirections == 1 || constraint_through_pointer(templ, param);
+        require_satisfies(struct_id, trait_id, through_pointer, call.loc);
     }
     return bounds;
 }

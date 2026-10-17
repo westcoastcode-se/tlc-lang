@@ -1,0 +1,20 @@
+import "math";
+
+func take(ptr func (i32, i32) math.Point) i32 {
+    var p = ptr(1, 0);
+    return p.x;
+}
+
+func main() i32 {
+    var direct = math.Point.make(40, 1);
+    var ptr = math.Point.make;
+    var once = ptr(0, 2);
+    var zero = math.Point.zero();
+    var passed = take(math.Point.make);
+    var box = math.Vec[i32].from(4);
+    var wide = math.Buf[1, i32].width();
+    var tag = math.Color.code();
+    var one = math.Point.pick(3);
+    var two = math.Point.pick(10, 2);
+    return direct.x + once.y + zero.x + passed + box.value + wide + tag + one + two - 64;
+}

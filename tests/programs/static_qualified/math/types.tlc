@@ -1,0 +1,51 @@
+package math;
+
+export type Point struct {
+    export x i32;
+    export y i32;
+};
+
+export func Point::make(x i32, y i32) Point {
+    var p Point;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+export func Point::zero() Point {
+    return Point.make(0, 0);
+}
+
+export func Point::pick(n i32) i32 {
+    return n;
+}
+
+export func Point::pick(a i32, b i32) i32 {
+    return a + b;
+}
+
+export type Color enum {
+    Red,
+};
+
+export func Color::code() i32 {
+    return 1;
+}
+
+export type Vec[T type] struct {
+    export value T;
+};
+
+export func Vec[T]::from(value T) Vec[T] {
+    var v Vec[T];
+    v.value = value;
+    return v;
+}
+
+export type Buf[N i32, T type] struct {
+    export value T;
+};
+
+export func Buf[N, T]::width() i32 {
+    return N;
+}

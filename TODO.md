@@ -4,10 +4,8 @@ What the language pages leave out. The compiler reports most of these as `not su
 
 ## Static functions
 
-A function on a struct or enum with no `this` parameter is called as `Type.name(...)`. These forms are not supported yet:
+A function on a struct or enum with no `this` parameter is called as `Type.name(...)`. `export` publishes `pkg.Type.name(...)` and `pkg.Vec[i32].name(...)`. These forms are not supported yet:
 
-- `pkg.Type.name(...)`.
-- A static function on a generic struct in another package, `pkg.Vec[i32].name(...)`. The same package calls `Vec[i32].name(...)` and `Buf[4, i32].name()`.
 - A call through a pointer alias, a sized-array alias, or a struct alias, such as `type Ptr *Point`, `type Pair [2]i32`, or `type Spot Point`. `type Integer i32` can use `Integer.name(...)`. A slice alias such as `type Row []i32` can use `Row.first(...)` in its package.
 - `const next` inside a struct. The constant is `const Entity::next = 1` or `const Box[T]::limit = 1`, written beside the type.
 - `const Entity::next` inside a function. The constant is file scope.
@@ -77,7 +75,6 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 ### Parsing
 
 - `name[args](` is a generic call. A call of an indexed value is `(ops[i])()`.
-- `Vec[i32]{}` and `pkg.Vec[i32]{}`. `Point{}` is a struct value. A type application before `{}` is not.
 - An array length may be a name, `[N]i32`. The name has to be a file-scope `const` already folded. A length that needs `sizeof` of a struct that is not complete yet does not fold.
 
 ### Constant evaluation
@@ -137,7 +134,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Methods and traits
 
-- `extern` on a method. `export` on a generic method. A non-generic method may be exported. Another package calls `value.name(...)`. A method without `export` is reported as `name is not exported`.
+- `extern` on a method. `export` on a generic instance method. A non-generic method may be exported. Another package calls `value.name(...)`. `export` on a static function publishes `pkg.Type.name(...)`. A method without `export` is reported as `name is not exported`.
 - A receiver with more than one star: `self **this`.
 - A body on a trait method. The trait lists the method and its type.
 - A trait method that returns several results.
