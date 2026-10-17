@@ -1,0 +1,11 @@
+func pair() (i32, [2]i32) {
+    var row [2]i32;
+    row[0] = 40;
+    row[1] = 2;
+    return 1, row;
+}
+
+func main() i32 {
+    var n, row = pair();
+    return n + row[0] + row[1] + row.len - 45;
+}

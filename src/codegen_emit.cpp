@@ -2675,7 +2675,7 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
                 slot.indirections = part.indirections;
                 slot.optional = part.optional;
                 slot.const_pointee = part.const_pointee;
-                slot.is_array = part.is_array && part.array_len < 0;
+                slot.is_array = part.is_array && part.array_len != 0;
                 slot.array_len = slot.is_array ? part.array_len : 0;
                 result.tuple_parts.push_back(std::move(slot));
             }
@@ -4974,9 +4974,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                value.value->getType()->isStructTy()) {
         parts.reserve(fn_results.size());
         for (const FnParam &part : fn_results) {
-            const bool slice = part.is_array && part.array_len < 0 && !part.is_fn_ptr;
+            const bool array = part.is_array && !part.is_fn_ptr && part.array_len != 0;
             parts.push_back(lower(current_file_, part.type_name, part.type_package, part.is_struct, part.indirections,
-                                  slice, slice ? part.array_len : 0, false));
+                                  array, array ? part.array_len : 0, false));
         }
     } else if (value.is_tuple && value.value != nullptr && value.value->getType()->isStructTy() &&
                value.tuple_parts.size() == node.names.size()) {
@@ -5015,6 +5015,10 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             } else if (ty == slice_type()) {
                 low.is_slice = true;
                 low.array_len = -1;
+                low.type = ty;
+            } else if (ty != nullptr && ty->isArrayTy()) {
+                low.is_array = true;
+                low.array_len = static_cast<int>(llvm::cast<llvm::ArrayType>(ty)->getNumElements());
                 low.type = ty;
             } else if (ty != nullptr && ty->isPointerTy()) {
                 low.depth = 1;
@@ -5177,6 +5181,11 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         }
                         if (field->isPointerTy()) {
                             return value.depth > 0 && value.value->getType()->isPointerTy() ? value.value : null_ptr();
+                        }
+                        // A local `[N]T` decays to a pointer. The result slot still holds the array.
+                        if (field->isArrayTy() && value.array_len > 0 && value.value != nullptr &&
+                            value.value->getType()->isPointerTy()) {
+                            return builder_.CreateLoad(field, value.value);
                         }
                         if (field->isIntegerTy() && value.value->getType()->isIntegerTy()) {
                             return resize_int(value.value, field, value.elem_unsigned);

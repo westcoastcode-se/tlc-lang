@@ -1200,53 +1200,93 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
     }
 }
 
-void Checker::require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc) {
+bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc, uint32_t body_home) {
     if (struct_id < 0 || trait_id < 0 || trait_id >= static_cast<int>(traits_.size())) {
         error(loc, "type mismatch");
-        return;
+        return false;
     }
     const bool known_struct = struct_id < static_cast<int>(structs_.size());
     const StructInfo *info = known_struct ? &structs_[static_cast<std::size_t>(struct_id)] : nullptr;
+    bool ok = true;
+    const auto same_package = [&](uint32_t view, uint32_t file) {
+        for (const uint32_t id : files_in_package(view)) {
+            if (id == file) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto visible = [&](const MethodInfo &candidate) {
+        if (info == nullptr) {
+            return false;
+        }
+        // The caller sees an unexported method only inside the struct's package.
+        // The specialized body is compiled in `body_home` and has the same limit.
+        if (!same_package(file_id_, info->file_id) && !candidate.exported) {
+            return false;
+        }
+        if (body_home != 0 && !same_package(body_home, info->file_id) && !candidate.exported) {
+            return false;
+        }
+        return true;
+    };
     for (const TraitInfo::Method &method : traits_[static_cast<std::size_t>(trait_id)].methods) {
-        // A struct from another package satisfies the trait through an exported method.
-        bool hidden = false;
-        const MethodInfo *head =
-            info == nullptr ? nullptr : find_visible_method(info->file_id, info->name, method.name, hidden);
-        if (head == nullptr) {
-            error(loc, hidden ? method.name + " is not exported" : "undeclared identifier");
-            continue;
-        }
-        const MethodInfo *concrete = head;
-        if (!head->more.empty()) {
-            concrete = nullptr;
-            bool body = false;
-            auto consider = [&](const MethodInfo &info) {
-                body = body || info.has_body;
-                if (info.has_body && trait_method_matches(method.type, info.type)) {
-                    concrete = &info;
+        const MethodInfo *head = nullptr;
+        if (info != nullptr) {
+            for (const uint32_t id : files_in_package(info->file_id)) {
+                const auto methods = methods_.find(id);
+                if (methods == methods_.end()) {
+                    continue;
                 }
-            };
-            consider(*head);
-            for (const MethodInfo &extra : head->more) {
-                consider(extra);
-            }
-            if (concrete == nullptr) {
-                error(loc, body ? "type mismatch" : "undeclared identifier");
-                continue;
+                const auto group = methods->second.find(info->name);
+                if (group == methods->second.end()) {
+                    continue;
+                }
+                const auto found = group->second.find(method.name);
+                if (found == group->second.end()) {
+                    continue;
+                }
+                head = &found->second;
+                break;
             }
         }
-        if (concrete == nullptr || !concrete->has_body) {
+        if (head == nullptr) {
             error(loc, "undeclared identifier");
+            ok = false;
             continue;
         }
-        const bool pointer_method = concrete->type.kind == TypeKind::Function && !concrete->type.params.empty() &&
-                                    concrete->type.params[0].kind == TypeKind::Pointer;
-        if (!through_pointer && pointer_method) {
-            error(loc, "type mismatch");
-            continue;
+        const auto signature_ok = [&](const MethodInfo &candidate) {
+            if (!candidate.has_body || candidate.is_static || !trait_method_matches(method.type, candidate.type)) {
+                return false;
+            }
+            const bool pointer_method = candidate.type.kind == TypeKind::Function && !candidate.type.params.empty() &&
+                                        candidate.type.params[0].kind == TypeKind::Pointer;
+            return through_pointer || !pointer_method;
+        };
+        const MethodInfo *concrete = nullptr;
+        bool hidden = false;
+        bool mismatched = false;
+        auto consider = [&](const MethodInfo &candidate) {
+            if (!candidate.has_body) {
+                return;
+            }
+            mismatched = true;
+            if (!signature_ok(candidate)) {
+                return;
+            }
+            if (!visible(candidate)) {
+                hidden = true;
+                return;
+            }
+            concrete = &candidate;
+        };
+        consider(*head);
+        for (const MethodInfo &extra : head->more) {
+            consider(extra);
         }
-        if (!trait_method_matches(method.type, concrete->type)) {
-            error(loc, "type mismatch");
+        if (concrete == nullptr) {
+            error(loc, hidden ? method.name + " is not exported" : (mismatched ? "type mismatch" : "undeclared identifier"));
+            ok = false;
         }
     }
     const Type object = type_struct(struct_id);
@@ -1254,12 +1294,15 @@ void Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
         Type got;
         if (!lookup_field(object, field.name, got)) {
             error(loc, "undeclared identifier");
+            ok = false;
             continue;
         }
         if (field.type.kind == TypeKind::Invalid || got.kind == TypeKind::Invalid || !same_type(field.type, got)) {
             error(loc, "type mismatch");
+            ok = false;
         }
     }
+    return ok;
 }
 
 void Checker::define_trait_fields() {

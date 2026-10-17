@@ -1,0 +1,17 @@
+package geom;
+
+type Point struct {
+    n i32;
+};
+
+type Shape trait {
+    func area() i32;
+};
+
+export func id[T type](value T) T {
+    return value;
+}
+
+export func measure[T Shape](value T) i32 {
+    return value.area();
+}

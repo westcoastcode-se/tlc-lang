@@ -1,0 +1,18 @@
+import "geom";
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+export func Point::area(self this) i32 {
+    return self.x + self.y;
+}
+
+func main() i32 {
+    var p Point;
+    p.x = 40;
+    p.y = 2;
+    var q = geom.id(p);
+    return q.x + q.y + geom.measure(p) - 84;
+}

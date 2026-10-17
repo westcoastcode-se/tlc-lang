@@ -361,7 +361,9 @@ class Checker {
     // True when `base` is a trait or `*Trait`. `out` is the field type, or invalid when the name is absent.
     bool as_trait_field(const Type &base, const std::string &name, Type &out) const;
     bool trait_method_matches(const Type &trait_fn, const Type &concrete) const;
-    void require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc);
+    // `body_home` is the package that will compile the specialized body. Zero keeps the caller's view.
+    // A method counts only when that body can call it, and when the caller can see it.
+    bool require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc, uint32_t body_home = 0);
     // The one method of a trait or `*Trait`. Null when the trait has a field or any other method count.
     const Type *sole_trait_method(const Type &want) const;
     // An anonymous function used as a single-method trait argument. The body is checked
@@ -499,6 +501,9 @@ class Checker {
                                     SourceLoc loc);
     bool bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg &out, SourceLoc loc);
     void expose_bounds(uint32_t owner, const std::vector<SpecArg> &bounds);
+    // A struct name that already means a different struct in `owner`, or that exists in two packages,
+    // is spelled `Name.file.N` so both checker and codegen resolve that struct.
+    void disambiguate_bounds(uint32_t owner, std::vector<SpecArg> &bounds);
     void substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, std::string &type_name,
                          std::string &type_package, bool &is_struct, bool &is_enum, int &indirections, uint32_t &optional,
                          bool &is_array, int &array_len, std::string &array_len_name, std::vector<TypeArg> &type_args,

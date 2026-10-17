@@ -139,9 +139,10 @@ bool CodeGen::is_struct_value(const Lowered &low) const {
 }
 
 CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) const {
-    const bool slice = slot.is_array && slot.array_len < 0 && !slot.is_fn_ptr;
-    return lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slice,
-                 slice ? slot.array_len : 0, false);
+    // A slice is `array_len < 0`. A sized array keeps its length. Zero is not an array.
+    const bool array = slot.is_array && !slot.is_fn_ptr && slot.array_len != 0;
+    return lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, array,
+                 array ? slot.array_len : 0, false);
 }
 
 llvm::Type *CodeGen::aggregate_return(const FunctionDecl &fn, uint32_t file) const {
@@ -189,7 +190,34 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
     return llvm::FunctionType::get(ret, params, fn.variadic);
 }
 
+int CodeGen::file_alias(const std::string &name) const {
+    const auto pos = name.rfind(".file.");
+    if (pos == std::string::npos || pos == 0 || pos + 6 >= name.size()) {
+        return -1;
+    }
+    uint32_t file = 0;
+    for (std::size_t i = pos + 6; i < name.size(); ++i) {
+        const unsigned char ch = static_cast<unsigned char>(name[i]);
+        if (ch < '0' || ch > '9') {
+            return -1;
+        }
+        file = file * 10u + static_cast<uint32_t>(ch - '0');
+    }
+    const auto found = tags_.find(file);
+    if (found == tags_.end()) {
+        return -1;
+    }
+    const auto tag = found->second.find(name.substr(0, pos));
+    if (tag == found->second.end()) {
+        return -1;
+    }
+    return tag->second;
+}
+
 int CodeGen::tag_id(uint32_t file, const std::string &name) const {
+    if (const int aliased = file_alias(name); aliased >= 0) {
+        return aliased;
+    }
     for (const uint32_t id : package_files(file)) {
         const auto found = tags_.find(id);
         if (found == tags_.end()) {
@@ -794,6 +822,8 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.is_tuple = low.is_tuple;
     binding.tuple_parts = low.tuple_parts;
     binding.is_slice = low.is_slice;
+    binding.is_array = low.is_array;
+    binding.array_len = low.array_len;
 }
 
 llvm::StructType *CodeGen::slice_type() const {

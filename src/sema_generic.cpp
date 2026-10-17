@@ -788,6 +788,45 @@ void Checker::expose_bounds(uint32_t owner, const std::vector<SpecArg> &bounds) 
     }
 }
 
+void Checker::disambiguate_bounds(uint32_t owner, std::vector<SpecArg> &bounds) {
+    for (SpecArg &bound : bounds) {
+        if (bound.is_pack) {
+            disambiguate_bounds(owner, bound.parts);
+            continue;
+        }
+        if (bound.struct_id < 0 || bound.struct_id >= static_cast<int>(structs_.size())) {
+            continue;
+        }
+        const StructInfo &info = structs_[static_cast<std::size_t>(bound.struct_id)];
+        if (info.name.empty()) {
+            continue;
+        }
+        const int existing = find_tag(owner, info.name);
+        if (existing == bound.struct_id) {
+            bound.type_name = info.name;
+            bound.type_package.clear();
+            continue;
+        }
+        bool ambiguous = existing >= 0;
+        if (!ambiguous) {
+            for (const StructInfo &other : structs_) {
+                if (other.name == info.name && other.file_id != info.file_id) {
+                    ambiguous = true;
+                    break;
+                }
+            }
+        }
+        if (!ambiguous) {
+            bound.type_name = info.name;
+            bound.type_package.clear();
+            continue;
+        }
+        // Codegen reads this spelling back in `file_alias`. The bare name would select the other struct.
+        bound.type_name = info.name + ".file." + std::to_string(info.file_id);
+        bound.type_package.clear();
+    }
+}
+
 void Checker::prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                               int &indirections, uint32_t &optional, bool &is_array, int &array_len,
                               std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc) {
@@ -1622,10 +1661,13 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                 return {};
             }
             const int struct_id = bound.struct_id >= 0 ? bound.struct_id : find_tag(file_id_, bound.type_name);
-            require_satisfies(struct_id, trait_id, bound.indirections == 1, loc);
+            if (!require_satisfies(struct_id, trait_id, bound.indirections == 1, loc, owner)) {
+                return {};
+            }
         }
         bounds.push_back(std::move(bound));
     }
+    disambiguate_bounds(owner, bounds);
     const std::string spec_name = mangle_spec(templ->name, bounds);
     const std::string key = std::to_string(owner) + "\n" + spec_name;
     const auto note_caller = [&](const std::string &spec) {
@@ -2131,7 +2173,9 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         }
         const int struct_id = bound.struct_id >= 0 ? bound.struct_id : find_tag(file_id_, bound.type_name);
         const bool through_pointer = bound.indirections == 1 || constraint_through_pointer(templ, param);
-        require_satisfies(struct_id, trait_id, through_pointer, call.loc);
+        if (!require_satisfies(struct_id, trait_id, through_pointer, call.loc, home)) {
+            return std::nullopt;
+        }
     }
     return bounds;
 }
@@ -2375,7 +2419,8 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     if (!inferred) {
         return type_invalid();
     }
-    const std::vector<SpecArg> &bounds = *inferred;
+    std::vector<SpecArg> bounds = *inferred;
+    disambiguate_bounds(owner, bounds);
     std::string spec_name = mangle_spec(templ->name, bounds);
     if (several) {
         spec_name.push_back('.');

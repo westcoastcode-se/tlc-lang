@@ -1032,6 +1032,8 @@ class CodeGen {
     const Binding *binding_for_decl(const FunctionDecl *decl) const;
     void bind_package_globals();
     int tag_id(uint32_t file, const std::string &name) const;
+    // `Name.file.N` is the spelling `disambiguate_bounds` writes. `N` is the file that defines `Name`.
+    int file_alias(const std::string &name) const;
     // A specialization is stored on the package that defines the generic struct.
     int spec_tag(const std::string &name) const;
     int unique_tag(const std::string &name) const;
