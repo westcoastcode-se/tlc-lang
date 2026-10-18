@@ -19,7 +19,7 @@ func main() i32 {
 }
 ```
 
-A local array takes a brace list with one value per element: `var row [3]i32 = {10, 20, 12}`. A different count is reported as `type mismatch`. `row[0]` reads an element.
+A local array takes a brace list with one value per element: `var row [3]i32 = {10, 20, 12}`. A different count is reported as `type mismatch`. `row[0]` reads an element. A local `var copy [2]i32 = row` copies that array. A later store into `row` does not change `copy`. Assigning `copy = row` is reported as `not an lvalue`. A file-scope `var copy [2]i32 = row` is reported as `not supported yet`.
 
 `[_]i32{10, 20, 12}` is an array. `_` stands for the length, which is the number of values, so the type is `[3]i32`. `var row = [_]i32{10, 20, 12}`, `row := [_]i32{10, 20, 12}`, and a local `const row = [_]i32{10, 20, 12}` take that type. `var typed [2]i32 = [_]i32{4, 1}` matches the written length. A different length or a different element type is reported as `type mismatch`. Assigning an element of the const binding is reported as `type mismatch`. `row.len` is `i32`, the number of elements, the same spelling as a slice.
 
@@ -280,6 +280,6 @@ A file-scope `var item = call_func()`, with `call_func` returning 42, runs befor
 
 A tuple local `(40, 2)` is 2 stores. Unpacking it into two names is 2 loads and 2 stores. A `for` whose first clause unpacks a call pays the traced call once per check of the condition.
 
-A local array with no initializer adds no instruction. A full list stores each listed value, 1 `movl` each, and does not store a zero first. A shorter list still stores a zero for each element it does not name. A file-scope array is initialized in the binary. Reading one element of it is 1 `movl`. A compile-time length such as `[N]i32` adds no instructions beyond the element stores.
+A local array with no initializer adds no instruction. A full list stores each listed value, 1 `movl` each, and does not store a zero first. A local `var copy [2]i32 = row` is 4 instructions after `row` is stored: two `movl` loads and two `movl` stores. The slot is not zeroed first. A shorter list still stores a zero for each element it does not name. A file-scope array is initialized in the binary. Reading one element of it is 1 `movl`. A compile-time length such as `[N]i32` adds no instructions beyond the element stores.
 
 [Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

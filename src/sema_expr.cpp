@@ -554,9 +554,18 @@ Type Checker::check_array_literal(Expr::Init &init) {
         }
     }
     for (const auto &element : init.elements) {
-        if (element) {
-            check_against(*element, elem);
+        if (!element) {
+            continue;
         }
+        // `var copy [2]i32 = row` copies. A name inside `[_][2]i32{inner}` does not.
+        if (elem.kind == TypeKind::Array && elem.length >= 0 && std::get_if<Expr::Init>(&element->data) == nullptr) {
+            const Type got = check_expr(*element, true);
+            if (got.kind != TypeKind::Invalid) {
+                mismatch(expr_loc(*element), elem, got);
+            }
+            continue;
+        }
+        check_against(*element, elem);
     }
     return type_array(std::move(elem), static_cast<int>(init.elements.size()));
 }
@@ -648,9 +657,19 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
                 return type_invalid();
             }
             for (const auto &element : init.elements) {
-                if (element) {
-                    check_against(*element, *dest.element);
+                if (!element) {
+                    continue;
                 }
+                // A nested row is a brace list. A name in that position stays a type mismatch.
+                if (dest.element->kind == TypeKind::Array && dest.element->length >= 0 &&
+                    std::get_if<Expr::Init>(&element->data) == nullptr) {
+                    const Type got = check_expr(*element, true);
+                    if (got.kind != TypeKind::Invalid) {
+                        mismatch(expr_loc(*element), *dest.element, got);
+                    }
+                    continue;
+                }
+                check_against(*element, *dest.element);
             }
             return dest;
         }
@@ -845,6 +864,16 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
         const Type got = check_init(const_cast<Expr::Init &>(*init), want);
         if (got.kind != TypeKind::Invalid) {
             expect_value(got, want, expr, expr_loc(expr));
+        }
+        return got;
+    }
+    // `var copy [2]i32 = row` copies the array. A read elsewhere still decays to `*T`.
+    // `const` on the source is the binding. The copy is a new array of the written type.
+    if (want.kind == TypeKind::Array && want.length >= 0) {
+        Type got = check_raw(expr, true);
+        got.is_const = false;
+        if (got.kind != TypeKind::Invalid && !same_type(got, want)) {
+            mismatch(expr_loc(expr), want, got);
         }
         return got;
     }
@@ -3880,7 +3909,14 @@ void Checker::check_stmt(const Stmt &stmt) {
                         return check_against(value, want);
                     }
                     if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
-                        return check_init(const_cast<Expr::Init &>(*init), want);
+                        Type got = check_init(const_cast<Expr::Init &>(*init), want);
+                        // `return {4, 6}` has no array address. `return [_]i32{4, 6}` does.
+                        if (want.kind == TypeKind::Array && want.length >= 0 && !init->array_literal &&
+                            got.kind != TypeKind::Invalid) {
+                            error(expr_loc(value), "not supported yet");
+                            return type_invalid();
+                        }
+                        return got;
                     }
                     if (want.kind == TypeKind::Array) {
                         return check_raw(value, true);
@@ -4235,11 +4271,14 @@ void Checker::check_stmt(const Stmt &stmt) {
                     declare(std::move(symbol), var.loc);
                     const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                     const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
-                    // `var v []i32 = row` converts. A sized array still needs a value list.
+                    // `var v []i32 = row` converts. `var copy [2]i32 = row` copies that array.
+                    // A brace list is the other initializer. A file-scope name stays unsupported.
                     const bool slice = var.is_array && !var.ptr_to_array && var.array_len < 0;
+                    const bool array_value = var.is_array && !var.ptr_to_array && var.array_len > 0 &&
+                                             var.init != nullptr && list == nullptr;
                     if (var.is_const_decl && var.init == nullptr) {
                         error(var.loc, "type mismatch");
-                    } else if (var.is_array && !var.ptr_to_array && var.init && !array_list && !slice) {
+                    } else if (var.is_array && !var.ptr_to_array && var.init && !array_list && !slice && !array_value) {
                         error(var.loc, "not supported yet");
                     } else if (var.init) {
                         check_against(*var.init, type);

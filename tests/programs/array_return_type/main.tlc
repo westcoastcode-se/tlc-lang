@@ -1,0 +1,22 @@
+func take(row [2]i32) [2]i32 {
+    return row;
+}
+
+func line(grid [2][2]i32) [2]i32 {
+    return grid[1];
+}
+
+func give() [3]i32 {
+    var row = [_]i32{1, 2, 3};
+    return row;
+}
+
+func pass() [2]i32 {
+    return give();
+}
+
+func main() i32 {
+    var row = [_]i32{10, 20};
+    var grid = [_][2]i32{{1, 2}, {3, 4}};
+    return take(row)[0] + line(grid)[0] + pass()[0];
+}

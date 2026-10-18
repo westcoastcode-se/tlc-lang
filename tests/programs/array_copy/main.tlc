@@ -1,0 +1,22 @@
+var file_row = [_]i32{10, 20, 30};
+
+func give() [2]i32 {
+    var row = [_]i32{4, 6};
+    return row;
+}
+
+func main() i32 {
+    var row = [_]i32{10, 20};
+    var copy [2]i32 = row;
+    const held = [_]i32{8, 9};
+    const frozen [2]i32 = held;
+    var from_file [3]i32 = file_row;
+    var from_call [2]i32 = give();
+    var grid = [_][2]i32{{1, 2}, {3, 4}};
+    var whole [2][2]i32 = grid;
+    var line [2]i32 = grid[1];
+    row[1] = 7;
+    grid[0][1] = 0;
+    grid[1][0] = 0;
+    return copy[1] + frozen[1] + from_file[2] + from_call[0] + from_call[1] + whole[0][1] + line[0];
+}

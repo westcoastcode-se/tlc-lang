@@ -5679,13 +5679,30 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     return;
                 }
                 if (return_type_ != nullptr && return_type_->isArrayTy() && node.value != nullptr) {
-                    const auto *name = std::get_if<Expr::Name>(&node.value->data);
-                    const Binding *binding = name == nullptr ? nullptr : lookup(name->text);
-                    if (binding == nullptr || !binding->is_array || binding->value == nullptr) {
+                    // `{4, 6}` is not an array address. `[_]i32{4, 6}` is the array slot.
+                    if (const auto *init = std::get_if<Expr::Init>(&node.value->data);
+                        init != nullptr && !init->array_literal) {
                         error(node.loc, "not supported yet");
                         return;
                     }
-                    llvm::Value *loaded = builder_.CreateLoad(return_type_, binding->value);
+                    // A name is the array address. A call has stored its array and yields the
+                    // address of the first element. An index of a nested array yields that row.
+                    const TypedValue value = emit_rvalue(*node.value);
+                    if (terminated()) {
+                        return;
+                    }
+                    llvm::Value *loaded = value.value;
+                    if (loaded == nullptr) {
+                        error(node.loc, "not supported yet");
+                        return;
+                    }
+                    if (loaded->getType() != return_type_) {
+                        if (!loaded->getType()->isPointerTy()) {
+                            error(node.loc, "not supported yet");
+                            return;
+                        }
+                        loaded = builder_.CreateLoad(return_type_, loaded);
+                    }
                     if (!terminated()) {
                         emit_defers_from(0);
                     }
@@ -5937,10 +5954,12 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         llvm::AllocaInst *slot = alloca_typed(ty, var.name);
                         // No initializer leaves the array uninitialized. A shorter list still
                         // starts from zero so the elements it does not name stay zero.
+                        // An array value is stored once. It is not zeroed first.
                         const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                         auto *array_ty = ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
+                        const bool copy_value = var.init != nullptr && list == nullptr;
                         const bool covered = list != nullptr && array_list_covers(*list, array_ty);
-                        if (var.init != nullptr && !covered) {
+                        if (var.init != nullptr && !covered && !copy_value) {
                             builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
                         }
                         Binding binding;
@@ -5964,6 +5983,24 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         debug_declare(var.name, var.loc, binding, 0);
                         if (list != nullptr && array_ty != nullptr && !list->elements.empty()) {
                             store_array_elements(slot, array_ty, *list);
+                        } else if (copy_value && array_ty != nullptr && var.init != nullptr) {
+                            // A name is the array address. A call has already stored its array
+                            // and yields the address of the first element. Both loads are the array.
+                            const TypedValue value = emit_rvalue(*var.init);
+                            if (!terminated() && value.value != nullptr) {
+                                llvm::Value *loaded = value.value;
+                                if (loaded->getType() != ty) {
+                                    if (!loaded->getType()->isPointerTy()) {
+                                        error(var.loc, "not supported yet");
+                                        loaded = nullptr;
+                                    } else {
+                                        loaded = builder_.CreateLoad(ty, loaded);
+                                    }
+                                }
+                                if (loaded != nullptr) {
+                                    builder_.CreateStore(loaded, slot);
+                                }
+                            }
                         }
                         continue;
                     }

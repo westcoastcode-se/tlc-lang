@@ -65,7 +65,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - The C qualifier spelling `const i32 x` and `var x const i32`. Inside a function, `const name = expr` is an immutable binding, and `*const T` is a pointer to constant `T`.
 - A file-scope `const` of a pointer, other than a string passed to C. `const label = "hi"` is `[]const u8`. `const c_text *const u8 = "unix"` is the C pointer. `const p *i32 = &n` is `type mismatch`. A string kept as an array is the same gap. A float, a struct, a function pointer, a typedef, and an array of a constant element are constants. `const bias = 0.5f` is not an array length. `const N = 4` remains the compile-time integer used as an array length. An alias is not an array length. An array constant is not an array length. `const row = [_]i32{n}` when `n` is a `var` is not a constant.
 - A non-positive compile-time length, including `const N = 0` used as `[N]i32`.
-- Returning an array from anything other than a local array name. `return out` works for `[N]T`. Another return expression does not.
+- Returning an array from a brace list that is not an array literal. `return {4, 6}` is `not supported yet`. `return row`, `return give()`, `return grid[1]`, and `return [_]i32{4, 6}` return the array. A parameter `[N]T` is already a pointer. `return row` there is `return type: expected [2]i32, found *i32`. `return grid[1]` when `grid` is a parameter `[2][2]i32` is `return type: expected [2]i32, found i32`.
 
 ### Inference
 
@@ -101,6 +101,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A local `type`, including a local struct or enum.
 - A file-scope array whose written length is `[0]i32`. An element may be an integer, `bool`, a float, a pointer, a struct, an enum, a typedef, a function pointer, an empty `[_]T{}`, a nested array `[_][2][3]i32`, or a pointer to an array `[_]*[4]i32`. An element that is an array name, `[_][2]i32{inner}`, is `type mismatch`.
 - A file-scope array element that is a call or an expression such as `n + 1` when `n` is a `var`. That is `global initializer is not a constant`. `var row = [_]i32{1u32}` folds. `var row = [_]i32{n}` copies the initializer of `n`. `const row = [_]i32{n}` when `n` is a `var` is `global initializer is not a constant`.
+- A file-scope sized array initialized from a name or a call. `var copy [2]i32 = row` is `not supported yet`. A local of that form copies the array.
 - Another abi than `"c"` and `"tlc"`.
 - `export type Name trait`.
 
@@ -148,7 +149,7 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Aggregates
 
-- `var row = [_]i32{10, 20}` has type `[2]i32`. Reading that name decays to `*i32`, so `var copy = row` is `*i32`. `copy = row` is `not an lvalue`. `var copy [2]i32 = row` is `not supported yet`. `return row` from a function whose result is `[2]i32` keeps the array. A parameter `[4]i32` is already `*i32`, and `row.len` is still 4. Returning that parameter where `[]i32` is expected is already listed under Types and operators. Pages: `docs/types/array.md`, `docs/types/slice.md`.
+- `var row = [_]i32{10, 20}` has type `[2]i32`. Reading that name decays to `*i32`, so `var copy = row` is `*i32`. `copy = row` is `not an lvalue`. `var copy [2]i32 = row` copies the array. A different length is `type mismatch`. `return row` from a function whose result is `[2]i32` keeps the array. `return give()` and `return grid[1]` return that array. `return {4, 6}` is listed under Generics and compile-time. A parameter `[4]i32` is already `*i32`, and `row.len` is still 4. Returning that parameter where `[]i32` is expected is already listed under Types and operators. A file-scope copy from a name or a call is listed under Declarations. Pages: `docs/types/array.md`, `docs/types/slice.md`, `docs/functions/aggregate.md`, `docs/statements/binding.md`.
 - `var v []i32 = row` is a readonly header. `v[0] = 1` is `type mismatch`. An element store goes through the array or through the `*T` from `new`. `[]i32` does not convert to `*i32`. `[]const u8` converts to `*const u8` and drops the length. Pages: `docs/types/slice.md`, `docs/types/array.md`, `docs/types/string.md`.
 - `[2]i32` converts to `[]i32`. It does not convert to `[]const i32`. `row[:]` is `[]i32` when `row` is a const array. `[]const T` is a type. A string literal is the value that produces `[]const u8`. Pages: `docs/types/slice.md`, `docs/types/string.md`.
 - `const` sits after the star in `*const T` and before the element in `[]const T` and `[4]const T`. Pages: `docs/types/pointer.md`, `docs/types/slice.md`, `docs/grammar.md`.

@@ -1,0 +1,29 @@
+var file_row = [_]i32{8, 9};
+
+func give() [2]i32 {
+    var row = [_]i32{4, 6};
+    return row;
+}
+
+func pass() [2]i32 {
+    return give();
+}
+
+func row_of() [2]i32 {
+    var grid = [_][2]i32{{1, 2}, {3, 4}};
+    grid[1][0] = 9;
+    return grid[1];
+}
+
+func from_file() [2]i32 {
+    return file_row;
+}
+
+func lit() [2]i32 {
+    return [_]i32{7, 1};
+}
+
+func main() i32 {
+    var copied [2]i32 = pass();
+    return copied[0] + copied[1] + row_of()[0] + from_file()[1] + lit()[0] + pass()[1];
+}
