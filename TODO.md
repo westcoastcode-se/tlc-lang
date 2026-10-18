@@ -141,7 +141,6 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Aggregates
 
-- `const` sits after the star in `*const T` and before the element in `[]const T` and `[4]const T`. Pages: `docs/types/pointer.md`, `docs/types/slice.md`, `docs/grammar.md`.
 - `new [n]i32` yields `*i32` and drops the length. `new [_]i32{10, 20}` yields `*[2]i32`. Neither yields `[]i32`. Pages: `docs/statements/new.md`, `docs/types/array.md`.
 - `Point{1, 2}` is `type mismatch`. `{10, 20}` fills an array. A struct initializer names fields. An array initializer is positional. Pages: `docs/types/struct.md`, `docs/expressions/tuple.md`.
 - `new [n]Point{.x = 1}` is parsed as a field list and is `type mismatch`. The element list is `new [n]Point{{.x = 1}...}`. Pages: `docs/statements/new.md`, `docs/grammar.md`.
