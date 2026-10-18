@@ -12,7 +12,10 @@ namespace tlc {
 
 namespace {
 
-constexpr int kInitLeafCap = 4096;
+// One byte per leaf. Past this, the array is a single leaf so checking a huge
+// local does not allocate a flag for every element. That leaf means the whole
+// array: an element store does not mark it, and an element read needs all of it.
+constexpr int kInitLeafCap = 1 << 20;
 
 bool sized_array(const Type &type) {
     return type.kind == TypeKind::Array && type.length >= 0 && type.element != nullptr;
@@ -47,7 +50,6 @@ int Checker::init_leaf_count(const Type &type, std::unordered_set<int> &seen) {
             return 0;
         }
         const int64_t product = static_cast<int64_t>(type.length) * elem;
-        // One bit stands for the whole array. An element access touches that bit.
         if (product > kInitLeafCap) {
             return 1;
         }
@@ -236,10 +238,21 @@ Checker::InitTouch Checker::init_resolve(Type type, int offset, int count, const
         const bool collapsed = elem > 0 && static_cast<int64_t>(length) * elem > kInitLeafCap;
         const bool oob = step.known && (step.index < 0 || step.index >= length);
         const bool dynamic = !step.known || oob;
-        if (collapsed || opaque) {
-            opaque = true;
+        // A capped array is one leaf for every element. Writing one element does not
+        // initialize the others, and reading one needs the whole array.
+        if (collapsed && !opaque) {
+            if (storing || (designate && !keep)) {
+                return {};
+            }
+            InitTouch touch;
+            touch.read = true;
+            touch.offset = offset;
+            touch.count = count;
+            return touch;
+        }
+        if (opaque) {
             if (dynamic) {
-                // A runtime write does not pick an element. An opaque array is one bit, so a
+                // A runtime write does not pick an element. An opaque value is one leaf, so a
                 // runtime write sets it. An index past the constant length sets nothing.
                 if (storing) {
                     if (oob) {

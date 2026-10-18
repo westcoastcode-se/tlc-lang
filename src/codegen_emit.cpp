@@ -5894,7 +5894,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                             return as_slice_value(value, node.loc);
                         }
                         if (field->isPointerTy()) {
-                            return value.depth > 0 && value.value->getType()->isPointerTy() ? value.value : null_ptr();
+                            // `*[N]T`, `?*[N]T`, and `**[N]T` are pointers at leaf depth 0.
+                            // A non-pointer still becomes null rather than a bitcast of an integer.
+                            return value.value->getType()->isPointerTy() ? value.value : null_ptr();
                         }
                         // A local `[N]T` decays to a pointer. The result slot still holds the array.
                         if (field->isArrayTy() && value.array_len > 0 && value.value != nullptr &&

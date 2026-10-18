@@ -1,0 +1,45 @@
+func both(p *[4]i32) (*[4]i32, i32) {
+    return p, p.len;
+}
+
+func swapped(p *[4]i32) (i32, *[4]i32) {
+    return p.len, p;
+}
+
+func paren(p *[4]i32) (*[4]i32, i32) {
+    return (p, p.len);
+}
+
+func open(opt ?*[4]i32) (?*[4]i32, i32) {
+    return opt, 4;
+}
+
+func deep(p **[4]i32) (**[4]i32, i32) {
+    return p, 4;
+}
+
+func main() i32 {
+    var row = [_]i32{10, 20, 30, 40};
+    var p, n = both(&row);
+    if (n != 4 || p[0] != 10 || p[3] != 40) {
+        return 1;
+    }
+    var count, q = swapped(&row);
+    if (count != 4 || q[1] != 20) {
+        return 2;
+    }
+    var again, n2 = paren(&row);
+    if (n2 != 4 || again[2] != 30) {
+        return 3;
+    }
+    var opt, k = open(&row);
+    if (k != 4 || opt == null || opt![2] != 30) {
+        return 4;
+    }
+    var slot = &row;
+    var pp, d = deep(&slot);
+    if (d != 4 || pp == null || (*pp)[0] != 10) {
+        return 5;
+    }
+    return 42;
+}

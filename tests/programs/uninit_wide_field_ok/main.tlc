@@ -1,0 +1,13 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func main() i32 {
+    var row [2049]Point;
+    row[0].x = 40;
+    row[0].y = 2;
+    row[2048].x = 0;
+    row[2048].y = 0;
+    return row[0].x + row[0].y + row[2048].x;
+}

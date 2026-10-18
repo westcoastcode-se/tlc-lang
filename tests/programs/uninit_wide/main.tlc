@@ -1,0 +1,5 @@
+func main() i32 {
+    var row [4097]i32;
+    row[0] = 7;
+    return row[1];
+}
