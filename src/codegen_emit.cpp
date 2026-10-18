@@ -2865,6 +2865,13 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             if (struct_id >= 0 && struct_id < static_cast<int>(structs_.size())) {
                 const std::string key = structs_[static_cast<std::size_t>(struct_id)].name + "." + selector->field;
                 method = selected_binding(method_binding(current_file_, selector->resolved_file, key));
+                // Specialization knows the struct. The trait's list picks the overload. No table.
+                if (node.selected == nullptr) {
+                    if (const Binding *exact =
+                            trait_spec_method(current_file_, selector->resolved_file, key, *selector, node)) {
+                        method = exact;
+                    }
+                }
             }
             if (method != nullptr && method->is_generic && method->decl != nullptr && !method->decl->static_method) {
                 const bool receiver_pointer =

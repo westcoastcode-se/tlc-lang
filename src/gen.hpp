@@ -1169,6 +1169,10 @@ class CodeGen {
     const Binding *function_named(uint32_t home, const std::string &key, uint32_t caller) const;
     // A value method. A type defined in another package is found through `resolved_file`.
     const Binding *method_binding(uint32_t caller, uint32_t resolved_file, const std::string &key) const;
+    // `s.twice()` inside a trait specialization. `selected` is empty, and overloads are not stored
+    // under the plain name. The trait method, or the one default of this arity, names the list.
+    const Binding *trait_spec_method(uint32_t caller, uint32_t resolved_file, const std::string &key,
+                                     const Expr::Selector &selector, const Expr::Call &node) const;
     const Binding *function_designator(uint32_t file, const Expr &expr) const;
     // Function or method a file-scope call initializer names. Null when it is not one.
     const Binding *call_callee(uint32_t file, const Expr &callee) const;

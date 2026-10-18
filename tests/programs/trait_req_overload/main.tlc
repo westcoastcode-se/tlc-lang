@@ -1,0 +1,25 @@
+type Shape trait {
+    func twice(n i32) i32;
+};
+
+type Rect struct {
+    n i32;
+};
+
+func Rect::twice(self *this) i32 {
+    return self.n;
+}
+
+func Rect::twice(self *this, n i32) i32 {
+    return n + self.n;
+}
+
+func use(s *Shape) i32 {
+    return s.twice(9);
+}
+
+func main() i32 {
+    var r Rect;
+    r.n = 3;
+    return use(&r) + r.twice();
+}

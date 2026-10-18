@@ -1919,6 +1919,112 @@ const Binding *CodeGen::method_binding(uint32_t caller, uint32_t resolved_file, 
     return method;
 }
 
+const Binding *CodeGen::trait_spec_method(uint32_t caller, uint32_t resolved_file, const std::string &key,
+                                          const Expr::Selector &selector, const Expr::Call &node) const {
+    if (emitting_fn_ == nullptr || active_spec_.empty() || key.empty() || selector.base == nullptr || graph_ == nullptr) {
+        return nullptr;
+    }
+    const auto *base_name = std::get_if<Expr::Name>(&selector.base->data);
+    if (base_name == nullptr) {
+        return nullptr;
+    }
+    const TraitDecl *trait = nullptr;
+    for (std::size_t index = 0; index < emitting_fn_->params.size(); ++index) {
+        const Param &param = emitting_fn_->params[index];
+        if (param.name != base_name->text || !param_is_trait(caller, param)) {
+            continue;
+        }
+        if (index >= active_spec_.size() || active_spec_[index] < 0) {
+            return nullptr;
+        }
+        const int trait_id = trait_named(caller, param.type_name);
+        if (trait_id < 0 || static_cast<std::size_t>(trait_id) >= trait_decls_.size()) {
+            return nullptr;
+        }
+        trait = trait_decls_[static_cast<std::size_t>(trait_id)];
+        break;
+    }
+    if (trait == nullptr) {
+        return nullptr;
+    }
+    // The required method of this name is the call. A default is used only when the trait
+    // does not require the name, and only one default has this argument count.
+    const FunctionDecl *signature = nullptr;
+    for (const FunctionDecl &method : trait->methods) {
+        if (method.name == selector.field) {
+            signature = &method;
+            break;
+        }
+    }
+    if (signature == nullptr) {
+        int hits = 0;
+        for (const PackageNode &pkg : graph_->nodes) {
+            for (const TopDecl &decl : pkg.unit.decls) {
+                const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+                if (fn == nullptr || fn->name != selector.field || fn->method_struct != trait->name ||
+                    !fn->type_params.empty() || fn->body == nullptr) {
+                    continue;
+                }
+                const std::size_t skip = !fn->static_method && !fn->params.empty() && fn->params.front().is_receiver ? 1 : 0;
+                if (fn->params.size() < skip || fn->params.size() - skip != node.args.size()) {
+                    continue;
+                }
+                ++hits;
+                signature = fn;
+            }
+        }
+        if (hits != 1) {
+            return nullptr;
+        }
+    }
+    const std::string want = param_list_key(*signature);
+    auto defined_here = [&](uint32_t file) {
+        if (file == 0 || resolved_file == 0) {
+            return false;
+        }
+        for (const uint32_t id : package_files(file)) {
+            if (id == resolved_file) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const uint32_t home = resolved_file != 0 && !defined_here(caller) ? resolved_file : caller;
+    const Binding *found = nullptr;
+    auto scan = [&](uint32_t package) {
+        for (const uint32_t id : package_files(package)) {
+            const auto file = files_.find(id);
+            if (file == files_.end()) {
+                continue;
+            }
+            for (const auto &[name, binding] : file->second.functions) {
+                const bool plain = name == key;
+                const bool listed = name.size() > key.size() && name[key.size()] == '.' && name.starts_with(key);
+                if (!plain && !listed) {
+                    continue;
+                }
+                if (!binding.is_function || binding.decl == nullptr || binding.decl->static_method) {
+                    continue;
+                }
+                if (binding.is_static && id != caller) {
+                    continue;
+                }
+                if (param_list_key(*binding.decl) != want) {
+                    continue;
+                }
+                if (found == nullptr || (found->value == nullptr && binding.value != nullptr)) {
+                    found = &binding;
+                }
+            }
+        }
+    };
+    scan(home);
+    if (found == nullptr && home != resolved_file && resolved_file != 0) {
+        scan(resolved_file);
+    }
+    return found;
+}
+
 const Binding *CodeGen::call_callee(uint32_t file, const Expr &callee) const {
     auto usable = [](const Binding *fn) {
         return fn != nullptr && fn->is_function && !fn->is_generic && fn->decl != nullptr && fn->value != nullptr;
