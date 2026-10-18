@@ -1,0 +1,71 @@
+const inner = [_]i32{1, 2};
+const copied [2]i32 = inner;
+var from_const = [_][2]i32{inner};
+var from_chain = [_][2]i32{copied};
+
+var held = [_]i32{8, 9};
+var from_var = [_][2]i32{held};
+
+var grid = [_][2]i32{{1, 2}, {3, 4}};
+var from_index = [_][2]i32{grid[1]};
+
+func give() [2]i32 {
+    var out = [_]i32{4, 6};
+    return out;
+}
+
+var from_call = [_][2]i32{give()};
+
+unsafe func hidden() [2]i32 {
+    var out = [_]i32{5, 7};
+    return out;
+}
+
+var from_unsafe = [_][2]i32{unsafe hidden()};
+
+var blank [2]i32;
+var from_blank = [_][2]i32{blank};
+
+var from_late [1][2]i32 = {late};
+var late = [_]i32{7, 1};
+
+var mixed = [_][2]i32{inner, give()};
+
+const frozen [2]i32 = earlier;
+var earlier = [_]i32{3, 1};
+
+func main() i32 {
+    held[0] = 0;
+    grid[1][0] = 0;
+    if (from_const[0][0] != 1 || from_const[0][1] != 2) {
+        return 1;
+    }
+    if (from_chain[0][0] != 1 || from_chain[0][1] != 2) {
+        return 2;
+    }
+    if (from_var[0][0] != 8 || from_var[0][1] != 9) {
+        return 3;
+    }
+    if (from_index[0][0] != 3 || from_index[0][1] != 4) {
+        return 4;
+    }
+    if (from_call[0][0] != 4 || from_call[0][1] != 6) {
+        return 5;
+    }
+    if (from_unsafe[0][0] != 5 || from_unsafe[0][1] != 7) {
+        return 6;
+    }
+    if (from_blank[0][0] != 0 || from_blank[0][1] != 0) {
+        return 7;
+    }
+    if (from_late[0][0] != 7 || from_late[0][1] != 1) {
+        return 8;
+    }
+    if (mixed[0][0] != 1 || mixed[0][1] != 2 || mixed[1][0] != 4 || mixed[1][1] != 6) {
+        return 9;
+    }
+    if (frozen[0] != 3 || frozen[1] != 1) {
+        return 10;
+    }
+    return from_const[0][1] + from_var[0][0] + from_index[0][1] + from_call[0][0] + from_late[0][0];
+}

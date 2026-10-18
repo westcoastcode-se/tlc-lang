@@ -557,14 +557,7 @@ Type Checker::check_array_literal(Expr::Init &init) {
         if (!element) {
             continue;
         }
-        // `var copy [2]i32 = row` copies. A name inside `[_][2]i32{inner}` does not.
-        if (elem.kind == TypeKind::Array && elem.length >= 0 && std::get_if<Expr::Init>(&element->data) == nullptr) {
-            const Type got = check_expr(*element, true);
-            if (got.kind != TypeKind::Invalid) {
-                mismatch(expr_loc(*element), elem, got);
-            }
-            continue;
-        }
+        // A brace list is that row. A name, an index, or a call copies the array.
         check_against(*element, elem);
     }
     return type_array(std::move(elem), static_cast<int>(init.elements.size()));
@@ -660,15 +653,7 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
                 if (!element) {
                     continue;
                 }
-                // A nested row is a brace list. A name in that position stays a type mismatch.
-                if (dest.element->kind == TypeKind::Array && dest.element->length >= 0 &&
-                    std::get_if<Expr::Init>(&element->data) == nullptr) {
-                    const Type got = check_expr(*element, true);
-                    if (got.kind != TypeKind::Invalid) {
-                        mismatch(expr_loc(*element), *dest.element, got);
-                    }
-                    continue;
-                }
+                // A brace list is that row. A name, an index, or a call copies the array.
                 check_against(*element, *dest.element);
             }
             return dest;

@@ -1,0 +1,10 @@
+func give() [2]i32 {
+    var out = [_]i32{4, 6};
+    return out;
+}
+
+const row = [_][2]i32{give()};
+
+func main() i32 {
+    return 0;
+}

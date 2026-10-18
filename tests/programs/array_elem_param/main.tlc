@@ -1,0 +1,8 @@
+func take(row [2]i32) i32 {
+    var copy = [_][2]i32{row};
+    return copy[0][0];
+}
+
+func main() i32 {
+    return 0;
+}

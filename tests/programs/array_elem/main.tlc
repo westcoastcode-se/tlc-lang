@@ -1,0 +1,66 @@
+func pair() [2]i32 {
+    var out = [_]i32{4, 6};
+    return out;
+}
+
+func cells() [2][2]i32 {
+    var out = [_][2]i32{{1, 2}, {3, 4}};
+    return out;
+}
+
+func rows() [2][2]i32 {
+    var a = [_]i32{1, 2};
+    var b = [_]i32{3, 4};
+    return {a, b};
+}
+
+func main() i32 {
+    var inner [2]i32 = {1, 2};
+    var named = [_][2]i32{inner};
+    inner[0] = 9;
+    inner[1] = 8;
+    if (named[0][0] != 1 || named[0][1] != 2) {
+        return 1;
+    }
+
+    var a = [_]i32{1, 2};
+    var b = [_]i32{3, 4};
+    var grid [2][2]i32 = {a, b};
+    a[0] = 0;
+    b[1] = 0;
+    if (grid[0][0] != 1 || grid[0][1] != 2 || grid[1][0] != 3 || grid[1][1] != 4) {
+        return 2;
+    }
+
+    var source = [_][2]i32{{1, 2}, {3, 4}};
+    var indexed = [_][2]i32{source[1]};
+    source[1][0] = 0;
+    source[1][1] = 0;
+    if (indexed[0][0] != 3 || indexed[0][1] != 4) {
+        return 3;
+    }
+
+    var called = [_][2]i32{pair()};
+    if (called[0][0] != 4 || called[0][1] != 6) {
+        return 4;
+    }
+
+    var from_call = [_][2]i32{cells()[1]};
+    if (from_call[0][0] != 3 || from_call[0][1] != 4) {
+        return 5;
+    }
+
+    var kept = [_]i32{1, 2};
+    var mixed [2][2]i32 = {kept, {3, 4}};
+    kept[0] = 0;
+    if (mixed[0][0] != 1 || mixed[0][1] != 2 || mixed[1][0] != 3 || mixed[1][1] != 4) {
+        return 6;
+    }
+
+    var got [2][2]i32 = rows();
+    if (got[0][0] != 1 || got[0][1] != 2 || got[1][0] != 3 || got[1][1] != 4) {
+        return 7;
+    }
+
+    return named[0][1] + grid[1][0] + indexed[0][0] + called[0][0] + got[1][1];
+}

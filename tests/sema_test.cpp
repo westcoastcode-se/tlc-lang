@@ -5942,9 +5942,64 @@ int run_sema_tests() {
             "func main() i32 {\n"
             "  var inner [2]i32 = {1, 2};\n"
             "  var row = [_][2]i32{inner};\n"
+            "  return row[0][0];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var inner [2]i32 = {1, 2};\n"
+            "  var row = [_][3]i32{inner};\n"
             "  return 0;\n"
             "}\n");
+        EXPECT_HAS(check, errors, "expected [3]i32, found [2]i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(row [2]i32) i32 {\n"
+            "  var copy = [_][2]i32{row};\n"
+            "  return copy[0][0];\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "expected [2]i32, found *i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func rows() [2]i32 {\n"
+            "  var inner = [_]i32{1, 2};\n"
+            "  return {inner};\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var row = [_][2]i32{inner};\n"
+            "const inner = [_]i32{1, 2};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func give() [2]i32 { var out = [_]i32{4, 6}; return out; }\n"
+            "var live [2]i32 = give();\n"
+            "var row = [_][2]i32{live};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const inner = [_]i32{1, 2};\n"
+            "var row = [_][2]i32{inner};\n"
+            "func main() i32 { return row[0][1]; }\n");
+        EXPECT(check, errors.empty());
     }
 
     {

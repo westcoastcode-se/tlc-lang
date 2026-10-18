@@ -987,15 +987,17 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
             value = constant_slice(*item, seen);
         } else if (auto *inner = llvm::dyn_cast<llvm::ArrayType>(element)) {
             const auto *nested = std::get_if<Expr::Init>(&item->data);
-            if (nested == nullptr) {
-                return nullptr;
+            if (nested != nullptr) {
+                Binding row = flags;
+                row.is_array = true;
+                row.array_len = static_cast<int>(inner->getNumElements());
+                row.inner_array_len = 0;
+                row.value = nullptr;
+                value = fill_array(*nested, inner, row);
+            } else {
+                // `[_][2]i32{inner}` and `[_][2]i32{grid[1]}` copy that constant row.
+                value = const_array_base(*item);
             }
-            Binding row = flags;
-            row.is_array = true;
-            row.array_len = static_cast<int>(inner->getNumElements());
-            row.inner_array_len = 0;
-            row.value = nullptr;
-            value = fill_array(*nested, inner, row);
         } else {
             Binding one = flags;
             one.is_array = false;
@@ -1094,8 +1096,12 @@ bool CodeGen::array_list_covers(const Expr::Init &init, llvm::ArrayType *array_t
         return true;
     }
     for (const auto &element : init.elements) {
-        const auto *nested = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
-        if (nested == nullptr || !array_list_covers(*nested, inner)) {
+        if (!element) {
+            return false;
+        }
+        const auto *nested = std::get_if<Expr::Init>(&element->data);
+        // An array value fills this row. A brace list fills it when every nested row does.
+        if (nested != nullptr && !array_list_covers(*nested, inner)) {
             return false;
         }
     }
@@ -1118,9 +1124,33 @@ void CodeGen::store_array_elements(llvm::Value *slot, llvm::ArrayType *array_ty,
             builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(static_cast<int>(index))});
         if (inner != nullptr) {
             // `{1, 2, 3}` and `[_]i32{1, 2, 3}` are both a list. The slot is that array.
+            // A name, an index, or a call copies that row into the slot.
             const auto *nested = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
             if (nested == nullptr) {
-                error(element == nullptr ? init.loc : expr_loc(*element), "not supported yet");
+                if (element == nullptr) {
+                    error(init.loc, "not supported yet");
+                } else {
+                    const TypedValue value = emit_rvalue(*element);
+                    if (terminated()) {
+                        return;
+                    }
+                    if (value.value == nullptr) {
+                        error(expr_loc(*element), "not supported yet");
+                    } else {
+                        llvm::Value *loaded = value.value;
+                        if (loaded->getType() != inner) {
+                            if (!loaded->getType()->isPointerTy()) {
+                                error(expr_loc(*element), "not supported yet");
+                                loaded = nullptr;
+                            } else {
+                                loaded = builder_.CreateLoad(inner, loaded);
+                            }
+                        }
+                        if (loaded != nullptr) {
+                            builder_.CreateStore(loaded, slot_i);
+                        }
+                    }
+                }
             } else {
                 store_array_elements(slot_i, inner, *nested);
             }

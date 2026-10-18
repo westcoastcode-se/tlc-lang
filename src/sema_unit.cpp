@@ -218,6 +218,68 @@ void Checker::absorb_function(Symbol &existing, const FunctionDecl &fn, Type sig
 
 void Checker::declare_globals(const TranslationUnit &unit) {
     std::vector<VarDecl *> pending_consts;
+    // A file-scope const is bound after the vars, so it can name a later var.
+    // Bind one early when every name it uses is already declared, so
+    // `var row = [_][2]i32{inner}` sees `const inner`.
+    auto names_bound = [&](const auto &self, const Expr &expr) -> bool {
+        return std::visit(
+            [&](const auto &node) -> bool {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Expr::Name>) {
+                    return lookup(node.text) != nullptr;
+                } else if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                                     std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
+                    return node.expr == nullptr || self(self, *node.expr);
+                } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
+                    return (node.lhs == nullptr || self(self, *node.lhs)) &&
+                           (node.rhs == nullptr || self(self, *node.rhs));
+                } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                    if (node.base != nullptr && !self(self, *node.base)) {
+                        return false;
+                    }
+                    if (node.index != nullptr && !self(self, *node.index)) {
+                        return false;
+                    }
+                    return node.end == nullptr || self(self, *node.end);
+                } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                    for (const Expr::FieldInit &field : node.fields) {
+                        if (field.value != nullptr && !self(self, *field.value)) {
+                            return false;
+                        }
+                    }
+                    for (const auto &element : node.elements) {
+                        if (element != nullptr && !self(self, *element)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                } else if constexpr (std::is_same_v<T, Expr::Call> || std::is_same_v<T, Expr::Selector> ||
+                                     std::is_same_v<T, Expr::Func> || std::is_same_v<T, Expr::New> ||
+                                     std::is_same_v<T, Expr::Delete> || std::is_same_v<T, Expr::Unsupported>) {
+                    return false;
+                } else {
+                    return true;
+                }
+            },
+            expr.data);
+    };
+    auto bind_ready = [&]() {
+        bool progress = true;
+        while (progress) {
+            progress = false;
+            for (VarDecl *&var : pending_consts) {
+                if (var == nullptr) {
+                    continue;
+                }
+                if (var->init != nullptr && !names_bound(names_bound, *var->init)) {
+                    continue;
+                }
+                bind_file_const(*var);
+                var = nullptr;
+                progress = true;
+            }
+        }
+    };
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
             if (!fn->type_params.empty()) {
@@ -461,6 +523,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             }
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
             if (!var->owner.empty()) {
+                bind_ready();
                 declare_assoc(*var);
                 continue;
             }
@@ -479,6 +542,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 pending_consts.push_back(&written);
                 continue;
             }
+            bind_ready();
             Type alias;
             if (package_typedef(file_id_, var->name, alias) || package_trait(file_id_, var->name) >= 0) {
                 error(var->loc, "redefinition");
@@ -633,6 +697,7 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
     std::unordered_set<std::string> seen;
     bool unfolded = false;
     bool runtime = false;
+    bool startup = false;
     const auto visit = [&](const auto &self, const Expr &value, const Type &element) -> void {
         if (const auto *nested = std::get_if<Expr::Init>(&value.data);
             nested != nullptr && element.kind == TypeKind::Array && element.element != nullptr && nested->fields.empty()) {
@@ -643,6 +708,19 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
                 }
                 self(self, *child, *element.element);
             }
+            return;
+        }
+        // `[_][2]i32{inner}` copies that array. A call runs before `main`.
+        if (element.kind == TypeKind::Array && element.length >= 0) {
+            if (!var.is_const_decl && !var.is_extern && startup_call(value)) {
+                startup = true;
+                return;
+            }
+            std::unordered_set<std::string> seen_copy;
+            if (constant_array_source(value, seen_copy)) {
+                return;
+            }
+            runtime = true;
             return;
         }
         const FileConst kind = file_constant(value, seen, !var.is_const_decl);
@@ -660,9 +738,16 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
         }
         visit(visit, *value, *got.element);
     }
-    if (runtime || unfolded) {
-        error(var.loc, runtime ? "global initializer is not a constant" : "not supported yet");
+    if (unfolded) {
+        error(var.loc, "not supported yet");
         return type_invalid();
+    }
+    if (runtime) {
+        error(var.loc, "global initializer is not a constant");
+        return type_invalid();
+    }
+    if (startup) {
+        var.runtime_init = true;
     }
     return got;
 }
