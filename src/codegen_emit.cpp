@@ -6641,8 +6641,8 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         }
                         llvm::Type *ty = stored_type(low);
                         llvm::AllocaInst *slot = alloca_typed(ty, var.name);
-                        // No initializer stores zero. A shorter list still starts from zero so the
-                        // elements it does not name stay zero. An array value is stored once.
+                        // A shorter list leaves the omitted elements unset. `0...` stores zero in
+                        // the whole array before the named elements. An array value is stored once.
                         const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                         auto *array_ty = ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
                         const bool copy_value = var.init != nullptr && list == nullptr;

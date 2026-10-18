@@ -32,6 +32,6 @@ func main() i32 {
 
 Unpacking two `i32` results from a call stores both return registers. After `pair` returns, that is 1 `movl` of `%eax` and 1 `movl` of `%edx` into the two locals, on top of the traced call. The callee that returns `x + y, x` is 7 instructions including its parameter stores and `retq`.
 
-An array brace list stores one immediate per element, after a zero store per element. A slice built from that array is the header cost on [Slices](../types/slice.md).
+An array brace list stores one immediate per named element. `var row [3]i32 = {10, 20, 12}; return row[0] + row[1] + row[2];` is 7 instructions: three `movl`, one `movl` into `%eax`, two `addl`, and `retq`. A shorter list leaves the tail unstored. `{10, 20, 0...}` on a `[4]i32` stores 0 in every element and then stores 10 and 20. Returning the sum of the four elements is 11 instructions: four `movl` of 0, two `movl` of the named values, one `movl` into `%eax`, three `addl`, and `retq`. A slice built from that array is the header cost on [Slices](../types/slice.md).
 
 [Index](../README.md) · [Previous: Unsafe](unsafe.md) · [Next: Statements](../statements/block.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
