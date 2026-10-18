@@ -1427,7 +1427,41 @@ int run_sema_tests() {
             "  unsafe func draw() void;\n"
             "};\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  unsafe func draw() void;\n"
+            "};\n"
+            "func paint(s *Shape) void { s.draw(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "unsafe call");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  unsafe func draw() void;\n"
+            "};\n"
+            "type Rect struct {};\n"
+            "func Rect::draw(self this) void {}\n"
+            "func paint(s *Shape) void {}\n"
+            "func main() i32 { var r Rect; paint(&r); return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  func draw() void;\n"
+            "};\n"
+            "type Rect struct {};\n"
+            "unsafe func Rect::draw(self this) void {}\n"
+            "func paint(s *Shape) void {}\n"
+            "func main() i32 { var r Rect; paint(&r); return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {

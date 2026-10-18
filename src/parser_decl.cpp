@@ -290,12 +290,25 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         trait.name = std::move(name);
         while (!check(TokenKind::RBrace) && !eof()) {
             const std::size_t before = pos_;
+            bool unsafe_fn = false;
             if (check(TokenKind::KwUnsafe)) {
-                diags_.error(peek().loc, "not supported yet");
-                ++pos_;
+                std::size_t ahead = 0;
+                while (peek(ahead).kind == TokenKind::KwUnsafe) {
+                    ++ahead;
+                }
+                // `unsafe` on a field stays rejected. `unsafe func` marks the method.
+                if (peek(ahead).kind != TokenKind::KwFunc) {
+                    diags_.error(peek().loc, "not supported yet");
+                    ++pos_;
+                } else {
+                    while (eat(TokenKind::KwUnsafe)) {
+                        unsafe_fn = true;
+                    }
+                }
             }
             if (check(TokenKind::KwFunc)) {
                 FunctionDecl method = parse_function(false, false, false, false, false);
+                method.unsafe = unsafe_fn;
                 if (!method.method_struct.empty()) {
                     diags_.error(method.loc, "type mismatch");
                 }

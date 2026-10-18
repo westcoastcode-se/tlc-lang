@@ -2580,6 +2580,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 return type_invalid();
                             }
+                            require_unsafe_call(method->unsafe_fn, node.loc);
                             if (deferring) {
                                 error(node.loc, "not supported yet");
                             }

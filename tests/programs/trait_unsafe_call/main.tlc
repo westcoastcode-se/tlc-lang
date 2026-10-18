@@ -1,0 +1,12 @@
+type Raw trait {
+    unsafe func load(p *u8) i32;
+};
+
+func once(r Raw, p *u8) i32 {
+    return r.load(p);
+}
+
+func main() i32 {
+    var n i32 = 1;
+    return once((p) { return 1; }, unsafe *u8(&n));
+}

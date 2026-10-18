@@ -1232,7 +1232,7 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
                 continue;
             }
             traits_[static_cast<std::size_t>(id)].methods.push_back(
-                TraitInfo::Method{method.name, std::move(signature)});
+                TraitInfo::Method{method.name, std::move(signature), method.unsafe});
         }
     }
 }
@@ -1293,7 +1293,8 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
             continue;
         }
         const auto signature_ok = [&](const MethodInfo &candidate) {
-            if (!candidate.has_body || candidate.is_static || !trait_method_matches(method.type, candidate.type)) {
+            if (!candidate.has_body || candidate.is_static || candidate.unsafe_fn != method.unsafe_fn ||
+                !trait_method_matches(method.type, candidate.type)) {
                 return false;
             }
             const bool pointer_method = candidate.type.kind == TypeKind::Function && !candidate.type.params.empty() &&

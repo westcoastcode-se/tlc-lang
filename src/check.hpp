@@ -177,6 +177,8 @@ class Checker {
         struct Method {
             std::string name;
             Type type;
+            // The call is `unsafe value.name(...)`. The struct method repeats `unsafe`.
+            bool unsafe_fn = false;
         };
         struct Field {
             std::string name;

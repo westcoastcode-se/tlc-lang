@@ -1,0 +1,35 @@
+type Point struct {
+    y i32;
+};
+
+type Raw trait {
+    unsafe func load(p *u8) i32;
+};
+
+unsafe func Point::load(self this, p *u8) i32 {
+    var q *i32 = unsafe *i32(p);
+    return *q + self.y;
+}
+
+func read(r *Raw, p *u8) i32 {
+    return unsafe r.load(p);
+}
+
+unsafe func direct(r *Raw, p *u8) i32 {
+    return r.load(p);
+}
+
+func once(r Raw, p *u8) i32 {
+    return unsafe r.load(p);
+}
+
+func main() i32 {
+    var n i32 = 40;
+    var bytes *u8 = unsafe *u8(&n);
+    var point Point;
+    point.y = 2;
+    var from_struct = read(&point, bytes);
+    var from_direct = unsafe direct(&point, bytes);
+    var from_fn = once((p) { var q *i32 = unsafe *i32(p); return *q; }, bytes);
+    return from_struct + from_direct + from_fn;
+}

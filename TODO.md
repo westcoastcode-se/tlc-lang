@@ -21,10 +21,6 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 There is no `realloc` expression. `Allocator.realloc` returns `?*u8`. The caller handles `null`.
 
-## Unsafe
-
-`unsafe` on a trait method is `not supported yet`. The method is parsed as an ordinary trait method.
-
 ## Names
 
 - A name may be declared again in the same block, as Rust does with `let`. `var n = 1` followed by `var n = n + 1` in that block is `redefinition`.

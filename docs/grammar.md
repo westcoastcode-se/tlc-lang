@@ -132,7 +132,7 @@ enumerators = enumerator { "," enumerator } [ "," ] ;
 enumerator  = identifier [ "=" integer-literal ] ;
 
 trait-item   = trait-method | field ;
-trait-method = "func" identifier "(" [ parameters ] ")" result ";" ;
+trait-method = [ "unsafe" ] "func" identifier "(" [ parameters ] ")" result ";" ;
 ```
 
 `type Vec[T type] struct` is a generic struct. The parameter list is allowed only before `struct`. A use is `Vec[i32]`, `Vec[Point]`, or, in another package, `pkg.Vec[i32]`. A struct value is `Vec[i32]{}`, `Buf[4, i32]{}`, `pkg.Vec[i32]{}`, and `pkg.Buf[4, i32]{}`. A method on `Vec` is `func Vec[T]::get(self *this, i i32) T`. One method name may have several parameter lists. The receiver is not one of those parameters. The names are the struct's parameters, in that order. Leaving them out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`. `func Vec[T type]::get` is reported as `type mismatch`. `Vec` without arguments is reported as `type mismatch`. `Vec[i32]` and `Vec[u8]` are different types. Assigning one to the other, or passing one where the parameter is the other, is reported as `type mismatch`.
@@ -147,7 +147,7 @@ The semicolon after `}` is optional. A member is a name and then a `go-type`, th
 
 `extern(abi="c") type Name enum` has no underlying type. `extern(abi="c") type Name enum(i8)` is reported as `extern enum`. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
 
-A trait method has no body and no receiver. A trait field is a name and a type, the same form as a struct field: `w i32;`. A value on that field, `w i32 = 1`, is reported as `not supported yet`. The struct that is passed must have a field of that name and that type.
+A trait method has no body and no receiver. `unsafe func draw() void;` makes that method unsafe. The call is `unsafe s.draw()`. A trait field is a name and a type, the same form as a struct field: `w i32;`. A value on that field, `w i32 = 1`, is reported as `not supported yet`. The struct that is passed must have a field of that name and that type.
 
 ## Types
 

@@ -53,6 +53,7 @@ There is no `impl` keyword. A struct satisfies a trait by defining the methods, 
 - A wrong result type, wrong extra parameters, or a field of another type are reported as `type mismatch`.
 - A field named twice, or a field and a method of the same name, is reported as `redefinition`.
 - The address is not taken automatically. `apply(r)` is reported as `type mismatch` when the parameter is `*Shape`. The call is `apply(&r)`.
+- `unsafe func draw() void;` makes that method unsafe. The call is `unsafe s.draw()` and is reported as `unsafe call` without the prefix. The struct method is `unsafe func Rect::draw`. Leaving `unsafe` off that method, or writing it when the trait method has none, is reported as `type mismatch`. An anonymous function passed to that trait is not an `unsafe func`. The call through the trait still writes `unsafe`.
 
 A generic function writes the same constraint as `T Shape`. `value *T` follows `*Shape`, and `value T` follows `Shape`. See [Generics](../functions/generic.md).
 
