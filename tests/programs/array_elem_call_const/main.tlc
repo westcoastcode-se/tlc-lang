@@ -1,0 +1,9 @@
+func give() i32 {
+    return 4;
+}
+
+const row = [_]i32{give()};
+
+func main() i32 {
+    return 0;
+}

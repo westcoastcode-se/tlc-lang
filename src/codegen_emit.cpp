@@ -6278,11 +6278,33 @@ void CodeGen::emit_dynamic_inits() {
             }
             trace_name_ = var->name;
             set_loc(var->loc);
+            llvm::Value *dest = found->second.value;
+            // `{give(), 2}` is a list. `[_]i32{give(), 2}` is an array literal and uses emit_rvalue.
+            if (found->second.is_array) {
+                if (const auto *list = std::get_if<Expr::Init>(&var->init->data);
+                    list != nullptr && !list->array_literal && !list->is_tuple && list->fields.empty() &&
+                    !list->elements.empty()) {
+                    llvm::Type *ty = object_type(dest);
+                    auto *array_ty = ty != nullptr && ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
+                    if (array_ty == nullptr) {
+                        error(var->loc, "type mismatch");
+                    } else {
+                        llvm::AllocaInst *slot = alloca_typed(ty, "array");
+                        if (!array_list_covers(*list, array_ty)) {
+                            builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
+                        }
+                        store_array_elements(slot, array_ty, *list);
+                        if (!terminated()) {
+                            builder_.CreateStore(builder_.CreateLoad(ty, slot), dest);
+                        }
+                    }
+                    continue;
+                }
+            }
             const TypedValue value = emit_rvalue(*var->init);
             if (terminated() || value.value == nullptr) {
                 continue;
             }
-            llvm::Value *dest = found->second.value;
             if (found->second.is_slice) {
                 llvm::Value *stored = as_slice_value(value, var->loc);
                 if (!terminated() && stored != nullptr) {

@@ -1,0 +1,68 @@
+func give() i32 {
+    return 4;
+}
+
+unsafe func hidden() i32 {
+    return 7;
+}
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func make() Point {
+    return Point{.x = 1, .y = 2};
+}
+
+var n i32;
+
+func first() i32 {
+    n = n + 1;
+    return n;
+}
+
+func second() i32 {
+    n = n + 1;
+    return n;
+}
+
+var numbers = [_]i32{3, 4};
+
+func pair_view() []i32 {
+    return numbers[:];
+}
+
+var pair = [_]i32{give(), 2};
+var written [2]i32 = {give(), 2};
+var marked = [_]i32{unsafe hidden()};
+var points = [_]Point{make(), Point{.x = 3, .y = 4}};
+var order = [_]i32{first(), second()};
+var grid = [_][2]i32{{give(), 1}, {3, 6}};
+var views = [_][]i32{pair_view()};
+
+func main() i32 {
+    n = 9;
+    if (pair[0] != 4 || pair[1] != 2) {
+        return 1;
+    }
+    if (written[0] != 4 || written[1] != 2) {
+        return 2;
+    }
+    if (marked[0] != 7) {
+        return 3;
+    }
+    if (points[0].x != 1 || points[0].y != 2 || points[1].x != 3 || points[1].y != 4) {
+        return 4;
+    }
+    if (order[0] != 1 || order[1] != 2) {
+        return 5;
+    }
+    if (grid[0][0] != 4 || grid[0][1] != 1 || grid[1][0] != 3 || grid[1][1] != 6) {
+        return 6;
+    }
+    if (views[0].len != 2 || views[0][0] != 3 || views[0][1] != 4) {
+        return 7;
+    }
+    return pair[0] + written[1] + marked[0] + points[1].x + order[1] + grid[1][1];
+}

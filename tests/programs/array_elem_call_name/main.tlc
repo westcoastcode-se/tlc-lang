@@ -1,0 +1,10 @@
+func give() i32 {
+    return 4;
+}
+
+var n = give();
+var row = [_]i32{n};
+
+func main() i32 {
+    return row[0];
+}

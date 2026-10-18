@@ -723,6 +723,12 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
             runtime = true;
             return;
         }
+        // `[_]i32{give()}` and `[_]Point{give()}` run before `main`.
+        // A `const` stays a constant. `n + 1` is not this call.
+        if (!var.is_const_decl && !var.is_extern && startup_call(value)) {
+            startup = true;
+            return;
+        }
         const FileConst kind = file_constant(value, seen, !var.is_const_decl);
         if (kind == FileConst::Unfolded) {
             unfolded = true;

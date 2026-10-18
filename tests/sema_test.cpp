@@ -5866,7 +5866,32 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func call_func() i32 { return 1; }\n"
-            "var row = [_]i32{call_func()};\n"
+            "var row = [_]i32{call_func(), 2};\n"
+            "func main() i32 { return row[0] + row[1]; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func call_func() i32 { return 1; }\n"
+            "const row = [_]i32{call_func()};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func call_func() i32 { return 1; }\n"
+            "var n = call_func();\n"
+            "var row = [_]i32{n};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func call_func() i32 { return 1; }\n"
+            "var row = [_]i32{call_func() + 1};\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "global initializer is not a constant");
     }
