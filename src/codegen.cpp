@@ -4,6 +4,8 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Passes/OptimizationLevel.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/TargetSelect.h"
@@ -11,6 +13,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/Transforms/Scalar/DeadStoreElimination.h"
 
 #include <memory>
 #include <string>
@@ -24,7 +27,22 @@ struct TargetState {
     std::string error;
 };
 
-TargetState prepare_target() {
+llvm::CodeGenOptLevel machine_level(OptLevel level) {
+    switch (level) {
+    case OptLevel::Default:
+    case OptLevel::None:
+        return llvm::CodeGenOptLevel::None;
+    case OptLevel::O1:
+        return llvm::CodeGenOptLevel::Less;
+    case OptLevel::O2:
+        return llvm::CodeGenOptLevel::Default;
+    case OptLevel::O3:
+        return llvm::CodeGenOptLevel::Aggressive;
+    }
+    return llvm::CodeGenOptLevel::None;
+}
+
+TargetState prepare_target(OptLevel level) {
     TargetState state;
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -38,11 +56,45 @@ TargetState prepare_target() {
     }
     llvm::TargetOptions options;
     state.machine.reset(target->createTargetMachine(
-        state.triple, "generic", "", options, llvm::Reloc::PIC_, std::nullopt, llvm::CodeGenOptLevel::None));
+        state.triple, "generic", "", options, llvm::Reloc::PIC_, std::nullopt, machine_level(level)));
     if (!state.machine) {
         state.error = "cannot create the host target machine";
     }
     return state;
+}
+
+// Default drops a store that is overwritten, or never read. The zero of a local is
+// that store when a later assignment replaces it. -O1 and above run LLVM's pipeline.
+// -O0 leaves the module alone. buildPerModuleDefaultPipeline rejects O0.
+void optimize_module(llvm::Module &module, llvm::TargetMachine &machine, OptLevel level) {
+    if (level == OptLevel::None) {
+        return;
+    }
+    llvm::LoopAnalysisManager loops;
+    llvm::FunctionAnalysisManager functions;
+    llvm::CGSCCAnalysisManager cgscc;
+    llvm::ModuleAnalysisManager modules;
+    llvm::PassBuilder builder(&machine);
+    builder.registerModuleAnalyses(modules);
+    builder.registerCGSCCAnalyses(cgscc);
+    builder.registerFunctionAnalyses(functions);
+    builder.registerLoopAnalyses(loops);
+    builder.crossRegisterProxies(loops, functions, cgscc, modules);
+    llvm::ModulePassManager module_passes;
+    if (level == OptLevel::Default) {
+        llvm::FunctionPassManager function_passes;
+        function_passes.addPass(llvm::DSEPass());
+        module_passes.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(function_passes)));
+    } else {
+        llvm::OptimizationLevel pipeline = llvm::OptimizationLevel::O1;
+        if (level == OptLevel::O2) {
+            pipeline = llvm::OptimizationLevel::O2;
+        } else if (level == OptLevel::O3) {
+            pipeline = llvm::OptimizationLevel::O3;
+        }
+        module_passes = builder.buildPerModuleDefaultPipeline(pipeline);
+    }
+    module_passes.run(module, modules);
 }
 
 bool write_object(llvm::Module &module, llvm::TargetMachine &machine, const std::string &path, std::string &error) {
@@ -65,9 +117,9 @@ bool write_object(llvm::Module &module, llvm::TargetMachine &machine, const std:
 } // namespace
 
 CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const std::string &object_path,
-                      bool testing, bool debug_info) {
+                      bool testing, bool debug_info, OptLevel opt_level) {
     CodegenOutput output;
-    TargetState target = prepare_target();
+    TargetState target = prepare_target(opt_level);
     if (!target.machine) {
         output.error = target.error;
         diags.error(SourceLoc{}, output.error);
@@ -90,6 +142,14 @@ CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const 
     if (llvm::verifyModule(*module, &verify_stream)) {
         verify_stream.flush();
         diags.error(SourceLoc{}, "invalid llvm module: " + verify_error);
+    } else {
+        optimize_module(*module, *target.machine, opt_level);
+        std::string optimized_error;
+        llvm::raw_string_ostream optimized_stream(optimized_error);
+        if (llvm::verifyModule(*module, &optimized_stream)) {
+            optimized_stream.flush();
+            diags.error(SourceLoc{}, "invalid llvm module: " + optimized_error);
+        }
     }
     llvm::raw_string_ostream ir_stream(output.ir);
     module->print(ir_stream, nullptr);

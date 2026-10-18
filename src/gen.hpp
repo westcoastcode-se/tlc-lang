@@ -1232,6 +1232,10 @@ class CodeGen {
     void finish_function();
     void emit_stmt(const Stmt &stmt);
     void emit_bind(const Stmt::Bind &node);
+    // A missing local initializer. One store per leaf, so a later store or an unread leaf can be deleted.
+    void zero_slot(llvm::Value *slot, llvm::Type *ty);
+    void zero_leaves(llvm::Value *slot, llvm::Type *ty);
+    void zero_bytes(llvm::Value *slot, uint64_t offset, uint64_t size);
     void collect_cases(const Stmt &stmt, std::vector<CaseArm> &arms) const;
     void emit_case(const Stmt::Case &node);
     void emit_switch(const Stmt::Switch &node);

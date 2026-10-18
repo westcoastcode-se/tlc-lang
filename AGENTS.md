@@ -80,7 +80,7 @@ A semantic unit test does not prove code generation. A new expression or stateme
 
 Comments and docs are English. Update the feature page when the meaning changes, and `docs/grammar.md` when the syntax changes. Link a new page from `docs/README.md` and from the previous and next pages. Each feature page keeps its navigation lines, a short example, and a Cost section.
 
-`tlc` does not optimize. A cost is the number of x86-64 instructions that run, measured as `docs/cost.md` describes, for `x86_64-pc-linux-gnu`. Measure with `tlc --emit-obj` before writing a count. Update or remove examples on the page, and fix `examples/triangle` and `examples/tetris` when a change breaks them.
+With no `-O` flag, `tlc` removes a store that is overwritten or never read, and does not run the other LLVM optimizations. `-O0` keeps that store. `-O`, `-O1`, `-O2`, and `-O3` run LLVM's pipeline. A cost is the number of x86-64 instructions that run, measured as `docs/cost.md` describes, for `x86_64-pc-linux-gnu`. Measure with `tlc --emit-obj` before writing a count. Update or remove examples on the page, and fix `examples/triangle` and `examples/tetris` when a change breaks them.
 
 ## Packages
 

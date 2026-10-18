@@ -4577,6 +4577,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     } else if (!var.is_extern && needs_nonnull_pointer(type)) {
                         error(var.loc, "type mismatch");
+                    } else if (!var.is_const_decl) {
+                        // No initializer stores zero, so a later read is that zero.
+                        init_mark_all(tracked);
                     }
                 }
             }

@@ -28,6 +28,10 @@ tlc --help
 | `-Bdynamic` | Link later `-l` libraries from shared libraries (`.so`). |
 | `-static` | Link all libraries statically. |
 | `-g` | Emit DWARF debug information. |
+| `-O0` | Keep every store. Do not optimize. |
+| `-O`, `-O1` | LLVM's first optimization level. |
+| `-O2` | LLVM's second optimization level. |
+| `-O3` | LLVM's third optimization level. |
 | `-Wl,<opt>` | Pass `<opt>` through to the linker. |
 | `lsp` | Speak the language server protocol on standard input and output. |
 
@@ -35,7 +39,7 @@ tlc --help
 
 ## Cost
 
-`--check` emits no instructions. `--emit-llvm` prints the instructions the compiler built and does not assemble them. `--emit-obj` and a normal build write those instructions. `tlc` does not optimize them.
+`--check` emits no instructions. With no `-O` flag, `--emit-llvm` prints the instructions after dead stores are removed and does not assemble them. `--emit-obj` and a normal build write those instructions. That compile removes a store that is overwritten or never read, and does not run the other LLVM optimizations. `-O0` keeps every store. `-O`, `-O1`, `-O2`, and `-O3` run LLVM's optimization pipeline, and the counts in this reference do not apply to them. The last `-O` flag wins.
 
 `return 40 + 2` is folded while compiling. `main` executes 2 instructions, `movl $42, %eax` and `retq`.
 

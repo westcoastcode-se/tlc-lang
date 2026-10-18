@@ -2,9 +2,9 @@
 
 [Index](README.md) · [Grammar](grammar.md)
 
-`tlc` does not optimize. A count on a feature page is the number of x86-64 instructions that run, taken from the object file `tlc --emit-obj` writes for `x86_64-pc-linux-gnu`. An instruction on a branch the running path does not reach is left out. Alignment `nop` is left out. `callq` is one instruction. The instructions inside the callee are extra and are stated with the callee.
+With no `-O` flag, `tlc` removes a store that is overwritten before it is read, or that is never read. It does not run the other LLVM optimizations. `-O0` keeps that store. `-O`, `-O1`, `-O2`, and `-O3` run LLVM's optimization pipeline, and a count on a feature page does not apply to those builds. A count is the number of x86-64 instructions that run, taken from the object file `tlc --emit-obj` writes for `x86_64-pc-linux-gnu` with no `-O` flag. An instruction on a branch the running path does not reach is left out. Alignment `nop` is left out. `callq` is one instruction. The instructions inside the callee are extra and are stated with the callee.
 
-A parameter is stored on entry: one `movl` for an `i32`, one `movq` for a pointer, one `movss` or `movsd` for a float. `var n i32 = 1` stores 1. A local with no initializer adds no instruction. The slot is uninitialized. Reading it before an assignment is `uninitialized`.
+A parameter is stored on entry: one `movl` for an `i32`, one `movq` for a pointer, one `movss` or `movsd` for a float. `var n i32 = 1` stores 1. A local with no initializer is zero. With no `-O` flag, that store is removed when the value is not read, so the declaration adds no instruction. Reading the zero keeps the store. `-O0` keeps the store.
 
 ## A call
 

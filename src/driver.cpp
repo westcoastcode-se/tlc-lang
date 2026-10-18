@@ -47,8 +47,15 @@ std::string help_text() {
         "  -Bdynamic       link later -l libraries from shared libraries\n"
         "  -static         link all libraries statically\n"
         "  -g              emit DWARF debug information\n"
+        "  -O0             keep every store\n"
+        "  -O, -O1         LLVM's first optimization level\n"
+        "  -O2             LLVM's second optimization level\n"
+        "  -O3             LLVM's third optimization level\n"
         "  lsp             speak the language server protocol on stdin and stdout\n"
         "  -Wl,<opt>       pass <opt> to the linker\n"
+        "\n"
+        "No -O flag removes a store that is overwritten or never read. No other\n"
+        "optimization runs. -O is -O1. The last -O flag wins.\n"
         "\n"
         "Vendor packages live in lib/tlc/vendor next to the compiler prefix, or in TLC_LIB.\n"
         "import \"vendor/name\" loads that package. Static and shared libraries beside its\n"
@@ -240,6 +247,14 @@ Options parse_args(int argc, char **argv) {
             opt.link_args.push_back(arg);
         } else if (arg == "-g") {
             opt.debug_info = true;
+        } else if (arg == "-O0") {
+            opt.opt_level = OptLevel::None;
+        } else if (arg == "-O" || arg == "-O1") {
+            opt.opt_level = OptLevel::O1;
+        } else if (arg == "-O2") {
+            opt.opt_level = OptLevel::O2;
+        } else if (arg == "-O3") {
+            opt.opt_level = OptLevel::O3;
         } else if (arg.starts_with('-')) {
             opt.mode = Mode::Error;
             opt.error = "unknown option: " + arg;
@@ -435,7 +450,8 @@ CompileOutput compile_source(const Options &opt) {
         }
     }
 
-    const CodegenOutput generated = codegen(graph, diags, object_path, opt.mode == Mode::Test, opt.debug_info);
+    const CodegenOutput generated =
+        codegen(graph, diags, object_path, opt.mode == Mode::Test, opt.debug_info, opt.opt_level);
     output.ir = generated.ir;
     if (!generated.ok || !diags.ok()) {
         output.compiler_stderr = diags.render();

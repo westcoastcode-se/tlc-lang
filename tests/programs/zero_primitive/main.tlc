@@ -1,0 +1,41 @@
+type Integer i32;
+
+func main() i32 {
+    var n i32;
+    var narrow i8;
+    var wide i64;
+    var raw u8;
+    var flag bool;
+    var x f32;
+    var y f64;
+    var p ?*i32;
+    var named Integer;
+    if (n != 0 || narrow != 0 || wide != 0 || raw != 0) {
+        return 1;
+    }
+    if (flag) {
+        return 2;
+    }
+    if (x != 0.0f || y != 0.0) {
+        return 3;
+    }
+    if (p != null) {
+        return 4;
+    }
+    if (i32(named) != 0) {
+        return 5;
+    }
+    n = 7;
+    flag = true;
+    x = 1.5f;
+    y = 2.5;
+    p = &n;
+    named = Integer(9);
+    if (p == null) {
+        return 6;
+    }
+    if (n != 7 || !flag || x != 1.5f || y != 2.5 || *p != 7 || i32(named) != 9) {
+        return 7;
+    }
+    return 40;
+}

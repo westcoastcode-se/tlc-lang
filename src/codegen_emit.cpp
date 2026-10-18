@@ -5465,6 +5465,115 @@ const FunctionDecl *CodeGen::callee_decl(const Expr &callee) const {
     return nullptr;
 }
 
+namespace {
+
+// Past this, one zero store covers the object. Splitting a huge local would emit one store per byte.
+constexpr int kZeroLeafCap = 64;
+
+int zero_leaf_count(llvm::Type *ty) {
+    if (ty == nullptr || !ty->isSized()) {
+        return kZeroLeafCap + 1;
+    }
+    if (const auto *array = llvm::dyn_cast<llvm::ArrayType>(ty)) {
+        if (array->getNumElements() == 0) {
+            return 0;
+        }
+        const int inner = zero_leaf_count(array->getElementType());
+        const uint64_t product = array->getNumElements() * static_cast<uint64_t>(std::max(inner, 1));
+        if (product > static_cast<uint64_t>(kZeroLeafCap)) {
+            return kZeroLeafCap + 1;
+        }
+        return static_cast<int>(product);
+    }
+    if (const auto *structure = llvm::dyn_cast<llvm::StructType>(ty)) {
+        int total = 0;
+        for (llvm::Type *field : structure->elements()) {
+            total += zero_leaf_count(field);
+            if (total > kZeroLeafCap) {
+                return kZeroLeafCap + 1;
+            }
+        }
+        return total;
+    }
+    return 1;
+}
+
+} // namespace
+
+void CodeGen::zero_bytes(llvm::Value *slot, uint64_t offset, uint64_t size) {
+    uint64_t at = offset;
+    const uint64_t end = offset + size;
+    while (at < end) {
+        uint64_t chunk = 1;
+        llvm::Type *ty = i8();
+        if (at % 8 == 0 && end - at >= 8) {
+            chunk = 8;
+            ty = i64();
+        } else if (at % 4 == 0 && end - at >= 4) {
+            chunk = 4;
+            ty = i32();
+        } else if (at % 2 == 0 && end - at >= 2) {
+            chunk = 2;
+            ty = i16();
+        }
+        llvm::Value *dest = slot;
+        if (at != 0) {
+            dest = builder_.CreateInBoundsGEP(i8(), slot, {llvm::ConstantInt::get(i64(), at)});
+        }
+        builder_.CreateStore(llvm::Constant::getNullValue(ty), dest);
+        at += chunk;
+    }
+}
+
+void CodeGen::zero_leaves(llvm::Value *slot, llvm::Type *ty) {
+    if (ty == nullptr || !ty->isSized()) {
+        return;
+    }
+    if (auto *array = llvm::dyn_cast<llvm::ArrayType>(ty)) {
+        llvm::Type *element = array->getElementType();
+        for (uint64_t index = 0; index < array->getNumElements(); ++index) {
+            llvm::Value *at = builder_.CreateInBoundsGEP(
+                ty, slot, {const_i32(0), llvm::ConstantInt::get(i64(), index)});
+            zero_leaves(at, element);
+        }
+        return;
+    }
+    if (auto *structure = llvm::dyn_cast<llvm::StructType>(ty)) {
+        const llvm::DataLayout &layout_data = module_.getDataLayout();
+        const llvm::StructLayout *layout = layout_data.getStructLayout(structure);
+        uint64_t cursor = 0;
+        for (unsigned index = 0; index < structure->getNumElements(); ++index) {
+            const uint64_t field_at = layout->getElementOffset(index);
+            if (field_at > cursor) {
+                zero_bytes(slot, cursor, field_at - cursor);
+            }
+            llvm::Type *field = structure->getElementType(index);
+            zero_leaves(builder_.CreateStructGEP(structure, slot, index), field);
+            cursor = field_at + layout_data.getTypeAllocSize(field).getFixedValue();
+        }
+        const uint64_t total = layout_data.getTypeAllocSize(structure).getFixedValue();
+        if (total > cursor) {
+            zero_bytes(slot, cursor, total - cursor);
+        }
+        return;
+    }
+    builder_.CreateStore(llvm::Constant::getNullValue(ty), slot);
+}
+
+void CodeGen::zero_slot(llvm::Value *slot, llvm::Type *ty) {
+    if (slot == nullptr || ty == nullptr || !ty->isSized()) {
+        return;
+    }
+    if (module_.getDataLayout().getTypeAllocSize(ty).getFixedValue() == 0) {
+        return;
+    }
+    if (zero_leaf_count(ty) > kZeroLeafCap) {
+        builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
+        return;
+    }
+    zero_leaves(slot, ty);
+}
+
 void CodeGen::emit_bind(const Stmt::Bind &node) {
     if (node.value == nullptr || node.names.empty() || scopes_.empty()) {
         error(node.loc, "type mismatch");
@@ -6244,6 +6353,8 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                             if (!terminated()) {
                                 builder_.CreateStore(as_slice_value(value, var.loc), slot);
                             }
+                        } else if (!var.is_extern && !var.is_const_decl) {
+                            zero_slot(slot, slice_type());
                         }
                         continue;
                     }
@@ -6254,14 +6365,15 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         }
                         llvm::Type *ty = stored_type(low);
                         llvm::AllocaInst *slot = alloca_typed(ty, var.name);
-                        // No initializer leaves the array uninitialized. A shorter list still
-                        // starts from zero so the elements it does not name stay zero.
-                        // An array value is stored once. It is not zeroed first.
+                        // No initializer stores zero. A shorter list still starts from zero so the
+                        // elements it does not name stay zero. An array value is stored once.
                         const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                         auto *array_ty = ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
                         const bool copy_value = var.init != nullptr && list == nullptr;
                         const bool covered = list != nullptr && array_list_covers(*list, array_ty);
-                        if (var.init != nullptr && !covered && !copy_value) {
+                        if (var.init == nullptr && !var.is_extern && !var.is_const_decl) {
+                            zero_slot(slot, ty);
+                        } else if (var.init != nullptr && !covered && !copy_value) {
                             builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
                         }
                         Binding binding;
@@ -6327,6 +6439,8 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                             builder_.CreateStore(
                                 as_stored(value.value, value.depth, object_type(slot), value.elem_unsigned), slot);
                         }
+                    } else if (!var.is_extern && !var.is_const_decl) {
+                        zero_slot(slot, ty);
                     }
                 }
             }

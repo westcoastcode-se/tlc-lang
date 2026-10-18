@@ -37,12 +37,51 @@ int run_cli_tests() {
     EXPECT_HAS(check, help.out, "-Bstatic");
     EXPECT_HAS(check, help.out, "-Bdynamic");
     EXPECT_HAS(check, help.out, "-g");
+    EXPECT_HAS(check, help.out, "-O0");
+    EXPECT_HAS(check, help.out, "-O2");
+    EXPECT_HAS(check, help.out, "-O3");
     EXPECT_HAS(check, help.out, "tlc lsp");
     EXPECT_HAS(check, help.out, "TLC_LIB");
 
     const tlc::test::Proc unknown = tlc::test::spawn({bin, "--nope"});
     EXPECT(check, unknown.code != 0);
     EXPECT_HAS(check, unknown.err, "unknown option");
+
+    const tlc::test::Proc bad_opt = tlc::test::spawn({bin, "-O4"});
+    EXPECT(check, bad_opt.code != 0);
+    EXPECT_HAS(check, bad_opt.err, "unknown option");
+
+    const std::string opt_zero = "/tmp/tlc-opt-zero.tlc";
+    {
+        std::ofstream out(opt_zero);
+        out << "func main() i32 {\n"
+               "    var n i32;\n"
+               "    n = 7;\n"
+               "    return n;\n"
+               "}\n";
+    }
+    const tlc::test::Proc opt_default = tlc::test::spawn({bin, "--emit-llvm", opt_zero});
+    EXPECT(check, opt_default.code == 0);
+    EXPECT(check, opt_default.out.find("store i32 0") == std::string::npos);
+    EXPECT_HAS(check, opt_default.out, "store i32 7");
+
+    const tlc::test::Proc opt_none = tlc::test::spawn({bin, "--emit-llvm", "-O2", "-O0", opt_zero});
+    EXPECT(check, opt_none.code == 0);
+    EXPECT_HAS(check, opt_none.out, "store i32 0");
+    EXPECT_HAS(check, opt_none.out, "store i32 7");
+
+    const tlc::test::Proc opt_o1 = tlc::test::spawn({bin, "--run", "-O", opt_zero});
+    EXPECT(check, opt_o1.code == 7);
+    EXPECT(check, opt_o1.err.empty());
+
+    const tlc::test::Proc opt_o2 = tlc::test::spawn({bin, "--emit-llvm", "-O2", opt_zero});
+    EXPECT(check, opt_o2.code == 0);
+    EXPECT(check, opt_o2.out.find("store i32 0") == std::string::npos);
+
+    const tlc::test::Proc opt_o3 = tlc::test::spawn({bin, "--run", "-O3", opt_zero});
+    EXPECT(check, opt_o3.code == 7);
+    EXPECT(check, opt_o3.err.empty());
+    std::remove(opt_zero.c_str());
 
 #ifndef TLC_ROOT
 #error "TLC_ROOT must point at the project root"

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "codegen.hpp"
+
 #include <string>
 #include <vector>
 
@@ -31,6 +33,8 @@ struct Options {
     std::vector<std::string> link_args;
     // `-g`. Emit DWARF line numbers and variable locations.
     bool debug_info = false;
+    // No `-O` flag is Default. The last `-O` flag wins.
+    OptLevel opt_level = OptLevel::Default;
     std::string error;
 };
 

@@ -10,7 +10,7 @@ A diagnostic has this form:
 file:line:column: error: message
 ```
 
-Each feature page ends with the instructions that feature runs. [Cost](cost.md) says how those counts were measured. `tlc` does not optimize, and the counts are for `x86_64-pc-linux-gnu`.
+Each feature page ends with the instructions that feature runs. [Cost](cost.md) says how those counts were measured. With no `-O` flag, `tlc` removes a store that is overwritten or never read, and does not run the other LLVM optimizations. `-O0` keeps that store. `-O1` and above run LLVM's pipeline. The counts are for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
 
 ## Reference
 

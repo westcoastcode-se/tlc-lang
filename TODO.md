@@ -138,8 +138,6 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Initialization
 
-- A local `var n i32` with no initializer is uninitialized and stores nothing. Reading it before an assignment is `uninitialized`. A file-scope variable with no initializer is zero. `var p *i32` with no initializer is `type mismatch` in both places. Pages: `docs/statements/binding.md`, `docs/types/integer.md`, `docs/expressions/null.md`.
-- A local `var p ?*i32` with no initializer is uninitialized, not null. A file-scope `var p ?*i32` with no initializer is zero, so it is null. Pages: `docs/expressions/null.md`, `docs/statements/binding.md`.
 - `Point{.x = 1}` zeros every omitted field. An omitted `?*T` is null. An omitted `*T` is `type mismatch`. `new Point{.x = 1}` leaves an omitted field uninitialized, so an omitted `?*T` is not null, and an omitted `*T` is still `type mismatch`. `new [n]Point{{.x = 1}...}` stores a struct value, and that value zeros the fields it omits. Pages: `docs/types/struct.md`, `docs/statements/new.md`.
 - A complete array list stores only the listed elements. A shorter list zeros each element it does not name. Pages: `docs/types/array.md`, `docs/statements/binding.md`. The sentence in `docs/expressions/tuple.md` that says every array list zeros first is under [Documentation](#documentation).
 

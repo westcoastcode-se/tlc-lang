@@ -1,0 +1,9 @@
+func give() i32 {
+    return 40;
+}
+
+func main() i32 {
+    var value = 0;
+    value = give();
+    return value;
+}
