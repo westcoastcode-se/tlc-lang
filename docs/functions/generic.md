@@ -21,6 +21,28 @@ func main() i32 {
 }
 ```
 
+`*T`, when `T` is `[4]i32`, is a pointer to that array. `p[i]` and `(*p)[i]` are the element. `**T` is a pointer to that pointer. `?*T` is that pointer or `null`. After `if (p == null) return`, `p` is `*T` and `p[i]` is the element. `*const T` is a pointer to the constant array. Reading `p[0]` is allowed. `p[0] = 1` is reported as `type mismatch`. When `T` is `[]i32`, `(*p)[i]` is the element. A field `p *T` on `Hold[T]` is that pointer. `box.p[i]` is the element.
+
+```c
+type Hold[T type] struct {
+    p *T;
+}
+
+func at[T type](p *T, i i32) i32 {
+    return p[i];
+}
+
+func main() i32 {
+    var data [4]i32;
+    data[0] = 1;
+    data[2] = 6;
+    var box Hold[[4]i32] = {.p = &data};
+    return at[[4]i32](&data, 0) + box.p[2];
+}
+```
+
+`at[[4]i32](&data, 0) + box.p[2]` returns 7.
+
 `T Shape` requires a type that has the methods and the fields of the trait `Shape`.
 
 ```c

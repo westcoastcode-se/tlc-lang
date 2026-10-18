@@ -516,7 +516,8 @@ class Checker {
     void substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, std::string &type_name,
                          std::string &type_package, bool &is_struct, bool &is_enum, int &indirections, uint32_t &optional,
                          bool &is_array, int &array_len, std::string &array_len_name, std::vector<TypeArg> &type_args,
-                         SourceLoc loc, std::vector<TypeShell> *shells = nullptr, bool *elem_const = nullptr);
+                         SourceLoc loc, std::vector<TypeShell> *shells = nullptr, bool *elem_const = nullptr,
+                         uint32_t *const_pointee = nullptr);
     void substitute_expr(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Expr &expr);
     void substitute_stmt(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Stmt &stmt);
     void substitute_function(FunctionDecl &fn, const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds);

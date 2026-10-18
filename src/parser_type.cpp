@@ -826,25 +826,6 @@ Parser::PlacedType Parser::parse_go_type() {
             type.type_args = parse_type_args();
         }
         project(type);
-        int leading_pointers = 0;
-        for (std::size_t index = 0; index < type.shells.size(); ++index) {
-            const TypeShell &shell = type.shells[index];
-            if (shell.kind == TypeShell::Kind::Pointer && index == static_cast<std::size_t>(leading_pointers)) {
-                ++leading_pointers;
-            }
-            if (shell.kind == TypeShell::Kind::Pointer && shell.optional) {
-                for (std::size_t later = index + 1; later < type.shells.size(); ++later) {
-                    if (type.shells[later].kind == TypeShell::Kind::Array) {
-                        diags_.error(type.loc, "not supported yet");
-                        break;
-                    }
-                }
-            }
-        }
-        // `**[4]i32` is two pointer shells around an array. Codegen does not peel that yet.
-        if (leading_pointers > 1) {
-            diags_.error(type.loc, "not supported yet");
-        }
         return type;
     }
 }

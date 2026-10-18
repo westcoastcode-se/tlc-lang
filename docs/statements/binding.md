@@ -6,7 +6,7 @@ A variable is `var name type`, `var name = expr`, or `name := expr`. `i32 value 
 
 A `*T`, or a struct or array that contains one, needs an initializer. `var p *i32;` is reported as `type mismatch`. `var p ?*i32;` is uninitialized. `var p ?*i32 = null` is `null`. A local `const` needs an initializer. `const n = 1` and `const n i32 = 1` are that binding. `const n;` and `const n i32;` are reported as `expected '='`. Assigning the local const is reported as `type mismatch`. `extern var p *i32;` is not checked. `name := expr` defines a new name. In a list, it also assigns a name that already exists in the block, and at least one name must be new. A `:=` whose names are all already in the block is reported as `type mismatch`. `var name := expr` is reported as `type mismatch`.
 
-`*[4]i32` is a pointer to an array. `arr[1]` reads and writes the same element as `(*arr)[1]`. `&` of an array has that pointer type.
+`*[4]i32` is a pointer to an array. `arr[1]` reads and writes the same element as `(*arr)[1]`. `&` of an array has that pointer type. `**[4]i32` is a pointer to that pointer. `(**deep)[2]` and `(*deep)[2]` read the same element. `?*[4]i32` is that pointer or `null`. `var deep **[4]i32` with no initializer is reported as `type mismatch`. `var opt ?*[4]i32` may omit the initializer.
 
 ```c
 func main() i32 {
@@ -270,7 +270,7 @@ func main() i32 {
 
 ## Cost
 
-`var value = 1` is 1 store of 1. `var n i32` with no initializer adds no instruction. `extra := 2` is 1 store of 2. `var p *i32 = &n` is 1 `leaq` and 1 store of that address.
+`var value = 1` is 1 store of 1. `var n i32` with no initializer adds no instruction. `extra := 2` is 1 store of 2. `var p *i32 = &n` is 1 `leaq` and 1 store of that address. `var deep **[4]i32 = &arr` is 1 `leaq` and 1 store. `(**deep)[2]` is 2 `movq` and 1 `movl`. `var opt ?*[4]i32` with no initializer adds no instruction.
 
 A local `const value = 40 + 2` is folded and stored like `var value = 42`: 1 store of 42. It is not a compile-time integer. A file-scope `const N = 4` used as `return N` is the same 2 instructions as `return 4`. No slot is read.
 

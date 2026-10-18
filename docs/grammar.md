@@ -184,7 +184,7 @@ integer-name = "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" ;
 float-name   = "f32" | "f64" ;
 ```
 
-One `*` before `[` is a pointer to that array or slice, as in `*[4]i32`, `*[]T`, `*[][]T`, and `*[N][]T`. `?*[4]i32` and `**[4]i32` are reported as `not supported yet`. `*const T` is a pointer to constant `T`. A store through it is reported as `type mismatch`. `*T` may be passed where `*const T` is required. A type argument may be a nested slice, as in `Vec[[][]i32]`.
+A `*` before `[` is a pointer to that array or slice, as in `*[4]i32`, `**[4]i32`, `?*[4]i32`, `*[]T`, `*[][]T`, and `*[N][]T`. `*const [4]i32` is a pointer to a constant array. A store through it is reported as `type mismatch`. `*const T` is a pointer to constant `T`. A store through it is reported as `type mismatch`. `*T` may be passed where `*const T` is required. A type argument may be a nested slice, as in `Vec[[][]i32]`. `*T` when `T` is `[4]i32` is a pointer to that array.
 
 `int`, `uint`, `short`, `long`, `ulong`, `char`, `float`, and `double` are ordinary identifiers. Using one where a type is required is reported as `not supported yet`. `signed` and `unsigned` are reported as `type mismatch`.
 

@@ -1330,8 +1330,13 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("func main() i32 { var arr **[4]i32; return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        const Parsed parsed = parse_source(
+            "func main() i32 {\n"
+            "  var arr **[4]i32;\n"
+            "  var opt ?*[4]i32;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
     }
 
     {

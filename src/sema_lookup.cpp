@@ -234,6 +234,10 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
             return false;
         }
         out = *pointee.element;
+        // `*const [N]T`: the array is const, so the element is const.
+        if (pointee.is_const) {
+            out.is_const = true;
+        }
         return true;
     }
     out = pointee;

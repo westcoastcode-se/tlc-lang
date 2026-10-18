@@ -3993,6 +3993,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (pointer_shell) {
                         TypedValue peeled = inner;
                         peeled.shells.erase(peeled.shells.begin());
+                        // `*p` on `**[N]T` loads the next pointer. `*[N]T` itself decays below.
+                        if (!peeled.shells.empty() && peeled.shells.front().kind == TypeShell::Kind::Pointer) {
+                            peeled.value = builder_.CreateLoad(ptr_type(), inner.value);
+                            peeled.ptr_to_array = peeled.shells.size() >= 2 &&
+                                                  peeled.shells[1].kind == TypeShell::Kind::Array;
+                            peeled.ptr_array_len = peeled.ptr_to_array ? peeled.shells[1].length : 0;
+                            return peeled;
+                        }
                         // `*p` on `*[N]T` decays to a pointer to the first element.
                         if (peeled.shells.size() == 1 && peeled.shells.front().kind == TypeShell::Kind::Array) {
                             peeled.shells.clear();
@@ -4077,11 +4085,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 const TypedValue right = emit_rvalue(*node.rhs);
                 llvm::Value *lhs = left.value;
                 llvm::Value *rhs = right.value;
-                if ((node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) && (left.depth > 0 || right.depth > 0)) {
-                    if (left.depth <= 0) {
+                const auto pointer_bits = [](const TypedValue &side) {
+                    // `*[N]T` keeps leaf depth 0. The value is still a pointer, including `?*[N]T` and `**[N]T`.
+                    return side.depth > 0 || side.ptr_to_array ||
+                           (!side.shells.empty() && side.shells.front().kind == TypeShell::Kind::Pointer);
+                };
+                if ((node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) &&
+                    (pointer_bits(left) || pointer_bits(right))) {
+                    if (!pointer_bits(left)) {
                         lhs = null_ptr();
                     }
-                    if (right.depth <= 0) {
+                    if (!pointer_bits(right)) {
                         rhs = null_ptr();
                     }
                     llvm::Value *cmp = node.op == TokenKind::EqEq ? builder_.CreateICmpEQ(lhs, rhs)

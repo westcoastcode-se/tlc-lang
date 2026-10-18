@@ -1,0 +1,60 @@
+type Hold[T type] struct {
+    p *T;
+}
+
+func at[T type](p *T, i i32) i32 {
+    return p[i];
+}
+
+func at_star[T type](p *T, i i32) i32 {
+    return (*p)[i];
+}
+
+func elem[T type](p *T, i i32) i32 {
+    return (*p)[i];
+}
+
+func through[T type](p **T, i i32) i32 {
+    return (*p)[i];
+}
+
+func maybe[T type](p ?*T, i i32) i32 {
+    if (p == null) { return -1; }
+    return p[i];
+}
+
+func look[T type](p *const T) i32 {
+    return p[0];
+}
+
+func main() i32 {
+    var data [4]i32;
+    data[0] = 1;
+    data[2] = 6;
+    var arr *[4]i32 = &data;
+    var deep **[4]i32 = &arr;
+    if ((**deep)[2] != 6) { return 1; }
+    if ((*deep)[2] != 6) { return 2; }
+    var opt ?*[4]i32 = &data;
+    if ((opt!)[2] != 6) { return 3; }
+    if (opt == null) { return 4; }
+    if (opt[2] != 6) { return 5; }
+    if (at[[4]i32](&data, 0) != 1) { return 6; }
+    if (at_star[[4]i32](&data, 2) != 6) { return 7; }
+    var box Hold[[4]i32] = {.p = &data};
+    if (box.p[2] != 6) { return 8; }
+    var none ?*[4]i32 = null;
+    if (none != null) { return 9; }
+    var row [2]i32;
+    row[0] = 10;
+    row[1] = 20;
+    var view []i32 = row[:];
+    if (elem[[]i32](&view, 1) != 20) { return 10; }
+    if (through[[4]i32](&arr, 2) != 6) { return 11; }
+    if (maybe[[4]i32](&data, 2) != 6) { return 12; }
+    if (maybe[[4]i32](null, 0) != -1) { return 13; }
+    if (look[[4]i32](&data) != 1) { return 14; }
+    var held *const [4]i32 = &data;
+    if (held[0] != 1) { return 15; }
+    return 0;
+}

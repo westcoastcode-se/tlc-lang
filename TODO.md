@@ -57,7 +57,6 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - Type parameters on an alias, an enum, a trait, or a union. Only `type Name[T type] struct` takes the list.
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.
-- An array type parameter under a pointer, or a pointer to an array, as in `*T` when `T` is `[4]i32`.
 - `sizeof(T)` when `T` is an array.
 - `typeof(T)` when `T` is an array.
 - `typeof` of a function, a tuple, or a trait.
@@ -86,8 +85,6 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 ## Types and operators
 
 - `?` on a type that is not a pointer: `?i32`.
-- An optional pointer to an array: `?*[4]i32`.
-- Two stars outside an array, `**[4]i32`.
 - A slice taken from an array parameter. The parameter is already a pointer, so `return row` from `func open(row [4]i32) []i32` is `return type: expected []i32, found *i32`. A range on that pointer, `row[0:2]`, is `type mismatch`.
 - A slice field on `extern(abi="c")`. It is `not supported yet`. A tlc union arm that is not a struct stays `type mismatch`.
 - A file-scope slice whose initializer is not the name of an array, another slice, or a call. A literal, `a[i:j]`, `a[i:]`, `a[:j]`, or `a[:]` is `global initializer is not a constant`. A call used as the whole initializer runs before `main`. `const v []i32 = row` stores that slice. A range, a literal, or a call used as its initializer is `global initializer is not a constant`.

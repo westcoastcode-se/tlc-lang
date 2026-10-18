@@ -987,7 +987,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
                               std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                               int &indirections, uint32_t &optional, bool &is_array, int &array_len,
                               std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
-                              std::vector<TypeShell> *shells, bool *elem_const) {
+                              std::vector<TypeShell> *shells, bool *elem_const, uint32_t *const_pointee) {
     (void)is_struct;
     if (!array_len_name.empty()) {
         if (const SpecArg *bound = find_arg(params, bounds, array_len_name); bound != nullptr && bound->is_value) {
@@ -1056,8 +1056,38 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         const uint32_t written_const = arg.const_pointee;
         const bool written_array = arg.is_array;
         const int written_len = arg.array_len;
-        if (bound->is_array && (written_array || written > 0)) {
+        if (bound->is_array && written_array) {
             error(arg.loc, "not supported yet");
+            return;
+        }
+        // `*T` when `T` is `[4]i32` or `[]i32` is a pointer shell around that type.
+        if (bound->is_array && written > 0) {
+            if (bound->shells.empty()) {
+                error(arg.loc, "not supported yet");
+                return;
+            }
+            std::vector<TypeShell> wrapped;
+            wrapped.reserve(static_cast<std::size_t>(written) + bound->shells.size());
+            for (int star = 0; star < written; ++star) {
+                TypeShell shell;
+                shell.kind = TypeShell::Kind::Pointer;
+                shell.optional = (written_opt & (1u << star)) != 0;
+                shell.const_pointee = (written_const & (1u << star)) != 0;
+                wrapped.push_back(shell);
+            }
+            wrapped.insert(wrapped.end(), bound->shells.begin(), bound->shells.end());
+            arg.shells = std::move(wrapped);
+            arg.type_name = bound->type_name;
+            arg.type_package = bound->type_package;
+            arg.is_struct = false;
+            arg.is_enum = bound->is_enum;
+            arg.indirections = bound->indirections;
+            arg.optional = bound->optional;
+            arg.const_pointee = bound->const_pointee;
+            arg.is_array = false;
+            arg.array_len = 0;
+            arg.array_len_name.clear();
+            arg.elem_const = bound->elem_const;
             return;
         }
         arg.type_name = bound->type_name;
@@ -1097,10 +1127,44 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
     }
     const int written = indirections;
     const uint32_t written_opt = optional;
+    const uint32_t written_const = const_pointee != nullptr ? *const_pointee : 0;
     const bool written_array = is_array;
     const int written_len = array_len;
-    if (bound->is_array && (written_array || written > 0)) {
+    if (bound->is_array && written_array) {
         error(loc, "not supported yet");
+        return;
+    }
+    // `*T` when `T` is `[4]i32` or `[]i32`. The stars become pointer shells. The leaf stays the array.
+    if (bound->is_array && written > 0) {
+        if (shells == nullptr || bound->shells.empty()) {
+            error(loc, "not supported yet");
+            return;
+        }
+        std::vector<TypeShell> wrapped;
+        wrapped.reserve(static_cast<std::size_t>(written) + bound->shells.size());
+        for (int star = 0; star < written; ++star) {
+            TypeShell shell;
+            shell.kind = TypeShell::Kind::Pointer;
+            shell.optional = (written_opt & (1u << star)) != 0;
+            shell.const_pointee = (written_const & (1u << star)) != 0;
+            wrapped.push_back(shell);
+        }
+        wrapped.insert(wrapped.end(), bound->shells.begin(), bound->shells.end());
+        *shells = std::move(wrapped);
+        type_name = bound->type_name;
+        type_package = bound->type_package;
+        is_enum = bound->is_enum;
+        indirections = bound->indirections;
+        optional = bound->optional;
+        if (const_pointee != nullptr) {
+            *const_pointee = bound->const_pointee;
+        }
+        is_array = false;
+        array_len = 0;
+        array_len_name.clear();
+        if (elem_const != nullptr) {
+            *elem_const = bound->elem_const;
+        }
         return;
     }
     type_name = bound->type_name;
@@ -1460,7 +1524,7 @@ void Checker::substitute_stmt(const std::vector<TypeParam> &params, const std::v
                 for (VarDecl &var : node.vars) {
                     substitute_type(params, bounds, var.type_name, var.type_package, var.is_struct, var.is_enum,
                                     var.indirections, var.optional, var.is_array, var.array_len, var.array_len_name,
-                                    var.type_args, var.loc, &var.shells, &var.elem_const);
+                                    var.type_args, var.loc, &var.shells, &var.elem_const, &var.const_pointee);
                     if (var.init) {
                         substitute_expr(params, bounds, *var.init);
                     }
@@ -1528,7 +1592,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         }
         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
                         param.indirections, param.optional, param.is_array, param.array_len, param.array_len_name,
-                        param.type_args, param.loc, &param.shells, &param.elem_const);
+                        param.type_args, param.loc, &param.shells, &param.elem_const, &param.const_pointee);
         for (FnParam &inner : param.fn_params) {
             subst_fn_param(subst_fn_param, inner, param.loc);
         }
@@ -1552,7 +1616,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
     for (ResultSlot &slot : fn.results) {
         substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
                         slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, fn.loc,
-                        &slot.shells, &slot.elem_const);
+                        &slot.shells, &slot.elem_const, &slot.const_pointee);
         for (FnParam &inner : slot.fn_params) {
             subst_fn_param(subst_fn_param, inner, fn.loc);
         }
@@ -1793,7 +1857,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     for (FieldDecl &field : spec.fields) {
         substitute_type(templ->type_params, bounds, field.type_name, field.type_package, field.is_struct, field.is_enum,
                         field.indirections, field.optional, field.is_array, field.array_len, field.array_len_name,
-                        field.type_args, field.loc, &field.shells, &field.elem_const);
+                        field.type_args, field.loc, &field.shells, &field.elem_const, &field.const_pointee);
     }
     const int id = static_cast<int>(structs_.size());
     StructInfo info;
