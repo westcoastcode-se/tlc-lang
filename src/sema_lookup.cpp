@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <type_traits>
 #include <unordered_map>
@@ -1158,6 +1159,94 @@ bool Checker::trait_method_matches(const Type &trait_fn, const Type &concrete) c
     return true;
 }
 
+namespace {
+
+std::unique_ptr<Expr> name_expr(std::string text) {
+    auto expr = std::make_unique<Expr>();
+    Expr::Name node;
+    node.text = std::move(text);
+    expr->data = std::move(node);
+    return expr;
+}
+
+std::unique_ptr<Expr> sizeof_type(std::string type_name, bool align) {
+    auto expr = std::make_unique<Expr>();
+    Expr::Sizeof node;
+    node.on_type = true;
+    node.type_name = std::move(type_name);
+    node.align = align;
+    expr->data = std::move(node);
+    return expr;
+}
+
+// `unsafe func Allocator::malloc[T type](self *this) ?*T`. The pointer stays in `owned_defaults_`.
+FunctionDecl allocator_malloc_default() {
+    FunctionDecl fn;
+    fn.name = "malloc";
+    fn.method_struct = "Allocator";
+    fn.unsafe = true;
+    fn.exported = true;
+    TypeParam param;
+    param.name = "T";
+    param.is_type = true;
+    fn.type_params.push_back(std::move(param));
+    Param self;
+    self.name = "self";
+    self.type_name = "Allocator";
+    self.is_receiver = true;
+    self.indirections = 1;
+    fn.params.push_back(std::move(self));
+    ResultSlot result;
+    result.type_name = "T";
+    result.indirections = 1;
+    result.optional = 1;
+    fn.results.push_back(result);
+    fn.return_type = "T";
+    fn.indirections = 1;
+    fn.optional = 1;
+
+    auto callee = std::make_unique<Expr>();
+    Expr::Selector selector;
+    selector.base = name_expr("self");
+    selector.field = "malloc";
+    callee->data = std::move(selector);
+    auto call_expr = std::make_unique<Expr>();
+    Expr::Call call;
+    call.callee = std::move(callee);
+    call.args.push_back(sizeof_type("T", false));
+    call.args.push_back(sizeof_type("T", true));
+    call_expr->data = std::move(call);
+
+    auto bind = std::make_unique<Stmt>();
+    Stmt::Bind binding;
+    binding.is_var = true;
+    binding.names.push_back("value");
+    binding.value = std::move(call_expr);
+    bind->data = std::move(binding);
+
+    auto cast_expr = std::make_unique<Expr>();
+    Expr::Cast cast;
+    cast.type_name = "T";
+    cast.indirections = 1;
+    cast.optional = 1;
+    cast.expr = name_expr("value");
+    cast_expr->data = std::move(cast);
+    auto ret = std::make_unique<Stmt>();
+    Stmt::Return ret_node;
+    ret_node.value = std::move(cast_expr);
+    ret->data = std::move(ret_node);
+
+    auto block = std::make_unique<Stmt>();
+    Stmt::Block body;
+    body.statements.push_back(std::move(bind));
+    body.statements.push_back(std::move(ret));
+    block->data = std::move(body);
+    fn.body = std::move(block);
+    return fn;
+}
+
+} // namespace
+
 void Checker::ensure_allocator_trait() {
     if (allocator_trait_id_ >= 0) {
         return;
@@ -1170,9 +1259,11 @@ void Checker::ensure_allocator_trait() {
     const Type size = type_int();
     TraitInfo info;
     info.name = "Allocator";
-    info.methods.push_back(TraitInfo::Method{"malloc", type_function(optional, {size, size})});
-    info.methods.push_back(TraitInfo::Method{"free", type_function(type_void(), {pointer})});
-    info.methods.push_back(TraitInfo::Method{"realloc", type_function(optional, {pointer, size, size})});
+    info.methods.push_back(TraitInfo::Method{"malloc", type_function(optional, {size, size}), true});
+    info.methods.push_back(TraitInfo::Method{"free", type_function(type_void(), {pointer}), false});
+    info.methods.push_back(TraitInfo::Method{"realloc", type_function(optional, {pointer, size, size}), true});
+    owned_defaults_.push_back(allocator_malloc_default());
+    info.defaults.push_back(&owned_defaults_.back());
     allocator_trait_id_ = static_cast<int>(traits_.size());
     traits_.push_back(std::move(info));
 }
@@ -1242,6 +1333,19 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
         error(loc, "type mismatch");
         return false;
     }
+    // A quiet probe counts a plain default as the required method. Grant only after that probe succeeds,
+    // and copy the struct name first: installing a default can grow `structs_`.
+    if (!quiet_ && struct_id < static_cast<int>(structs_.size())) {
+        const bool saved = quiet_;
+        quiet_ = true;
+        const bool covered = require_satisfies(struct_id, trait_id, through_pointer, loc, body_home);
+        quiet_ = saved;
+        if (covered) {
+            const uint32_t struct_file = structs_[static_cast<std::size_t>(struct_id)].file_id;
+            const std::string struct_name = structs_[static_cast<std::size_t>(struct_id)].name;
+            grant_trait_defaults(struct_file, struct_name, trait_id);
+        }
+    }
     const bool known_struct = struct_id < static_cast<int>(structs_.size());
     const StructInfo *info = known_struct ? &structs_[static_cast<std::size_t>(struct_id)] : nullptr;
     bool ok = true;
@@ -1288,6 +1392,9 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
             }
         }
         if (head == nullptr) {
+            if (quiet_ && plain_default_supplies(trait_id, method, through_pointer)) {
+                continue;
+            }
             error(loc, "undeclared identifier");
             ok = false;
             continue;

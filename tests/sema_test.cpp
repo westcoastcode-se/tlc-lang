@@ -1375,17 +1375,40 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Arena struct { mark i32; };\n"
-            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "func main() i32 {\n"
+            "  var arena Arena;\n"
+            "  var raw *u8 = *u8(0);\n"
+            "  var p ?*u8 = unsafe arena.malloc(4, 1);\n"
+            "  arena.free(raw);\n"
+            "  var q ?*u8 = unsafe arena.realloc(raw, 8, 1);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Arena struct { mark i32; };\n"
+            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "func Arena::free(self *this, ptr *u8) void {}\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var arena Arena;\n"
             "  var raw *u8 = *u8(0);\n"
             "  var p ?*u8 = arena.malloc(4, 1);\n"
-            "  arena.free(raw);\n"
             "  var q ?*u8 = arena.realloc(raw, 8, 1);\n"
             "  return 0;\n"
             "}\n");
+        EXPECT_HAS(check, errors, "unsafe call");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const n = alignof(i32);\n"
+            "func main() i32 { return n; }\n");
         EXPECT_EQ(check, errors, "");
     }
 
@@ -5056,7 +5079,7 @@ int run_sema_tests() {
         const std::string errors = check_program(
             "type Point struct { x i32; };\n"
             "type Arena struct { mark i32; };\n"
-            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
             "func main() i32 {\n"
             "  var arena Arena;\n"
@@ -5073,9 +5096,9 @@ int run_sema_tests() {
     {
         const std::string errors = check_program(
             "type Arena struct { hits i32; };\n"
-            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var live Arena;\n"
             "  const frozen = live;\n"
@@ -5093,9 +5116,9 @@ int run_sema_tests() {
     {
         const std::string errors = check_program(
             "type Arena struct { hits i32; };\n"
-            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var live Arena;\n"
             "  var q ?*Arena = &live;\n"
@@ -5109,9 +5132,9 @@ int run_sema_tests() {
     {
         const std::string errors = check_program(
             "type Arena struct { hits i32; };\n"
-            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var live Arena;\n"
             "  const p = &live;\n"
@@ -5122,6 +5145,21 @@ int run_sema_tests() {
             "  return 0;\n"
             "}\n");
         EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "type Arena struct { hits i32; };\n"
+            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "func Arena::free(self *this, ptr *u8) void {}\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "func main() i32 {\n"
+            "  var live Arena;\n"
+            "  var n *i32 = new(&live) i32;\n"
+            "  delete(&live) n;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
@@ -5331,6 +5369,22 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Vec[T type] struct { n i32; };\n"
             "func Vec[T]::get[U type](self *this) i32 { return self.n; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "unsafe func Allocator::malloc[T type](self *this) ?*T { return null; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(a *Allocator) ?*i32 {\n"
+            "  return a.malloc[i32]();\n"
+            "}\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }

@@ -2,21 +2,21 @@ type Arena struct {
     n i32;
 };
 
-func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
     return null;
 }
 
 func Arena::free(self *this, ptr *u8) void {
 }
 
-func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
     return null;
 }
 
 func main() i32 {
     var arena Arena;
     var scratch u8;
-    var raw ?*u8 = arena.realloc(&scratch, 4, 4);
+    var raw ?*u8 = unsafe arena.realloc(&scratch, 4, 4);
     if (raw != null) {
         return 1;
     }

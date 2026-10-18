@@ -1,0 +1,41 @@
+type Shape trait {
+    func area() i32;
+};
+
+func Shape::twice(self *this) i32 {
+    return self.area() + self.area();
+}
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self *this) i32 {
+    return self.w * self.h;
+}
+
+type Square struct {
+    n i32;
+};
+
+func Square::area(self *this) i32 {
+    return self.n * self.n;
+}
+
+func Square::twice(self *this) i32 {
+    return 7;
+}
+
+func use(s *Shape) i32 {
+    return s.twice();
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 5;
+    r.h = 6;
+    var q Square;
+    q.n = 3;
+    return r.twice() + use(&r) + use(&q);
+}

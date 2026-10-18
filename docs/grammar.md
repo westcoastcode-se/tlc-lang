@@ -51,7 +51,7 @@ type-params = "[" type-param { "," type-param } "]"
 type-param  = identifier "type"
             | identifier integer-name
             | identifier identifier ;
-method      = [ "unsafe" ] "func" identifier [ method-params ] "::" identifier "(" [ parameters ] ")" result ( block | ";" ) ;
+method      = [ "unsafe" ] "func" identifier [ method-params ] "::" identifier [ type-params ] "(" [ parameters ] ")" result ( block | ";" ) ;
 method-params = "[" identifier { "," identifier } "]" ;
 receiver    = identifier [ "*" ] "this" ;
 
@@ -71,7 +71,7 @@ A receiver parameter is written `name this`, `name *this`, `name *const this`, `
 
 The method is written in the same file as that struct, enum, or slice alias. A method in another file is reported as `method in another file`. Every file in the package can call it. `export func Type::name` publishes a value method, and another package calls `value.name(...)`. With no receiver, `export` publishes `pkg.Type.name(...)`. On a generic struct that call is `pkg.Vec[i32].name(...)`. A method without `export` is reported as `name is not exported`. `extern` on a method is reported as `not supported yet`. A slice alias uses `self this` or `self *this`. `self *this` is a pointer to that slice.
 
-An inner function uses the same `function` form inside a block, and it has a body.
+An inner function uses the same `function` form inside a block, and it has a body. A type-parameter list after the method name, `func Type::name[T type](self *this) T`, is a method template when that type is not a generic struct. `func Vec[T]::get[U type]` is `not supported yet`. A default method is the same form on a trait name, with a body: `func Shape::twice(self *this) i32 { ... }`. The method inside the trait braces still has no body and no receiver.
 
 ### Generics
 
@@ -147,11 +147,11 @@ The semicolon after `}` is optional. A member is a name and then a `go-type`, th
 
 `extern(abi="c") type Name enum` has no underlying type. `extern(abi="c") type Name enum(i8)` is reported as `extern enum`. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
 
-A trait method has no body and no receiver. `unsafe func draw() void;` makes that method unsafe. The call is `unsafe s.draw()`. A trait field is a name and a type, the same form as a struct field: `w i32;`. A value on that field, `w i32 = 1`, is reported as `not supported yet`. The struct that is passed must have a field of that name and that type.
+A trait method has no body and no receiver. `unsafe func draw() void;` makes that method unsafe. The call is `unsafe s.draw()`. A default method is written on the trait name, outside the braces, and has a body. A trait field is a name and a type, the same form as a struct field: `w i32;`. A value on that field, `w i32 = 1`, is reported as `not supported yet`. The struct that is passed must have a field of that name and that type.
 
 ## Types
 
-A type spelling adds no instructions. `sizeof` folds to an immediate. The widths and the conversions are on [Numeric types](types/integer.md).
+A type spelling adds no instructions. `sizeof` and `alignof` fold to an immediate. `alignof` is the alignment in bytes. The widths and the conversions are on [Numeric types](types/integer.md).
 
 A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. An empty length is a slice: `[]i32` and `func head(a []i32) []i32`. One more empty pair is a slice of those headers: `[][]i32`, `[N][]i32`, and `func sum(rows [][]i32) [][]i32`. `const` before the element makes that element constant: `[]const u8`, `[4]const u8`, and `[][]const u8`. A string literal is `[]const u8`. `i32[4]`, `i32[N]`, and `i32[]` are reported as `type mismatch`. Another pair is the same constructor again: `[N][M]T`, `[][N]T`, and `[][][]T`. Each empty pair is one slice header. Each length is one array of the inner type.
 
@@ -351,11 +351,11 @@ A `'` between digits is a separator, not an empty gap and not a trailing mark. A
 These words are keywords and cannot be identifiers:
 
 ```text
-assert bool break case const continue default defer delete do else enum
+alignof assert bool break case const continue default defer delete do else enum
 export extern false for func if import new null package
 return sizeof struct switch test trait true type typeof union unsafe var void while
 ```
 
-C keywords that tlc reserves but does not use are also keywords: `alignas`, `alignof`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof_unqual`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).
+C keywords that tlc reserves but does not use are also keywords: `alignas`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof_unqual`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).
 
 `as`, `from`, `impl`, `static`, and `this` are not keywords. `signed` and `unsigned` are not keywords.

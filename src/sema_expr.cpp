@@ -2573,12 +2573,70 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             const bool through_pointer = base.kind != TypeKind::Trait;
                             const int trait_id = through_pointer ? base.pointee->trait_id : base.trait_id;
                             const TraitInfo::Method *method = find_trait_method(trait_id, selector->field);
-                            if (method == nullptr || method->type.kind != TypeKind::Function || method->type.result == nullptr) {
+                            if (method != nullptr &&
+                                (method->type.kind != TypeKind::Function || method->type.result == nullptr)) {
                                 error(node.loc, "undeclared identifier");
                                 for (const auto &arg : node.args) {
                                     check_expr(*arg, true);
                                 }
                                 return type_invalid();
+                            }
+                            if (method == nullptr) {
+                                std::vector<const FunctionDecl *> plain;
+                                bool saw_generic = false;
+                                if (trait_id >= 0 && trait_id < static_cast<int>(traits_.size())) {
+                                    for (const FunctionDecl *def : traits_[static_cast<std::size_t>(trait_id)].defaults) {
+                                        if (def == nullptr || def->name != selector->field) {
+                                            continue;
+                                        }
+                                        if (def->type_params.empty()) {
+                                            plain.push_back(def);
+                                        } else {
+                                            saw_generic = true;
+                                        }
+                                    }
+                                }
+                                auto check_args = [&]() {
+                                    for (const auto &arg : node.args) {
+                                        check_expr(*arg, true);
+                                    }
+                                };
+                                if (plain.empty()) {
+                                    error(node.loc, saw_generic ? "not supported yet" : "undeclared identifier");
+                                    check_args();
+                                    return type_invalid();
+                                }
+                                const FunctionDecl *chosen = nullptr;
+                                Type chosen_tail;
+                                int hits = 0;
+                                for (const FunctionDecl *def : plain) {
+                                    const Type tail = method_tail(*def);
+                                    if (tail.kind != TypeKind::Function || tail.result == nullptr ||
+                                        tail.params.size() != node.args.size()) {
+                                        continue;
+                                    }
+                                    ++hits;
+                                    chosen = def;
+                                    chosen_tail = tail;
+                                }
+                                if (hits == 0) {
+                                    error(node.loc, "argument count");
+                                    check_args();
+                                    return type_invalid();
+                                }
+                                if (hits != 1 || chosen == nullptr || chosen_tail.result == nullptr) {
+                                    error(node.loc, "type mismatch");
+                                    check_args();
+                                    return type_invalid();
+                                }
+                                require_unsafe_call(chosen->unsafe, node.loc);
+                                if (deferring) {
+                                    error(node.loc, "not supported yet");
+                                }
+                                for (std::size_t i = 0; i < node.args.size(); ++i) {
+                                    check_call_arg(*node.args[i], chosen_tail.params[i]);
+                                }
+                                return *chosen_tail.result;
                             }
                             require_unsafe_call(method->unsafe_fn, node.loc);
                             if (deferring) {
@@ -2692,6 +2750,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             uint32_t home = 0;
                             std::string owner;
                             if (object.struct_id >= 0 && object.struct_id < static_cast<int>(structs_.size())) {
+                                grant_covered_defaults(object.struct_id);
                                 home = structs_[static_cast<std::size_t>(object.struct_id)].file_id;
                                 owner = structs_[static_cast<std::size_t>(object.struct_id)].name;
                             }
@@ -3949,6 +4008,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Void || type.kind == TypeKind::Function ||
                     type.kind == TypeKind::Tuple || mentions_trait(type)) {
                     return std::nullopt;
+                }
+                if (node.align) {
+                    return min_align_of(type);
                 }
                 return type_size(type);
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {

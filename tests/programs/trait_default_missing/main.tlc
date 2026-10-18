@@ -1,0 +1,16 @@
+type Shape trait {
+    func area() i32;
+};
+
+func Shape::twice(self *this) i32 {
+    return 1;
+}
+
+type Empty struct {
+    n i32;
+};
+
+func main() i32 {
+    var e Empty;
+    return e.twice();
+}

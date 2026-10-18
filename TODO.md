@@ -50,7 +50,8 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `typeof` inside a parenthesized result list. A bare result `typeof(expression)` is accepted.
 - A tuple index that is not a constant, and assignment to a tuple element.
 - `count(U)` and `const for`.
-- A type-parameter list after the method name: `func Vec[T]::get[U type]`. `func Vec[T]::get` names the struct's parameters.
+- A type-parameter list after the method name on a generic struct: `func Vec[T]::get[U type]`. `func Type::name[T type](self *this)` is a method template when the owner is not a generic struct. `func Vec[T]::get` names the struct's parameters.
+- A method template that is static, exported, `extern`, or `...`, and a method template on a type alias: `func Integer::id[T type]`. They are `not supported yet`.
 - Type parameters on an alias, an enum, a trait, or a union. Only `type Name[T type] struct` takes the list.
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.
@@ -73,7 +74,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 
 ### Constant evaluation
 
-`assert`, `const`, and a compile-time integer share one evaluator. It folds integers, including a suffix whose value fits in `i32` such as `1u32`, names of those constants, `sizeof`, float arithmetic (`1.5f + 0.5f`), and `==` / `!=` of two `typeof` values. `var x = 1.5f + 0.5f`, `const x = 1.5f + 0.5f`, and `var x f32 = 1u32` are constant initializers.
+`assert`, `const`, and a compile-time integer share one evaluator. It folds integers, including a suffix whose value fits in `i32` such as `1u32`, names of those constants, `sizeof`, `alignof`, float arithmetic (`1.5f + 0.5f`), and `==` / `!=` of two `typeof` values. `var x = 1.5f + 0.5f`, `const x = 1.5f + 0.5f`, and `var x f32 = 1u32` are constant initializers.
 
 An `assert` whose condition is not one of those constants is `not supported yet`. A call is not a constant. `const x f32 = n` when `n` is a `var` is `global initializer is not a constant`. A suffix whose value does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
 
@@ -122,7 +123,8 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 - `extern` on a method. A method may be exported, including `export func Vec[T]::get`. Another package calls `value.name(...)`. `export` on a static function publishes `pkg.Type.name(...)`. A method without `export` is reported as `name is not exported`.
 - A receiver with more than one star: `self **this`.
-- A body on a trait method. The trait lists the method and its type.
+- A body on a trait method. The trait lists the method and its type. A default is `func Trait::name` outside the braces.
+- A generic default called through a trait value, such as `a.malloc[i32]()` when `a` is `*Allocator`. It is `not supported yet`. A call on the struct, `arena.malloc[i32]()`, is that default.
 - A trait method that returns several results.
 - A trait used as a variable, a return type, an array, a type alias, a trait field, or `**Shape`. A parameter is `Shape` or `*Shape`.
 - `export`, `extern`, or `...` on a function that takes a trait parameter.

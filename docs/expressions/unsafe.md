@@ -49,7 +49,7 @@ The flag is part of the function. `unsafe func point(raw *u8) *Point;` and `func
 
 `unsafe func draw() void;` on a trait makes that method unsafe. The call is `unsafe s.draw()` and is reported as `unsafe call` without the prefix. Inside an `unsafe func`, the prefix is not required. The struct method repeats the flag: `unsafe func Rect::draw`. A method that does not, or an `unsafe` method where the trait method is not, is reported as `type mismatch`. An anonymous function passed to a one-method trait is not itself an `unsafe func`. The call through the trait still writes `unsafe`.
 
-`malloc`, `realloc`, and `free` are ordinary calls. They are not unsafe. `malloc` returns `?*u8`, and the caller handles `null`. The unsafe step is the cast of that pointer.
+`malloc` and `realloc` on `Allocator` are unsafe. The call is `unsafe arena.malloc(...)` or `unsafe arena.realloc(...)`, and it is `unsafe call` without the prefix. `free` is an ordinary call. `new` and `delete` are not unsafe calls. `malloc` returns `?*u8`, and the caller handles `null`. The cast of that pointer follows the rules above.
 
 ## Cost
 

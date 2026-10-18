@@ -182,6 +182,8 @@ struct Expr {
         std::vector<TypeShell> shells;
         int array_len = 0;
         std::unique_ptr<Expr> expr;
+        // `alignof`. The operand is the same as `sizeof`. The value is the alignment in bytes.
+        bool align = false;
     };
     struct Typeof {
         SourceLoc loc{};

@@ -1256,7 +1256,8 @@ std::optional<int32_t> CodeGen::folded_sizeof(const Expr::Sizeof &node) const {
     if (measured == nullptr || !measured->isSized() || measured->isFunctionTy()) {
         return std::nullopt;
     }
-    const uint64_t bytes = module_.getDataLayout().getTypeAllocSize(measured).getFixedValue();
+    const uint64_t bytes = node.align ? module_.getDataLayout().getABITypeAlign(measured).value()
+                                      : module_.getDataLayout().getTypeAllocSize(measured).getFixedValue();
     if (bytes > 2147483647ULL) {
         return std::nullopt;
     }
@@ -2068,6 +2069,10 @@ bool CodeGen::param_is_trait(uint32_t file, const Param &param) const {
 
 bool CodeGen::function_is_generic(uint32_t file, const FunctionDecl &fn) const {
     if (!fn.type_params.empty()) {
+        return true;
+    }
+    // A trait default is copied onto each struct. The trait receiver is not emitted.
+    if (!fn.method_struct.empty() && trait_named(file, fn.method_struct) >= 0) {
         return true;
     }
     for (const Param &param : fn.params) {
@@ -5271,7 +5276,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     error(node.loc, "not supported yet");
                     return {zero(), 0};
                 }
-                const uint64_t bytes = module_.getDataLayout().getTypeAllocSize(measured).getFixedValue();
+                const uint64_t bytes = node.align ? module_.getDataLayout().getABITypeAlign(measured).value()
+                                                  : module_.getDataLayout().getTypeAllocSize(measured).getFixedValue();
                 if (bytes > 2147483647ULL) {
                     error(node.loc, "not supported yet");
                     return {zero(), 0};

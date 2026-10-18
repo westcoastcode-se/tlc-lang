@@ -576,7 +576,10 @@ std::string dump_expr(const Expr &expr) {
                     }
                 }
                 if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof>) {
-                    const char *op = std::is_same_v<T, Expr::Sizeof> ? "sizeof" : "typeof";
+                    const char *op = "typeof";
+                    if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                        op = node.align ? "alignof" : "sizeof";
+                    }
                     if (!node.on_type) {
                         return std::string("(") + op + " " + (node.expr ? dump_expr(*node.expr) : "(unsupported)") + ")";
                     }
@@ -924,6 +927,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.shells = node.shells;
                 copy.array_len = node.array_len;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
+                copy.align = node.align;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
                 Expr::Typeof copy;

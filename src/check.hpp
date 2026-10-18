@@ -187,6 +187,10 @@ class Checker {
         };
         std::vector<Method> methods;
         std::vector<Field> fields;
+        // `func Trait::name`. A struct that satisfies the trait gains these. The struct's own
+        // method with the same parameters after the receiver wins. The decl stays in the unit,
+        // or in `owned_defaults_` for the built-in `Allocator.malloc[T]`.
+        std::vector<const FunctionDecl *> defaults;
         // Field declarations, typed after structs are complete.
         std::vector<FieldDecl> pending;
     };
@@ -641,6 +645,17 @@ class Checker {
     std::unordered_map<uint32_t, std::unordered_map<std::string, StructDecl *>> struct_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, ConstBinding>> const_values_;
     std::deque<OwnedFn> deferred_methods_;
+    // The built-in `Allocator.malloc[T type]`. Pointers into this deque stay valid.
+    std::deque<FunctionDecl> owned_defaults_;
+    // file, owner, name. `func Arena::malloc[T type]`. The decl stays in the unit.
+    std::unordered_map<uint32_t,
+                       std::unordered_map<std::string, std::unordered_map<std::string, std::vector<const FunctionDecl *>>>>
+        method_templates_;
+    // `file\nstruct\ntrait` once that struct has this trait's plain defaults.
+    std::unordered_set<std::string> defaults_ready_;
+    std::unordered_set<std::string> granting_;
+    // Instantiated copy -> the default or method template it was copied from.
+    std::unordered_map<const FunctionDecl *, const FunctionDecl *> default_origin_;
     std::vector<PendingAppend> pending_appends_;
     std::unordered_set<std::string> spec_checking_;
     std::unordered_set<std::string> spec_ready_;
@@ -683,6 +698,17 @@ class Checker {
                          std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);
     const StructDecl *find_struct_template(const std::string &name, uint32_t &owner) const;
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
+    void register_trait_default(const FunctionDecl &fn);
+    void register_method_template(const FunctionDecl &fn);
+    // The function type of a method with the receiver left out. Trait signatures have no receiver.
+    Type method_tail(const FunctionDecl &fn);
+    bool plain_default_supplies(int trait_id, const TraitInfo::Method &method, bool through_pointer);
+    void grant_trait_defaults(uint32_t struct_file, const std::string &struct_name, int trait_id);
+    void grant_covered_defaults(int struct_id);
+    const MethodInfo *find_method_head(uint32_t file, const std::string &owner, const std::string &name) const;
+    const FunctionDecl *install_default(const FunctionDecl &templ, uint32_t struct_file, const std::string &struct_name,
+                                        const std::string &spec_name, const std::vector<SpecArg> &bounds);
+    std::optional<Type> try_method_template(Expr &expr, bool used);
     void drain_deferred();
     void flush_appends();
     TranslationUnit *unit_for(uint32_t file_id);

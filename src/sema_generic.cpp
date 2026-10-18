@@ -1441,6 +1441,17 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     for (FnParam &part : node.fn_results) {
                         subst_param(subst_param, part);
                     }
+                } else {
+                    // `?*T(value)`. A function-pointer cast is handled above.
+                    bool is_array = false;
+                    int array_len = 0;
+                    std::string array_len_name;
+                    std::vector<TypeArg> type_args;
+                    uint32_t const_pointee = node.const_pointee;
+                    substitute_type(params, bounds, node.type_name, node.type_package, node.is_struct, node.is_enum,
+                                    node.indirections, node.optional, is_array, array_len, array_len_name, type_args,
+                                    node.loc, nullptr, nullptr, &const_pointee);
+                    node.const_pointee = const_pointee;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
                 if (node.array_literal) {
@@ -2204,7 +2215,9 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         error(call.loc, "argument count");
         return std::nullopt;
     }
-    if (call.args.size() != templ.params.size()) {
+    // A method's first parameter is the receiver. The call does not pass it.
+    const std::size_t receiver = !templ.params.empty() && templ.params.front().is_receiver ? 1 : 0;
+    if (call.args.size() + receiver != templ.params.size()) {
         error(call.loc, "argument count");
         return std::nullopt;
     }
@@ -2256,8 +2269,11 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
     };
     for (std::size_t param_i = 0; param_i < templ.params.size(); ++param_i) {
         const Param &param = templ.params[param_i];
-        const Type &got = arg_types[param_i];
-        if (param.is_receiver || got.kind == TypeKind::Invalid) {
+        if (param.is_receiver || param_i < receiver || param_i - receiver >= arg_types.size()) {
+            continue;
+        }
+        const Type &got = arg_types[param_i - receiver];
+        if (got.kind == TypeKind::Invalid) {
             continue;
         }
         const int index = param.type_package.empty() ? param_index(templ.type_params, param.type_name) : -1;
@@ -2542,13 +2558,7 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
                 return std::nullopt;
             }
         } else if (!call.type_args.empty()) {
-            error(call.loc, "not supported yet");
-            for (const auto &arg : call.args) {
-                if (arg) {
-                    check_expr(*arg, true);
-                }
-            }
-            return type_invalid();
+            return try_method_template(expr, used);
         } else {
             return std::nullopt;
         }
@@ -2717,6 +2727,491 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     spec_ready_.insert(key);
     queue_spec(owner, std::move(spec));
     rewrite();
+    return check_raw(expr, used);
+}
+
+namespace {
+
+bool same_param_spelling(const Param &lhs, const Param &rhs) {
+    return lhs.type_name == rhs.type_name && lhs.type_package == rhs.type_package && lhs.indirections == rhs.indirections &&
+           lhs.optional == rhs.optional && lhs.const_pointee == rhs.const_pointee && lhs.is_array == rhs.is_array &&
+           lhs.array_len == rhs.array_len && lhs.is_struct == rhs.is_struct && lhs.is_enum == rhs.is_enum &&
+           lhs.elem_const == rhs.elem_const;
+}
+
+bool same_result_spelling(const FunctionDecl &lhs, const FunctionDecl &rhs) {
+    if (lhs.results.size() != rhs.results.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < lhs.results.size(); ++i) {
+        const ResultSlot &left = lhs.results[i];
+        const ResultSlot &right = rhs.results[i];
+        if (left.type_name != right.type_name || left.type_package != right.type_package ||
+            left.indirections != right.indirections || left.optional != right.optional || left.is_array != right.is_array ||
+            left.array_len != right.array_len || left.is_struct != right.is_struct || left.is_enum != right.is_enum) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool same_type_param_kinds(const FunctionDecl &lhs, const FunctionDecl &rhs) {
+    if (lhs.type_params.size() != rhs.type_params.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < lhs.type_params.size(); ++i) {
+        const TypeParam &left = lhs.type_params[i];
+        const TypeParam &right = rhs.type_params[i];
+        if (left.is_type != right.is_type || left.is_value != right.is_value || left.is_trait != right.is_trait ||
+            left.is_pack != right.is_pack || left.constraint != right.constraint) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Same name, type-parameter kinds, value parameters after the receiver, and result.
+// The receiver kind is not part of the selection. `unsafe` is compared by the caller.
+bool same_default_shape(const FunctionDecl &lhs, const FunctionDecl &rhs) {
+    if (lhs.name != rhs.name || !same_type_param_kinds(lhs, rhs)) {
+        return false;
+    }
+    const std::size_t left_skip = !lhs.params.empty() && lhs.params.front().is_receiver ? 1 : 0;
+    const std::size_t right_skip = !rhs.params.empty() && rhs.params.front().is_receiver ? 1 : 0;
+    if (lhs.params.size() < left_skip || rhs.params.size() < right_skip ||
+        lhs.params.size() - left_skip != rhs.params.size() - right_skip) {
+        return false;
+    }
+    for (std::size_t i = 0; i < lhs.params.size() - left_skip; ++i) {
+        if (!same_param_spelling(lhs.params[left_skip + i], rhs.params[right_skip + i])) {
+            return false;
+        }
+    }
+    return same_result_spelling(lhs, rhs);
+}
+
+bool type_arg_count_ok(const FunctionDecl &fn, const Expr::Call &call) {
+    if (fn.type_params.empty()) {
+        return false;
+    }
+    if (fn.type_params.back().is_pack) {
+        return call.type_args.size() + 1 >= fn.type_params.size();
+    }
+    return call.type_args.size() == fn.type_params.size();
+}
+
+} // namespace
+
+void Checker::register_trait_default(const FunctionDecl &fn) {
+    const int trait_id = package_trait(file_id_, fn.method_struct);
+    if (trait_id < 0 || trait_id >= static_cast<int>(traits_.size())) {
+        return;
+    }
+    if (fn.is_extern || fn.variadic) {
+        error(fn.loc, "not supported yet");
+        return;
+    }
+    if (fn.body == nullptr) {
+        error(fn.loc, "not supported yet");
+        return;
+    }
+    const bool receiver_ok = !fn.static_method && !fn.params.empty() && fn.params.front().is_receiver &&
+                             fn.params.front().type_name == fn.method_struct && fn.params.front().type_package.empty() &&
+                             !fn.params.front().is_array && fn.params.front().indirections <= 1;
+    if (!receiver_ok) {
+        error(fn.loc, "type mismatch");
+        return;
+    }
+    // `Allocator` is built in and its file id stays 0, which is also the primary file.
+    if (trait_id != allocator_trait_id_ && traits_[static_cast<std::size_t>(trait_id)].file_id != file_id_) {
+        error(fn.loc, "method in another file");
+        return;
+    }
+    TraitInfo &info = traits_[static_cast<std::size_t>(trait_id)];
+    for (const FunctionDecl *existing : info.defaults) {
+        if (existing != nullptr && same_default_shape(*existing, fn)) {
+            error(fn.loc, "redefinition");
+            return;
+        }
+    }
+    if (fn.type_params.empty()) {
+        const Type tail = method_tail(fn);
+        for (const TraitInfo::Method &method : info.methods) {
+            if (method.name == fn.name && method.type.kind == TypeKind::Function && same_type(tail, method.type) &&
+                fn.unsafe != method.unsafe_fn) {
+                error(fn.loc, "redefinition");
+                return;
+            }
+        }
+    }
+    info.defaults.push_back(&fn);
+}
+
+void Checker::register_method_template(const FunctionDecl &fn) {
+    if (fn.type_params.empty()) {
+        return;
+    }
+    for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
+        if (fn.type_params[i].is_pack && i + 1 != fn.type_params.size()) {
+            error(fn.type_params[i].loc, "not supported yet");
+        }
+    }
+    const int struct_id = find_tag(file_id_, fn.method_struct);
+    if (struct_id < 0) {
+        // An alias such as `type Integer i32` is not a method template.
+        error(fn.loc, "not supported yet");
+        return;
+    }
+    if (fn.is_extern || fn.variadic || fn.exported || fn.body == nullptr || fn.static_method) {
+        error(fn.loc, "not supported yet");
+        return;
+    }
+    if (defined_in(fn.method_struct) != file_id_) {
+        error(fn.loc, "method in another file");
+        return;
+    }
+    const bool receiver_ok = !fn.params.empty() && fn.params.front().is_receiver &&
+                             fn.params.front().type_name == fn.method_struct && fn.params.front().type_package.empty() &&
+                             !fn.params.front().is_array && fn.params.front().indirections <= 1;
+    if (!receiver_ok) {
+        error(fn.loc, "type mismatch");
+        return;
+    }
+    auto &bucket = method_templates_[file_id_][fn.method_struct][fn.name];
+    for (const FunctionDecl *existing : bucket) {
+        if (existing != nullptr && same_default_shape(*existing, fn)) {
+            error(fn.loc, "redefinition");
+            return;
+        }
+    }
+    bucket.push_back(&fn);
+}
+
+Type Checker::method_tail(const FunctionDecl &fn) {
+    std::vector<Type> params;
+    for (std::size_t i = 0; i < fn.params.size(); ++i) {
+        if (i == 0 && fn.params[i].is_receiver) {
+            continue;
+        }
+        params.push_back(type_of_param(fn.params[i]));
+    }
+    return type_function(function_result(fn), std::move(params), fn.variadic);
+}
+
+bool Checker::plain_default_supplies(int trait_id, const TraitInfo::Method &method, bool through_pointer) {
+    if (trait_id < 0 || trait_id >= static_cast<int>(traits_.size()) || method.type.kind != TypeKind::Function) {
+        return false;
+    }
+    for (const FunctionDecl *def : traits_[static_cast<std::size_t>(trait_id)].defaults) {
+        if (def == nullptr || def->name != method.name || !def->type_params.empty() || def->unsafe != method.unsafe_fn ||
+            def->body == nullptr || def->params.empty() || !def->params.front().is_receiver) {
+            continue;
+        }
+        const bool pointer = def->params.front().indirections > 0;
+        if (pointer && !through_pointer) {
+            continue;
+        }
+        const Type tail = method_tail(*def);
+        if (tail.kind == TypeKind::Function && same_type(tail, method.type)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const Checker::MethodInfo *Checker::find_method_head(uint32_t file, const std::string &owner, const std::string &name) const {
+    const auto methods = methods_.find(file);
+    if (methods == methods_.end()) {
+        return nullptr;
+    }
+    const auto group = methods->second.find(owner);
+    if (group == methods->second.end()) {
+        return nullptr;
+    }
+    const auto found = group->second.find(name);
+    if (found == group->second.end()) {
+        return nullptr;
+    }
+    return &found->second;
+}
+
+const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t struct_file, const std::string &struct_name,
+                                             const std::string &spec_name, const std::vector<SpecArg> &bounds) {
+    // `function_signature` can grow `structs_`. The caller's name must not be that storage.
+    const std::string owner = struct_name;
+    if (const MethodInfo *head = find_method_head(struct_file, owner, spec_name)) {
+        const auto already = [&](const MethodInfo &slot) {
+            const auto origin = default_origin_.find(slot.decl);
+            return origin != default_origin_.end() && origin->second == &templ;
+        };
+        if (already(*head)) {
+            return head->decl;
+        }
+        for (const MethodInfo &extra : head->more) {
+            if (already(extra)) {
+                return extra.decl;
+            }
+        }
+    }
+    FunctionDecl method = clone_function(templ);
+    method.method_struct = owner;
+    method.name = spec_name;
+    const std::vector<TypeParam> params = templ.type_params;
+    method.type_params.clear();
+    if (!method.params.empty() && method.params.front().is_receiver) {
+        method.params.front().type_name = owner;
+        method.params.front().is_struct = true;
+        method.params.front().type_package.clear();
+    }
+    substitute_function(method, params, bounds);
+    const uint32_t saved_file = file_id_;
+    file_id_ = struct_file;
+    expose_bounds(struct_file, bounds);
+    Type signature = function_signature(method);
+    file_id_ = saved_file;
+    if (signature.kind != TypeKind::Function || signature.result == nullptr || signature.result->kind == TypeKind::Invalid) {
+        return nullptr;
+    }
+    if (const MethodInfo *head = find_method_head(struct_file, owner, spec_name)) {
+        const auto same_slot = [&](const MethodInfo &slot) {
+            return same_selection(slot.type, !slot.is_static, signature, true);
+        };
+        const MethodInfo *slot = nullptr;
+        if (same_slot(*head)) {
+            slot = head;
+        } else {
+            for (const MethodInfo &extra : head->more) {
+                if (same_slot(extra)) {
+                    slot = &extra;
+                    break;
+                }
+            }
+        }
+        if (slot != nullptr) {
+            const auto origin = default_origin_.find(slot->decl);
+            if (origin != default_origin_.end() && origin->second != &templ) {
+                error(templ.loc, "type mismatch");
+            }
+            // The struct's method wins. An earlier default with this selection stays.
+            return slot->decl;
+        }
+    }
+    deferred_methods_.push_back(OwnedFn{struct_file, std::move(method)});
+    FunctionDecl *stable = &deferred_methods_.back().fn;
+    default_origin_.emplace(stable, &templ);
+    MethodInfo info;
+    info.type = std::move(signature);
+    info.has_body = stable->body != nullptr;
+    info.is_static = false;
+    info.unsafe_fn = templ.unsafe;
+    info.exported = templ.exported;
+    info.file_id = struct_file;
+    info.decl = stable;
+    auto &table = methods_[struct_file][owner];
+    const auto found = table.find(spec_name);
+    if (found == table.end()) {
+        table.emplace(spec_name, std::move(info));
+    } else {
+        found->second.more.push_back(std::move(info));
+    }
+    return stable;
+}
+
+void Checker::grant_trait_defaults(uint32_t struct_file, const std::string &struct_name, int trait_id) {
+    if (quiet_ || trait_id < 0 || trait_id >= static_cast<int>(traits_.size()) || struct_name.empty()) {
+        return;
+    }
+    const std::string owner = struct_name;
+    const std::string key = std::to_string(struct_file) + "\n" + owner + "\n" + std::to_string(trait_id);
+    if (defaults_ready_.contains(key) || !granting_.insert(key).second) {
+        return;
+    }
+    for (const FunctionDecl *templ : traits_[static_cast<std::size_t>(trait_id)].defaults) {
+        if (templ == nullptr || !templ->type_params.empty() || templ->body == nullptr) {
+            continue;
+        }
+        install_default(*templ, struct_file, owner, templ->name, {});
+    }
+    granting_.erase(key);
+    defaults_ready_.insert(key);
+}
+
+void Checker::grant_covered_defaults(int struct_id) {
+    if (quiet_ || struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+        return;
+    }
+    const uint32_t struct_file = structs_[static_cast<std::size_t>(struct_id)].file_id;
+    const std::string struct_name = structs_[static_cast<std::size_t>(struct_id)].name;
+    for (std::size_t trait_i = 0; trait_i < traits_.size(); ++trait_i) {
+        bool any_plain = false;
+        for (const FunctionDecl *def : traits_[trait_i].defaults) {
+            if (def != nullptr && def->type_params.empty()) {
+                any_plain = true;
+                break;
+            }
+        }
+        if (!any_plain) {
+            continue;
+        }
+        const bool saved = quiet_;
+        quiet_ = true;
+        const bool covered = require_satisfies(struct_id, static_cast<int>(trait_i), true, {}, struct_file);
+        quiet_ = saved;
+        if (covered) {
+            grant_trait_defaults(struct_file, struct_name, static_cast<int>(trait_i));
+        }
+    }
+}
+
+std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
+    auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
+    if (call_ptr == nullptr || call_ptr->callee == nullptr) {
+        return std::nullopt;
+    }
+    Expr::Call &call = *call_ptr;
+    auto *selector = std::get_if<Expr::Selector>(&call.callee->data);
+    if (selector == nullptr || selector->base == nullptr || call.type_args.empty()) {
+        error(call.loc, "not supported yet");
+        return type_invalid();
+    }
+    auto check_args = [&]() {
+        for (const auto &arg : call.args) {
+            if (arg) {
+                check_expr(*arg, true);
+            }
+        }
+    };
+    Type probe;
+    {
+        const bool saved = quiet_;
+        quiet_ = true;
+        InitQuiet init(*this);
+        probe = check_expr(*selector->base, true);
+        quiet_ = saved;
+    }
+    if (probe.kind == TypeKind::Invalid) {
+        check_expr(*selector->base, true);
+        check_args();
+        return type_invalid();
+    }
+    const bool trait_base = probe.kind == TypeKind::Trait ||
+                            (probe.kind == TypeKind::Pointer && probe.pointee && probe.pointee->kind == TypeKind::Trait);
+    Type object;
+    bool through_pointer = false;
+    if (trait_base || !dot_object(probe, object, through_pointer) || object.struct_id < 0 ||
+        object.struct_id >= static_cast<int>(structs_.size())) {
+        check_expr(*selector->base, true);
+        error(call.loc, "not supported yet");
+        check_args();
+        return type_invalid();
+    }
+    const uint32_t struct_file = structs_[static_cast<std::size_t>(object.struct_id)].file_id;
+    const std::string struct_name = structs_[static_cast<std::size_t>(object.struct_id)].name;
+    const FunctionDecl *templ = nullptr;
+    bool struct_template = false;
+    if (const auto file = method_templates_.find(struct_file); file != method_templates_.end()) {
+        const auto owner = file->second.find(struct_name);
+        if (owner != file->second.end()) {
+            const auto found = owner->second.find(selector->field);
+            if (found != owner->second.end()) {
+                std::vector<const FunctionDecl *> matches;
+                for (const FunctionDecl *item : found->second) {
+                    if (item != nullptr && type_arg_count_ok(*item, call)) {
+                        matches.push_back(item);
+                    }
+                }
+                if (matches.size() > 1) {
+                    check_expr(*selector->base, true);
+                    error(call.loc, "type mismatch");
+                    check_args();
+                    return type_invalid();
+                }
+                if (matches.size() == 1) {
+                    templ = matches.front();
+                    struct_template = true;
+                }
+            }
+        }
+    }
+    if (!struct_template) {
+        std::vector<const FunctionDecl *> matches;
+        for (std::size_t trait_i = 0; trait_i < traits_.size(); ++trait_i) {
+            bool named = false;
+            for (const FunctionDecl *def : traits_[trait_i].defaults) {
+                if (def != nullptr && def->name == selector->field && type_arg_count_ok(*def, call)) {
+                    named = true;
+                    break;
+                }
+            }
+            if (!named) {
+                continue;
+            }
+            const bool saved = quiet_;
+            quiet_ = true;
+            const bool covered = require_satisfies(object.struct_id, static_cast<int>(trait_i), true, call.loc, struct_file);
+            quiet_ = saved;
+            if (!covered) {
+                continue;
+            }
+            for (const FunctionDecl *def : traits_[trait_i].defaults) {
+                if (def != nullptr && def->name == selector->field && type_arg_count_ok(*def, call)) {
+                    matches.push_back(def);
+                }
+            }
+        }
+        if (matches.empty()) {
+            check_expr(*selector->base, true);
+            error(call.loc, "undeclared identifier");
+            check_args();
+            return type_invalid();
+        }
+        if (matches.size() != 1) {
+            check_expr(*selector->base, true);
+            error(call.loc, "type mismatch");
+            check_args();
+            return type_invalid();
+        }
+        templ = matches.front();
+    }
+    if (templ == nullptr || templ->body == nullptr) {
+        check_expr(*selector->base, true);
+        error(call.loc, "not supported yet");
+        check_args();
+        return type_invalid();
+    }
+    std::vector<Type> arg_types;
+    bool arg_invalid = false;
+    for (const auto &arg : call.args) {
+        if (arg == nullptr) {
+            arg_invalid = true;
+            arg_types.push_back(type_invalid());
+            continue;
+        }
+        Type got = check_expr(*arg, true);
+        if (got.kind == TypeKind::Invalid) {
+            arg_invalid = true;
+        }
+        arg_types.push_back(std::move(got));
+    }
+    if (arg_invalid) {
+        check_expr(*selector->base, true);
+        return type_invalid();
+    }
+    const auto inferred = infer_generic_bounds(*templ, call, arg_types);
+    if (!inferred) {
+        check_expr(*selector->base, true);
+        return type_invalid();
+    }
+    std::vector<SpecArg> bounds = *inferred;
+    disambiguate_bounds(struct_file, bounds);
+    const std::string spec_name = mangle_spec(templ->name, bounds);
+    const FunctionDecl *installed = install_default(*templ, struct_file, struct_name, spec_name, bounds);
+    if (installed == nullptr) {
+        check_expr(*selector->base, true);
+        return type_invalid();
+    }
+    selector->field = spec_name;
+    call.type_args.clear();
     return check_raw(expr, used);
 }
 

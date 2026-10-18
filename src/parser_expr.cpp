@@ -648,8 +648,9 @@ std::unique_ptr<Expr> Parser::parse_unary() {
     if (kind == TokenKind::KwNew || kind == TokenKind::KwDelete) {
         return parse_alloc();
     }
-    if (kind == TokenKind::KwSizeof || kind == TokenKind::KwTypeof) {
-        const bool is_sizeof = kind == TokenKind::KwSizeof;
+    if (kind == TokenKind::KwSizeof || kind == TokenKind::KwTypeof || kind == TokenKind::KwAlignof) {
+        const bool is_sizeof = kind == TokenKind::KwSizeof || kind == TokenKind::KwAlignof;
+        const bool is_align = kind == TokenKind::KwAlignof;
         const SourceLoc loc = peek().loc;
         ++pos_;
         // `sizeof(Point)` and `typeof(Point)`. `struct` is not a type spelling here.
@@ -731,6 +732,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         if (is_sizeof) {
             Expr::Sizeof node;
             fill(node);
+            node.align = is_align;
             node.is_array = type_array;
             node.elem_const = type_elem_const;
             node.elem_slice = type_elem_slice;

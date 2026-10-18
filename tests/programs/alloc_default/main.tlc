@@ -1,0 +1,28 @@
+type Arena struct {
+    used i32;
+    align i32;
+    slot i32;
+};
+
+unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    self.used = size;
+    self.align = align;
+    return ?*u8(&self.slot);
+}
+
+func Arena::free(self *this, ptr *u8) void {
+}
+
+unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return null;
+}
+
+func main() i32 {
+    var arena Arena;
+    var raw = unsafe arena.malloc[i32]();
+    if (raw == null) {
+        return 0;
+    }
+    *raw = arena.used * 10 + arena.align;
+    return *raw;
+}

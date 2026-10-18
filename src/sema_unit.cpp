@@ -285,17 +285,14 @@ void Checker::declare_globals(const TranslationUnit &unit) {
     };
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
-            if (!fn->type_params.empty()) {
-                if (fn->is_extern || fn->extern_c || fn->variadic || !fn->method_struct.empty()) {
+            if (!fn->type_params.empty() && fn->method_struct.empty()) {
+                if (fn->is_extern || fn->extern_c || fn->variadic) {
                     error(fn->loc, "not supported yet");
                 }
                 for (std::size_t i = 0; i < fn->type_params.size(); ++i) {
                     if (fn->type_params[i].is_pack && i + 1 != fn->type_params.size()) {
                         error(fn->type_params[i].loc, "not supported yet");
                     }
-                }
-                if (!fn->method_struct.empty()) {
-                    require_method_params(*fn);
                 }
                 FunctionDecl *stable = stable_template(file_id_, *fn);
                 Symbol *existing = lookup_scope(fn->name);
@@ -355,6 +352,14 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     generic_method_clash(*fn);
                     continue;
                 }
+                if (package_trait(file_id_, fn->method_struct) >= 0) {
+                    register_trait_default(*fn);
+                    continue;
+                }
+                if (!fn->type_params.empty()) {
+                    register_method_template(*fn);
+                    continue;
+                }
             }
             Type signature = function_signature(*fn);
             if (signature.result != nullptr && mentions_trait(*signature.result)) {
@@ -400,9 +405,6 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (!fn->method_struct.empty()) {
                 if (fn->is_extern) {
                     error(fn->loc, "not supported yet");
-                }
-                if (package_trait(file_id_, fn->method_struct) >= 0) {
-                    error(fn->loc, "type mismatch");
                 }
                 const bool has_param = !fn->params.empty();
                 const int receiver_refs = has_param ? fn->params.front().indirections : -1;
@@ -1264,8 +1266,10 @@ void Checker::check_globals(const TranslationUnit &unit) {
     std::unordered_set<std::string> tests;
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+            // A trait default is checked after a struct gains it. The receiver is still the trait here.
             if (!fn->type_params.empty() ||
-                (!fn->method_struct.empty() && generic_struct_name(file_id_, fn->method_struct))) {
+                (!fn->method_struct.empty() && (generic_struct_name(file_id_, fn->method_struct) ||
+                                                package_trait(file_id_, fn->method_struct) >= 0))) {
                 continue;
             }
             check_function(*fn);

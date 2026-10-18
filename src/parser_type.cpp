@@ -1057,11 +1057,14 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     } else {
         error_here("expected an identifier");
     }
-    if (fn.method_struct.empty() && check(TokenKind::LBracket)) {
-        fn.type_params = parse_type_params();
-    } else if (!fn.method_struct.empty() && check(TokenKind::LBracket)) {
-        diags_.error(peek().loc, "not supported yet");
-        parse_type_params();
+    if (check(TokenKind::LBracket)) {
+        // `func Vec[T]::get[U type]` stays rejected. `func Type::name[T type]` is a method template.
+        if (fn.method_params.empty()) {
+            fn.type_params = parse_type_params();
+        } else {
+            diags_.error(peek().loc, "not supported yet");
+            parse_type_params();
+        }
     }
     fn.params = parse_params(extern_c, fn.variadic, fn.method_struct);
     fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);

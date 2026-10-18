@@ -1,0 +1,12 @@
+type Node struct {
+    p *i32;
+};
+
+const n = alignof(i32);
+const p = alignof(Node);
+
+func main() i32 {
+    var a = alignof(i32);
+    var b = alignof(Node);
+    return n + p + a + b;
+}

@@ -47,7 +47,7 @@ type Arena struct {
     mark i32;
 };
 
-func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
     order = 1;
     return ?*u8(&slot);
 }
@@ -55,7 +55,7 @@ func Arena::malloc(self *this, size i32, align i32) ?*u8 {
 func Arena::free(self *this, ptr *u8) void {
 }
 
-func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
     return null;
 }
 
