@@ -3,5 +3,7 @@ func open(row [4]i32) []const i32 {
 }
 
 func main() i32 {
-    return 0;
+    var row = [_]i32{1, 2, 3, 4};
+    var v = open(row);
+    return v[0] + v[3];
 }

@@ -4,5 +4,5 @@ func main() i32 {
     var rows = [_][]i32{a[:], b[:]};
     var view [][]i32 = rows;
     view[0] = b[:];
-    return 0;
+    return view[0][0] + rows[0][0];
 }

@@ -1,0 +1,7 @@
+const row = [_]i32{1, 2};
+
+func main() i32 {
+    var v = row[:];
+    v[0] = 8;
+    return v[0];
+}

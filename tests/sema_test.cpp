@@ -6033,7 +6033,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func open(row [4]i32) []const i32 { return row; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "return type: expected []const i32, found *i32");
+        EXPECT(check, errors.empty());
     }
 
     {

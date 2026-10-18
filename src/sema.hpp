@@ -62,10 +62,11 @@ bool mentions_trait(const Type &type);
 bool same_type(const Type &lhs, const Type &rhs);
 // Parameter lists used to tell two functions of one name apart. A method skips its receiver.
 bool same_selection(const Type &lhs, bool skip_lhs, const Type &rhs, bool skip_rhs);
-// `[]T`: an array whose length is unknown. It is a readonly slice.
+// `[]T`: an array whose length is unknown. `[]const T` does not store an element.
 bool is_slice(const Type &type);
-// `[N]T`, a parameter `[N]T`, and `*[N]T` convert to `[]T` of the same element.
-// Two slices match only when they are the same type.
+// `[N]T`, a parameter `[N]T`, and `*[N]T` convert to `[]T`.
+// `const` may be added on the element. It may not be dropped.
+// Two slices match only when they are the same type, apart from that added `const`.
 bool accepts_slice(const Type &got, const Type &want);
 
 void analyze(const TranslationUnit &unit, DiagnosticEngine &diags);

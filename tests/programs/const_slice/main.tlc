@@ -4,7 +4,7 @@ const again []i32 = v;
 type Row []i32;
 const named Row = row;
 const fixed = [_]i32{4, 5};
-const from []i32 = fixed;
+const from []const i32 = fixed;
 
 func main() i32 {
     if (v.len != 3 || v[0] != 10 || v[2] != 30 || again[1] != 20 || named.len != 3 || named[0] != 10) {

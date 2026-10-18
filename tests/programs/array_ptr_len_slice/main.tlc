@@ -22,7 +22,7 @@ func field(h *Hold) []i32 {
     return h.items;
 }
 
-func frozen(p *const [4]i32) []i32 {
+func frozen(p *const [4]i32) []const i32 {
     return p;
 }
 

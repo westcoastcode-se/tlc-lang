@@ -1,1 +1,1 @@
-compile-error: return type: expected []const i32, found *i32
+exit: 5

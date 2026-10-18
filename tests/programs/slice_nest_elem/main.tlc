@@ -3,5 +3,5 @@ func main() i32 {
     var rows = [_][]i32{a[:]};
     var view [][]i32 = rows;
     view[0][0] = 3;
-    return 0;
+    return a[0];
 }

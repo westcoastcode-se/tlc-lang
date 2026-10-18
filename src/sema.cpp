@@ -242,6 +242,29 @@ bool is_slice(const Type &type) {
     return type.kind == TypeKind::Array && type.length < 0 && type.element != nullptr;
 }
 
+// `[]i32` converts to `[]const i32`. `[]const i32` does not convert to `[]i32`.
+bool allows_added_const(const Type &got, const Type &want) {
+    if (got.alias_id != want.alias_id || got.kind != want.kind) {
+        return false;
+    }
+    if (got.is_const && !want.is_const) {
+        return false;
+    }
+    if (got.kind == TypeKind::Array) {
+        return got.length == want.length && got.element && want.element &&
+               allows_added_const(*got.element, *want.element);
+    }
+    if (got.kind == TypeKind::Pointer) {
+        return got.optional == want.optional && got.pointee && want.pointee &&
+               allows_added_const(*got.pointee, *want.pointee);
+    }
+    Type bare_got = got;
+    Type bare_want = want;
+    bare_got.is_const = false;
+    bare_want.is_const = false;
+    return same_type(bare_got, bare_want);
+}
+
 bool accepts_slice(const Type &got, const Type &want) {
     if (!is_slice(want) || want.element == nullptr) {
         return false;
@@ -249,13 +272,19 @@ bool accepts_slice(const Type &got, const Type &want) {
     // A parameter `[N]T` is a pointer to the element, and `decayed_len` is that `N`.
     // `*[N]T` points at the array. A plain `*T` has no length. `?*[N]T` stays optional.
     if (got.kind == TypeKind::Pointer && !got.optional && got.alias_id == 0 && got.pointee != nullptr) {
-        if (got.decayed_len > 0 && same_type(*got.pointee, *want.element)) {
+        if (got.decayed_len > 0 && allows_added_const(*got.pointee, *want.element)) {
             return true;
         }
         const Type &array = *got.pointee;
         if (got.decayed_len == 0 && array.kind == TypeKind::Array && array.length > 0 && array.alias_id == 0 &&
-            array.element != nullptr && same_type(*array.element, *want.element)) {
-            return true;
+            array.element != nullptr) {
+            Type element = *array.element;
+            if (array.is_const) {
+                element.is_const = true;
+            }
+            if (allows_added_const(element, *want.element)) {
+                return true;
+            }
         }
     }
     if (got.kind != TypeKind::Array || got.element == nullptr) {
@@ -264,7 +293,11 @@ bool accepts_slice(const Type &got, const Type &want) {
     if (got.alias_id != 0 && got.alias_id != want.alias_id) {
         return false;
     }
-    if (!same_type(*got.element, *want.element)) {
+    Type element = *got.element;
+    if (got.is_const) {
+        element.is_const = true;
+    }
+    if (!allows_added_const(element, *want.element)) {
         return false;
     }
     if (is_slice(got)) {
@@ -272,7 +305,7 @@ bool accepts_slice(const Type &got, const Type &want) {
         if (got.alias_id == 0 && want.alias_id != 0) {
             return true;
         }
-        return same_type(got, want);
+        return got.alias_id == want.alias_id && allows_added_const(got, want);
     }
     return got.length >= 0;
 }

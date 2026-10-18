@@ -1,0 +1,7 @@
+func take(v []const i32) []i32 {
+    return v;
+}
+
+func main() i32 {
+    return 0;
+}

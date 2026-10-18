@@ -279,7 +279,7 @@ ResultSlot slot_from_spelling(const Spelling &spelling) {
     return slot;
 }
 
-// `v[i].x` still names the slice element. The element is readonly.
+// `v[i].x` on `[]const Point` still names that const element.
 bool from_slice_element(const Expr *expr) {
     while (expr != nullptr) {
         if (const auto *index = std::get_if<Expr::Index>(&expr->data)) {
@@ -2183,11 +2183,6 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         // A sized array stays `[N]T`. `row[i] = n` stores one element.
                         base = check_raw(*index->base, true);
                     }
-                    if (is_slice(base)) {
-                        error(node.loc, "type mismatch");
-                        check_expr(*node.rhs, true);
-                        return type_invalid();
-                    }
                     if (base.kind == TypeKind::Tuple) {
                         error(node.loc, "not supported yet");
                         check_expr(*node.rhs, true);
@@ -2200,7 +2195,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     Type element;
                     bool pointee_void = false;
-                    if (base.kind == TypeKind::Array && base.length >= 0 && base.element != nullptr &&
+                    // `v[i] = n` stores one element of `[]T`. `[]const T` and a const slice do not.
+                    if (is_slice(base)) {
+                        if (base.element == nullptr) {
+                            error(node.loc, "type mismatch");
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        element = *base.element;
+                        if (base.is_const) {
+                            element.is_const = true;
+                        }
+                    } else if (base.kind == TypeKind::Array && base.length >= 0 && base.element != nullptr &&
                         !is_slice(base)) {
                         element = *base.element;
                         if (base.is_const) {
@@ -2980,13 +2986,22 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (base.kind == TypeKind::Pointer && !base.optional && base.pointee != nullptr &&
                         base.pointee->kind == TypeKind::Array && base.pointee->length > 0 &&
                         base.pointee->element != nullptr) {
-                        return type_array(*base.pointee->element, -1);
+                        Type element = *base.pointee->element;
+                        if (base.pointee->is_const) {
+                            element.is_const = true;
+                        }
+                        return type_array(std::move(element), -1);
                     }
                     if (base.kind != TypeKind::Array || base.element == nullptr) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
-                    Type slice = type_array(*base.element, -1);
+                    Type element = *base.element;
+                    // A const array or a const slice yields `[]const T`, so the range cannot store.
+                    if (base.is_const) {
+                        element.is_const = true;
+                    }
+                    Type slice = type_array(std::move(element), -1);
                     // `type Row []i32` stays `Row`. A sized array becomes the plain slice `[]T`.
                     if (is_slice(base)) {
                         slice.alias_id = base.alias_id;
@@ -3016,10 +3031,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 if (base.kind == TypeKind::Array && base.element != nullptr) {
                     Type element = *base.element;
-                    if (base.is_const || is_slice(base)) {
+                    if (base.is_const) {
                         element.is_const = true;
                     }
-                    if (is_slice(base)) {
+                    // `[]const T` and a const slice name a const element. `[]T` does not.
+                    if (is_slice(base) && element.is_const) {
                         node.slice_element = true;
                     }
                     return element;

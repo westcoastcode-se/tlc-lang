@@ -141,8 +141,6 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Aggregates
 
-- `var v []i32 = row` is a readonly header. `v[0] = 1` is `type mismatch`. An element store goes through the array or through the `*T` from `new`. `[]i32` does not convert to `*i32`. `[]const u8` converts to `*const u8` and drops the length. Pages: `docs/types/slice.md`, `docs/types/array.md`, `docs/types/string.md`.
-- `[2]i32` converts to `[]i32`. It does not convert to `[]const i32`. `row[:]` is `[]i32` when `row` is a const array. `[]const T` is a type. A string literal is the value that produces `[]const u8`. Pages: `docs/types/slice.md`, `docs/types/string.md`.
 - `const` sits after the star in `*const T` and before the element in `[]const T` and `[4]const T`. Pages: `docs/types/pointer.md`, `docs/types/slice.md`, `docs/grammar.md`.
 - `new [n]i32` yields `*i32` and drops the length. `new [_]i32{10, 20}` yields `*[2]i32`. Neither yields `[]i32`. Pages: `docs/statements/new.md`, `docs/types/array.md`.
 - `Point{1, 2}` is `type mismatch`. `{10, 20}` fills an array. A struct initializer names fields. An array initializer is positional. Pages: `docs/types/struct.md`, `docs/expressions/tuple.md`.
