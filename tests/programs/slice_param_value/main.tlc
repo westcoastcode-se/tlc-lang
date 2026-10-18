@@ -1,0 +1,7 @@
+func open(row [4]i32) []i32 {
+    return row;
+}
+
+func main() i32 {
+    return 0;
+}

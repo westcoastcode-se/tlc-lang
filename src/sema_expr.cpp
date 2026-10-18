@@ -856,8 +856,10 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
 Type Checker::value_type(Type type) {
     // A loaded value is a copy. `const` stays on a pointee, not on this temporary.
     // A const array decays to a pointer to a const element, so `row[0] = n` is rejected.
+    // The length of a parameter `[N]T` stays on that binding. A copy is a plain pointer.
     const bool array_const = type.kind == TypeKind::Array && type.is_const;
     type.is_const = false;
+    type.decayed_len = 0;
     // A slice stays a value. Only a sized array decays to a pointer.
     if (type.kind == TypeKind::Array && type.element && type.length >= 0) {
         Type pointer = type_pointer(*type.element);
@@ -2662,6 +2664,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     return type_int();
                 }
+                // `a.len` on a parameter `[N]T`. The value is a pointer. The length is the one that was written.
+                if (raw.kind == TypeKind::Pointer && raw.decayed_len > 0 && node.field == "len") {
+                    node.slice_len = true;
+                    node.len_value = raw.decayed_len;
+                    return type_int();
+                }
                 const Type base = value_type(raw);
                 if (is_slice(base)) {
                     error(node.loc, "undeclared identifier");
@@ -2712,7 +2720,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 (void)used;
                 // `a[i:j]` is a slice of the elements from i up to, but not including, j.
                 // A missing low bound is 0. A missing high bound is the length.
-                // The base is an array or a slice. A pointer, including an array parameter, is not.
+                // The base is an array, a slice, or a parameter `[N]T`. Any other pointer is not.
                 if (node.is_range) {
                     const Type base = node.base ? check_raw(*node.base, true) : type_invalid();
                     if (node.index) {
@@ -2725,6 +2733,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (base.kind == TypeKind::Invalid) {
                         return type_invalid();
+                    }
+                    // `row[0:2]` on `func open(row [4]i32)`. The pointer keeps the written length.
+                    if (base.kind == TypeKind::Pointer && base.decayed_len > 0 && base.pointee != nullptr &&
+                        !base.optional) {
+                        return type_array(*base.pointee, -1);
                     }
                     if (base.kind != TypeKind::Array || base.element == nullptr) {
                         error(node.loc, "type mismatch");

@@ -216,7 +216,10 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
             return type_invalid();
         }
         if (index == 0 && parameter) {
+            // The value is a pointer to the element. The length stays for a range and `.len`.
+            const int length = shell.length;
             type = type_pointer(std::move(type));
+            type.decayed_len = length;
             continue;
         }
         type = type_array(std::move(type), shell.length);
@@ -247,7 +250,11 @@ inline Type quiet_object(const std::string &name, int indirections, bool is_arra
         if (nested_slice(type)) {
             return type_invalid();
         }
-        return type_pointer(std::move(type));
+        Type pointer = type_pointer(std::move(type));
+        if (array_len > 0) {
+            pointer.decayed_len = array_len;
+        }
+        return pointer;
     }
     // `[]T` is a slice. One more slice is `[][]T`. A third level stays invalid.
     if (array_len < 0) {

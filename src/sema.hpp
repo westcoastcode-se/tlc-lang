@@ -35,6 +35,9 @@ struct Type {
     bool is_const = false;
     // `type Name T` is a distinct type with the same representation as T. Zero means T itself.
     int alias_id = 0;
+    // A parameter `[N]T` decays to a pointer. This is that `N`. Zero on every other type.
+    // It is not part of the type, so the pointer still does not convert to `[]T`.
+    int decayed_len = 0;
 };
 
 Type type_invalid();

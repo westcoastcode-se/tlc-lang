@@ -2264,7 +2264,11 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             if (type.length < 0) {
                 return type;
             }
-            return type_pointer(*type.element);
+            Type pointer = type_pointer(*type.element);
+            if (type.length > 0) {
+                pointer.decayed_len = type.length;
+            }
+            return pointer;
         }
         return type;
     }
@@ -2297,7 +2301,11 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         return type_invalid();
     }
     if (parameter) {
-        return type_pointer(std::move(type));
+        Type pointer = type_pointer(std::move(type));
+        if (array_len > 0) {
+            pointer.decayed_len = array_len;
+        }
+        return pointer;
     }
     if (array_len <= 0) {
         error(loc, "not supported yet");

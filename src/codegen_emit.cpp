@@ -311,6 +311,10 @@ void CodeGen::declare_globals(const PackageNode &node) {
         binding.is_slice = low.is_slice;
         binding.elem_slice = low.elem_slice;
         binding.is_static = var->is_static;
+        // `[N][M]T` keeps every shell so an index steps by the row, then by the element.
+        if (low.is_array) {
+            binding.shells = low.shells;
+        }
         file.globals.emplace(key, binding);
     }
 }
@@ -1016,6 +1020,65 @@ llvm::Constant *CodeGen::const_array(const Expr::Init &init, const Binding &dest
     return fill_array(init, array_ty, dest);
 }
 
+bool CodeGen::array_list_covers(const Expr::Init &init, llvm::ArrayType *array_ty) const {
+    if (array_ty == nullptr || !init.fields.empty() || init.elements.size() != array_ty->getNumElements()) {
+        return false;
+    }
+    auto *inner = llvm::dyn_cast<llvm::ArrayType>(array_ty->getElementType());
+    if (inner == nullptr) {
+        return true;
+    }
+    for (const auto &element : init.elements) {
+        const auto *nested = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
+        if (nested == nullptr || !array_list_covers(*nested, inner)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void CodeGen::store_array_elements(llvm::Value *slot, llvm::ArrayType *array_ty, const Expr::Init &init) {
+    if (slot == nullptr || array_ty == nullptr || terminated()) {
+        return;
+    }
+    llvm::Type *elem = array_ty->getElementType();
+    auto *inner = llvm::dyn_cast<llvm::ArrayType>(elem);
+    const unsigned limit = array_ty->getNumElements();
+    unsigned index = 0;
+    for (const auto &element : init.elements) {
+        if (index >= limit || terminated()) {
+            break;
+        }
+        llvm::Value *slot_i =
+            builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(static_cast<int>(index))});
+        if (inner != nullptr) {
+            // `{1, 2, 3}` and `[_]i32{1, 2, 3}` are both a list. The slot is that array.
+            const auto *nested = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
+            if (nested == nullptr) {
+                error(element == nullptr ? init.loc : expr_loc(*element), "not supported yet");
+            } else {
+                store_array_elements(slot_i, inner, *nested);
+            }
+        } else {
+            const TypedValue value = element != nullptr ? emit_rvalue(*element) : TypedValue{};
+            if (terminated()) {
+                return;
+            }
+            llvm::Value *stored = nullptr;
+            const SourceLoc loc = element == nullptr ? init.loc : expr_loc(*element);
+            if (value.value == nullptr) {
+                stored = llvm::Constant::getNullValue(elem);
+            } else if (elem == slice_type()) {
+                stored = as_slice_value(value, loc);
+            } else {
+                stored = as_stored(value.value, value.depth, elem, value.elem_unsigned);
+            }
+            builder_.CreateStore(stored, slot_i);
+        }
+        ++index;
+    }
+}
+
 llvm::AllocaInst *CodeGen::emit_array_literal(const Expr::Init &init, Lowered &low) {
     const std::optional<Lowered> got = lower_array_literal(current_file_, init);
     if (!got || got->type == nullptr || !got->type->isArrayTy()) {
@@ -1026,82 +1089,11 @@ llvm::AllocaInst *CodeGen::emit_array_literal(const Expr::Init &init, Lowered &l
     llvm::Type *ty = stored_type(low);
     llvm::AllocaInst *slot = alloca_typed(ty, "array");
     auto *array_ty = llvm::cast<llvm::ArrayType>(ty);
-    bool complete = init.elements.size() == array_ty->getNumElements();
-    if (complete && low.inner_array_len > 0) {
-        for (const auto &element : init.elements) {
-            const auto *brace = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
-            if (brace == nullptr || brace->elements.size() != static_cast<std::size_t>(low.inner_array_len)) {
-                complete = false;
-                break;
-            }
-        }
-    }
-    // Every listed element is stored below. The array starts as that list, not as zeros.
-    if (!complete) {
+    // A complete list is the whole array. A short list starts at zero so the rest stays zero.
+    if (!array_list_covers(init, array_ty)) {
         builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
     }
-    if (low.inner_array_len > 0) {
-        auto *inner = llvm::dyn_cast<llvm::ArrayType>(array_ty->getElementType());
-        if (inner == nullptr) {
-            error(init.loc, "not supported yet");
-            return nullptr;
-        }
-        unsigned row = 0;
-        for (const auto &element : init.elements) {
-            if (row >= array_ty->getNumElements() || terminated()) {
-                break;
-            }
-            const auto *brace = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
-            if (brace == nullptr) {
-                error(element == nullptr ? init.loc : expr_loc(*element), "not supported yet");
-                ++row;
-                continue;
-            }
-            llvm::Value *row_ptr = builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(static_cast<int>(row))});
-            unsigned col = 0;
-            for (const auto &cell : brace->elements) {
-                if (col >= inner->getNumElements() || terminated()) {
-                    break;
-                }
-                const TypedValue value = cell ? emit_rvalue(*cell) : TypedValue{};
-                if (terminated()) {
-                    break;
-                }
-                llvm::Value *slot_i =
-                    builder_.CreateInBoundsGEP(inner, row_ptr, {const_i32(0), const_i32(static_cast<int>(col))});
-                llvm::Type *cell_ty = inner->getElementType();
-                llvm::Value *stored = value.value == nullptr ? llvm::Constant::getNullValue(cell_ty)
-                                                             : as_stored(value.value, value.depth, cell_ty, value.elem_unsigned);
-                builder_.CreateStore(stored, slot_i);
-                ++col;
-            }
-            ++row;
-        }
-        return slot;
-    }
-    llvm::Type *elem = array_ty->getElementType();
-    unsigned index = 0;
-    for (const auto &element : init.elements) {
-        if (index >= array_ty->getNumElements() || terminated()) {
-            break;
-        }
-        const TypedValue value = element ? emit_rvalue(*element) : TypedValue{};
-        if (terminated()) {
-            break;
-        }
-        llvm::Value *slot_i =
-            builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(static_cast<int>(index))});
-        llvm::Value *stored = nullptr;
-        if (value.value == nullptr) {
-            stored = llvm::Constant::getNullValue(elem);
-        } else if (elem == slice_type()) {
-            stored = as_slice_value(value, init.loc);
-        } else {
-            stored = as_stored(value.value, value.depth, elem, value.elem_unsigned);
-        }
-        builder_.CreateStore(stored, slot_i);
-        ++index;
-    }
+    store_array_elements(slot, array_ty, init);
     return slot;
 }
 
@@ -3293,6 +3285,13 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         TypedValue out;
         out.value = slot;
         carry(out);
+        // `view[i]` on `[][M]T` is that row. A further index reads one element.
+        if (rest.size() == 1 && rest.front().kind == TypeShell::Kind::Array) {
+            out.row_decay = true;
+            out.array_len = rest.front().length;
+            out.depth = base.depth + 1;
+            return out;
+        }
         mark(out, std::move(rest));
         return out;
     }
@@ -3815,7 +3814,16 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     const int elem_depth = packed_slice ? base.depth : base.depth > 0 ? base.depth - 1 : base.depth;
     llvm::Value *out = packed;
     std::vector<TypeShell> range_shells;
+    // A parameter `[N][]T` is a pointer to headers. The range is a slice of those headers.
+    const bool decayed_headers = base.array_len > 0 && !base.is_slice && !base.shells.empty() &&
+                                 base.shells.front().kind == TypeShell::Kind::Pointer && base.shells.size() >= 2 &&
+                                 base.shells[1].kind == TypeShell::Kind::Slice;
     if (!base.shells.empty() && base.shells.front().kind == TypeShell::Kind::Slice) {
+        TypeShell header;
+        header.kind = TypeShell::Kind::Slice;
+        range_shells.push_back(header);
+        range_shells.insert(range_shells.end(), base.shells.begin() + 1, base.shells.end());
+    } else if (decayed_headers) {
         TypeShell header;
         header.kind = TypeShell::Kind::Slice;
         range_shells.push_back(header);
@@ -3838,7 +3846,12 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         llvm::Value *start = data;
         llvm::Value *len = nullptr;
         // A header element steps by `tlc.slice`. A row `[M]T` steps by that row.
+        // A parameter `[N][]T` is a pointer. The range steps by the element after that pointer.
         if (!base.shells.empty() && base.shells.front().kind == TypeShell::Kind::Slice) {
+            std::vector<TypeShell> rest(base.shells.begin() + 1, base.shells.end());
+            element = shell_type(rest, elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
+                                 base.elem_float);
+        } else if (decayed_headers) {
             std::vector<TypeShell> rest(base.shells.begin() + 1, base.shells.end());
             element = shell_type(rest, elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
                                  base.elem_float);
@@ -3874,11 +3887,11 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     TypedValue result;
     result.value = out;
     result.is_slice = true;
-    result.elem_slice = base.elem_slice;
+    result.elem_slice = base.elem_slice || decayed_headers;
     result.shells = std::move(range_shells);
     result.array_len = -1;
     result.depth = elem_depth;
-    result.inner_array_len = base.elem_slice ? 0 : base.inner_array_len;
+    result.inner_array_len = result.elem_slice ? 0 : base.inner_array_len;
     result.elem_char = base.elem_char;
     result.struct_id = base.struct_id;
     result.elem_void = base.elem_void;
@@ -5875,9 +5888,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         // No initializer leaves the array uninitialized. A shorter list still
                         // starts from zero so the elements it does not name stay zero.
                         const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
-                        const bool listed = list != nullptr && ty->isArrayTy() &&
-                                            list->elements.size() == llvm::cast<llvm::ArrayType>(ty)->getNumElements();
-                        if (var.init != nullptr && !listed) {
+                        auto *array_ty = ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
+                        const bool covered = list != nullptr && array_list_covers(*list, array_ty);
+                        if (var.init != nullptr && !covered) {
                             builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
                         }
                         Binding binding;
@@ -5895,38 +5908,12 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         binding.enum_id = low.enum_id;
                         binding.elem_slice = low.elem_slice;
                         binding.inner_array_len = low.inner_array_len;
+                        binding.shells = low.shells;
                         scopes_.back()[var.name] = binding;
                         alias_capture(var.name, binding);
                         debug_declare(var.name, var.loc, binding, 0);
-                        if (var.init != nullptr && ty->isArrayTy()) {
-                            const auto *init = std::get_if<Expr::Init>(&var.init->data);
-                            if (init != nullptr && !init->elements.empty()) {
-                                auto *array_ty = llvm::cast<llvm::ArrayType>(ty);
-                                llvm::Type *elem = array_ty->getElementType();
-                                const unsigned limit = array_ty->getNumElements();
-                                unsigned index = 0;
-                                for (const auto &element : init->elements) {
-                                    if (index >= limit || terminated()) {
-                                        break;
-                                    }
-                                    const TypedValue value = element ? emit_rvalue(*element) : TypedValue{};
-                                    if (terminated()) {
-                                        break;
-                                    }
-                                    llvm::Value *slot_i = builder_.CreateInBoundsGEP(
-                                        array_ty, slot, {const_i32(0), const_i32(static_cast<int>(index))});
-                                    llvm::Value *stored = nullptr;
-                                    if (value.value == nullptr) {
-                                        stored = llvm::Constant::getNullValue(elem);
-                                    } else if (elem == slice_type()) {
-                                        stored = as_slice_value(value, var.loc);
-                                    } else {
-                                        stored = as_stored(value.value, value.depth, elem, value.elem_unsigned);
-                                    }
-                                    builder_.CreateStore(stored, slot_i);
-                                    ++index;
-                                }
-                            }
+                        if (list != nullptr && array_ty != nullptr && !list->elements.empty()) {
+                            store_array_elements(slot, array_ty, *list);
                         }
                         continue;
                     }

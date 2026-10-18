@@ -529,13 +529,17 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
         }
     };
     peel(leaf, shells);
+    // A parameter `[N]T` is a pointer to the element. `array_len` keeps `N` for a range.
+    int decayed_len = 0;
     if (parameter && !shells.empty() && shells.front().kind == TypeShell::Kind::Array) {
+        decayed_len = shells.front().length;
         shells.erase(shells.begin());
         if (shells.empty()) {
             leaf.depth += 1;
             leaf.type = ptr_type();
             leaf.is_slice = false;
             leaf.is_array = false;
+            leaf.array_len = decayed_len;
             leaf.shells.clear();
             return leaf;
         }
@@ -554,6 +558,9 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
                         shells[1].kind == TypeShell::Kind::Array;
     leaf.ptr_array_len = leaf.ptr_to_array ? shells[1].length : 0;
     leaf.inner_array_len = shells.size() >= 2 && shells[1].kind == TypeShell::Kind::Array ? shells[1].length : 0;
+    if (decayed_len > 0 && !leaf.is_array && !leaf.is_slice) {
+        leaf.array_len = decayed_len;
+    }
     return leaf;
 }
 
@@ -727,6 +734,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     // `[N][]T` decays to a pointer that steps by one header.
     if (nest_slice && is_array && array_len > 0 && parameter) {
         out.elem_slice = true;
+        out.array_len = array_len;
         fill(out, base_depth + indirections + 1);
         out.type = ptr_type();
         return out;
@@ -755,6 +763,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     }
     if (parameter && (is_array || base_array)) {
         out.elem_slice = base_headers;
+        out.array_len = is_array ? array_len : base.array_len;
         fill(out, base_depth + indirections + 1);
         out.type = ptr_type();
         return out;

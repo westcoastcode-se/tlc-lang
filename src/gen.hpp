@@ -1001,6 +1001,8 @@ class CodeGen {
             loaded.ptr_array_len = binding.ptr_array_len;
             loaded.elem_slice = binding.elem_slice;
             loaded.inner_array_len = binding.inner_array_len;
+            // A parameter `[N][M]T` or `[N][]T` keeps `N` after the outer array decays.
+            loaded.array_len = binding.array_len;
             return loaded;
         }
         TypedValue loaded = load_object(binding.value, binding.depth, binding.elem_char, binding.struct_id, binding.elem_void,
@@ -1008,9 +1010,11 @@ class CodeGen {
         loaded.ptr_to_array = binding.ptr_to_array;
         loaded.ptr_array_len = binding.ptr_array_len;
         // A `[N][]T` parameter is a pointer that steps by one header.
+        // A `[N]T` parameter keeps `N` in `array_len` so a range can build the slice.
         loaded.elem_slice = binding.elem_slice;
         loaded.shells = binding.shells;
         loaded.inner_array_len = binding.inner_array_len;
+        loaded.array_len = binding.array_len;
         loaded.fn_ty = binding.fn_ty;
         loaded.fn_ret_depth = binding.fn_ret_depth;
         loaded.fn_ret_float = binding.fn_ret_float;
@@ -1242,6 +1246,10 @@ class CodeGen {
     TypedValue load_field(const TypedValue &addr);
     // Allocates `[_]T{...}` and stores each value. `low` is the array type.
     llvm::AllocaInst *emit_array_literal(const Expr::Init &init, Lowered &low);
+    // True when every brace matches that array, including an element that is itself an array.
+    bool array_list_covers(const Expr::Init &init, llvm::ArrayType *array_ty) const;
+    // Writes `init` into `slot`. A nested array is another brace list, not one rvalue.
+    void store_array_elements(llvm::Value *slot, llvm::ArrayType *array_ty, const Expr::Init &init);
     TypedValue emit_init(const Expr::Init &init);
     // Writes the named fields of `init` through `slot`. Omitted fields are left as they are.
     void store_init_fields(int struct_id, llvm::Value *slot, const Expr::Init &init);
