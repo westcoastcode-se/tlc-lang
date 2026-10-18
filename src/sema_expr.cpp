@@ -2756,7 +2756,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 (void)used;
                 // `a[i:j]` is a slice of the elements from i up to, but not including, j.
                 // A missing low bound is 0. A missing high bound is the length.
-                // The base is an array, a slice, or a parameter `[N]T`. Any other pointer is not.
+                // The base is an array, a slice, a parameter `[N]T`, or a pointer `*[N]T`.
+                // `*i32` and `?*[N]T` have no array length.
                 if (node.is_range) {
                     const Type base = node.base ? check_raw(*node.base, true) : type_invalid();
                     if (node.index) {
@@ -2774,6 +2775,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (base.kind == TypeKind::Pointer && base.decayed_len > 0 && base.pointee != nullptr &&
                         !base.optional) {
                         return type_array(*base.pointee, -1);
+                    }
+                    // `p[0:2]` on `*[4]i32` is `(*p)[0:2]`. The pointee is the array.
+                    if (base.kind == TypeKind::Pointer && !base.optional && base.pointee != nullptr &&
+                        base.pointee->kind == TypeKind::Array && base.pointee->length > 0 &&
+                        base.pointee->element != nullptr) {
+                        return type_array(*base.pointee->element, -1);
                     }
                     if (base.kind != TypeKind::Array || base.element == nullptr) {
                         error(node.loc, "type mismatch");

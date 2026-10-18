@@ -1,0 +1,8 @@
+func copy(p *[2]i32) i32 {
+    var row [2]i32 = p;
+    return row[0];
+}
+
+func main() i32 {
+    return 0;
+}

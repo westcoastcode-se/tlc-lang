@@ -4011,15 +4011,61 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
                        addr.elem_bits, addr.elem_unsigned, addr.elem_float);
 }
 
+// `p[i:j]` on `*[N]...T` is still the pointer. A decayed `[N]T` already stores N in `array_len`.
+// Turn the pointer into that decayed shape so the range packs `{ data, N }` and steps by the element.
+void adopt_pointer_array(TypedValue &base) {
+    if (base.array_len > 0 || !base.ptr_to_array || base.ptr_array_len <= 0 || base.value == nullptr ||
+        !base.value->getType()->isPointerTy()) {
+        return;
+    }
+    const bool described = base.shells.size() >= 2 && base.shells[0].kind == TypeShell::Kind::Pointer &&
+                           base.shells[1].kind == TypeShell::Kind::Array;
+    std::vector<TypeShell> element;
+    if (described) {
+        element.assign(base.shells.begin() + 2, base.shells.end());
+        // The binding depth is the leaf. A decayed array is one above that leaf.
+        base.depth += 1;
+    }
+    base.array_len = base.ptr_array_len;
+    base.ptr_to_array = false;
+    base.ptr_array_len = 0;
+    if (!described) {
+        // `&row` and `new [_]T` are already one above the element. `inner_array_len` is the row.
+        base.shells.clear();
+        return;
+    }
+    if (element.size() == 1 && element[0].kind == TypeShell::Kind::Array) {
+        base.inner_array_len = element[0].length;
+        base.elem_slice = false;
+        base.shells.clear();
+        return;
+    }
+    if (!element.empty() && element[0].kind == TypeShell::Kind::Slice) {
+        // Same shape as a parameter `[N][]T`: a pointer to headers, with the length in `array_len`.
+        TypeShell pointer;
+        pointer.kind = TypeShell::Kind::Pointer;
+        base.shells.clear();
+        base.shells.push_back(pointer);
+        base.shells.insert(base.shells.end(), element.begin(), element.end());
+        base.inner_array_len = 0;
+        base.elem_slice = false;
+        return;
+    }
+    base.inner_array_len = 0;
+    base.elem_slice = false;
+    base.shells.clear();
+}
+
 TypedValue CodeGen::emit_range(const Expr::Index &node) {
     if (node.base == nullptr) {
         error(node.loc, "type mismatch");
         return {zero(), 0};
     }
-    const TypedValue base = emit_rvalue(*node.base);
+    TypedValue base = emit_rvalue(*node.base);
     if (base.value == nullptr || terminated()) {
         return {zero(), 0};
     }
+    adopt_pointer_array(base);
     // An omitted low bound is 0. An omitted high bound is the length already in the slice.
     const bool low_omitted = node.index == nullptr;
     const bool high_omitted = node.end == nullptr;
@@ -4051,7 +4097,17 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     const bool decayed_headers = base.array_len > 0 && !base.is_slice && !base.shells.empty() &&
                                  base.shells.front().kind == TypeShell::Kind::Pointer && base.shells.size() >= 2 &&
                                  base.shells[1].kind == TypeShell::Kind::Slice;
-    if (!base.shells.empty() && base.shells.front().kind == TypeShell::Kind::Slice) {
+    // `(*p)[i:j]` on `*[N][]T` decayed the array. The value is still that pointer, and the
+    // shells are the element (a header), not a packed slice of a further element.
+    const bool decayed_slice_elems = base.is_slice && !packed_slice && base.array_len > 0 && base.value != nullptr &&
+                                     base.value->getType()->isPointerTy() && !base.shells.empty() &&
+                                     base.shells.front().kind == TypeShell::Kind::Slice;
+    if (decayed_slice_elems) {
+        TypeShell header;
+        header.kind = TypeShell::Kind::Slice;
+        range_shells.push_back(header);
+        range_shells.insert(range_shells.end(), base.shells.begin(), base.shells.end());
+    } else if (!base.shells.empty() && base.shells.front().kind == TypeShell::Kind::Slice) {
         TypeShell header;
         header.kind = TypeShell::Kind::Slice;
         range_shells.push_back(header);
@@ -4080,7 +4136,10 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         llvm::Value *len = nullptr;
         // A header element steps by `tlc.slice`. A row `[M]T` steps by that row.
         // A parameter `[N][]T` is a pointer. The range steps by the element after that pointer.
-        if (!base.shells.empty() && base.shells.front().kind == TypeShell::Kind::Slice) {
+        if (decayed_slice_elems) {
+            element = shell_type(base.shells, elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
+                                 base.elem_float);
+        } else if (!base.shells.empty() && base.shells.front().kind == TypeShell::Kind::Slice) {
             std::vector<TypeShell> rest(base.shells.begin() + 1, base.shells.end());
             element = shell_type(rest, elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
                                  base.elem_float);
@@ -4120,7 +4179,7 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     TypedValue result;
     result.value = out;
     result.is_slice = true;
-    result.elem_slice = base.elem_slice || decayed_headers;
+    result.elem_slice = base.elem_slice || decayed_headers || decayed_slice_elems;
     result.shells = std::move(range_shells);
     result.array_len = -1;
     result.depth = elem_depth;
@@ -4214,17 +4273,24 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         array.ptr_array_len = 0;
                         return decay_outer_array(std::move(array));
                     }
-                    // `*arr` on a pointer to an array is the array, which decays to a pointer to its element.
+                    // `*arr` on `*[N]T` is that array, decayed to a pointer to its element.
+                    // `array_len` keeps N so `(*p)[i:j]` can build the slice. Depth is one above the element.
                     if (inner.ptr_to_array ||
                         (pointer_shell && inner.shells.size() >= 2 && inner.shells[1].kind == TypeShell::Kind::Array &&
                          inner.shells.size() == 2)) {
+                        int length = inner.ptr_array_len;
+                        if (length <= 0 && inner.shells.size() >= 2 &&
+                            inner.shells[1].kind == TypeShell::Kind::Array) {
+                            length = inner.shells[1].length;
+                        }
                         TypedValue decayed = inner;
                         decayed.ptr_to_array = false;
                         decayed.ptr_array_len = 0;
                         decayed.inner_array_len = 0;
                         decayed.elem_slice = false;
                         decayed.shells.clear();
-                        decayed.depth = inner.depth > 0 ? inner.depth : 1;
+                        decayed.array_len = length;
+                        decayed.depth = inner.depth + 1;
                         return decayed;
                     }
                     if (pointer_shell && inner.shells.size() >= 2 && inner.shells[1].kind == TypeShell::Kind::Slice) {
@@ -4257,11 +4323,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             return peeled;
                         }
                         // `*p` on `*[N]T` decays to a pointer to the first element.
+                        // The length stays so a range of that array can build the slice.
                         if (peeled.shells.size() == 1 && peeled.shells.front().kind == TypeShell::Kind::Array) {
+                            peeled.array_len = peeled.shells.front().length;
                             peeled.shells.clear();
                             peeled.ptr_to_array = false;
                             peeled.ptr_array_len = 0;
-                            peeled.depth = inner.depth > 0 ? inner.depth : 1;
+                            peeled.inner_array_len = 0;
+                            peeled.depth = inner.depth + 1;
                             return peeled;
                         }
                         return peeled;
@@ -4284,6 +4353,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             pointer.elem_float = binding->elem_float;
                             pointer.ptr_to_array = true;
                             pointer.ptr_array_len = binding->array_len;
+                            // `(&grid)[i:j]` steps by the row. A flat array leaves this at 0.
+                            pointer.inner_array_len = binding->inner_array_len;
+                            pointer.elem_slice = binding->elem_slice;
                             return pointer;
                         }
                     }
@@ -7039,6 +7111,9 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     if (node.count_inferred) {
         result.ptr_to_array = true;
         result.ptr_array_len = list_len;
+        // `buf[i:j]` on `new [_][M]T` steps by that row. A flat element leaves this at 0.
+        result.inner_array_len = low.inner_array_len;
+        result.elem_slice = low.elem_slice;
     }
     return result;
 }
