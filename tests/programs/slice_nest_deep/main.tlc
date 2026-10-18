@@ -1,4 +1,6 @@
 func main() i32 {
-    var x [][][]i32;
-    return 0;
+    var cell = [_]i32{7};
+    var row = [_][]i32{cell[:]};
+    var grid [][][]i32 = [_][][]i32{row[:]};
+    return grid[0][0][0] + grid.len;
 }

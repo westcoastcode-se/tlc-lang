@@ -29,6 +29,8 @@ struct SpecArg {
     bool elem_const = false;
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
+    // Every pointer, slice, and array outside the leaf. Empty when a plain pointer run is enough.
+    std::vector<TypeShell> shells;
     int array_len = 0;
     int struct_id = -1;
     int enum_id = -1;
@@ -293,7 +295,8 @@ class Checker {
     Type object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                      bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
                      bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0,
-                     bool allow_incomplete = false, bool elem_const = false, bool elem_slice = false);
+                     bool allow_incomplete = false, bool elem_const = false, bool elem_slice = false,
+                     const std::vector<TypeShell> &shells = {});
     Type spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
                       int indirections, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
     // A store through this lvalue would change a `const` binding or a `*const` pointee.
@@ -353,8 +356,8 @@ class Checker {
     Type finish_overloaded(const Expr::Call &node, const Symbol &symbol, bool deferring);
     // `Integer` or `*Integer` when that alias is a primitive. Null otherwise.
     const Type *scalar_alias(const Type &base, bool &through_pointer) const;
-    // A slice alias such as `type string_view []const u8`. Not a pointer to one.
-    const Type *slice_alias(const Type &base) const;
+    // A slice alias such as `type string_view []const u8`. A pointer to that alias sets `through_pointer`.
+    const Type *slice_alias(const Type &base, bool &through_pointer) const;
     const AssocVar *find_assoc(const std::string &owner, const std::string &name) const;
     const AssocVar *find_assoc_in(uint32_t file, const std::string &owner, const std::string &name) const;
     bool assoc_defined(uint32_t file, const std::string &owner, const std::string &name) const;
@@ -386,7 +389,7 @@ class Checker {
     Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum,
                           uint32_t optional = 0, uint32_t const_pointee = 0, bool elem_const = false,
-                          bool elem_slice = false);
+                          bool elem_slice = false, const std::vector<TypeShell> &shells = {});
     Type published_result(const std::string &name, int indirections, SourceLoc loc, const std::string &package,
                           bool is_struct, bool is_enum, uint32_t optional = 0, uint32_t const_pointee = 0);
     void expect(const Type &got, const Type &want, SourceLoc loc);
@@ -414,7 +417,9 @@ class Checker {
     Type operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                       bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
                       uint32_t const_pointee = 0, bool is_array = false, int array_len = 0, bool elem_const = false,
-                      bool elem_slice = false);
+                      bool elem_slice = false, const std::vector<TypeShell> &shells = {});
+    // Fold each array shell's length name. A non-positive length is `not supported yet`.
+    void fold_shells(std::vector<TypeShell> &shells, SourceLoc loc);
     Type sizeof_operand(const Expr::Sizeof &node);
     // A folded number. `wide` is f64. An integer is neither.
     struct FoldedNumber {
@@ -511,7 +516,7 @@ class Checker {
     void substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, std::string &type_name,
                          std::string &type_package, bool &is_struct, bool &is_enum, int &indirections, uint32_t &optional,
                          bool &is_array, int &array_len, std::string &array_len_name, std::vector<TypeArg> &type_args,
-                         SourceLoc loc);
+                         SourceLoc loc, std::vector<TypeShell> *shells = nullptr, bool *elem_const = nullptr);
     void substitute_expr(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Expr &expr);
     void substitute_stmt(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Stmt &stmt);
     void substitute_function(FunctionDecl &fn, const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds);

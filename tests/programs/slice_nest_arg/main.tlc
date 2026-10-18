@@ -4,5 +4,6 @@ type Vec[T type] struct {
 
 func main() i32 {
     var v Vec[[][]i32];
+    v.len = 4;
     return v.len;
 }

@@ -97,6 +97,8 @@ class Parser {
         bool elem_const = false;
         // `[][]T` and `[N][]T`. The element is one slice. A third pair stays rejected.
         bool elem_slice = false;
+        // Constructors outside the leaf, outermost first. This is the shape `[]`, `*[]`, and `[N][M]` share.
+        std::vector<TypeShell> shells;
         int array_len = 0;
         std::string array_len_name;
         std::vector<TypeArg> type_args;

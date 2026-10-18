@@ -1,5 +1,6 @@
 func main() i32 {
-    var row = [_]i32{1};
-    var rows = [_][][]i32{row[:]};
-    return rows.len;
+    var row = [_]i32{1, 2};
+    var rows = [_][]i32{row[:]};
+    var cube = [_][][]i32{rows[:]};
+    return cube[0][0][1] + cube.len;
 }

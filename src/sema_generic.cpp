@@ -515,13 +515,62 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
         }
     }
     if (cursor->kind == TypeKind::Array) {
-        if (outer > 0 || cursor->element == nullptr) {
+        const Type *layer = &type;
+        bool saw_array = false;
+        while (layer != nullptr && (layer->kind == TypeKind::Pointer || layer->kind == TypeKind::Array)) {
+            if (layer->kind == TypeKind::Pointer) {
+                if (layer->pointee == nullptr) {
+                    return false;
+                }
+                // Pointers after the last array stay in `indirections`, as they always have.
+                if (saw_array) {
+                    break;
+                }
+                TypeShell shell;
+                shell.kind = TypeShell::Kind::Pointer;
+                shell.optional = layer->optional;
+                shell.const_pointee = layer->pointee->is_const;
+                out.shells.push_back(shell);
+                layer = layer->pointee.get();
+                continue;
+            }
+            if (layer->element == nullptr || (layer->length == 0)) {
+                return false;
+            }
+            saw_array = true;
+            TypeShell shell;
+            if (layer->length < 0) {
+                shell.kind = TypeShell::Kind::Slice;
+            } else {
+                shell.kind = TypeShell::Kind::Array;
+                shell.length = layer->length;
+            }
+            out.shells.push_back(shell);
+            layer = layer->element.get();
+        }
+        if (!saw_array) {
             return false;
         }
         out.is_array = true;
-        out.array_len = cursor->length;
-        out.elem_const = cursor->element->is_const;
-        cursor = cursor->element.get();
+        out.array_len = -1;
+        for (const TypeShell &shell : out.shells) {
+            if (shell.kind == TypeShell::Kind::Slice) {
+                out.array_len = -1;
+                break;
+            }
+            if (shell.kind == TypeShell::Kind::Array) {
+                out.array_len = shell.length;
+                break;
+            }
+        }
+        if (out.shells.size() >= 2 && out.shells[1].kind == TypeShell::Kind::Slice && out.shells.size() == 2) {
+            out.elem_slice = true;
+        }
+        if (layer != nullptr && layer->is_const && layer->kind != TypeKind::Pointer) {
+            out.elem_const = true;
+        }
+        cursor = layer;
+        outer = 0;
     }
     int depth = 0;
     uint32_t optional = 0;
@@ -593,7 +642,22 @@ std::string Checker::mangle_spec(const std::string &base, const std::vector<Spec
             name += std::to_string(arg.value);
             return;
         }
-        if (arg.is_array) {
+        if (!arg.shells.empty()) {
+            for (const TypeShell &shell : arg.shells) {
+                if (shell.kind == TypeShell::Kind::Slice) {
+                    name += "slice.";
+                } else if (shell.kind == TypeShell::Kind::Array) {
+                    name += "arr.";
+                    name += std::to_string(shell.length);
+                    name += '.';
+                } else {
+                    name += shell.optional ? "opt." : "ptr.";
+                    if (shell.const_pointee) {
+                        name += "const.";
+                    }
+                }
+            }
+        } else if (arg.is_array) {
             name += "arr.";
             if (arg.elem_const) {
                 name += "const.";
@@ -905,9 +969,10 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
         concrete.args.clear();
         concrete.is_struct = true;
     }
+    fold_shells(concrete.shells, arg.loc);
     const Type type = object_type(concrete.type_name, concrete.indirections, concrete.is_array, concrete.array_len, arg.loc,
                                   false, concrete.type_package, false, concrete.is_enum, false, concrete.optional,
-                                  concrete.const_pointee, false, concrete.elem_const);
+                                  concrete.const_pointee, false, concrete.elem_const, false, concrete.shells);
     if (type.kind == TypeKind::Invalid) {
         return false;
     }
@@ -921,7 +986,8 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
 void Checker::substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds,
                               std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                               int &indirections, uint32_t &optional, bool &is_array, int &array_len,
-                              std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc) {
+                              std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
+                              std::vector<TypeShell> *shells, bool *elem_const) {
     (void)is_struct;
     if (!array_len_name.empty()) {
         if (const SpecArg *bound = find_arg(params, bounds, array_len_name); bound != nullptr && bound->is_value) {
@@ -931,6 +997,21 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
                 array_len = bound->value;
                 array_len_name.clear();
                 is_array = true;
+            }
+        }
+    }
+    if (shells != nullptr) {
+        for (TypeShell &shell : *shells) {
+            if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
+                continue;
+            }
+            if (const SpecArg *bound = find_arg(params, bounds, shell.length_name); bound != nullptr && bound->is_value) {
+                if (bound->value <= 0) {
+                    error(loc, "not supported yet");
+                } else {
+                    shell.length = bound->value;
+                    shell.length_name.clear();
+                }
             }
         }
     }
@@ -1033,6 +1114,13 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
     } else if (written_array) {
         is_array = true;
         array_len = written_len;
+    }
+    if (shells != nullptr && !bound->shells.empty() && written == 0 && !written_array) {
+        *shells = bound->shells;
+        // `const` sits on the leaf. A shell list does not carry it.
+        if (elem_const != nullptr) {
+            *elem_const = bound->elem_const;
+        }
     }
 }
 
@@ -1372,7 +1460,7 @@ void Checker::substitute_stmt(const std::vector<TypeParam> &params, const std::v
                 for (VarDecl &var : node.vars) {
                     substitute_type(params, bounds, var.type_name, var.type_package, var.is_struct, var.is_enum,
                                     var.indirections, var.optional, var.is_array, var.array_len, var.array_len_name,
-                                    var.type_args, var.loc);
+                                    var.type_args, var.loc, &var.shells, &var.elem_const);
                     if (var.init) {
                         substitute_expr(params, bounds, *var.init);
                     }
@@ -1440,7 +1528,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         }
         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
                         param.indirections, param.optional, param.is_array, param.array_len, param.array_len_name,
-                        param.type_args, param.loc);
+                        param.type_args, param.loc, &param.shells, &param.elem_const);
         for (FnParam &inner : param.fn_params) {
             subst_fn_param(subst_fn_param, inner, param.loc);
         }
@@ -1463,7 +1551,8 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
     }
     for (ResultSlot &slot : fn.results) {
         substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
-                        slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, fn.loc);
+                        slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, fn.loc,
+                        &slot.shells, &slot.elem_const);
         for (FnParam &inner : slot.fn_params) {
             subst_fn_param(subst_fn_param, inner, fn.loc);
         }
@@ -1704,7 +1793,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     for (FieldDecl &field : spec.fields) {
         substitute_type(templ->type_params, bounds, field.type_name, field.type_package, field.is_struct, field.is_enum,
                         field.indirections, field.optional, field.is_array, field.array_len, field.array_len_name,
-                        field.type_args, field.loc);
+                        field.type_args, field.loc, &field.shells, &field.elem_const);
     }
     const int id = static_cast<int>(structs_.size());
     StructInfo info;
@@ -1724,6 +1813,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     for (FieldDecl &field : spec.fields) {
         prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                         field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args, field.loc);
+        fold_shells(field.shells, field.loc);
         Type field_type = field.is_fn_ptr
                               ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
@@ -1731,7 +1821,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                               : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                             false, field.type_package, field.is_struct, field.is_enum, false,
                                             field.optional, field.const_pointee, false, field.elem_const,
-                                            field.elem_slice);
+                                            field.elem_slice, field.shells);
         structs_[static_cast<std::size_t>(id)].fields.push_back(
             StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
     }

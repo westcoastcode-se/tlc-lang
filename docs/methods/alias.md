@@ -28,7 +28,7 @@ func main() i32 {
 }
 ```
 
-The program returns 42. `Integer.from` is the static function. `Integer.ten` is the variable. `n.add` takes a pointer, and `n.twice` takes the value. `var f = Integer.from` is that function. The same forms work for `bool`, `f32`, `f64`, and the other integer widths. A slice alias such as `type string_view []const u8` is a different owner. Its value methods are library source in [`std/string`](../std/string.md). `self *this` on that alias is reported as `not supported yet`.
+The program returns 42. `Integer.from` is the static function. `Integer.ten` is the variable. `n.add` takes a pointer, and `n.twice` takes the value. `var f = Integer.from` is that function. The same forms work for `bool`, `f32`, `f64`, and the other integer widths. A slice alias such as `type string_view []const u8` is a different owner. Its value methods are library source in [`std/string`](../std/string.md). `self *this` on that alias is a pointer to the slice.
 
 ## Cost
 

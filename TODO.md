@@ -87,11 +87,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 - `?` on a type that is not a pointer: `?i32`.
 - An optional pointer to an array: `?*[4]i32`.
-- Two stars outside an array, `**[4]i32`, and a nested array.
-- A pointer to an array as a field. `var p *[4]i32` is fine. `p *[4]i32` inside a struct is not.
-- A pointer to a slice, `*[]T`. It is `not supported yet`.
-- A pointer receiver on a slice alias, `func string_view::at(self *this)`. It is `not supported yet`. A value receiver, `self this`, is the form that works.
-- A slice nested more than once: `[][][]T`, `[N][][]T`, `[_][][]T`, and `[]Grid` or `[N]Grid` when `Grid` is already `[][]T`. It is `not supported yet`, including as a parameter. A nested slice as a type argument, `Vec[[][]i32]`, is `not supported yet`.
+- Two stars outside an array, `**[4]i32`.
 - A slice taken from an array parameter. The parameter is already a pointer, so `return row` from `func open(row [4]i32) []i32` is `return type: expected []i32, found *i32`. A range on that pointer, `row[0:2]`, is `type mismatch`.
 - A slice field on `extern(abi="c")`. It is `not supported yet`. A tlc union arm that is not a struct stays `type mismatch`.
 - A file-scope slice whose initializer is not the name of an array, another slice, or a call. A literal, `a[i:j]`, `a[i:]`, `a[:j]`, or `a[:]` is `global initializer is not a constant`. A call used as the whole initializer runs before `main`. `const v []i32 = row` stores that slice. A range, a literal, or a call used as its initializer is `global initializer is not a constant`.
@@ -104,7 +100,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - `var a, b =` at file scope. Inside a function, several names unpack one tuple.
 - `extern` on an inferred variable, `var name = expr` or `name := expr`. `export var name = expr` and `export name := expr` are accepted. Another package uses `pkg.name` or `import { name }`.
 - A local `type`, including a local struct or enum.
-- A file-scope array whose element is a pointer to an array, `[_]*[4]i32`. An element may be an integer, `bool`, a float, a pointer, a struct, an enum, a typedef, a function pointer, an empty `[_]T{}`, or one nested level written as `[_][2]i32{{1, 2}}`. A written nested type `[2][3]i32` and a written length `[0]i32` stay `not supported yet`. An element that is an array name, `[_][2]i32{inner}`, is `type mismatch`.
+- A file-scope array whose written length is `[0]i32`. An element may be an integer, `bool`, a float, a pointer, a struct, an enum, a typedef, a function pointer, an empty `[_]T{}`, a nested array `[_][2][3]i32`, or a pointer to an array `[_]*[4]i32`. An element that is an array name, `[_][2]i32{inner}`, is `type mismatch`.
 - A file-scope array element that is a call or an expression such as `n + 1` when `n` is a `var`. That is `global initializer is not a constant`. `var row = [_]i32{1u32}` folds. `var row = [_]i32{n}` copies the initializer of `n`. `const row = [_]i32{n}` when `n` is a `var` is `global initializer is not a constant`.
 - Another abi than `"c"` and `"tlc"`.
 - `export type Name trait`.

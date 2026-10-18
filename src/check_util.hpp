@@ -176,6 +176,54 @@ inline bool nested_slice(const Type &type) {
     return is_slice(type) && type.element != nullptr && type.element->kind == TypeKind::Array;
 }
 
+// Wrap `type` in `shells`. `shells.front()` is the outermost constructor.
+// A sized array that is the outermost shell decays to a pointer when `parameter` is set.
+// A slice does not decay. `rejected` is set when a shell cannot wrap this leaf.
+inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool parameter, bool &rejected) {
+    rejected = false;
+    for (int index = static_cast<int>(shells.size()) - 1; index >= 0; --index) {
+        const TypeShell &shell = shells[static_cast<std::size_t>(index)];
+        if (type.kind == TypeKind::Invalid) {
+            return type;
+        }
+        if (shell.kind == TypeShell::Kind::Pointer) {
+            if (type.kind == TypeKind::Void) {
+                rejected = true;
+                return type_invalid();
+            }
+            if (shell.const_pointee) {
+                type.is_const = true;
+            }
+            type = type_pointer(std::move(type));
+            type.optional = shell.optional;
+            continue;
+        }
+        if (type.kind == TypeKind::Void || type.kind == TypeKind::Function || type.kind == TypeKind::Tuple ||
+            type.kind == TypeKind::Meta) {
+            rejected = true;
+            return type_invalid();
+        }
+        // `[]Row` where `Row` is `[]i32` is the plain slice `[][]i32`.
+        if (is_slice(type)) {
+            type.alias_id = 0;
+        }
+        if (shell.kind == TypeShell::Kind::Slice) {
+            type = type_array(std::move(type), -1);
+            continue;
+        }
+        if (shell.length <= 0) {
+            rejected = true;
+            return type_invalid();
+        }
+        if (index == 0 && parameter) {
+            type = type_pointer(std::move(type));
+            continue;
+        }
+        type = type_array(std::move(type), shell.length);
+    }
+    return type;
+}
+
 inline Type quiet_object(const std::string &name, int indirections, bool is_array, int array_len, bool parameter,
                          uint32_t optional = 0, uint32_t const_pointee = 0, bool elem_slice = false) {
     Type type = quiet_indirect(quiet_type(name), indirections, optional, const_pointee);

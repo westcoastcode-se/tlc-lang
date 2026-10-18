@@ -689,7 +689,7 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "type Box struct { p *[4]i32; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
     }
 
     {

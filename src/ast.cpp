@@ -803,6 +803,7 @@ VarDecl clone_var(const VarDecl &var) {
     copy.is_array = var.is_array;
     copy.elem_const = var.elem_const;
     copy.elem_slice = var.elem_slice;
+    copy.shells = var.shells;
     copy.array_len = var.array_len;
     copy.array_len_name = var.array_len_name;
     copy.type_args = var.type_args;
@@ -900,6 +901,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.is_array = node.is_array;
                 copy.elem_const = node.elem_const;
                 copy.elem_slice = node.elem_slice;
+                copy.shells = node.shells;
                 copy.array_len = node.array_len;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
@@ -917,6 +919,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.is_array = node.is_array;
                 copy.elem_const = node.elem_const;
                 copy.elem_slice = node.elem_slice;
+                copy.shells = node.shells;
                 copy.array_len = node.array_len;
                 copy.canonical = node.canonical;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
@@ -961,6 +964,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.elem_array_len = node.elem_array_len;
                 copy.elem_array_len_name = node.elem_array_len_name;
                 copy.elem_slice = node.elem_slice;
+                copy.elem_shells = node.elem_shells;
                 copy.elem_const = node.elem_const;
                 copy.elem_ret_indirections = node.elem_ret_indirections;
                 copy.elem_ret_optional = node.elem_ret_optional;

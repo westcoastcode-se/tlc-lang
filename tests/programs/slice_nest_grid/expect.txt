@@ -1,1 +1,1 @@
-compile-error: not supported yet
+exit: 5

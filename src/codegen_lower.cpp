@@ -142,7 +142,7 @@ CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) co
     // A slice is `array_len < 0`. A sized array keeps its length. Zero is not an array.
     const bool array = slot.is_array && !slot.is_fn_ptr && slot.array_len != 0;
     return lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, array,
-                 array ? slot.array_len : 0, false, slot.elem_slice);
+                 array ? slot.array_len : 0, false, slot.elem_slice, slot.shells);
 }
 
 llvm::Type *CodeGen::aggregate_return(const FunctionDecl &fn, uint32_t file) const {
@@ -457,8 +457,113 @@ bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
     return true;
 }
 
+llvm::Type *CodeGen::shell_type(const std::vector<TypeShell> &shells, int depth, bool elem_char, int struct_id,
+                                   bool elem_bool, int elem_bits, bool elem_float) const {
+    llvm::Type *type = leaf_type(depth, elem_char, struct_id, elem_bool, elem_bits, elem_float);
+    for (int index = static_cast<int>(shells.size()) - 1; index >= 0; --index) {
+        const TypeShell &shell = shells[static_cast<std::size_t>(index)];
+        if (shell.kind == TypeShell::Kind::Slice) {
+            type = slice_type();
+        } else if (shell.kind == TypeShell::Kind::Array) {
+            if (shell.length <= 0) {
+                return i32();
+            }
+            type = llvm::ArrayType::get(type, static_cast<uint64_t>(shell.length));
+        } else {
+            type = ptr_type();
+        }
+    }
+    return type;
+}
+
+CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> shells, bool parameter) const {
+    auto peel = [](Lowered &inner, std::vector<TypeShell> &out) {
+        if (inner.ptr_to_array) {
+            TypeShell pointer;
+            pointer.kind = TypeShell::Kind::Pointer;
+            out.push_back(pointer);
+            TypeShell array;
+            array.kind = TypeShell::Kind::Array;
+            array.length = inner.ptr_array_len;
+            out.push_back(array);
+            if (inner.depth > 0) {
+                inner.depth -= 1;
+            }
+            inner.ptr_to_array = false;
+            inner.ptr_array_len = 0;
+            inner.is_array = false;
+            return;
+        }
+        if (inner.is_slice) {
+            if (inner.elem_slice) {
+                TypeShell header;
+                header.kind = TypeShell::Kind::Slice;
+                out.push_back(header);
+            }
+            TypeShell header;
+            header.kind = TypeShell::Kind::Slice;
+            out.push_back(header);
+            inner.is_slice = false;
+            inner.elem_slice = false;
+            return;
+        }
+        if (inner.is_array) {
+            TypeShell array;
+            array.kind = TypeShell::Kind::Array;
+            array.length = inner.array_len;
+            out.push_back(array);
+            if (inner.elem_slice) {
+                TypeShell header;
+                header.kind = TypeShell::Kind::Slice;
+                out.push_back(header);
+            } else if (inner.inner_array_len > 0) {
+                TypeShell row;
+                row.kind = TypeShell::Kind::Array;
+                row.length = inner.inner_array_len;
+                out.push_back(row);
+            }
+            inner.is_array = false;
+            inner.array_len = 0;
+            inner.elem_slice = false;
+            inner.inner_array_len = 0;
+        }
+    };
+    peel(leaf, shells);
+    if (parameter && !shells.empty() && shells.front().kind == TypeShell::Kind::Array) {
+        shells.erase(shells.begin());
+        if (shells.empty()) {
+            leaf.depth += 1;
+            leaf.type = ptr_type();
+            leaf.is_slice = false;
+            leaf.is_array = false;
+            leaf.shells.clear();
+            return leaf;
+        }
+        TypeShell pointer;
+        pointer.kind = TypeShell::Kind::Pointer;
+        shells.insert(shells.begin(), pointer);
+    }
+    leaf.shells = shells;
+    leaf.type = shell_type(shells, leaf.depth, leaf.elem_char, leaf.struct_id, leaf.elem_bool, leaf.elem_bits, leaf.elem_float);
+    leaf.is_slice = !shells.empty() && shells.front().kind == TypeShell::Kind::Slice;
+    leaf.is_array = !shells.empty() && shells.front().kind == TypeShell::Kind::Array;
+    leaf.array_len = leaf.is_slice ? -1 : leaf.is_array ? shells.front().length : 0;
+    leaf.elem_slice = shells.size() >= 2 && shells[1].kind == TypeShell::Kind::Slice &&
+                      (shells.front().kind == TypeShell::Kind::Slice || shells.front().kind == TypeShell::Kind::Array);
+    leaf.ptr_to_array = shells.size() >= 2 && shells.front().kind == TypeShell::Kind::Pointer &&
+                        shells[1].kind == TypeShell::Kind::Array;
+    leaf.ptr_array_len = leaf.ptr_to_array ? shells[1].length : 0;
+    leaf.inner_array_len = shells.size() >= 2 && shells[1].kind == TypeShell::Kind::Array ? shells[1].length : 0;
+    return leaf;
+}
+
 CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct,
-                                 int indirections, bool is_array, int array_len, bool parameter, bool elem_slice) const {
+                                 int indirections, bool is_array, int array_len, bool parameter, bool elem_slice,
+                                 const std::vector<TypeShell> &shells) const {
+    if (!shells.empty()) {
+        Lowered leaf = lower(file, name, package, is_struct, indirections, false, 0, false, false);
+        return compose_shells(std::move(leaf), shells, parameter);
+    }
     Lowered out;
     Alias base;
     bool have = false;
@@ -597,10 +702,17 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.type = i32();
         return out;
     }
-    // `*[]T` and `*Row` stay rejected. The name of a slice alias does not.
-    if (base_slice && indirections > 0) {
-        out.type = i32();
-        return out;
+    // `*Row` when `Row` is a slice or an array. The star is a pointer shell around that alias.
+    if ((base_slice || base_array) && indirections > 0 && !is_array) {
+        std::vector<TypeShell> lifted;
+        lifted.reserve(static_cast<std::size_t>(indirections));
+        for (int star = 0; star < indirections; ++star) {
+            TypeShell shell;
+            shell.kind = TypeShell::Kind::Pointer;
+            lifted.push_back(shell);
+        }
+        Lowered leaf = lower(file, name, package, is_struct, 0, false, 0, false, false);
+        return compose_shells(std::move(leaf), std::move(lifted), parameter);
     }
     // `[][]T` and `[]Row` are one header whose element is a header.
     if (nest_slice && is_array && array_len < 0) {
@@ -695,8 +807,8 @@ CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) cons
                            var.indirections, var.fn_params, var.fn_variadic, var.fn_results);
     }
     Lowered low = lower(file, var.type_name, var.type_package, var.is_struct, var.indirections, var.is_array,
-                        var.array_len, false, var.elem_slice);
-    if (!var.ptr_to_array) {
+                        var.array_len, false, var.elem_slice, var.shells);
+    if (!var.shells.empty() || !var.ptr_to_array) {
         return low;
     }
     low.ptr_to_array = true;
@@ -722,7 +834,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
         }
         const bool slice = part.is_array && part.array_len < 0;
         return lower(file, part.type_name, part.type_package, part.is_struct, part.indirections, slice,
-                     slice ? part.array_len : 0, parameter, part.elem_slice);
+                     slice ? part.array_len : 0, parameter, part.elem_slice, part.shells);
     };
     for (const FnParam &param : params) {
         args.push_back(stored_type(lower_part(param, true)));
@@ -761,7 +873,7 @@ CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) co
         out.tuple_parts = param.tuple_parts;
         for (const ResultSlot &slot : param.tuple_parts) {
             const Lowered part = lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                       slot.is_array, slot.array_len, false, slot.elem_slice);
+                                       slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
             fields.push_back(stored_type(part));
         }
         if (fields.empty()) {
@@ -775,11 +887,12 @@ CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) co
                            param.indirections, param.fn_params, param.fn_variadic, param.fn_results);
     }
     return lower(file, param.type_name, param.type_package, param.is_struct, param.indirections, param.is_array,
-                 param.array_len, true, param.elem_slice);
+                 param.array_len, true, param.elem_slice, param.shells);
 }
 
 std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, const Expr::Init &item) const {
-    if (!item.array_literal || item.elem_ptr_to_array || (item.type_name.empty() && !item.elem_fn)) {
+    if (!item.array_literal || (item.elem_ptr_to_array && item.elem_shells.empty()) ||
+        (item.type_name.empty() && !item.elem_fn)) {
         return std::nullopt;
     }
     const int count = static_cast<int>(item.elements.size());
@@ -789,6 +902,12 @@ std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, cons
                            item.indirections < 1 ? 1 : item.indirections, item.elem_fn_params, item.elem_fn_variadic,
                            item.elem_fn_results);
         if (elem.fn_ty == nullptr || elem.type == nullptr) {
+            return std::nullopt;
+        }
+    } else if (!item.elem_shells.empty()) {
+        elem = lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, false, 0, false, false,
+                     item.elem_shells);
+        if (elem.type == nullptr) {
             return std::nullopt;
         }
     } else if (item.elem_slice) {
@@ -820,6 +939,14 @@ std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, cons
     low.elem_slice = elem.is_slice;
     low.inner_array_len = item.elem_is_array && !elem.is_slice ? item.elem_array_len : 0;
     low.type = llvm::ArrayType::get(elem.type, static_cast<uint64_t>(count));
+    if (!elem.shells.empty()) {
+        TypeShell outer;
+        outer.kind = TypeShell::Kind::Array;
+        outer.length = count;
+        low.shells.clear();
+        low.shells.push_back(outer);
+        low.shells.insert(low.shells.end(), elem.shells.begin(), elem.shells.end());
+    }
     return low;
 }
 
@@ -850,6 +977,7 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.tuple_parts = low.tuple_parts;
     binding.is_slice = low.is_slice;
     binding.elem_slice = low.elem_slice;
+    binding.shells = low.shells;
     binding.is_array = low.is_array;
     binding.array_len = low.array_len;
 }
@@ -935,6 +1063,7 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
         out.array_len = slot->array_len;
         out.is_slice = slot->is_slice;
         out.elem_slice = slot->elem_slice;
+        out.shells = slot->shells;
         return out;
     };
     // A C union overlays every field at offset 0. A tlc union does the same, and the enum tag sits after the payload.
@@ -1082,7 +1211,7 @@ void CodeGen::prepare_structs() {
                     continue;
                 }
                 const Lowered low = lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
-                                          field.is_array, field.array_len, false, field.elem_slice);
+                                          field.is_array, field.array_len, false, field.elem_slice, field.shells);
                 if (low.depth == 0 && !low.is_array && low.struct_id >= 0 &&
                     !structs_[static_cast<std::size_t>(low.struct_id)].ready) {
                     waiting = true;
@@ -1122,7 +1251,7 @@ void CodeGen::prepare_structs() {
                                                   field.ret_indirections, field.indirections, field.fn_params,
                                                   field.fn_variadic, field.fn_results)
                                    : lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
-                                           field.is_array, field.array_len, false, field.elem_slice);
+                                           field.is_array, field.array_len, false, field.elem_slice, field.shells);
                 FieldLayout slot;
                 slot.name = field.name;
                 slot.type = stored_type(low);
@@ -1138,6 +1267,7 @@ void CodeGen::prepare_structs() {
                 slot.elem_float = low.elem_float;
                 slot.is_slice = low.is_slice;
                 slot.elem_slice = low.elem_slice;
+                slot.shells = low.shells;
                 // C _Bool is one byte. An extern(abi="c") struct keeps that layout.
                 if (item->extern_c && low.elem_bool && low.depth == 0) {
                     slot.type = c_memory(c_memory, slot.type);
@@ -1346,7 +1476,7 @@ void CodeGen::prepare_aliases() {
                                   item.item->fn_params, item.item->fn_variadic, item.item->fn_results)
                     : lower(item.file, item.item->type_name, item.item->type_package, item.item->is_struct,
                             item.item->indirections, item.item->is_array, item.item->array_len, false,
-                            item.item->elem_slice);
+                            item.item->elem_slice, item.item->shells);
             Alias alias;
             alias.depth = low.depth;
             alias.elem_char = low.elem_char;
@@ -1369,6 +1499,7 @@ void CodeGen::prepare_aliases() {
             alias.fn_results = low.fn_results;
             alias.is_slice = low.is_slice;
             alias.elem_slice = low.elem_slice;
+            alias.shells = low.shells;
             aliases_[item.file].emplace(item.item->name, alias);
             progress = true;
         }

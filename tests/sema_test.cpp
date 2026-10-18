@@ -827,7 +827,7 @@ int run_sema_tests() {
             "type Text []const u8;\n"
             "func Text::get(self *this) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -5997,7 +5997,7 @@ int run_sema_tests() {
             "var inner [4]i32 = {1, 2, 3, 4};\n"
             "var row = [_]*[4]i32{&inner};\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {

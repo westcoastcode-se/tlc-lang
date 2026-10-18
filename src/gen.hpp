@@ -308,6 +308,7 @@ struct Binding {
     bool is_slice = false;
     // The element of this slice or array is one `[]E`. A further slice stays rejected.
     bool elem_slice = false;
+    std::vector<TypeShell> shells;
 };
 
 struct TypedValue {
@@ -348,6 +349,7 @@ struct TypedValue {
     bool is_slice = false;
     // The element is one `[]E`. Indexing loads a header, not `E`.
     bool elem_slice = false;
+    std::vector<TypeShell> shells;
 };
 
 // How an extern function passes one struct on x86-64 System V.
@@ -524,6 +526,7 @@ class CodeGen {
         bool is_slice = false;
         // The element of this slice or array field is one `[]E`.
         bool elem_slice = false;
+        std::vector<TypeShell> shells;
     };
     struct StructLayout {
         std::string name;
@@ -567,6 +570,7 @@ class CodeGen {
         bool is_slice = false;
         // The element is one `[]E`. `[N][]T` is `[N x tlc.slice]`.
         bool elem_slice = false;
+        std::vector<TypeShell> shells;
     };
     struct EnumLayout {
         std::string name;
@@ -601,6 +605,7 @@ class CodeGen {
         bool is_slice = false;
         // `type Rows [][]i32`. A use of the name keeps this on the header.
         bool elem_slice = false;
+        std::vector<TypeShell> shells;
     };
     struct Shape {
         llvm::Type *type = nullptr;
@@ -618,6 +623,7 @@ class CodeGen {
         bool is_slice = false;
         // The element is one `[]E`. `sizeof` of `[N][]T` is `N` headers.
         bool elem_slice = false;
+        std::vector<TypeShell> shells;
     };
     struct CaseArm {
         const Stmt::Case *node = nullptr;
@@ -942,6 +948,7 @@ class CodeGen {
             loaded.enum_id = binding.enum_id;
             loaded.inner_array_len = binding.inner_array_len;
             loaded.elem_slice = binding.elem_slice;
+            loaded.shells = binding.shells;
             return loaded;
         }
         if (binding.is_array) {
@@ -950,6 +957,10 @@ class CodeGen {
             value.array_len = binding.array_len;
             value.inner_array_len = binding.inner_array_len;
             value.elem_slice = binding.elem_slice;
+            // The array decays to a pointer to its element. Indexing steps by that element.
+            if (!binding.shells.empty() && binding.shells.front().kind == TypeShell::Kind::Array) {
+                value.shells.assign(binding.shells.begin() + 1, binding.shells.end());
+            }
             value.fn_ty = binding.fn_ty;
             value.fn_ret_depth = binding.fn_ret_depth;
             value.fn_ret_float = binding.fn_ret_float;
@@ -973,12 +984,32 @@ class CodeGen {
             loaded.tuple_parts = binding.tuple_parts;
             return loaded;
         }
+        if (!binding.shells.empty() && binding.shells.front().kind == TypeShell::Kind::Pointer && binding.value != nullptr) {
+            TypedValue loaded;
+            loaded.value = builder_.CreateLoad(ptr_type(), binding.value);
+            loaded.shells = binding.shells;
+            loaded.depth = binding.depth;
+            loaded.elem_char = binding.elem_char;
+            loaded.struct_id = binding.struct_id;
+            loaded.elem_void = binding.elem_void;
+            loaded.elem_bool = binding.elem_bool;
+            loaded.elem_bits = binding.elem_bits;
+            loaded.elem_unsigned = binding.elem_unsigned;
+            loaded.elem_float = binding.elem_float;
+            loaded.enum_id = binding.enum_id;
+            loaded.ptr_to_array = binding.ptr_to_array;
+            loaded.ptr_array_len = binding.ptr_array_len;
+            loaded.elem_slice = binding.elem_slice;
+            loaded.inner_array_len = binding.inner_array_len;
+            return loaded;
+        }
         TypedValue loaded = load_object(binding.value, binding.depth, binding.elem_char, binding.struct_id, binding.elem_void,
                                         binding.elem_bool, binding.elem_bits, binding.elem_unsigned, binding.elem_float);
         loaded.ptr_to_array = binding.ptr_to_array;
         loaded.ptr_array_len = binding.ptr_array_len;
         // A `[N][]T` parameter is a pointer that steps by one header.
         loaded.elem_slice = binding.elem_slice;
+        loaded.shells = binding.shells;
         loaded.inner_array_len = binding.inner_array_len;
         loaded.fn_ty = binding.fn_ty;
         loaded.fn_ret_depth = binding.fn_ret_depth;
@@ -1065,7 +1096,14 @@ class CodeGen {
     bool has_typedef(uint32_t file, const std::string &name) const;
     bool alias_base_ready(uint32_t file, const TypedefDecl &item) const;
     Lowered lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct, int indirections,
-                  bool is_array, int array_len, bool parameter, bool elem_slice = false) const;
+                  bool is_array, int array_len, bool parameter, bool elem_slice = false,
+                  const std::vector<TypeShell> &shells = {}) const;
+    // LLVM type of `shells` around a leaf. `shells.front()` is the outermost constructor.
+    llvm::Type *shell_type(const std::vector<TypeShell> &shells, int depth, bool elem_char, int struct_id, bool elem_bool,
+                           int elem_bits, bool elem_float) const;
+    Lowered compose_shells(Lowered leaf, std::vector<TypeShell> shells, bool parameter) const;
+    // Index one shell. The base is an rvalue: a slice header, or a pointer whose shells start with `Pointer`.
+    TypedValue index_shells(const TypedValue &base, llvm::Value *subscript);
     Lowered lower_declared(uint32_t file, const VarDecl &var) const;
     Lowered lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package, bool ret_struct,
                         bool ret_enum, int ret_indirections, int fn_depth, const std::vector<FnParam> &params,

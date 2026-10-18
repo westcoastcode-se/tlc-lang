@@ -125,9 +125,10 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
     }
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, array_len_name, written.type_args, loc);
+    fold_shells(written.shells, loc);
     return object_type(param.type_name, param.indirections, param.is_array, param.array_len, loc, true, param.type_package,
                        param.is_struct, param.is_enum, false, param.optional, param.const_pointee, false, false,
-                       param.elem_slice);
+                       param.elem_slice, written.shells);
 }
 
 Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
@@ -144,10 +145,11 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
             prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
                             written.indirections, written.optional, written.is_array, written.array_len, array_len_name,
                             written.type_args, loc);
-            Type one = part.is_array
+            fold_shells(written.shells, loc);
+            Type one = part.is_array || !written.shells.empty()
                            ? object_type(part.type_name, part.indirections, true, part.array_len, loc, false,
                                          part.type_package, part.is_struct, part.is_enum, false, part.optional,
-                                         part.const_pointee, false, false, part.elem_slice)
+                                         part.const_pointee, false, false, part.elem_slice, written.shells)
                            : (part.is_struct || part.is_enum || !part.type_package.empty()
                                   ? object_type(part.type_name, part.indirections, false, 0, loc, false, part.type_package,
                                                 part.is_struct, part.is_enum, false, part.optional, part.const_pointee)
@@ -185,14 +187,16 @@ Type Checker::type_of_var(const VarDecl &var) {
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
                     written.loc);
+    fold_shells(written.shells, written.loc);
     Type type = var.is_fn_ptr
                     ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
                                      var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
                                      var.ret_optional, var.ret_const_pointee)
                     : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
                                   var.type_package, var.is_struct, var.is_enum, false, var.optional, var.const_pointee,
-                                  false, var.elem_const, var.elem_slice);
-    if (!var.ptr_to_array || type.kind == TypeKind::Invalid) {
+                                  false, var.elem_const, var.elem_slice, written.shells);
+    // A pointer shell is already applied. The flag is the flat spelling of `*[N]T`.
+    if (!written.shells.empty() || !var.ptr_to_array || type.kind == TypeKind::Invalid) {
         return type;
     }
     if (type.kind != TypeKind::Array) {
@@ -249,6 +253,7 @@ Type Checker::type_of_param(const Param &param) {
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
                     written.loc);
+    fold_shells(written.shells, written.loc);
     if (param.is_fn_ptr) {
         return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
                               param.indirections, param.fn_params, param.fn_variadic, param.fn_results, param.loc,
@@ -256,22 +261,23 @@ Type Checker::type_of_param(const Param &param) {
     }
     return object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
                        param.type_package, param.is_struct, param.is_enum, param.is_receiver, param.optional,
-                       param.const_pointee, false, param.elem_const, param.elem_slice);
+                       param.const_pointee, false, param.elem_const, param.elem_slice, written.shells);
 }
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
     ResultSlot &written = const_cast<ResultSlot &>(slot);
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args, loc);
+    fold_shells(written.shells, loc);
     if (slot.is_fn_ptr) {
         return type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
                               slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results, loc,
                               slot.ret_optional, slot.ret_const_pointee);
     }
-    if (slot.is_array) {
+    if (slot.is_array || !written.shells.empty()) {
         return object_type(slot.type_name, slot.indirections, true, slot.array_len, loc, false, slot.type_package,
                            slot.is_struct, slot.is_enum, false, slot.optional, slot.const_pointee, false,
-                           slot.elem_const, slot.elem_slice);
+                           slot.elem_const, slot.elem_slice, written.shells);
     }
     return slot.is_struct || slot.is_enum || !slot.type_package.empty()
                ? object_type(slot.type_name, slot.indirections, false, 0, loc, false, slot.type_package, slot.is_struct,
@@ -562,11 +568,17 @@ const Type *Checker::scalar_alias(const Type &base, bool &through_pointer) const
     return type;
 }
 
-const Type *Checker::slice_alias(const Type &base) const {
-    if (base.alias_id == 0 || !is_slice(base)) {
+const Type *Checker::slice_alias(const Type &base, bool &through_pointer) const {
+    through_pointer = false;
+    const Type *type = &base;
+    if (base.kind == TypeKind::Pointer && base.pointee != nullptr) {
+        through_pointer = true;
+        type = base.pointee.get();
+    }
+    if (type->alias_id == 0 || !is_slice(*type)) {
         return nullptr;
     }
-    return &base;
+    return type;
 }
 
 bool Checker::is_c_enum(const Type &type) const {
@@ -724,7 +736,8 @@ Type Checker::with_indirections(Type type, int count, SourceLoc loc, uint32_t op
         }
         if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool &&
             type.kind != TypeKind::Float && type.kind != TypeKind::Pointer && type.kind != TypeKind::Struct &&
-            type.kind != TypeKind::Enum && type.kind != TypeKind::Void && type.kind != TypeKind::Meta) {
+            type.kind != TypeKind::Enum && type.kind != TypeKind::Void && type.kind != TypeKind::Meta &&
+            type.kind != TypeKind::Array) {
             error(loc, "not supported yet");
             return type_invalid();
         }
@@ -1338,6 +1351,7 @@ void Checker::define_trait_fields() {
             prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                             field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args,
                             field.loc);
+            fold_shells(field.shells, field.loc);
             Type field_type =
                 field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                  field.ret_indirections, field.indirections, field.fn_params,
@@ -1346,7 +1360,7 @@ void Checker::define_trait_fields() {
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
                                               field.optional, field.const_pointee, false, field.elem_const,
-                                              field.elem_slice);
+                                              field.elem_slice, field.shells);
             if (field_type.kind == TypeKind::Invalid) {
                 continue;
             }
@@ -1361,7 +1375,8 @@ void Checker::define_trait_fields() {
 }
 
 bool Checker::field_waits(const FieldDecl &field) const {
-    if (field.is_array || field.indirections > 0 || !field.type_package.empty() || field.is_enum || field.type_name.empty()) {
+    if (field.is_array || field.indirections > 0 || !field.shells.empty() || !field.type_package.empty() || field.is_enum ||
+        field.type_name.empty()) {
         return false;
     }
     const int id = find_tag(file_id_, field.type_name);
@@ -1707,6 +1722,7 @@ void Checker::define_struct_fields() {
             prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
                             written.indirections, written.optional, written.is_array, written.array_len,
                             written.array_len_name, written.type_args, written.loc);
+            fold_shells(written.shells, written.loc);
             Type field_type =
                 field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                  field.ret_indirections, field.indirections, field.fn_params,
@@ -1715,7 +1731,7 @@ void Checker::define_struct_fields() {
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
                                               field.optional, field.const_pointee, false, field.elem_const,
-                                              field.elem_slice);
+                                              field.elem_slice, written.shells);
             // A slice is a tlc value, `{ptr, i32}`. An `extern(abi="c")` struct keeps the C layout.
             if (is_slice(field_type) && info.extern_c) {
                 error(field.loc, "not supported yet");
@@ -2071,11 +2087,13 @@ bool Checker::name_taken(const std::string &name) const {
 
 Type Checker::published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                                bool parameter, const std::string &package, bool is_struct, bool is_enum,
-                               uint32_t optional, uint32_t const_pointee, bool elem_const, bool elem_slice) {
+                               uint32_t optional, uint32_t const_pointee, bool elem_const, bool elem_slice,
+                               const std::vector<TypeShell> &shells) {
     Type alias;
-    if (is_struct || is_enum || !package.empty() || package_typedef(file_id_, name, alias) || find_tag(file_id_, name) >= 0) {
+    if (is_struct || is_enum || !package.empty() || package_typedef(file_id_, name, alias) || find_tag(file_id_, name) >= 0 ||
+        !shells.empty()) {
         return object_type(name, indirections, is_array, array_len, loc, parameter, package, is_struct, is_enum, false,
-                           optional, const_pointee, false, elem_const, elem_slice);
+                           optional, const_pointee, false, elem_const, elem_slice, shells);
     }
     return quiet_object(name, indirections, is_array, array_len, parameter, optional, const_pointee, elem_slice);
 }
@@ -2132,10 +2150,25 @@ Type Checker::spelled_type(const std::string &name, const std::string &package, 
     return with_indirections(type_of_name(name, loc, indirections > 0), indirections, loc, optional, const_pointee);
 }
 
+void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
+    for (TypeShell &shell : shells) {
+        if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
+            continue;
+        }
+        const std::optional<int> value = lookup_const_value(shell.length_name);
+        if (value && *value > 0) {
+            shell.length = *value;
+            shell.length_name.clear();
+        } else if (value && *value <= 0) {
+            error(loc, "not supported yet");
+        }
+    }
+}
+
 Type Checker::object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum, bool receiver,
                           uint32_t optional, uint32_t const_pointee, bool allow_incomplete, bool elem_const,
-                          bool elem_slice) {
+                          bool elem_slice, const std::vector<TypeShell> &shells) {
     if (!receiver) {
         note_struct_use(is_struct, name, loc);
     }
@@ -2151,7 +2184,7 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             type = with_indirections(type_enum(enumeration), indirections, loc, optional, const_pointee);
         } else if (receiver && have_alias && alias.alias_id != 0 && (is_numeric(alias) || is_slice(alias))) {
             // `func Integer::twice(self this)` and `func string_view::equals(self this)` keep the alias.
-            // The parser marks every receiver as a struct. A pointer receiver on a slice alias is not supported yet.
+            // The parser marks every receiver as a struct. `self *this` is a pointer to that alias.
             type = with_indirections(std::move(alias), indirections, loc, optional, const_pointee);
         } else if (receiver && have_alias) {
             // A pointer alias, a sized-array alias, or a struct alias is not a method owner.
@@ -2174,9 +2207,33 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         type = with_indirections(type_of_name(name, loc, indirections > 0 || allow_incomplete), indirections, loc,
                                  optional, const_pointee);
     }
-    if (mentions_trait(type) && (is_array || elem_slice || !parameter)) {
+    if (mentions_trait(type) && (is_array || elem_slice || !shells.empty() || !parameter)) {
         error(loc, "not supported yet");
         return type_invalid();
+    }
+    // Shells are the type. `[]T`, `[][][]T`, `*[]T`, and `[N][M]T` are the same walk.
+    // A length that is still a name is a generic parameter. The flat path folds that name.
+    bool shells_ready = !shells.empty();
+    for (const TypeShell &shell : shells) {
+        if (shell.kind == TypeShell::Kind::Array && shell.length <= 0) {
+            shells_ready = false;
+        }
+    }
+    if (shells_ready) {
+        if (elem_const) {
+            type.is_const = true;
+        }
+        bool rejected = false;
+        type = apply_shells(std::move(type), shells, parameter, rejected);
+        if (rejected) {
+            error(loc, "not supported yet");
+            return type_invalid();
+        }
+        if (!parameter && type.kind == TypeKind::Void) {
+            error(loc, "type mismatch");
+            return type_invalid();
+        }
+        return type;
     }
     // One empty `[]` makes the named type a slice. `[][][]T` and `[][]Row` stay rejected.
     if (elem_slice) {

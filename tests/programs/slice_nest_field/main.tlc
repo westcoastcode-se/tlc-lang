@@ -1,0 +1,11 @@
+type Hold[T type] struct {
+    rows T;
+};
+
+func main() i32 {
+    var a = [_]i32{1, 2};
+    var b = [_]i32{3, 4};
+    var grid = [_][]i32{a[:], b[:]};
+    var box Hold[[][]i32] = {.rows = grid};
+    return box.rows[1][0] + box.rows.len;
+}

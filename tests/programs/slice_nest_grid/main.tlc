@@ -1,10 +1,12 @@
 type Grid [][]i32;
 
 func take(rows []Grid) i32 {
-    return 0;
+    return rows[0][0][0] + rows.len;
 }
 
 func main() i32 {
-    var x []Grid;
+    var cell = [_]i32{4};
+    var row = [_][]i32{cell[:]};
+    var x []Grid = [_][][]i32{row[:]};
     return take(x);
 }

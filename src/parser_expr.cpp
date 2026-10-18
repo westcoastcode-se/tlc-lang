@@ -653,6 +653,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         bool type_elem_const = false;
         bool type_elem_slice = false;
         int type_array_len = 0;
+        std::vector<TypeShell> type_shells;
         ParenType spelled;
         std::unique_ptr<Expr> expr;
         std::size_t look = 0;
@@ -690,6 +691,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             type_elem_const = array.elem_const;
             type_elem_slice = array.elem_slice;
             type_array_len = array.array_len;
+            type_shells = array.shells;
             spelled.name = array.type_name;
             spelled.package = array.type_package;
             spelled.is_struct = array.is_struct;
@@ -727,6 +729,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             node.is_array = type_array;
             node.elem_const = type_elem_const;
             node.elem_slice = type_elem_slice;
+            node.shells = type_shells;
             node.array_len = type_array_len;
             return make_expr(std::move(node));
         }
@@ -735,6 +738,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         node.is_array = type_array;
         node.elem_const = type_elem_const;
         node.elem_slice = type_elem_slice;
+        node.shells = std::move(type_shells);
         node.array_len = type_array_len;
         return finish_postfix(make_expr(std::move(node)));
     }
@@ -1060,6 +1064,7 @@ std::unique_ptr<Expr> Parser::parse_array_literal() {
         node->type_args = elem.type_args;
         node->elem_is_array = elem.is_array;
         node->elem_slice = elem.elem_slice;
+        node->elem_shells = elem.shells;
         node->elem_const = elem.elem_const;
         node->elem_ptr_to_array = elem.ptr_to_array;
         node->elem_fn = elem.is_fn_ptr;

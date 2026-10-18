@@ -1,0 +1,11 @@
+type Row []i32;
+
+func Row::at(self *this, i i32) i32 {
+    return (*self)[i];
+}
+
+func main() i32 {
+    var data = [_]i32{3, 5};
+    var row Row = data;
+    return row.at(1);
+}

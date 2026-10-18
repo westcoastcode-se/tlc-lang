@@ -464,7 +464,7 @@ Type Checker::check_array_literal(Expr::Init &init) {
         check_loose();
         return type_invalid();
     }
-    if (init.elem_ptr_to_array) {
+    if (init.elem_ptr_to_array && init.elem_shells.empty()) {
         error(init.loc, "not supported yet");
         check_loose();
         return type_invalid();
@@ -474,6 +474,20 @@ Type Checker::check_array_literal(Expr::Init &init) {
         elem = type_of_fn_ptr(init.type_name, init.type_package, init.is_struct, init.is_enum, init.elem_ret_indirections,
                               init.indirections < 1 ? 1 : init.indirections, init.elem_fn_params, init.elem_fn_variadic,
                               init.elem_fn_results, init.loc, init.elem_ret_optional, init.elem_ret_const_pointee);
+    } else if (!init.elem_shells.empty()) {
+        bool is_array = false;
+        int array_len = 0;
+        std::string array_len_name;
+        prepare_written(init.type_name, init.type_package, init.is_struct, init.is_enum, init.indirections, init.optional,
+                        is_array, array_len, array_len_name, init.type_args, init.loc);
+        fold_shells(init.elem_shells, init.loc);
+        elem = object_type(init.type_name, init.indirections, false, 0, init.loc, false, init.type_package, init.is_struct,
+                           init.is_enum, false, init.optional, init.const_pointee, false, init.elem_const, false,
+                           init.elem_shells);
+        if (elem.kind == TypeKind::Invalid) {
+            check_loose();
+            return type_invalid();
+        }
     } else if (init.elem_slice) {
         // `[_][][]T` is a third slice. The element of `[_][]T` is one slice.
         error(init.loc, "not supported yet");
@@ -1824,11 +1838,6 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "not an lvalue");
                         return type_invalid();
                     }
-                    // `&v` of a slice has no representation yet. `&v[i]` is `*const T`.
-                    if (is_slice(inner)) {
-                        error(node.loc, "not supported yet");
-                        return type_invalid();
-                    }
                     if (const auto *index = std::get_if<Expr::Index>(&node.expr->data);
                         index != nullptr && index->slice_element) {
                         inner.is_const = true;
@@ -2402,7 +2411,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                             return finish_value_method(node, *selector, *method, base, alias_pointer);
                         }
-                        if (const Type *alias = slice_alias(base)) {
+                        bool slice_pointer = false;
+                        if (const Type *alias = slice_alias(base, slice_pointer)) {
                             bool hidden = false;
                             uint32_t home = 0;
                             if (alias->alias_id > 0 && static_cast<std::size_t>(alias->alias_id) < alias_file_.size()) {
@@ -2427,7 +2437,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 selector->resolved_owner = type_desc(*alias);
                                 selector->resolved_file = method->file_id;
                             }
-                            return finish_value_method(node, *selector, *method, base, false);
+                            return finish_value_method(node, *selector, *method, base, slice_pointer);
                         }
                         Type object;
                         bool through_pointer = false;
@@ -2720,12 +2730,6 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
-                    // A slice element `[]T` and a sized row `[M]T` both range. `[][][]T` does not.
-                    if (base.element->kind == TypeKind::Array && base.element->element != nullptr &&
-                        base.element->element->kind == TypeKind::Array) {
-                        error(node.loc, "not supported yet");
-                        return type_invalid();
-                    }
                     Type slice = type_array(*base.element, -1);
                     // `type Row []i32` stays `Row`. A sized array becomes the plain slice `[]T`.
                     if (is_slice(base)) {
@@ -2797,7 +2801,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 const Type type = operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum,
                                                node.indirections, node.optional, node.expr.get(), node.loc,
                                                node.const_pointee, node.is_array, node.array_len, node.elem_const,
-                                               node.elem_slice);
+                                               node.elem_slice, node.shells);
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
@@ -3177,11 +3181,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
 
 Type Checker::operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                            bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
-                           uint32_t const_pointee, bool is_array, int array_len, bool elem_const, bool elem_slice) {
+                           uint32_t const_pointee, bool is_array, int array_len, bool elem_const, bool elem_slice,
+                           const std::vector<TypeShell> &shells) {
     if (on_type) {
-        if (is_array || elem_slice) {
+        if (is_array || elem_slice || !shells.empty()) {
+            std::vector<TypeShell> folded = shells;
+            fold_shells(folded, loc);
             return object_type(type_name, indirections, is_array, array_len, loc, false, type_package, is_struct, is_enum,
-                               false, optional, const_pointee, false, elem_const, elem_slice);
+                               false, optional, const_pointee, false, elem_const, elem_slice, folded);
         }
         return spelled_type(type_name, type_package, is_struct, is_enum, indirections, loc, optional, const_pointee);
     }
@@ -3213,7 +3220,7 @@ Type Checker::operand_type(bool on_type, const std::string &type_name, const std
 Type Checker::sizeof_operand(const Expr::Sizeof &node) {
     return operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
                         node.optional, node.expr.get(), node.loc, node.const_pointee, node.is_array, node.array_len,
-                        node.elem_const, node.elem_slice);
+                        node.elem_const, node.elem_slice, node.shells);
 }
 
 void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &message) {

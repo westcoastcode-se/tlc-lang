@@ -49,7 +49,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
             body.fields.push_back(std::move(field));
         } else {
             const PlacedType type = parse_go_type();
-            if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
+            if (type.struct_definition || type.enum_definition) {
                 diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
             }
             field.type_name = type.type_name;
@@ -62,6 +62,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
             field.is_array = type.is_array;
             field.elem_const = type.elem_const;
             field.elem_slice = type.elem_slice;
+            field.shells = type.shells;
             field.array_len = type.array_len;
             field.array_len_name = type.array_len_name;
             field.type_args = type.type_args;
@@ -99,6 +100,7 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
         field.is_array = type.is_array;
         field.elem_const = type.elem_const;
         field.elem_slice = type.elem_slice;
+        field.shells = type.shells;
         field.array_len = type.array_len;
         field.array_len_name = type.array_len_name;
         field.type_args = type.type_args;
@@ -166,7 +168,7 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
                     }
                 } else {
                     const PlacedType type = parse_go_type();
-                    if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
+                    if (type.struct_definition || type.enum_definition) {
                         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
                     }
                     fill(field, type);
@@ -422,6 +424,7 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.is_array = type.is_array;
     item.elem_const = type.elem_const;
     item.elem_slice = type.elem_slice;
+    item.shells = type.shells;
     item.array_len = type.array_len;
     item.array_len_name = type.array_len_name;
     item.type_args = type.type_args;

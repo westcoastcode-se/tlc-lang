@@ -2,6 +2,7 @@
 
 #include "token.hpp"
 
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -13,6 +14,18 @@
 namespace tlc {
 
 struct FunctionDecl;
+
+// One constructor outside a leaf. `shells.front()` is the outermost.
+// A slice is `{ ptr, i32 }`. An array is N of the inner type. A pointer points at the inner type.
+struct TypeShell {
+    enum class Kind : uint8_t { Pointer, Slice, Array };
+    Kind kind = Kind::Pointer;
+    bool optional = false;
+    bool const_pointee = false;
+    // Array length. Zero with `length_name` set is not folded yet. A slice leaves this at 0.
+    int length = 0;
+    std::string length_name;
+};
 
 // One slot of `func id[T type, N int]`. `T type` is a type. `T Shape` is a trait.
 // `N int` is a compile-time integer. `[...U]` is a type pack and is the last parameter.
@@ -45,6 +58,8 @@ struct TypeArg {
     bool elem_const = false;
     int array_len = 0;
     std::string array_len_name;
+    // Constructors outside the leaf, outermost first. Empty when the argument is only a name and pointers.
+    std::vector<TypeShell> shells;
     std::vector<TypeArg> args;
 };
 
@@ -62,6 +77,8 @@ struct FnParam {
     int array_len = 0;
     // `[][]T`. The element of this slice is one slice.
     bool elem_slice = false;
+    // Constructors outside the leaf, outermost first.
+    std::vector<TypeShell> shells;
     bool is_fn_ptr = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
@@ -161,6 +178,8 @@ struct Expr {
         bool elem_const = false;
         // `[][]T` and `[N][]T`. The element is one slice.
         bool elem_slice = false;
+        // Constructors outside the leaf, outermost first.
+        std::vector<TypeShell> shells;
         int array_len = 0;
         std::unique_ptr<Expr> expr;
     };
@@ -179,6 +198,7 @@ struct Expr {
         bool elem_const = false;
         // `[][]T` and `[N][]T`. The element is one slice.
         bool elem_slice = false;
+        std::vector<TypeShell> shells;
         int array_len = 0;
         std::unique_ptr<Expr> expr;
         // Filled while checking. Codegen interns this spelling, so equal types share one value.
@@ -255,6 +275,8 @@ struct Expr {
         int elem_array_len = 0;
         // `[_][][]T`. The element slice is itself a slice. That form stays rejected.
         bool elem_slice = false;
+        // Constructors of the element, outermost first. The inferred `[N]` is not one of them.
+        std::vector<TypeShell> elem_shells;
         // `[_][]const u8`. The leaf is const. A sized row does not use this flag.
         bool elem_const = false;
         std::string elem_array_len_name;
@@ -345,6 +367,7 @@ struct FieldDecl {
     bool elem_const = false;
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
+    std::vector<TypeShell> shells;
     int array_len = 0;
     // `[N]int` when N is a name. Folded into `array_len` before code generation.
     std::string array_len_name;
@@ -415,6 +438,7 @@ struct TypedefDecl {
     bool elem_const = false;
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
+    std::vector<TypeShell> shells;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -443,6 +467,7 @@ struct VarDecl {
     bool elem_const = false;
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
+    std::vector<TypeShell> shells;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -585,6 +610,7 @@ struct ResultSlot {
     bool elem_const = false;
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
+    std::vector<TypeShell> shells;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -612,6 +638,7 @@ struct Param {
     bool elem_const = false;
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
+    std::vector<TypeShell> shells;
     int array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;

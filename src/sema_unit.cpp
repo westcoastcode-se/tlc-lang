@@ -1367,9 +1367,11 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             }
             Symbol symbol;
             symbol.name = var->name;
+            std::vector<TypeShell> shells = var->shells;
+            fold_shells(shells, var->loc);
             symbol.type = published_object(var->type_name, var->indirections, var->is_array, var->array_len, var->loc,
                                            false, var->type_package, var->is_struct, var->is_enum, var->optional,
-                                           var->const_pointee, false, var->elem_slice);
+                                           var->const_pointee, false, var->elem_slice, shells);
             exports_[file_id].emplace(var->name, std::move(symbol));
         }
     }

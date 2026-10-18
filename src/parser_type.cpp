@@ -374,7 +374,7 @@ bool Parser::parse_field(FieldDecl &field) {
     field.loc = peek().loc;
     ++pos_;
     const PlacedType type = parse_go_type();
-    if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
+    if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
     }
     field.type_name = type.type_name;
@@ -387,6 +387,7 @@ bool Parser::parse_field(FieldDecl &field) {
     field.is_array = type.is_array;
     field.elem_const = type.elem_const;
     field.elem_slice = type.elem_slice;
+    field.shells = type.shells;
     field.array_len = type.array_len;
     field.array_len_name = type.array_len_name;
     field.type_args = type.type_args;
@@ -586,6 +587,22 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_fn_dec
     if (check(TokenKind::LBracket)) {
         return parse_go_type();
     }
+    if (check(TokenKind::Star) || (check(TokenKind::Question) && peek(1).kind == TokenKind::Star)) {
+        std::size_t ahead = 0;
+        while (peek(ahead).kind == TokenKind::Star ||
+               (peek(ahead).kind == TokenKind::Question && peek(ahead + 1).kind == TokenKind::Star)) {
+            if (peek(ahead).kind == TokenKind::Question) {
+                ++ahead;
+            }
+            ++ahead;
+            if (peek(ahead).kind == TokenKind::KwConst) {
+                ++ahead;
+            }
+        }
+        if (peek(ahead).kind == TokenKind::LBracket) {
+            return parse_go_type();
+        }
+    }
     if (at_func_type()) {
         return parse_func_type();
     }
@@ -694,86 +711,142 @@ Parser::PlacedType Parser::parse_go_type() {
         type.struct_definition = specs.struct_definition;
         type.enum_definition = specs.enum_definition;
     };
+    // One `[...]` constructor. A further pair is another shell, not a special case.
+    auto take_bracket = [&](TypeShell &shell) {
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        if (check(TokenKind::RBracket)) {
+            ++pos_;
+            shell.kind = TypeShell::Kind::Slice;
+            return;
+        }
+        if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&
+            peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value > 0 &&
+            peek().int_value <= 2147483647ULL) {
+            shell.kind = TypeShell::Kind::Array;
+            shell.length = static_cast<int>(peek().int_value);
+            ++pos_;
+            expect(TokenKind::RBracket, "expected ']'");
+            return;
+        }
+        if (check(TokenKind::Identifier)) {
+            shell.kind = TypeShell::Kind::Array;
+            shell.length_name = peek().text;
+            ++pos_;
+            expect(TokenKind::RBracket, "expected ']'");
+            return;
+        }
+        diags_.error(loc, "not supported yet");
+        while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::Comma) &&
+               !check(TokenKind::RParen) && !check(TokenKind::Eq) && !check(TokenKind::LBrace) && !eof()) {
+            ++pos_;
+        }
+        eat(TokenKind::RBracket);
+        shell.kind = TypeShell::Kind::Slice;
+    };
+    // Flags the older paths still read. A shape they cannot spell stays only in `shells`.
+    auto project = [](PlacedType &type) {
+        const std::vector<TypeShell> &shells = type.shells;
+        if (shells.empty()) {
+            return;
+        }
+        std::size_t index = 0;
+        if (shells[0].kind == TypeShell::Kind::Pointer && shells.size() >= 2 &&
+            shells[1].kind == TypeShell::Kind::Array && !shells[0].optional && shells.size() == 2) {
+            type.ptr_to_array = true;
+            if (shells[0].const_pointee) {
+                type.const_pointee |= 1u;
+            }
+            index = 1;
+        }
+        if (index >= shells.size() || shells[index].kind == TypeShell::Kind::Pointer) {
+            return;
+        }
+        type.is_array = true;
+        if (shells[index].kind == TypeShell::Kind::Slice) {
+            type.array_len = -1;
+        } else {
+            type.array_len = shells[index].length;
+            type.array_len_name = shells[index].length_name;
+        }
+        if (index + 1 < shells.size() && shells[index + 1].kind == TypeShell::Kind::Slice && index + 2 == shells.size()) {
+            type.elem_slice = true;
+        }
+    };
     if (at_func_type()) {
         return parse_func_type();
     }
     PlacedType type;
     type.loc = peek().loc;
-    const PointerPrefix outer_prefix = parse_pointer_prefix();
-    const int outer = outer_prefix.count;
-    if (!check(TokenKind::LBracket)) {
-        if (at_func_type()) {
-            PlacedType fn = parse_func_type();
-            if (outer > 0) {
-                diags_.error(type.loc, "not supported yet");
-                fn.indirections += outer;
-                fn.optional |= outer_prefix.optional;
-                fn.const_pointee |= outer_prefix.const_pointee;
+    while (true) {
+        const PointerPrefix prefix = parse_pointer_prefix();
+        if (check(TokenKind::LBracket)) {
+            for (int star = 0; star < prefix.count; ++star) {
+                TypeShell shell;
+                shell.kind = TypeShell::Kind::Pointer;
+                shell.optional = (prefix.optional & (1u << star)) != 0;
+                shell.const_pointee = (prefix.const_pointee & (1u << star)) != 0;
+                type.shells.push_back(shell);
             }
-            return fn;
+            TypeShell shell;
+            take_bracket(shell);
+            type.shells.push_back(std::move(shell));
+            continue;
+        }
+        if (at_func_type()) {
+            if (prefix.count > 0 || !type.shells.empty()) {
+                diags_.error(type.loc, "not supported yet");
+            }
+            return parse_func_type();
+        }
+        // `const` before the leaf, as in `[]const u8`. `const i32` and `[]const [4]T` are not forms.
+        if (check(TokenKind::KwConst)) {
+            if (type.shells.empty()) {
+                diags_.error(peek().loc, "not supported yet");
+                ++pos_;
+            } else {
+                type.elem_const = true;
+                ++pos_;
+                if (check(TokenKind::LBracket)) {
+                    diags_.error(peek().loc, "not supported yet");
+                    while (eat(TokenKind::LBracket)) {
+                        while (!check(TokenKind::RBracket) && !eof()) {
+                            ++pos_;
+                        }
+                        eat(TokenKind::RBracket);
+                    }
+                }
+            }
         }
         take_base(type, parse_specifiers(false, false, true));
-        type.indirections = outer;
-        type.optional = outer_prefix.optional;
-        type.const_pointee = outer_prefix.const_pointee;
+        type.indirections = prefix.count;
+        type.optional = prefix.optional;
+        type.const_pointee = prefix.const_pointee;
         if (check(TokenKind::LBracket)) {
             type.type_args = parse_type_args();
         }
+        project(type);
+        int leading_pointers = 0;
+        for (std::size_t index = 0; index < type.shells.size(); ++index) {
+            const TypeShell &shell = type.shells[index];
+            if (shell.kind == TypeShell::Kind::Pointer && index == static_cast<std::size_t>(leading_pointers)) {
+                ++leading_pointers;
+            }
+            if (shell.kind == TypeShell::Kind::Pointer && shell.optional) {
+                for (std::size_t later = index + 1; later < type.shells.size(); ++later) {
+                    if (type.shells[later].kind == TypeShell::Kind::Array) {
+                        diags_.error(type.loc, "not supported yet");
+                        break;
+                    }
+                }
+            }
+        }
+        // `**[4]i32` is two pointer shells around an array. Codegen does not peel that yet.
+        if (leading_pointers > 1) {
+            diags_.error(type.loc, "not supported yet");
+        }
         return type;
     }
-    // One star outside the brackets is a pointer to the array: `*[4]i32`.
-    if (outer > 1) {
-        diags_.error(type.loc, "not supported yet");
-    } else if (outer == 1) {
-        type.ptr_to_array = true;
-    }
-    const ArrayMark array = parse_array_suffix(true);
-    type.is_array = array.is_array;
-    type.array_len = array.length;
-    type.array_len_name = array.len_name;
-    type.elem_slice = array.elem_slice;
-    // `[]const u8` and `[4]const u8`. `*const` stays on the pointer prefix.
-    if (check(TokenKind::KwConst)) {
-        type.elem_const = true;
-        ++pos_;
-    }
-    const PointerPrefix inner_prefix = parse_pointer_prefix();
-    const int inner = inner_prefix.count;
-    // `parse_array_suffix` already took one empty `[]` element. A further pair is a third level.
-    if (check(TokenKind::LBracket)) {
-        diags_.error(peek().loc, "not supported yet");
-        while (eat(TokenKind::LBracket)) {
-            while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::Comma) &&
-                   !check(TokenKind::RParen) && !check(TokenKind::Eq) && !check(TokenKind::LBrace) && !eof()) {
-                ++pos_;
-            }
-            eat(TokenKind::RBracket);
-        }
-    }
-    if (at_func_type()) {
-        diags_.error(peek().loc, "not supported yet");
-        PlacedType fn = parse_func_type();
-        fn.is_array = type.is_array;
-        fn.array_len = type.array_len;
-        fn.indirections += inner;
-        return fn;
-    }
-    take_base(type, parse_specifiers(false, false, true));
-    type.indirections = inner;
-    type.optional = inner_prefix.optional;
-    type.const_pointee = type.ptr_to_array ? outer_prefix.const_pointee : inner_prefix.const_pointee;
-    if (check(TokenKind::LBracket)) {
-        type.type_args = parse_type_args();
-    }
-    if (type.ptr_to_array && outer_prefix.optional != 0) {
-        diags_.error(type.loc, "not supported yet");
-    }
-    // `*[]T` is not a pointer to an array. A slice has no length to point at.
-    // `*[N][]T` is the same gap: a pointer to an array of headers.
-    if (type.ptr_to_array && (type.array_len < 0 || type.elem_slice)) {
-        diags_.error(type.loc, "not supported yet");
-    }
-    return type;
 }
 
 std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const std::string &method_struct) {
@@ -871,6 +944,7 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             param.is_array = type.is_array;
             param.elem_const = type.elem_const;
             param.elem_slice = type.elem_slice;
+            param.shells = type.shells;
             param.array_len = type.array_len;
             param.is_fn_ptr = type.is_fn_ptr;
             param.ret_indirections = type.ret_indirections;
@@ -911,6 +985,7 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
     slot.is_array = type.is_array;
     slot.elem_const = type.elem_const;
     slot.elem_slice = type.elem_slice;
+    slot.shells = type.shells;
     slot.array_len = type.array_len;
     slot.array_len_name = type.array_len_name;
     slot.type_args = type.type_args;
@@ -1043,6 +1118,7 @@ FnParam Parser::fn_param_from(const PlacedType &type) const {
     param.is_array = type.is_array && type.array_len < 0;
     param.array_len = param.is_array ? type.array_len : 0;
     param.elem_slice = param.is_array && type.elem_slice;
+    param.shells = type.shells;
     param.is_fn_ptr = type.is_fn_ptr;
     param.ret_indirections = type.ret_indirections;
     param.ret_optional = type.ret_optional;
@@ -1501,27 +1577,36 @@ TypeArg Parser::parse_one_type_arg() {
         ++pos_;
         return arg;
     }
-    if (check(TokenKind::LBracket)) {
-        arg.is_array = true;
-        const ArrayMark array = parse_array_suffix(true);
-        arg.array_len = array.length;
-        arg.array_len_name = array.len_name;
-        if (check(TokenKind::KwConst)) {
-            arg.elem_const = true;
-            ++pos_;
-        }
-        TypeArg element = parse_one_type_arg();
-        arg.type_name = std::move(element.type_name);
-        arg.type_package = std::move(element.type_package);
-        arg.is_struct = element.is_struct;
-        arg.is_enum = element.is_enum;
-        arg.indirections = element.indirections;
-        arg.optional = element.optional;
-        arg.const_pointee = element.const_pointee;
-        arg.args = std::move(element.args);
-        if (element.is_array || array.elem_slice) {
-            diags_.error(arg.loc, "not supported yet");
-        }
+    if (check(TokenKind::LBracket) ||
+        ((check(TokenKind::Star) || check(TokenKind::Question)) &&
+         [&]() {
+             std::size_t ahead = 0;
+             while (peek(ahead).kind == TokenKind::Star ||
+                    (peek(ahead).kind == TokenKind::Question && peek(ahead + 1).kind == TokenKind::Star)) {
+                 if (peek(ahead).kind == TokenKind::Question) {
+                     ++ahead;
+                 }
+                 ++ahead;
+                 if (peek(ahead).kind == TokenKind::KwConst) {
+                     ++ahead;
+                 }
+             }
+             return peek(ahead).kind == TokenKind::LBracket;
+         }())) {
+        const PlacedType type = parse_go_type();
+        arg.type_name = type.type_name;
+        arg.type_package = type.type_package;
+        arg.is_struct = type.is_struct;
+        arg.is_enum = type.is_enum;
+        arg.indirections = type.indirections;
+        arg.optional = type.optional;
+        arg.const_pointee = type.const_pointee;
+        arg.is_array = type.is_array || !type.shells.empty();
+        arg.elem_const = type.elem_const;
+        arg.array_len = type.array_len;
+        arg.array_len_name = type.array_len_name;
+        arg.shells = type.shells;
+        arg.args = type.type_args;
         return arg;
     }
     const PointerPrefix prefix = parse_pointer_prefix();
