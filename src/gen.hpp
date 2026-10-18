@@ -339,7 +339,7 @@ struct TypedValue {
     bool row_decay = false;
     bool is_tuple = false;
     // Element types of a tuple value, in order. Empty when the value is not a tuple.
-    std::vector<ResultSlot> tuple_parts;
+    std::vector<ResultSlot> tuple_parts{};
     // Set when this value is a pointer to an array (`*[4]i32`).
     bool ptr_to_array = false;
     int ptr_array_len = 0;
@@ -349,7 +349,7 @@ struct TypedValue {
     bool is_slice = false;
     // The element is one `[]E`. Indexing loads a header, not `E`.
     bool elem_slice = false;
-    std::vector<TypeShell> shells;
+    std::vector<TypeShell> shells{};
 };
 
 // How an extern function passes one struct on x86-64 System V.

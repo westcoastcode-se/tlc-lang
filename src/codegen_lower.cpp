@@ -2130,16 +2130,6 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         }
         return visible(file, name, false);
     };
-    const auto find_function = [&](const std::string &name) -> const Binding * {
-        const auto own = files_.find(file);
-        if (own != files_.end()) {
-            const auto it = own->second.functions.find(name);
-            if (it != own->second.functions.end()) {
-                return &it->second;
-            }
-        }
-        return visible(file, name, true);
-    };
     const auto as_int = [&](int bits, bool uns) {
         Lowered low;
         low.elem_bits = bits;
