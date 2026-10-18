@@ -155,7 +155,7 @@ func main() i32 {
 
 The program returns 30. A trailing comma is allowed. `box = {.complex = {.inner_value = 42}}` replaces the whole value, so `box.value` becomes 0 when that field has no value. A call used as the whole initializer of a file-scope `var` runs before `main`. A `const`, and any other global initializer, stays a constant. A call in a local initializer is allowed.
 
-`Point{}` is a `Point`, so an inferred binding does not write the type again. `var p = Point{}`, `const origin = Point{}`, and `p := Point{}` are that form. `Point{.x = 40}` fills `x` and leaves `y` zero when `y` has no value. `y i32 = 2` stores 2 in the field that was left out. `new Point{.x = 40}`, `var p Point`, and `var p = Point{}` use that same value. A named field replaces it.
+`Point{}` is a `Point`, so an inferred binding does not write the type again. `var p = Point{}`, `const origin = Point{}`, and `p := Point{}` are that form. `Point{.x = 40}` fills `x`. `y` stays uninitialized when `y` has no value. `y i32 = 2` stores 2 in the field that was left out. `Point{0...}` stores 0 in every field the list does not name. `new Point{.x = 40}`, `var p Point`, and `var p = Point{}` use that same rule. A named field replaces the value written on the field.
 
 ```c
 type Point struct {

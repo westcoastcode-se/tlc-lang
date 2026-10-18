@@ -1,0 +1,4 @@
+func main() i32 {
+    var row [4]i32 = {10, 20, 0...};
+    return row[0] + row[1] + row[2] + row[3];
+}

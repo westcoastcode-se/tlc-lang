@@ -1,5 +1,5 @@
 type Node struct {
-    next ?*Node;
+    next ?*Node = null;
     n i32 = 42;
 };
 

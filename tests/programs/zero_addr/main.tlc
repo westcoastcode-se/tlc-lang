@@ -1,4 +1,4 @@
-func read(p *i32) i32 {
+func read(p *const i32) i32 {
     return *p;
 }
 

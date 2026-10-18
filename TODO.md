@@ -141,7 +141,7 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Initialization
 
-- A complete array list stores only the listed elements. A shorter list zeros each element it does not name. Pages: `docs/types/array.md`, `docs/statements/binding.md`. The sentence in `docs/expressions/tuple.md` that says every array list zeros first is under [Documentation](#documentation).
+- A complete array list stores only the listed elements. A shorter list leaves the tail uninitialized. `0...` stores 0 in that tail. Pages: `docs/types/array.md`, `docs/statements/binding.md`, `docs/expressions/tuple.md`.
 
 ### Aggregates
 

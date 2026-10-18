@@ -644,10 +644,18 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             return dest;
         }
         if (dest.kind == TypeKind::Array && dest.element != nullptr) {
-            if (static_cast<int>(init.elements.size()) != dest.length) {
+            const int listed = static_cast<int>(init.elements.size());
+            if (listed > dest.length) {
                 error(init.loc, "type mismatch");
                 check_elements();
                 return type_invalid();
+            }
+            if (init.zero_rest && listed < dest.length && needs_nonnull_pointer(*dest.element)) {
+                error(init.loc, "type mismatch");
+            }
+            if (!init.zero_rest && listed != dest.length && !init_allow_partial_) {
+                // A short list leaves the tail uninitialized. A finished value cannot.
+                error(init.loc, "uninitialized");
             }
             for (const auto &element : init.elements) {
                 if (!element) {
@@ -732,8 +740,19 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             if (seen.contains(field.name)) {
                 continue;
             }
-            if (needs_nonnull_pointer(field.type)) {
+            if (needs_nonnull_pointer(field.type) && !field.has_init) {
                 error(init.loc, "type mismatch");
+            }
+        }
+        if (!init_allow_partial_) {
+            const int leaves = init_leaf_count(dest);
+            std::vector<uint8_t> bits(static_cast<std::size_t>(std::max(leaves, 0)), 0);
+            init_fill_brace(dest, &init, bits, 0);
+            for (const uint8_t bit : bits) {
+                if (bit == 0) {
+                    error(init.loc, "uninitialized");
+                    break;
+                }
             }
         }
     }
@@ -812,6 +831,11 @@ void Checker::check_call_arg(const Expr &expr, const Type &want) {
         return;
     }
     check_against(expr, want);
+    // `*T` is assumed to store into the object. `*const T` may only read it.
+    if (want.kind == TypeKind::Pointer && want.pointee != nullptr) {
+        const bool writes = !want.pointee->is_const;
+        init_address_span(expr, writes, expr_loc(expr));
+    }
 }
 
 // A parameter `[N]T` is a pointer that still records N. When `[N]T` is expected, that
@@ -827,6 +851,15 @@ bool decayed_array_value(const Type &got, const Type &want) {
 }
 
 Type Checker::check_against(const Expr &expr, const Type &want) {
+    struct PartialRestore {
+        bool &flag;
+        bool saved;
+        ~PartialRestore() { flag = saved; }
+    } restore{init_allow_partial_, init_allow_partial_};
+    // A nested call sees a finished value. A nested brace keeps the partial initializer.
+    if (!std::holds_alternative<Expr::Init>(expr.data)) {
+        init_allow_partial_ = false;
+    }
     // `[]const u8` gives C its `*const u8` address. The slice is still the string in TLC.
     if (const_u8_pointer(want)) {
         const Type got = check_expr(expr, true);
@@ -1684,6 +1717,9 @@ Type Checker::finish_value_method(const Expr::Call &node, const Expr::Selector &
                 const Type pointer = method_pointer(base, object, through_pointer, *selector.base);
                 if (!accepts_pointer(pointer, receiver)) {
                     mismatch(expr_loc(*selector.base), receiver, pointer);
+                } else if (selector.base != nullptr) {
+                    const bool writes = receiver.pointee != nullptr && !receiver.pointee->is_const;
+                    init_address_span(*selector.base, writes, expr_loc(*selector.base));
                 }
             }
         } else if (selector.base != nullptr) {
@@ -2064,6 +2100,21 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return common;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                struct CoverRhs {
+                    const Expr *&slot;
+                    const Expr *saved;
+                    ~CoverRhs() { slot = saved; }
+                } cover{init_cover_rhs_, init_cover_rhs_};
+                struct PartialRestore {
+                    bool &flag;
+                    bool saved;
+                    ~PartialRestore() { flag = saved; }
+                } partial{init_allow_partial_, init_allow_partial_};
+                if (node.rhs != nullptr && std::holds_alternative<Expr::Init>(node.rhs->data) &&
+                    !std::get<Expr::Init>(node.rhs->data).is_tuple) {
+                    init_cover_rhs_ = node.rhs.get();
+                    init_allow_partial_ = true;
+                }
                 if (const auto *star = std::get_if<Expr::Unary>(&node.lhs->data); star != nullptr && star->op == TokenKind::Star) {
                     const Type pointer = check_expr(*star->expr, true);
                     if (pointer.kind != TypeKind::Pointer || !pointer.pointee) {
@@ -2612,6 +2663,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                                 method_pointer(base, object, through_pointer, *selector->base);
                                             if (!accepts_pointer(pointer, receiver)) {
                                                 mismatch(expr_loc(*selector->base), receiver, pointer);
+                                            } else if (selector->base != nullptr) {
+                                                const bool writes = receiver.pointee != nullptr && !receiver.pointee->is_const;
+                                                init_address_span(*selector->base, writes, expr_loc(*selector->base));
                                             }
                                         }
                                     } else {
@@ -3315,7 +3369,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             loose_init();
                             return type_pointer(object);
                         }
-                        auto check_element = [&](const Expr &element) { check_against(element, object); };
+                        auto check_element = [&](const Expr &element) {
+                            const bool saved = init_allow_partial_;
+                            init_allow_partial_ = true;
+                            check_against(element, object);
+                            init_allow_partial_ = saved;
+                        };
                         if (node.count_inferred) {
                             // `_` takes its length from the list. `...` has no length to repeat.
                             if (list == nullptr || node.repeat_init || list->elements.empty()) {
@@ -3340,7 +3399,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 error(expr_loc(*node.init), "type mismatch");
                             } else {
                                 const std::optional<int> folded = node.count ? fold_int(*node.count) : std::nullopt;
-                                if (!folded || *folded != static_cast<int>(list->elements.size())) {
+                                const int listed = static_cast<int>(list->elements.size());
+                                if (list->zero_rest) {
+                                    if (!folded || *folded < listed ||
+                                        (*folded > listed && needs_nonnull_pointer(object))) {
+                                        error(expr_loc(*node.init), "type mismatch");
+                                    }
+                                } else if (!folded || *folded != listed) {
                                     error(expr_loc(*node.init), "type mismatch");
                                 }
                                 for (const auto &element : list->elements) {
@@ -3361,7 +3426,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             error(expr_loc(*node.init), "type mismatch");
                             loose_init();
                         } else {
+                            // The allocated object may leave a field unset.
+                            const bool saved = init_allow_partial_;
+                            init_allow_partial_ = true;
                             check_init(*init, object);
+                            init_allow_partial_ = saved;
                         }
                     } else if (needs_nonnull_pointer(object)) {
                         error(node.loc, "type mismatch");
@@ -4404,6 +4473,17 @@ void Checker::check_stmt(const Stmt &stmt) {
                     return;
                 }
                 Type rhs = type_invalid();
+                const bool brace = std::holds_alternative<Expr::Init>(node.value->data) &&
+                                   !std::get<Expr::Init>(node.value->data).is_tuple;
+                struct PartialRestore {
+                    bool &flag;
+                    bool saved;
+                    ~PartialRestore() { flag = saved; }
+                } partial{init_allow_partial_, init_allow_partial_};
+                // `var p = Point{.x = 1}` may leave a field unset. A const may not.
+                if (!node.is_const && brace && node.names.size() == 1) {
+                    init_allow_partial_ = true;
+                }
                 // `var row = [_]i32{1, 2}` keeps `[2]i32`. A read of the name still decays to `*i32`.
                 if (node.names.size() == 1) {
                     if (auto *init = std::get_if<Expr::Init>(&node.value->data); init != nullptr && init->array_literal) {
@@ -4482,6 +4562,17 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     symbol.loc = loc;
                     declare(std::move(symbol), loc);
+                    if (!node.is_const && node.names.size() == 1 && node.value != nullptr) {
+                        if (Symbol *live = in_current(node.names[index])) {
+                            init_open(*live);
+                            init_cover(*live, node.value.get());
+                            if (const auto *created = std::get_if<Expr::New>(&node.value->data);
+                                created != nullptr && created->count == nullptr && !created->count_inferred &&
+                                live->type.kind == TypeKind::Pointer && live->type.pointee != nullptr) {
+                                init_track_pointee(*live, *live->type.pointee, created->init.get(), false);
+                            }
+                        }
+                    }
                 };
                 if (node.is_var || node.is_const) {
                     for (std::size_t i = 0; i < node.names.size(); ++i) {
@@ -4571,15 +4662,37 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(var.loc, "not supported yet");
                     } else if (var.init) {
                         const std::size_t before = diags_.size();
+                        const bool saved_new = init_new_partial_;
+                        if (!var.is_const_decl) {
+                            init_allow_partial_ = true;
+                            if (std::holds_alternative<Expr::New>(var.init->data)) {
+                                init_new_partial_ = true;
+                            }
+                        }
                         check_against(*var.init, type);
-                        if (diags_.size() == before) {
-                            init_mark_all(tracked);
+                        init_allow_partial_ = false;
+                        init_new_partial_ = saved_new;
+                        if (diags_.size() == before && live != nullptr) {
+                            init_cover(*live, var.init.get());
+                            if (const auto *created = std::get_if<Expr::New>(&var.init->data);
+                                created != nullptr && created->count == nullptr && !created->count_inferred &&
+                                live->type.kind == TypeKind::Pointer && live->type.pointee != nullptr) {
+                                const Expr *brace = created->init.get();
+                                init_track_pointee(*live, *live->type.pointee, brace, false);
+                            } else if (const auto *unary = std::get_if<Expr::Unary>(&var.init->data);
+                                       unary != nullptr && unary->op == TokenKind::Amp && unary->expr != nullptr) {
+                                if (const auto *named = std::get_if<Expr::Name>(&unary->expr->data)) {
+                                    if (const Symbol *target = lookup(named->text);
+                                        target != nullptr && target->init_id != 0) {
+                                        live->pointee_id = target->init_id;
+                                    }
+                                }
+                            }
                         }
                     } else if (!var.is_extern && needs_nonnull_pointer(type)) {
                         error(var.loc, "type mismatch");
-                    } else if (!var.is_const_decl) {
-                        // No initializer stores zero, so a later read is that zero.
-                        init_mark_all(tracked);
+                    } else if (!var.is_const_decl && live != nullptr) {
+                        init_cover(*live, nullptr);
                     }
                 }
             }

@@ -608,6 +608,11 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         expect(TokenKind::LBrace, "expected '{'");
         bool repeat = false;
         while (!check(TokenKind::RBrace) && !eof()) {
+            if (zero_rest_token()) {
+                list.zero_rest = true;
+                eat(TokenKind::Comma);
+                break;
+            }
             list.elements.push_back(parse_assignment());
             if (eat(TokenKind::Ellipsis)) {
                 repeat = true;
@@ -1080,14 +1085,36 @@ std::unique_ptr<Expr> Parser::parse_array_literal() {
     return init;
 }
 
+bool Parser::zero_rest_token() {
+    if (!check(TokenKind::IntLiteral) || peek(1).kind != TokenKind::Ellipsis) {
+        return false;
+    }
+    const Token &token = peek();
+    // Integer tokens keep the value, not the spelling. `0...` is one unsuffixed zero.
+    if (token.length != 1 || token.int_value != 0 || token.suffix.bits != 0) {
+        return false;
+    }
+    ++pos_;
+    ++pos_;
+    return true;
+}
+
 std::unique_ptr<Expr> Parser::parse_init() {
     Expr::Init init;
     init.loc = peek().loc;
     expect(TokenKind::LBrace, "expected '{'");
-    if (!check(TokenKind::Dot) && !check(TokenKind::RBrace)) {
+    if (zero_rest_token()) {
+        init.zero_rest = true;
+        eat(TokenKind::Comma);
+    } else if (!check(TokenKind::Dot) && !check(TokenKind::RBrace)) {
         while (!check(TokenKind::RBrace) && !eof()) {
             if (check(TokenKind::Dot)) {
                 error_here("type mismatch");
+                break;
+            }
+            if (zero_rest_token()) {
+                init.zero_rest = true;
+                eat(TokenKind::Comma);
                 break;
             }
             init.elements.push_back(parse_assignment());
@@ -1099,6 +1126,11 @@ std::unique_ptr<Expr> Parser::parse_init() {
         return make_expr(std::move(init));
     }
     while (!check(TokenKind::RBrace) && !eof()) {
+        if (zero_rest_token()) {
+            init.zero_rest = true;
+            eat(TokenKind::Comma);
+            break;
+        }
         if (!eat(TokenKind::Dot)) {
             error_here("type mismatch");
             while (!check(TokenKind::Comma) && !check(TokenKind::RBrace) && !check(TokenKind::Semicolon) && !eof()) {

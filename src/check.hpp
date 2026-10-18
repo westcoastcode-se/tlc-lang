@@ -86,6 +86,8 @@ struct Symbol {
     SourceLoc loc{};
     // 0 when this local is not tracked. A tracked local stays open until every leaf is assigned.
     int init_id = 0;
+    // Leaves of the object a tracked pointer refers to. 0 when the pointee is not tracked.
+    int pointee_id = 0;
 };
 
 struct Scope {
@@ -442,7 +444,7 @@ class Checker {
 
     // One step from a local toward the use. The stack is outer-first.
     struct InitStep {
-        enum class Kind { Field, Index, Range };
+        enum class Kind { Field, Index, Range, Deref };
         Kind kind = Kind::Field;
         std::string field;
         int index = 0;
@@ -548,6 +550,14 @@ class Checker {
 
     int init_leaf_count(const Type &type);
     int init_leaf_count(const Type &type, std::unordered_set<int> &seen);
+    Symbol *symbol_slot(const std::string &name);
+    void init_set_span(std::vector<uint8_t> &bits, int offset, int count);
+    void init_fill(const Type &type, const Expr *init, std::vector<uint8_t> &bits, int offset);
+    void init_fill_brace(const Type &type, const Expr::Init *brace, std::vector<uint8_t> &bits, int offset);
+    void init_cover(Symbol &symbol, const Expr *init);
+    void init_track_pointee(Symbol &symbol, const Type &object, const Expr *init, bool fresh);
+    void init_address_span(const Expr &expr, bool mark, SourceLoc loc);
+    bool init_pointee_steps(const Symbol &symbol, std::vector<InitStep> steps) const;
     void init_open(Symbol &symbol);
     void init_note_local(int id, int leaves);
     void init_mark_span(int id, int offset, int count);
@@ -556,6 +566,7 @@ class Checker {
     void init_touch(const Symbol &symbol, SourceLoc loc);
     InitTouch init_resolve(Type type, int offset, int count, const std::vector<InitStep> &steps, bool storing);
     bool init_collect(const Expr &expr, std::vector<InitStep> &steps);
+    void init_replace(const Expr &lhs, const Expr &rhs);
     void init_store(const Expr &lhs);
     void init_store_if(const Expr &lhs, std::size_t before);
     // A `self this` call copies the receiver. A `self *this` call does not.
@@ -578,6 +589,12 @@ class Checker {
     InitUse init_use_ = InitUse::Read;
     bool init_quiet_ = false;
     int init_keep_array_ = 0;
+    // A brace used as a local initializer may leave fields unset.
+    bool init_allow_partial_ = false;
+    // `var p = new T{...}` keeps the object's holes on `p`.
+    bool init_new_partial_ = false;
+    // Set while checking an assignment whose right side is a brace list.
+    const Expr *init_cover_rhs_ = nullptr;
     int init_seq_ = 0;
     std::unordered_map<int, int> init_leaves_;
     std::unordered_map<int, int> init_struct_leaves_;

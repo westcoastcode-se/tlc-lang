@@ -136,7 +136,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "var acc i32;\n"
+            "var acc i32 = 0;\n"
             "func add(a i32, b i32) i32;\n"
             "func main() i32 {\n"
             "  var n i32 = add(1, 2);\n"
@@ -1667,13 +1667,13 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Point struct { x i32; y i32; };\n"
             "type Spot Point;\n"
-            "const origin = Point{};\n"
+            "const origin = Point{0...};\n"
             "func main() i32 {\n"
-            "  var p = Point{};\n"
-            "  q := Point{.y = 2};\n"
-            "  const frozen = Point{};\n"
+            "  var p = Point{0...};\n"
+            "  q := Point{.y = 2, 0...};\n"
+            "  const frozen = Point{0...};\n"
             "  p.x = 40;\n"
-            "  var s = Spot{};\n"
+            "  var s = Spot{0...};\n"
             "  var back Spot = s;\n"
             "  return p.x + q.y + origin.x + frozen.x + back.x;\n"
             "}\n");
@@ -2651,11 +2651,11 @@ int run_sema_tests() {
             "func made() Box { return {.value = 10, .complex = {.inner_value = 20}}; }\n"
             "func main() i32 {\n"
             "  var box Box = {.value = twenty(), .complex = {.inner_value=20}};\n"
-            "  box = {.complex = {.inner_value = 42}};\n"
-            "  var omitted Box = {.value = 1,};\n"
-            "  var empty Box = {};\n"
+            "  box = {.complex = {.inner_value = 42}, 0...};\n"
+            "  var omitted Box = {.value = 1, 0...};\n"
+            "  var empty Box = {0...};\n"
             "  var flipped Box = {.complex = {.inner_value = 1}, .value = 2};\n"
-            "  return take({.value = 1}) + made().value + box.value + omitted.value + empty.value + flipped.value + bias.value;\n"
+            "  return take({.value = 1, 0...}) + made().value + box.value + omitted.value + empty.value + flipped.value + bias.value;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -2733,7 +2733,7 @@ int run_sema_tests() {
             "type Link struct { n i32; next ?*Link; };\n"
             "func main() i32 {\n"
             "  var link Link = {.n = 1, .next = null};\n"
-            "  link = {.next = null};\n"
+            "  link = {.next = null, 0...};\n"
             "  if (link.next == null) {\n"
             "    return link.n;\n"
             "  }\n"
@@ -5660,7 +5660,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() i32 { var row [3]i32 = {10, 20}; return row[0]; }\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -5936,7 +5936,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("var row [2]i32 = {1};\nfunc main() i32 { return row[0]; }\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT(check, errors.empty());
     }
 
     {

@@ -34,7 +34,7 @@ var made = Box[i32].from;
 
 func main() i32 {
     var box = Box[i32].from(40);
-    var point = Box[Point].from(Point{});
+    var point = Box[Point].from(Point{0...});
     var zero = Box[i32].zero(0);
     var local = Box[i32].from;
     var extra = local(0);

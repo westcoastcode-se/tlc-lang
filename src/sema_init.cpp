@@ -313,15 +313,45 @@ Checker::InitTouch Checker::init_resolve(Type type, int offset, int count, const
     return touch;
 }
 
+bool Checker::init_pointee_steps(const Symbol &symbol, std::vector<InitStep> steps) const {
+    if (symbol.pointee_id == 0 || symbol.type.kind != TypeKind::Pointer || symbol.type.pointee == nullptr) {
+        return false;
+    }
+    if (steps.empty()) {
+        return false;
+    }
+    if (steps.front().kind == InitStep::Kind::Deref) {
+        return true;
+    }
+    return steps.front().kind == InitStep::Kind::Field || steps.front().kind == InitStep::Kind::Index;
+}
+
 void Checker::init_touch(const Symbol &symbol, SourceLoc loc) {
-    if (symbol.init_id == 0 || assign_.unreachable || quiet_ || init_quiet_) {
+    if (assign_.unreachable || quiet_ || init_quiet_) {
+        return;
+    }
+    std::vector<InitStep> steps(init_stack_.rbegin(), init_stack_.rend());
+    if (init_pointee_steps(symbol, steps)) {
+        if (steps.front().kind == InitStep::Kind::Deref) {
+            steps.erase(steps.begin());
+        }
+        const auto leaves = init_leaves_.find(symbol.pointee_id);
+        if (leaves == init_leaves_.end()) {
+            return;
+        }
+        const InitTouch touch = init_resolve(*symbol.type.pointee, 0, leaves->second, steps, false);
+        if (touch.read) {
+            init_require_span(symbol.pointee_id, touch.offset, touch.count, loc);
+        }
+        return;
+    }
+    if (symbol.init_id == 0) {
         return;
     }
     const auto leaves = init_leaves_.find(symbol.init_id);
     if (leaves == init_leaves_.end()) {
         return;
     }
-    std::vector<InitStep> steps(init_stack_.rbegin(), init_stack_.rend());
     const InitTouch touch = init_resolve(symbol.type, 0, leaves->second, steps, false);
     if (touch.read) {
         init_require_span(symbol.init_id, touch.offset, touch.count, loc);
@@ -332,6 +362,12 @@ bool Checker::init_collect(const Expr &expr, std::vector<InitStep> &steps) {
     if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
         if (unary->op == TokenKind::KwUnsafe && unary->expr != nullptr) {
             return init_collect(*unary->expr, steps);
+        }
+        if (unary->op == TokenKind::Star && unary->expr != nullptr && init_collect(*unary->expr, steps)) {
+            InitStep step;
+            step.kind = InitStep::Kind::Deref;
+            steps.push_back(std::move(step));
+            return true;
         }
         return false;
     }
@@ -366,8 +402,123 @@ bool Checker::init_collect(const Expr &expr, std::vector<InitStep> &steps) {
     return std::holds_alternative<Expr::Name>(expr.data);
 }
 
+void Checker::init_replace(const Expr &lhs, const Expr &rhs) {
+    std::vector<InitStep> steps;
+    if (!init_collect(lhs, steps)) {
+        init_store(lhs);
+        return;
+    }
+    const Expr *walk = &lhs;
+    const Expr::Name *named = nullptr;
+    while (walk != nullptr && named == nullptr) {
+        if (const auto *unary = std::get_if<Expr::Unary>(&walk->data)) {
+            if ((unary->op == TokenKind::KwUnsafe || unary->op == TokenKind::Star) && unary->expr != nullptr) {
+                walk = unary->expr.get();
+                continue;
+            }
+            break;
+        }
+        if (const auto *index = std::get_if<Expr::Index>(&walk->data)) {
+            walk = index->base.get();
+            continue;
+        }
+        if (const auto *selector = std::get_if<Expr::Selector>(&walk->data)) {
+            walk = selector->base.get();
+            continue;
+        }
+        named = std::get_if<Expr::Name>(&walk->data);
+        break;
+    }
+    if (named == nullptr) {
+        return;
+    }
+    Symbol *symbol = symbol_slot(named->text);
+    if (symbol == nullptr) {
+        return;
+    }
+    int id = symbol->init_id;
+    Type focused = symbol->type;
+    if (init_pointee_steps(*symbol, steps)) {
+        id = symbol->pointee_id;
+        if (symbol->type.pointee != nullptr) {
+            focused = *symbol->type.pointee;
+        }
+        if (!steps.empty() && steps.front().kind == InitStep::Kind::Deref) {
+            steps.erase(steps.begin());
+        }
+    }
+    const auto total = init_leaves_.find(id);
+    if (id == 0 || total == init_leaves_.end()) {
+        return;
+    }
+    int offset = 0;
+    for (const InitStep &step : steps) {
+        if (step.kind == InitStep::Kind::Field && focused.kind == TypeKind::Struct) {
+            const StructInfo &info = structs_[static_cast<std::size_t>(focused.struct_id)];
+            int at = 0;
+            bool found = false;
+            for (const StructInfo::Field &field : info.fields) {
+                const int count = init_leaf_count(field.type);
+                if (field.name == step.field) {
+                    focused = field.type;
+                    offset += at;
+                    found = true;
+                    break;
+                }
+                if (!info.is_union) {
+                    at += count;
+                }
+            }
+            if (!found) {
+                return;
+            }
+            continue;
+        }
+        if (step.kind == InitStep::Kind::Index && focused.kind == TypeKind::Array && focused.element != nullptr &&
+            step.known) {
+            const int elem = init_leaf_count(*focused.element);
+            offset += step.index * std::max(elem, 0);
+            focused = *focused.element;
+            continue;
+        }
+        return;
+    }
+    const int count = init_leaf_count(focused);
+    std::vector<uint8_t> bits(static_cast<std::size_t>(total->second), 1);
+    const auto open = assign_.open.find(id);
+    if (open != assign_.open.end()) {
+        bits = open->second;
+    }
+    std::vector<uint8_t> cover(static_cast<std::size_t>(std::max(count, 0)), 0);
+    init_fill(focused, &rhs, cover, 0);
+    for (int i = 0; i < count; ++i) {
+        const int at = offset + i;
+        if (at >= 0 && at < static_cast<int>(bits.size())) {
+            bits[static_cast<std::size_t>(at)] = i < static_cast<int>(cover.size()) ? cover[static_cast<std::size_t>(i)] : 0;
+        }
+    }
+    bool all = true;
+    for (const uint8_t bit : bits) {
+        if (bit == 0) {
+            all = false;
+            break;
+        }
+    }
+    if (all) {
+        assign_.open.erase(id);
+    } else {
+        assign_.open[id] = std::move(bits);
+    }
+}
+
 void Checker::init_store(const Expr &lhs) {
     if (assign_.unreachable || quiet_ || init_quiet_) {
+        return;
+    }
+    if (init_cover_rhs_ != nullptr) {
+        const Expr *rhs = init_cover_rhs_;
+        init_cover_rhs_ = nullptr;
+        init_replace(lhs, *rhs);
         return;
     }
     std::vector<InitStep> steps;
@@ -378,7 +529,7 @@ void Checker::init_store(const Expr &lhs) {
     const Expr::Name *named = nullptr;
     while (walk != nullptr && named == nullptr) {
         if (const auto *unary = std::get_if<Expr::Unary>(&walk->data)) {
-            if (unary->op == TokenKind::KwUnsafe && unary->expr != nullptr) {
+            if ((unary->op == TokenKind::KwUnsafe || unary->op == TokenKind::Star) && unary->expr != nullptr) {
                 walk = unary->expr.get();
                 continue;
             }
@@ -399,7 +550,24 @@ void Checker::init_store(const Expr &lhs) {
         return;
     }
     const Symbol *symbol = lookup(named->text);
-    if (symbol == nullptr || symbol->init_id == 0) {
+    if (symbol == nullptr) {
+        return;
+    }
+    if (init_pointee_steps(*symbol, steps)) {
+        if (steps.front().kind == InitStep::Kind::Deref) {
+            steps.erase(steps.begin());
+        }
+        const auto leaves = init_leaves_.find(symbol->pointee_id);
+        if (leaves == init_leaves_.end()) {
+            return;
+        }
+        const InitTouch touch = init_resolve(*symbol->type.pointee, 0, leaves->second, steps, true);
+        if (touch.mark) {
+            init_mark_span(symbol->pointee_id, touch.offset, touch.count);
+        }
+        return;
+    }
+    if (symbol->init_id == 0) {
         return;
     }
     const auto leaves = init_leaves_.find(symbol->init_id);
@@ -650,5 +818,245 @@ Checker::UnreachableAfter::~UnreachableAfter() { self_->assign_.unreachable = tr
 Checker::InitSuspend::InitSuspend(Checker &self) : self_(&self) { self.init_suspend(*this); }
 
 Checker::InitSuspend::~InitSuspend() { self_->init_resume(*this); }
+
+Symbol *Checker::symbol_slot(const std::string &name) {
+    for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
+        const auto found = it->symbols.find(name);
+        if (found != it->symbols.end()) {
+            return &found->second;
+        }
+    }
+    return nullptr;
+}
+
+void Checker::init_set_span(std::vector<uint8_t> &bits, int offset, int count) {
+    if (offset < 0 || count <= 0) {
+        return;
+    }
+    const int end = std::min(offset + count, static_cast<int>(bits.size()));
+    for (int i = offset; i < end; ++i) {
+        bits[static_cast<std::size_t>(i)] = 1;
+    }
+}
+
+void Checker::init_fill(const Type &type, const Expr *init, std::vector<uint8_t> &bits, int offset) {
+    const int leaves = init_leaf_count(type);
+    if (leaves <= 0) {
+        return;
+    }
+    const Expr::Init *brace = nullptr;
+    if (init != nullptr) {
+        brace = std::get_if<Expr::Init>(&init->data);
+        if (brace != nullptr && brace->is_tuple) {
+            brace = nullptr;
+        }
+    }
+    if (init != nullptr && brace == nullptr) {
+        init_set_span(bits, offset, leaves);
+        return;
+    }
+    // A slice header is one value. The elements are not leaves of this local.
+    if (type.kind == TypeKind::Array && type.length < 0) {
+        if (init != nullptr) {
+            init_set_span(bits, offset, leaves);
+        }
+        return;
+    }
+    init_fill_brace(type, brace, bits, offset);
+}
+
+void Checker::init_fill_brace(const Type &type, const Expr::Init *brace, std::vector<uint8_t> &bits, int offset) {
+    const int leaves = init_leaf_count(type);
+    if (leaves <= 0) {
+        return;
+    }
+    if (type.kind == TypeKind::Array && type.length >= 0 && type.element != nullptr) {
+        const int elem = init_leaf_count(*type.element);
+        const int listed = brace == nullptr ? 0 : static_cast<int>(brace->elements.size());
+        for (int index = 0; index < type.length; ++index) {
+            const int at = offset + index * std::max(elem, 0);
+            if (brace != nullptr && index < listed && brace->elements[static_cast<std::size_t>(index)] != nullptr) {
+                init_fill(*type.element, brace->elements[static_cast<std::size_t>(index)].get(), bits, at);
+            } else if (brace != nullptr && brace->zero_rest && index >= listed) {
+                init_set_span(bits, at, elem);
+            } else if (brace == nullptr) {
+                init_fill(*type.element, nullptr, bits, at);
+            }
+        }
+        return;
+    }
+    if (type.kind == TypeKind::Struct && type.struct_id >= 0 &&
+        type.struct_id < static_cast<int>(structs_.size())) {
+        const StructInfo &info = structs_[static_cast<std::size_t>(type.struct_id)];
+        if (info.is_union) {
+            if (brace != nullptr) {
+                init_set_span(bits, offset, leaves);
+            }
+            return;
+        }
+        int at = offset;
+        for (const StructInfo::Field &field : info.fields) {
+            const int count = init_leaf_count(field.type);
+            const Expr *named = nullptr;
+            if (brace != nullptr) {
+                for (const Expr::FieldInit &item : brace->fields) {
+                    if (item.field == field.name) {
+                        named = item.value.get();
+                        break;
+                    }
+                }
+            }
+            if (named != nullptr) {
+                init_fill(field.type, named, bits, at);
+            } else if (brace != nullptr && brace->zero_rest) {
+                init_set_span(bits, at, count);
+            } else if (field.has_init) {
+                init_set_span(bits, at, count);
+            } else {
+                init_fill(field.type, nullptr, bits, at);
+            }
+            at += count;
+        }
+        return;
+    }
+}
+
+void Checker::init_cover(Symbol &symbol, const Expr *init) {
+    if (symbol.init_id == 0) {
+        return;
+    }
+    const auto leaves = init_leaves_.find(symbol.init_id);
+    if (leaves == init_leaves_.end() || leaves->second <= 0) {
+        return;
+    }
+    std::vector<uint8_t> bits(static_cast<std::size_t>(leaves->second), 0);
+    init_fill(symbol.type, init, bits, 0);
+    bool all = true;
+    for (const uint8_t bit : bits) {
+        if (bit == 0) {
+            all = false;
+            break;
+        }
+    }
+    if (all) {
+        assign_.open.erase(symbol.init_id);
+        return;
+    }
+    assign_.open[symbol.init_id] = std::move(bits);
+}
+
+void Checker::init_track_pointee(Symbol &symbol, const Type &object, const Expr *init, bool fresh) {
+    const int leaves = init_leaf_count(object);
+    if (leaves <= 0) {
+        return;
+    }
+    const int id = ++init_seq_;
+    symbol.pointee_id = id;
+    init_leaves_[id] = leaves;
+    init_note_local(id, leaves);
+    if (fresh) {
+        assign_.open[id] = std::vector<uint8_t>(static_cast<std::size_t>(leaves), 0);
+        return;
+    }
+    std::vector<uint8_t> bits(static_cast<std::size_t>(leaves), 0);
+    init_fill(object, init, bits, 0);
+    bool all = true;
+    for (const uint8_t bit : bits) {
+        if (bit == 0) {
+            all = false;
+            break;
+        }
+    }
+    if (!all) {
+        assign_.open[id] = std::move(bits);
+    }
+}
+
+void Checker::init_address_span(const Expr &expr, bool mark, SourceLoc loc) {
+    if (assign_.unreachable || quiet_ || init_quiet_) {
+        return;
+    }
+    const Expr *cursor = &expr;
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data);
+        unary != nullptr && unary->op == TokenKind::Amp && unary->expr != nullptr) {
+        cursor = unary->expr.get();
+    }
+    std::vector<InitStep> steps;
+    if (!init_collect(*cursor, steps)) {
+        return;
+    }
+    const Expr *walk = cursor;
+    const Expr::Name *named = nullptr;
+    while (walk != nullptr && named == nullptr) {
+        if (const auto *unary = std::get_if<Expr::Unary>(&walk->data)) {
+            if ((unary->op == TokenKind::KwUnsafe || unary->op == TokenKind::Star) && unary->expr != nullptr) {
+                walk = unary->expr.get();
+                continue;
+            }
+            break;
+        }
+        if (const auto *index = std::get_if<Expr::Index>(&walk->data)) {
+            walk = index->base.get();
+            continue;
+        }
+        if (const auto *selector = std::get_if<Expr::Selector>(&walk->data)) {
+            walk = selector->base.get();
+            continue;
+        }
+        named = std::get_if<Expr::Name>(&walk->data);
+        break;
+    }
+    if (named == nullptr) {
+        return;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr) {
+        return;
+    }
+    int id = symbol->init_id;
+    Type type = symbol->type;
+    int total = 0;
+    if (symbol->pointee_id != 0 && symbol->type.pointee != nullptr &&
+        (steps.empty() || init_pointee_steps(*symbol, steps))) {
+        id = symbol->pointee_id;
+        type = *symbol->type.pointee;
+        if (!steps.empty() && steps.front().kind == InitStep::Kind::Deref) {
+            steps.erase(steps.begin());
+        }
+    }
+    const auto leaves = init_leaves_.find(id);
+    if (id == 0 || leaves == init_leaves_.end()) {
+        return;
+    }
+    total = leaves->second;
+    const InitUse saved_use = init_use_;
+    init_use_ = InitUse::Read;
+    const InitTouch touch = init_resolve(type, 0, total, steps, false);
+    init_use_ = saved_use;
+    const int offset = touch.read || touch.mark ? touch.offset : 0;
+    const int count = touch.read || touch.mark ? touch.count : total;
+    if (mark) {
+        std::vector<uint8_t> bits(static_cast<std::size_t>(total), 1);
+        const auto found = assign_.open.find(id);
+        if (found != assign_.open.end()) {
+            bits = found->second;
+        }
+        init_set_span(bits, offset, count);
+        bool all = true;
+        for (const uint8_t bit : bits) {
+            if (bit == 0) {
+                all = false;
+                break;
+            }
+        }
+        if (all) {
+            assign_.open.erase(id);
+        } else {
+            assign_.open[id] = std::move(bits);
+        }
+        return;
+    }
+    init_require_span(id, offset, count, loc);
+}
 
 } // namespace tlc

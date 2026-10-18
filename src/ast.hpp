@@ -257,6 +257,8 @@ struct Expr {
         std::vector<std::unique_ptr<Expr>> elements;
         // `(value, value, ...)`. A brace list is not a tuple.
         bool is_tuple = false;
+        // `{1, 2, 0...}` stores 0 in every element the list does not name.
+        bool zero_rest = false;
         // Filled when the destination struct is known.
         int struct_id = -1;
         // `Point{}`. Empty when the braces take their type from the destination.

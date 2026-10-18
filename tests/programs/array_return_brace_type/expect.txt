@@ -1,1 +1,1 @@
-compile-error: type mismatch
+compile-error: uninitialized

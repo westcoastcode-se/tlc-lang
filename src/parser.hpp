@@ -246,6 +246,8 @@ class Parser {
     // `[_]i32{1, 2, 3}`. `_` is the length, taken from the values, not an unsized type.
     std::unique_ptr<Expr> parse_array_literal();
     std::unique_ptr<Expr> parse_init();
+    // Consume `0...` when that shorthand is next.
+    bool zero_rest_token();
     std::unique_ptr<Expr> parse_anon_function();
     bool starts_short_function() const;
     std::unique_ptr<Expr> parse_short_function();

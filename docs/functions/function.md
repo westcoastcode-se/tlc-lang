@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: assert](../statements/assert.md) · [Next: Several results](result.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A function starts with `func`, then the name, then the parameters, then the result type. A parameter is a name followed by its type. An empty parameter list means there are no parameters. There is one `main`.
+A function starts with `func`, then the name, then the parameters, then the result type. A parameter is a name followed by its type. An empty parameter list means there are no parameters. There is one `main`. A parameter `*T` is assumed to store into that object, so the caller may pass storage that is not yet initialized, and the object is initialized after the call. A parameter `*const T` reads the object, so the storage has to be initialized first. Leaving it unset is reported as `uninitialized`. The same rule applies to a method receiver, `self *this` and `self *const this`.
 
 ```c
 func add(a i32, b i32) i32 {

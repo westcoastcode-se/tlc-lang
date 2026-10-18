@@ -5,6 +5,6 @@ func main() i32 {
     box.set(30);
     var p = &box;
     p.set(p.get() + 8);
-    var wide = math.Buf[4, i32]{};
+    var wide = math.Buf[4, i32]{0...};
     return box.get() + wide.len() + math.through() - 11;
 }

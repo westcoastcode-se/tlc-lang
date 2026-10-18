@@ -353,12 +353,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     continue;
                 }
             }
-            std::vector<Type> params;
-            for (const Param &param : fn->params) {
-                params.push_back(type_of_param(param));
-            }
-            Type result = function_result(*fn);
-            Type signature = type_function(std::move(result), std::move(params), fn->variadic);
+            Type signature = function_signature(*fn);
             if (signature.result != nullptr && mentions_trait(*signature.result)) {
                 error(fn->loc, "not supported yet");
             }
@@ -1266,6 +1261,29 @@ void Checker::check_globals(const TranslationUnit &unit) {
         } else if (const auto *item = std::get_if<AssertDecl>(&decl.data)) {
             check_assert(item->loc, item->cond.get(), item->message);
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            struct PartialFlag {
+                bool &slot;
+                bool saved;
+                ~PartialFlag() { slot = saved; }
+            } partial{init_allow_partial_, init_allow_partial_};
+            if (!var->is_const_decl) {
+                init_allow_partial_ = true;
+            }
+            struct GlobalNote {
+                Checker *self;
+                const VarDecl *var;
+                ~GlobalNote() {
+                    if (var->is_extern || var->is_const_decl || !var->owner.empty()) {
+                        return;
+                    }
+                    Symbol *symbol = self->symbol_slot(var->name);
+                    if (symbol == nullptr) {
+                        return;
+                    }
+                    self->init_open(*symbol);
+                    self->init_cover(*symbol, var->init.get());
+                }
+            } note{this, var};
             if (!var->owner.empty()) {
                 if (!var->owner_params.empty() || generic_struct_name(file_id_, var->owner)) {
                     continue;
@@ -1501,14 +1519,9 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             if (generic) {
                 continue;
             }
-            std::vector<Type> params;
-            for (const Param &param : fn->params) {
-                params.push_back(type_of_param(param));
-            }
-            Type result = function_result(*fn);
             Symbol symbol;
             symbol.name = fn->name;
-            symbol.type = type_function(std::move(result), std::move(params), fn->variadic);
+            symbol.type = function_signature(*fn);
             symbol.is_function = true;
             symbol.unsafe_fn = fn->unsafe;
             symbol.has_body = fn->body != nullptr;

@@ -67,7 +67,7 @@ int run_cli_tests() {
 
     const tlc::test::Proc opt_none = tlc::test::spawn({bin, "--emit-llvm", "-O2", "-O0", opt_zero});
     EXPECT(check, opt_none.code == 0);
-    EXPECT_HAS(check, opt_none.out, "store i32 0");
+    EXPECT(check, opt_none.out.find("store i32 0") == std::string::npos);
     EXPECT_HAS(check, opt_none.out, "store i32 7");
 
     const tlc::test::Proc opt_o1 = tlc::test::spawn({bin, "--run", "-O", opt_zero});

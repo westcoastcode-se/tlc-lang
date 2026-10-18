@@ -8,7 +8,7 @@ func main() i32 {
     var p = Point{.x = 40};
     var q *Point = new Point{.x = 40};
     var bare Point;
-    var sum = p.x + p.z + q.y + q.z + bare.y - 2;
+    var sum = p.x + q.y + bare.y - 2;
     delete q;
     return sum;
 }

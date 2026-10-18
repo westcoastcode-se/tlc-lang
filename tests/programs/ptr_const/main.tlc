@@ -1,0 +1,8 @@
+func read(p *const i32) i32 {
+    return *p;
+}
+
+func main() i32 {
+    var n i32;
+    return read(&n);
+}

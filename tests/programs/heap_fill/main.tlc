@@ -12,11 +12,11 @@ func next() i32 {
 
 func main() i32 {
     var n i32 = 3;
-    var buf *Point = new [n]Point{{.x = next()}...};
+    var buf *Point = new [n]Point{{.x = next(), 0...}...};
     if (hits != 1 || buf[0].x != 9 || buf[0].y != 0 || buf[1].x != 9 || buf[2].y != 0) {
         return 1;
     }
-    var row *[2]Point = new [_]Point{{.x = 4, .y = 8}, {.y = 10}};
+    var row *[2]Point = new [_]Point{{.x = 4, .y = 8}, {.y = 10, 0...}};
     if (row[0].x != 4 || row[0].y != 8 || row[1].x != 0 || row[1].y != 10) {
         return 2;
     }

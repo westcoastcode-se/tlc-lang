@@ -26,7 +26,7 @@ func main() i32 {
     if (box.value + box.complex.inner_value + bias.value != 42) {
         return 0;
     }
-    if (take({.value = 22,}) != 22) {
+    if (take({.value = 22, 0...}) != 22) {
         return 0;
     }
     if (take({.complex = {.inner_value = 7}, .value = 3}) != 10) {
@@ -35,6 +35,6 @@ func main() i32 {
     if (take(made()) != 30) {
         return 0;
     }
-    box = {.complex = {.inner_value=42}};
+    box = {.complex = {.inner_value=42}, 0...};
     return box.value + box.complex.inner_value;
 }

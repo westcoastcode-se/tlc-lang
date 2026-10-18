@@ -17,16 +17,16 @@ func Vec[T]::get(self this) T {
     return self.n;
 }
 
-const origin = Vec[i32]{};
+const origin = Vec[i32]{0...};
 
 func main() i32 {
-    var filled = Vec[i32]{.n = 40};
+    var filled = Vec[i32]{.n = 40, 0...};
     q := Vec[i32]{.extra = 1};
     var nested = Box[Vec[i32]]{.value = Vec[i32]{.n = 3}};
     var buf = Buf[4, i32]{.n = 2};
     var remote = math.Vec[i32]{.n = 7};
     var wide = math.Buf[4, i32]{};
     wide.n = 1;
-    var empty = math.Vec[i32]{};
+    var empty = math.Vec[i32]{0...};
     return filled.get() + q.extra + origin.n + nested.value.n + buf.n + remote.n + wide.n + empty.n - 54;
 }

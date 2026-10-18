@@ -261,25 +261,15 @@ void CodeGen::declare_globals(const PackageNode &node) {
         if (global == nullptr) {
             llvm::Constant *init = nullptr;
             if (!var->is_extern) {
-                if (low.is_slice || (low.trait_id >= 0 && low.struct_id < 0 && low.depth == 0 && !low.is_array)) {
+                if (low.is_slice) {
+                    init = llvm::UndefValue::get(ty);
+                } else if (low.trait_id >= 0 && low.struct_id < 0 && low.depth == 0 && !low.is_array) {
                     init = llvm::ConstantAggregateZero::get(ty);
                 } else if (low.is_array || (low.depth == 0 && low.struct_id >= 0)) {
-                    // A struct with no field value stays all zeros. A field value replaces that zero.
+                    // Unset fields stay undef. A field value or `0...` replaces that hole.
                     init = bare_initializer(low, ty);
-                } else if (low.depth > 0) {
-                    init = null_ptr();
-                } else if (low.elem_float) {
-                    init = llvm::ConstantFP::get(low.elem_bits >= 64 ? f64_ty() : f32_ty(), 0.0);
-                } else if (low.elem_bool) {
-                    init = llvm::ConstantInt::get(i1(), 0, false);
-                } else if (low.elem_char || low.elem_bits == 8) {
-                    init = llvm::ConstantInt::get(i8(), 0, false);
-                } else if (low.elem_bits == 16) {
-                    init = llvm::ConstantInt::get(i16(), 0, false);
-                } else if (low.elem_bits == 64) {
-                    init = llvm::ConstantInt::get(i64(), 0, false);
                 } else {
-                    init = const_i32(0);
+                    init = llvm::UndefValue::get(ty);
                 }
             }
             global = new llvm::GlobalVariable(module_, ty, var->is_const_decl, form.linkage, init, form.name);
@@ -1063,7 +1053,12 @@ llvm::Constant *CodeGen::const_struct_into(const Expr::Init *overlay, int struct
             return leave(nullptr);
         }
         if (value == nullptr) {
-            elements[index] = llvm::Constant::getNullValue(expected);
+            // `0...` writes a zero. A hole that was not requested stays unset.
+            if (overlay != nullptr && overlay->zero_rest) {
+                elements[index] = llvm::Constant::getNullValue(expected);
+            } else {
+                elements[index] = llvm::UndefValue::get(expected);
+            }
             continue;
         }
         if (value->getType() != expected) {
@@ -1515,20 +1510,14 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
         error(init.loc, "type mismatch");
         return {zero(), 0};
     }
-    // Omitted fields take the value written on the field. A field with no value stays zero.
-    // Named fields are stored after this, so their slot in the image stays zero.
+    // Named fields and `0...` are stored. A field with a value is stored when the list does not zero it.
     llvm::AllocaInst *slot = alloca_typed(layout.type, "init");
-    llvm::Constant *image = nullptr;
-    if (!layout.is_union) {
+    if (init.zero_rest || layout.is_union) {
+        builder_.CreateStore(llvm::ConstantAggregateZero::get(layout.type), slot);
+    } else if (!layout.is_union) {
         std::unordered_set<int> seen;
-        if (struct_has_default(init.struct_id, seen)) {
-            image = init_image(init.struct_id, &init);
-        }
+        store_struct_defaults(slot, init.struct_id, seen);
     }
-    if (image == nullptr || image->getType() != layout.type) {
-        image = llvm::ConstantAggregateZero::get(layout.type);
-    }
-    builder_.CreateStore(image, slot);
     store_init_fields(init.struct_id, slot, init);
     if (terminated()) {
         return {zero(), 0};
@@ -6657,10 +6646,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                         auto *array_ty = ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
                         const bool copy_value = var.init != nullptr && list == nullptr;
-                        const bool covered = list != nullptr && array_list_covers(*list, array_ty);
-                        if (var.init == nullptr && !var.is_extern && !var.is_const_decl) {
-                            zero_slot(slot, ty);
-                        } else if (var.init != nullptr && !covered && !copy_value) {
+                        if (list != nullptr && list->zero_rest) {
                             builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
                         }
                         Binding binding;
@@ -6703,10 +6689,10 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                                 }
                             }
                         }
-                        // A copied array already holds its field values. A full list stores each element.
-                        if (!copy_value && !covered && array_ty != nullptr && low.struct_id >= 0 && low.depth == 0 &&
-                            !low.is_slice && !low.elem_slice && !var.is_extern && !var.is_const_decl &&
-                            (var.init == nullptr || list != nullptr)) {
+                        // A bare array of structs stores each field that has a value. A list does not.
+                        if (var.init == nullptr && !copy_value && array_ty != nullptr && low.struct_id >= 0 &&
+                            low.depth == 0 && !low.is_slice && !low.elem_slice && !var.is_extern &&
+                            !var.is_const_decl) {
                             std::unordered_set<int> seen;
                             paint_omitted_elements(slot, array_ty, low.struct_id, list, seen);
                         }
@@ -6726,22 +6712,28 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     alias_capture(var.name, binding);
                     debug_declare(var.name, var.loc, binding, 0);
                     if (var.init) {
-                        // The initializer is the first value. Clearing the slot first would store a
-                        // zero the programmer did not write.
-                        const TypedValue value = emit_rvalue(*var.init);
-                        if (!terminated()) {
-                            builder_.CreateStore(
-                                as_stored(value.value, value.depth, object_type(slot), value.elem_unsigned), slot);
-                        }
-                    } else if (!var.is_extern && !var.is_const_decl) {
-                        zero_slot(slot, ty);
-                        if (low.struct_id >= 0 && low.depth == 0 && !low.is_array && !low.is_slice) {
-                            std::unordered_set<int> seen;
-                            if (struct_has_default(low.struct_id, seen)) {
-                                std::unordered_set<int> walk;
-                                store_struct_defaults(slot, low.struct_id, walk);
+                        const auto *made = std::get_if<Expr::Init>(&var.init->data);
+                        if (made != nullptr && made->struct_id >= 0 && made->elements.empty() && !made->is_tuple) {
+                            if (made->zero_rest) {
+                                builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
+                            } else if (low.struct_id >= 0) {
+                                std::unordered_set<int> seen;
+                                store_struct_defaults(slot, low.struct_id, seen);
+                            }
+                            store_init_fields(made->struct_id, slot, *made);
+                        } else {
+                            // The initializer is the first value. Clearing the slot first would store a
+                            // zero the programmer did not write.
+                            const TypedValue value = emit_rvalue(*var.init);
+                            if (!terminated()) {
+                                builder_.CreateStore(
+                                    as_stored(value.value, value.depth, object_type(slot), value.elem_unsigned), slot);
                             }
                         }
+                    } else if (!var.is_extern && !var.is_const_decl && low.struct_id >= 0 && low.depth == 0 &&
+                               !low.is_array && !low.is_slice) {
+                        std::unordered_set<int> seen;
+                        store_struct_defaults(slot, low.struct_id, seen);
                     }
                 }
             }
@@ -7524,37 +7516,43 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     builder_.SetInsertPoint(oom);
     abort_out_of_memory(node.loc);
     builder_.SetInsertPoint(ok);
-    // A struct stores the values written on its fields, then each named field. `new i32` stays uninitialized.
+    // A struct stores named fields, `0...`, and fields that have a value. Other fields stay unset.
+    // `new i32` stores nothing.
     const bool struct_object = low.struct_id >= 0 && low.depth == 0 && !low.is_array && !low.is_slice &&
                                low.struct_id < static_cast<int>(structs_.size()) &&
                                !structs_[static_cast<std::size_t>(low.struct_id)].is_union;
     if (buffer && node.init != nullptr) {
         if (const auto *list = std::get_if<Expr::Init>(&node.init->data)) {
+            if (list->zero_rest && size != 0) {
+                store_each_element(raw, element_count, low.type, llvm::ConstantAggregateZero::get(low.type));
+            }
             fill_new_buffer(raw, element_count, low, *list, node.repeat_init);
         }
     } else if (node.init != nullptr) {
         const auto *init = std::get_if<Expr::Init>(&node.init->data);
         if (init == nullptr || init->struct_id < 0) {
             error(node.loc, "type mismatch");
-        } else {
-            if (struct_object && size != 0) {
-                llvm::Constant *image = init_image(low.struct_id, init);
-                if (image == nullptr || image->getType() != low.type) {
-                    image = llvm::ConstantAggregateZero::get(low.type);
-                }
-                builder_.CreateStore(image, raw);
+        } else if (size != 0) {
+            if (init->zero_rest || !struct_object) {
+                builder_.CreateStore(llvm::ConstantAggregateZero::get(low.type), raw);
+            } else {
+                std::unordered_set<int> seen;
+                store_struct_defaults(raw, low.struct_id, seen);
             }
             store_init_fields(init->struct_id, raw, *init);
         }
     } else if (struct_object && size != 0) {
-        llvm::Constant *image = default_struct(low.struct_id);
-        if (image == nullptr || image->getType() != low.type) {
-            image = llvm::ConstantAggregateZero::get(low.type);
-        }
         if (buffer) {
-            store_each_element(raw, element_count, low.type, image);
+            std::unordered_set<int> probe;
+            if (struct_has_default(low.struct_id, probe)) {
+                llvm::Constant *image = default_struct(low.struct_id);
+                if (image != nullptr && image->getType() == low.type) {
+                    store_each_element(raw, element_count, low.type, image);
+                }
+            }
         } else {
-            builder_.CreateStore(image, raw);
+            std::unordered_set<int> seen;
+            store_struct_defaults(raw, low.struct_id, seen);
         }
     }
     if (terminated()) {

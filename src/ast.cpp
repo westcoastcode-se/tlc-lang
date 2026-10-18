@@ -974,6 +974,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 Expr::Init copy;
                 copy.loc = node.loc;
                 copy.is_tuple = node.is_tuple;
+                copy.zero_rest = node.zero_rest;
                 copy.struct_id = node.struct_id;
                 copy.type_name = node.type_name;
                 copy.type_package = node.type_package;

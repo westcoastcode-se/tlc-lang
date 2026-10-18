@@ -1208,21 +1208,13 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
                 error(method.loc, "not supported yet");
                 continue;
             }
-            std::vector<Type> params;
-            for (const Param &param : method.params) {
-                params.push_back(type_of_param(param));
-            }
-            Type result = method.is_struct || method.is_enum || !method.type_package.empty()
-                              ? object_type(method.return_type, method.indirections, false, 0, method.loc, false,
-                                            method.type_package, method.is_struct, method.is_enum, false, method.optional)
-                              : with_indirections(type_of_name(method.return_type, method.loc, method.indirections > 0),
-                                                  method.indirections, method.loc, method.optional);
-            if (mentions_trait(result)) {
+            Type signature = function_signature(method);
+            if (signature.result != nullptr && mentions_trait(*signature.result)) {
                 error(method.loc, "not supported yet");
                 continue;
             }
             traits_[static_cast<std::size_t>(id)].methods.push_back(
-                TraitInfo::Method{method.name, type_function(std::move(result), std::move(params), false)});
+                TraitInfo::Method{method.name, std::move(signature)});
         }
     }
 }
