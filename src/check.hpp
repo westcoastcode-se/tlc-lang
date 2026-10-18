@@ -497,6 +497,12 @@ class Checker {
     // An array, a string, a slice whose initializer is one of those, or a range of one.
     // A missing bound is constant. A bound that does not fold is not. A call is not.
     bool constant_slice_expr(const Expr &expr, std::unordered_set<std::string> &seen);
+    // A file-scope array name, or a constant index of one, whose initializer is constant.
+    // A call is not. The name has to already be an array.
+    bool constant_array_source(const Expr &expr, std::unordered_set<std::string> &seen);
+    // A sized array copied from a name, an index, or a call. A list is already constant.
+    // A call on a `var` runs before `main`. A `const` and any other source stay constant.
+    bool accept_array_copy(VarDecl &var);
     bool constant_operand(const Expr &expr);
     std::optional<int> lookup_const_value(const std::string &name);
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,

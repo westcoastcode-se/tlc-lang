@@ -1782,8 +1782,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
+                    // `unsafe` does not change the type. A value use still decays an array.
+                    // A copy reads this raw array, so the prefix stays outside `value_type`.
                     ++unsafe_depth_;
-                    const Type inner = check_expr(*node.expr, used);
+                    const Type inner = check_raw(*node.expr, used);
                     --unsafe_depth_;
                     return inner;
                 }
@@ -4272,7 +4274,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                     const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
                     // `var v []i32 = row` converts. `var copy [2]i32 = row` copies that array.
-                    // A brace list is the other initializer. A file-scope name stays unsupported.
+                    // A brace list is the other initializer. A file-scope copy is checked with the globals.
                     const bool slice = var.is_array && !var.ptr_to_array && var.array_len < 0;
                     const bool array_value = var.is_array && !var.ptr_to_array && var.array_len > 0 &&
                                              var.init != nullptr && list == nullptr;

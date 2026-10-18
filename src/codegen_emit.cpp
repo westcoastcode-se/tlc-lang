@@ -1024,6 +1024,67 @@ llvm::Constant *CodeGen::const_array(const Expr::Init &init, const Binding &dest
     return fill_array(init, array_ty, dest);
 }
 
+llvm::Constant *CodeGen::const_array_base(const Expr &expr) {
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        // `grid[1]` is one row of that constant. A range is a slice header.
+        if (index->is_range || index->base == nullptr || index->index == nullptr) {
+            return nullptr;
+        }
+        const std::optional<int32_t> at = fold(*index->index);
+        if (!at || *at < 0) {
+            return nullptr;
+        }
+        llvm::Constant *base = const_array_base(*index->base);
+        if (base == nullptr || !base->getType()->isArrayTy()) {
+            return nullptr;
+        }
+        auto *array_ty = llvm::cast<llvm::ArrayType>(base->getType());
+        if (static_cast<uint64_t>(*at) >= array_ty->getNumElements()) {
+            return nullptr;
+        }
+        return base->getAggregateElement(static_cast<unsigned>(*at));
+    }
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const auto file = files_.find(current_file_);
+    if (file == files_.end()) {
+        return nullptr;
+    }
+    const auto found = file->second.globals.find(named->text);
+    if (found == file->second.globals.end() || !found->second.is_array) {
+        return nullptr;
+    }
+    if (!const_names_.insert(named->text).second) {
+        return nullptr;
+    }
+    const VarDecl *written = global_decl(named->text);
+    llvm::Constant *copied = nullptr;
+    if (written != nullptr && written->init != nullptr) {
+        copied = const_array_copied(*written->init, found->second);
+    } else if (auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value)) {
+        copied = llvm::ConstantAggregateZero::get(global->getValueType());
+    }
+    const_names_.erase(named->text);
+    return copied;
+}
+
+llvm::Constant *CodeGen::const_array_copied(const Expr &expr, const Binding &dest) {
+    auto *slot = llvm::dyn_cast_or_null<llvm::GlobalVariable>(dest.value);
+    if (slot == nullptr || !slot->getValueType()->isArrayTy()) {
+        return nullptr;
+    }
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
+        return const_array(*init, dest);
+    }
+    llvm::Constant *value = const_array_base(expr);
+    if (value == nullptr || value->getType() != slot->getValueType()) {
+        return nullptr;
+    }
+    return value;
+}
+
 bool CodeGen::array_list_covers(const Expr::Init &init, llvm::ArrayType *array_ty) const {
     if (array_ty == nullptr || !init.fields.empty() || init.elements.size() != array_ty->getNumElements()) {
         return false;
@@ -1467,6 +1528,18 @@ void CodeGen::apply_initializer(const VarDecl &var) {
             file.folded.insert(key);
             return;
         }
+        // `const frozen [2]i32 = held` copies that array. A list still uses the element path.
+        if (found != file.globals.end() && found->second.is_array && var.init != nullptr && global != nullptr &&
+            !std::holds_alternative<Expr::Init>(var.init->data)) {
+            llvm::Constant *copied = const_array_copied(*var.init, found->second);
+            if (copied == nullptr || copied->getType() != global->getValueType()) {
+                error(var.loc, "global initializer is not a constant");
+                return;
+            }
+            global->setInitializer(copied);
+            file.folded.insert(key);
+            return;
+        }
         llvm::Constant *value = var.init == nullptr || global == nullptr ? nullptr : const_initializer(*var.init, found->second);
         if (value == nullptr || value->getType() != global->getValueType()) {
             error(var.loc, "global initializer is not a constant");
@@ -1537,6 +1610,19 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         }
         auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
         global->setInitializer(value);
+        file.folded.insert(key);
+        return;
+    }
+    // `var copy [2]i32 = row` and `var line [2]i32 = grid[1]` copy that constant array.
+    if (found_early != file.globals.end() && found_early->second.is_array && var.init != nullptr &&
+        !std::holds_alternative<Expr::Init>(var.init->data)) {
+        llvm::Constant *copied = const_array_copied(*var.init, found_early->second);
+        auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
+        if (copied == nullptr || global == nullptr || copied->getType() != global->getValueType()) {
+            error(var.loc, "global initializer is not a constant");
+            return;
+        }
+        global->setInitializer(copied);
         file.folded.insert(key);
         return;
     }
@@ -6171,6 +6257,19 @@ void CodeGen::emit_dynamic_inits() {
                 llvm::Value *stored = as_slice_value(value, var->loc);
                 if (!terminated() && stored != nullptr) {
                     builder_.CreateStore(stored, dest);
+                }
+            } else if (found->second.is_array) {
+                // A call stores the returned array and yields the address of its first element.
+                llvm::Type *ty = object_type(dest);
+                llvm::Value *loaded = value.value;
+                if (ty == nullptr || !ty->isArrayTy() || loaded == nullptr) {
+                    error(var->loc, "type mismatch");
+                } else if (loaded->getType() == ty) {
+                    builder_.CreateStore(loaded, dest);
+                } else if (!loaded->getType()->isPointerTy()) {
+                    error(var->loc, "not supported yet");
+                } else {
+                    builder_.CreateStore(builder_.CreateLoad(ty, loaded), dest);
                 }
             } else {
                 llvm::Type *slot = object_type(dest);

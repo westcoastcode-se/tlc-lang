@@ -593,7 +593,16 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
             want = type_of_var(var);
         }
     }
-    // A typed array stores a value list or `[_]T{...}`. A name or a call is still unsupported.
+    // A list stores elements. A name, an index, or a call copies that array.
+    const bool copy = !var.inferred && init == nullptr && want.kind == TypeKind::Array && want.length >= 0;
+    if (copy) {
+        const std::size_t before = diags_.size();
+        const Type got = check_against(*var.init, want);
+        if (got.kind == TypeKind::Invalid || diags_.size() != before || !same_type(got, want)) {
+            return type_invalid();
+        }
+        return want;
+    }
     const bool shape = var.inferred ? literal : var.is_array && !var.ptr_to_array && values;
     if (!shape || init == nullptr) {
         error(var.loc, "not supported yet");
@@ -789,7 +798,7 @@ Type Checker::check_file_const(VarDecl &written) {
     const bool written_slice = written.is_array && written.array_len < 0 && !written.ptr_to_array;
     if (!string_slice && !written_slice && (literal || (written.is_array && !written.ptr_to_array))) {
         Type got = file_array_initializer(written, nullptr);
-        if (got.kind == TypeKind::Invalid) {
+        if (got.kind == TypeKind::Invalid || !accept_array_copy(written)) {
             return type_invalid();
         }
         got.is_const = true;
@@ -887,6 +896,66 @@ void Checker::bind_file_const(VarDecl &written) {
         return;
     }
     define_constant(written, std::move(got), 0);
+}
+
+bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::string> &seen) {
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        // `grid[1]` is that row. A range is a slice, and a runtime index is not in the binary.
+        if (index->is_range || index->base == nullptr || index->index == nullptr || !fold_int(*index->index)) {
+            return false;
+        }
+        return constant_array_source(*index->base, seen);
+    }
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr || !seen.insert(named->text).second) {
+        return false;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->is_auto || symbol->is_function || symbol->is_type || symbol->is_package ||
+        symbol->type.kind != TypeKind::Array || symbol->type.element == nullptr || is_slice(symbol->type)) {
+        seen.erase(named->text);
+        return false;
+    }
+    // A `const` array was checked when it was declared. The initializer has to be in this file.
+    // A `var` follows its initializer. A name from another file is not this constant.
+    const VarDecl *var = global_var(named->text);
+    if (symbol->is_constant) {
+        seen.erase(named->text);
+        return var != nullptr;
+    }
+    if (var == nullptr || var->runtime_init) {
+        seen.erase(named->text);
+        return false;
+    }
+    if (var->init == nullptr) {
+        seen.erase(named->text);
+        return true;
+    }
+    bool ok = false;
+    if (std::holds_alternative<Expr::Init>(var->init->data)) {
+        ok = file_constant(*var->init, seen, !var->is_const_decl) == FileConst::Yes;
+    } else {
+        ok = constant_array_source(*var->init, seen);
+    }
+    seen.erase(named->text);
+    return ok;
+}
+
+bool Checker::accept_array_copy(VarDecl &var) {
+    if (var.init == nullptr || std::holds_alternative<Expr::Init>(var.init->data)) {
+        return true;
+    }
+    // `var copy [2]i32 = give()` runs before `main`. A `const` stays a constant.
+    if (!var.is_const_decl && !var.is_extern && startup_call(*var.init)) {
+        var.runtime_init = true;
+        return true;
+    }
+    std::unordered_set<std::string> seen;
+    if (!constant_array_source(*var.init, seen)) {
+        error(var.loc, "global initializer is not a constant");
+        return false;
+    }
+    return true;
 }
 
 bool Checker::constant_slice_expr(const Expr &expr, std::unordered_set<std::string> &seen) {
@@ -1074,7 +1143,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                             }
                         }
                     } else if (assoc != nullptr && assoc->type.kind == TypeKind::Array) {
-                        (void)file_array_initializer(const_cast<VarDecl &>(*var), &assoc->type);
+                        const std::size_t before = diags_.size();
+                        const Type got = file_array_initializer(const_cast<VarDecl &>(*var), &assoc->type);
+                        if (diags_.size() == before && got.kind == TypeKind::Array) {
+                            (void)accept_array_copy(const_cast<VarDecl &>(*var));
+                        }
                     } else if (assoc == nullptr || assoc->type.kind != TypeKind::Invalid) {
                         error(var->loc, "not supported yet");
                     }
@@ -1120,7 +1193,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 } else if (!var->is_const_decl) {
                     const Symbol *symbol = lookup(var->name);
                     if (symbol != nullptr && symbol->type.kind == TypeKind::Array) {
-                        (void)file_array_initializer(const_cast<VarDecl &>(*var), &symbol->type);
+                        const std::size_t before = diags_.size();
+                        const Type got = file_array_initializer(const_cast<VarDecl &>(*var), &symbol->type);
+                        if (diags_.size() == before && got.kind == TypeKind::Array) {
+                            (void)accept_array_copy(const_cast<VarDecl &>(*var));
+                        }
                     }
                 }
             } else if (var->init && std::get_if<Expr::Init>(&var->init->data) != nullptr &&

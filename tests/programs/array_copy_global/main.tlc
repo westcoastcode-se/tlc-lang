@@ -1,6 +1,68 @@
 var row = [_]i32{10, 20};
 var copy [2]i32 = row;
+var again [2]i32 = copy;
+const held = [_]i32{8, 9};
+const frozen [2]i32 = held;
+var named [3]i32 = {1, 2, 3};
+var from_named [3]i32 = named;
+var grid = [_][2]i32{{1, 2}, {3, 4}};
+var whole [2][2]i32 = grid;
+var line [2]i32 = grid[1];
+var flags = [_]bool{true, false};
+var flags_copy [2]bool = flags;
+var blank [2]i32;
+var blank_copy [2]i32 = blank;
+var early [2]i32 = late;
+var late = [_]i32{7, 1};
+
+func give() [2]i32 {
+    var out = [_]i32{4, 6};
+    return out;
+}
+
+var from_call [2]i32 = give();
+
+func give_grid() [2][2]i32 {
+    var out = [_][2]i32{{1, 2}, {3, 4}};
+    return out;
+}
+
+var from_grid [2][2]i32 = give_grid();
+
+unsafe func hidden() [2]i32 {
+    var out = [_]i32{5, 7};
+    return out;
+}
+
+var from_unsafe [2]i32 = unsafe hidden();
 
 func main() i32 {
-    return copy[1];
+    if (flags_copy[0] == 0 || flags_copy[1] != 0) {
+        return 1;
+    }
+    if (blank_copy[0] != 0 || blank_copy[1] != 0) {
+        return 2;
+    }
+    if (from_call[0] != 4 || from_call[1] != 6) {
+        return 3;
+    }
+    if (from_grid[0][0] != 1) {
+        return 4;
+    }
+    if (from_grid[0][1] != 2) {
+        return 5;
+    }
+    if (from_grid[1][0] != 3) {
+        return 6;
+    }
+    if (from_grid[1][1] != 4) {
+        return 7;
+    }
+    if (from_unsafe[0] != 5 || from_unsafe[1] != 7) {
+        return 8;
+    }
+    row[1] = 0;
+    grid[1][0] = 0;
+    named[2] = 0;
+    return copy[1] + again[0] + frozen[1] + from_named[2] + whole[0][1] + line[0] + early[0] + from_call[0] + from_call[1];
 }

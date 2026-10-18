@@ -1,0 +1,11 @@
+func one() i32 {
+    return 1;
+}
+
+var n = one();
+var grid = [_][2]i32{{1, 2}, {3, 4}};
+var line [2]i32 = grid[n];
+
+func main() i32 {
+    return line[0];
+}

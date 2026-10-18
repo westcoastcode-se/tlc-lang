@@ -1,0 +1,11 @@
+func give() [2]i32 {
+    var out = [_]i32{4, 6};
+    return out;
+}
+
+var live [2]i32 = give();
+var copy [2]i32 = live;
+
+func main() i32 {
+    return copy[0];
+}

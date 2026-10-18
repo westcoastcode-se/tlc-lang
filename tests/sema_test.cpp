@@ -6695,5 +6695,31 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "not an lvalue");
     }
 
+    {
+        // `var copy = row` stays a pointer. The file-scope copy spelling writes the length.
+        const std::string errors = check_program(
+            "var row = [_]i32{10, 20};\n"
+            "var copy = row;\n"
+            "func main() i32 { return copy[1]; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::filesystem::path path = std::filesystem::temp_directory_path() / "tlc-array-copy-infer.tlc";
+        {
+            std::ofstream out(path);
+            out << "var row = [_]i32{10, 20};\n"
+                   "var copy = row;\n"
+                   "func main() i32 { return copy[1]; }\n";
+        }
+        tlc::Options opt;
+        opt.mode = tlc::Mode::EmitLlvm;
+        opt.input = path.string();
+        const tlc::CompileOutput output = tlc::compile_source(opt);
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        EXPECT_HAS(check, output.compiler_stderr, "global initializer is not a constant");
+    }
+
     return check.failed;
 }

@@ -1197,6 +1197,10 @@ class CodeGen {
     llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
     llvm::Constant *const_array(const Expr::Init &init, const Binding &dest);
     llvm::Constant *fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
+    // The constant array stored by `expr`, using that array's own global when `expr` is a name.
+    llvm::Constant *const_array_base(const Expr &expr);
+    // `expr` copied into `dest`. A list is filled as `dest`. A name or an index must match `dest`.
+    llvm::Constant *const_array_copied(const Expr &expr, const Binding &dest);
     const VarDecl *global_decl(const std::string &name) const;
     std::optional<Lowered> lower_array_literal(uint32_t file, const Expr::Init &init) const;
     llvm::Constant *const_field(const Expr &expr, const FieldLayout &slot);
