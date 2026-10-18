@@ -1,0 +1,13 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func Point::sum(self this) i32 {
+    return self.x + self.y;
+}
+
+func main() i32 {
+    var p Point;
+    return p.sum();
+}

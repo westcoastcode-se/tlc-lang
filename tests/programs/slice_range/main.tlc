@@ -52,7 +52,7 @@ func main() i32 {
     if (take_row(part) != 22 || take_row(named[1:3]) != 22) {
         return 4;
     }
-    var box Hold;
+    var box = Hold{};
     if (box.items.len != 0) {
         return 5;
     }

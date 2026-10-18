@@ -229,7 +229,7 @@ Inside the package the type is written `Point`. `import { Point } from "geom"` m
 
 ## Cost
 
-`var p Point` on a struct of two `i32` fields adds no instruction. The fields are uninitialized. Each later `p.x = 40` is 1 `movl`. Reading `p.x` is 1 `movl`. `p.x + p.y` is 1 load of `p.x` and 1 `addl` that reads `p.y` from its slot.
+`var p Point` on a struct of two `i32` fields adds no instruction. The fields are uninitialized. Reading a field before it is assigned is `uninitialized`. Each later `p.x = 40` is 1 `movl`. Reading `p.x` is 1 `movl`. `p.x + p.y` is 1 load of `p.x` and 1 `addl` that reads `p.y` from its slot.
 
 A field through `*Point` reloads the pointer and then loads the field. `return p.x` on a `*Point` parameter is 4 instructions including the pointer store and `retq`.
 

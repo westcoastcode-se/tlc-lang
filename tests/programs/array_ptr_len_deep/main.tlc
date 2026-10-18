@@ -1,0 +1,7 @@
+func open(p **[4]i32) i32 {
+    return p.len;
+}
+
+func main() i32 {
+    return 0;
+}

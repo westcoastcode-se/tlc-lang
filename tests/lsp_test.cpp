@@ -279,6 +279,13 @@ int run_lsp_tests() {
         "    var ptrs = [_]*i32{&kept};\n"
         "    var ops = [_]func (i32) i32{add};\n"
         "    return add(p.x, q.x) + r.x + slice.len + named.len + tail;\n"
+        "    var cells = [_]i32{1, 2, 3, 4};\n"
+        "    var span *[4]i32 = &cells;\n"
+        "    var span_n = span.len;\n"
+        "    var bare *i32 = &kept;\n"
+        "    var bare_n = bare.len;\n"
+        "    var optp ?*[4]i32 = &cells;\n"
+        "    var optp_n = optp.len;\n"
         "}\n";
 
     int to_child[2] = {-1, -1};
@@ -634,6 +641,26 @@ int run_lsp_tests() {
     EXPECT(check, named_len_at.line >= 0);
     const std::string named_len_hover = request_at(to_child[1], from_child[0], 36, "textDocument/hover", uri, named_len_at);
     EXPECT_HAS(check, named_len_hover, "len i32");
+
+    const LineCol span_dot = at_needle(source, "span.", true);
+    EXPECT(check, span_dot.line >= 0);
+    const std::string span_len = request_at(to_child[1], from_child[0], 37, "textDocument/completion", uri, span_dot);
+    EXPECT_HAS(check, span_len, "\"len\"");
+
+    const LineCol span_len_at = at_needle(source, "span.", true);
+    EXPECT(check, span_len_at.line >= 0);
+    const std::string span_len_hover = request_at(to_child[1], from_child[0], 38, "textDocument/hover", uri, span_len_at);
+    EXPECT_HAS(check, span_len_hover, "len i32");
+
+    const LineCol bare_dot = at_needle(source, "bare.", true);
+    EXPECT(check, bare_dot.line >= 0);
+    const std::string bare_items = request_at(to_child[1], from_child[0], 39, "textDocument/completion", uri, bare_dot);
+    EXPECT(check, bare_items.find("\"len\"") == std::string::npos);
+
+    const LineCol optp_dot = at_needle(source, "optp.", true);
+    EXPECT(check, optp_dot.line >= 0);
+    const std::string optp_items = request_at(to_child[1], from_child[0], 40, "textDocument/completion", uri, optp_dot);
+    EXPECT(check, optp_items.find("\"len\"") == std::string::npos);
 
     const std::string over_source =
         "func once(n i32) i32;\n"

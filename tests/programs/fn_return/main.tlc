@@ -38,6 +38,7 @@ func main() i32 {
     var fp = pick();
     var typed func (i32, i32) i32 = pick();
     var box Box;
+    box.n = 0;
     var from_method = box.choose();
     var from_static = Box.static_choose();
     var made = make();

@@ -1,0 +1,7 @@
+func main() i32 {
+    var value i32;
+    while (0) {
+        value = 1;
+    }
+    return value;
+}

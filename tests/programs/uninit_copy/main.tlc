@@ -1,0 +1,5 @@
+func main() i32 {
+    var row [2]i32;
+    var copy [2]i32 = row;
+    return copy[0];
+}

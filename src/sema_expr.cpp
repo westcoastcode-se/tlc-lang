@@ -868,6 +868,7 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
     // `const` on the source is the binding. The copy is a new array of the written type.
     // A parameter `[N]T` is already a pointer. The same written array copies those elements.
     if (want.kind == TypeKind::Array && want.length >= 0) {
+        InitKeep keep(*this);
         Type got = check_raw(expr, true);
         got.is_const = false;
         if (got.kind == TypeKind::Invalid) {
@@ -908,7 +909,23 @@ Type Checker::value_type(Type type) {
     return promote(type);
 }
 
-Type Checker::check_expr(const Expr &expr, bool used) { return value_type(check_raw(expr, used)); }
+Type Checker::check_expr(const Expr &expr, bool used) {
+    cond_split_ = false;
+    const Type type = value_type(check_raw(expr, used));
+    if (!cond_split_) {
+        cond_true_ = assign_;
+        cond_false_ = assign_;
+    }
+    // A constant condition makes the other arm unreachable. `&&` and `||` set both arms themselves.
+    if (const std::optional<int> folded = fold_int(expr)) {
+        if (*folded != 0) {
+            cond_false_.unreachable = true;
+        } else {
+            cond_true_.unreachable = true;
+        }
+    }
+    return type;
+}
 
 bool Checker::type_arg_from_expr(const Expr &expr, TypeArg &out) const {
     if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
@@ -1669,6 +1686,7 @@ Type Checker::finish_value_method(const Expr::Call &node, const Expr::Selector &
                 }
             }
         } else if (selector.base != nullptr) {
+            init_require_receiver(*selector.base);
             expect(object, receiver, expr_loc(*selector.base));
         }
     }
@@ -1696,6 +1714,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "undeclared identifier");
                     return type_invalid();
                 }
+                init_touch(*symbol, node.loc);
                 if (captured(*symbol)) {
                     // A function pointer is a pointer. A direct call of the inner function can pass it along.
                     if (!fn_pointer(symbol->type) || checking_.empty()) {
@@ -1808,6 +1827,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return asserted;
                 }
                 if (node.op == TokenKind::Star) {
+                    InitUseGuard read(*this, InitUse::Read);
                     const Type inner = check_expr(*node.expr, true);
                     if (inner.kind == TypeKind::Invalid) {
                         return inner;
@@ -1864,6 +1884,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_expr(*node.expr, true);
                         return type_invalid();
                     }
+                    InitUseGuard address(*this, InitUse::Address);
                     Type inner = check_raw(*node.expr, true);
                     if (inner.kind == TypeKind::Invalid) {
                         return inner;
@@ -1889,6 +1910,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 const Type inner = check_expr(*node.expr, true);
                 if (node.op == TokenKind::Bang) {
+                    std::swap(cond_true_, cond_false_);
+                    cond_split_ = true;
                     if (is_float(inner) || inner.kind == TypeKind::Bool) {
                         return type_int();
                     }
@@ -1907,8 +1930,30 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 return type_invalid();
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
-                Type lhs = check_expr(*node.lhs, true);
-                Type rhs = check_expr(*node.rhs, true);
+                Type lhs;
+                Type rhs;
+                if (node.op == TokenKind::AmpAmp || node.op == TokenKind::PipePipe) {
+                    lhs = node.lhs ? check_expr(*node.lhs, true) : type_invalid();
+                    const AssignState left_true = cond_true_;
+                    const AssignState left_false = cond_false_;
+                    // `&&` checks the right operand only when the left one is true. `||` is the opposite.
+                    assign_ = node.op == TokenKind::AmpAmp ? left_true : left_false;
+                    rhs = node.rhs ? check_expr(*node.rhs, true) : type_invalid();
+                    const AssignState right_true = cond_true_;
+                    const AssignState right_false = cond_false_;
+                    if (node.op == TokenKind::AmpAmp) {
+                        cond_true_ = right_true;
+                        cond_false_ = init_merge(left_false, right_false);
+                    } else {
+                        cond_true_ = init_merge(left_true, right_true);
+                        cond_false_ = right_false;
+                    }
+                    assign_ = init_merge(cond_true_, cond_false_);
+                    cond_split_ = true;
+                } else {
+                    lhs = check_expr(*node.lhs, true);
+                    rhs = check_expr(*node.rhs, true);
+                }
                 if (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) {
                     const bool lhs_ptr = lhs.kind == TypeKind::Pointer || lhs.kind == TypeKind::Nullptr;
                     const bool rhs_ptr = rhs.kind == TypeKind::Pointer || rhs.kind == TypeKind::Nullptr;
@@ -2032,7 +2077,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_expr(*node.rhs, true);
                         return type_invalid();
                     }
+                    const std::size_t before = diags_.size();
                     check_against(*node.rhs, *pointer.pointee);
+                    init_store_if(*node.lhs, before);
                     return *pointer.pointee;
                 }
                 if (const auto *index = std::get_if<Expr::Index>(&node.lhs->data)) {
@@ -2050,9 +2097,25 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "not an lvalue");
                         return type_invalid();
                     }
-                    const Type base = check_expr(*index->base, true);
-                    const Type subscript = check_expr(*index->index, true);
+                    Type subscript;
+                    {
+                        // The subscript is its own value. It must not see this index step.
+                        InitUseGuard read(*this, InitUse::Read);
+                        subscript = check_expr(*index->index, true);
+                    }
                     expect(subscript, type_int(), expr_loc(*index->index));
+                    InitStep step;
+                    step.kind = InitStep::Kind::Index;
+                    if (const std::optional<int> folded = fold_int(*index->index)) {
+                        step.known = true;
+                        step.index = *folded;
+                    }
+                    Type base;
+                    {
+                        InitUseGuard address(*this, InitUse::Address);
+                        InitPush push(*this, std::move(step));
+                        base = check_expr(*index->base, true);
+                    }
                     if (is_slice(base)) {
                         error(node.loc, "type mismatch");
                         check_expr(*node.rhs, true);
@@ -2082,7 +2145,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_expr(*node.rhs, true);
                         return type_invalid();
                     }
+                    const std::size_t before = diags_.size();
                     check_against(*node.rhs, element);
+                    init_store_if(*node.lhs, before);
                     return element;
                 }
                 if (const auto *selector = std::get_if<Expr::Selector>(&node.lhs->data)) {
@@ -2102,7 +2167,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             check_expr(*node.rhs, true);
                             return type_invalid();
                         }
+                        const std::size_t before = diags_.size();
                         check_against(*node.rhs, assoc);
+                        init_store_if(*node.lhs, before);
                         return assoc;
                     }
                     const SelectorTarget target = resolve_selector(*selector);
@@ -2117,10 +2184,21 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             check_expr(*node.rhs, true);
                             return type_invalid();
                         }
+                        const std::size_t before = diags_.size();
                         check_against(*node.rhs, target.symbol->type);
+                        init_store_if(*node.lhs, before);
                         return target.symbol->type;
                     }
-                    const Type base = check_expr(*selector->base, true);
+                    Type base;
+                    {
+                        // `p.x = 1` names storage in `p`. The field step keeps the other fields unread.
+                        InitUseGuard address(*this, InitUse::Address);
+                        InitStep step;
+                        step.kind = InitStep::Kind::Field;
+                        step.field = selector->field;
+                        InitPush push(*this, std::move(step));
+                        base = check_expr(*selector->base, true);
+                    }
                     Type trait_field;
                     if (as_trait_field(base, selector->field, trait_field)) {
                         if (trait_field.kind == TypeKind::Invalid) {
@@ -2140,7 +2218,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             check_expr(*node.rhs, true);
                             return type_invalid();
                         }
+                        const std::size_t before = diags_.size();
                         check_against(*node.rhs, trait_field);
+                        init_store_if(*node.lhs, before);
                         return trait_field;
                     }
                     if (base.kind == TypeKind::Pointer && base.optional) {
@@ -2179,7 +2259,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_expr(*node.rhs, true);
                         return type_invalid();
                     }
+                    const std::size_t before = diags_.size();
                     check_against(*node.rhs, field);
+                    init_store_if(*node.lhs, before);
                     return field;
                 }
                 const bool name = std::holds_alternative<Expr::Name>(node.lhs->data);
@@ -2207,7 +2289,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     check_expr(*node.rhs, true);
                     return type_invalid();
                 }
+                const std::size_t before = diags_.size();
                 check_against(*node.rhs, symbol->type);
+                init_store_if(*node.lhs, before);
                 return symbol->type;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
                 const bool deferring = checking_defer_;
@@ -2326,7 +2410,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return type_invalid();
                     }
                     if (target.kind != SelectorTarget::Kind::Package && selector->base != nullptr) {
-                        const Type base = check_expr(*selector->base, true);
+                        // `self *this` does not read the fields. `self this` copies them below.
+                        Type base;
+                        {
+                            InitUseGuard method(*this, InitUse::Method);
+                            base = check_expr(*selector->base, true);
+                        }
                         if (base.kind == TypeKind::Invalid) {
                             for (const auto &arg : node.args) {
                                 check_expr(*arg, true);
@@ -2525,6 +2614,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                             }
                                         }
                                     } else {
+                                        init_require_receiver(*selector->base);
                                         expect(object, receiver, expr_loc(*selector->base));
                                     }
                                 }
@@ -2690,7 +2780,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     return target.symbol->type;
                 }
-                const Type raw = check_raw(*node.base, true);
+                Type raw;
+                {
+                    InitStep step;
+                    step.kind = InitStep::Kind::Field;
+                    step.field = node.field;
+                    InitPush push(*this, std::move(step));
+                    raw = check_raw(*node.base, true);
+                }
                 // `name.len` is the number of elements, for a slice and for a sized array.
                 // The array decays to a pointer only when the field is not `len`.
                 if (raw.kind == TypeKind::Array && raw.element != nullptr && node.field == "len") {
@@ -2701,9 +2798,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_int();
                 }
                 // `a.len` on a parameter `[N]T`. The value is a pointer. The length is the one that was written.
+                // This stays ahead of the pointer-to-array check: `[N][M]T` decays to a pointer whose
+                // pointee is the row, and `.len` is the outer `N`, not that row.
                 if (raw.kind == TypeKind::Pointer && raw.decayed_len > 0 && node.field == "len") {
                     node.slice_len = true;
                     node.len_value = raw.decayed_len;
+                    return type_int();
+                }
+                // `p.len` on `*[N]T` is the written length. `*i32`, `*[]T`, `**[N]T`, and `?*[N]T` have none.
+                if (raw.kind == TypeKind::Pointer && !raw.optional && raw.pointee != nullptr &&
+                    raw.pointee->kind == TypeKind::Array && raw.pointee->length > 0 &&
+                    raw.pointee->element != nullptr && node.field == "len") {
+                    node.slice_len = true;
+                    node.len_value = raw.pointee->length;
                     return type_int();
                 }
                 const Type base = value_type(raw);
@@ -2759,15 +2866,21 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 // The base is an array, a slice, a parameter `[N]T`, or a pointer `*[N]T`.
                 // `*i32` and `?*[N]T` have no array length.
                 if (node.is_range) {
-                    const Type base = node.base ? check_raw(*node.base, true) : type_invalid();
                     if (node.index) {
+                        InitUseGuard read(*this, InitUse::Read);
                         const Type low = check_expr(*node.index, true);
                         expect(low, type_int(), expr_loc(*node.index));
                     }
                     if (node.end) {
+                        InitUseGuard read(*this, InitUse::Read);
                         const Type high = check_expr(*node.end, true);
                         expect(high, type_int(), expr_loc(*node.end));
                     }
+                    // A range of a sized array is an address, not a read of the elements.
+                    InitStep step;
+                    step.kind = InitStep::Kind::Range;
+                    InitPush push(*this, std::move(step));
+                    const Type base = node.base ? check_raw(*node.base, true) : type_invalid();
                     if (base.kind == TypeKind::Invalid) {
                         return type_invalid();
                     }
@@ -2795,9 +2908,25 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 // An array keeps its element, including when that element is an array.
                 // A pointer to an array still means `(*p)[i]`.
-                const Type base = check_raw(*node.base, true);
-                const Type subscript = check_expr(*node.index, true);
+                Type subscript;
+                {
+                    InitUseGuard read(*this, InitUse::Read);
+                    subscript = check_expr(*node.index, true);
+                }
                 expect(subscript, type_int(), expr_loc(*node.index));
+                InitStep step;
+                step.kind = InitStep::Kind::Index;
+                if (node.index != nullptr) {
+                    if (const std::optional<int> folded = fold_int(*node.index)) {
+                        step.known = true;
+                        step.index = *folded;
+                    }
+                }
+                Type base;
+                {
+                    InitPush push(*this, std::move(step));
+                    base = check_raw(*node.base, true);
+                }
                 if (base.kind == TypeKind::Array && base.element != nullptr) {
                     Type element = *base.element;
                     if (base.is_const || is_slice(base)) {
@@ -2848,7 +2977,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_nullptr();
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 (void)used;
-                const Type type = sizeof_operand(node);
+                Type type;
+                {
+                    InitQuiet quiet(*this);
+                    type = sizeof_operand(node);
+                }
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
@@ -2860,6 +2993,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_int();
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
                 (void)used;
+                InitQuiet quiet(*this);
                 const Type type = operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum,
                                                node.indirections, node.optional, node.expr.get(), node.loc,
                                                node.const_pointee, node.is_array, node.array_len, node.elem_const,
@@ -3334,6 +3468,7 @@ bool Checker::is_builtin_va_call(const Expr &callee) {
 }
 
 void Checker::check_test(const TestDecl &test) {
+    InitSuspend suspend(*this);
     push_function();
     const Type saved = return_type_;
     const int saved_loops = loop_depth_;
@@ -3902,6 +4037,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 pop();
             } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                UnreachableAfter exit(*this);
                 auto match_return = [&](const Type &got, const Type &want) {
                     const bool null_pointer =
                         want.kind == TypeKind::Pointer && got.kind == TypeKind::Nullptr && want.optional;
@@ -3941,6 +4077,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (want.kind == TypeKind::Array && want.length > 0) {
                         // `return row` on a parameter `[N]T` copies the elements. `return row`
                         // where `[]T` is expected stays the pointer. The slice is `row[:]`.
+                        InitKeep keep(*this);
                         const Type got = check_raw(value, true);
                         if (got.kind != TypeKind::Invalid && decayed_array_value(got, want)) {
                             return want;
@@ -3997,21 +4134,33 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_expr(*node.expr, false);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                AssignState on_true = assign_;
+                AssignState on_false = assign_;
                 if (node.cond) {
                     expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
+                    on_true = cond_true_;
+                    on_false = cond_false_;
                 }
                 const std::optional<NullGuard> guard = null_guard(node.cond.get());
                 if (!guard) {
+                    assign_ = on_true;
                     if (node.then_arm) {
                         check_stmt(*node.then_arm);
                     }
+                    const AssignState then_out = assign_;
+                    assign_ = on_false;
                     if (node.else_arm) {
                         check_stmt(*node.else_arm);
                     }
+                    const AssignState else_out = node.else_arm ? assign_ : on_false;
+                    assign_ = init_merge(then_out, else_out);
                 } else if (guard->equal_null) {
+                    assign_ = on_true;
                     if (node.then_arm) {
                         check_stmt(*node.then_arm);
                     }
+                    const AssignState then_out = assign_;
+                    assign_ = on_false;
                     if (node.else_arm) {
                         const bool narrowed = narrow_optional(guard->name);
                         check_stmt(*node.else_arm);
@@ -4019,10 +4168,13 @@ void Checker::check_stmt(const Stmt &stmt) {
                             restore_optional(guard->name);
                         }
                     }
+                    const AssignState else_out = node.else_arm ? assign_ : on_false;
+                    assign_ = init_merge(then_out, else_out);
                     if (node.then_arm && always_exits(node.then_arm.get())) {
                         narrow_optional(guard->name);
                     }
                 } else {
+                    assign_ = on_true;
                     const bool narrowed = narrow_optional(guard->name);
                     if (node.then_arm) {
                         check_stmt(*node.then_arm);
@@ -4030,17 +4182,33 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (narrowed) {
                         restore_optional(guard->name);
                     }
+                    const AssignState then_out = assign_;
+                    assign_ = on_false;
                     if (node.else_arm) {
                         check_stmt(*node.else_arm);
                     }
+                    const AssignState else_out = node.else_arm ? assign_ : on_false;
+                    assign_ = init_merge(then_out, else_out);
                     if (node.else_arm && always_exits(node.else_arm.get())) {
                         narrow_optional(guard->name);
                     }
                 }
             } else if constexpr (std::is_same_v<T, Stmt::While>) {
+                AssignState on_true = assign_;
+                AssignState on_false = assign_;
+                bool can_fail = false;
                 if (node.cond) {
                     expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
+                    on_true = cond_true_;
+                    on_false = cond_false_;
+                    can_fail = !on_false.unreachable;
                 }
+                // The body sees this condition only. A store in the body is not carried to the next test.
+                FlowFrame frame;
+                frame.kind = FlowFrame::Kind::Loop;
+                frame.entry = on_true;
+                flow_frames_.push_back(std::move(frame));
+                assign_ = on_true;
                 const std::optional<NullGuard> guard = null_guard(node.cond.get());
                 ++loop_depth_;
                 const bool narrowed = guard && !guard->equal_null && narrow_optional(guard->name);
@@ -4051,25 +4219,80 @@ void Checker::check_stmt(const Stmt &stmt) {
                     restore_optional(guard->name);
                 }
                 --loop_depth_;
+                const FlowFrame done = std::move(flow_frames_.back());
+                flow_frames_.pop_back();
+                assign_ = init_loop_exit(done.breaks, on_false, can_fail);
             } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
+                FlowFrame frame;
+                frame.kind = FlowFrame::Kind::Loop;
+                flow_frames_.push_back(std::move(frame));
                 ++loop_depth_;
                 if (node.body) {
                     check_stmt(*node.body);
                 }
                 --loop_depth_;
+                const FlowFrame done = std::move(flow_frames_.back());
+                flow_frames_.pop_back();
+                AssignState at_cond;
+                at_cond.unreachable = true;
+                if (!assign_.unreachable) {
+                    at_cond = assign_;
+                }
+                for (const AssignState &continued : done.continues) {
+                    at_cond = init_merge(at_cond, continued);
+                }
+                const bool reach = !at_cond.unreachable;
+                assign_ = at_cond;
                 if (node.cond) {
                     expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
                 }
+                const bool can_fail = reach && node.cond && !cond_false_.unreachable;
+                assign_ = init_loop_exit(done.breaks, node.cond ? cond_false_ : at_cond, node.cond ? can_fail : reach);
             } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
                 if (node.cond) {
                     expect(check_expr(*node.cond, true), type_int(), expr_loc(*node.cond));
                 }
+                const bool has_default = init_has_default(node.body.get());
+                FlowFrame frame;
+                frame.kind = FlowFrame::Kind::Switch;
+                frame.entry = assign_;
+                flow_frames_.push_back(std::move(frame));
                 switches_.push_back({});
+                // Statements before the first case are not reached. A case loads the entry state.
+                assign_.unreachable = true;
                 if (node.body) {
                     check_stmt(*node.body);
                 }
                 switches_.pop_back();
+                const FlowFrame done = std::move(flow_frames_.back());
+                flow_frames_.pop_back();
+                AssignState out;
+                out.unreachable = true;
+                for (const AssignState &stopped : done.breaks) {
+                    out = init_merge(out, stopped);
+                }
+                if (!assign_.unreachable) {
+                    out = init_merge(out, assign_);
+                }
+                // Without `default` the switch can be skipped, so the entry state still counts.
+                if (!has_default) {
+                    out = init_merge(out, done.entry);
+                }
+                assign_ = out;
             } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (FlowFrame *sw = init_switch_frame()) {
+                    const AssignState entry = sw->entry;
+                    if (!assign_.unreachable) {
+                        assign_ = init_merge(assign_, entry);
+                    } else {
+                        assign_ = entry;
+                    }
+                    assign_.unreachable = false;
+                    for (const FlowFrame::Local &local : sw->locals) {
+                        assign_.open[local.id] =
+                            std::vector<uint8_t>(static_cast<std::size_t>(local.leaves), 0);
+                    }
+                }
                 if (switches_.empty()) {
                     error(node.loc, node.is_default ? "default outside switch" : "case outside switch");
                 } else if (node.is_default) {
@@ -4097,16 +4320,23 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
             } else if constexpr (std::is_same_v<T, Stmt::For>) {
                 push();
+                FlowFrame frame;
+                frame.kind = FlowFrame::Kind::Loop;
+                flow_frames_.push_back(std::move(frame));
                 ++loop_depth_;
                 if (node.init) {
                     check_stmt(*node.init);
                 }
+                AssignState on_true = assign_;
+                AssignState on_false = assign_;
+                bool can_fail = false;
                 if (node.cond) {
                     expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
+                    on_true = cond_true_;
+                    on_false = cond_false_;
+                    can_fail = !on_false.unreachable;
                 }
-                if (node.step) {
-                    check_expr(*node.step, false);
-                }
+                assign_ = on_true;
                 const std::optional<NullGuard> guard = null_guard(node.cond.get());
                 const bool narrowed = guard && !guard->equal_null && narrow_optional(guard->name);
                 if (node.body) {
@@ -4115,15 +4345,30 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (narrowed) {
                     restore_optional(guard->name);
                 }
+                AssignState step_state = assign_;
+                for (const AssignState &continued : flow_frames_.back().continues) {
+                    step_state = init_merge(step_state, continued);
+                }
+                assign_ = step_state;
+                if (node.step) {
+                    check_expr(*node.step, false);
+                }
+                const FlowFrame done = std::move(flow_frames_.back());
+                flow_frames_.pop_back();
+                assign_ = init_loop_exit(done.breaks, on_false, can_fail);
                 --loop_depth_;
                 pop();
             } else if constexpr (std::is_same_v<T, Stmt::Break>) {
                 if (loop_depth_ == 0 && switches_.empty()) {
                     error(node.loc, "break outside loop");
+                } else {
+                    init_break();
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Continue>) {
                 if (loop_depth_ == 0) {
                     error(node.loc, "continue outside loop");
+                } else {
+                    init_continue();
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Func>) {
                 if (node.decl) {
@@ -4216,7 +4461,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(loc, "not supported yet");
                         return;
                     }
+                    const int tracked = symbol.init_id;
+                    const std::size_t before = diags_.size();
                     expect_value(got, symbol.type, *node.value, loc);
+                    if (diags_.size() == before) {
+                        init_mark_all(tracked);
+                    }
                 };
                 auto declare_new = [&](std::size_t index) {
                     const SourceLoc loc = index < node.name_locs.size() ? node.name_locs[index] : node.loc;
@@ -4297,7 +4547,16 @@ void Checker::check_stmt(const Stmt &stmt) {
                         symbol.type.is_const = true;
                     }
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
-                    declare(std::move(symbol), var.loc);
+                    Symbol *live = nullptr;
+                    if (declare(std::move(symbol), var.loc)) {
+                        live = lookup(var.name);
+                    }
+                    int tracked = 0;
+                    // Open before the initializer so `var n i32 = n` reads an uninitialized local.
+                    if (live != nullptr && live->function_id != 0 && !var.is_extern && !var.is_const_decl) {
+                        init_open(*live);
+                        tracked = live->init_id;
+                    }
                     const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                     const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
                     // `var v []i32 = row` converts. `var copy [2]i32 = row` copies that array.
@@ -4310,7 +4569,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                     } else if (var.is_array && !var.ptr_to_array && var.init && !array_list && !slice && !array_value) {
                         error(var.loc, "not supported yet");
                     } else if (var.init) {
+                        const std::size_t before = diags_.size();
                         check_against(*var.init, type);
+                        if (diags_.size() == before) {
+                            init_mark_all(tracked);
+                        }
                     } else if (!var.is_extern && needs_nonnull_pointer(type)) {
                         error(var.loc, "type mismatch");
                     }
@@ -4321,6 +4584,7 @@ void Checker::check_stmt(const Stmt &stmt) {
 }
 
 void Checker::check_function(const FunctionDecl &fn) {
+    InitSuspend suspend(*this);
     const int saved_unsafe = unsafe_depth_;
     unsafe_depth_ = fn.unsafe ? 1 : 0;
     if (fn.results.size() > 1) {

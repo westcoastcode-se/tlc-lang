@@ -1,0 +1,7 @@
+func open(opt ?*[4]i32) i32 {
+    return opt.len;
+}
+
+func main() i32 {
+    return 0;
+}

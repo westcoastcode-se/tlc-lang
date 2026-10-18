@@ -1,0 +1,8 @@
+func main() i32 {
+    var n i32 = 0;
+    var value i32;
+    if (n) {
+        value = 1;
+    }
+    return value;
+}

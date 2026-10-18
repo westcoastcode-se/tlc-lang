@@ -1,0 +1,36 @@
+func use(p *i32) i32 {
+    return 0;
+}
+
+func main() i32 {
+    var value i32;
+    var other i32;
+    var s i32;
+    var raw i32;
+    var buf [2]i32;
+    var n = sizeof(raw);
+    var len = buf.len;
+    var p = &raw;
+    use(buf);
+    value = 40;
+    if (1) {
+        value = value + 1;
+    } else {
+        value = 0;
+    }
+    if (0) {
+        other = 5;
+    } else {
+        other = 1;
+    }
+    s = 0;
+    do {
+        s = other;
+    } while (0);
+    buf[0] = 0;
+    buf[1] = 0;
+    if (0 && raw) {
+        return 0;
+    }
+    return value + s + buf[0] + buf[1] + n - n + len - len + (p == null);
+}

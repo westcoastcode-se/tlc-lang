@@ -149,6 +149,8 @@ int run_abi_tests() {
                "    var o One = make_one(42);\n"
                "    if (o.a != 42 || one_a(o) != 42) { return 6; }\n"
                "    var q Pair;\n"
+               "    q.a = 0;\n"
+               "    q.b = 0;\n"
                "    fill_pair(&q, 10, 5);\n"
                "    if (q.a != 10 || q.b != 5) { return 7; }\n"
                "    if (call_add() != 42 || call_make() != 42) { return 8; }\n"

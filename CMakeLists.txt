@@ -32,6 +32,7 @@ add_library(tlc_lib
     src/sema.cpp
     src/sema_lookup.cpp
     src/sema_expr.cpp
+    src/sema_init.cpp
     src/sema_unit.cpp
     src/sema_generic.cpp
     src/codegen.cpp

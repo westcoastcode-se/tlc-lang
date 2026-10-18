@@ -4,6 +4,7 @@
 
 #include "sema.hpp"
 
+#include <cstdint>
 #include <deque>
 #include <optional>
 #include <string>
@@ -83,6 +84,8 @@ struct Symbol {
     int function_id = 0;
     uint32_t package_file = 0;
     SourceLoc loc{};
+    // 0 when this local is not tracked. A tracked local stays open until every leaf is assigned.
+    int init_id = 0;
 };
 
 struct Scope {
@@ -432,6 +435,150 @@ class Checker {
     std::optional<FoldedNumber> fold_number(const Expr &expr, std::unordered_set<std::string> &seen);
     // `typeof(...)` after checking. Empty when this expression is not that constant.
     std::optional<std::string> type_constant(const Expr &expr) const;
+
+    // One step from a local toward the use. The stack is outer-first.
+    struct InitStep {
+        enum class Kind { Field, Index, Range };
+        Kind kind = Kind::Field;
+        std::string field;
+        int index = 0;
+        bool known = false;
+    };
+    // Absent from `open` means every leaf is assigned. A present byte is 1 when that leaf is assigned.
+    struct AssignState {
+        bool unreachable = false;
+        std::unordered_map<int, std::vector<uint8_t>> open;
+    };
+    struct FlowFrame {
+        enum class Kind { Loop, Switch };
+        Kind kind = Kind::Loop;
+        AssignState entry;
+        std::vector<AssignState> breaks;
+        std::vector<AssignState> continues;
+        struct Local {
+            int id = 0;
+            int leaves = 0;
+        };
+        // Locals declared in this switch. A later case enters them directly, so they are open again.
+        std::vector<Local> locals;
+    };
+    enum class InitUse { Read, Address, Method };
+
+    class InitUseGuard {
+      public:
+        InitUseGuard(Checker &self, InitUse use);
+        ~InitUseGuard();
+        InitUseGuard(const InitUseGuard &) = delete;
+        InitUseGuard &operator=(const InitUseGuard &) = delete;
+
+      private:
+        Checker *self_;
+        InitUse saved_;
+    };
+    class InitPush {
+      public:
+        InitPush(Checker &self, InitStep step);
+        ~InitPush();
+        InitPush(const InitPush &) = delete;
+        InitPush &operator=(const InitPush &) = delete;
+
+      private:
+        Checker *self_;
+    };
+    class InitKeep {
+      public:
+        explicit InitKeep(Checker &self);
+        ~InitKeep();
+        InitKeep(const InitKeep &) = delete;
+        InitKeep &operator=(const InitKeep &) = delete;
+
+      private:
+        Checker *self_;
+    };
+    class InitQuiet {
+      public:
+        explicit InitQuiet(Checker &self);
+        ~InitQuiet();
+        InitQuiet(const InitQuiet &) = delete;
+        InitQuiet &operator=(const InitQuiet &) = delete;
+
+      private:
+        Checker *self_;
+        bool saved_;
+    };
+    class UnreachableAfter {
+      public:
+        explicit UnreachableAfter(Checker &self);
+        ~UnreachableAfter();
+        UnreachableAfter(const UnreachableAfter &) = delete;
+        UnreachableAfter &operator=(const UnreachableAfter &) = delete;
+
+      private:
+        Checker *self_;
+    };
+    class InitSuspend {
+      public:
+        explicit InitSuspend(Checker &self);
+        ~InitSuspend();
+        InitSuspend(const InitSuspend &) = delete;
+        InitSuspend &operator=(const InitSuspend &) = delete;
+
+        Checker *self_ = nullptr;
+        AssignState assign;
+        std::vector<FlowFrame> frames;
+        std::vector<InitStep> stack;
+        InitUse use = InitUse::Read;
+        bool quiet = false;
+        int keep = 0;
+        bool split = false;
+        AssignState cond_true;
+        AssignState cond_false;
+    };
+
+    struct InitTouch {
+        bool read = false;
+        bool mark = false;
+        int offset = 0;
+        int count = 0;
+    };
+
+    int init_leaf_count(const Type &type);
+    int init_leaf_count(const Type &type, std::unordered_set<int> &seen);
+    void init_open(Symbol &symbol);
+    void init_note_local(int id, int leaves);
+    void init_mark_span(int id, int offset, int count);
+    void init_mark_all(int id);
+    void init_require_span(int id, int offset, int count, SourceLoc loc);
+    void init_touch(const Symbol &symbol, SourceLoc loc);
+    InitTouch init_resolve(Type type, int offset, int count, const std::vector<InitStep> &steps, bool storing);
+    bool init_collect(const Expr &expr, std::vector<InitStep> &steps);
+    void init_store(const Expr &lhs);
+    void init_store_if(const Expr &lhs, std::size_t before);
+    // A `self this` call copies the receiver. A `self *this` call does not.
+    void init_require_receiver(const Expr &expr);
+    AssignState init_merge(const AssignState &lhs, const AssignState &rhs) const;
+    AssignState init_loop_exit(const std::vector<AssignState> &breaks, const AssignState &fail, bool can_fail) const;
+    bool init_has_default(const Stmt *stmt) const;
+    void init_break();
+    void init_continue();
+    void init_suspend(InitSuspend &saved);
+    void init_resume(InitSuspend &saved);
+    FlowFrame *init_switch_frame();
+
+    // Definite assignment. Only a function-local `var` with no settled initializer is tracked.
+    AssignState assign_;
+    AssignState cond_true_;
+    AssignState cond_false_;
+    bool cond_split_ = false;
+    std::vector<InitStep> init_stack_;
+    InitUse init_use_ = InitUse::Read;
+    bool init_quiet_ = false;
+    int init_keep_array_ = 0;
+    int init_seq_ = 0;
+    std::unordered_map<int, int> init_leaves_;
+    std::unordered_map<int, int> init_struct_leaves_;
+    std::vector<FlowFrame> flow_frames_;
+
     void check_function(const FunctionDecl &fn);
     void declare_globals(const TranslationUnit &unit);
     void check_globals(const TranslationUnit &unit);

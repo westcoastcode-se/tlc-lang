@@ -1,0 +1,11 @@
+func take(a []i32) i32 {
+    return a.len;
+}
+
+func open(p *[4]i32) i32 {
+    return take(p);
+}
+
+func main() i32 {
+    return 0;
+}

@@ -1587,6 +1587,7 @@ int run_sema_tests() {
             "func main() i32 {\n"
             "  var live Point;\n"
             "  live.x = 10;\n"
+            "  live.y = 0;\n"
             "  const frozen = live;\n"
             "  const p = &live;\n"
             "  p.bump();\n"
@@ -3233,6 +3234,7 @@ int run_sema_tests() {
             "func main() i32 {\n"
             "  func inner(n i32) void { }\n"
             "  var box Box;\n"
+            "  box.v = 0;\n"
             "  var p *Box = &box;\n"
             "  defer note(1);\n"
             "  defer inner(2);\n"
@@ -4111,6 +4113,7 @@ int run_sema_tests() {
             "func main() i32 {\n"
             "  var f = make();\n"
             "  var box Box;\n"
+            "  box.n = 0;\n"
             "  var g = box.choose();\n"
             "  a, b := pair()(1);\n"
             "  return f(1) + g(1, 1) + none()() + Box.full()(1) + a + b;\n"
@@ -4150,6 +4153,7 @@ int run_sema_tests() {
             "}\n"
             "func main() i32 {\n"
             "  var box Box;\n"
+            "  box.n = 0;\n"
             "  return outer(add)(1) + apply(add) + nested(add) + box.wrap(add);\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -4341,7 +4345,7 @@ int run_sema_tests() {
             "  person.nickname = null;\n"
             "  person.home = &home;\n"
             "  bind(&person, &home);\n"
-            "  var p ?*i32;\n"
+            "  var p ?*i32 = null;\n"
             "  if (p == null) { return 0; }\n"
             "  return *p;\n"
             "}\n");
