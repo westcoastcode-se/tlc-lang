@@ -1,1 +1,1 @@
-compile-error: return type: expected []i32, found *[4]i32
+exit: 42

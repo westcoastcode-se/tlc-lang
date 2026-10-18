@@ -1,5 +1,5 @@
 func take(a []i32) i32 {
-    return a.len;
+    return a[0] + a.len;
 }
 
 func open(p *[4]i32) i32 {
@@ -7,5 +7,6 @@ func open(p *[4]i32) i32 {
 }
 
 func main() i32 {
-    return 0;
+    var row = [_]i32{38, 1, 2, 3};
+    return open(&row);
 }

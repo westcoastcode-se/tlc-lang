@@ -6013,8 +6013,58 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func open(row [4]i32) []i32 { return row; }\n"
+            "func view(p *[4]i32) []i32 { return p; }\n"
+            "func rows(grid [2][3]i32) [][3]i32 { return grid; }\n"
+            "func plane(p *[2][3]i32) [][3]i32 { return p; }\n"
+            "type Row []i32;\n"
+            "func named(row [4]i32) Row { return row; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func open(p *i32) []i32 { return p; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "return type: expected []i32, found *i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func open(row [4]i32) []const i32 { return row; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "return type: expected []const i32, found *i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func open(p ?*[4]i32) []i32 { return p; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "return type: expected []i32, found ?*[4]i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Pair [4]i32;\n"
+            "func open(p *Pair) []i32 { return p; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "return type: expected []i32, found *Pair");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func open(p **[4]i32) []i32 { return p; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "return type: expected []i32, found **[4]i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "var row = [_]i32{1, 2, 3, 4};\n"
+            "var p *[4]i32 = &row;\n"
+            "var view []i32 = p;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "global initializer is not a constant");
     }
 
     {

@@ -1033,11 +1033,22 @@ llvm::Value *CodeGen::as_slice_value(const TypedValue &value, SourceLoc loc) {
             packed = builder_.CreateInsertValue(packed, const_i32(len), 1);
             return packed;
         }
-        if ((value.array_len > 0 || (value.is_slice && value.array_len >= 0)) &&
-            value.value->getType()->isPointerTy()) {
+        // A parameter `[N]T` keeps `N` in `array_len`. `*[N]T` keeps it in `ptr_array_len`,
+        // or in the array shell when a field load did not copy that flag. A string uses
+        // `array_len` 0, so that length is still packed.
+        int len = -1;
+        if (value.array_len > 0 || (value.is_slice && value.array_len >= 0)) {
+            len = value.array_len;
+        } else if (value.ptr_to_array && value.ptr_array_len > 0) {
+            len = value.ptr_array_len;
+        } else if (value.shells.size() >= 2 && value.shells[0].kind == TypeShell::Kind::Pointer &&
+                   value.shells[1].kind == TypeShell::Kind::Array && value.shells[1].length > 0) {
+            len = value.shells[1].length;
+        }
+        if (len >= 0 && value.value->getType()->isPointerTy()) {
             llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_ty);
             packed = builder_.CreateInsertValue(packed, value.value, 0);
-            packed = builder_.CreateInsertValue(packed, const_i32(value.array_len), 1);
+            packed = builder_.CreateInsertValue(packed, const_i32(len), 1);
             return packed;
         }
     }

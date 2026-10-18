@@ -836,7 +836,8 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
         expect_value(got, want, expr, expr_loc(expr));
         return got;
     }
-    // `[N]T` converts to `[]T` while the length is still known. A decayed `*T` does not.
+    // `[N]T` converts to `[]T` while the length is still known. A parameter `[N]T`
+    // and `*[N]T` do too. A decayed `*T` with no length does not.
     if (is_slice(want)) {
         const Type got = check_raw(expr, true);
         if (got.kind != TypeKind::Invalid && !accepts_slice(got, want)) {
@@ -4076,7 +4077,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     if (want.kind == TypeKind::Array && want.length > 0) {
                         // `return row` on a parameter `[N]T` copies the elements. `return row`
-                        // where `[]T` is expected stays the pointer. The slice is `row[:]`.
+                        // where `[]T` is expected builds the slice header.
                         InitKeep keep(*this);
                         const Type got = check_raw(value, true);
                         if (got.kind != TypeKind::Invalid && decayed_array_value(got, want)) {

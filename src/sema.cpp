@@ -243,7 +243,22 @@ bool is_slice(const Type &type) {
 }
 
 bool accepts_slice(const Type &got, const Type &want) {
-    if (!is_slice(want) || got.kind != TypeKind::Array || got.element == nullptr || want.element == nullptr) {
+    if (!is_slice(want) || want.element == nullptr) {
+        return false;
+    }
+    // A parameter `[N]T` is a pointer to the element, and `decayed_len` is that `N`.
+    // `*[N]T` points at the array. A plain `*T` has no length. `?*[N]T` stays optional.
+    if (got.kind == TypeKind::Pointer && !got.optional && got.alias_id == 0 && got.pointee != nullptr) {
+        if (got.decayed_len > 0 && same_type(*got.pointee, *want.element)) {
+            return true;
+        }
+        const Type &array = *got.pointee;
+        if (got.decayed_len == 0 && array.kind == TypeKind::Array && array.length > 0 && array.alias_id == 0 &&
+            array.element != nullptr && same_type(*array.element, *want.element)) {
+            return true;
+        }
+    }
+    if (got.kind != TypeKind::Array || got.element == nullptr) {
         return false;
     }
     if (got.alias_id != 0 && got.alias_id != want.alias_id) {

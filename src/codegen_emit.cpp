@@ -2833,6 +2833,32 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
     }
     TypedValue result = tagged({inst, call.depth, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool,
                                 call.elem_bits, call.elem_unsigned});
+    // `give()` that returns `*[N]T` is still that pointer. The length stays so a slice use can pack it.
+    auto stamp_array_ptr = [&](const std::string &name, const std::string &package, bool is_struct, int indirections,
+                               bool is_array, int array_len, bool elem_slice, const std::vector<TypeShell> &shells) {
+        if (result.ptr_to_array || shells.empty()) {
+            return;
+        }
+        const Lowered low = lower(current_file_, name, package, is_struct, indirections, is_array, array_len, false,
+                                  elem_slice, shells);
+        if (!low.ptr_to_array || low.ptr_array_len <= 0) {
+            return;
+        }
+        result.ptr_to_array = true;
+        result.ptr_array_len = low.ptr_array_len;
+        result.shells = low.shells;
+        result.inner_array_len = low.inner_array_len;
+        result.elem_slice = low.elem_slice;
+    };
+    if (call.decl != nullptr && call.decl->results.size() == 1) {
+        const ResultSlot &slot = call.decl->results.front();
+        stamp_array_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
+                        slot.array_len, slot.elem_slice, slot.shells);
+    } else if (call.fn_results.size() == 1) {
+        const FnParam &slot = call.fn_results.front();
+        stamp_array_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
+                        slot.array_len, slot.elem_slice, slot.shells);
+    }
     if (inst->getType()->isStructTy() &&
         ((call.decl != nullptr && call.decl->results.size() > 1) || call.fn_results.size() > 1)) {
         result.is_tuple = true;

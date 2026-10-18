@@ -36,7 +36,7 @@ struct Type {
     // `type Name T` is a distinct type with the same representation as T. Zero means T itself.
     int alias_id = 0;
     // A parameter `[N]T` decays to a pointer. This is that `N`. Zero on every other type.
-    // It is not part of the type. The pointer does not convert to `[]T`.
+    // It is not part of the type. Where `[]T` is expected, the pointer becomes that slice.
     // When `[N]T` is expected, the pointer is that array and the elements are copied.
     int decayed_len = 0;
 };
@@ -64,7 +64,8 @@ bool same_type(const Type &lhs, const Type &rhs);
 bool same_selection(const Type &lhs, bool skip_lhs, const Type &rhs, bool skip_rhs);
 // `[]T`: an array whose length is unknown. It is a readonly slice.
 bool is_slice(const Type &type);
-// `[N]T` converts to `[]T` of the same element. Two slices match only when they are the same type.
+// `[N]T`, a parameter `[N]T`, and `*[N]T` convert to `[]T` of the same element.
+// Two slices match only when they are the same type.
 bool accepts_slice(const Type &got, const Type &want);
 
 void analyze(const TranslationUnit &unit, DiagnosticEngine &diags);
