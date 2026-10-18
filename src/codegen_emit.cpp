@@ -5465,41 +5465,6 @@ const FunctionDecl *CodeGen::callee_decl(const Expr &callee) const {
     return nullptr;
 }
 
-namespace {
-
-// Past this, one zero store covers the object. Splitting a huge local would emit one store per byte.
-constexpr int kZeroLeafCap = 64;
-
-int zero_leaf_count(llvm::Type *ty) {
-    if (ty == nullptr || !ty->isSized()) {
-        return kZeroLeafCap + 1;
-    }
-    if (const auto *array = llvm::dyn_cast<llvm::ArrayType>(ty)) {
-        if (array->getNumElements() == 0) {
-            return 0;
-        }
-        const int inner = zero_leaf_count(array->getElementType());
-        const uint64_t product = array->getNumElements() * static_cast<uint64_t>(std::max(inner, 1));
-        if (product > static_cast<uint64_t>(kZeroLeafCap)) {
-            return kZeroLeafCap + 1;
-        }
-        return static_cast<int>(product);
-    }
-    if (const auto *structure = llvm::dyn_cast<llvm::StructType>(ty)) {
-        int total = 0;
-        for (llvm::Type *field : structure->elements()) {
-            total += zero_leaf_count(field);
-            if (total > kZeroLeafCap) {
-                return kZeroLeafCap + 1;
-            }
-        }
-        return total;
-    }
-    return 1;
-}
-
-} // namespace
-
 void CodeGen::zero_bytes(llvm::Value *slot, uint64_t offset, uint64_t size) {
     uint64_t at = offset;
     const uint64_t end = offset + size;
@@ -5567,10 +5532,8 @@ void CodeGen::zero_slot(llvm::Value *slot, llvm::Type *ty) {
     if (module_.getDataLayout().getTypeAllocSize(ty).getFixedValue() == 0) {
         return;
     }
-    if (zero_leaf_count(ty) > kZeroLeafCap) {
-        builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
-        return;
-    }
+    // One store per leaf. A later store, or a leaf that is never read, can be deleted.
+    // One aggregate zero cannot: a single live byte keeps every element.
     zero_leaves(slot, ty);
 }
 
