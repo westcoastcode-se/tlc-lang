@@ -6279,24 +6279,20 @@ void CodeGen::emit_dynamic_inits() {
             trace_name_ = var->name;
             set_loc(var->loc);
             llvm::Value *dest = found->second.value;
-            // `{give(), 2}` is a list. `[_]i32{give(), 2}` is an array literal and uses emit_rvalue.
+            // Store the list in the global. A later call reads elements already stored.
             if (found->second.is_array) {
                 if (const auto *list = std::get_if<Expr::Init>(&var->init->data);
-                    list != nullptr && !list->array_literal && !list->is_tuple && list->fields.empty() &&
-                    !list->elements.empty()) {
+                    list != nullptr && !list->is_tuple && list->fields.empty() && !list->elements.empty()) {
                     llvm::Type *ty = object_type(dest);
                     auto *array_ty = ty != nullptr && ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
                     if (array_ty == nullptr) {
                         error(var->loc, "type mismatch");
                     } else {
-                        llvm::AllocaInst *slot = alloca_typed(ty, "array");
+                        // A short list starts at zero. A full list stores only its elements.
                         if (!array_list_covers(*list, array_ty)) {
-                            builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
+                            builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), dest);
                         }
-                        store_array_elements(slot, array_ty, *list);
-                        if (!terminated()) {
-                            builder_.CreateStore(builder_.CreateLoad(ty, slot), dest);
-                        }
+                        store_array_elements(dest, array_ty, *list);
                     }
                     continue;
                 }

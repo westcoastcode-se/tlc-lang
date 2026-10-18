@@ -1,0 +1,49 @@
+func id(n i32) i32 {
+    return n;
+}
+
+func peek() i32 {
+    return inferred[0];
+}
+
+func plant() i32 {
+    side[1] = 8;
+    return 4;
+}
+
+func read_side() i32 {
+    return side[1];
+}
+
+func grid_peek() i32 {
+    return grid[0][0];
+}
+
+func deep_peek() i32 {
+    return deep[0][0];
+}
+
+var row [2]i32 = {4, id(row[0])};
+var inferred = [_]i32{4, peek()};
+var side [3]i32 = {plant(), 5, read_side()};
+var grid [2][2]i32 = {{4, grid_peek()}, {1, 2}};
+var deep = [_][2]i32{{4, deep_peek()}, {1, 2}};
+
+func main() i32 {
+    if (row[0] != 4 || row[1] != 4) {
+        return 1;
+    }
+    if (inferred[0] != 4 || inferred[1] != 4) {
+        return 2;
+    }
+    if (side[0] != 4 || side[1] != 5 || side[2] != 5) {
+        return 3;
+    }
+    if (grid[0][0] != 4 || grid[0][1] != 4 || grid[1][0] != 1 || grid[1][1] != 2) {
+        return 4;
+    }
+    if (deep[0][0] != 4 || deep[0][1] != 4 || deep[1][0] != 1 || deep[1][1] != 2) {
+        return 5;
+    }
+    return row[1] + inferred[1] + side[2] + grid[0][1] + deep[0][1];
+}
