@@ -1,0 +1,23 @@
+type Node struct {
+    next ?*Node;
+    n i32 = 42;
+};
+
+type Hold struct {
+    next ?*Hold = null;
+    n i32 = 40;
+};
+
+func main() i32 {
+    var node = Node{};
+    var made *Node = new Node{};
+    var hold = Hold{};
+    var heap *Hold = new Hold{};
+    if (node.next != null || made.next != null || hold.next != null || heap.next != null) {
+        return 0;
+    }
+    var sum = node.n + hold.n - heap.n;
+    delete made;
+    delete heap;
+    return sum;
+}

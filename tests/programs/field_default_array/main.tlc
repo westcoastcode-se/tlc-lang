@@ -1,0 +1,20 @@
+type Point struct {
+    x i32 = 1;
+    y i32 = 2;
+};
+
+var origin Point;
+var global [2]Point;
+
+func main() i32 {
+    var row [2]Point;
+    var both [2]Point = {Point{.x = 28}, Point{}};
+    var n = 2;
+    var buf *Point = new [n]Point;
+    var empty *Point = new Point;
+    var sum = origin.x + origin.y + global[0].y + row[1].x + both[0].x + both[1].y + buf[0].x + buf[1].y + empty.x +
+              empty.y;
+    delete buf;
+    delete empty;
+    return sum;
+}

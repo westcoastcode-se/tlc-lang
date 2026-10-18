@@ -1089,6 +1089,62 @@ bool Checker::constant_slice_expr(const Expr &expr, std::unordered_set<std::stri
     return ok;
 }
 
+void Checker::check_field_default(const Expr &expr, const Type &type, SourceLoc loc) {
+    // `const p *i32 = &n` is not a constant. Null is the pointer this evaluator folds.
+    if (type.kind == TypeKind::Pointer && !std::holds_alternative<Expr::Nullptr>(expr.data)) {
+        error(loc, "global initializer is not a constant");
+        return;
+    }
+    const std::size_t before = diags_.size();
+    const Type got = check_against(expr, type);
+    if (diags_.size() != before || got.kind == TypeKind::Invalid) {
+        return;
+    }
+    std::unordered_set<std::string> seen;
+    const FileConst kind = file_constant(expr, seen, false);
+    if (kind == FileConst::Yes) {
+        return;
+    }
+    std::unordered_set<std::string> slice_seen;
+    if (is_slice(type) && constant_slice_expr(expr, slice_seen)) {
+        return;
+    }
+    error(loc, kind == FileConst::Unfolded ? "not supported yet" : "global initializer is not a constant");
+}
+
+void Checker::check_field_defaults(const TranslationUnit &unit) {
+    for (const TopDecl &decl : unit.decls) {
+        const auto *item = std::get_if<StructDecl>(&decl.data);
+        if (item == nullptr || item->name.empty() || !item->type_params.empty()) {
+            continue;
+        }
+        const int id = find_tag(file_id_, item->name);
+        if (id < 0 || id >= static_cast<int>(structs_.size())) {
+            continue;
+        }
+        const StructInfo &info = structs_[static_cast<std::size_t>(id)];
+        if (info.is_union) {
+            continue;
+        }
+        for (const FieldDecl &field : item->fields) {
+            if (field.init == nullptr) {
+                continue;
+            }
+            const StructInfo::Field *slot = nullptr;
+            for (const StructInfo::Field &have : info.fields) {
+                if (have.name == field.name) {
+                    slot = &have;
+                    break;
+                }
+            }
+            if (slot == nullptr || !slot->has_init || slot->type.kind == TypeKind::Invalid) {
+                continue;
+            }
+            check_field_default(*field.init, slot->type, field.loc);
+        }
+    }
+}
+
 bool Checker::constant_operand(const Expr &expr) {
     return std::visit(
         [&](const auto &node) -> bool {
@@ -1696,6 +1752,7 @@ void Checker::check_unit(const TranslationUnit &unit, uint32_t file_id, const Pa
             declare(symbol, {});
         }
     }
+    check_field_defaults(unit);
     check_globals(unit);
     drain_deferred();
     pop();

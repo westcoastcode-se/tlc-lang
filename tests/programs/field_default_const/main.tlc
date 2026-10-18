@@ -1,0 +1,11 @@
+type Point struct {
+    x i32 = 40;
+    y i32 = 2;
+};
+
+const origin = Point{};
+var placed Point = {.x = 10};
+
+func main() i32 {
+    return origin.x + placed.y;
+}

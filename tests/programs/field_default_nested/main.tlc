@@ -1,0 +1,18 @@
+type Inner struct {
+    a i32 = 3;
+    b i32 = 4;
+};
+
+type Box struct {
+    inner Inner;
+    n i32 = 5;
+};
+
+func main() i32 {
+    var b = Box{.n = 30};
+    var p *Box = new Box{};
+    var bare Box;
+    var sum = b.n + b.inner.a + p.inner.b + bare.n;
+    delete p;
+    return sum;
+}

@@ -381,8 +381,16 @@ struct FieldDecl {
     std::vector<FnParam> fn_results;
     // `export name` on a struct member. Another package can read and assign it.
     bool exported = false;
+    // `name type = expr`. The value of a field that a struct value or `new` does not name.
+    std::unique_ptr<Expr> init;
     // Fields of `Name struct { ... }` inside a tlc union. Empty when the variant names a declared struct.
     std::vector<FieldDecl> inline_fields;
+
+    FieldDecl() = default;
+    FieldDecl(const FieldDecl &other);
+    FieldDecl &operator=(const FieldDecl &other);
+    FieldDecl(FieldDecl &&) noexcept = default;
+    FieldDecl &operator=(FieldDecl &&) noexcept = default;
 };
 
 struct StructDecl {
@@ -402,6 +410,8 @@ struct StructDecl {
     std::vector<TypeParam> type_params;
     // The struct synthesized for an inline variant. Its name is not a type the program can write.
     bool anonymous = false;
+    // Inline payload of a tlc union. A field value there is not a union form.
+    bool union_payload = false;
 };
 
 struct Enumerator {

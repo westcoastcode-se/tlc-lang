@@ -14,6 +14,26 @@ Stmt::~Stmt() = default;
 Stmt::Stmt(Stmt &&) noexcept = default;
 Stmt &Stmt::operator=(Stmt &&) noexcept = default;
 
+FieldDecl::FieldDecl(const FieldDecl &other)
+    : loc(other.loc), name(other.name), type_name(other.type_name), type_package(other.type_package),
+      is_struct(other.is_struct), is_enum(other.is_enum), indirections(other.indirections), optional(other.optional),
+      const_pointee(other.const_pointee), is_array(other.is_array), elem_const(other.elem_const),
+      elem_slice(other.elem_slice), shells(other.shells), array_len(other.array_len),
+      array_len_name(other.array_len_name), type_args(other.type_args), is_fn_ptr(other.is_fn_ptr),
+      ret_indirections(other.ret_indirections), ret_optional(other.ret_optional),
+      ret_const_pointee(other.ret_const_pointee), fn_params(other.fn_params), fn_variadic(other.fn_variadic),
+      fn_results(other.fn_results), exported(other.exported), init(other.init ? clone_expr(*other.init) : nullptr),
+      inline_fields(other.inline_fields) {}
+
+FieldDecl &FieldDecl::operator=(const FieldDecl &other) {
+    if (this == &other) {
+        return *this;
+    }
+    FieldDecl copy(other);
+    *this = std::move(copy);
+    return *this;
+}
+
 SourceLoc expr_loc(const Expr &expr) {
     return std::visit([](const auto &node) { return node.loc; }, expr.data);
 }

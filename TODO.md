@@ -18,7 +18,7 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 ## Heap allocation
 
-`new T` and `delete p` allocate one object with `builtin.allocator`. `new(&arena) T` and `delete(&arena) p` take a pointer whose pointee has `Allocator`'s methods. The pointee type is taken from the pointer. `new [n]T` reserves `n` elements and yields `*T`. `new Box[i32]` allocates one specialization. `new` yields `*T`. `delete` frees that pointer and has no result. `malloc` returns `?*u8`. When that is `null`, including from a custom allocator, `new` calls `builtin.panic("out of memory")`. `new` does not zero the block. A field that is not named stays uninitialized. A non-nullable pointer field has to be named. `delete` does not zero the pointer.
+`new T` and `delete p` allocate one object with `builtin.allocator`. `new(&arena) T` and `delete(&arena) p` take a pointer whose pointee has `Allocator`'s methods. The pointee type is taken from the pointer. `new [n]T` reserves `n` elements and yields `*T`. `new Box[i32]` allocates one specialization. `new` yields `*T`. `delete` frees that pointer and has no result. `malloc` returns `?*u8`. When that is `null`, including from a custom allocator, `new` calls `builtin.panic("out of memory")`. `new i32` and `new [n]i32` do not store the reserved memory. `new Point` and `new [n]Point` store each field. A field that is not named takes the value written on the field, or zero. A non-nullable pointer field has to be named unless that field has a value. `delete` does not zero the pointer.
 
 There is no `realloc` expression. `Allocator.realloc` returns `?*u8`. The caller handles `null`.
 
@@ -120,6 +120,8 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - `extern` or `extern(abi="c")` on `union(Enum)`.
 - A qualified enum name in `union(Enum)`, such as `union(pkg.Kind)`.
 - A by-value field of a struct that is still incomplete, including the struct being defined. A pointer to that struct is fine.
+- A value on a union field, including a field of the inline payload, such as `n i32 = 1` inside `union(Enum)`. It is `not supported yet`.
+- A value on a sized-array field, such as `raw [2]i32 = {1, 2}`. It is `not supported yet`.
 
 ## Methods and traits
 
@@ -131,6 +133,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - `export`, `extern`, or `...` on a function that takes a trait parameter.
 - A named function as the argument of a single-method trait. The argument is an anonymous function.
 - `(*a).apply(n)` when `a` is a trait pointer passed as an anonymous function. The call is `a.apply(n)`.
+- A value on a trait field, such as `w i32 = 1`. It is `not supported yet`.
 
 ## Inconsistencies
 
@@ -138,7 +141,6 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Initialization
 
-- `Point{.x = 1}` zeros every omitted field. An omitted `?*T` is null. An omitted `*T` is `type mismatch`. `new Point{.x = 1}` leaves an omitted field uninitialized, so an omitted `?*T` is not null, and an omitted `*T` is still `type mismatch`. `new [n]Point{{.x = 1}...}` stores a struct value, and that value zeros the fields it omits. Pages: `docs/types/struct.md`, `docs/statements/new.md`.
 - A complete array list stores only the listed elements. A shorter list zeros each element it does not name. Pages: `docs/types/array.md`, `docs/statements/binding.md`. The sentence in `docs/expressions/tuple.md` that says every array list zeros first is under [Documentation](#documentation).
 
 ### Aggregates

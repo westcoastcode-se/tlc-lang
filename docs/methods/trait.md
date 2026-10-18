@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A trait is a list of methods and fields. The receiver is implicit and is omitted from the trait type. A field is a name and a type, the same form as a struct field.
+A trait is a list of methods and fields. The receiver is implicit and is omitted from the trait type. A field is a name and a type, the same form as a struct field. A value on the field, `w i32 = 1`, is reported as `not supported yet`.
 
 ```c
 type Shape trait {

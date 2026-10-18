@@ -1,0 +1,16 @@
+const N = 7;
+
+type Box[T type] struct {
+    value T;
+    extra i32 = N;
+    bytes i32 = sizeof(T);
+};
+
+func main() i32 {
+    var N = 100;
+    var b = Box[i32]{.value = 20};
+    var p *Box[i32] = new Box[i32]{};
+    var sum = b.value + b.extra + b.bytes + p.extra + p.bytes - N + 100;
+    delete p;
+    return sum;
+}

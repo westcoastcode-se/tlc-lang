@@ -1,0 +1,8 @@
+type Node struct {
+    next *Node;
+};
+
+func main() i32 {
+    var n = Node{};
+    return 0;
+}

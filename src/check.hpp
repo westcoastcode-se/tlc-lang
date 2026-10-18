@@ -122,6 +122,8 @@ class Checker {
             SourceLoc loc{};
             // `export name` in the struct. Extern structs and unions publish every field.
             bool exported = false;
+            // `name type = expr`. An omitted field uses that value.
+            bool has_init = false;
         };
         std::vector<Field> fields;
         bool exported = false;
@@ -289,6 +291,8 @@ class Checker {
     std::optional<int> type_size(const Type &type) const;
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);
     void define_struct_fields();
+    void check_field_defaults(const TranslationUnit &unit);
+    void check_field_default(const Expr &expr, const Type &type, SourceLoc loc);
     void prepare_unit(const TranslationUnit &unit, uint32_t file_id, const PackageNode *node);
     void check_unit(const TranslationUnit &unit, uint32_t file_id, const PackageNode *node);
 

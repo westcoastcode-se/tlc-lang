@@ -398,6 +398,10 @@ bool Parser::parse_field(FieldDecl &field) {
     field.fn_params = type.fn_params;
     field.fn_variadic = type.fn_variadic;
     field.fn_results = type.fn_results;
+    // `x i32 = 1` is the value of a field that an initializer does not name.
+    if (eat(TokenKind::Eq)) {
+        field.init = parse_expr();
+    }
     expect(TokenKind::Semicolon, "expected ';'");
     return true;
 }

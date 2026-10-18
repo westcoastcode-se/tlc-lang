@@ -1255,6 +1255,7 @@ void CodeGen::prepare_structs() {
             structs_[static_cast<std::size_t>(id)].is_extern = item->is_extern;
             structs_[static_cast<std::size_t>(id)].extern_c = item->extern_c;
             structs_[static_cast<std::size_t>(id)].is_union = item->is_union;
+            structs_[static_cast<std::size_t>(id)].file_id = file;
             if (!item->tag_name.empty()) {
                 structs_[static_cast<std::size_t>(id)].tag_enum = enum_named(file, item->tag_name);
             }
@@ -1299,6 +1300,11 @@ void CodeGen::prepare_structs() {
                 slot.is_slice = low.is_slice;
                 slot.elem_slice = low.elem_slice;
                 slot.shells = low.shells;
+                // A union payload and a sized array are not given a field value.
+                if (field.init != nullptr && !item->is_union && !item->union_payload &&
+                    !(low.is_array && !low.is_slice)) {
+                    slot.init = field.init.get();
+                }
                 // C _Bool is one byte. An extern(abi="c") struct keeps that layout.
                 if (item->extern_c && low.elem_bool && low.depth == 0) {
                     slot.type = c_memory(c_memory, slot.type);

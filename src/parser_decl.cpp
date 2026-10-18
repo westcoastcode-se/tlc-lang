@@ -43,6 +43,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
                 anon.name = union_name + "." + field.name;
                 anon.fields = field.inline_fields;
                 anon.anonymous = true;
+                anon.union_payload = true;
                 field.type_name = anon.name;
                 body.anonymous.push_back(std::move(anon));
             }
@@ -172,6 +173,10 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
                         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
                     }
                     fill(field, type);
+                    // `x i32 = 1` is the value of a field that an initializer does not name.
+                    if (eat(TokenKind::Eq)) {
+                        field.init = parse_expr();
+                    }
                     expect(TokenKind::Semicolon, "expected ';'");
                     body.fields.push_back(std::move(field));
                 }

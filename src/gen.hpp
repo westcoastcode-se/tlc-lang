@@ -527,10 +527,13 @@ class CodeGen {
         // The element of this slice or array field is one `[]E`.
         bool elem_slice = false;
         std::vector<TypeShell> shells;
+        // `name type = expr`. Null when the field has no value, or when that value is rejected.
+        const Expr *init = nullptr;
     };
     struct StructLayout {
         std::string name;
         llvm::StructType *type = nullptr;
+        uint32_t file_id = 0;
         std::vector<FieldLayout> fields;
         bool ready = false;
         bool is_extern = false;
@@ -1195,6 +1198,22 @@ class CodeGen {
     llvm::Constant *sized_int(const Binding &dest, int32_t value) const;
     llvm::Constant *intern_type_name(const std::string &text);
     llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
+    // Omitted fields take the value written on the field. `strict` drops the constant when a named field does not fold.
+    llvm::Constant *const_struct_into(const Expr::Init *overlay, int struct_id, bool strict,
+                                      std::unordered_set<int> &stack);
+    llvm::Constant *default_struct_into(int struct_id, std::unordered_set<int> &stack);
+    llvm::Constant *default_struct(int struct_id);
+    llvm::Constant *init_image(int struct_id, const Expr::Init *named);
+    llvm::Constant *default_array(llvm::Type *type, int struct_id, std::unordered_set<int> &stack);
+    llvm::Constant *omitted_field(const FieldLayout &slot, std::unordered_set<int> &stack);
+    llvm::Constant *bare_initializer(const Lowered &low, llvm::Type *ty);
+    // `seen` stops a by-value cycle. A true result leaves ids in `seen`.
+    bool struct_has_default(int struct_id, std::unordered_set<int> &seen) const;
+    void store_struct_defaults(llvm::Value *slot, int struct_id, std::unordered_set<int> &seen);
+    void paint_omitted_elements(llvm::Value *slot, llvm::ArrayType *array_ty, int struct_id, const Expr::Init *list,
+                                std::unordered_set<int> &seen);
+    void store_each_element(llvm::Value *raw, llvm::Value *count, llvm::Type *elem, llvm::Constant *image);
+    std::optional<int32_t> folded_sizeof(const Expr::Sizeof &node) const;
     llvm::Constant *const_array(const Expr::Init &init, const Binding &dest);
     llvm::Constant *fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
     // The constant array stored by `expr`, using that array's own global when `expr` is a name.

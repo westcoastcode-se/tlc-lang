@@ -1200,6 +1200,28 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     expr.data = std::move(literal);
                 }
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                // `sizeof(T)` is parsed as a type. The parameter is replaced before the value is folded.
+                if (node.on_type) {
+                    if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
+                        bound != nullptr && !bound->is_value) {
+                        if (bound->is_array || node.is_array || (!bound->shells.empty() && node.indirections != 0)) {
+                            error(node.loc, "not supported yet");
+                        }
+                        const int stars = node.indirections;
+                        node.type_name = bound->type_name;
+                        node.type_package = bound->type_package;
+                        node.is_struct = bound->is_struct;
+                        node.is_enum = bound->is_enum;
+                        node.indirections = stars + bound->indirections;
+                        node.optional = bound->optional << static_cast<unsigned>(stars);
+                        node.const_pointee = bound->const_pointee << static_cast<unsigned>(stars);
+                        node.is_array = bound->is_array;
+                        node.array_len = bound->array_len;
+                        node.elem_const = bound->elem_const;
+                        node.elem_slice = bound->elem_slice;
+                        node.shells = bound->shells;
+                    }
+                }
                 if (node.expr) {
                     substitute_expr(params, bounds, *node.expr);
                 }
@@ -1858,6 +1880,9 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         substitute_type(templ->type_params, bounds, field.type_name, field.type_package, field.is_struct, field.is_enum,
                         field.indirections, field.optional, field.is_array, field.array_len, field.array_len_name,
                         field.type_args, field.loc, &field.shells, &field.elem_const, &field.const_pointee);
+        if (field.init != nullptr) {
+            substitute_expr(templ->type_params, bounds, *field.init);
+        }
     }
     const int id = static_cast<int>(structs_.size());
     StructInfo info;
@@ -1886,10 +1911,52 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                                             false, field.type_package, field.is_struct, field.is_enum, false,
                                             field.optional, field.const_pointee, false, field.elem_const,
                                             field.elem_slice, field.shells);
-        structs_[static_cast<std::size_t>(id)].fields.push_back(
-            StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
+        StructInfo::Field stored{field.name, std::move(field_type), field.loc, field.exported};
+        if (field.init != nullptr) {
+            if (spec.union_payload || (stored.type.kind == TypeKind::Array && !is_slice(stored.type))) {
+                error(field.loc, "not supported yet");
+            } else {
+                stored.has_init = true;
+            }
+        }
+        structs_[static_cast<std::size_t>(id)].fields.push_back(std::move(stored));
     }
     structs_[static_cast<std::size_t>(id)].complete = true;
+    if (spec.is_union) {
+        for (const FieldDecl &field : spec.fields) {
+            if (field.init != nullptr) {
+                error(field.loc, "not supported yet");
+            }
+        }
+    } else {
+        // The value is checked in the struct's file, not in the call that instantiates it.
+        std::vector<Scope> saved_scopes = std::move(scopes_);
+        scopes_.clear();
+        push();
+        if (const auto found = statics_.find(owner); found != statics_.end()) {
+            for (const auto &[name, symbol] : found->second) {
+                scopes_.back().symbols.emplace(name, symbol);
+            }
+        }
+        for (const FieldDecl &field : spec.fields) {
+            if (field.init == nullptr) {
+                continue;
+            }
+            const StructInfo::Field *slot = nullptr;
+            for (const StructInfo::Field &have : structs_[static_cast<std::size_t>(id)].fields) {
+                if (have.name == field.name) {
+                    slot = &have;
+                    break;
+                }
+            }
+            if (slot == nullptr || !slot->has_init || slot->type.kind == TypeKind::Invalid) {
+                continue;
+            }
+            check_field_default(*field.init, slot->type, field.loc);
+        }
+        pop();
+        scopes_ = std::move(saved_scopes);
+    }
     for (const OwnedFn &owned : owned_fns_) {
         if (owned.file_id != owner || owned.fn.method_struct != templ->name) {
             continue;

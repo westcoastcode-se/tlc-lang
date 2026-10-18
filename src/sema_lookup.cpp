@@ -914,6 +914,10 @@ bool Checker::needs_nonnull_pointer(const Type &type) const {
             return false;
         }
         for (const StructInfo::Field &field : info.fields) {
+            // A value on the field initializes it, including a `*T` that would otherwise be missing.
+            if (field.has_init) {
+                continue;
+            }
             if (self(self, field.type)) {
                 return true;
             }
@@ -1351,6 +1355,10 @@ void Checker::define_trait_fields() {
             if (duplicate) {
                 continue;
             }
+            // A trait lists the field. A value on it is not a trait form.
+            if (source.init != nullptr) {
+                error(source.loc, "not supported yet");
+            }
             FieldDecl field = source;
             prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                             field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args,
@@ -1746,6 +1754,16 @@ void Checker::define_struct_fields() {
                 require_extern_struct(field_type, field.loc);
             }
             info.fields.push_back(StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
+            if (field.init != nullptr) {
+                const Type &stored = info.fields.back().type;
+                // A union keeps one payload. An array field is not a constant element list yet.
+                if (info.is_union || pending.decl->union_payload ||
+                    (stored.kind == TypeKind::Array && !is_slice(stored))) {
+                    error(field.loc, "not supported yet");
+                } else {
+                    info.fields.back().has_init = true;
+                }
+            }
         }
         if (pending.decl->align > 0) {
             int natural = 1;

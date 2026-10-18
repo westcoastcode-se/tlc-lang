@@ -1,0 +1,14 @@
+type Point struct {
+    x i32 = 1;
+    y i32 = 2;
+    z i32;
+};
+
+func main() i32 {
+    var p = Point{.x = 40};
+    var q *Point = new Point{.x = 40};
+    var bare Point;
+    var sum = p.x + p.z + q.y + q.z + bare.y - 2;
+    delete q;
+    return sum;
+}
