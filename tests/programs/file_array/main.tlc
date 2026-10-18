@@ -19,5 +19,5 @@ func main() i32 {
         return 1;
     }
     live[0] = 3;
-    return read(fixed) + sum(named) + listed[0] + listed[1] + live[0] + narrow[0] + 1;
+    return read(*const i32(fixed)) + sum(*i32(named)) + listed[0] + listed[1] + live[0] + narrow[0] + 1;
 }

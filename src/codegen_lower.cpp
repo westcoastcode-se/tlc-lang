@@ -2158,11 +2158,8 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         if (low.is_slice) {
             return low;
         }
+        // A sized array stays `[N]T`. A pointer is the cast `*T(array)`.
         if (low.is_array) {
-            low.depth += 1;
-            low.is_array = false;
-            low.array_len = 0;
-            low.type = ptr_type();
             return low;
         }
         if (!scalar(low) || low.elem_float) {
@@ -2210,11 +2207,14 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         if (fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty()) {
             return std::nullopt;
         }
-        const bool result_slice = fn.results.size() == 1 && fn.results.front().is_array &&
-                                 fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
-        return promote(lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, result_slice,
-                             result_slice ? fn.results.front().array_len : 0, false,
-                             result_slice && fn.results.front().elem_slice));
+        if (fn.results.size() == 1) {
+            const ResultSlot &slot = fn.results.front();
+            const bool result_array = slot.is_array && !slot.is_fn_ptr && slot.array_len != 0;
+            return promote(lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, result_array,
+                                 result_array ? slot.array_len : 0, false, result_array && slot.elem_slice,
+                                 slot.shells));
+        }
+        return promote(lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false));
     };
 
     std::function<std::optional<Lowered>(const Expr &)> value;
@@ -2465,7 +2465,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         return promote(*got);
     };
 
-    // `var row = [_]i32{1, 2}` keeps the array. A use of that name still decays to a pointer.
+    // `var row = [_]i32{1, 2}` keeps the array. A use of that name is that array.
     if (const auto *init = std::get_if<Expr::Init>(&expr.data); init != nullptr && init->array_literal) {
         const auto got = raw(expr);
         if (!got || !got->is_array || got->type == nullptr) {

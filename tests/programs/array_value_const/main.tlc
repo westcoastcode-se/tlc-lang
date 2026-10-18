@@ -1,0 +1,5 @@
+func main() i32 {
+    const held = [_]i32{8, 9};
+    var p = *i32(held);
+    return p[0];
+}

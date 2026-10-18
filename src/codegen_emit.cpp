@@ -3134,6 +3134,7 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
                 result.shells.assign(shells.begin() + 1, shells.end());
             }
         }
+        result.array_type = array_ty;
         return result;
     }
     if (call.depth == 0 && call.elem_bool) {
@@ -3590,6 +3591,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                                base.elem_bits, base.elem_unsigned, -1, base.elem_float};
                 out.row_decay = true;
                 out.array_len = base.inner_array_len;
+                out.array_type = row;
                 out.enum_id = base.enum_id;
                 return out;
             }
@@ -3625,6 +3627,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             // The address is the row `[M]T`. The length stays so the row converts to `[]T`.
             out.row_decay = true;
             out.array_len = base.inner_array_len;
+            out.array_type = row;
             return out;
         }
         if (base.ptr_to_array) {
@@ -3831,6 +3834,7 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
             out.row_decay = true;
             out.array_len = rest.front().length;
             out.depth = base.depth + 1;
+            out.array_type = element_of(rest);
             return out;
         }
         mark(out, std::move(rest));
@@ -3853,6 +3857,7 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
             out.array_len = outer.length;
             out.is_slice = false;
             out.depth = base.depth;
+            out.array_type = step;
         } else {
             // A decayed `[N][]T` steps by one header. That slot is the slice.
             // No shell is left, so the element is the leaf. Array decay added one to that depth.
@@ -3877,6 +3882,7 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         out.row_decay = true;
         out.array_len = rest.front().length;
         out.depth = base.depth + 1;
+        out.array_type = element_of(rest);
         mark(out, std::vector<TypeShell>(rest.begin() + 1, rest.end()));
         out.is_slice = false;
         return out;
@@ -4610,6 +4616,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         array.shells.erase(array.shells.begin());
                         array.ptr_to_array = false;
                         array.ptr_array_len = 0;
+                        array.array_type = shell_type(array.shells, array.depth, array.elem_char, array.struct_id,
+                                                      array.elem_bool, array.elem_bits, array.elem_float);
                         return decay_outer_array(std::move(array));
                     }
                     // `*arr` on `*[N]T` is that array, decayed to a pointer to its element.
@@ -4630,6 +4638,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         decayed.shells.clear();
                         decayed.array_len = length;
                         decayed.depth = inner.depth + 1;
+                        if (length > 0) {
+                            const int elem_depth = inner.depth > 0 ? inner.depth - 1 : 0;
+                            llvm::Type *elem = leaf_type(elem_depth, inner.elem_char, inner.struct_id, inner.elem_bool,
+                                                         inner.elem_bits, inner.elem_float);
+                            decayed.array_type = llvm::ArrayType::get(elem, static_cast<uint64_t>(length));
+                        }
                         return decayed;
                     }
                     if (pointer_shell && inner.shells.size() >= 2 && inner.shells[1].kind == TypeShell::Kind::Slice) {
@@ -4664,12 +4678,20 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         // `*p` on `*[N]T` decays to a pointer to the first element.
                         // The length stays so a range of that array can build the slice.
                         if (peeled.shells.size() == 1 && peeled.shells.front().kind == TypeShell::Kind::Array) {
-                            peeled.array_len = peeled.shells.front().length;
+                            const int length = peeled.shells.front().length;
+                            peeled.array_len = length;
                             peeled.shells.clear();
                             peeled.ptr_to_array = false;
                             peeled.ptr_array_len = 0;
                             peeled.inner_array_len = 0;
                             peeled.depth = inner.depth + 1;
+                            if (length > 0) {
+                                const int elem_depth = inner.depth > 0 ? inner.depth - 1 : 0;
+                                llvm::Type *elem =
+                                    leaf_type(elem_depth, inner.elem_char, inner.struct_id, inner.elem_bool,
+                                              inner.elem_bits, inner.elem_float);
+                                peeled.array_type = llvm::ArrayType::get(elem, static_cast<uint64_t>(length));
+                            }
                             return peeled;
                         }
                         return peeled;
@@ -5901,6 +5923,49 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.enum_id = got.enum_id;
             binding.inner_array_len = got.inner_array_len;
             binding.elem_slice = got.elem_slice;
+            scopes_.back()[name] = binding;
+            alias_capture(name, binding);
+            note(name, binding);
+            return;
+        }
+        // `var copy = row` copies the array. `*i32(row)` has no array type and stays a pointer.
+        if (got.array_type != nullptr && got.array_type->isArrayTy() && got.value != nullptr) {
+            auto *array_ty = llvm::cast<llvm::ArrayType>(got.array_type);
+            llvm::AllocaInst *slot = alloca_typed(array_ty, name);
+            llvm::Value *loaded = got.value;
+            if (loaded->getType() != array_ty) {
+                if (!loaded->getType()->isPointerTy()) {
+                    error(node.loc, "not supported yet");
+                    return;
+                }
+                loaded = builder_.CreateLoad(array_ty, loaded);
+            }
+            builder_.CreateStore(loaded, slot);
+            Binding binding;
+            binding.value = slot;
+            binding.depth = 0;
+            binding.is_array = true;
+            binding.array_len = static_cast<int>(array_ty->getNumElements());
+            binding.elem_char = got.elem_char;
+            binding.struct_id = got.struct_id;
+            binding.elem_void = got.elem_void;
+            binding.elem_bool = got.elem_bool;
+            binding.elem_bits = got.elem_bits;
+            binding.elem_unsigned = got.elem_unsigned;
+            binding.elem_float = got.elem_float;
+            binding.enum_id = got.enum_id;
+            binding.elem_slice = got.elem_slice;
+            TypeShell outer;
+            outer.kind = TypeShell::Kind::Array;
+            outer.length = binding.array_len;
+            binding.shells.push_back(outer);
+            binding.shells.insert(binding.shells.end(), got.shells.begin(), got.shells.end());
+            if (binding.shells.size() >= 2 && binding.shells[1].kind == TypeShell::Kind::Array) {
+                binding.inner_array_len = binding.shells[1].length;
+            }
+            if (binding.shells.size() >= 2 && binding.shells[1].kind == TypeShell::Kind::Slice) {
+                binding.elem_slice = true;
+            }
             scopes_.back()[name] = binding;
             alias_capture(name, binding);
             note(name, binding);

@@ -8,6 +8,6 @@ func main() i32 {
     a[1] = 20;
     a[2] = 7;
     a[3] = 5;
-    var q *i32 = a;
-    return add4(a) + q[0] - a[0];
+    var q *i32 = *i32(a);
+    return add4(*i32(a)) + q[0] - a[0];
 }

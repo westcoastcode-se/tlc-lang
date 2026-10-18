@@ -405,13 +405,13 @@ int run_sema_tests() {
             "  a[1] = 20;\n"
             "  a[2] = 7;\n"
             "  a[3] = 5;\n"
-            "  var q *i32 = a;\n"
+            "  var q *i32 = *i32(a);\n"
             "  var s *const u8 = \"hi\";\n"
             "  var n i32 = 0;\n"
             "  while (s[n] != 0) {\n"
             "    n = n + 1;\n"
             "  }\n"
-            "  return add4(a) + q[0] - a[0] + n;\n"
+            "  return add4(*i32(a)) + q[0] - a[0] + n;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -5673,7 +5673,7 @@ int run_sema_tests() {
             "  var typed [2]i32 = [_]i32{4, 1};\n"
             "  var n = 3;\n"
             "  var live = [_]i32{n, 1};\n"
-            "  return row[0] + other[1] + fixed[0] + typed[1] + live[0] + take(row);\n"
+            "  return row[0] + other[1] + fixed[0] + typed[1] + live[0] + take(*i32(row));\n"
             "}\n");
         EXPECT(check, errors.empty());
     }
@@ -5707,7 +5707,7 @@ int run_sema_tests() {
             "func take(p *const i32) i32 { return p[0] + p[1]; }\n"
             "func main() i32 {\n"
             "  live[0] = 3;\n"
-            "  return take(fixed) + named[0] + other[1] + live[0] + flags[0] + bytes[0];\n"
+            "  return take(*const i32(fixed)) + named[0] + other[1] + live[0] + flags[0] + bytes[0];\n"
             "}\n");
         EXPECT(check, errors.empty());
     }
@@ -6893,7 +6893,7 @@ int run_sema_tests() {
     }
 
     {
-        // `var copy = row` stays a pointer. The file-scope copy spelling writes the length.
+        // `var copy = row` copies the array. The file-scope copy is that array.
         const std::string errors = check_program(
             "var row = [_]i32{10, 20};\n"
             "var copy = row;\n"
@@ -6915,7 +6915,7 @@ int run_sema_tests() {
         const tlc::CompileOutput output = tlc::compile_source(opt);
         std::error_code ec;
         std::filesystem::remove(path, ec);
-        EXPECT_HAS(check, output.compiler_stderr, "global initializer is not a constant");
+        EXPECT(check, output.compiler_stderr.empty());
     }
 
     return check.failed;

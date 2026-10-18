@@ -11,7 +11,7 @@ func main() i32 {
     var n = sizeof(raw);
     var len = buf.len;
     var p = &raw;
-    use(buf);
+    use(*i32(buf));
     value = 40;
     if (1) {
         value = value + 1;

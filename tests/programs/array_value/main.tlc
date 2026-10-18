@@ -1,0 +1,28 @@
+var file_row = [_]i32{4, 6};
+var file_copy = file_row;
+const file_held = file_row;
+
+func poke(row [2]i32) i32 {
+    var copy = row;
+    copy[0] = 7;
+    return row[0];
+}
+
+func main() i32 {
+    var row = [_]i32{10, 20};
+    var copy = row;
+    row[0] = 1;
+    var p = *i32(row);
+    var seen = p[0];
+    var slice = row[:];
+    var grid = [_][2]i32{{1, 2}, {3, 4}};
+    var line = grid[1];
+    grid[1][0] = 9;
+    var cell = grid[1][0];
+    const held = [_]i32{8, 9};
+    var from_held = held;
+    var through = poke(row);
+    file_row[0] = 0;
+    return copy[0] + copy[1] + seen + slice.len + line[0] + line[1] + cell + grid[0][0] + from_held[0] +
+           file_copy[0] + file_copy[1] + file_held[1] + through;
+}

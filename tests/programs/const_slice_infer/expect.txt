@@ -1,1 +1,1 @@
-compile-error: type mismatch
+exit: 10

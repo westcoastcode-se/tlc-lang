@@ -345,6 +345,9 @@ struct TypedValue {
     int ptr_array_len = 0;
     // Length of a sized array that has not decayed. Negative for a slice.
     int array_len = 0;
+    // Set when this rvalue is a sized array. A new binding copies that array.
+    // The address is still the array, so an index or a `[N]T` argument uses the pointer.
+    llvm::Type *array_type = nullptr;
     // `[]T`, stored as one `{ ptr, i32 }` value.
     bool is_slice = false;
     // The element is one `[]E`. Indexing loads a header, not `E`.
@@ -974,6 +977,10 @@ class CodeGen {
             value.fn_ret_struct = binding.fn_ret_struct;
             value.fn_results = binding.fn_results;
             value.enum_id = binding.enum_id;
+            // A binding copies this array. Indexing still uses the address.
+            if (llvm::Type *object = object_type(binding.value); object != nullptr && object->isArrayTy()) {
+                value.array_type = object;
+            }
             return value;
         }
         if (binding.is_tuple && binding.value != nullptr) {

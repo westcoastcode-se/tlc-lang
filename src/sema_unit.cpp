@@ -113,6 +113,9 @@ void Checker::declare_assoc(const VarDecl &var) {
             if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void || type.kind == TypeKind::Nullptr) {
                 error(var.loc, "type mismatch");
                 type = type_invalid();
+            } else if (type.kind == TypeKind::Array && type.length >= 0 && !is_slice(type) &&
+                       !accept_array_copy(const_cast<VarDecl &>(var))) {
+                type = type_invalid();
             }
         }
     } else {
@@ -560,6 +563,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void || type.kind == TypeKind::Nullptr) {
                         error(var->loc, "type mismatch");
                         type = type_invalid();
+                    } else if (type.kind == TypeKind::Array && type.length >= 0 && !is_slice(type) &&
+                               !accept_array_copy(const_cast<VarDecl &>(*var))) {
+                        type = type_invalid();
                     }
                 }
             } else {
@@ -950,6 +956,14 @@ Type Checker::check_file_const(VarDecl &written) {
         if (is_slice(got) && got.element != nullptr && got.element->is_const) {
             return got;
         }
+    }
+    // `const copy = row` copies that array. A pointer is `*T(row)`.
+    if (got.kind == TypeKind::Array && got.length >= 0 && !is_slice(got)) {
+        if (!accept_array_copy(written)) {
+            return type_invalid();
+        }
+        got.is_const = true;
+        return got;
     }
     // A file-scope const slice is an array, another slice, a string, or a constant range.
     if (is_slice(got)) {

@@ -839,7 +839,7 @@ void Checker::check_call_arg(const Expr &expr, const Type &want) {
 }
 
 // A parameter `[N]T` is a pointer that still records N. When `[N]T` is expected, that
-// pointer is the array. A read that does not expect the array still decays to `*T`.
+// pointer is the array. A read of a parameter stays that pointer.
 bool decayed_array_value(const Type &got, const Type &want) {
     if (want.kind != TypeKind::Array || want.length <= 0 || want.element == nullptr) {
         return false;
@@ -898,8 +898,8 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
         }
         return got;
     }
-    // `var copy [2]i32 = row` copies the array. A read elsewhere still decays to `*T`.
-    // `const` on the source is the binding. The copy is a new array of the written type.
+    // `var copy [2]i32 = row` and `var copy = row` copy the array.
+    // `const` stays on the binding. The copy is a new array of the wanted type.
     // A parameter `[N]T` is already a pointer. The same written array copies those elements.
     if (want.kind == TypeKind::Array && want.length >= 0) {
         InitKeep keep(*this);
@@ -908,8 +908,10 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
         if (got.kind == TypeKind::Invalid) {
             return got;
         }
-        if (same_type(got, want)) {
-            return got;
+        Type bare = want;
+        bare.is_const = false;
+        if (same_type(got, bare)) {
+            return want;
         }
         if (decayed_array_value(got, want)) {
             return want;
@@ -917,26 +919,39 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
         mismatch(expr_loc(expr), want, got);
         return got;
     }
+    // A parameter `[N]T` is a pointer that records N. A sized array of that length
+    // passes its address and does not read the elements. A plain `*T` does not:
+    // the cast is `*T(array)`.
+    if (want.kind == TypeKind::Pointer && !want.optional && want.decayed_len > 0 && want.pointee != nullptr) {
+        Type got = check_raw(expr, true);
+        if (got.kind == TypeKind::Array && got.length >= 0 && got.element != nullptr && !is_slice(got)) {
+            Type element = *got.element;
+            if (got.is_const) {
+                element.is_const = true;
+            }
+            Type as_pointer = type_pointer(std::move(element));
+            as_pointer.decayed_len = got.length;
+            if (got.length == want.decayed_len && accepts_pointer(as_pointer, want)) {
+                return want;
+            }
+            mismatch(expr_loc(expr), want, got);
+            return got;
+        }
+        Type value = value_type(std::move(got));
+        expect_value(value, want, expr, expr_loc(expr));
+        return value;
+    }
     const Type got = check_expr(expr, true);
     expect_value(got, want, expr, expr_loc(expr));
     return got;
 }
 
 Type Checker::value_type(Type type) {
-    // A loaded value is a copy. `const` stays on a pointee, not on this temporary.
-    // A const array decays to a pointer to a const element, so `row[0] = n` is rejected.
-    // The length of a parameter `[N]T` stays on that binding. A copy is a plain pointer.
-    const bool array_const = type.kind == TypeKind::Array && type.is_const;
+    // A loaded value is a copy. `const` stays on the source, not on this temporary.
+    // A sized array stays `[N]T`. A pointer is the cast `*T(array)`. A slice is `array[:]`.
+    // A parameter `[N]T` is already a pointer. Its length stays on that binding.
     type.is_const = false;
     type.decayed_len = 0;
-    // A slice stays a value. Only a sized array decays to a pointer.
-    if (type.kind == TypeKind::Array && type.element && type.length >= 0) {
-        Type pointer = type_pointer(*type.element);
-        if (array_const && pointer.pointee) {
-            pointer.pointee->is_const = true;
-        }
-        return pointer;
-    }
     if (type.kind == TypeKind::Function) {
         return type_pointer(type);
     }
@@ -1843,8 +1858,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
-                    // `unsafe` does not change the type. A value use still decays an array.
-                    // A copy reads this raw array, so the prefix stays outside `value_type`.
+                    // `unsafe` does not change the type. The prefix stays outside `value_type`.
                     ++unsafe_depth_;
                     const Type inner = check_raw(*node.expr, used);
                     --unsafe_depth_;
@@ -2166,7 +2180,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     {
                         InitUseGuard address(*this, InitUse::Address);
                         InitPush push(*this, std::move(step));
-                        base = check_expr(*index->base, true);
+                        // A sized array stays `[N]T`. `row[i] = n` stores one element.
+                        base = check_raw(*index->base, true);
                     }
                     if (is_slice(base)) {
                         error(node.loc, "type mismatch");
@@ -2185,10 +2200,27 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     Type element;
                     bool pointee_void = false;
-                    if (!indexed_type(base, element, pointee_void)) {
+                    if (base.kind == TypeKind::Array && base.length >= 0 && base.element != nullptr &&
+                        !is_slice(base)) {
+                        element = *base.element;
+                        if (base.is_const) {
+                            element.is_const = true;
+                        }
+                    } else if (base.kind == TypeKind::Pointer && !base.optional && base.decayed_len > 0 &&
+                               base.pointee != nullptr && base.pointee->kind == TypeKind::Array &&
+                               base.pointee->length >= 0) {
+                        // A parameter `[N][M]T` points at the first row. `grid[i]` is that row.
+                        element = *base.pointee;
+                    } else if (!indexed_type(base, element, pointee_void)) {
                         if (base.kind != TypeKind::Invalid) {
                             error(node.loc, pointee_void ? "type mismatch" : "not an lvalue");
                         }
+                        check_expr(*node.rhs, true);
+                        return type_invalid();
+                    }
+                    // A row is an array. `grid[i] = row` is not an lvalue. `grid[i][j] = n` stores one element.
+                    if (element.kind == TypeKind::Array && element.length >= 0 && !is_slice(element)) {
+                        error(node.loc, "not an lvalue");
                         check_expr(*node.rhs, true);
                         return type_invalid();
                     }
@@ -3078,7 +3110,26 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                          node.ret_const_pointee)
                         : spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
                                        node.loc, node.optional, node.const_pointee);
-                const Type source = node.expr ? check_expr(*node.expr, true) : type_invalid();
+                Type source = node.expr ? check_raw(*node.expr, true) : type_invalid();
+                // `*i32(row)` is a pointer to the element. Dropping `const` is `unsafe cast`.
+                if (target.kind == TypeKind::Pointer && source.kind == TypeKind::Array && source.length >= 0 &&
+                    source.element != nullptr && target.pointee != nullptr && !is_slice(source)) {
+                    Type element = *source.element;
+                    if (source.is_const) {
+                        element.is_const = true;
+                    }
+                    Type element_bare = element;
+                    Type pointee_bare = *target.pointee;
+                    element_bare.is_const = false;
+                    pointee_bare.is_const = false;
+                    if (same_type(element_bare, pointee_bare)) {
+                        if (element.is_const && !target.pointee->is_const && unsafe_depth_ == 0) {
+                            error(node.loc, "unsafe cast");
+                        }
+                        return target;
+                    }
+                }
+                source = value_type(std::move(source));
                 if (target.kind == TypeKind::Invalid || source.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
@@ -4484,7 +4535,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (!node.is_const && brace && node.names.size() == 1) {
                     init_allow_partial_ = true;
                 }
-                // `var row = [_]i32{1, 2}` keeps `[2]i32`. A read of the name still decays to `*i32`.
+                // `var row = [_]i32{1, 2}` keeps `[2]i32`. A read of the name is that array.
                 if (node.names.size() == 1) {
                     if (auto *init = std::get_if<Expr::Init>(&node.value->data); init != nullptr && init->array_literal) {
                         rhs = check_array_literal(*init);
