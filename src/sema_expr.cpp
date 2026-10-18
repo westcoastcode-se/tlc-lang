@@ -3910,9 +3910,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
                         Type got = check_init(const_cast<Expr::Init &>(*init), want);
-                        // `return {4, 6}` has no array address. `return [_]i32{4, 6}` does.
-                        if (want.kind == TypeKind::Array && want.length >= 0 && !init->array_literal &&
-                            got.kind != TypeKind::Invalid) {
+                        // One array result stores `{4, 6}` in a temporary. A tuple piece has no slot.
+                        if (return_type_.kind == TypeKind::Tuple && want.kind == TypeKind::Array && want.length >= 0 &&
+                            !init->array_literal && got.kind != TypeKind::Invalid) {
                             error(expr_loc(value), "not supported yet");
                             return type_invalid();
                         }

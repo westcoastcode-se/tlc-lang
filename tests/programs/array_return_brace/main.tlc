@@ -1,7 +1,16 @@
-func brace() [2]i32 {
+func pair() [2]i32 {
     return {4, 6};
 }
 
+func grid() [2][2]i32 {
+    return {{1, 2}, {3, 4}};
+}
+
+func shifted(n i32) [2]i32 {
+    return {n, n + 1};
+}
+
 func main() i32 {
-    return brace()[0];
+    var held [2][2]i32 = grid();
+    return pair()[0] + 2 * pair()[1] + grid()[1][0] + held[0][0] + held[1][1] + shifted(7)[1];
 }

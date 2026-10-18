@@ -2696,8 +2696,16 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         llvm::AllocaInst *slot = allocas.CreateAlloca(array_ty, nullptr, "arr.ret");
         builder_.CreateStore(inst, slot);
         llvm::Value *first = builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(0)});
-        return tagged({first, call.depth + 1, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool,
-                       call.elem_bits, call.elem_unsigned});
+        TypedValue result = tagged({first, call.depth + 1, call.elem_char, call.struct_id, false, call.elem_void,
+                                    call.elem_bool, call.elem_bits, call.elem_unsigned});
+        // The address is the first row. Shells after the outer array are that row, as on a local.
+        if (call.decl != nullptr && call.decl->results.size() == 1) {
+            const std::vector<TypeShell> &shells = call.decl->results.front().shells;
+            if (!shells.empty() && shells.front().kind == TypeShell::Kind::Array) {
+                result.shells.assign(shells.begin() + 1, shells.end());
+            }
+        }
+        return result;
     }
     if (call.depth == 0 && call.elem_bool) {
         return tagged({builder_.CreateZExt(inst, i32()), 0});
@@ -5679,33 +5687,43 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     return;
                 }
                 if (return_type_ != nullptr && return_type_->isArrayTy() && node.value != nullptr) {
-                    // `{4, 6}` is not an array address. `[_]i32{4, 6}` is the array slot.
+                    llvm::Value *loaded = nullptr;
                     if (const auto *init = std::get_if<Expr::Init>(&node.value->data);
                         init != nullptr && !init->array_literal) {
-                        error(node.loc, "not supported yet");
-                        return;
-                    }
-                    // A name is the array address. A call has stored its array and yields the
-                    // address of the first element. An index of a nested array yields that row.
-                    const TypedValue value = emit_rvalue(*node.value);
-                    if (terminated()) {
-                        return;
-                    }
-                    llvm::Value *loaded = value.value;
-                    if (loaded == nullptr) {
-                        error(node.loc, "not supported yet");
-                        return;
-                    }
-                    if (loaded->getType() != return_type_) {
-                        if (!loaded->getType()->isPointerTy()) {
-                            error(node.loc, "not supported yet");
-                            return;
+                        // `{4, 6}` is a list. Store it in a temporary of the result array.
+                        auto *array_ty = llvm::cast<llvm::ArrayType>(return_type_);
+                        llvm::AllocaInst *slot = alloca_typed(return_type_, "array");
+                        // A complete list is the whole array. A short list starts at zero, as a local does.
+                        if (!array_list_covers(*init, array_ty)) {
+                            builder_.CreateStore(llvm::ConstantAggregateZero::get(return_type_), slot);
                         }
-                        loaded = builder_.CreateLoad(return_type_, loaded);
+                        store_array_elements(slot, array_ty, *init);
+                        if (!terminated()) {
+                            loaded = builder_.CreateLoad(return_type_, slot);
+                        }
+                    } else {
+                        // A name is the array address. A call has stored its array and yields the
+                        // address of the first element. An index of a nested array yields that row.
+                        // `[_]i32{4, 6}` is the array slot.
+                        const TypedValue value = emit_rvalue(*node.value);
+                        if (!terminated()) {
+                            loaded = value.value;
+                            if (loaded == nullptr) {
+                                error(node.loc, "not supported yet");
+                            } else if (loaded->getType() != return_type_) {
+                                if (!loaded->getType()->isPointerTy()) {
+                                    error(node.loc, "not supported yet");
+                                    loaded = nullptr;
+                                } else {
+                                    loaded = builder_.CreateLoad(return_type_, loaded);
+                                }
+                            }
+                        }
                     }
-                    if (!terminated()) {
-                        emit_defers_from(0);
+                    if (terminated() || loaded == nullptr) {
+                        return;
                     }
+                    emit_defers_from(0);
                     if (!terminated()) {
                         builder_.CreateRet(loaded);
                     }

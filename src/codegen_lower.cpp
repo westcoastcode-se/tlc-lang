@@ -165,25 +165,36 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
                               fn.results.front().array_len > 0 && !fn.results.front().is_fn_ptr;
     const bool result_slice = !many && fn.results.size() == 1 && fn.results.front().is_array &&
                              fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
+    // `[2][2]i32` keeps the row in `shells`. The outer length alone would be `[2]i32`.
+    bool nested_array = false;
+    if (!many && fn.results.size() == 1 && !fn.results.front().is_fn_ptr) {
+        const std::vector<TypeShell> &shells = fn.results.front().shells;
+        for (std::size_t index = 1; index < shells.size(); ++index) {
+            if (shells[index].kind == TypeShell::Kind::Array) {
+                nested_array = true;
+                break;
+            }
+        }
+    }
+    auto lowered = [&]() {
+        if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
+            return lower_fnptr(file, fn.results.front().type_name, fn.results.front().type_package,
+                               fn.results.front().is_struct, fn.results.front().is_enum,
+                               fn.results.front().ret_indirections, fn.results.front().indirections,
+                               fn.results.front().fn_params, fn.results.front().fn_variadic,
+                               fn.results.front().fn_results);
+        }
+        if (nested_array) {
+            return lower_result(file, fn.results.front());
+        }
+        return lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections,
+                     result_array || result_slice,
+                     result_slice ? fn.results.front().array_len
+                                 : (result_array ? fn.results.front().array_len : 0),
+                     false, (result_array || result_slice) && fn.results.front().elem_slice);
+    };
     llvm::Type *ret = many ? aggregate_return(fn, file)
-                           : (returns_void ? llvm::Type::getVoidTy(context_)
-                                           : stored_type(fn.results.size() == 1 && fn.results.front().is_fn_ptr
-                                                            ? lower_fnptr(file, fn.results.front().type_name,
-                                                                          fn.results.front().type_package,
-                                                                          fn.results.front().is_struct,
-                                                                          fn.results.front().is_enum,
-                                                                          fn.results.front().ret_indirections,
-                                                                          fn.results.front().indirections,
-                                                                          fn.results.front().fn_params,
-                                                                          fn.results.front().fn_variadic,
-                                                                          fn.results.front().fn_results)
-                                                            : lower(file, fn.return_type, fn.type_package, fn.is_struct,
-                                                                    fn.indirections, result_array || result_slice,
-                                                                    result_slice ? fn.results.front().array_len
-                                                                                : (result_array ? fn.results.front().array_len : 0),
-                                                                    false,
-                                                                    (result_array || result_slice) &&
-                                                                        fn.results.front().elem_slice)));
+                           : (returns_void ? llvm::Type::getVoidTy(context_) : stored_type(lowered()));
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (const Param &param : fn.params) {

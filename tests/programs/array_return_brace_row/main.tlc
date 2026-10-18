@@ -1,0 +1,8 @@
+func rows() [2][2]i32 {
+    var inner = [_]i32{1, 2};
+    return {inner, inner};
+}
+
+func main() i32 {
+    return rows()[0][0];
+}
