@@ -856,36 +856,10 @@ Type Checker::check_file_const(VarDecl &written) {
             return got;
         }
     }
-    // A file-scope const slice names an array or another slice. A range, a literal, or a call does not.
+    // A file-scope const slice is an array, another slice, a string, or a constant range.
     if (is_slice(got)) {
         std::unordered_set<std::string> seen;
-        const auto slice_constant = [&](const auto &self, const Expr &expr) -> bool {
-            if (std::holds_alternative<Expr::String>(expr.data)) {
-                return true;
-            }
-            const auto *named = std::get_if<Expr::Name>(&expr.data);
-            if (named == nullptr || !seen.insert(named->text).second) {
-                return false;
-            }
-            const Symbol *symbol = lookup(named->text);
-            if (symbol == nullptr || symbol->type.kind != TypeKind::Array || symbol->type.element == nullptr) {
-                seen.erase(named->text);
-                return false;
-            }
-            if (!is_slice(symbol->type)) {
-                seen.erase(named->text);
-                return true;
-            }
-            const VarDecl *source = global_var(named->text);
-            if (source == nullptr) {
-                seen.erase(named->text);
-                return false;
-            }
-            const bool ok = source->init == nullptr || self(self, *source->init);
-            seen.erase(named->text);
-            return ok;
-        };
-        if (!slice_constant(slice_constant, *written.init)) {
+        if (written.init == nullptr || !constant_slice_expr(*written.init, seen)) {
             error(written.loc, "global initializer is not a constant");
             return type_invalid();
         }
@@ -913,6 +887,46 @@ void Checker::bind_file_const(VarDecl &written) {
         return;
     }
     define_constant(written, std::move(got), 0);
+}
+
+bool Checker::constant_slice_expr(const Expr &expr, std::unordered_set<std::string> &seen) {
+    if (std::holds_alternative<Expr::String>(expr.data)) {
+        return true;
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        // `numbers[1:3]`, `numbers[2:]`, `numbers[:2]`, and `numbers[:]`.
+        // The address is fixed. A runtime bound is not a header in the binary.
+        if (!index->is_range || index->base == nullptr || !constant_slice_expr(*index->base, seen)) {
+            return false;
+        }
+        if (index->index != nullptr && !fold_int(*index->index)) {
+            return false;
+        }
+        return index->end == nullptr || fold_int(*index->end).has_value();
+    }
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr || !seen.insert(named->text).second) {
+        return false;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->type.kind != TypeKind::Array || symbol->type.element == nullptr) {
+        seen.erase(named->text);
+        return false;
+    }
+    // A sized array lives at a fixed address. A slice follows its initializer.
+    if (!is_slice(symbol->type)) {
+        seen.erase(named->text);
+        return true;
+    }
+    const VarDecl *source = global_var(named->text);
+    if (source == nullptr) {
+        seen.erase(named->text);
+        return false;
+    }
+    // No initializer is the zero header. A call runs before `main` and is not this constant.
+    const bool ok = source->init == nullptr || constant_slice_expr(*source->init, seen);
+    seen.erase(named->text);
+    return ok;
 }
 
 bool Checker::constant_operand(const Expr &expr) {
@@ -966,6 +980,12 @@ bool Checker::constant_operand(const Expr &expr) {
                     return method != nullptr && method->is_static;
                 }
                 return false;
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                if (!node.is_range || node.base == nullptr) {
+                    return false;
+                }
+                std::unordered_set<std::string> range_seen;
+                return constant_slice_expr(expr, range_seen);
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 if (node.indirections != 0 || node.is_fn_ptr || node.expr == nullptr) {
                     return false;
@@ -1007,19 +1027,10 @@ bool Checker::constant_operand(const Expr &expr) {
 }
 
 void Checker::check_globals(const TranslationUnit &unit) {
-    // A file-scope slice is the name of an array or another slice. A range is not a constant.
-    auto slice_name = [&](const Expr &expr) {
-        const auto *named = std::get_if<Expr::Name>(&expr.data);
-        if (named == nullptr) {
-            return false;
-        }
-        const Symbol *symbol = lookup(named->text);
-        return symbol != nullptr && symbol->type.kind == TypeKind::Array && symbol->type.element != nullptr;
-    };
+    // A file-scope slice is an array, another slice, a string, or a constant range.
     auto require_slice_name = [&](const Expr &expr, const Type &want, SourceLoc loc, std::size_t before) {
-        // A string literal is a constant `[]const u8`. Another slice still names an array or a slice.
-        if (diags_.size() == before && is_slice(want) && !slice_name(expr) &&
-            !std::holds_alternative<Expr::String>(expr.data)) {
+        std::unordered_set<std::string> seen;
+        if (diags_.size() == before && is_slice(want) && !constant_slice_expr(expr, seen)) {
             error(loc, "global initializer is not a constant");
         }
     };

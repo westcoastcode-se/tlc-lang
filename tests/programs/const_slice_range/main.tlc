@@ -2,5 +2,5 @@ var row = [_]i32{10, 20, 30};
 const v []i32 = row[0:2];
 
 func main() i32 {
-    return v.len;
+    return v[0] + v[1] + v.len;
 }

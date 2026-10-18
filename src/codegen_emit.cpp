@@ -981,7 +981,11 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
             return nullptr;
         }
         llvm::Constant *value = nullptr;
-        if (auto *inner = llvm::dyn_cast<llvm::ArrayType>(element)) {
+        if (element == slice_type()) {
+            // `[_][]i32{a[:], b[:]}` stores one header per element.
+            std::unordered_set<std::string> seen;
+            value = constant_slice(*item, seen);
+        } else if (auto *inner = llvm::dyn_cast<llvm::ArrayType>(element)) {
             const auto *nested = std::get_if<Expr::Init>(&item->data);
             if (nested == nullptr) {
                 return nullptr;
@@ -1351,18 +1355,51 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
     return sized_int(dest, *number);
 }
 
-llvm::Constant *CodeGen::constant_slice(const Expr &expr, std::unordered_set<std::string> &seen) {
+std::optional<CodeGen::SlicePieces> CodeGen::slice_pieces(const Expr &expr, std::unordered_set<std::string> &seen) {
     if (const auto *text = std::get_if<Expr::String>(&expr.data)) {
         llvm::Constant *data = llvm::ConstantDataArray::getString(context_, text->text, true);
         auto *global = new llvm::GlobalVariable(module_, data->getType(), true, llvm::GlobalValue::PrivateLinkage, data,
                                                 ".str");
-        llvm::Constant *pointer = llvm::ConstantExpr::getInBoundsGetElementPtr(
+        SlicePieces pieces;
+        pieces.element = i8();
+        pieces.pointer = llvm::ConstantExpr::getInBoundsGetElementPtr(
             data->getType(), global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
-        return llvm::ConstantStruct::get(slice_type(), {pointer, const_i32(static_cast<int32_t>(text->text.size()))});
+        pieces.length = static_cast<int32_t>(text->text.size());
+        return pieces;
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        // `numbers[i:j]` is the header of that array, shifted by `i` elements.
+        // A missing low bound is 0. A missing high bound is the base length.
+        if (!index->is_range || index->base == nullptr) {
+            return std::nullopt;
+        }
+        const std::optional<SlicePieces> base = slice_pieces(*index->base, seen);
+        if (!base || base->pointer == nullptr || base->element == nullptr) {
+            return std::nullopt;
+        }
+        const std::optional<int32_t> low = index->index == nullptr ? std::optional<int32_t>{0} : fold(*index->index);
+        const std::optional<int32_t> high = index->end == nullptr ? std::optional<int32_t>{base->length} : fold(*index->end);
+        if (!low || !high) {
+            return std::nullopt;
+        }
+        llvm::Constant *pointer = base->pointer;
+        if (*low != 0) {
+            // An uninitialized slice has no element to step from.
+            if (llvm::isa<llvm::ConstantPointerNull>(pointer)) {
+                return std::nullopt;
+            }
+            pointer = llvm::ConstantExpr::getInBoundsGetElementPtr(base->element, pointer,
+                                                                   llvm::ArrayRef<llvm::Constant *>{const_i32(*low)});
+        }
+        SlicePieces pieces;
+        pieces.pointer = pointer;
+        pieces.element = base->element;
+        pieces.length = static_cast<int32_t>(static_cast<uint32_t>(*high) - static_cast<uint32_t>(*low));
+        return pieces;
     }
     const auto *name = std::get_if<Expr::Name>(&expr.data);
     if (name == nullptr || !seen.insert(name->text).second) {
-        return nullptr;
+        return std::nullopt;
     }
     const Binding *binding = nullptr;
     if (const auto file = files_.find(current_file_); file != files_.end()) {
@@ -1374,28 +1411,36 @@ llvm::Constant *CodeGen::constant_slice(const Expr &expr, std::unordered_set<std
     if (binding == nullptr) {
         binding = visible(current_file_, name->text, false);
     }
-    if (binding == nullptr || binding->value == nullptr) {
-        return nullptr;
-    }
-    auto *global = llvm::dyn_cast<llvm::GlobalVariable>(binding->value);
-    if (global == nullptr) {
-        return nullptr;
-    }
-    if (binding->is_array && global->getValueType()->isArrayTy()) {
+    std::optional<SlicePieces> pieces;
+    auto *global = binding == nullptr ? nullptr : llvm::dyn_cast<llvm::GlobalVariable>(binding->value);
+    if (binding != nullptr && global != nullptr && binding->is_array && global->getValueType()->isArrayTy()) {
         auto *array = llvm::cast<llvm::ArrayType>(global->getValueType());
-        llvm::Constant *data = llvm::ConstantExpr::getInBoundsGetElementPtr(
+        pieces = SlicePieces{};
+        pieces->element = array->getElementType();
+        pieces->pointer = llvm::ConstantExpr::getInBoundsGetElementPtr(
             array, global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
-        const int len = binding->array_len > 0 ? binding->array_len : static_cast<int>(array->getNumElements());
-        return llvm::ConstantStruct::get(slice_type(), {data, const_i32(len)});
+        pieces->length = binding->array_len > 0 ? binding->array_len : static_cast<int32_t>(array->getNumElements());
+    } else if (binding != nullptr && binding->is_slice) {
+        const VarDecl *source = global_decl(name->text);
+        if (source == nullptr || source->init == nullptr) {
+            pieces = SlicePieces{};
+            pieces->pointer = null_ptr();
+            pieces->element = i8();
+            pieces->length = 0;
+        } else {
+            pieces = slice_pieces(*source->init, seen);
+        }
     }
-    if (!binding->is_slice) {
+    seen.erase(name->text);
+    return pieces;
+}
+
+llvm::Constant *CodeGen::constant_slice(const Expr &expr, std::unordered_set<std::string> &seen) {
+    const std::optional<SlicePieces> pieces = slice_pieces(expr, seen);
+    if (!pieces || pieces->pointer == nullptr) {
         return nullptr;
     }
-    const VarDecl *source = global_decl(name->text);
-    if (source == nullptr || source->init == nullptr) {
-        return llvm::ConstantAggregateZero::get(slice_type());
-    }
-    return constant_slice(*source->init, seen);
+    return llvm::ConstantStruct::get(slice_type(), {pieces->pointer, const_i32(pieces->length)});
 }
 
 void CodeGen::apply_initializer(const VarDecl &var) {
@@ -3314,8 +3359,13 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
             out.depth = base.depth;
         } else {
             // A decayed `[N][]T` steps by one header. That slot is the slice.
+            // No shell is left, so the element is the leaf. Array decay added one to that depth.
+            // A further slice shell, as in `[N][][]T`, keeps the depth the next index already uses.
             out.is_slice = true;
             out.array_len = -1;
+            if (out.shells.empty() && out.depth > 0) {
+                out.depth -= 1;
+            }
         }
         return out;
     }

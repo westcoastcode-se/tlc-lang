@@ -1,6 +1,63 @@
 var numbers = [_]i32{10, 20, 30, 40};
 var mid []i32 = numbers[1:3];
+var all = numbers[:];
+var tail = numbers[2:];
+var head = numbers[:2];
+const N = 1;
+const named []i32 = numbers[N:numbers.len];
+var from_all = all[1:3];
+var a = [_]i32{7, 8};
+var b = [_]i32{9};
+var rows = [_][]i32{a[:], b[:]};
+var top = rows[0:1];
+var grid = [_][2]i32{{1, 2}, {3, 4}};
+var band = grid[1:];
+var text = "hi"[1:];
+
+type Hold struct {
+    items []i32;
+};
+
+const held = Hold{.items = numbers[0:2]};
 
 func main() i32 {
-    return mid.len;
+    if (mid.len != 2 || mid[0] != 20 || mid[1] != 30) {
+        return 1;
+    }
+    if (all.len != 4 || all[0] != 10 || all[3] != 40) {
+        return 2;
+    }
+    if (tail.len != 2 || tail[0] != 30 || tail[1] != 40) {
+        return 3;
+    }
+    if (head.len != 2 || head[0] != 10 || head[1] != 20) {
+        return 4;
+    }
+    if (named.len != 3 || named[0] != 20 || named[2] != 40) {
+        return 5;
+    }
+    if (from_all.len != 2 || from_all[0] != 20 || from_all[1] != 30) {
+        return 6;
+    }
+    if (rows.len != 2 || rows[0].len != 2 || rows[0][1] != 8 || rows[1].len != 1 || rows[1][0] != 9) {
+        return 7;
+    }
+    if (top.len != 1 || top[0][0] != 7 || top[0][1] != 8) {
+        return 8;
+    }
+    if (band.len != 1 || band[0][0] != 3 || band[0][1] != 4) {
+        return 9;
+    }
+    if (text.len != 1 || text[0] != "i"[0]) {
+        return 10;
+    }
+    if (held.items.len != 2 || held.items[0] != 10 || held.items[1] != 20) {
+        return 11;
+    }
+    numbers[1] = 21;
+    a[1] = 4;
+    if (mid[0] != 21 || all[1] != 21 || rows[0][1] != 4 || held.items[1] != 21) {
+        return 12;
+    }
+    return 0;
 }

@@ -1,1 +1,1 @@
-compile-error: global initializer is not a constant
+exit: 0

@@ -494,6 +494,9 @@ class Checker {
     void define_constant(const VarDecl &var, Type type, int folded);
     bool integer_const_type(const Type &type) const;
     bool stored_const_type(const Type &type) const;
+    // An array, a string, a slice whose initializer is one of those, or a range of one.
+    // A missing bound is constant. A bound that does not fold is not. A call is not.
+    bool constant_slice_expr(const Expr &expr, std::unordered_set<std::string> &seen);
     bool constant_operand(const Expr &expr);
     std::optional<int> lookup_const_value(const std::string &name);
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,

@@ -1,0 +1,7 @@
+var numbers = [_]i32{10, 20, 30, 40};
+var i = 1;
+var mid = numbers[i:3];
+
+func main() i32 {
+    return mid.len;
+}

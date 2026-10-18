@@ -2084,6 +2084,11 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         low.enum_id = binding.enum_id;
         low.is_slice = binding.is_slice;
         low.elem_slice = binding.elem_slice;
+        // `var band = grid[1:]` is `[][M]T`. The row length is what `band[0][i]` steps by.
+        low.inner_array_len = binding.inner_array_len;
+        low.shells = binding.shells;
+        low.ptr_to_array = binding.ptr_to_array;
+        low.ptr_array_len = binding.ptr_array_len;
         if (binding.value != nullptr) {
             if (const auto *global = llvm::dyn_cast<llvm::GlobalVariable>(binding.value)) {
                 low.type = global->getValueType();
@@ -2317,6 +2322,36 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     low.type = ret;
                     low.is_slice = ret == slice_type();
                     return promote(low);
+                } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                    // `var view = numbers[0:2]` is a slice. The header is filled later.
+                    if (!item.is_range || item.base == nullptr) {
+                        return std::nullopt;
+                    }
+                    if (std::holds_alternative<Expr::String>(item.base->data)) {
+                        Lowered low;
+                        low.is_slice = true;
+                        low.array_len = -1;
+                        low.elem_bits = 8;
+                        low.elem_unsigned = true;
+                        low.elem_char = true;
+                        low.type = slice_type();
+                        return low;
+                    }
+                    const auto base = raw(*item.base);
+                    if (!base || (!base->is_array && !base->is_slice) || base->type == nullptr) {
+                        return std::nullopt;
+                    }
+                    Lowered low = *base;
+                    if (low.is_array && !low.is_slice && !low.shells.empty() &&
+                        low.shells.front().kind == TypeShell::Kind::Array) {
+                        low.shells.front().kind = TypeShell::Kind::Slice;
+                        low.shells.front().length = -1;
+                    }
+                    low.is_slice = true;
+                    low.is_array = false;
+                    low.array_len = -1;
+                    low.type = slice_type();
+                    return low;
                 } else if constexpr (std::is_same_v<T, Expr::Init>) {
                     if (item.array_literal) {
                         // `var row = [_]i32{1, 2}` keeps the array. The elements are filled later.

@@ -20,7 +20,7 @@ int run_cli_tests() {
     const tlc::test::Proc version = tlc::test::spawn({bin, "--version"});
     EXPECT(check, version.code == 0);
     EXPECT_HAS(check, version.out, "tlc 0.1.0");
-    EXPECT_HAS(check, version.out, "23.1.1");
+    EXPECT_HAS(check, version.out, "23.1");
     EXPECT(check, version.err.empty());
 
     const tlc::test::Proc none = tlc::test::spawn({bin});

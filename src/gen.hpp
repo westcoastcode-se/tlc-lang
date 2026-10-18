@@ -1183,6 +1183,13 @@ class CodeGen {
     void emit_builtin_panic();
     llvm::Value *variadic_arg(const TypedValue &value);
     void apply_initializer(const VarDecl &var);
+    // Pointer to the first element, the element type a further range steps by, and the length.
+    struct SlicePieces {
+        llvm::Constant *pointer = nullptr;
+        llvm::Type *element = nullptr;
+        int32_t length = 0;
+    };
+    std::optional<SlicePieces> slice_pieces(const Expr &expr, std::unordered_set<std::string> &seen);
     llvm::Constant *constant_slice(const Expr &expr, std::unordered_set<std::string> &seen);
     llvm::Constant *const_initializer(const Expr &expr, const Binding &dest);
     llvm::Constant *sized_int(const Binding &dest, int32_t value) const;
