@@ -3409,6 +3409,39 @@ llvm::Value *CodeGen::emit_short_circuit(const Expr::Binary &expr, bool is_and) 
     return builder_.CreateZExt(phi, i32());
 }
 
+// A local `[N]...T` decays by dropping the outer array. The pointer already addresses element 0.
+// `*p` and `p[i]` on `*[N]...T` use that value, so the next index peels one more shell.
+TypedValue decay_outer_array(TypedValue array) {
+    if (array.shells.empty() || array.shells.front().kind != TypeShell::Kind::Array) {
+        return array;
+    }
+    array.array_len = array.shells.front().length;
+    array.shells.erase(array.shells.begin());
+    array.ptr_to_array = false;
+    array.ptr_array_len = 0;
+    array.depth += 1;
+    array.row_decay = false;
+    array.is_slice = !array.shells.empty() && array.shells.front().kind == TypeShell::Kind::Slice;
+    array.inner_array_len = 0;
+    array.elem_slice = false;
+    if (!array.shells.empty() && array.shells.front().kind == TypeShell::Kind::Array) {
+        array.inner_array_len = array.shells.front().length;
+    }
+    if (array.shells.size() >= 2 && array.shells[1].kind == TypeShell::Kind::Slice) {
+        array.elem_slice = true;
+    }
+    return array;
+}
+
+bool nested_array_element(const std::vector<TypeShell> &shells, std::size_t array_at) {
+    const std::size_t next = array_at + 1;
+    if (next >= shells.size()) {
+        return false;
+    }
+    const TypeShell::Kind kind = shells[next].kind;
+    return kind == TypeShell::Kind::Array || kind == TypeShell::Kind::Slice;
+}
+
 TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript) {
     if (base.shells.empty() || base.value == nullptr || subscript == nullptr) {
         return {};
@@ -3508,6 +3541,16 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         mark(out, std::vector<TypeShell>(rest.begin() + 1, rest.end()));
         out.is_slice = false;
         return out;
+    }
+    if (outer.kind == TypeShell::Kind::Pointer && !rest.empty() && rest.front().kind == TypeShell::Kind::Array &&
+        base.array_len == 0 && nested_array_element(base.shells, 1)) {
+        // `p[i]` on `*[N][M]...T` is `(*p)[i]`. Decay the array, then index that value.
+        // A further dimension is the same call. `*[N]T` has no inner shell and stays below.
+        TypedValue array = base;
+        array.shells = rest;
+        array.ptr_to_array = false;
+        array.ptr_array_len = 0;
+        return index_shells(decay_outer_array(std::move(array)), subscript);
     }
     if (outer.kind == TypeShell::Kind::Pointer && !rest.empty() && rest.front().kind == TypeShell::Kind::Array) {
         std::vector<TypeShell> inner(rest.begin() + 1, rest.end());
@@ -4161,6 +4204,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if ((!pointer_shell && inner.depth <= 0) || inner.value == nullptr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
+                    }
+                    // `*p` on `*[N][M]...T` is that array, decayed like a local. The next index peels one shell.
+                    if (pointer_shell && inner.shells.size() >= 2 && inner.shells[1].kind == TypeShell::Kind::Array &&
+                        nested_array_element(inner.shells, 1)) {
+                        TypedValue array = inner;
+                        array.shells.erase(array.shells.begin());
+                        array.ptr_to_array = false;
+                        array.ptr_array_len = 0;
+                        return decay_outer_array(std::move(array));
                     }
                     // `*arr` on a pointer to an array is the array, which decays to a pointer to its element.
                     if (inner.ptr_to_array ||

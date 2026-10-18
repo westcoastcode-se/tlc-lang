@@ -1,0 +1,73 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func line(p *[2][2]i32) [2]i32 {
+    return p[1];
+}
+
+func stared(p *[2][2]i32) [2]i32 {
+    return (*p)[1];
+}
+
+func cell(p *[2][2]i32) i32 {
+    return p[1][0];
+}
+
+func deep(p *[2][2][2]i32) i32 {
+    return p[1][0][1];
+}
+
+func plane(p *[2][2][2]i32) [2][2]i32 {
+    return p[1];
+}
+
+func quad(p *[2][2][2][2]i32) i32 {
+    return p[1][0][1][0];
+}
+
+func flat(p *[2]i32) i32 {
+    return (*p)[1];
+}
+
+func rows(p *[2][]i32) i32 {
+    return p[1][0];
+}
+
+func spot(p *[2]Point) i32 {
+    return p[1].y;
+}
+
+func copied(p *[2][2]i32) i32 {
+    var row [2]i32 = (*p)[1];
+    p[1][0] = 0;
+    return row[0] * 10 + row[1];
+}
+
+func main() i32 {
+    var grid = [_][2]i32{{1, 2}, {3, 8}};
+    var cube = [_][2][2]i32{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}};
+    var hyper = [_][2][2][2]i32{
+        {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}},
+        {{{9, 10}, {11, 12}}, {{13, 14}, {15, 16}}}
+    };
+    var row = [_]i32{4, 9};
+    var a = [_]i32{4, 6};
+    var b = [_]i32{9, 1};
+    var table = [_][]i32{a[:], b[:]};
+    var points = [_]Point{Point{.x = 1, .y = 2}, Point{.x = 3, .y = 6}};
+    var back [2]i32 = line(&grid);
+    var via [2]i32 = stared(&grid);
+    var face [2][2]i32 = plane(&cube);
+    var seen = cell(&grid);
+    var buried = deep(&cube);
+    var corner = quad(&hyper);
+    var elem = flat(&row);
+    var from_rows = rows(&table);
+    var height = spot(&points);
+    var kept = copied(&grid);
+    grid[1][1] = 0;
+    cube[1][0][1] = 0;
+    return back[0] + back[1] + via[0] + via[1] + face[0][1] + seen + buried + corner + elem + from_rows + height + kept;
+}
