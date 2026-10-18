@@ -277,8 +277,11 @@ class Checker {
     int find_enum(uint32_t file, const std::string &name) const;
     // File that defines this struct, enum, or typedef. The current file when the type is missing.
     uint32_t defined_in(const std::string &name) const;
-    // A struct, an enum, or a primitive typedef such as `type Integer i32`.
+    // A struct, an enum, a primitive alias, or a slice alias.
     bool named_type_owner(const std::string &name) const;
+    // `named_type_owner`, plus a pointer alias, a sized-array alias, or a struct alias.
+    // Those three own a static function. They do not own a method or `var Type::name`.
+    bool static_type_owner(const std::string &name) const;
     bool package_has_enum(uint32_t file, const std::string &name) const;
     bool is_c_enum(const Type &type) const;
     const EnumInfo::Member *find_enum_member(int enum_id, const std::string &name) const;

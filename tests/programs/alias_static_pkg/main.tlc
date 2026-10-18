@@ -1,0 +1,11 @@
+import "geom";
+
+func main() i32 {
+    var point geom.Point;
+    point.x = 40;
+    point.y = 1;
+    var p = geom.Ptr.from(&point);
+    var row = geom.Pair.from(1, 2);
+    var s = geom.Spot.origin(4, 3);
+    return (*p).y + row[0] + s.x;
+}

@@ -772,6 +772,31 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Op func (i32) i32;\n"
+            "func Op::id(n i32) i32 { return n; }\n"
+            "func main() i32 { return Op.id(1); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "type Ptr *Point;\n"
+            "var Ptr::n i32 = 1;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"geom/spot.tlc", "package geom;\ntype Point struct { x i32; };\ntype Spot Point;\n"},
+            {"geom/origin.tlc", "package geom;\nfunc Spot::origin() Spot { var p Spot; return p; }\n"},
+        });
+        EXPECT_HAS(check, errors, "method in another file");
+    }
+
+    {
+        const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var flag bool = true;\n"
             "  if (flag) {\n"

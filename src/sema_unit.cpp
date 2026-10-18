@@ -410,13 +410,15 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                                             (receiver_refs == 0 || receiver_refs == 1) && !fn->params.front().is_array &&
                                             fn->params.front().type_package.empty() &&
                                             fn->params.front().type_name == fn->method_struct;
-                const bool known_type = named_type_owner(fn->method_struct);
+                const bool known_type = fn->static_method ? static_type_owner(fn->method_struct)
+                                                             : named_type_owner(fn->method_struct);
                 const bool receiver_ok = receiver_shape && has_param &&
                                          (fn->params.front().is_struct || package_has_enum(file_id_, fn->method_struct));
                 if (!known_type || (!fn->static_method && !receiver_ok)) {
                     error(fn->loc, "type mismatch");
                 }
-                // The method is written beside its struct, enum, primitive alias, or slice alias.
+                // The function is written beside its struct, enum, primitive alias, or slice alias.
+                // A static function may also sit beside a pointer alias, a sized-array alias, or a struct alias.
                 // Other files in the package can still call it.
                 if (defined_in(fn->method_struct) != file_id_) {
                     error(fn->loc, "method in another file");

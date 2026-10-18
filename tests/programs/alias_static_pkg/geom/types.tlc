@@ -1,0 +1,28 @@
+package geom;
+
+export type Point struct {
+    export x i32;
+    export y i32;
+};
+
+export type Ptr *Point;
+export type Pair [2]i32;
+export type Spot Point;
+
+export func Ptr::from(p *Point) Ptr {
+    return Ptr(p);
+}
+
+export func Pair::from(a i32, b i32) Pair {
+    var row Pair;
+    row[0] = a;
+    row[1] = b;
+    return row;
+}
+
+export func Spot::origin(x i32, y i32) Spot {
+    var p Spot;
+    p.x = x;
+    p.y = y;
+    return p;
+}

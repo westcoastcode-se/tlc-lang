@@ -1,0 +1,16 @@
+type Point struct {
+    x i32;
+};
+
+type Spot Point;
+
+func Spot::origin() Spot {
+    var p Spot;
+    p.x = 1;
+    return p;
+}
+
+func main() i32 {
+    var s = Spot.origin();
+    return s.origin().x;
+}

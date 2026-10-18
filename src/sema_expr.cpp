@@ -2472,7 +2472,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
                             const Symbol *symbol = lookup(named->text);
                             const bool shadowed = symbol != nullptr && !symbol->is_type;
-                            if (!shadowed && named_type_owner(named->text)) {
+                            if (!shadowed && static_type_owner(named->text)) {
                                 const MethodInfo *method = find_named_method(named->text, selector->field);
                                 if (method != nullptr && !method->more.empty()) {
                                     method = choose_method(node, *method, true, !package_owns(method->file_id),
@@ -2511,6 +2511,34 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 check_expr(*arg, true);
                             }
                             return type_invalid();
+                        }
+                        // `p.make(...)` on a static function is `type mismatch`. The call is `Type.make(...)`.
+                        const Type *alias_type = &base;
+                        if (base.alias_id == 0 && base.kind == TypeKind::Pointer && base.pointee != nullptr) {
+                            alias_type = base.pointee.get();
+                        }
+                        if (alias_type->alias_id > 0 &&
+                            static_cast<std::size_t>(alias_type->alias_id) < alias_file_.size()) {
+                            bool hidden = false;
+                            const MethodInfo *owned = find_visible_method(
+                                alias_file_[static_cast<std::size_t>(alias_type->alias_id)], type_desc(*alias_type),
+                                selector->field, hidden);
+                            bool only_static = owned != nullptr && owned->is_static;
+                            if (only_static) {
+                                for (const MethodInfo &extra : owned->more) {
+                                    if (!extra.is_static) {
+                                        only_static = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (only_static) {
+                                error(node.loc, "type mismatch");
+                                for (const auto &arg : node.args) {
+                                    check_expr(*arg, true);
+                                }
+                                return type_invalid();
+                            }
                         }
                         const bool type_value = base.kind == TypeKind::Meta;
                         const bool through_type = base.kind == TypeKind::Pointer && base.pointee &&
@@ -2830,7 +2858,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
                         const Symbol *symbol = lookup(named->text);
                         const bool shadowed = symbol != nullptr && !symbol->is_type;
-                        if (!shadowed && named_type_owner(named->text)) {
+                        if (!shadowed && static_type_owner(named->text)) {
                             const MethodInfo *method = find_named_method(named->text, node.field);
                             if (method != nullptr && !method->more.empty()) {
                                 error(node.loc, "not supported yet");

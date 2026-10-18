@@ -1,0 +1,37 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Ptr *Point;
+type Pair [2]i32;
+type Spot Point;
+
+func Ptr::from(p *Point) Ptr {
+    return Ptr(p);
+}
+
+func Pair::from(a i32, b i32) Pair {
+    var row Pair;
+    row[0] = a;
+    row[1] = b;
+    return row;
+}
+
+func Spot::origin(x i32, y i32) Spot {
+    var p Spot;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+func main() i32 {
+    var point Point;
+    point.x = 40;
+    point.y = 2;
+    var through = Ptr.from;
+    var p = through(&point);
+    var row = Pair.from(1, 2);
+    var s = Spot.origin(7, 3);
+    return (*p).x + row[1] + s.y;
+}

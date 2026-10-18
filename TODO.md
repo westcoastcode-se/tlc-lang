@@ -8,7 +8,6 @@ What the language pages leave out. The compiler reports most of these as `not su
 
 A function on a struct or enum with no `this` parameter is called as `Type.name(...)`. `export` publishes `pkg.Type.name(...)` and `pkg.Vec[i32].name(...)`. These forms are not supported yet:
 
-- A call through a pointer alias, a sized-array alias, or a struct alias, such as `type Ptr *Point`, `type Pair [2]i32`, or `type Spot Point`. `type Integer i32` can use `Integer.name(...)`. A slice alias such as `type Row []i32` can use `Row.first(...)` in its package.
 - `const next` inside a struct. The constant is `const Entity::next = 1` or `const Box[T]::limit = 1`, written beside the type.
 - `const Entity::next` inside a function. The constant is file scope.
 - `extern` on `const Entity::next`.
@@ -155,7 +154,7 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 ### Aliases and generics
 
 - Integer ranks assign to each other and to `bool`. A narrower store keeps the low bits. `type Integer i32` does not take part in that. `var n Integer = 10` and `n + 1` are `type mismatch`. The cast is `Integer(n)`. Pages: `docs/types/integer.md`, `docs/types/alias.md`.
-- A primitive alias and a slice alias can have methods. A pointer alias, a sized-array alias, and `type Spot Point` cannot. The missing calls are under Static functions. Pages: `docs/types/alias.md`, `docs/methods/method.md`.
+- A primitive alias and a slice alias can have methods. A pointer alias, a sized-array alias, and `type Spot Point` cannot. Pages: `docs/types/alias.md`, `docs/methods/method.md`.
 - `[]i32` converts to `type Row []i32`. `Row` does not convert back to `[]i32`. `string_view` still converts to `*const u8`. Pages: `docs/types/slice.md`, `docs/std/string.md`.
 - A function and a struct write the kind: `[T type, N i32, U Shape]`. A method, `var Type::name`, and `const Type::name` write the names: `func Vec[T]::get`. `func Vec[T type]::get` is `type mismatch`. A call infers `T`. A call does not infer `N`: `repeat[4](7)`. Pages: `docs/functions/generic.md`, `docs/types/struct.md`, `docs/grammar.md`. Type parameters on anything other than a struct, and `export var Box[T]::extra` beside an accepted `export const Box[T]::limit`, stay in the lists above.
 

@@ -559,6 +559,24 @@ bool Checker::named_type_owner(const std::string &name) const {
            (is_numeric(alias) || is_slice(alias));
 }
 
+bool Checker::static_type_owner(const std::string &name) const {
+    if (named_type_owner(name)) {
+        return true;
+    }
+    Type alias;
+    if (!package_typedef(file_id_, name, alias) || alias.alias_id == 0) {
+        return false;
+    }
+    // `type Op func (i32) i32` is a pointer to a function. It is not `type Ptr *Point`.
+    if (alias.kind == TypeKind::Pointer) {
+        return alias.pointee == nullptr || alias.pointee->kind != TypeKind::Function;
+    }
+    if (alias.kind == TypeKind::Struct) {
+        return true;
+    }
+    return alias.kind == TypeKind::Array && alias.length >= 0;
+}
+
 const Type *Checker::scalar_alias(const Type &base, bool &through_pointer) const {
     through_pointer = false;
     const Type *type = &base;
