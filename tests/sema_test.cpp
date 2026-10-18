@@ -5989,7 +5989,70 @@ int run_sema_tests() {
             "  return copy[0][0];\n"
             "}\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "expected [2]i32, found *i32");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func give(row [2]i32) [2]i32 { return row; }\n"
+            "func line(grid [2][2]i32) [2]i32 { return grid[1]; }\n"
+            "func whole(grid [2][2]i32) [2][2]i32 { return grid; }\n"
+            "func cell(grid [2][2]i32) i32 { return grid[1][0]; }\n"
+            "func copy_of(row [2]i32) i32 {\n"
+            "  var copy [2]i32 = row;\n"
+            "  return copy[0];\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func open(row [4]i32) []i32 { return row; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "return type: expected []i32, found *i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func give(row [2]i32) [3]i32 { return row; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "return type: expected [3]i32, found *i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func give(row [2]i32) [2]i32 { return {row}; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(row [2]i32) i32 {\n"
+            "  var kept [2]i32 = row;\n"
+            "  kept = row;\n"
+            "  return kept[0];\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not an lvalue");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(row [2]i32) *i32 {\n"
+            "  var copy = row;\n"
+            "  return copy;\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func inner(p *[2]i32) i32 { return p[1]; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
     }
 
     {

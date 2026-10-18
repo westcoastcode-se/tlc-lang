@@ -1,8 +1,10 @@
 func take(row [2]i32) i32 {
     var copy = [_][2]i32{row};
-    return copy[0][0];
+    row[0] = 0;
+    return copy[0][0] + copy[0][1];
 }
 
 func main() i32 {
-    return 0;
+    var row = [_]i32{4, 6};
+    return take(row);
 }

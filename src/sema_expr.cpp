@@ -814,6 +814,18 @@ void Checker::check_call_arg(const Expr &expr, const Type &want) {
     check_against(expr, want);
 }
 
+// A parameter `[N]T` is a pointer that still records N. When `[N]T` is expected, that
+// pointer is the array. A read that does not expect the array still decays to `*T`.
+bool decayed_array_value(const Type &got, const Type &want) {
+    if (want.kind != TypeKind::Array || want.length <= 0 || want.element == nullptr) {
+        return false;
+    }
+    if (got.kind != TypeKind::Pointer || got.optional || got.pointee == nullptr || got.decayed_len != want.length) {
+        return false;
+    }
+    return same_type(*got.pointee, *want.element);
+}
+
 Type Checker::check_against(const Expr &expr, const Type &want) {
     // `[]const u8` gives C its `*const u8` address. The slice is still the string in TLC.
     if (const_u8_pointer(want)) {
@@ -854,12 +866,20 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
     }
     // `var copy [2]i32 = row` copies the array. A read elsewhere still decays to `*T`.
     // `const` on the source is the binding. The copy is a new array of the written type.
+    // A parameter `[N]T` is already a pointer. The same written array copies those elements.
     if (want.kind == TypeKind::Array && want.length >= 0) {
         Type got = check_raw(expr, true);
         got.is_const = false;
-        if (got.kind != TypeKind::Invalid && !same_type(got, want)) {
-            mismatch(expr_loc(expr), want, got);
+        if (got.kind == TypeKind::Invalid) {
+            return got;
         }
+        if (same_type(got, want)) {
+            return got;
+        }
+        if (decayed_array_value(got, want)) {
+            return want;
+        }
+        mismatch(expr_loc(expr), want, got);
         return got;
     }
     const Type got = check_expr(expr, true);
@@ -2798,6 +2818,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
+                // A parameter `[N][M]T` points at the first row. `grid[i]` is that row.
+                // `*[M]T` has no decayed length, so `p[i]` is still `(*p)[i]`.
+                if (base.kind == TypeKind::Pointer && base.decayed_len > 0 && base.pointee != nullptr &&
+                    base.pointee->kind == TypeKind::Array && base.pointee->length >= 0) {
+                    return *base.pointee;
+                }
                 Type element;
                 bool pointee_void = false;
                 if (!indexed_type(base, element, pointee_void)) {
@@ -3902,6 +3928,15 @@ void Checker::check_stmt(const Stmt &stmt) {
                             !init->array_literal && got.kind != TypeKind::Invalid) {
                             error(expr_loc(value), "not supported yet");
                             return type_invalid();
+                        }
+                        return got;
+                    }
+                    if (want.kind == TypeKind::Array && want.length > 0) {
+                        // `return row` on a parameter `[N]T` copies the elements. `return row`
+                        // where `[]T` is expected stays the pointer. The slice is `row[:]`.
+                        const Type got = check_raw(value, true);
+                        if (got.kind != TypeKind::Invalid && decayed_array_value(got, want)) {
+                            return want;
                         }
                         return got;
                     }

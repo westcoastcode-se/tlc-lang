@@ -1,0 +1,59 @@
+func give(row [2]i32) [2]i32 {
+    return row;
+}
+
+func line(grid [2][2]i32) [2]i32 {
+    return grid[1];
+}
+
+func whole(grid [2][2]i32) [2][2]i32 {
+    return grid;
+}
+
+func cell(grid [2][2]i32) i32 {
+    return grid[1][0];
+}
+
+func copy_of(row [2]i32) i32 {
+    var copy [2]i32 = row;
+    row[0] = 1;
+    return copy[0] * 10 + copy[1];
+}
+
+func listed(row [2]i32) i32 {
+    var grid = [_][2]i32{row, row};
+    row[0] = 0;
+    return grid[0][0] + grid[1][1];
+}
+
+func rows_of(a [2]i32, b [2]i32) [2][2]i32 {
+    return {a, b};
+}
+
+func plane(cube [2][2][2]i32) [2][2]i32 {
+    return cube[1];
+}
+
+func deep(cube [2][2][2]i32) i32 {
+    return cube[1][0][1];
+}
+
+func main() i32 {
+    var row = [_]i32{4, 6};
+    var grid = [_][2]i32{{1, 2}, {3, 9}};
+    var cube = [_][2][2]i32{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}};
+    var back [2]i32 = give(row);
+    var from_grid [2]i32 = line(grid);
+    var full [2][2]i32 = whole(grid);
+    var paired [2][2]i32 = rows_of(row, grid[0]);
+    var face [2][2]i32 = plane(cube);
+    var seen = cell(grid);
+    var buried = deep(cube);
+    var copied = copy_of(row);
+    var packed = listed(row);
+    row[1] = 0;
+    grid[1][1] = 0;
+    cube[1][0][1] = 0;
+    return back[0] + back[1] + from_grid[0] + from_grid[1] + full[0][1] + full[1][0] + paired[0][0] + paired[1][1] +
+           face[0][1] + seen + buried + copied + packed;
+}

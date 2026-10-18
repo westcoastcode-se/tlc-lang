@@ -3493,6 +3493,22 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         }
         return out;
     }
+    if (outer.kind == TypeShell::Kind::Pointer && !rest.empty() && rest.front().kind == TypeShell::Kind::Array &&
+        base.array_len > 0) {
+        // A parameter `[N][M]T` points at the first row. Indexing steps by one row.
+        // `*[M]T` has no decayed length and still indexes inside that one array.
+        llvm::Value *slot =
+            builder_.CreateInBoundsGEP(element_of(rest), base.value, llvm::ArrayRef<llvm::Value *>{subscript});
+        TypedValue out;
+        out.value = slot;
+        carry(out);
+        out.row_decay = true;
+        out.array_len = rest.front().length;
+        out.depth = base.depth + 1;
+        mark(out, std::vector<TypeShell>(rest.begin() + 1, rest.end()));
+        out.is_slice = false;
+        return out;
+    }
     if (outer.kind == TypeShell::Kind::Pointer && !rest.empty() && rest.front().kind == TypeShell::Kind::Array) {
         std::vector<TypeShell> inner(rest.begin() + 1, rest.end());
         llvm::Type *array = llvm::ArrayType::get(element_of(inner), static_cast<uint64_t>(rest.front().length));
