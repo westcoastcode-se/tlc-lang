@@ -67,7 +67,7 @@ func shader_status(object u32, pname u32, linked bool) bool {
         } else {
             GetShaderInfoLog(object, 512, null, log);
         }
-        printf("%s\n", log);
+        printf("%s\n", *u8(log));
         return false;
     }
     return true;

@@ -1,5 +1,18 @@
+type Holder struct {
+    raw [2]i32;
+}
+
+func sum(p *i32) i32 {
+    return p[0] + p[1];
+}
+
 func main() i32 {
     var row = [_]i32{10, 20};
     var p *i32 = row;
-    return p[0];
+    var view []i32 = row;
+    var h Holder;
+    h.raw[0] = 3;
+    h.raw[1] = 4;
+    var field *i32 = h.raw;
+    return sum(row) + p[0] + view[1] + field[0] + field[1];
 }

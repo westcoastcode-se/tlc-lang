@@ -553,6 +553,9 @@ class Checker {
     struct InitTouch {
         bool read = false;
         bool mark = false;
+        // The span is a sized array used as an address. The elements were not read.
+        // `*[N]T` may still store into that span. `*T` and a parameter `[N]T` do not.
+        bool array_addr = false;
         int offset = 0;
         int count = 0;
     };
@@ -565,7 +568,7 @@ class Checker {
     void init_fill_brace(const Type &type, const Expr::Init *brace, std::vector<uint8_t> &bits, int offset);
     void init_cover(Symbol &symbol, const Expr *init);
     void init_track_pointee(Symbol &symbol, const Type &object, const Expr *init, bool fresh);
-    void init_address_span(const Expr &expr, bool mark, SourceLoc loc);
+    void init_address_span(const Expr &expr, bool mark, SourceLoc loc, bool array_pointer);
     bool init_pointee_steps(const Symbol &symbol, std::vector<InitStep> steps) const;
     void init_open(Symbol &symbol);
     void init_note_local(int id, int leaves);

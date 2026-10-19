@@ -1852,6 +1852,33 @@ void CodeGen::apply_initializer(const VarDecl &var) {
     if (!var.owner_params.empty()) {
         return;
     }
+    // `var p *i32 = row` at file scope stores the address of the first element.
+    auto element_pointer = [&](const Expr &expr) -> llvm::Constant * {
+        const auto *named = std::get_if<Expr::Name>(&expr.data);
+        if (named == nullptr) {
+            return nullptr;
+        }
+        const Binding *binding = nullptr;
+        if (const auto file = files_.find(current_file_); file != files_.end()) {
+            const auto found = file->second.globals.find(named->text);
+            if (found != file->second.globals.end()) {
+                binding = &found->second;
+            }
+        }
+        if (binding == nullptr) {
+            binding = visible(current_file_, named->text, false);
+        }
+        auto *global = binding == nullptr ? nullptr : llvm::dyn_cast<llvm::GlobalVariable>(binding->value);
+        if (binding == nullptr || global == nullptr || !binding->is_array) {
+            return nullptr;
+        }
+        auto *array = llvm::dyn_cast<llvm::ArrayType>(global->getValueType());
+        if (array == nullptr) {
+            return nullptr;
+        }
+        return llvm::ConstantExpr::getInBoundsGetElementPtr(
+            array, global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
+    };
     const std::string key = global_key(var);
     FileSymbols &file = files_[current_file_];
     if (var.is_const_decl && var.has_const) {
@@ -1871,6 +1898,15 @@ void CodeGen::apply_initializer(const VarDecl &var) {
             global->setInitializer(packed);
             file.folded.insert(key);
             return;
+        }
+        // `const p *i32 = row` stores the address of the first element.
+        if (found != file.globals.end() && found->second.depth > 0 && !found->second.is_array &&
+            !found->second.is_slice && var.init != nullptr && global != nullptr) {
+            if (llvm::Constant *pointer = element_pointer(*var.init)) {
+                global->setInitializer(pointer);
+                file.folded.insert(key);
+                return;
+            }
         }
         // `const frozen [2]i32 = held` copies that array. A list still uses the element path.
         if (found != file.globals.end() && found->second.is_array && var.init != nullptr && global != nullptr &&
@@ -1956,6 +1992,16 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         global->setInitializer(value);
         file.folded.insert(key);
         return;
+    }
+    // `var p *i32 = row` stores the address of the first element.
+    if (found_early != file.globals.end() && found_early->second.depth > 0 && !found_early->second.is_array &&
+        !found_early->second.is_slice && var.init != nullptr) {
+        auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
+        if (llvm::Constant *pointer = element_pointer(*var.init); pointer != nullptr && global != nullptr) {
+            global->setInitializer(pointer);
+            file.folded.insert(key);
+            return;
+        }
     }
     // `var copy [2]i32 = row` and `var line [2]i32 = grid[1]` copy that constant array.
     if (found_early != file.globals.end() && found_early->second.is_array && var.init != nullptr &&

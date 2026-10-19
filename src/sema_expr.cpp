@@ -830,11 +830,20 @@ void Checker::check_call_arg(const Expr &expr, const Type &want) {
     if (accept_trait_lambda(expr, want)) {
         return;
     }
+    const std::size_t before = diags_.size();
     check_against(expr, want);
+    // A type error is not a store into the argument.
+    if (diags_.size() != before) {
+        return;
+    }
     // `*T` is assumed to store into the object. `*const T` may only read it.
+    // A sized array passed as `*Elem`, including a parameter `[N]T`, is not that object.
     if (want.kind == TypeKind::Pointer && want.pointee != nullptr) {
         const bool writes = !want.pointee->is_const;
-        init_address_span(expr, writes, expr_loc(expr));
+        const Type &pointee = *want.pointee;
+        const bool array_pointer =
+            want.decayed_len == 0 && pointee.kind == TypeKind::Array && pointee.length >= 0 && pointee.element != nullptr;
+        init_address_span(expr, writes, expr_loc(expr), array_pointer);
     }
 }
 
@@ -864,6 +873,11 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
     if (const_u8_pointer(want)) {
         const Type got = check_expr(expr, true);
         if (slice_of_const_u8(got)) {
+            return want;
+        }
+        // `[N]u8` is the address of the first byte. `*const u8` may read it.
+        if (got.kind == TypeKind::Array && got.length >= 0 && !is_slice(got) && got.element != nullptr &&
+            raw_pointee(*got.element)) {
             return want;
         }
         expect_value(got, want, expr, expr_loc(expr));
@@ -920,26 +934,35 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
         return got;
     }
     // A parameter `[N]T` is a pointer that records N. A sized array of that length
-    // passes its address and does not read the elements. A plain `*T` does not:
-    // the cast is `*T(array)`.
-    if (want.kind == TypeKind::Pointer && !want.optional && want.decayed_len > 0 && want.pointee != nullptr) {
-        Type got = check_raw(expr, true);
-        if (got.kind == TypeKind::Array && got.length >= 0 && got.element != nullptr && !is_slice(got)) {
-            Type element = *got.element;
-            if (got.is_const) {
-                element.is_const = true;
+    // passes its address and does not read the elements.
+    // A written `*T` does the same when `T` is the element. `*[N]T` does not:
+    // that argument is `&array`. The cast `*T(array)` is the same address.
+    if (want.kind == TypeKind::Pointer && want.pointee != nullptr) {
+        const bool decayed_param = !want.optional && want.decayed_len > 0;
+        const bool element_pointer = want.decayed_len == 0 && want.pointee->kind != TypeKind::Array;
+        if (decayed_param || element_pointer) {
+            Type got = check_raw(expr, true);
+            if (got.kind == TypeKind::Array && got.length >= 0 && got.element != nullptr && !is_slice(got)) {
+                Type element = *got.element;
+                if (got.is_const) {
+                    element.is_const = true;
+                }
+                Type as_pointer = type_pointer(std::move(element));
+                if (decayed_param) {
+                    as_pointer.decayed_len = got.length;
+                }
+                const bool matched = decayed_param ? got.length == want.decayed_len && accepts_pointer(as_pointer, want)
+                                                   : accepts_pointer(as_pointer, want);
+                if (matched) {
+                    return want;
+                }
+                mismatch(expr_loc(expr), want, got);
+                return got;
             }
-            Type as_pointer = type_pointer(std::move(element));
-            as_pointer.decayed_len = got.length;
-            if (got.length == want.decayed_len && accepts_pointer(as_pointer, want)) {
-                return want;
-            }
-            mismatch(expr_loc(expr), want, got);
-            return got;
+            Type value = value_type(std::move(got));
+            expect_value(value, want, expr, expr_loc(expr));
+            return value;
         }
-        Type value = value_type(std::move(got));
-        expect_value(value, want, expr, expr_loc(expr));
-        return value;
     }
     const Type got = check_expr(expr, true);
     expect_value(got, want, expr, expr_loc(expr));
@@ -948,7 +971,8 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
 
 Type Checker::value_type(Type type) {
     // A loaded value is a copy. `const` stays on the source, not on this temporary.
-    // A sized array stays `[N]T`. A pointer is the cast `*T(array)`. A slice is `array[:]`.
+    // A sized array stays `[N]T` until a written `*T` or `[]T` accepts it.
+    // The cast `*T(array)` is that pointer. A slice is `array[:]`.
     // A parameter `[N]T` is already a pointer. Its length stays on that binding.
     type.is_const = false;
     type.decayed_len = 0;
@@ -1734,7 +1758,7 @@ Type Checker::finish_value_method(const Expr::Call &node, const Expr::Selector &
                     mismatch(expr_loc(*selector.base), receiver, pointer);
                 } else if (selector.base != nullptr) {
                     const bool writes = receiver.pointee != nullptr && !receiver.pointee->is_const;
-                    init_address_span(*selector.base, writes, expr_loc(*selector.base));
+                    init_address_span(*selector.base, writes, expr_loc(*selector.base), false);
                 }
             }
         } else if (selector.base != nullptr) {
@@ -2791,7 +2815,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                                 mismatch(expr_loc(*selector->base), receiver, pointer);
                                             } else if (selector->base != nullptr) {
                                                 const bool writes = receiver.pointee != nullptr && !receiver.pointee->is_const;
-                                                init_address_span(*selector->base, writes, expr_loc(*selector->base));
+                                                init_address_span(*selector->base, writes, expr_loc(*selector->base), false);
                                             }
                                         }
                                     } else {

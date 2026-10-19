@@ -7031,5 +7031,238 @@ int run_sema_tests() {
         EXPECT(check, output.compiler_stderr.empty());
     }
 
+    {
+        const std::string errors = diagnose(
+            "func take(buf [4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  take(log);\n"
+            "  return log[0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func write(buf *u8) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  write(log);\n"
+            "  return log[3];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(p *i32) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  take(log);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected *i32, found [4]u8");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "const row = [_]i32{1, 2};\n"
+            "func take(p *i32) void {}\n"
+            "func main() i32 {\n"
+            "  take(row);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func peek(buf *const u8) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  peek(log);\n"
+            "  return log[0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func fill(buf *[4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  fill(log);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected *[4]u8, found [4]u8");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  log[0] = 1;\n"
+            "  var p *u8 = log;\n"
+            "  var view []u8 = log;\n"
+            "  return i32(p[0]) + i32(view[0]);\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Logger struct { n i32; };\n"
+            "func Logger::put(self *this, buf [4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  var logger Logger;\n"
+            "  logger.n = 1;\n"
+            "  logger.put(log);\n"
+            "  return log[3];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func write(buf *u8) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  write(&log[0]);\n"
+            "  return log[0];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func write(buf *u8) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  write(&log[0]);\n"
+            "  return log[1];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func fill(buf *[4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  fill(&log);\n"
+            "  return log[0] + log[3];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func peek(buf *const [4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var log [4]u8;\n"
+            "  peek(&log);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Holder struct { n i32; raw [4]u8; };\n"
+            "func take(buf [4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var h Holder;\n"
+            "  h.n = 1;\n"
+            "  take(h.raw);\n"
+            "  return h.raw[0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Holder struct { n i32; raw [4]u8; };\n"
+            "func fill(buf *[4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var h Holder;\n"
+            "  fill(&h.raw);\n"
+            "  return h.n;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Holder struct { n i32; raw [4]u8; };\n"
+            "func fill(buf *[4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var h Holder;\n"
+            "  h.n = 1;\n"
+            "  fill(&h.raw);\n"
+            "  return h.n + h.raw[3];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(row [4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var grid [2][4]u8;\n"
+            "  take(grid[0]);\n"
+            "  return grid[0][0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func fill(row *[4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var grid [2][4]u8;\n"
+            "  fill(&grid[0]);\n"
+            "  return grid[1][0];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func fill(row *[4]u8) void {}\n"
+            "func main() i32 {\n"
+            "  var grid [2][4]u8;\n"
+            "  fill(&grid[0]);\n"
+            "  return grid[0][3];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func write(p *Point) void {}\n"
+            "func main() i32 {\n"
+            "  var p Point;\n"
+            "  write(&p);\n"
+            "  return p.x + p.y;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func read(p *const Point) void {}\n"
+            "func main() i32 {\n"
+            "  var p Point;\n"
+            "  read(&p);\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
     return check.failed;
 }

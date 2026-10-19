@@ -303,8 +303,13 @@ Checker::InitTouch Checker::init_resolve(Type type, int offset, int count, const
         return {};
     }
     // A sized array used as a pointer is not a read of its elements. A copy is.
+    // The span stays so `*[N]T` can initialize that array and not the object around it.
     if (sized_array(type) && !keep) {
-        return {};
+        InitTouch touch;
+        touch.array_addr = true;
+        touch.offset = offset;
+        touch.count = count;
+        return touch;
     }
     InitTouch touch;
     touch.read = true;
@@ -972,7 +977,7 @@ void Checker::init_track_pointee(Symbol &symbol, const Type &object, const Expr 
     }
 }
 
-void Checker::init_address_span(const Expr &expr, bool mark, SourceLoc loc) {
+void Checker::init_address_span(const Expr &expr, bool mark, SourceLoc loc, bool array_pointer) {
     if (assign_.unreachable || quiet_ || init_quiet_) {
         return;
     }
@@ -1033,8 +1038,12 @@ void Checker::init_address_span(const Expr &expr, bool mark, SourceLoc loc) {
     init_use_ = InitUse::Read;
     const InitTouch touch = init_resolve(type, 0, total, steps, false);
     init_use_ = saved_use;
-    const int offset = touch.read || touch.mark ? touch.offset : 0;
-    const int count = touch.read || touch.mark ? touch.count : total;
+    // `*[N]T` stores into that array. `*T` and a parameter `[N]T` point at one element.
+    if (touch.array_addr && (!array_pointer || touch.count <= 0)) {
+        return;
+    }
+    const int offset = touch.array_addr || touch.read || touch.mark ? touch.offset : 0;
+    const int count = touch.array_addr || touch.read || touch.mark ? touch.count : total;
     if (mark) {
         std::vector<uint8_t> bits(static_cast<std::size_t>(total), 1);
         const auto found = assign_.open.find(id);

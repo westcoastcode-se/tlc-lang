@@ -961,7 +961,19 @@ Type Checker::check_file_const(VarDecl &written) {
             return got;
         }
     }
-    // `const copy = row` copies that array. A pointer is `*T(row)`.
+    // `const copy = row` copies that array.
+    // `const p *i32 = row` stores the address of the first element.
+    if (got.kind == TypeKind::Pointer && written.init != nullptr) {
+        if (const auto *named = std::get_if<Expr::Name>(&written.init->data)) {
+            const Symbol *source = lookup(named->text);
+            if (source != nullptr && source->function_id == 0 && source->type.kind == TypeKind::Array &&
+                source->type.element != nullptr && !is_slice(source->type) && source->type.length >= 0 &&
+                global_var(named->text) != nullptr) {
+                return got;
+            }
+        }
+    }
+    // `const copy = row` copies that array. A pointer to its element was returned above.
     if (got.kind == TypeKind::Array && got.length >= 0 && !is_slice(got)) {
         if (!accept_array_copy(written)) {
             return type_invalid();
