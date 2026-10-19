@@ -1,0 +1,8 @@
+type Holder struct { raw [2][3]i32; };
+
+func main() i32 {
+    var h Holder;
+    var line = [_]i32{4, 5, 6};
+    h.raw[1] = line;
+    return 0;
+}

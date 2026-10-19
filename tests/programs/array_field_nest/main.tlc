@@ -1,0 +1,22 @@
+type Holder struct {
+    raw [2][3]i32;
+    cube [2][2][2]i32;
+};
+
+var g Holder;
+
+func main() i32 {
+    var h Holder;
+    h.raw[1][0] = 4;
+    h.raw[1][1] = 5;
+    h.raw[1][2] = 6;
+    var view []i32 = h.raw[1];
+    var line [3]i32 = h.raw[1];
+    h.raw[1][2] = 9;
+    h.cube[1][0][1] = 4;
+    var p *Holder = &h;
+    p.raw[0][1] = 2;
+    g.raw[1][2] = 5;
+    var rows [][3]i32 = h.raw;
+    return view[2] + line[2] + h.raw[1][2] + h.cube[1][0][1] + h.raw[0][1] + g.raw[1][2] + rows[1][2];
+}

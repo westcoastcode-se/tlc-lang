@@ -4403,11 +4403,23 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         return loaded;
     }
     // An array field decays to a pointer to its first element. The length stays so a range can use it.
+    // `[N][M]...T` keeps the inner shells. The next index steps by the row, as a local array does.
     if (addr.is_array) {
         TypedValue value{addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
                          addr.elem_bool, addr.elem_bits, addr.elem_unsigned, -1, addr.elem_float};
         value.array_len = addr.array_len;
         value.elem_slice = addr.elem_slice;
+        value.enum_id = addr.enum_id;
+        if (!addr.shells.empty() && addr.shells.front().kind == TypeShell::Kind::Array) {
+            if (addr.shells.size() >= 2 && addr.shells[1].kind == TypeShell::Kind::Array) {
+                value.inner_array_len = addr.shells[1].length;
+            }
+            value.shells.assign(addr.shells.begin() + 1, addr.shells.end());
+            if (addr.shells.size() >= 2) {
+                value.array_type = shell_type(addr.shells, addr.depth, addr.elem_char, addr.struct_id, addr.elem_bool,
+                                              addr.elem_bits, addr.elem_float);
+            }
+        }
         return value;
     }
     return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void, addr.elem_bool,
