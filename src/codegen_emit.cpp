@@ -4950,6 +4950,26 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     }
                     return rhs;
                 }
+                // `h.raw = row` copies the array into the field. `row` is a pointer to those elements.
+                if (slot.is_array) {
+                    if (slot.array_type == nullptr || !slot.array_type->isArrayTy() || slot.value == nullptr ||
+                        rhs.value == nullptr) {
+                        error(node.loc, "not supported yet");
+                        return rhs;
+                    }
+                    llvm::Value *loaded = rhs.value;
+                    if (loaded->getType() != slot.array_type) {
+                        // `{4, 6}` is not this array. That brace reports `type mismatch`.
+                        if (!loaded->getType()->isPointerTy()) {
+                            return rhs;
+                        }
+                        loaded = builder_.CreateLoad(slot.array_type, loaded);
+                    }
+                    if (!terminated()) {
+                        builder_.CreateStore(loaded, slot.value);
+                    }
+                    return rhs;
+                }
                 llvm::Value *stored = nullptr;
                 if (slot.value != nullptr && rhs.value != nullptr) {
                     stored = stored_value(rhs, slot);

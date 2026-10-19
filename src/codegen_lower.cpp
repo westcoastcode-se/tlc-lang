@@ -1095,6 +1095,10 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
         out.is_slice = slot->is_slice;
         out.elem_slice = slot->elem_slice;
         out.shells = slot->shells;
+        // `h.raw = row` stores this array. The address is the field, not a decayed pointer.
+        if (slot->type != nullptr && slot->type->isArrayTy()) {
+            out.array_type = slot->type;
+        }
         return out;
     };
     // A C union overlays every field at offset 0. A tlc union does the same, and the enum tag sits after the payload.

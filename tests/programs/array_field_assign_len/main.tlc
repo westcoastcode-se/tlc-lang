@@ -1,0 +1,10 @@
+type Holder struct {
+    raw [2]i32;
+};
+
+func main() i32 {
+    var h Holder;
+    var row [3]i32 = {4, 5, 6};
+    h.raw = row;
+    return 0;
+}

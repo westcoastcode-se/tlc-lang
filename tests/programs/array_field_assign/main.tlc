@@ -1,0 +1,84 @@
+type Point struct {
+    x i32;
+};
+
+type Holder struct {
+    raw [2]i32;
+    grid [2][3]i32;
+    pts [2]Point;
+};
+
+type Box struct {
+    cell [2]i32;
+};
+
+var g Holder;
+
+func give() [2]i32 {
+    var row [2]i32 = {3, 0};
+    return row;
+}
+
+func from_param(dst *Holder, row [2]i32) i32 {
+    dst.raw = row;
+    row[0] = 9;
+    return dst.raw[0];
+}
+
+func main() i32 {
+    var h Holder;
+    var row [2]i32 = {4, 6};
+    h.raw = row;
+    row[0] = 1;
+    var sum = h.raw[0] + h.raw[1];
+
+    var grid [2][3]i32 = {{0, 0, 0}, {0, 0, 6}};
+    h.grid = grid;
+    grid[1][2] = 1;
+    sum = sum + h.grid[1][2];
+
+    var p *Holder = &h;
+    var alt [2]i32 = {8, 0};
+    p.raw = alt;
+    alt[0] = 1;
+    sum = sum + h.raw[0];
+
+    var a Point;
+    var b Point;
+    a.x = 5;
+    b.x = 0;
+    var pts [2]Point = {a, b};
+    h.pts = pts;
+    a.x = 1;
+    sum = sum + h.pts[0].x;
+
+    var fresh [2]i32 = {4, 0};
+    sum = sum + from_param(&h, fresh);
+    sum = sum + fresh[0];
+
+    h.raw = give();
+    sum = sum + h.raw[0];
+
+    var other Holder;
+    other.raw[0] = 7;
+    other.raw[1] = 0;
+    h.raw = other.raw;
+    other.raw[0] = 1;
+    sum = sum + h.raw[0];
+
+    var file_row [2]i32 = {2, 0};
+    g.raw = file_row;
+    file_row[0] = 1;
+    sum = sum + g.raw[0];
+
+    var boxes [2]Box;
+    var line [2]i32 = {6, 0};
+    boxes[1].cell = line;
+    line[0] = 1;
+    sum = sum + boxes[1].cell[0];
+
+    var copied [2][3]i32 = {{0, 0, 0}, {0, 0, 4}};
+    g.grid = copied;
+    copied[1][2] = 1;
+    return sum + g.grid[1][2];
+}
