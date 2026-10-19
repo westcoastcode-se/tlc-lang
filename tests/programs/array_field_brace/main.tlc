@@ -1,0 +1,106 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Holder struct {
+    raw [2]i32;
+    grid [2][3]i32;
+    pts [2]Point;
+};
+
+type Box struct {
+    cell [2]i32;
+};
+
+type Pair [2]i32;
+
+type Aliased struct {
+    raw Pair;
+};
+
+var g Holder;
+var seen i32;
+
+func give() i32 {
+    return 4;
+}
+
+func line() [3]i32 {
+    var row [3]i32 = {1, 0, 5};
+    return row;
+}
+
+func bump() i32 {
+    seen = seen + 1;
+    return seen;
+}
+
+func main() i32 {
+    var h Holder;
+    var sum i32;
+
+    h.raw = {4, 6};
+    sum = h.raw[0] + h.raw[1];
+
+    var p *Holder = &h;
+    p.raw = {8, 0};
+    sum = sum + h.raw[0];
+    (*p).raw = {1, 2};
+    sum = sum + h.raw[0] + h.raw[1];
+
+    h.grid = {{1, 2, 3}, {4, 5, 6}};
+    sum = sum + h.grid[1][0] + h.grid[1][2];
+
+    h.raw = {give(), 6};
+    sum = sum + h.raw[0] + h.raw[1];
+
+    var a Point;
+    var b Point;
+    a.x = 5;
+    a.y = 0;
+    b.x = 7;
+    b.y = 0;
+    h.pts = {a, b};
+    a.x = 1;
+    sum = sum + h.pts[0].x + h.pts[1].x;
+
+    g.raw = {2, 0};
+    sum = sum + g.raw[0];
+
+    var boxes [2]Box;
+    boxes[1].cell = {6, 0};
+    sum = sum + boxes[1].cell[0];
+
+    var other [3]i32 = {2, 0, 0};
+    h.grid = {other, line()};
+    other[0] = 9;
+    sum = sum + h.grid[0][0] + h.grid[1][2];
+
+    h.pts = {{.x = 3, .y = 0}, {.x = 4, .y = 0}};
+    sum = sum + h.pts[0].x + h.pts[1].x;
+
+    h.raw = {4, 0...};
+    sum = sum + h.raw[0] + h.raw[1];
+
+    h.raw = {7};
+    sum = sum + h.raw[0];
+
+    var src [2]i32 = {3, 1};
+    h.raw = {src[0], src[1]};
+    src[0] = 9;
+    sum = sum + h.raw[0] + h.raw[1];
+
+    var aliased Aliased;
+    aliased.raw = {4, 0};
+    sum = sum + aliased.raw[0];
+
+    var copy [2]i32 = (h.raw = {4, 6});
+    h.raw[0] = 1;
+    sum = sum + copy[0] + copy[1];
+
+    h.raw = {bump(), bump()};
+    sum = sum + h.raw[0] * 10 + h.raw[1];
+
+    return sum;
+}

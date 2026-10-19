@@ -4943,6 +4943,23 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 arm_union_tag_ = true;
                 const TypedValue slot = emit_addr(*node.lhs);
                 arm_union_tag_ = false;
+                // `h.raw = {4, 6}` stores that list in the field. A short list stores only the
+                // named elements. `0...` zeros the field first, the same way a local array does.
+                if (slot.is_array && node.rhs != nullptr) {
+                    if (const auto *list = std::get_if<Expr::Init>(&node.rhs->data);
+                        list != nullptr && !list->array_literal && !list->is_tuple && list->fields.empty()) {
+                        if (slot.array_type == nullptr || !slot.array_type->isArrayTy() || slot.value == nullptr) {
+                            error(node.loc, "not supported yet");
+                            return {zero(), 0};
+                        }
+                        auto *array_ty = llvm::cast<llvm::ArrayType>(slot.array_type);
+                        if (list->zero_rest && !terminated()) {
+                            builder_.CreateStore(llvm::ConstantAggregateZero::get(array_ty), slot.value);
+                        }
+                        store_array_elements(slot.value, array_ty, *list);
+                        return slot;
+                    }
+                }
                 const TypedValue rhs = emit_rvalue(*node.rhs);
                 if (slot.is_slice) {
                     if (slot.value != nullptr && rhs.value != nullptr && !terminated()) {
@@ -4959,8 +4976,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     }
                     llvm::Value *loaded = rhs.value;
                     if (loaded->getType() != slot.array_type) {
-                        // `{4, 6}` is not this array. That brace reports `type mismatch`.
+                        // A brace list is stored above. What remains is a pointer to an array value.
                         if (!loaded->getType()->isPointerTy()) {
+                            error(node.loc, "type mismatch");
                             return rhs;
                         }
                         loaded = builder_.CreateLoad(slot.array_type, loaded);
