@@ -1354,6 +1354,10 @@ std::string Checker::type_desc(const Type &type) const {
             if (name.rfind(".struct.", 0) == 0) {
                 return "struct";
             }
+            // `.union.1.A` is a payload. `.union.1` is the union itself.
+            if (name.rfind(".union.", 0) == 0 && name.find('.', std::string(".union.").size()) == std::string::npos) {
+                return "union";
+            }
             return name;
         }
         return "struct";

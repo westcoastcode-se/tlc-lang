@@ -92,6 +92,56 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             specs.type_name = name;
             break;
         }
+        // `var u union(Kind) { A struct { n i32; }; }` is a union. `union Shape` is not a type spelling.
+        if (type_only && token.kind == TokenKind::KwUnion && peek(1).kind == TokenKind::LParen) {
+            const SourceLoc loc = token.loc;
+            ++pos_;
+            ++pos_;
+            std::string tag;
+            if (check(TokenKind::Identifier)) {
+                tag = peek().text;
+                ++pos_;
+                if (check(TokenKind::Dot)) {
+                    diags_.error(peek().loc, "not supported yet");
+                    tag.clear();
+                    while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+                        ++pos_;
+                    }
+                }
+            } else {
+                error_here("expected a type");
+                while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+                    ++pos_;
+                }
+            }
+            expect(TokenKind::RParen, "expected ')'");
+            if (tag.empty() || !eat(TokenKind::LBrace)) {
+                if (tag.empty()) {
+                    // The missing tag was already reported.
+                } else {
+                    error_here("expected '{'");
+                }
+                specs.saw_type = true;
+                specs.type_name = "invalid";
+                break;
+            }
+            const std::string name = ".union." + std::to_string(++anonymous_struct_count_);
+            UnionBody variants = parse_union_variants(name);
+            expect(TokenKind::RBrace, "expected '}'");
+            anonymous_structs_.insert(anonymous_structs_.end(), std::make_move_iterator(variants.anonymous.begin()),
+                                      std::make_move_iterator(variants.anonymous.end()));
+            StructDecl item;
+            item.loc = loc;
+            item.name = name;
+            item.fields = std::move(variants.fields);
+            item.anonymous = true;
+            item.is_union = true;
+            item.tag_name = std::move(tag);
+            anonymous_structs_.push_back(std::move(item));
+            specs.saw_type = true;
+            specs.type_name = name;
+            break;
+        }
         // `struct`, `union`, and `trait` are only written in the type definition. A variable names the type.
         if (token.kind == TokenKind::KwStruct || token.kind == TokenKind::KwEnum || token.kind == TokenKind::KwUnion ||
             token.kind == TokenKind::KwTrait) {

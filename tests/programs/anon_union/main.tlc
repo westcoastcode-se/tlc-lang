@@ -1,0 +1,27 @@
+type Kind enum {
+    A,
+    B,
+};
+
+type Payload struct {
+    n i32;
+};
+
+type View trait {
+    A Payload;
+};
+
+func read(v View) i32 {
+    return v.A.n;
+}
+
+func main() i32 {
+    var u union(Kind) {
+        A Payload;
+        B struct { n i32; };
+    } = {.A = {.n = 40}};
+    if (Kind(u) != Kind.A) {
+        return 0;
+    }
+    return read(u);
+}

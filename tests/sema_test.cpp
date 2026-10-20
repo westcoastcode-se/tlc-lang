@@ -3132,6 +3132,35 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Kind enum { A, B };\n"
+            "func main() i32 {\n"
+            "  var u union(Kind) {\n"
+            "    A struct { n i32; };\n"
+            "    B struct { n i32; };\n"
+            "  };\n"
+            "  var v union(Kind) {\n"
+            "    A struct { n i32; };\n"
+            "    B struct { n i32; };\n"
+            "  };\n"
+            "  u = v;\n"
+            "  return u.A.n;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Kind enum { A };\n"
+            "type Shape union(Kind) { A struct { n i32; }; };\n"
+            "func main() i32 {\n"
+            "  var u union Shape;\n"
+            "  return sizeof(union Shape);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected a type");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Kind enum { A, B };\n"
             "type Shape union(Kind) {\n"
             "  A struct { n i32; };\n"
             "  B struct { n i32; };\n"
