@@ -1,13 +1,50 @@
 type Kind enum {
     One,
+    Two,
 };
 
 type Shape union(Kind) {
     One struct {
-        n i32 = 1;
+        n i32 = 10;
+        m i32 = 2;
+    };
+    Two struct {
+        k i32 = 7;
     };
 };
 
+type Point struct {
+    x i32 = 4;
+};
+
+type Named union(Kind) {
+    One Point;
+    Two struct {
+        k i32 = 1;
+    };
+};
+
+type Arm enum {
+    One,
+};
+
+type Pack union(Arm) {
+    One struct {
+        raw [2]i32 = {3, 1};
+    };
+};
+
+var global = Shape{.One = {}};
+
 func main() i32 {
-    return 0;
+    var plain = Shape{.One = {}};
+    var named = Shape{.One = {.n = 20}};
+    var other = Shape{.Two = {}};
+    var p *Shape = new Shape{.One = {}};
+    var via = Named{.One = {}};
+    var pack = Pack{.One = {}};
+    var sum = plain.One.n + plain.One.m + named.One.n + named.One.m + other.Two.k + p.One.n + global.One.n + via.One.x +
+              pack.One.raw[0] + pack.One.raw[1];
+    delete p;
+    return sum;
 }

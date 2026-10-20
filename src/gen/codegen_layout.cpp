@@ -183,8 +183,8 @@ void CodeGen::prepare_structs() {
                 slot.is_slice = low.is_slice;
                 slot.elem_slice = low.elem_slice;
                 slot.shells = low.shells;
-                // A union payload is not given a field value. A sized array keeps its constant list.
-                if (field.init != nullptr && !item->is_union && !item->union_payload) {
+                // A union arm is not a field value. The inline payload keeps the values on its fields.
+                if (field.init != nullptr && !item->is_union) {
                     slot.init = field.init.get();
                 }
                 // C _Bool is one byte. An extern(abi="c") struct keeps that layout.

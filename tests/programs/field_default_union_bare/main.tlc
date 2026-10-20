@@ -1,0 +1,14 @@
+type Kind enum {
+    One,
+};
+
+type Shape union(Kind) {
+    One struct {
+        n i32 = 1;
+    };
+};
+
+func main() i32 {
+    var shape Shape;
+    return shape.One.n;
+}

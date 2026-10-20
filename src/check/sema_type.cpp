@@ -718,8 +718,8 @@ void Checker::define_struct_fields() {
             }
             info.fields.push_back(StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
             if (field.init != nullptr) {
-                // A union keeps one payload. A sized array uses the same constant list as `x i32 = 1`.
-                if (info.is_union || pending.decl->union_payload) {
+                // A union arm is not a field value. The inline payload is an ordinary struct.
+                if (info.is_union) {
                     error(field.loc, "not supported yet");
                 } else {
                     info.fields.back().has_init = true;

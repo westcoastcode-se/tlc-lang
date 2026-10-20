@@ -1,0 +1,17 @@
+func give() i32 {
+    return 1;
+}
+
+type Kind enum {
+    One,
+};
+
+type Shape union(Kind) {
+    One struct {
+        n i32 = give();
+    };
+};
+
+func main() i32 {
+    return 0;
+}

@@ -48,7 +48,7 @@ func main() i32 {
 }
 ```
 
-The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `i32` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0.
+The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `i32` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0. A field of an inline payload may have a value, `n i32 = 1`. `Shape{.One = {}}` uses that value when the initializer does not name the field. Naming the field replaces it. The value is a constant, and a call is reported as `global initializer is not a constant`. `{.One = {0...}}` stores 0 and does not use the value. A union with no initializer does not choose an arm. Reading a field of that union is reported as `uninitialized`.
 
 ### C unions
 
@@ -76,7 +76,7 @@ func main() i32 {
 
 ## Cost
 
-A tlc union stores the payload and then an `i32` tag. Assigning `shape.Rectangle.width` through a `*Shape` is 6 instructions including the pointer store and `retq`: the tag is stored as the immediate 1, and the `f32` is stored at offset 0.
+A tlc union stores the payload and then an `i32` tag. Assigning `shape.Rectangle.width` through a `*Shape` is 6 instructions including the pointer store and `retq`: the tag is stored as the immediate 1, and the `f32` is stored at offset 0. `var shape = Shape{.One = {}}` when the payload is `n i32 = 10`, then `return shape.One.n`, is 16 instructions including `retq`. One `movl` stores 10. The tag stored with that value is 0, and the union is copied into `shape`.
 
 Reading the tag with `ShapeType(*shape)` loads the whole value. For a 12-byte `Shape` that load moves the 8 payload bytes one byte at a time and then loads the tag. The compare against `ShapeType.Circle` brings the function to 16 instructions including `retq`. Passing that union by value does the same byte-wise copy into the callee's stack. The function that builds a `Shape`, assigns one field, and returns 1 when the tag matches runs 60 instructions.
 
