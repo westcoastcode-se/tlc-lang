@@ -182,7 +182,7 @@ func main() i32 {
 }
 ```
 
-`use(&r)` is 60. `a.malloc[i32]()` when `a` is `*Allocator` is `not supported yet`.
+`use(&r)` is 60. `a.malloc[i32]()` when `a` is `*Allocator` is the same default as `arena.malloc[i32]()`. The call is specialized for the struct that was passed. A struct method `Arena::malloc[T type]` wins over that default. The result is `?*T`, and the caller handles `null`. The call is `unsafe`.
 
 ## Cost
 

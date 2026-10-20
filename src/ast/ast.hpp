@@ -128,6 +128,8 @@ struct Expr {
         mutable bool type_name = false;
         // The parameter list selected for this call. Null when the name has one list.
         mutable const FunctionDecl *selected = nullptr;
+        // `a.malloc[i32]()` through a trait. The concrete struct's method has this name.
+        mutable std::string trait_method;
     };
     struct Selector {
         SourceLoc loc{};

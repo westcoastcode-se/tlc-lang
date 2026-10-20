@@ -1,0 +1,25 @@
+type Box trait {
+    func id() i32;
+};
+
+func Box::keep[T type](self *this, n T) T {
+    return n;
+}
+
+type Cell struct {
+    n i32;
+};
+
+func Cell::id(self *this) i32 {
+    return self.n;
+}
+
+func take(b *Box) i32 {
+    return b.keep[i32](40) + b.id();
+}
+
+func main() i32 {
+    var cell Cell;
+    cell.n = 2;
+    return take(&cell);
+}

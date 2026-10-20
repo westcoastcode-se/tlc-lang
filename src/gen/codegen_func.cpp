@@ -43,7 +43,15 @@ void CodeGen::finish_function() {
 }
 
 bool CodeGen::param_is_trait(uint32_t file, const Param &param) const {
-    if (param.is_struct || param.is_enum || param.is_array || !param.type_package.empty() || param.indirections > 1) {
+    // `Allocator` is supplied by the compiler. It is not a trait declaration in the unit.
+    const bool allocator = param.type_name == "Allocator" && param.type_package.empty();
+    if (param.is_enum || param.is_array || !param.type_package.empty() || param.indirections > 1) {
+        return false;
+    }
+    if (allocator) {
+        return true;
+    }
+    if (param.is_struct) {
         return false;
     }
     if (has_typedef(file, param.type_name) || tag_id(file, param.type_name) >= 0 ||

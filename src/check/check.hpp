@@ -661,6 +661,15 @@ class Checker {
     std::unordered_set<std::string> granting_;
     // Instantiated copy -> the default or method template it was copied from.
     std::unordered_map<const FunctionDecl *, const FunctionDecl *> default_origin_;
+    // `a.malloc[i32]()` on a trait. Installed on each struct that satisfies the trait.
+    struct TraitGenericUse {
+        int trait_id = -1;
+        const FunctionDecl *templ = nullptr;
+        std::vector<SpecArg> bounds;
+        std::string spec_name;
+        bool through_pointer = false;
+    };
+    std::vector<TraitGenericUse> trait_generic_uses_;
     std::vector<PendingAppend> pending_appends_;
     std::unordered_set<std::string> spec_checking_;
     std::unordered_set<std::string> spec_ready_;
@@ -709,6 +718,7 @@ class Checker {
     Type method_tail(const FunctionDecl &fn);
     bool plain_default_supplies(int trait_id, const TraitInfo::Method &method, bool through_pointer);
     void grant_trait_defaults(uint32_t struct_file, const std::string &struct_name, int trait_id);
+    void install_trait_generics(uint32_t struct_file, const std::string &struct_name, int trait_id);
     void grant_covered_defaults(int struct_id);
     const MethodInfo *find_method_head(uint32_t file, const std::string &owner, const std::string &name) const;
     const FunctionDecl *install_default(const FunctionDecl &templ, uint32_t struct_file, const std::string &struct_name,

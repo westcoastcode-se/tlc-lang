@@ -5383,10 +5383,10 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func take(a *Allocator) ?*i32 {\n"
-            "  return a.malloc[i32]();\n"
+            "  return unsafe a.malloc[i32]();\n"
             "}\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {

@@ -35,6 +35,56 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         selector != nullptr && selector->base != nullptr) {
         const auto *base_name = std::get_if<Expr::Name>(&selector->base->data);
         const bool package_call = base_name != nullptr && packages_.contains(base_name->text);
+        if (!package_call && !node.trait_method.empty()) {
+            // `a.malloc[i32]()` on a trait parameter. The active specialization names the struct.
+            int struct_id = -1;
+            TypedValue addr;
+            if (addressable(*selector->base)) {
+                addr = emit_addr(*selector->base);
+                struct_id = addr.struct_id;
+            }
+            if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size()) || addr.value == nullptr) {
+                error(node.loc, "type mismatch");
+                return prepared;
+            }
+            const std::string key = structs_[static_cast<std::size_t>(struct_id)].name + "." + node.trait_method;
+            const Binding *method = method_binding(current_file_, structs_[static_cast<std::size_t>(struct_id)].file_id, key);
+            auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
+            if (function == nullptr || method->decl == nullptr || method->decl->static_method) {
+                error(node.loc, "type mismatch");
+                return prepared;
+            }
+            const bool receiver_pointer = function->getFunctionType()->getNumParams() > 0 &&
+                                          function->getFunctionType()->getParamType(0)->isPointerTy();
+            llvm::Value *receiver_arg = nullptr;
+            if (receiver_pointer) {
+                receiver_arg = addr.depth > 0 ? builder_.CreateLoad(ptr_type(), addr.value) : addr.value;
+            } else if (addr.depth == 0 && addr.struct_id >= 0) {
+                receiver_arg = builder_.CreateLoad(structs_[static_cast<std::size_t>(struct_id)].type, addr.value);
+            }
+            if (receiver_arg == nullptr) {
+                error(node.loc, "type mismatch");
+                return prepared;
+            }
+            std::vector<llvm::Value *> args;
+            args.reserve(node.args.size() + 1);
+            args.push_back(receiver_arg);
+            unsigned index = 1;
+            for (const auto &arg : node.args) {
+                const TypedValue value = emit_rvalue(*arg);
+                llvm::Type *param = index < function->getFunctionType()->getNumParams()
+                                        ? function->getFunctionType()->getParamType(index)
+                                        : nullptr;
+                args.push_back(adapt(value, param, node.loc));
+                ++index;
+            }
+            remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
+                     method->elem_bool, method->elem_bits, method->elem_unsigned);
+            prepared.decl = method->decl;
+            prepared.elem_float = method->elem_float;
+            prepared.enum_id = method->enum_id;
+            return prepared;
+        }
         if (!package_call) {
             // `Box[i32].from(...)`. The owner is the specialization, and the call passes no receiver.
             if (!selector->resolved_owner.empty()) {

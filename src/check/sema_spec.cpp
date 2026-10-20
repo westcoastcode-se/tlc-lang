@@ -1270,6 +1270,55 @@ const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t
     return stable;
 }
 
+void Checker::install_trait_generics(uint32_t struct_file, const std::string &struct_name, int trait_id) {
+    if (struct_name.empty() || trait_id < 0) {
+        return;
+    }
+    const int struct_id = find_tag(struct_file, struct_name);
+    const std::vector<TraitGenericUse> pending = trait_generic_uses_;
+    for (const TraitGenericUse &use : pending) {
+        if (use.trait_id != trait_id || use.templ == nullptr || use.spec_name.empty()) {
+            continue;
+        }
+        const bool saved = quiet_;
+        quiet_ = true;
+        const bool covered = require_satisfies(struct_id, trait_id, use.through_pointer, {}, struct_file);
+        quiet_ = saved;
+        if (!covered) {
+            continue;
+        }
+        const FunctionDecl *chosen = use.templ;
+        std::vector<const FunctionDecl *> matches;
+        if (const auto file = method_templates_.find(struct_file); file != method_templates_.end()) {
+            const auto owner = file->second.find(struct_name);
+            if (owner != file->second.end()) {
+                const auto found = owner->second.find(use.templ->name);
+                if (found != owner->second.end()) {
+                    for (const FunctionDecl *item : found->second) {
+                        if (item == nullptr || item->type_params.empty()) {
+                            continue;
+                        }
+                        const bool pack = item->type_params.back().is_pack;
+                        const bool count_ok = pack ? use.bounds.size() + 1 >= item->type_params.size()
+                                                   : use.bounds.size() == item->type_params.size();
+                        if (count_ok) {
+                            matches.push_back(item);
+                        }
+                    }
+                }
+            }
+        }
+        if (matches.size() > 1) {
+            error(use.templ->loc, "type mismatch");
+            continue;
+        }
+        if (matches.size() == 1) {
+            chosen = matches.front();
+        }
+        install_default(*chosen, struct_file, struct_name, use.spec_name, use.bounds);
+    }
+}
+
 void Checker::grant_trait_defaults(uint32_t struct_file, const std::string &struct_name, int trait_id) {
     if (quiet_ || trait_id < 0 || trait_id >= static_cast<int>(traits_.size()) || struct_name.empty()) {
         return;
@@ -1285,6 +1334,7 @@ void Checker::grant_trait_defaults(uint32_t struct_file, const std::string &stru
         }
         install_default(*templ, struct_file, owner, templ->name, {});
     }
+    install_trait_generics(struct_file, owner, trait_id);
     granting_.erase(key);
     defaults_ready_.insert(key);
 }
@@ -1349,9 +1399,120 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
     }
     const bool trait_base = probe.kind == TypeKind::Trait ||
                             (probe.kind == TypeKind::Pointer && probe.pointee && probe.pointee->kind == TypeKind::Trait);
+    if (trait_base) {
+        const bool through_pointer = probe.kind == TypeKind::Pointer;
+        const Type &trait_type = through_pointer ? *probe.pointee : probe;
+        if (through_pointer && probe.optional) {
+            check_expr(*selector->base, true);
+            error(call.loc, "type mismatch");
+            check_args();
+            return type_invalid();
+        }
+        const int trait_id = trait_type.trait_id;
+        std::vector<const FunctionDecl *> matches;
+        if (trait_id >= 0 && trait_id < static_cast<int>(traits_.size())) {
+            for (const FunctionDecl *def : traits_[static_cast<std::size_t>(trait_id)].defaults) {
+                if (def != nullptr && def->name == selector->field && type_arg_count_ok(*def, call)) {
+                    matches.push_back(def);
+                }
+            }
+        }
+        if (matches.empty()) {
+            check_expr(*selector->base, true);
+            error(call.loc, "undeclared identifier");
+            check_args();
+            return type_invalid();
+        }
+        if (matches.size() != 1) {
+            check_expr(*selector->base, true);
+            error(call.loc, "type mismatch");
+            check_args();
+            return type_invalid();
+        }
+        const FunctionDecl *templ = matches.front();
+        const bool receiver_pointer =
+            templ->params.empty() || !templ->params.front().is_receiver ? false : templ->params.front().indirections > 0;
+        if (receiver_pointer && !through_pointer) {
+            check_expr(*selector->base, true);
+            error(expr_loc(*selector->base), "not an lvalue");
+            check_args();
+            return type_invalid();
+        }
+        if (through_pointer && probe.pointee != nullptr && probe.pointee->is_const && receiver_pointer &&
+            templ->params.front().const_pointee == 0) {
+            check_expr(*selector->base, true);
+            error(call.loc, "type mismatch");
+            check_args();
+            return type_invalid();
+        }
+        require_unsafe_call(templ->unsafe, call.loc);
+        std::vector<Type> arg_types;
+        bool arg_invalid = false;
+        for (const auto &arg : call.args) {
+            if (arg == nullptr) {
+                arg_invalid = true;
+                arg_types.push_back(type_invalid());
+                continue;
+            }
+            Type got = check_expr(*arg, true);
+            if (got.kind == TypeKind::Invalid) {
+                arg_invalid = true;
+            }
+            arg_types.push_back(std::move(got));
+        }
+        if (arg_invalid) {
+            check_expr(*selector->base, true);
+            return type_invalid();
+        }
+        const auto inferred = infer_generic_bounds(*templ, call, arg_types);
+        if (!inferred) {
+            check_expr(*selector->base, true);
+            return type_invalid();
+        }
+        std::vector<SpecArg> bounds = *inferred;
+        disambiguate_bounds(file_id_, bounds);
+        const std::string spec_name = mangle_spec(templ->name, bounds);
+        bool known = false;
+        for (const TraitGenericUse &use : trait_generic_uses_) {
+            if (use.trait_id == trait_id && use.spec_name == spec_name && use.through_pointer == through_pointer) {
+                known = true;
+                break;
+            }
+        }
+        if (!known) {
+            trait_generic_uses_.push_back(TraitGenericUse{trait_id, templ, bounds, spec_name, through_pointer});
+            const int count = static_cast<int>(structs_.size());
+            for (int id = 0; id < count; ++id) {
+                const uint32_t struct_file = structs_[static_cast<std::size_t>(id)].file_id;
+                const std::string struct_name = structs_[static_cast<std::size_t>(id)].name;
+                install_trait_generics(struct_file, struct_name, trait_id);
+            }
+        }
+        call.trait_method = spec_name;
+        FunctionDecl spec = clone_function(*templ);
+        const std::vector<TypeParam> params = templ->type_params;
+        spec.type_params.clear();
+        substitute_function(spec, params, bounds);
+        if (!spec.results.empty()) {
+            const ResultSlot &first = spec.results.front();
+            spec.return_type = first.type_name;
+            spec.type_package = first.type_package;
+            spec.is_struct = first.is_struct;
+            spec.is_enum = first.is_enum;
+            spec.indirections = first.indirections;
+            spec.optional = first.optional;
+            spec.const_pointee = first.const_pointee;
+        }
+        if (through_pointer && receiver_pointer) {
+            const bool writes = templ->params.front().const_pointee == 0;
+            init_address_span(*selector->base, writes, expr_loc(*selector->base), false);
+        }
+        check_expr(*selector->base, true);
+        return function_result(spec);
+    }
     Type object;
     bool through_pointer = false;
-    if (trait_base || !dot_object(probe, object, through_pointer) || object.struct_id < 0 ||
+    if (!dot_object(probe, object, through_pointer) || object.struct_id < 0 ||
         object.struct_id >= static_cast<int>(structs_.size())) {
         check_expr(*selector->base, true);
         error(call.loc, "not supported yet");

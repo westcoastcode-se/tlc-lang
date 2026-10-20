@@ -19,7 +19,7 @@ unsafe func Allocator::malloc[T type](self *this) ?*T {
 }
 ```
 
-The call is `unsafe arena.malloc[i32]()`. The result is `?*T`, and the caller handles `null`. A struct method `unsafe func Arena::malloc[T type](self *this) ?*T` wins over that default.
+The call is `unsafe arena.malloc[i32]()`. The same call through a trait parameter is `unsafe a.malloc[i32]()` when `a` is `*Allocator`. The result is `?*T`, and the caller handles `null`. A struct method `unsafe func Arena::malloc[T type](self *this) ?*T` wins over that default.
 
 `import "builtin"` also provides `allocator`, a `Malloc` value. `new T` uses that allocator, and so does `delete p`. `new(&builtin.allocator) T` and `delete(&builtin.allocator) p` name it. The argument is a pointer, and the pointee type is taken from that pointer. `Malloc` calls the C functions `malloc`, `free`, and `realloc`. `malloc` returns `null` when it cannot reserve the bytes. `new` then calls `builtin.panic("out of memory")`. The result of `new` is `*T`.
 
