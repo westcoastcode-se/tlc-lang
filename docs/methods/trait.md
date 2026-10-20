@@ -61,6 +61,8 @@ A trait is written as a parameter of a function or a method, `Shape` or `*Shape`
 
 The function is monomorphized. Each struct that is passed in gets its own copy, and the call `s.area()` becomes a direct call of that struct's method. Passing the same trait onward, as `measure(s)` inside `apply`, is not checked again.
 
+A trait method may return several results, the same way a function does. `var a, b = p.both()` unpacks them. One name binds the tuple. A different count is reported as `type mismatch`. The struct method returns that same list. A default is `func Pair::both` outside the braces.
+
 A trait names a field that the struct already has. `s.w` reads it, and `s.w = 1` writes it, for both `s Shape` and `s *Shape`. Writing through `*const Shape` is reported as `type mismatch`.
 
 ```c
@@ -186,7 +188,7 @@ func main() i32 {
 
 ## Cost
 
-`s.twice()` on `*Shape` is a direct call, the same as another method of that trait. A trait parameter is specialized. There is no table. `measure(r)` for a struct of two `i32` fields executes 8 instructions in `main` and does not push a trace frame: store the fields, copy them into the argument registers, call. The struct is not zeroed first. `s.area()` inside that copy is a direct traced call of `Rect.area`, which is 5 instructions for two `i32` fields multiplied.
+`s.twice()` on `*Shape` is a direct call, the same as another method of that trait. A trait parameter is specialized. There is no table. `measure(r)` for a struct of two `i32` fields executes 8 instructions in `main` and does not push a trace frame: store the fields, copy them into the argument registers, call. The struct is not zeroed first. `s.area()` inside that copy is a direct traced call of `Rect.area`, which is 5 instructions for two `i32` fields multiplied. `var a, b = p.both()` when `both` returns `(i32, i32)` is that same direct call. The two results come back in `%eax` and `%edx`.
 
 A field named by the trait is the struct field. Reading it is 1 load. Writing it through `*Shape` reloads the pointer and stores, the same as a field of `*Rect`.
 

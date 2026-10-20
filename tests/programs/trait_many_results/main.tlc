@@ -1,0 +1,23 @@
+type Pair trait {
+    func both() (i32, i32);
+};
+
+type Cell struct {
+    n i32;
+};
+
+func Cell::both(self *this) (i32, i32) {
+    return self.n, self.n + 1;
+}
+
+func take(p *Pair) i32 {
+    var a, b = p.both();
+    return a + b;
+}
+
+func main() i32 {
+    var cell Cell;
+    cell.n = 20;
+    var x, y = cell.both();
+    return take(&cell) + x + y;
+}

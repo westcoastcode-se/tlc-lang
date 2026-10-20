@@ -115,7 +115,6 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - `extern` on a method. A method may be exported, including `export func Vec[T]::get`. Another package calls `value.name(...)`. `export` on a static function publishes `pkg.Type.name(...)`. A method without `export` is reported as `name is not exported`.
 - A receiver with more than one star: `self **this`.
 - A body on a trait method. The trait lists the method and its type. A default is `func Trait::name` outside the braces.
-- A trait method that returns several results.
 - A trait used as a variable, a return type, an array, a type alias, a trait field, or `**Shape`. A parameter is `Shape` or `*Shape`.
 - `export`, `extern`, or `...` on a function that takes a trait parameter.
 - A named function as the argument of a single-method trait. The argument is an anonymous function.

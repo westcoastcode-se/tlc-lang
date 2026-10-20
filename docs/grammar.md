@@ -147,7 +147,7 @@ The semicolon after `}` is optional. A member is a name and then a `go-type`, th
 
 `extern(abi="c") type Name enum` has no underlying type. `extern(abi="c") type Name enum(i8)` is reported as `extern enum`. An enumerator value is a decimal integer literal with no suffix, or with the suffix `i32`.
 
-A trait method has no body and no receiver. `unsafe func draw() void;` makes that method unsafe. The call is `unsafe s.draw()`. A default method is written on the trait name, outside the braces, and has a body. The call names the trait, `s.twice()` when `s` is `*Shape`. A call on the struct is reported as `undeclared identifier`. A trait field is a name and a type, the same form as a struct field: `w i32;`. A value on that field, `w i32 = 1`, is reported as `not supported yet`. The struct that is passed must have a field of that name and that type.
+A trait method has no body and no receiver. It may return several results, `(i32, i32)`, and the call unpacks them the same way a function call does. `unsafe func draw() void;` makes that method unsafe. The call is `unsafe s.draw()`. A default method is written on the trait name, outside the braces, and has a body. The call names the trait, `s.twice()` when `s` is `*Shape`. A call on the struct is reported as `undeclared identifier`. A trait field is a name and a type, the same form as a struct field: `w i32;`. A value on that field, `w i32 = 1`, is reported as `not supported yet`. The struct that is passed must have a field of that name and that type.
 
 ## Types
 

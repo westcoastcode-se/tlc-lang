@@ -158,10 +158,6 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
                 error(method.loc, method.variadic && !wrote_receiver ? "not supported yet" : "type mismatch");
                 continue;
             }
-            if (method.results.size() > 1) {
-                error(method.loc, "not supported yet");
-                continue;
-            }
             Type signature = function_signature(method);
             if (signature.result != nullptr && mentions_trait(*signature.result)) {
                 error(method.loc, "not supported yet");

@@ -3736,7 +3736,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("type Pair trait { func both() (i32, i32); };\nfunc main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {
