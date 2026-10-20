@@ -1,5 +1,5 @@
 #include "harness.hpp"
-#include "lexer.hpp"
+#include "lex/lexer.hpp"
 
 #include <string>
 #include <vector>

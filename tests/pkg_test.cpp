@@ -1,5 +1,5 @@
 #include "harness.hpp"
-#include "pkg.hpp"
+#include "pkg/pkg.hpp"
 
 #include <filesystem>
 #include <fstream>

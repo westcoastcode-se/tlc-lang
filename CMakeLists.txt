@@ -19,29 +19,46 @@ message(STATUS "tlc using LLVM ${LLVM_PACKAGE_VERSION} from ${LLVM_DIR}")
 separate_arguments(TLC_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
 
 add_library(tlc_lib
-    src/driver.cpp
-    src/source.cpp
-    src/diag.cpp
-    src/lexer.cpp
-    src/ast.cpp
-    src/parser.cpp
-    src/parser_type.cpp
-    src/parser_decl.cpp
-    src/parser_stmt.cpp
-    src/parser_expr.cpp
-    src/sema.cpp
-    src/sema_lookup.cpp
-    src/sema_expr.cpp
-    src/sema_init.cpp
-    src/sema_unit.cpp
-    src/sema_generic.cpp
-    src/codegen.cpp
-    src/codegen_abi.cpp
-    src/codegen_lower.cpp
-    src/codegen_emit.cpp
-    src/codegen_debug.cpp
-    src/pkg.cpp
-    src/lsp.cpp
+    src/diag/diag.cpp
+    src/source/source.cpp
+    src/driver/driver.cpp
+    src/pkg/pkg.cpp
+    src/lex/lexer.cpp
+    src/ast/ast.cpp
+    src/parse/parser.cpp
+    src/parse/parser_decl.cpp
+    src/parse/parser_stmt.cpp
+    src/parse/parser_expr.cpp
+    src/parse/parser_type.cpp
+    src/check/sema.cpp
+    src/check/sema_lookup.cpp
+    src/check/sema_type.cpp
+    src/check/sema_expr.cpp
+    src/check/sema_value.cpp
+    src/check/sema_fold.cpp
+    src/check/sema_stmt.cpp
+    src/check/sema_init.cpp
+    src/check/sema_unit.cpp
+    src/check/sema_generic.cpp
+    src/check/sema_spec.cpp
+    src/gen/codegen.cpp
+    src/gen/codegen_abi.cpp
+    src/gen/codegen_lower.cpp
+    src/gen/codegen_layout.cpp
+    src/gen/codegen_fold.cpp
+    src/gen/codegen_const.cpp
+    src/gen/codegen_func.cpp
+    src/gen/codegen_call.cpp
+    src/gen/codegen_addr.cpp
+    src/gen/codegen_value.cpp
+    src/gen/codegen_stmt.cpp
+    src/gen/codegen_builtin.cpp
+    src/gen/codegen_global.cpp
+    src/gen/codegen_debug.cpp
+    src/lsp/lsp_json.cpp
+    src/lsp/lsp_index.cpp
+    src/lsp/lsp_complete.cpp
+    src/lsp/lsp.cpp
 )
 target_include_directories(tlc_lib PUBLIC "${CMAKE_SOURCE_DIR}/src" ${LLVM_INCLUDE_DIRS})
 target_compile_options(tlc_lib PUBLIC ${TLC_LLVM_DEFINITIONS})

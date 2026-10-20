@@ -1,4 +1,4 @@
-#include "diag.hpp"
+#include "diag/diag.hpp"
 #include "harness.hpp"
 
 int run_diag_tests() {

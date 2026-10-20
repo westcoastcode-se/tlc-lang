@@ -1,8 +1,8 @@
-#include "driver.hpp"
+#include "driver/driver.hpp"
 #include "harness.hpp"
-#include "lexer.hpp"
-#include "parser.hpp"
-#include "sema.hpp"
+#include "lex/lexer.hpp"
+#include "parse/parser.hpp"
+#include "check/sema.hpp"
 
 #include <filesystem>
 #include <fstream>

@@ -1,6 +1,6 @@
 #include "harness.hpp"
-#include "lexer.hpp"
-#include "parser.hpp"
+#include "lex/lexer.hpp"
+#include "parse/parser.hpp"
 
 #include <string>
 
