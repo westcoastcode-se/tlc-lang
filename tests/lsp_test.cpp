@@ -284,7 +284,7 @@ int run_lsp_tests() {
         "    var span_n = span.len;\n"
         "    var bare *i32 = &kept;\n"
         "    var bare_n = bare.len;\n"
-        "    var optp ?*[4]i32 = &cells;\n"
+        "    var optp ?*[4]i32 = null;\n"
         "    var optp_n = optp.len;\n"
         "}\n";
 

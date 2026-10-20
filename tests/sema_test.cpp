@@ -2895,7 +2895,7 @@ int run_sema_tests() {
             "  tail.n = 2;\n"
             "  tail.next = null;\n"
             "  head.n = 40;\n"
-            "  head.next = &tail;\n"
+            "  head.next = ?*Node(&tail);\n"
             "  var next ?*Node = head.next;\n"
             "  if (next == null) { return 0; }\n"
             "  return head.n + next.n;\n"
@@ -4606,7 +4606,7 @@ int run_sema_tests() {
             "  var person Person = {.nickname = null, .home = &home};\n"
             "  person.nickname = null;\n"
             "  person.home = &home;\n"
-            "  bind(&person, &home);\n"
+            "  bind(?*Person(&person), ?*Address(&home));\n"
             "  var p ?*i32 = null;\n"
             "  if (p == null) { return 0; }\n"
             "  return *p;\n"
@@ -4636,7 +4636,7 @@ int run_sema_tests() {
             "func take(p *i32) i32 { return *p; }\n"
             "func main() i32 {\n"
             "  var n i32 = 1;\n"
-            "  var p ?*i32 = &n;\n"
+            "  var p ?*i32 = ?*i32(&n);\n"
             "  var q *i32 = &n;\n"
             "  if (p == q) { return take(p); }\n"
             "  return 0;\n"
@@ -4650,9 +4650,9 @@ int run_sema_tests() {
             "func wide(p ?*i32) i32 { return p != null; }\n"
             "func main() i32 {\n"
             "  var n i32 = 1;\n"
-            "  var p ?*i32 = &n;\n"
+            "  var p ?*i32 = ?*i32(&n);\n"
             "  if (p == null) { return 0; }\n"
-            "  return take(p) + wide(&n);\n"
+            "  return take(p) + wide(?*i32(&n));\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -4693,7 +4693,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var n i32 = 1;\n"
-            "  var p ?*i32 = &n;\n"
+            "  var p ?*i32 = ?*i32(&n);\n"
             "  do { return *p; } while (p != null);\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -4712,14 +4712,25 @@ int run_sema_tests() {
             "  var q ?*Point = &p;\n"
             "  return p.read() + q.read();\n"
             "}\n");
-        EXPECT_EQ(check, errors, "");
+        EXPECT_HAS(check, errors, "type mismatch: expected ?*Point, found *Point");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func take(p ?*i32) i32 { return 0; }\n"
+            "func main() i32 {\n"
+            "  var n i32 = 1;\n"
+            "  var p ?*i32 = &n;\n"
+            "  return take(&n) + p;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected ?*i32, found *i32");
     }
 
     {
         const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var n i32 = 3;\n"
-            "  var p ?*i32 = &n;\n"
+            "  var p ?*i32 = ?*i32(&n);\n"
             "  while (p != null) {\n"
             "    n = *p;\n"
             "    break;\n"
@@ -4743,7 +4754,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var n i32 = 1;\n"
-            "  var inner ?*i32 = &n;\n"
+            "  var inner ?*i32 = ?*i32(&n);\n"
             "  var p *?*i32 = &inner;\n"
             "  var q ?**i32 = p;\n"
             "  return 0;\n"
@@ -4757,10 +4768,10 @@ int run_sema_tests() {
             "func read(p *i32) i32 { return *p; }\n"
             "func main() i32 {\n"
             "  var n i32 = 1;\n"
-            "  var p ?*i32 = &n;\n"
+            "  var p ?*i32 = ?*i32(&n);\n"
             "  var box Box;\n"
             "  box.n = 2;\n"
-            "  var q ?*Box = &box;\n"
+            "  var q ?*Box = ?*Box(&box);\n"
             "  return read(p!) + q!.n;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
@@ -4771,7 +4782,7 @@ int run_sema_tests() {
             "func read(p *i32) i32 { return *p; }\n"
             "func main() i32 {\n"
             "  var n i32 = 1;\n"
-            "  var p ?*i32 = &n;\n"
+            "  var p ?*i32 = ?*i32(&n);\n"
             "  var direct *i32 = &n;\n"
             "  return read(p) + read(direct!) + p!! + n!;\n"
             "}\n");
@@ -5301,7 +5312,7 @@ int run_sema_tests() {
             "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var live Arena;\n"
-            "  var q ?*Arena = &live;\n"
+            "  var q ?*Arena = ?*Arena(&live);\n"
             "  var p *i32 = new(q) i32;\n"
             "  delete(q) p;\n"
             "  return 0;\n"

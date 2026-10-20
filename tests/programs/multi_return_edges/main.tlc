@@ -61,8 +61,8 @@ func narrow() (i16, u8, bool) {
     return -2, 200, 4;
 }
 
-func pick(p *i32) (*i32, i32) {
-    return p, 7;
+func pick(p *i32) (?*i32, i32) {
+    return ?*i32(p), 7;
 }
 
 func none() (?*i32, i32) {

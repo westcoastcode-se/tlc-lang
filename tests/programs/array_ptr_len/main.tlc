@@ -77,11 +77,10 @@ func main() i32 {
     var left = [_]i32{1, 2};
     var right = [_]i32{3, 4};
     var table = [_][]i32{left[:], right[:]};
-    var opt ?*[4]i32 = &row;
     var box = Hold{.items = &row};
     var cube_row = [_][2][2]i32{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}};
     var q Quad;
     return written(&row) + rows(&grid) + headers(&table) + frozen(&row) + local() + from_new() +
-        narrowed(opt) + narrowed(null) + held(&row) + star(&row) + named(&q) + field(&box) +
+        narrowed(null) + held(&row) + star(&row) + named(&q) + field(&box) +
         sized_name(&row) + cube(&cube_row) + FILE_N;
 }

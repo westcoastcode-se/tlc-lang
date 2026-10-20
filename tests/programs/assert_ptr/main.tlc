@@ -8,10 +8,10 @@ func read(p *i32) i32 {
 
 func main() i32 {
     var n i32 = 40;
-    var p ?*i32 = &n;
+    var p ?*i32 = ?*i32(&n);
     var box Box;
     box.n = 2;
-    var q ?*Box = &box;
+    var q ?*Box = ?*Box(&box);
     q!.n = q!.n;
     return read(p!) + q!.n;
 }

@@ -33,7 +33,7 @@ func main() i32 {
     var person Person = {.nickname = null, .home = &home};
     person.nickname = null;
     person.home = &home;
-    bind(&person, &home);
+    bind(?*Person(&person), ?*Address(&home));
     if (person.nickname != null) {
         return 1;
     }
@@ -41,7 +41,7 @@ func main() i32 {
         return 2;
     }
     var n i32 = 40;
-    if (value(&n) != 40) {
+    if (value(?*i32(&n)) != 40) {
         return 3;
     }
     if (value(null) != 0) {

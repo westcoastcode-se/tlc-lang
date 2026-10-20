@@ -883,8 +883,9 @@ bool Checker::accepts_pointer(const Type &got, const Type &want) const {
         want.pointee == nullptr) {
         return false;
     }
-    // `*T` may be stored in `?*T`. `*T` may be stored in `*const T`. Dropping `const` is rejected.
-    if (got.optional && !want.optional) {
+    // `*T` stays non-null. It is not stored in `?*T`, and `?*T` is not stored in `*T`.
+    // `*T` may be stored in `*const T`. Dropping `const` is rejected.
+    if (got.optional != want.optional) {
         return false;
     }
     if (got.pointee->is_const && !want.pointee->is_const) {

@@ -59,7 +59,7 @@ func main() i32 {
     var local i32 = 5;
     var refs *?*i32 = new [2]?*i32;
     refs[0] = null;
-    refs[1] = &local;
+    refs[1] = ?*i32(&local);
     if (refs[1] == null) {
         return 6;
     }
