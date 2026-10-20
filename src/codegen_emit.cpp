@@ -32,6 +32,9 @@ std::string global_key(const tlc::VarDecl &var) {
     return var.owner + "." + var.name;
 }
 
+// `{...}` and `[_]T{...}` fill an array. A struct value and a tuple do not.
+bool array_brace(const tlc::Expr::Init &init) { return !init.is_tuple && init.fields.empty(); }
+
 } // namespace
 
 namespace tlc {
@@ -1426,25 +1429,62 @@ llvm::Constant *CodeGen::const_array_copied(const Expr &expr, const Binding &des
     return value;
 }
 
-bool CodeGen::array_list_covers(const Expr::Init &init, llvm::ArrayType *array_ty) const {
-    if (array_ty == nullptr || !init.fields.empty() || init.elements.size() != array_ty->getNumElements()) {
-        return false;
+llvm::Value *CodeGen::array_bits(llvm::Value *value, llvm::Type *array_ty, SourceLoc loc) {
+    if (terminated()) {
+        return nullptr;
     }
-    auto *inner = llvm::dyn_cast<llvm::ArrayType>(array_ty->getElementType());
-    if (inner == nullptr) {
-        return true;
+    if (value == nullptr || array_ty == nullptr) {
+        error(loc, "not supported yet");
+        return nullptr;
     }
-    for (const auto &element : init.elements) {
-        if (!element) {
-            return false;
+    if (value->getType() == array_ty) {
+        return value;
+    }
+    // An array name is the address of the array. A call yields the address of its first element.
+    if (!value->getType()->isPointerTy()) {
+        error(loc, "not supported yet");
+        return nullptr;
+    }
+    return builder_.CreateLoad(array_ty, value);
+}
+
+void CodeGen::store_array_bits(llvm::Value *slot, llvm::Type *array_ty, llvm::Value *value, SourceLoc loc) {
+    if (slot == nullptr || terminated()) {
+        return;
+    }
+    llvm::Value *loaded = array_bits(value, array_ty, loc);
+    if (loaded != nullptr && !terminated()) {
+        builder_.CreateStore(loaded, slot);
+    }
+}
+
+void CodeGen::store_array_list(llvm::Value *slot, llvm::ArrayType *array_ty, const Expr::Init &init) {
+    if (slot == nullptr || array_ty == nullptr || terminated()) {
+        return;
+    }
+    // `0...` zeros every element this list does not name. A short list leaves those elements as they are.
+    if (init.zero_rest) {
+        builder_.CreateStore(llvm::ConstantAggregateZero::get(array_ty), slot);
+    }
+    store_array_elements(slot, array_ty, init);
+}
+
+void CodeGen::store_array(llvm::Value *slot, llvm::ArrayType *array_ty, const Expr &expr, SourceLoc loc) {
+    if (slot == nullptr || array_ty == nullptr || terminated()) {
+        if (!terminated()) {
+            error(loc, "not supported yet");
         }
-        const auto *nested = std::get_if<Expr::Init>(&element->data);
-        // An array value fills this row. A brace list fills it when every nested row does.
-        if (nested != nullptr && !array_list_covers(*nested, inner)) {
-            return false;
-        }
+        return;
     }
-    return true;
+    if (const auto *list = std::get_if<Expr::Init>(&expr.data); list != nullptr && array_brace(*list)) {
+        store_array_list(slot, array_ty, *list);
+        return;
+    }
+    const TypedValue value = emit_rvalue(expr);
+    if (terminated()) {
+        return;
+    }
+    store_array_bits(slot, array_ty, value.value, loc);
 }
 
 void CodeGen::store_array_elements(llvm::Value *slot, llvm::ArrayType *array_ty, const Expr::Init &init) {
@@ -1465,33 +1505,16 @@ void CodeGen::store_array_elements(llvm::Value *slot, llvm::ArrayType *array_ty,
             // `{1, 2, 3}` and `[_]i32{1, 2, 3}` are both a list. The slot is that array.
             // A name, an index, or a call copies that row into the slot.
             const auto *nested = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
-            if (nested == nullptr) {
-                if (element == nullptr) {
-                    error(init.loc, "not supported yet");
-                } else {
-                    const TypedValue value = emit_rvalue(*element);
-                    if (terminated()) {
-                        return;
-                    }
-                    if (value.value == nullptr) {
-                        error(expr_loc(*element), "not supported yet");
-                    } else {
-                        llvm::Value *loaded = value.value;
-                        if (loaded->getType() != inner) {
-                            if (!loaded->getType()->isPointerTy()) {
-                                error(expr_loc(*element), "not supported yet");
-                                loaded = nullptr;
-                            } else {
-                                loaded = builder_.CreateLoad(inner, loaded);
-                            }
-                        }
-                        if (loaded != nullptr) {
-                            builder_.CreateStore(loaded, slot_i);
-                        }
-                    }
-                }
+            if (nested != nullptr && array_brace(*nested)) {
+                store_array_list(slot_i, inner, *nested);
+            } else if (element == nullptr) {
+                error(init.loc, "not supported yet");
             } else {
-                store_array_elements(slot_i, inner, *nested);
+                const TypedValue value = emit_rvalue(*element);
+                if (terminated()) {
+                    return;
+                }
+                store_array_bits(slot_i, inner, value.value, expr_loc(*element));
             }
         } else {
             const TypedValue value = element != nullptr ? emit_rvalue(*element) : TypedValue{};
@@ -1522,12 +1545,7 @@ llvm::AllocaInst *CodeGen::emit_array_literal(const Expr::Init &init, Lowered &l
     low = *got;
     llvm::Type *ty = stored_type(low);
     llvm::AllocaInst *slot = alloca_typed(ty, "array");
-    auto *array_ty = llvm::cast<llvm::ArrayType>(ty);
-    // A complete list is the whole array. A short list starts at zero so the rest stays zero.
-    if (!array_list_covers(init, array_ty)) {
-        builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
-    }
-    store_array_elements(slot, array_ty, init);
+    store_array_list(slot, llvm::cast<llvm::ArrayType>(ty), init);
     return slot;
 }
 
@@ -1572,41 +1590,12 @@ void CodeGen::store_init_fields(int struct_id, llvm::Value *slot, const Expr::In
             continue;
         }
         if (addr.is_array) {
-            // `Holder{.raw = {4, 6}}` stores that list in the field. A short list stores only
-            // the named elements. `0...` zeros the field first, the same way `h.raw = {4, 0...}` does.
+            // `Holder{.raw = {4, 6}}` and `Holder{.raw = row}` both store into this field.
             if (addr.array_type == nullptr || !addr.array_type->isArrayTy() || addr.value == nullptr) {
                 error(field.loc, "not supported yet");
                 continue;
             }
-            auto *array_ty = llvm::cast<llvm::ArrayType>(addr.array_type);
-            const auto *list = std::get_if<Expr::Init>(&field.value->data);
-            const bool brace = list != nullptr && !list->array_literal && !list->is_tuple && list->fields.empty();
-            if (brace) {
-                if (list->zero_rest && !terminated()) {
-                    builder_.CreateStore(llvm::ConstantAggregateZero::get(array_ty), addr.value);
-                }
-                store_array_elements(addr.value, array_ty, *list);
-            } else {
-                const TypedValue rhs = emit_rvalue(*field.value);
-                if (terminated()) {
-                    return;
-                }
-                if (rhs.value == nullptr) {
-                    error(field.loc, "not supported yet");
-                    continue;
-                }
-                llvm::Value *loaded = rhs.value;
-                if (loaded->getType() != array_ty) {
-                    if (!loaded->getType()->isPointerTy()) {
-                        error(field.loc, "type mismatch");
-                        continue;
-                    }
-                    loaded = builder_.CreateLoad(array_ty, loaded);
-                }
-                if (!terminated()) {
-                    builder_.CreateStore(loaded, addr.value);
-                }
-            }
+            store_array(addr.value, llvm::cast<llvm::ArrayType>(addr.array_type), *field.value, field.loc);
             if (terminated()) {
                 return;
             }
@@ -5031,48 +5020,19 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (slot.row_decay && slot.array_type != nullptr && slot.array_type->isArrayTy()) {
                     slot.is_array = true;
                 }
-                // `h.raw = {4, 6}` stores that list in the field. A short list stores only the
-                // named elements. `0...` zeros the field first, the same way a local array does.
+                // A list and an array value use the same store. The result is this slot.
                 if (slot.is_array && node.rhs != nullptr) {
-                    if (const auto *list = std::get_if<Expr::Init>(&node.rhs->data);
-                        list != nullptr && !list->array_literal && !list->is_tuple && list->fields.empty()) {
-                        if (slot.array_type == nullptr || !slot.array_type->isArrayTy() || slot.value == nullptr) {
-                            error(node.loc, "not supported yet");
-                            return {zero(), 0};
-                        }
-                        auto *array_ty = llvm::cast<llvm::ArrayType>(slot.array_type);
-                        if (list->zero_rest && !terminated()) {
-                            builder_.CreateStore(llvm::ConstantAggregateZero::get(array_ty), slot.value);
-                        }
-                        store_array_elements(slot.value, array_ty, *list);
-                        return slot;
+                    if (slot.array_type == nullptr || !slot.array_type->isArrayTy() || slot.value == nullptr) {
+                        error(node.loc, "not supported yet");
+                        return {zero(), 0};
                     }
+                    store_array(slot.value, llvm::cast<llvm::ArrayType>(slot.array_type), *node.rhs, node.loc);
+                    return slot;
                 }
                 const TypedValue rhs = emit_rvalue(*node.rhs);
                 if (slot.is_slice) {
                     if (slot.value != nullptr && rhs.value != nullptr && !terminated()) {
                         builder_.CreateStore(as_slice_value(rhs, node.loc), slot.value);
-                    }
-                    return rhs;
-                }
-                // `h.raw = row` copies the array into the field. `row` is a pointer to those elements.
-                if (slot.is_array) {
-                    if (slot.array_type == nullptr || !slot.array_type->isArrayTy() || slot.value == nullptr ||
-                        rhs.value == nullptr) {
-                        error(node.loc, "not supported yet");
-                        return rhs;
-                    }
-                    llvm::Value *loaded = rhs.value;
-                    if (loaded->getType() != slot.array_type) {
-                        // A brace list is stored above. What remains is a pointer to an array value.
-                        if (!loaded->getType()->isPointerTy()) {
-                            error(node.loc, "type mismatch");
-                            return rhs;
-                        }
-                        loaded = builder_.CreateLoad(slot.array_type, loaded);
-                    }
-                    if (!terminated()) {
-                        builder_.CreateStore(loaded, slot.value);
                     }
                     return rhs;
                 }
@@ -6129,13 +6089,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         if (got.array_type != nullptr && got.array_type->isArrayTy() && got.value != nullptr) {
             auto *array_ty = llvm::cast<llvm::ArrayType>(got.array_type);
             llvm::AllocaInst *slot = alloca_typed(array_ty, name);
-            llvm::Value *loaded = got.value;
-            if (loaded->getType() != array_ty) {
-                if (!loaded->getType()->isPointerTy()) {
-                    error(node.loc, "not supported yet");
-                    return;
-                }
-                loaded = builder_.CreateLoad(array_ty, loaded);
+            llvm::Value *loaded = array_bits(got.value, array_ty, node.loc);
+            if (loaded == nullptr || terminated()) {
+                return;
             }
             builder_.CreateStore(loaded, slot);
             Binding binding;
@@ -6547,8 +6503,10 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         }
                         // A local `[N]T` decays to a pointer. The result slot still holds the array.
                         if (field->isArrayTy() && value.array_len > 0 && value.value != nullptr &&
-                            value.value->getType()->isPointerTy()) {
-                            return builder_.CreateLoad(field, value.value);
+                            (value.value->getType() == field || value.value->getType()->isPointerTy())) {
+                            if (llvm::Value *loaded = array_bits(value.value, field, node.loc)) {
+                                return loaded;
+                            }
                         }
                         if (field->isIntegerTy() && value.value->getType()->isIntegerTy()) {
                             return resize_int(value.value, field, value.elem_unsigned);
@@ -6620,35 +6578,19 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                 if (return_type_ != nullptr && return_type_->isArrayTy() && node.value != nullptr) {
                     llvm::Value *loaded = nullptr;
                     if (const auto *init = std::get_if<Expr::Init>(&node.value->data);
-                        init != nullptr && !init->array_literal) {
-                        // `{4, 6}` is a list. Store it in a temporary of the result array.
+                        init != nullptr && array_brace(*init)) {
+                        // `{4, 6}` and `[_]i32{4, 6}` are lists. Store them in the result array.
                         auto *array_ty = llvm::cast<llvm::ArrayType>(return_type_);
                         llvm::AllocaInst *slot = alloca_typed(return_type_, "array");
-                        // A complete list is the whole array. A short list starts at zero, as a local does.
-                        if (!array_list_covers(*init, array_ty)) {
-                            builder_.CreateStore(llvm::ConstantAggregateZero::get(return_type_), slot);
-                        }
-                        store_array_elements(slot, array_ty, *init);
+                        store_array_list(slot, array_ty, *init);
                         if (!terminated()) {
                             loaded = builder_.CreateLoad(return_type_, slot);
                         }
                     } else {
-                        // A name is the array address. A call has stored its array and yields the
-                        // address of the first element. An index of a nested array yields that row.
-                        // `[_]i32{4, 6}` is the array slot.
+                        // A name is the array address. A call yields the address of its first element.
                         const TypedValue value = emit_rvalue(*node.value);
                         if (!terminated()) {
-                            loaded = value.value;
-                            if (loaded == nullptr) {
-                                error(node.loc, "not supported yet");
-                            } else if (loaded->getType() != return_type_) {
-                                if (!loaded->getType()->isPointerTy()) {
-                                    error(node.loc, "not supported yet");
-                                    loaded = nullptr;
-                                } else {
-                                    loaded = builder_.CreateLoad(return_type_, loaded);
-                                }
-                            }
+                            loaded = array_bits(value.value, return_type_, node.loc);
                         }
                     }
                     if (terminated() || loaded == nullptr) {
@@ -6903,14 +6845,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         }
                         llvm::Type *ty = stored_type(low);
                         llvm::AllocaInst *slot = alloca_typed(ty, var.name);
-                        // A shorter list leaves the omitted elements unset. `0...` stores zero in
-                        // the whole array before the named elements. An array value is stored once.
-                        const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                         auto *array_ty = ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
-                        const bool copy_value = var.init != nullptr && list == nullptr;
-                        if (list != nullptr && list->zero_rest) {
-                            builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
-                        }
                         Binding binding;
                         binding.value = slot;
                         binding.depth = low.depth;
@@ -6930,33 +6865,19 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         scopes_.back()[var.name] = binding;
                         alias_capture(var.name, binding);
                         debug_declare(var.name, var.loc, binding, 0);
-                        if (list != nullptr && array_ty != nullptr && !list->elements.empty()) {
-                            store_array_elements(slot, array_ty, *list);
-                        } else if (copy_value && array_ty != nullptr && var.init != nullptr) {
-                            // A name is the array address. A call has already stored its array
-                            // and yields the address of the first element. Both loads are the array.
-                            const TypedValue value = emit_rvalue(*var.init);
-                            if (!terminated() && value.value != nullptr) {
-                                llvm::Value *loaded = value.value;
-                                if (loaded->getType() != ty) {
-                                    if (!loaded->getType()->isPointerTy()) {
-                                        error(var.loc, "not supported yet");
-                                        loaded = nullptr;
-                                    } else {
-                                        loaded = builder_.CreateLoad(ty, loaded);
-                                    }
-                                }
-                                if (loaded != nullptr) {
-                                    builder_.CreateStore(loaded, slot);
-                                }
+                        // A brace list and an array value share one store. The name is in scope first,
+                        // so an element can read it. A struct value is not this list.
+                        if (var.init != nullptr && array_ty != nullptr) {
+                            const auto *list = std::get_if<Expr::Init>(&var.init->data);
+                            if (list == nullptr || array_brace(*list)) {
+                                store_array(slot, array_ty, *var.init, var.loc);
                             }
                         }
                         // A bare array of structs stores each field that has a value. A list does not.
-                        if (var.init == nullptr && !copy_value && array_ty != nullptr && low.struct_id >= 0 &&
-                            low.depth == 0 && !low.is_slice && !low.elem_slice && !var.is_extern &&
-                            !var.is_const_decl) {
+                        if (var.init == nullptr && array_ty != nullptr && low.struct_id >= 0 && low.depth == 0 &&
+                            !low.is_slice && !low.elem_slice && !var.is_extern && !var.is_const_decl) {
                             std::unordered_set<int> seen;
-                            paint_omitted_elements(slot, array_ty, low.struct_id, list, seen);
+                            paint_omitted_elements(slot, array_ty, low.struct_id, nullptr, seen);
                         }
                         continue;
                     }
@@ -7118,21 +7039,14 @@ void CodeGen::emit_dynamic_inits() {
             llvm::Value *dest = found->second.value;
             // Store the list in the global. A later call reads elements already stored.
             if (found->second.is_array) {
-                if (const auto *list = std::get_if<Expr::Init>(&var->init->data);
-                    list != nullptr && !list->is_tuple && list->fields.empty() && !list->elements.empty()) {
-                    llvm::Type *ty = object_type(dest);
-                    auto *array_ty = ty != nullptr && ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
-                    if (array_ty == nullptr) {
-                        error(var->loc, "type mismatch");
-                    } else {
-                        // A short list starts at zero. A full list stores only its elements.
-                        if (!array_list_covers(*list, array_ty)) {
-                            builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), dest);
-                        }
-                        store_array_elements(dest, array_ty, *list);
-                    }
-                    continue;
+                llvm::Type *ty = object_type(dest);
+                auto *array_ty = ty != nullptr && ty->isArrayTy() ? llvm::cast<llvm::ArrayType>(ty) : nullptr;
+                if (array_ty == nullptr) {
+                    error(var->loc, "type mismatch");
+                } else {
+                    store_array(dest, array_ty, *var->init, var->loc);
                 }
+                continue;
             }
             const TypedValue value = emit_rvalue(*var->init);
             if (terminated() || value.value == nullptr) {
@@ -7142,19 +7056,6 @@ void CodeGen::emit_dynamic_inits() {
                 llvm::Value *stored = as_slice_value(value, var->loc);
                 if (!terminated() && stored != nullptr) {
                     builder_.CreateStore(stored, dest);
-                }
-            } else if (found->second.is_array) {
-                // A call stores the returned array and yields the address of its first element.
-                llvm::Type *ty = object_type(dest);
-                llvm::Value *loaded = value.value;
-                if (ty == nullptr || !ty->isArrayTy() || loaded == nullptr) {
-                    error(var->loc, "type mismatch");
-                } else if (loaded->getType() == ty) {
-                    builder_.CreateStore(loaded, dest);
-                } else if (!loaded->getType()->isPointerTy()) {
-                    error(var->loc, "not supported yet");
-                } else {
-                    builder_.CreateStore(builder_.CreateLoad(ty, loaded), dest);
                 }
             } else {
                 llvm::Type *slot = object_type(dest);

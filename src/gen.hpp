@@ -1291,8 +1291,14 @@ class CodeGen {
     TypedValue load_field(const TypedValue &addr);
     // Allocates `[_]T{...}` and stores each value. `low` is the array type.
     llvm::AllocaInst *emit_array_literal(const Expr::Init &init, Lowered &low);
-    // True when every brace matches that array, including an element that is itself an array.
-    bool array_list_covers(const Expr::Init &init, llvm::ArrayType *array_ty) const;
+    // The array in `value`. A pointer is the address of that array, the same shape a name has.
+    llvm::Value *array_bits(llvm::Value *value, llvm::Type *array_ty, SourceLoc loc);
+    // Stores those bits into `slot`. The slot is not cleared first.
+    void store_array_bits(llvm::Value *slot, llvm::Type *array_ty, llvm::Value *value, SourceLoc loc);
+    // Named elements of a brace list. `0...` zeros this array first. A short list does not.
+    void store_array_list(llvm::Value *slot, llvm::ArrayType *array_ty, const Expr::Init &init);
+    // A brace list stores its elements. Any other expression copies that array into `slot`.
+    void store_array(llvm::Value *slot, llvm::ArrayType *array_ty, const Expr &expr, SourceLoc loc);
     // Writes `init` into `slot`. A nested array is another brace list, not one rvalue.
     void store_array_elements(llvm::Value *slot, llvm::ArrayType *array_ty, const Expr::Init &init);
     TypedValue emit_init(const Expr::Init &init);
