@@ -916,7 +916,12 @@ void Checker::init_fill_brace(const Type &type, const Expr::Init *brace, std::ve
             } else if (brace != nullptr && brace->zero_rest) {
                 init_set_span(bits, at, count);
             } else if (field.has_init) {
-                init_set_span(bits, at, count);
+                // A short array list marks the elements it names. `0...` marks the tail.
+                if (field.init != nullptr) {
+                    init_fill(field.type, field.init, bits, at);
+                } else {
+                    init_set_span(bits, at, count);
+                }
             } else {
                 init_fill(field.type, nullptr, bits, at);
             }

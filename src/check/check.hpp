@@ -126,6 +126,8 @@ class Checker {
             bool exported = false;
             // `name type = expr`. An omitted field uses that value.
             bool has_init = false;
+            // The expression written on the field. Null when `has_init` is clear.
+            const Expr *init = nullptr;
         };
         std::vector<Field> fields;
         bool exported = false;

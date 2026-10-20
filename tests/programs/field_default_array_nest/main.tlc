@@ -1,0 +1,25 @@
+type Grid struct {
+    cell [2][2]i32 = {{1, 2}, {3, 4}};
+};
+
+type Point struct {
+    x i32 = 1;
+    y i32 = 2;
+};
+
+type Row struct {
+    raw [2]Point = {{.x = 10}, {.y = 6}};
+};
+
+const held = [_]i32{8, 9};
+
+type Copy struct {
+    raw [2]i32 = held;
+};
+
+func main() i32 {
+    var g Grid;
+    var r Row;
+    var c Copy;
+    return g.cell[1][0] + r.raw[0].x + r.raw[0].y + r.raw[1].y + c.raw[0] + c.raw[1];
+}

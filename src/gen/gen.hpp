@@ -1220,7 +1220,8 @@ class CodeGen {
     llvm::Constant *bare_initializer(const Lowered &low, llvm::Type *ty);
     // `seen` stops a by-value cycle. A true result leaves ids in `seen`.
     bool struct_has_default(int struct_id, std::unordered_set<int> &seen) const;
-    void store_struct_defaults(llvm::Value *slot, int struct_id, std::unordered_set<int> &seen);
+    void store_struct_defaults(llvm::Value *slot, int struct_id, std::unordered_set<int> &seen,
+                               const Expr::Init *overlay = nullptr);
     void paint_omitted_elements(llvm::Value *slot, llvm::ArrayType *array_ty, int struct_id, const Expr::Init *list,
                                 std::unordered_set<int> &seen);
     void store_each_element(llvm::Value *raw, llvm::Value *count, llvm::Type *elem, llvm::Constant *image);
@@ -1234,6 +1235,8 @@ class CodeGen {
     const VarDecl *global_decl(const std::string &name) const;
     std::optional<Lowered> lower_array_literal(uint32_t file, const Expr::Init &init) const;
     llvm::Constant *const_field(const Expr &expr, const FieldLayout &slot);
+    // A field default `{1}` or `{1, 0...}` on `[2]i32`. Missing elements are zero in this constant.
+    llvm::Constant *const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
     std::optional<int32_t> fold(const Expr &expr) const;
     // A constant float or integer. `wide` is an f64 operation. Integers leave `is_float` clear.
     struct FoldedNumber {

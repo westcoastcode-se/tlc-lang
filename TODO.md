@@ -110,7 +110,6 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A qualified enum name in `union(Enum)`, such as `union(pkg.Kind)`.
 - A by-value field of a struct that is still incomplete, including the struct being defined. A pointer to that struct is fine.
 - A value on a union field, including a field of the inline payload, such as `n i32 = 1` inside `union(Enum)`. It is `not supported yet`.
-- A value on a sized-array field, such as `raw [2]i32 = {1, 2}`. It is `not supported yet`.
 
 ## Methods and traits
 

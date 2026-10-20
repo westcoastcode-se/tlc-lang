@@ -1,7 +1,23 @@
-type Row struct {
-    raw [2]i32 = {1, 2};
+type Holder struct {
+    raw [2]i32 = {10, 2};
+    n i32 = 4;
 };
 
+type Box[T type] struct {
+    raw [2]i32 = {3, 1};
+    value T;
+};
+
+var global Holder;
+
 func main() i32 {
-    return 0;
+    var h Holder;
+    var named = Holder{.raw = {7, 1}};
+    var kept = Holder{.n = 6};
+    var p *Holder = new Holder;
+    var box = Box[i32]{.value = 1};
+    var sum = h.raw[0] + h.raw[1] + h.n + named.raw[0] + named.raw[1] + kept.raw[0] + kept.n + p.raw[1] +
+              box.raw[0] + box.raw[1] + global.raw[0] - 10;
+    delete p;
+    return sum;
 }

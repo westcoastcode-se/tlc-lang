@@ -1098,7 +1098,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                                 builder_.CreateStore(llvm::ConstantAggregateZero::get(ty), slot);
                             } else if (low.struct_id >= 0) {
                                 std::unordered_set<int> seen;
-                                store_struct_defaults(slot, low.struct_id, seen);
+                                store_struct_defaults(slot, low.struct_id, seen, made);
                             }
                             store_init_fields(made->struct_id, slot, *made);
                         } else {

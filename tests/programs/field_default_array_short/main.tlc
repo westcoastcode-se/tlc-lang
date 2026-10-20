@@ -1,0 +1,21 @@
+type Short struct {
+    raw [2]i32 = {2};
+};
+
+type Zeroed struct {
+    raw [3]i32 = {40, 0...};
+};
+
+var file Short;
+
+func main() i32 {
+    var n = 1;
+    var s Short;
+    var z Zeroed;
+    var buf *Short = new [n]Short;
+    var named = Short{.raw = {5}};
+    var sum = s.raw[0] + z.raw[0] + z.raw[1] + z.raw[2] + file.raw[0] + file.raw[1] + buf[0].raw[0] + buf[0].raw[1] +
+              named.raw[0];
+    delete buf;
+    return sum;
+}

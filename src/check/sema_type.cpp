@@ -718,13 +718,12 @@ void Checker::define_struct_fields() {
             }
             info.fields.push_back(StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
             if (field.init != nullptr) {
-                const Type &stored = info.fields.back().type;
-                // A union keeps one payload. An array field is not a constant element list yet.
-                if (info.is_union || pending.decl->union_payload ||
-                    (stored.kind == TypeKind::Array && !is_slice(stored))) {
+                // A union keeps one payload. A sized array uses the same constant list as `x i32 = 1`.
+                if (info.is_union || pending.decl->union_payload) {
                     error(field.loc, "not supported yet");
                 } else {
                     info.fields.back().has_init = true;
+                    info.fields.back().init = field.init.get();
                 }
             }
         }

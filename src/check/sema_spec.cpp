@@ -180,10 +180,11 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                                             field.elem_slice, field.shells);
         StructInfo::Field stored{field.name, std::move(field_type), field.loc, field.exported};
         if (field.init != nullptr) {
-            if (spec.union_payload || (stored.type.kind == TypeKind::Array && !is_slice(stored.type))) {
+            if (spec.union_payload) {
                 error(field.loc, "not supported yet");
             } else {
                 stored.has_init = true;
+                stored.init = field.init.get();
             }
         }
         structs_[static_cast<std::size_t>(id)].fields.push_back(std::move(stored));

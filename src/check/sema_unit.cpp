@@ -1120,8 +1120,14 @@ void Checker::check_field_default(const Expr &expr, const Type &type, SourceLoc 
         error(loc, "global initializer is not a constant");
         return;
     }
+    // A short array list is that constant. The elements it does not name stay uninitialized.
+    const bool saved_partial = init_allow_partial_;
+    if (type.kind == TypeKind::Array && !is_slice(type)) {
+        init_allow_partial_ = true;
+    }
     const std::size_t before = diags_.size();
     const Type got = check_against(expr, type);
+    init_allow_partial_ = saved_partial;
     if (diags_.size() != before || got.kind == TypeKind::Invalid) {
         return;
     }

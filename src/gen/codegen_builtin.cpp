@@ -567,7 +567,7 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
                 builder_.CreateStore(llvm::ConstantAggregateZero::get(low.type), raw);
             } else {
                 std::unordered_set<int> seen;
-                store_struct_defaults(raw, low.struct_id, seen);
+                store_struct_defaults(raw, low.struct_id, seen, init);
             }
             store_init_fields(init->struct_id, raw, *init);
         }

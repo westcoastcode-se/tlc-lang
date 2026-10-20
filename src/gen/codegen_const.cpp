@@ -5,6 +5,49 @@
 
 namespace tlc {
 
+llvm::Constant *CodeGen::const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags) {
+    if (array_ty == nullptr || init.is_tuple || !init.fields.empty() || init.elements.size() > array_ty->getNumElements()) {
+        return nullptr;
+    }
+    llvm::Type *element = array_ty->getElementType();
+    std::vector<llvm::Constant *> values(array_ty->getNumElements(), llvm::Constant::getNullValue(element));
+    for (std::size_t index = 0; index < init.elements.size(); ++index) {
+        const auto &item = init.elements[index];
+        if (!item) {
+            return nullptr;
+        }
+        llvm::Constant *value = nullptr;
+        if (element == slice_type()) {
+            std::unordered_set<std::string> seen;
+            value = constant_slice(*item, seen);
+        } else if (auto *inner = llvm::dyn_cast<llvm::ArrayType>(element)) {
+            const auto *nested = std::get_if<Expr::Init>(&item->data);
+            if (nested != nullptr && array_brace(*nested)) {
+                Binding row = flags;
+                row.is_array = true;
+                row.array_len = static_cast<int>(inner->getNumElements());
+                row.inner_array_len = 0;
+                row.value = nullptr;
+                value = const_default_array(*nested, inner, row);
+            } else {
+                value = const_array_base(*item);
+            }
+        } else {
+            Binding one = flags;
+            one.is_array = false;
+            one.array_len = 0;
+            one.inner_array_len = 0;
+            one.value = nullptr;
+            value = const_initializer(*item, one);
+        }
+        if (value == nullptr || value->getType() != element) {
+            return nullptr;
+        }
+        values[index] = value;
+    }
+    return llvm::ConstantArray::get(array_ty, values);
+}
+
 llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) {
     if (slot.is_slice) {
         std::unordered_set<std::string> seen;
@@ -247,6 +290,25 @@ llvm::Constant *CodeGen::init_image(int struct_id, const Expr::Init *named) {
 
 llvm::Constant *CodeGen::omitted_field(const FieldLayout &slot, std::unordered_set<int> &stack) {
     if (slot.init != nullptr) {
+        // `{1}` on `[2]i32` is the constant `{1, 0}` here. A local stores only the named element.
+        if (slot.is_array && !slot.is_slice) {
+            auto *array_ty = llvm::dyn_cast_or_null<llvm::ArrayType>(slot.type);
+            const auto *list = std::get_if<Expr::Init>(&slot.init->data);
+            if (array_ty != nullptr && list != nullptr && array_brace(*list)) {
+                Binding flags;
+                flags.elem_char = slot.elem_char;
+                flags.struct_id = slot.struct_id;
+                flags.elem_void = slot.elem_void;
+                flags.elem_bool = slot.elem_bool;
+                flags.elem_bits = slot.elem_bits;
+                flags.elem_unsigned = slot.elem_unsigned;
+                flags.elem_float = slot.elem_float;
+                flags.elem_slice = slot.elem_slice;
+                flags.is_array = true;
+                flags.array_len = slot.array_len;
+                return const_default_array(*list, array_ty, flags);
+            }
+        }
         return const_field(*slot.init, slot);
     }
     if (slot.depth != 0 || slot.is_slice || slot.struct_id < 0) {
@@ -430,7 +492,8 @@ llvm::Constant *CodeGen::bare_initializer(const Lowered &low, llvm::Type *ty) {
     return llvm::ConstantAggregateZero::get(ty);
 }
 
-void CodeGen::store_struct_defaults(llvm::Value *slot, int struct_id, std::unordered_set<int> &seen) {
+void CodeGen::store_struct_defaults(llvm::Value *slot, int struct_id, std::unordered_set<int> &seen,
+                                    const Expr::Init *overlay) {
     if (slot == nullptr || terminated() || struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
         return;
     }
@@ -449,6 +512,19 @@ void CodeGen::store_struct_defaults(llvm::Value *slot, int struct_id, std::unord
             break;
         }
         const FieldLayout &field = layout.fields[static_cast<std::size_t>(index)];
+        bool named = false;
+        if (overlay != nullptr) {
+            for (const Expr::FieldInit &item : overlay->fields) {
+                if (item.value != nullptr && item.field == field.name) {
+                    named = true;
+                    break;
+                }
+            }
+        }
+        // Naming the field replaces its value. A short list does not keep the omitted tail.
+        if (named) {
+            continue;
+        }
         const bool nested = field.init == nullptr && field.depth == 0 && !field.is_slice && field.struct_id >= 0;
         bool dive = field.init != nullptr;
         if (!dive && nested) {
@@ -461,6 +537,13 @@ void CodeGen::store_struct_defaults(llvm::Value *slot, int struct_id, std::unord
         llvm::Value *addr = builder_.CreateInBoundsGEP(
             layout.type, slot, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(index)});
         if (field.init != nullptr) {
+            auto *array_ty = llvm::dyn_cast_or_null<llvm::ArrayType>(field.type);
+            const auto *list = std::get_if<Expr::Init>(&field.init->data);
+            // A brace list stores the elements it names. `0...` zeros the rest first.
+            if (field.is_array && !field.is_slice && array_ty != nullptr && list != nullptr && array_brace(*list)) {
+                store_array(addr, array_ty, *field.init, expr_loc(*field.init));
+                continue;
+            }
             llvm::Constant *value = const_field(*field.init, field);
             if (value != nullptr && field.type != nullptr && value->getType() == field.type) {
                 builder_.CreateStore(value, addr);
@@ -833,7 +916,7 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
         builder_.CreateStore(llvm::ConstantAggregateZero::get(layout.type), slot);
     } else if (!layout.is_union) {
         std::unordered_set<int> seen;
-        store_struct_defaults(slot, init.struct_id, seen);
+        store_struct_defaults(slot, init.struct_id, seen, &init);
     }
     store_init_fields(init.struct_id, slot, init);
     if (terminated()) {
