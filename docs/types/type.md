@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Slices](slice.md) · [Next: Structs](struct.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`Type` is the type of a tlc type. `typeof(i32)` and `typeof n` produce a `Type`. `typeof(Point)`, `typeof(*i32)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)` and `typeof(union Shape)` are reported as `expected a type`. `typeof('A')` is `u8`, and that value is different from `typeof(i8)`. `typeof` does not decay an array. `var t Type` with no value is reported as `type mismatch`.
+`Type` is the type of a tlc type. `typeof(i32)` and `typeof n` produce a `Type`. `typeof(Point)`, `typeof(*i32)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)`, `typeof(union Shape)`, and `typeof(trait Area)` are reported as `expected a type`. `typeof('A')` is `u8`, and that value is different from `typeof(i8)`. `typeof` does not decay an array. `var t Type` with no value is reported as `type mismatch`.
 
 `typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*Type` uses the value `p` points at. `name` is a method of `Type`. `t.name()` returns `*u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box.spec.i32`. `name` takes no arguments. Another argument is reported as `argument count`. Another method is reported as `undeclared identifier`. `t.name` without the call is reported as `undeclared identifier`.
 

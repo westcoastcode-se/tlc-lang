@@ -129,7 +129,6 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Spellings
 
-- `sizeof(trait ...)` does not parse. `sizeof(union Shape)` is `expected a type`. Pages: `docs/grammar.md`, `docs/types/sizeof.md`.
 - `[` is type parameters, type arguments, an array length, an index, a range, a `new` count, and `_`. `name[i32](` is a generic call, already listed under Parsing. A call of an indexed value is `(ops[i])()`. `Vec[i32]{}` is a struct value. `Buf[4, i32].count` is the constant because of the comma. `arr[i].field` is an index. Pages: `docs/grammar.md`.
 
 ### Documentation

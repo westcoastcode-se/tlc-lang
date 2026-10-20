@@ -57,7 +57,7 @@ There is no `impl` keyword. A struct satisfies a trait by defining the methods, 
 
 A generic function writes the same constraint as `T Shape`. `value *T` follows `*Shape`, and `value T` follows `Shape`. See [Generics](../functions/generic.md).
 
-A trait is written as a parameter of a function or a method, `Shape` or `*Shape`. `sizeof(Shape)` is reported as `undeclared identifier`.
+`trait` is written only in `type Shape trait`. A parameter is `Shape` or `*Shape`. `var s trait Shape`, `sizeof(trait Shape)`, and `alignof(trait Shape)` are reported as `expected a type`. `sizeof(Shape)` and `alignof(Shape)` are reported as `undeclared identifier`.
 
 The function is monomorphized. Each struct that is passed in gets its own copy, and the call `s.area()` becomes a direct call of that struct's method. Passing the same trait onward, as `measure(s)` inside `apply`, is not checked again.
 

@@ -5950,6 +5950,30 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Area trait { func area() i32; };\n"
+            "func main() i32 {\n"
+            "  var bad trait Area;\n"
+            "  return sizeof(trait Area) + alignof(trait Area);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected a type");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Area trait { func area() i32; };\n"
+            "func main() i32 { return sizeof(Area) + alignof(Area); }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Area trait { func area() i32; };\n"
+            "func main() i32 { return typeof(trait Area); }\n");
+        EXPECT_HAS(check, errors, "expected a type");
+    }
+
+    {
+        const std::string errors = diagnose(
             "func keep[...U](args U) U { return args; }\n"
             "func first[...U](args U) typeof(args[0]) { return args[0]; }\n"
             "func id(x i32) typeof(x) { return x; }\n"

@@ -653,7 +653,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         const bool is_align = kind == TokenKind::KwAlignof;
         const SourceLoc loc = peek().loc;
         ++pos_;
-        // `sizeof(Point)` and `typeof(Point)`. `struct` and `union` are not type spellings here.
+        // `sizeof(Point)` and `typeof(Point)`. `struct`, `union`, and `trait` are not type spellings here.
         bool on_type = false;
         bool type_array = false;
         bool type_elem_const = false;
@@ -677,7 +677,8 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             }
         }
         if (peek().kind == TokenKind::LParen &&
-            (peek(look).kind == TokenKind::KwStruct || peek(look).kind == TokenKind::KwUnion)) {
+            (peek(look).kind == TokenKind::KwStruct || peek(look).kind == TokenKind::KwUnion ||
+             peek(look).kind == TokenKind::KwTrait)) {
             error_at(peek(look), "expected a type");
             int depth = 0;
             do {

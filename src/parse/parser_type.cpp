@@ -72,10 +72,11 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             ++pos_;
             continue;
         }
-        // `struct` and `union` are only written in the type definition. A variable names the type.
+        // `struct`, `union`, and `trait` are only written in the type definition. A variable names the type.
         if (token.kind == TokenKind::KwStruct || token.kind == TokenKind::KwEnum || token.kind == TokenKind::KwUnion ||
             token.kind == TokenKind::KwTrait) {
-            const bool definition_keyword = token.kind == TokenKind::KwStruct || token.kind == TokenKind::KwUnion;
+            const bool definition_keyword = token.kind == TokenKind::KwStruct || token.kind == TokenKind::KwUnion ||
+                                            token.kind == TokenKind::KwTrait;
             error_at(token, definition_keyword ? "expected a type" : "not supported yet");
             ++pos_;
             if (check(TokenKind::LParen)) {
