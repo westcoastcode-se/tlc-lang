@@ -2831,7 +2831,7 @@ int run_sema_tests() {
             "  var buf Buf = {.raw = 1};\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
@@ -4928,7 +4928,7 @@ int run_sema_tests() {
             "  delete p;\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {

@@ -739,7 +739,37 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
         std::unordered_set<std::string> seen;
         return constant_slice(expr, seen);
     }
-    if (slot.is_array || slot.type == nullptr) {
+    // `Holder{.raw = {4, 6}}` at file scope is that constant array. A short list and
+    // `0...` are not a constant, the same way a file-scope array list is not.
+    if (slot.is_array) {
+        auto *array_ty = llvm::dyn_cast_or_null<llvm::ArrayType>(slot.type);
+        if (array_ty == nullptr) {
+            return nullptr;
+        }
+        Binding flags;
+        flags.elem_char = slot.elem_char;
+        flags.struct_id = slot.struct_id;
+        flags.elem_void = slot.elem_void;
+        flags.elem_bool = slot.elem_bool;
+        flags.elem_bits = slot.elem_bits;
+        flags.elem_unsigned = slot.elem_unsigned;
+        flags.elem_float = slot.elem_float;
+        flags.elem_slice = slot.elem_slice;
+        flags.is_array = true;
+        flags.array_len = slot.array_len;
+        if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
+            if (init->is_tuple || !init->fields.empty()) {
+                return nullptr;
+            }
+            return fill_array(*init, array_ty, flags);
+        }
+        llvm::Constant *copied = const_array_base(expr);
+        if (copied == nullptr || copied->getType() != array_ty) {
+            return nullptr;
+        }
+        return copied;
+    }
+    if (slot.type == nullptr) {
         return nullptr;
     }
     if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
@@ -1542,7 +1572,45 @@ void CodeGen::store_init_fields(int struct_id, llvm::Value *slot, const Expr::In
             continue;
         }
         if (addr.is_array) {
-            error(field.loc, "not supported yet");
+            // `Holder{.raw = {4, 6}}` stores that list in the field. A short list stores only
+            // the named elements. `0...` zeros the field first, the same way `h.raw = {4, 0...}` does.
+            if (addr.array_type == nullptr || !addr.array_type->isArrayTy() || addr.value == nullptr) {
+                error(field.loc, "not supported yet");
+                continue;
+            }
+            auto *array_ty = llvm::cast<llvm::ArrayType>(addr.array_type);
+            const auto *list = std::get_if<Expr::Init>(&field.value->data);
+            const bool brace = list != nullptr && !list->array_literal && !list->is_tuple && list->fields.empty();
+            if (brace) {
+                if (list->zero_rest && !terminated()) {
+                    builder_.CreateStore(llvm::ConstantAggregateZero::get(array_ty), addr.value);
+                }
+                store_array_elements(addr.value, array_ty, *list);
+            } else {
+                const TypedValue rhs = emit_rvalue(*field.value);
+                if (terminated()) {
+                    return;
+                }
+                if (rhs.value == nullptr) {
+                    error(field.loc, "not supported yet");
+                    continue;
+                }
+                llvm::Value *loaded = rhs.value;
+                if (loaded->getType() != array_ty) {
+                    if (!loaded->getType()->isPointerTy()) {
+                        error(field.loc, "type mismatch");
+                        continue;
+                    }
+                    loaded = builder_.CreateLoad(array_ty, loaded);
+                }
+                if (!terminated()) {
+                    builder_.CreateStore(loaded, addr.value);
+                }
+            }
+            if (terminated()) {
+                return;
+            }
+            store_union_tag(struct_id, slot, field.field);
             continue;
         }
         const TypedValue rhs = emit_rvalue(*field.value);

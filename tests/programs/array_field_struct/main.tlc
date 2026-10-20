@@ -1,0 +1,118 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Holder struct {
+    n i32;
+    raw [2]i32;
+    grid [2][3]i32;
+    pts [2]Point;
+};
+
+type Box struct {
+    cell [2]i32;
+};
+
+type Pair [2]i32;
+
+type Aliased struct {
+    raw Pair;
+};
+
+type File struct {
+    raw [2]i32;
+};
+
+var file_row [2]i32 = {3, 1};
+var g = File{.raw = {4, 6}};
+var named = File{.raw = file_row};
+var seen i32;
+
+func give() i32 {
+    return 4;
+}
+
+func line() [3]i32 {
+    var row [3]i32 = {1, 0, 5};
+    return row;
+}
+
+func bump() i32 {
+    seen = seen + 1;
+    return seen;
+}
+
+func main() i32 {
+    var sum i32 = g.raw[0] + g.raw[1];
+    sum = sum + named.raw[0] + named.raw[1];
+    file_row[0] = 9;
+    sum = sum + named.raw[0];
+
+    var h = Holder{.raw = {4, 6}};
+    sum = sum + h.raw[0] + h.raw[1];
+
+    var p = new Holder{.raw = {8, 0}};
+    sum = sum + p.raw[0];
+    delete p;
+
+    var q *Holder = new Holder{.raw = {1, 2}};
+    sum = sum + (*q).raw[0] + (*q).raw[1];
+    delete q;
+
+    var wide = Holder{.grid = {{1, 2, 3}, {4, 5, 6}}};
+    sum = sum + wide.grid[0][0] + wide.grid[1][2];
+
+    var called = Holder{.raw = {give(), 6}};
+    sum = sum + called.raw[0] + called.raw[1];
+
+    var a Point;
+    a.x = 5;
+    a.y = 0;
+    var b Point;
+    b.x = 7;
+    b.y = 0;
+    var spots = Holder{.pts = {a, b}};
+    a.x = 1;
+    sum = sum + spots.pts[0].x + spots.pts[1].x;
+
+    var other [3]i32 = {2, 0, 0};
+    var rows = Holder{.grid = {other, line()}};
+    other[0] = 9;
+    sum = sum + rows.grid[0][0] + rows.grid[1][2];
+
+    var marked = Holder{.pts = {{.x = 3, .y = 0}, {.x = 4, .y = 0}}};
+    sum = sum + marked.pts[0].x + marked.pts[1].x;
+
+    var tail = Holder{.raw = {4, 0...}};
+    sum = sum + tail.raw[0] + tail.raw[1];
+
+    var short = Holder{.raw = {7}};
+    sum = sum + short.raw[0];
+
+    var src [2]i32 = {3, 1};
+    var copied = Holder{.raw = {src[0], src[1]}};
+    src[0] = 9;
+    sum = sum + copied.raw[0] + copied.raw[1];
+
+    var aliased = Aliased{.raw = {4, 0}};
+    sum = sum + aliased.raw[0];
+
+    var row [2]i32 = {8, 1};
+    var from_name = Holder{.raw = row};
+    row[0] = 0;
+    sum = sum + from_name.raw[0] + from_name.raw[1];
+
+    var spelled = Holder{.raw = [_]i32{4, 6}};
+    sum = sum + spelled.raw[0] + spelled.raw[1];
+
+    var both = Holder{.n = 3, .raw = {4, 6}};
+    sum = sum + both.n + both.raw[1];
+
+    var boxes = [_]Box{Box{.cell = {6, 0}}, Box{.cell = {1, 2}}};
+    sum = sum + boxes[1].cell[0] + boxes[1].cell[1];
+
+    var order = Holder{.raw = {bump(), bump()}};
+    sum = sum + order.raw[0] * 10 + order.raw[1];
+    return sum;
+}

@@ -723,13 +723,7 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             }
             continue;
         }
-        if (field_type.kind == TypeKind::Array && !is_slice(field_type)) {
-            error(field.loc, "not supported yet");
-            if (field.value) {
-                check_expr(*field.value, true);
-            }
-            continue;
-        }
+        // `Holder{.raw = {4, 6}}` is that array. A short list leaves the tail unset.
         if (field.value) {
             check_against(*field.value, field_type);
         }
