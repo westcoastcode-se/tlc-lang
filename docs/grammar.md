@@ -266,7 +266,7 @@ delete-expr = "delete" [ "(" expression ")" ] unary ;
 
 `name[args](` is a generic call, not an index. An array length may be a file-scope `const` name: `[N]i32`.
 
-Postfix `!` asserts that a `?*T` has a value. `pointer!` has type `*T`. `pointer!.value` reads the field. Prefix `!` is logical not on a `bool` and yields `bool`. An integer is reported as `type mismatch: expected bool, found i32`. There is no runtime check.
+Postfix `!` asserts that a `?*T` has a value. `pointer!` has type `*T`. `pointer!.value` reads the field. Prefix `!` is logical not on a `bool` and yields `bool`. An integer is reported as `type mismatch: expected bool, found i32`. A null pointer calls `builtin.panic("null pointer")`.
 
 `a[i:j]` is the slice of elements from `i` up to, but not including, `j`. A missing low bound is `0`. A missing high bound is the length. `a[i:]`, `a[:j]`, and `a[:]` are those slices. `a[]` is reported as `expected an expression`.
 

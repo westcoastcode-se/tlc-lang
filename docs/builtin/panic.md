@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: va](va.md) · [Next: builtin/env/consts](family.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`builtin.panic(message)` prints the message and the call stack, then aborts the process. `new` calls it with `out of memory` when allocation returns `null`. The message is `*const u8`. A string and a `*u8` may be passed. The text goes to the standard error stream:
+`builtin.panic(message)` prints the message and the call stack, then aborts the process. `new` calls it with `out of memory` when allocation returns `null`. Postfix `!` calls it with `null pointer` when that pointer is `null`. The message is `*const u8`. A string and a `*u8` may be passed. The text goes to the standard error stream:
 
 ```text
 panic: message

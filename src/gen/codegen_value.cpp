@@ -195,6 +195,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 const TypedValue inner_value = emit_rvalue(*node.expr);
                 if (node.op == TokenKind::Bang && node.postfix) {
+                    llvm::Value *pointer = inner_value.value;
+                    // `p!` is `*T` for this use. A null pointer panics before that use.
+                    if (pointer == nullptr || terminated() || function_ == nullptr || !pointer->getType()->isPointerTy()) {
+                        return inner_value;
+                    }
+                    llvm::BasicBlock *bad = llvm::BasicBlock::Create(context_, "bang.null", function_);
+                    llvm::BasicBlock *ok = llvm::BasicBlock::Create(context_, "bang.ok", function_);
+                    builder_.CreateCondBr(builder_.CreateICmpEQ(pointer, null_ptr()), bad, ok);
+                    builder_.SetInsertPoint(bad);
+                    abort_panic(node.loc, "null pointer");
+                    builder_.SetInsertPoint(ok);
                     return inner_value;
                 }
                 llvm::Value *inner = inner_value.value;

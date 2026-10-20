@@ -1292,6 +1292,8 @@ class CodeGen {
     void abort_now();
     llvm::Function *panic_function();
     void abort_out_of_memory(SourceLoc loc);
+    // `builtin.panic(message)`, then unreachable. The frame names `loc`.
+    void abort_panic(SourceLoc loc, const char *message);
     // `base[low:high]`. The result is a slice header.
     TypedValue emit_range(const Expr::Index &node);
     // Load one field. A slice field is the header. An array field decays to a pointer.

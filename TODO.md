@@ -125,10 +125,6 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 Accepted forms whose rules do not match. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there. This section records the mismatch.
 
-### Conditions
-
-- Postfix `!` strips `?` from a pointer and inserts no null check. `if (p != null)` narrows the name for the rest of the block. `p!` applies to that use. `opt![2]` parses as `(opt!)[2]` and typechecks. Pages: `docs/expressions/narrowing.md`, `docs/types/pointer.md`, `docs/grammar.md`. The sentence in `docs/types/pointer.md` that parses `opt![i]` as `(opt[i])!` is under [Documentation](#documentation).
-
 ### Spellings
 
 - `sizeof(union ...)` and `sizeof(trait ...)` do not parse. Pages: `docs/grammar.md`, `docs/types/sizeof.md`.

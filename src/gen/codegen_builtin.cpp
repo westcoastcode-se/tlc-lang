@@ -291,17 +291,21 @@ llvm::Function *CodeGen::panic_function() {
     return llvm::Function::Create(type, llvm::Function::InternalLinkage, "tlc.panic", module_);
 }
 
-void CodeGen::abort_out_of_memory(SourceLoc loc) {
+void CodeGen::abort_panic(SourceLoc loc, const char *message) {
     llvm::Function *panic = panic_function();
-    if (panic == nullptr) {
+    if (panic == nullptr || message == nullptr) {
         abort_now();
         return;
     }
     // The frame stays. panic does not return.
     push_trace(loc);
-    llvm::CallInst *call = builder_.CreateCall(panic, {builder_.CreateGlobalString("out of memory")});
+    llvm::CallInst *call = builder_.CreateCall(panic, {builder_.CreateGlobalString(message)});
     call->setCallingConv(llvm::CallingConv::C);
     builder_.CreateUnreachable();
+}
+
+void CodeGen::abort_out_of_memory(SourceLoc loc) {
+    abort_panic(loc, "out of memory");
 }
 
 llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, llvm::Value *bytes, uint64_t align) {
