@@ -150,7 +150,7 @@ func main() i32 {
 
 `this` inside a trait method is reported as `type mismatch`. `s.area` without a call is reported as `undeclared identifier`.
 
-A default method is a function written on the trait, with a body, outside the braces. A struct that satisfies the trait gains that method. The struct's own method with the same parameters after the receiver wins. A different parameter list is another method. A missing method that the trait requires, and that no default supplies, is still `undeclared identifier`, and the struct does not gain the other defaults. A default whose parameters, result, and `unsafe` match a required method supplies that method when the struct omits it.
+A default method is a function written on the trait, with a body, outside the braces. The call writes that trait. `s.twice()` when `s` is `*Shape` runs the body. `r.twice()` when `r` is `Rect` is reported as `undeclared identifier`. The struct's own method with the same parameters after the receiver is a method of that struct. A call on the struct uses that body, and the call through the trait uses it too. A different parameter list is another method. A missing method that the trait requires, and that no default supplies, is reported as `undeclared identifier`. A default whose parameters, result, and `unsafe` match a required method supplies that method when the struct omits it. That call is still written on the trait.
 
 ```c
 type Shape trait {
@@ -170,19 +170,23 @@ func Rect::area(self *this) i32 {
     return self.w * self.h;
 }
 
+func use(s *Shape) i32 {
+    return s.twice();
+}
+
 func main() i32 {
     var r Rect;
     r.w = 5;
     r.h = 6;
-    return r.twice();
+    return use(&r);
 }
 ```
 
-`r.twice()` is 60. A call through the trait, `s.twice()` when `s` is `*Shape`, is that same method. A struct that defines `twice` with those parameters uses its own body. `a.malloc[i32]()` when `a` is `*Allocator` is `not supported yet`.
+`use(&r)` is 60. `a.malloc[i32]()` when `a` is `*Allocator` is `not supported yet`.
 
 ## Cost
 
-A default method is a direct call, the same as a trait method. A trait parameter is specialized. There is no table. `measure(r)` for a struct of two `i32` fields executes 8 instructions in `main` and does not push a trace frame: store the fields, copy them into the argument registers, call. The struct is not zeroed first. `s.area()` inside that copy is a direct traced call of `Rect.area`, which is 5 instructions for two `i32` fields multiplied.
+`s.twice()` on `*Shape` is a direct call, the same as another method of that trait. A trait parameter is specialized. There is no table. `measure(r)` for a struct of two `i32` fields executes 8 instructions in `main` and does not push a trace frame: store the fields, copy them into the argument registers, call. The struct is not zeroed first. `s.area()` inside that copy is a direct traced call of `Rect.area`, which is 5 instructions for two `i32` fields multiplied.
 
 A field named by the trait is the struct field. Reading it is 1 load. Writing it through `*Shape` reloads the pointer and stores, the same as a field of `*Rect`.
 
