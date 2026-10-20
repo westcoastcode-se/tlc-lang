@@ -125,10 +125,6 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 Accepted forms whose rules do not match. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there. This section records the mismatch.
 
-### Aggregates
-
-- `new [n]Point{.x = 1}` is parsed as a field list and is `type mismatch`. The element list is `new [n]Point{{.x = 1}...}`. Pages: `docs/statements/new.md`, `docs/grammar.md`.
-
 ### Conditions
 
 - `if` accepts an integer after promotion, including `i64` and `u32`, and a `bool`. A pointer is `compare with null`. An `f32` is `type mismatch`. `switch` accepts a value that promotes to `i32`, so `bool`, `i8`, and `i16` match. `u32` and `i64` do not. `case 1u32` is `type mismatch`. Pages: `docs/expressions/condition.md`, `docs/statements/switch.md`.
