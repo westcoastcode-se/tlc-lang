@@ -1311,6 +1311,8 @@ class CodeGen {
     // Writes `init` into `slot`. A nested array is another brace list, not one rvalue.
     void store_array_elements(llvm::Value *slot, llvm::ArrayType *array_ty, const Expr::Init &init);
     TypedValue emit_init(const Expr::Init &init);
+    // `{.value = 10}` builds the struct when sema first numbers it. Later structs keep that number.
+    TypedValue emit_inferred_init(const Expr::Init &init);
     // Writes the named fields of `init` through `slot`. Omitted fields are left as they are.
     void store_init_fields(int struct_id, llvm::Value *slot, const Expr::Init &init);
     TypedValue emit_addr(const Expr &expr);

@@ -1,0 +1,12 @@
+type Measure trait {
+    w i32;
+};
+
+func width(s Measure) i32 {
+    return s.w;
+}
+
+func main() i32 {
+    var s = struct{.w = 40, .h = 2, .row = [_]i32{1, 2}, .inner = struct{.n = 7}};
+    return width(s) + s.h + s.row[1] + s.inner.n;
+}

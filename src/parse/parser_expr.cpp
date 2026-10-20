@@ -1028,6 +1028,17 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     if (check(TokenKind::LBrace)) {
         return parse_init();
     }
+    // `struct{.value = 10}` is a struct. A bare `{.value = 10}` still needs a destination type.
+    if (check(TokenKind::KwStruct) && peek(1).kind == TokenKind::LBrace) {
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto expr = parse_init();
+        if (auto *init = std::get_if<Expr::Init>(&expr->data)) {
+            init->loc = loc;
+            init->inferred = true;
+        }
+        return expr;
+    }
     // `[_]i32{1, 2, 3}`. `_` stands for the length, which is the number of values.
     // A length inside the brackets stays an ordinary expression error.
     // Empty `[]` is not this form.

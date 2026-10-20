@@ -3088,7 +3088,36 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var s = {.value = 10};\n"
-            "  return 0;\n"
+            "  return s.value;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var s = struct{.value = 10};\n"
+            "  var t = struct{.value = 11};\n"
+            "  s = t;\n"
+            "  return s.value;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var s = struct{.value = 10, .inner = struct{.n = 7}, .row = [_]i32{1, 2}};\n"
+            "  return s.value + s.inner.n + s.row[1];\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var n i32 = {.value = 10};\n"
+            "  return n;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }

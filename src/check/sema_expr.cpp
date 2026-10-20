@@ -460,6 +460,53 @@ Type Checker::check_array_literal(Expr::Init &init) {
     return type_array(std::move(elem), static_cast<int>(init.elements.size()));
 }
 
+Type Checker::infer_brace_struct(Expr::Init &init) {
+    std::vector<StructInfo::Field> fields;
+    std::unordered_set<std::string> seen;
+    bool bad = false;
+    for (const Expr::FieldInit &field : init.fields) {
+        if (field.field.empty()) {
+            if (field.value) {
+                check_expr(*field.value, true);
+            }
+            bad = true;
+            continue;
+        }
+        if (!seen.insert(field.field).second) {
+            error(field.loc, "redefinition");
+            bad = true;
+        }
+        if (field.value == nullptr) {
+            error(field.loc, "type mismatch");
+            bad = true;
+            continue;
+        }
+        const Type field_type = check_expr(*field.value, true);
+        if (field_type.kind == TypeKind::Invalid || field_type.kind == TypeKind::Void ||
+            field_type.kind == TypeKind::Tuple || field_type.kind == TypeKind::Nullptr ||
+            field_type.kind == TypeKind::Trait || field_type.kind == TypeKind::Meta) {
+            error(field.loc, "type mismatch");
+            bad = true;
+            continue;
+        }
+        fields.push_back(StructInfo::Field{field.field, field_type, field.loc, false, false, nullptr});
+    }
+    if (bad || fields.empty()) {
+        return type_invalid();
+    }
+    const int id = static_cast<int>(structs_.size());
+    StructInfo info;
+    info.name = ".struct." + std::to_string(id);
+    info.file_id = file_id_;
+    info.complete = true;
+    info.loc = init.loc;
+    info.anonymous = true;
+    info.fields = std::move(fields);
+    structs_.push_back(std::move(info));
+    init.struct_id = id;
+    return type_struct(id);
+}
+
 Type Checker::check_init(Expr::Init &init, const Type &want) {
     if (init.array_literal) {
         return check_array_literal(init);
@@ -583,6 +630,13 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             }
         }
     };
+    // `var s = struct{.value = 10}` has no destination type. A trait parameter accepts that struct.
+    const bool infer = init.inferred && init.type_name.empty() && !init.fields.empty() &&
+                       (dest.kind == TypeKind::Invalid || dest.kind == TypeKind::Trait) && !scopes_.empty() &&
+                       scopes_.back().function_id != 0;
+    if (infer) {
+        return infer_brace_struct(init);
+    }
     if (dest.kind != TypeKind::Struct || dest.struct_id < 0 ||
         dest.struct_id >= static_cast<int>(structs_.size())) {
         error(init.loc, "type mismatch");

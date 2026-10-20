@@ -423,6 +423,8 @@ class Checker {
     // `[_]T{v, v, v}` has type `[N]T`, where N is the number of values.
     Type check_array_literal(Expr::Init &init);
     Type check_init(Expr::Init &init, const Type &want);
+    // `{.value = 10}` with no destination type. Each field takes the type of its value.
+    Type infer_brace_struct(Expr::Init &init);
     void expect_integer(const Type &got, SourceLoc loc);
     void expect_condition(const Type &got, SourceLoc loc);
     bool is_lvalue_form(const Expr &expr) const;

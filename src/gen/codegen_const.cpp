@@ -900,7 +900,128 @@ llvm::AllocaInst *CodeGen::emit_array_literal(const Expr::Init &init, Lowered &l
     return slot;
 }
 
+TypedValue CodeGen::emit_inferred_init(const Expr::Init &init) {
+    // A nested `struct{...}` is emitted with its field, so it takes the earlier number.
+    std::vector<llvm::Type *> body;
+    std::vector<FieldLayout> fields;
+    std::vector<llvm::Value *> values;
+    body.reserve(init.fields.size());
+    for (const Expr::FieldInit &field : init.fields) {
+        if (field.value == nullptr || field.field.empty()) {
+            error(field.loc, "type mismatch");
+            return {zero(), 0};
+        }
+        TypedValue rhs = emit_rvalue(*field.value);
+        if (terminated() || rhs.value == nullptr) {
+            return {zero(), 0};
+        }
+        FieldLayout slot;
+        slot.name = field.field;
+        if (rhs.is_slice) {
+            if (rhs.value->getType() != slice_type()) {
+                rhs.value = as_slice_value(rhs, field.loc);
+            }
+            slot.type = slice_type();
+            slot.is_slice = true;
+            slot.depth = rhs.depth;
+            slot.struct_id = rhs.struct_id;
+            slot.elem_void = rhs.elem_void;
+            slot.elem_bool = rhs.elem_bool;
+            slot.elem_bits = rhs.elem_bits;
+            slot.elem_unsigned = rhs.elem_unsigned;
+            slot.elem_float = rhs.elem_float;
+            slot.elem_char = rhs.elem_char;
+            slot.elem_slice = rhs.elem_slice;
+        } else if (rhs.array_len > 0 && rhs.value != nullptr) {
+            llvm::Type *allocated = nullptr;
+            if (auto *slot_ptr = llvm::dyn_cast<llvm::AllocaInst>(rhs.value)) {
+                allocated = slot_ptr->getAllocatedType();
+            }
+            if (allocated == nullptr || !allocated->isArrayTy()) {
+                error(field.loc, "type mismatch");
+                return {zero(), 0};
+            }
+            slot.type = allocated;
+            slot.is_array = true;
+            slot.array_len = rhs.array_len;
+            slot.elem_char = rhs.elem_char;
+            slot.elem_bool = rhs.elem_bool;
+            slot.elem_bits = rhs.elem_bits;
+            slot.elem_unsigned = rhs.elem_unsigned;
+            slot.elem_float = rhs.elem_float;
+            slot.struct_id = rhs.struct_id;
+        } else if (rhs.struct_id >= 0 && rhs.struct_id < static_cast<int>(structs_.size()) &&
+                   structs_[static_cast<std::size_t>(rhs.struct_id)].type != nullptr) {
+            slot.type = structs_[static_cast<std::size_t>(rhs.struct_id)].type;
+            slot.struct_id = rhs.struct_id;
+        } else if (rhs.depth > 0) {
+            slot.type = ptr_type();
+            slot.depth = rhs.depth;
+            slot.struct_id = rhs.struct_id;
+            slot.elem_void = rhs.elem_void;
+            slot.elem_bool = rhs.elem_bool;
+            slot.elem_bits = rhs.elem_bits;
+            slot.elem_unsigned = rhs.elem_unsigned;
+            slot.elem_float = rhs.elem_float;
+            slot.elem_char = rhs.elem_char;
+        } else if (std::holds_alternative<Expr::Bool>(field.value->data)) {
+            // A bool value promotes to `i32`. The field keeps one bit, as a written `bool` field does.
+            slot.type = i1();
+            slot.elem_bool = true;
+            rhs.value = builder_.CreateICmpNE(rhs.value, const_i32(0));
+        } else if (rhs.elem_float || rhs.value->getType()->isFloatingPointTy()) {
+            const bool wide = rhs.value->getType()->isDoubleTy() || rhs.elem_bits >= 64;
+            slot.type = wide ? f64_ty() : f32_ty();
+            slot.elem_float = true;
+            slot.elem_bits = wide ? 64 : 32;
+        } else {
+            slot.type = rhs.value->getType();
+            slot.elem_char = rhs.elem_char;
+            slot.elem_bool = rhs.elem_bool;
+            slot.elem_bits = rhs.elem_bits;
+            slot.elem_unsigned = rhs.elem_unsigned;
+        }
+        if (slot.type == nullptr) {
+            error(field.loc, "type mismatch");
+            return {zero(), 0};
+        }
+        body.push_back(slot.type);
+        fields.push_back(std::move(slot));
+        values.push_back(rhs.value);
+    }
+    if (init.struct_id != static_cast<int>(structs_.size())) {
+        error(init.loc, "type mismatch");
+        return {zero(), 0};
+    }
+    StructLayout layout;
+    layout.name = ".struct." + std::to_string(init.struct_id);
+    layout.type = llvm::StructType::create(context_, body, layout.name);
+    layout.file_id = current_file_;
+    layout.fields = std::move(fields);
+    layout.ready = true;
+    const int id = init.struct_id;
+    structs_.push_back(std::move(layout));
+    tags_[current_file_][structs_.back().name] = id;
+    llvm::AllocaInst *slot = alloca_typed(structs_.back().type, "init");
+    for (unsigned index = 0; index < values.size(); ++index) {
+        const FieldLayout &field = structs_.back().fields[index];
+        const TypedValue addr = field_addr(id, slot, field.name, init.loc);
+        if (addr.value == nullptr) {
+            continue;
+        }
+        llvm::Value *stored = values[static_cast<std::size_t>(index)];
+        if (field.is_array) {
+            stored = builder_.CreateLoad(field.type, stored);
+        }
+        builder_.CreateStore(stored, addr.value);
+    }
+    return load_object(slot, 0, false, init.struct_id);
+}
+
 TypedValue CodeGen::emit_init(const Expr::Init &init) {
+    if (init.struct_id >= static_cast<int>(structs_.size()) && init.type_name.empty() && !init.fields.empty()) {
+        return emit_inferred_init(init);
+    }
     if (init.struct_id < 0 || init.struct_id >= static_cast<int>(structs_.size())) {
         error(init.loc, "type mismatch");
         return {zero(), 0};

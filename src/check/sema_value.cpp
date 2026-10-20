@@ -1584,6 +1584,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     return type_tuple(std::move(parts));
                 }
+                // `struct{.value = 10}` names a struct. The field types come from the values.
+                if (node.inferred && !node.fields.empty() && node.elements.empty() && node.type_name.empty()) {
+                    return check_init(const_cast<Expr::Init &>(node), type_invalid());
+                }
                 error(node.loc, "type mismatch");
                 for (const Expr::FieldInit &field : node.fields) {
                     if (field.value) {

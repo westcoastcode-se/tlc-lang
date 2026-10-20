@@ -265,6 +265,8 @@ struct Expr {
         bool zero_rest = false;
         // Filled when the destination struct is known.
         int struct_id = -1;
+        // `struct{.value = 10}`. The field types come from the values.
+        bool inferred = false;
         // `Point{}`. Empty when the braces take their type from the destination.
         // For `[_]i32{1, 2}` this is the element type.
         std::string type_name;
