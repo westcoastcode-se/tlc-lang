@@ -1,0 +1,12 @@
+type Color enum {}
+
+func classify(value Color) i32 {
+    switch (value) {
+    default:
+        return 1;
+    }
+}
+
+func main() i32 {
+    return sizeof(Color);
+}

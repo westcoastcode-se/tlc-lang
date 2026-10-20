@@ -930,8 +930,19 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("type Color enum {};\nfunc main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        const std::string errors = diagnose(
+            "type Color enum {};\n"
+            "func classify(value Color) i32 {\n"
+            "  switch (value) {\n"
+            "  default: return 1;\n"
+            "  }\n"
+            "}\n"
+            "func main() i32 {\n"
+            "  var value Color;\n"
+            "  if (value) { return 0; }\n"
+            "  return sizeof(Color);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected bool, found Color");
     }
 
     {

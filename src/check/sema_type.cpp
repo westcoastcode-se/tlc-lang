@@ -828,9 +828,6 @@ void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
             error(item->loc, "not supported yet");
             continue;
         }
-        if (item->enumerators.empty()) {
-            error(item->loc, "not supported yet");
-        }
         Type existing;
         if (package_has_enum(file_id, item->name) || find_tag(file_id, item->name) >= 0 ||
             package_trait(file_id, item->name) >= 0 || package_typedef(file_id, item->name, existing)) {
