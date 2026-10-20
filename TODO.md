@@ -109,7 +109,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - `extern` or `extern(abi="c")` on `union(Enum)`.
 - A qualified enum name in `union(Enum)`, such as `union(pkg.Kind)`.
 - A by-value field of a struct that is still incomplete, including the struct being defined. A pointer to that struct is fine.
-- An anonymous struct or union. `var s struct { value i32; } = {.value = 10};` and `var u union(Kind) { A struct { n i32; }; } = {.A = {.n = 1}};` are `expected a type`. The value can be passed where a trait parameter is expected.
+- An anonymous union. `var u union(Kind) { A struct { n i32; }; } = {.A = {.n = 1}};` is `expected a type`. The value can be passed where a trait parameter is expected.
 - An anonymous struct inferred from a value. `var s = {.value = 10};` is `type mismatch`. The brace list defines a struct whose field `value` is `i32`. The same value can be passed where a trait parameter is expected.
 
 ## Methods and traits

@@ -1349,7 +1349,12 @@ std::string Checker::type_desc(const Type &type) const {
     }
     case TypeKind::Struct:
         if (type.struct_id >= 0 && type.struct_id < static_cast<int>(structs_.size())) {
-            return structs_[static_cast<std::size_t>(type.struct_id)].name;
+            const std::string &name = structs_[static_cast<std::size_t>(type.struct_id)].name;
+            // `var s struct { ... }` has no name the program can write.
+            if (name.rfind(".struct.", 0) == 0) {
+                return "struct";
+            }
+            return name;
         }
         return "struct";
     case TypeKind::Enum:

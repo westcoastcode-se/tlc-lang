@@ -72,6 +72,26 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             ++pos_;
             continue;
         }
+        // `var s struct { value i32; }` is a struct. `struct Point` is not a type spelling.
+        if (type_only && token.kind == TokenKind::KwStruct && peek(1).kind == TokenKind::LBrace) {
+            const SourceLoc loc = token.loc;
+            ++pos_;
+            ++pos_;
+            const std::string name = ".struct." + std::to_string(++anonymous_struct_count_);
+            StructMembers members = parse_struct_members(name);
+            expect(TokenKind::RBrace, "expected '}'");
+            StructDecl item;
+            item.loc = loc;
+            item.name = name;
+            item.fields = std::move(members.fields);
+            item.anonymous = true;
+            anonymous_structs_.insert(anonymous_structs_.end(), std::make_move_iterator(members.anonymous.begin()),
+                                      std::make_move_iterator(members.anonymous.end()));
+            anonymous_structs_.push_back(std::move(item));
+            specs.saw_type = true;
+            specs.type_name = name;
+            break;
+        }
         // `struct`, `union`, and `trait` are only written in the type definition. A variable names the type.
         if (token.kind == TokenKind::KwStruct || token.kind == TokenKind::KwEnum || token.kind == TokenKind::KwUnion ||
             token.kind == TokenKind::KwTrait) {

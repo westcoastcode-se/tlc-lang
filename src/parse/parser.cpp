@@ -304,6 +304,11 @@ TranslationUnit Parser::parse() {
         error_here("expected a declaration");
         ++pos_;
     }
+    for (StructDecl &item : anonymous_structs_) {
+        TopDecl top;
+        top.data = std::move(item);
+        unit.decls.push_back(std::move(top));
+    }
     return unit;
 }
 

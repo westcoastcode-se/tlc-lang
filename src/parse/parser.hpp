@@ -69,6 +69,9 @@ class Parser {
     DiagnosticEngine &diags_;
     std::size_t pos_ = 0;
     bool saw_decl_ = false;
+    // `var s struct { ... }` is a struct with no written name. The name is not a type spelling.
+    std::vector<StructDecl> anonymous_structs_;
+    int anonymous_struct_count_ = 0;
 
     bool eof() const;
     const Token &peek(std::size_t ahead = 0) const;

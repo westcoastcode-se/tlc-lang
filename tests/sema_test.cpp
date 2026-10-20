@@ -3075,6 +3075,26 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var a struct { n i32; };\n"
+            "  var b struct { n i32; };\n"
+            "  a = b;\n"
+            "  return a.n;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var s = {.value = 10};\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Point struct { x i32; };\n"
             "func main() i32 { return sizeof(struct Point); }\n");
         EXPECT_HAS(check, errors, "expected a type");
