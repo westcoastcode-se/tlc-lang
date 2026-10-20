@@ -3082,6 +3082,35 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Kind enum { A, B };\n"
+            "type Shape union(Kind) {\n"
+            "  A struct { n i32; };\n"
+            "  B struct { n i32; };\n"
+            "};\n"
+            "func main() i32 {\n"
+            "  var s Shape;\n"
+            "  s.A.n = 1;\n"
+            "  return sizeof(Shape) + alignof(Shape) + s.A.n;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Kind enum { A, B };\n"
+            "type Shape union(Kind) {\n"
+            "  A struct { n i32; };\n"
+            "  B struct { n i32; };\n"
+            "};\n"
+            "func main() i32 {\n"
+            "  var bad union Shape;\n"
+            "  return sizeof(union Shape) + alignof(union Shape);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "expected a type");
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Point struct { x i32; };\n"
             "type Point i32;\n"
             "func main() i32 { return 0; }\n");
@@ -5908,6 +5937,14 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Point struct { x i32; };\n"
             "func main() i32 { return typeof(struct Point); }\n");
+        EXPECT_HAS(check, errors, "expected a type");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Kind enum { A, B };\n"
+            "type Shape union(Kind) { A struct { n i32; }; B struct { n i32; }; };\n"
+            "func main() i32 { return typeof(union Shape); }\n");
         EXPECT_HAS(check, errors, "expected a type");
     }
 

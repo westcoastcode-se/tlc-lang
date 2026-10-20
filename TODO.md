@@ -109,6 +109,8 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - `extern` or `extern(abi="c")` on `union(Enum)`.
 - A qualified enum name in `union(Enum)`, such as `union(pkg.Kind)`.
 - A by-value field of a struct that is still incomplete, including the struct being defined. A pointer to that struct is fine.
+- An anonymous struct or union. `var s struct { value i32; } = {.value = 10};` and `var u union(Kind) { A struct { n i32; }; } = {.A = {.n = 1}};` are `expected a type`. The value can be passed where a trait parameter is expected.
+- An anonymous struct inferred from a value. `var s = {.value = 10};` is `type mismatch`. The brace list defines a struct whose field `value` is `i32`. The same value can be passed where a trait parameter is expected.
 
 ## Methods and traits
 
@@ -127,7 +129,7 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Spellings
 
-- `sizeof(union ...)` and `sizeof(trait ...)` do not parse. Pages: `docs/grammar.md`, `docs/types/sizeof.md`.
+- `sizeof(trait ...)` does not parse. `sizeof(union Shape)` is `expected a type`. Pages: `docs/grammar.md`, `docs/types/sizeof.md`.
 - `[` is type parameters, type arguments, an array length, an index, a range, a `new` count, and `_`. `name[i32](` is a generic call, already listed under Parsing. A call of an indexed value is `(ops[i])()`. `Vec[i32]{}` is a struct value. `Buf[4, i32].count` is the constant because of the comma. `arr[i].field` is an index. Pages: `docs/grammar.md`.
 
 ### Documentation
