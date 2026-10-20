@@ -6202,7 +6202,7 @@ int run_sema_tests() {
             "  return kept[0];\n"
             "}\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not an lvalue");
+        EXPECT(check, errors.empty());
     }
 
     {

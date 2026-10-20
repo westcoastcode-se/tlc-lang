@@ -3627,9 +3627,25 @@ TypedValue CodeGen::emit_generic_call(const Binding &binding, const Expr::Call &
 TypedValue CodeGen::emit_addr(const Expr &expr) {
     if (const auto *name = std::get_if<Expr::Name>(&expr.data)) {
         const Binding *binding = lookup(name->text);
-        if (binding == nullptr || binding->is_function || binding->is_array) {
-            error(name->loc, binding != nullptr && binding->is_array ? "not supported yet" : "not an lvalue");
+        if (binding == nullptr || binding->is_function) {
+            error(name->loc, "not an lvalue");
             return {};
+        }
+        // `copy = row` stores into this array. The address is the binding, not a decayed pointer.
+        if (binding->is_array) {
+            TypedValue slot{binding->value, binding->depth, binding->elem_char, binding->struct_id, true,
+                            binding->elem_void, binding->elem_bool, binding->elem_bits, binding->elem_unsigned,
+                            binding->trait_id, binding->elem_float, binding->fn_ty, binding->fn_ret_depth,
+                            binding->fn_ret_float, binding->fn_ret_bits, binding->fn_ret_unsigned, binding->fn_ret_char,
+                            binding->fn_ret_bool, binding->fn_ret_struct, binding->fn_results, binding->enum_id};
+            slot.array_len = binding->array_len;
+            slot.inner_array_len = binding->inner_array_len;
+            slot.elem_slice = binding->elem_slice;
+            slot.shells = binding->shells;
+            if (llvm::Type *object = object_type(binding->value); object != nullptr && object->isArrayTy()) {
+                slot.array_type = object;
+            }
+            return slot;
         }
         TypedValue slot{binding->value, binding->depth, binding->elem_char, binding->struct_id, false, binding->elem_void,
                         binding->elem_bool, binding->elem_bits, binding->elem_unsigned, binding->trait_id, binding->elem_float,

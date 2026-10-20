@@ -1,6 +1,112 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Pair [2]i32;
+
+var file_row [2]i32 = {3, 1};
+var seen i32;
+
+func give() [2]i32 {
+    var row [2]i32 = {8, 0};
+    return row;
+}
+
+func bump() i32 {
+    seen = seen + 1;
+    return seen;
+}
+
+func from_param(row [2]i32) i32 {
+    var kept [2]i32;
+    kept = row;
+    row[0] = 9;
+    return kept[0];
+}
+
 func main() i32 {
     var row = [_]i32{10, 20};
     var copy [2]i32 = row;
+    row[0] = 1;
     copy = row;
-    return copy[1];
+    row[0] = 9;
+    var sum = copy[0] + copy[1];
+
+    var fresh [2]i32;
+    fresh = {4, 6};
+    sum = sum + fresh[0] + fresh[1];
+
+    var grid = [_][2]i32{{1, 2}, {3, 4}};
+    var other [2][2]i32;
+    other = grid;
+    grid[0][0] = 8;
+    sum = sum + other[0][0] + other[1][1];
+
+    var line [2]i32;
+    line = grid[1];
+    grid[1][0] = 7;
+    sum = sum + line[0] + line[1];
+
+    var listed [2][2]i32;
+    listed = {{1, 0}, {0, 5}};
+    sum = sum + listed[0][0] + listed[1][1];
+
+    var a Point;
+    a.x = 5;
+    a.y = 0;
+    var b Point;
+    b.x = 2;
+    b.y = 0;
+    var pts [2]Point;
+    pts = {a, b};
+    a.x = 0;
+    sum = sum + pts[0].x + pts[1].x;
+
+    var src [2]i32 = {6, 0};
+    sum = sum + from_param(src);
+
+    var called [2]i32;
+    called = give();
+    sum = sum + called[0];
+
+    var g [2]i32;
+    g = file_row;
+    file_row[0] = 0;
+    sum = sum + g[0] + g[1];
+
+    file_row = {4, 6};
+    sum = sum + file_row[0] + file_row[1];
+
+    var alias_a Pair = {2, 0};
+    var alias_b Pair;
+    alias_b = alias_a;
+    alias_a[0] = 0;
+    sum = sum + alias_b[0];
+
+    var zeros [3]i32 = {9, 9, 9};
+    zeros = {4, 0...};
+    sum = sum + zeros[0] + zeros[1] + zeros[2];
+
+    var named [2]i32;
+    named = [_]i32{3, 1};
+    sum = sum + named[0] + named[1];
+
+    var order [2]i32;
+    order = {bump(), bump()};
+    sum = sum + order[0] * 10 + order[1];
+
+    var tail [2]i32 = {7, 3};
+    tail = {4};
+    sum = sum + tail[0];
+
+    var scale [2]f32;
+    scale = {1.5f, 0.5f};
+    sum = sum + (scale[0] == 1.5f);
+
+    var flags [2]bool;
+    flags = {true, false};
+    sum = sum + flags[0];
+
+    return sum;
 }

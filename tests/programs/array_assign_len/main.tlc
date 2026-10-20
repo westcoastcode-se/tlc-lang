@@ -1,0 +1,6 @@
+func main() i32 {
+    var row = [_]i32{10, 20};
+    var copy [3]i32;
+    copy = row;
+    return 0;
+}

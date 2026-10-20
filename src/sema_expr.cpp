@@ -48,6 +48,18 @@ bool slice_of_const_u8(const Type &type) {
     return is_slice(type) && type.element != nullptr && type.element->is_const && raw_pointee(*type.element);
 }
 
+// `[2]const i32` and `[2][2]const i32` store into a constant element. The array name is not a store.
+bool const_array_elements(const Type &type) {
+    const Type *cursor = &type;
+    while (cursor->kind == TypeKind::Array && !is_slice(*cursor) && cursor->element != nullptr) {
+        if (cursor->is_const) {
+            return true;
+        }
+        cursor = cursor->element.get();
+    }
+    return cursor->is_const;
+}
+
 bool primitive_pointee(const Type &type) {
     return type.kind == TypeKind::Bool || type.kind == TypeKind::Int || type.kind == TypeKind::Char ||
            type.kind == TypeKind::Float;
@@ -2387,8 +2399,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     check_expr(*node.rhs, true);
                     return type_invalid();
                 }
-                if (!name || !symbol || symbol->is_function || symbol->is_package || symbol->is_constant ||
-                    (symbol->type.kind == TypeKind::Array && !is_slice(symbol->type))) {
+                // `copy = row` and `row = {4, 6}` store into the array. A const element does not.
+                if (name && symbol != nullptr && symbol->type.kind == TypeKind::Array && !is_slice(symbol->type) &&
+                    const_array_elements(symbol->type)) {
+                    error(node.loc, "type mismatch");
+                    check_expr(*node.rhs, true);
+                    return type_invalid();
+                }
+                if (!name || !symbol || symbol->is_function || symbol->is_package || symbol->is_constant) {
                     if (name && !symbol) {
                         error(expr_loc(*node.lhs), "undeclared identifier");
                     } else {
