@@ -15,12 +15,6 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 - `var Entity::next` inside a function. The variable is file scope.
 - `Entity::next := 1`. The form is `var Entity::next i32 = 1` or `var Entity::next = 1`.
 
-## Heap allocation
-
-`new T` and `delete p` allocate one object with `builtin.allocator`. `new(&arena) T` and `delete(&arena) p` take a pointer whose pointee has `Allocator`'s methods. The pointee type is taken from the pointer. `new [n]T` reserves `n` elements and yields `*T`. `new Box[i32]` allocates one specialization. `new` yields `*T`. `delete` frees that pointer and has no result. `malloc` returns `?*u8`. When that is `null`, including from a custom allocator, `new` calls `builtin.panic("out of memory")`. `new i32` and `new [n]i32` do not store the reserved memory. `new Point` and `new [n]Point` store each field. A field that is not named takes the value written on the field, or zero. A non-nullable pointer field has to be named unless that field has a value. `delete` does not zero the pointer.
-
-There is no `realloc` expression. `Allocator.realloc` returns `?*u8`. The caller handles `null`.
-
 ## Names
 
 - A name may be declared again in the same block, as Rust does with `let`. `var n = 1` followed by `var n = n + 1` in that block is `redefinition`.
@@ -41,12 +35,11 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 ## Generics and compile-time
 
 - A generic used as a value: `var f = id`.
-- `extern` on a generic, a generic with no body, and a generic that is also `...`. `[...U]` is a separate parameter and is accepted when it is the last type parameter, as in `[T type, ...U]`.
+- `extern` on a generic, and a generic that is also `...`. A prototype followed by a body is accepted. A call of a generic that has no body is `not supported yet`. `[...U]` is a separate parameter and is accepted when it is the last type parameter, as in `[T type, ...U]`.
 - A pack that is not the last type parameter, `[...U, T type]`.
 - A pack on a struct or a union.
 - An empty pack.
 - A pack of several types used as `*U`, `[N]U`, a type argument, or a field.
-- A tuple element that is itself a tuple.
 - `typeof` inside a parenthesized result list. A bare result `typeof(expression)` is accepted.
 - A tuple index that is not a constant, and assignment to a tuple element.
 - `count(U)` and `const for`.
@@ -138,43 +131,17 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Aggregates
 
-- `new [n]i32` yields `*i32` and drops the length. `new [_]i32{10, 20}` yields `*[2]i32`. Neither yields `[]i32`. Pages: `docs/statements/new.md`, `docs/types/array.md`.
-- `Point{1, 2}` is `type mismatch`. `{10, 20}` fills an array. A struct initializer names fields. An array initializer is positional. Pages: `docs/types/struct.md`, `docs/expressions/tuple.md`.
 - `new [n]Point{.x = 1}` is parsed as a field list and is `type mismatch`. The element list is `new [n]Point{{.x = 1}...}`. Pages: `docs/statements/new.md`, `docs/grammar.md`.
 
 ### Conditions
 
-- A comparison, prefix `!`, `&&`, and `||` yield `i32`. `typeof(!flag)` and `typeof(1 < 2)` are `i32` when `flag` is `bool`. Assigning an integer to `bool` stores 0 or 1. Pages: `docs/types/integer.md`, `docs/types/float.md`, `docs/expressions/condition.md`.
 - `if` accepts an integer after promotion, including `i64` and `u32`, and a `bool`. A pointer is `compare with null`. An `f32` is `type mismatch`. `switch` accepts a value that promotes to `i32`, so `bool`, `i8`, and `i16` match. `u32` and `i64` do not. `case 1u32` is `type mismatch`. Pages: `docs/expressions/condition.md`, `docs/statements/switch.md`.
 - A tlc enum is neither a condition nor a `switch` value. An `extern(abi="c")` enum converts to an integer and can be either. Pages: `docs/types/enum.md`, `docs/expressions/condition.md`, `docs/statements/switch.md`.
 - Prefix `!` is logical not and yields `i32`. Postfix `!` strips `?` from a pointer and inserts no null check. `if (p != null)` narrows the name for the rest of the block. `p!` applies to that use. `opt![2]` parses as `(opt!)[2]` and typechecks. Pages: `docs/expressions/narrowing.md`, `docs/types/pointer.md`, `docs/grammar.md`. The sentence in `docs/types/pointer.md` that parses `opt![i]` as `(opt[i])!` is under [Documentation](#documentation).
 
-### Aliases and generics
-
-- Integer ranks assign to each other and to `bool`. A narrower store keeps the low bits. `type Integer i32` does not take part in that. `var n Integer = 10` and `n + 1` are `type mismatch`. The cast is `Integer(n)`. Pages: `docs/types/integer.md`, `docs/types/alias.md`.
-- A primitive alias and a slice alias can have methods. A pointer alias, a sized-array alias, and `type Spot Point` cannot. Pages: `docs/types/alias.md`, `docs/methods/method.md`.
-- `[]i32` converts to `type Row []i32`. `Row` does not convert back to `[]i32`. `string_view` still converts to `*const u8`. Pages: `docs/types/slice.md`, `docs/std/string.md`.
-- A function and a struct write the kind: `[T type, N i32, U Shape]`. A method, `var Type::name`, and `const Type::name` write the names: `func Vec[T]::get`. `func Vec[T type]::get` is `type mismatch`. A call infers `T`. A call does not infer `N`: `repeat[4](7)`. Pages: `docs/functions/generic.md`, `docs/types/struct.md`, `docs/grammar.md`. Type parameters on anything other than a struct, and `export var Box[T]::extra` beside an accepted `export const Box[T]::limit`, stay in the lists above.
-
-### Calls and methods
-
-- `p.set(40)` takes the address when `set` has `self *this`. `apply(r)` where the parameter is `*Shape` does not. The call is `apply(&r)`. Pages: `docs/methods/method.md`, `docs/methods/trait.md`.
-- `func Point::draw(self this)` beside `func Point::draw(self *this)` is `redefinition`. A `*Shape` parameter accepts a value receiver and a pointer receiver on different methods. A `Shape` parameter requires a value receiver. Pages: `docs/functions/function.md`, `docs/methods/trait.md`.
-- A trait method is `func area() i32`. The implementation is `func Rect::area(self this) i32`. `this` is an identifier, and it is the receiver type only in that parameter. Pages: `docs/methods/trait.md`, `docs/methods/method.md`, `docs/keyword.md`.
-
-### Strings
-
-- A quoted string and a raw string are `[]const u8`. The length excludes the stored terminating null. `*const u8` is written when a C library is the destination. `builtin.trace()` and `consts.family` are `*const u8`. `builtin.panic` takes `*const u8`. Pages: `docs/types/string.md`, `docs/builtin/trace.md`, `docs/builtin/panic.md`, `docs/builtin/family.md`. The literal table that still says `*const u8` is under [Documentation](#documentation).
-
 ### Spellings
 
-- `if`, `while`, and `for` take a block. `do` and `switch` take a statement. `else` is a block or another `if`. Pages: `docs/statements/block.md`, `docs/grammar.md`.
-- `return a, b` is several expressions. `(a, b)` is a tuple. Both unpack as that result. Pages: `docs/expressions/tuple.md`, `docs/functions/result.md`.
-- `var` defines every name. `=` assigns every name. `:=` defines a name that is new in the block and assigns a name that is already there. At least one name is new. Pages: `docs/statements/binding.md`, `docs/grammar.md`.
-- `as` and `from` are syntax in `import` and identifiers everywhere else. Pages: `docs/keyword.md`, `docs/packages/import.md`.
-- The parentheses after a type keyword are `struct(align=16)`, `enum(i8)`, and `union(ShapeType)`. Pages: `docs/types/struct.md`, `docs/types/enum.md`, `docs/types/union.md`.
-- `type Empty struct;` is an empty struct and `sizeof` is 0. `extern(abi="c") type Empty struct;` occupies one byte. An enum and a trait still need `{`. Pages: `docs/types/struct.md`, `docs/grammar.md`.
-- `sizeof(enum Color)` is accepted. `sizeof(struct Point)` is `expected a type`. `sizeof(Point)` is the spelling. `sizeof(union ...)` and `sizeof(trait ...)` do not parse. Pages: `docs/grammar.md`, `docs/types/sizeof.md`.
+- `sizeof(union ...)` and `sizeof(trait ...)` do not parse. Pages: `docs/grammar.md`, `docs/types/sizeof.md`.
 - `[` is type parameters, type arguments, an array length, an index, a range, a `new` count, and `_`. `name[i32](` is a generic call, already listed under Parsing. A call of an indexed value is `(ops[i])()`. `Vec[i32]{}` is a struct value. `Buf[4, i32].count` is the constant because of the comma. `arr[i].field` is an index. Pages: `docs/grammar.md`.
 
 ### Documentation
