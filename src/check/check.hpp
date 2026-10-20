@@ -241,6 +241,10 @@ class Checker {
     struct SwitchFrame {
         std::unordered_set<int> values;
         bool has_default = false;
+        // The subject when it is an enum. Invalid means the subject is `i32`.
+        Type subject;
+        // `extern(abi="c")` converts where an integer is expected. A case may be that enum or an `i32`.
+        bool c_enum = false;
     };
 
     uint32_t file_id_ = 0;
@@ -448,6 +452,9 @@ class Checker {
         bool wide = false;
     };
     std::optional<int> fold_int(const Expr &expr);
+    // An `i32` case, or an enumerator such as `Color.Blue`. Other expressions are not case constants.
+    std::optional<int> fold_switch_case(const Expr &expr);
+    bool switch_case_matches(const SwitchFrame &frame, const Type &got) const;
     std::optional<FoldedNumber> fold_number(const Expr &expr);
     std::optional<FoldedNumber> fold_number(const Expr &expr, std::unordered_set<std::string> &seen);
     // `typeof(...)` after checking. Empty when this expression is not that constant.

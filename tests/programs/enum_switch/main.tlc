@@ -1,0 +1,119 @@
+type Color enum {
+    Red,
+    Green = 40,
+    Blue,
+};
+
+type Tiny enum(i8) {
+    A,
+    B = 20,
+};
+
+type Wide enum(i64) {
+    One = 1,
+    Two,
+};
+
+type Bit enum(bool) {
+    No,
+    Yes,
+};
+
+func color_code(value Color) i32 {
+    switch (value) {
+    case Color.Red:
+        return 1;
+    case Color.Green:
+        return 2;
+    case Color.Blue:
+        return 4;
+    default:
+        return 0;
+    }
+}
+
+func fall(value Color) i32 {
+    var x i32 = 0;
+    switch (value) {
+    case Color.Red:
+        x = 1;
+    case Color.Green:
+        x = x + 2;
+        break;
+    default:
+        x = 7;
+        break;
+    }
+    return x;
+}
+
+func tiny_code(value Tiny) i32 {
+    switch (value) {
+    case Tiny.B:
+        return 8;
+    default:
+        return 0;
+    }
+}
+
+func tiny_direct() i32 {
+    switch (Tiny.B) {
+    case Tiny.B:
+        return 16;
+    default:
+        return 0;
+    }
+}
+
+func wide_code(value Wide) i32 {
+    switch (value) {
+    case Wide.Two:
+        return 32;
+    default:
+        return 0;
+    }
+}
+
+func bit_code(value Bit) i32 {
+    switch (value) {
+    case Bit.Yes:
+        return 64;
+    default:
+        return 0;
+    }
+}
+
+func local_tiny() i32 {
+    var value Tiny = Tiny.B;
+    switch (value) {
+    case Tiny.B:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+func local_bit() i32 {
+    var value Bit = Bit.Yes;
+    switch (value) {
+    case Bit.Yes:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
+func local_wide() i32 {
+    var value Wide = Wide.Two;
+    switch (value) {
+    case Wide.Two:
+        return 4;
+    default:
+        return 0;
+    }
+}
+
+func main() i32 {
+    return color_code(Color.Blue) + fall(Color.Red) + tiny_code(Tiny.B) + tiny_direct() + wide_code(Wide.Two) +
+        bit_code(Bit.Yes) + local_tiny() + local_bit() + local_wide();
+}

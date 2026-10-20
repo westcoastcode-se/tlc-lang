@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Narrowing](narrowing.md) · [Next: Type values](type.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A condition in `if`, `while`, `do`, and `for` is a `bool`. An integer is reported as `type mismatch: expected bool, found i32`. The comparison is written out, as in `if (n != 0)`. A pointer used as a condition is reported as `compare with null`. An `f32` is reported as `type mismatch: expected bool, found f32`. `&&`, `||`, and prefix `!` require a `bool` and yield a `bool`. `assert` checks a constant `bool`.
+A condition in `if`, `while`, `do`, and `for` is a `bool`. An integer is reported as `type mismatch: expected bool, found i32`. The comparison is written out, as in `if (n != 0)`. A pointer used as a condition is reported as `compare with null`. An `f32` is reported as `type mismatch: expected bool, found f32`. An enum is not a condition, including `extern(abi="c")`. `if (value)` when `value` is `Color` is `type mismatch: expected bool, found Color`. The comparison is `if (value == Color.Blue)`. `&&`, `||`, and prefix `!` require a `bool` and yield a `bool`. `assert` checks a constant `bool`.
 
 ```c
 func main() i32 {

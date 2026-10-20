@@ -1,0 +1,34 @@
+extern(abi="c") type Flag enum {
+    Off,
+    On = 1,
+    Both = 3,
+};
+
+func by_name(f Flag) i32 {
+    switch (f) {
+    case Flag.Off:
+        return 1;
+    case Flag.On:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
+func by_int(f Flag) i32 {
+    switch (f) {
+    case 3:
+        return 4;
+    default:
+        return 0;
+    }
+}
+
+func main() i32 {
+    var off Flag = Flag.Off;
+    var both Flag = Flag.Both;
+    if (off == Flag.Off && both == Flag.Both) {
+        return by_name(off) + by_name(Flag.On) + by_int(both);
+    }
+    return 0;
+}

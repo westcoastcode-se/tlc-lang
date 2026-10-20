@@ -127,7 +127,6 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Conditions
 
-- A tlc enum is neither a condition nor a `switch` value. An `extern(abi="c")` enum is not a condition. `switch` on that enum is `type mismatch: expected i32`. Pages: `docs/types/enum.md`, `docs/expressions/condition.md`, `docs/statements/switch.md`.
 - Postfix `!` strips `?` from a pointer and inserts no null check. `if (p != null)` narrows the name for the rest of the block. `p!` applies to that use. `opt![2]` parses as `(opt!)[2]` and typechecks. Pages: `docs/expressions/narrowing.md`, `docs/types/pointer.md`, `docs/grammar.md`. The sentence in `docs/types/pointer.md` that parses `opt![i]` as `(opt[i])!` is under [Documentation](#documentation).
 
 ### Spellings

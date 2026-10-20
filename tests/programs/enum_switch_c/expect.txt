@@ -1,0 +1,2 @@
+link: -lc
+exit: 7

@@ -1175,6 +1175,186 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Color enum { Red, Green = 40, Blue };\n"
+            "func main() i32 {\n"
+            "  value := Color.Blue;\n"
+            "  switch (value) {\n"
+            "  case Color.Green: return 2;\n"
+            "  case Color.Blue: return 4;\n"
+            "  default: return 0;\n"
+            "  }\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, Green = 40, Blue };\n"
+            "func main() i32 {\n"
+            "  value := Color.Blue;\n"
+            "  switch (value) {\n"
+            "  case 1: return 0;\n"
+            "  }\n"
+            "  return 1;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, Green = 40, Blue };\n"
+            "func main() i32 {\n"
+            "  value := Color.Blue;\n"
+            "  if (value) { return 1; }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected bool, found Color");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, Green = 40, Blue };\n"
+            "func take(x i32) i32 { return x; }\n"
+            "func main() i32 { return take(Color.Red); }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, Green = 40, Blue };\n"
+            "type Flag enum { Off, On };\n"
+            "func main() i32 {\n"
+            "  value := Color.Red;\n"
+            "  switch (value) {\n"
+            "  case Flag.On: return 0;\n"
+            "  }\n"
+            "  return 1;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, Green = 40, Blue };\n"
+            "func main() i32 {\n"
+            "  value := Color.Red;\n"
+            "  switch (value) {\n"
+            "  case value: return 0;\n"
+            "  }\n"
+            "  return 1;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, Green = 40, Blue };\n"
+            "func main() i32 {\n"
+            "  value := Color.Red;\n"
+            "  switch (value) {\n"
+            "  case Color.Red: return 1;\n"
+            "  case Color.Red: return 2;\n"
+            "  }\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Twin enum { A = 1, B = 1 };\n"
+            "func main() i32 {\n"
+            "  value := Twin.A;\n"
+            "  switch (value) {\n"
+            "  case Twin.A: return 1;\n"
+            "  case Twin.B: return 2;\n"
+            "  }\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Flag enum { Off, On = 1, Both = 3 };\n"
+            "func main() i32 {\n"
+            "  f := Flag.Both;\n"
+            "  switch (f) {\n"
+            "  case Flag.Off: return 1;\n"
+            "  case 1: return 2;\n"
+            "  case 3: return 4;\n"
+            "  default: return 0;\n"
+            "  }\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Flag enum { Off, On = 1 };\n"
+            "func main() i32 {\n"
+            "  f := Flag.On;\n"
+            "  if (f) { return 1; }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected bool, found Flag");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Flag enum { Off, On = 1 };\n"
+            "type Color enum { Red };\n"
+            "func main() i32 {\n"
+            "  f := Flag.On;\n"
+            "  switch (f) {\n"
+            "  case Color.Red: return 0;\n"
+            "  }\n"
+            "  return 1;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Flag enum { On = 1 };\n"
+            "func main() i32 {\n"
+            "  f := Flag.On;\n"
+            "  switch (f) {\n"
+            "  case Flag.On: return 1;\n"
+            "  case 1: return 2;\n"
+            "  }\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var n bool = true;\n"
+            "  switch (n) {\n"
+            "  case 1: return 0;\n"
+            "  }\n"
+            "  return 1;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected i32, found bool");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import { Color } from \"geom\";\n"
+                       "func main() i32 {\n"
+                       "  value := Color.Blue;\n"
+                       "  switch (value) {\n"
+                       "  case Color.Blue: return 4;\n"
+                       "  default: return 0;\n"
+                       "  }\n"
+                       "}\n"},
+            {"geom.tlc", "package geom;\n"
+                       "export type Color enum { Red, Green = 40, Blue };\n"},
+        });
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var n i32;\n"
             "  var c u8;\n"

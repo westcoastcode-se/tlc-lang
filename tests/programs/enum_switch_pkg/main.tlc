@@ -1,0 +1,11 @@
+import { Color } from "geom";
+
+func main() i32 {
+    value := Color.Blue;
+    switch (value) {
+    case Color.Blue:
+        return 4;
+    default:
+        return 0;
+    }
+}

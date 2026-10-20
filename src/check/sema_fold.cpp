@@ -223,6 +223,34 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
         expr.data);
 }
 
+bool Checker::switch_case_matches(const SwitchFrame &frame, const Type &got) const {
+    // A TLC enum matches only that enum. It does not become an `i32`.
+    if (frame.subject.kind == TypeKind::Enum && !frame.c_enum) {
+        return same_type(got, frame.subject);
+    }
+    if (same_type(got, type_int())) {
+        return true;
+    }
+    // `case Flag.On` and `case 1` are the same integer on an `extern(abi="c")` enum.
+    return frame.c_enum && frame.subject.kind == TypeKind::Enum && same_type(got, frame.subject);
+}
+
+std::optional<int> Checker::fold_switch_case(const Expr &expr) {
+    if (const std::optional<int> folded = fold_int(expr)) {
+        return folded;
+    }
+    const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+    if (selector == nullptr || selector->base == nullptr) {
+        return std::nullopt;
+    }
+    const int enum_id = enum_designator(*selector->base);
+    const EnumInfo::Member *member = enum_id < 0 ? nullptr : find_enum_member(enum_id, selector->field);
+    if (member == nullptr || member->value != static_cast<int64_t>(static_cast<int>(member->value))) {
+        return std::nullopt;
+    }
+    return static_cast<int>(member->value);
+}
+
 std::optional<int> Checker::fold_int(const Expr &expr) {
     auto wrap = [](int64_t value) { return static_cast<int>(static_cast<uint32_t>(value)); };
     return std::visit(

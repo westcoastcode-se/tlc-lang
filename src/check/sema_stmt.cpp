@@ -457,15 +457,23 @@ void Checker::check_stmt(const Stmt &stmt) {
                 const bool can_fail = reach && node.cond && !cond_false_.unreachable;
                 assign_ = init_loop_exit(done.breaks, node.cond ? cond_false_ : at_cond, node.cond ? can_fail : reach);
             } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                SwitchFrame sw;
                 if (node.cond) {
-                    expect(check_expr(*node.cond, true), type_int(), expr_loc(*node.cond));
+                    const Type cond = check_expr(*node.cond, true);
+                    if (cond.kind == TypeKind::Enum) {
+                        // A TLC enum stays that enum. A C enum is accepted here and matches `i32` cases below.
+                        sw.subject = cond;
+                        sw.c_enum = is_c_enum(cond);
+                    } else if (cond.kind != TypeKind::Invalid) {
+                        expect(cond, type_int(), expr_loc(*node.cond));
+                    }
                 }
                 const bool has_default = init_has_default(node.body.get());
                 FlowFrame frame;
                 frame.kind = FlowFrame::Kind::Switch;
                 frame.entry = assign_;
                 flow_frames_.push_back(std::move(frame));
-                switches_.push_back({});
+                switches_.push_back(std::move(sw));
                 // Statements before the first case are not reached. A case loads the entry state.
                 assign_.unreachable = true;
                 if (node.body) {
@@ -511,11 +519,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                 } else if (node.value) {
                     const Type got = check_expr(*node.value, true);
-                    if (got.kind != TypeKind::Invalid && !same_type(got, type_int())) {
+                    if (got.kind != TypeKind::Invalid && !switch_case_matches(switches_.back(), got)) {
                         error(expr_loc(*node.value), "type mismatch");
-                    }
-                    if (same_type(got, type_int())) {
-                        const std::optional<int> folded = fold_int(*node.value);
+                    } else if (switch_case_matches(switches_.back(), got)) {
+                        const std::optional<int> folded = fold_switch_case(*node.value);
                         if (!folded) {
                             error(node.loc, "not supported yet");
                         } else if (!switches_.back().values.insert(*folded).second) {

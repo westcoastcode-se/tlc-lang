@@ -1,0 +1,7 @@
+package geom;
+
+export type Color enum {
+    Red,
+    Green = 40,
+    Blue,
+};

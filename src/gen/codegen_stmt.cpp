@@ -14,7 +14,23 @@ void CodeGen::collect_cases(const Stmt &stmt, std::vector<CaseArm> &arms) const 
                 arm.node = &node;
                 arm.is_default = node.is_default;
                 if (!node.is_default && node.value) {
-                    if (const std::optional<int32_t> folded = fold(*node.value)) {
+                    std::optional<int32_t> folded = fold(*node.value);
+                    if (!folded) {
+                        // `Color.Red` is not an integer fold. The case still needs that enumerator's value.
+                        if (const auto *selector = std::get_if<Expr::Selector>(&node.value->data);
+                            selector != nullptr && selector->base != nullptr) {
+                            const int enum_id = enum_type_designator(*selector->base);
+                            if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size())) {
+                                const auto member =
+                                    enums_[static_cast<std::size_t>(enum_id)].values.find(selector->field);
+                                if (member != enums_[static_cast<std::size_t>(enum_id)].values.end() &&
+                                    member->second == static_cast<int64_t>(static_cast<int32_t>(member->second))) {
+                                    folded = static_cast<int32_t>(member->second);
+                                }
+                            }
+                        }
+                    }
+                    if (folded) {
                         arm.value = *folded;
                         arm.has_value = true;
                     }
@@ -106,10 +122,20 @@ void CodeGen::emit_switch(const Stmt::Switch &node) {
             ++cases;
         }
     }
-    llvm::SwitchInst *inst = builder_.CreateSwitch(cond.value == nullptr ? zero() : cond.value, default_block, cases);
+    // A narrow enum local is extended to `i32` when it is loaded. `switch (Tiny.B)` keeps `i8`.
+    // The case constant uses that width, so the two sides of the branch are the same integer.
+    llvm::Value *on = cond.value == nullptr ? zero() : cond.value;
+    llvm::IntegerType *switch_ty = llvm::dyn_cast<llvm::IntegerType>(on->getType());
+    if (switch_ty == nullptr) {
+        on = zero();
+        switch_ty = llvm::cast<llvm::IntegerType>(on->getType());
+    }
+    llvm::SwitchInst *inst = builder_.CreateSwitch(on, default_block, cases);
     for (const CaseArm &arm : arms) {
         if (!arm.is_default && arm.has_value && arm.block != nullptr) {
-            inst->addCase(llvm::cast<llvm::ConstantInt>(const_i32(arm.value)), arm.block);
+            inst->addCase(llvm::ConstantInt::get(switch_ty,
+                                                 static_cast<uint64_t>(static_cast<int64_t>(arm.value)), true, true),
+                          arm.block);
         }
     }
     std::unordered_map<const Stmt::Case *, llvm::BasicBlock *> blocks;
