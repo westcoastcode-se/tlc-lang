@@ -5025,8 +5025,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
                 arm_union_tag_ = true;
-                const TypedValue slot = emit_addr(*node.lhs);
+                TypedValue slot = emit_addr(*node.lhs);
                 arm_union_tag_ = false;
+                // `grid[i] = line` stores into this row. The address is the row, not a decayed pointer.
+                if (slot.row_decay && slot.array_type != nullptr && slot.array_type->isArrayTy()) {
+                    slot.is_array = true;
+                }
                 // `h.raw = {4, 6}` stores that list in the field. A short list stores only the
                 // named elements. `0...` zeros the field first, the same way a local array does.
                 if (slot.is_array && node.rhs != nullptr) {

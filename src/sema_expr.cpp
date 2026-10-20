@@ -2254,13 +2254,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_expr(*node.rhs, true);
                         return type_invalid();
                     }
-                    // A row is an array. `grid[i] = row` is not an lvalue. `grid[i][j] = n` stores one element.
-                    if (element.kind == TypeKind::Array && element.length >= 0 && !is_slice(element)) {
-                        error(node.loc, "not an lvalue");
-                        check_expr(*node.rhs, true);
-                        return type_invalid();
-                    }
-                    if (element.is_const) {
+                    // `grid[i] = line` and `h.raw[i] = {7, 8}` store into that row. A const element does not.
+                    // `grid[i][j] = n` still stores one element.
+                    if (element.is_const || const_array_elements(element)) {
                         error(node.loc, "type mismatch");
                         check_expr(*node.rhs, true);
                         return type_invalid();

@@ -1,6 +1,126 @@
+type Holder struct {
+    raw [2][2]i32;
+};
+
+type Pair [2]i32;
+
+var seen i32;
+var file_grid [2][2]i32 = {{1, 0}, {0, 0}};
+
+func give() [2]i32 {
+    var row [2]i32 = {8, 0};
+    return row;
+}
+
+func bump() i32 {
+    seen = seen + 1;
+    return seen;
+}
+
+func through(grid [2][2]i32, line [2]i32) i32 {
+    grid[1] = line;
+    line[0] = 9;
+    return grid[1][0];
+}
+
+func from_param(row [2]i32) i32 {
+    var grid [2][2]i32;
+    grid[0] = {0, 0};
+    grid[1] = row;
+    row[0] = 9;
+    return grid[1][0];
+}
+
 func main() i32 {
     var grid = [_][2]i32{{1, 2}, {3, 4}};
-    var line = grid[1];
+    var line = [_]i32{7, 8};
     grid[1] = line;
-    return line[0];
+    line[0] = 0;
+    var sum = grid[1][0] + grid[1][1];
+
+    grid[0] = {4, 6};
+    sum = sum + grid[0][0] + grid[0][1];
+
+    var other = [_][2]i32{{1, 0}, {0, 5}};
+    other[0] = grid[0];
+    grid[0][0] = 1;
+    sum = sum + other[0][0] + other[0][1];
+
+    var h Holder;
+    h.raw[0] = {1, 0};
+    h.raw[1] = line;
+    line[0] = 3;
+    sum = sum + h.raw[1][0] + h.raw[1][1];
+
+    var p *Holder = &h;
+    var alt = [_]i32{5, 0};
+    p.raw[0] = alt;
+    alt[0] = 1;
+    sum = sum + h.raw[0][0];
+
+    var src = [_][2]i32{{6, 0}, {0, 0}};
+    var put = [_]i32{2, 0};
+    sum = sum + through(src, put);
+    sum = sum + src[1][0];
+    sum = sum + put[0];
+
+    var called [2][2]i32;
+    called[0] = {0, 0};
+    called[1] = give();
+    sum = sum + called[1][0];
+
+    var rows [][2]i32 = grid;
+    var via = [_]i32{3, 1};
+    rows[1] = via;
+    via[0] = 0;
+    sum = sum + grid[1][0] + grid[1][1];
+
+    var q *[2][2]i32 = &grid;
+    var back = [_]i32{4, 0};
+    q[0] = back;
+    back[0] = 1;
+    (*q)[1] = {1, 0};
+    sum = sum + grid[0][0] + grid[1][0];
+
+    file_grid[1] = {4, 6};
+    sum = sum + file_grid[1][0] + file_grid[1][1];
+    sum = sum + file_grid[0][0];
+
+    var order [2][2]i32;
+    order[0] = {0, 0};
+    order[1] = {bump(), bump()};
+    sum = sum + order[1][0] * 10 + order[1][1];
+
+    var zeros [2][3]i32;
+    zeros[0] = {9, 9, 9};
+    zeros[1] = {4, 0...};
+    sum = sum + zeros[1][0] + zeros[1][1] + zeros[1][2];
+    sum = sum + zeros[0][0];
+
+    var named [2]Pair;
+    var pair Pair = {4, 6};
+    named[1] = pair;
+    pair[0] = 0;
+    sum = sum + named[1][0] + named[1][1];
+
+    var cube [2][2][2]i32;
+    var plane = [_][2]i32{{1, 0}, {0, 5}};
+    cube[1] = plane;
+    plane[0][0] = 9;
+    var edge = [_]i32{4, 6};
+    cube[0][1] = edge;
+    edge[0] = 0;
+    sum = sum + cube[1][0][0] + cube[1][1][1] + cube[0][1][0] + cube[0][1][1];
+
+    var kept = [_]i32{6, 0};
+    sum = sum + from_param(kept);
+
+    var blank [2][2]i32;
+    var view [][2]i32 = blank;
+    var one = [_]i32{2, 0};
+    view[1] = one;
+    one[0] = 0;
+    sum = sum + view[1][0];
+
+    return sum;
 }

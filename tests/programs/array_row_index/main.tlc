@@ -1,0 +1,7 @@
+func main() i32 {
+    var grid [2][2]i32;
+    var i = 1;
+    var line = [_]i32{7, 8};
+    grid[i] = line;
+    return grid[1][0];
+}

@@ -1,8 +1,16 @@
-type Holder struct { raw [2][3]i32; };
+type Holder struct {
+    raw [2][3]i32;
+};
 
 func main() i32 {
     var h Holder;
     var line = [_]i32{4, 5, 6};
     h.raw[1] = line;
-    return 0;
+    line[0] = 0;
+    h.raw[0] = {1, 0, 0};
+    var p *Holder = &h;
+    var alt = [_]i32{7, 0, 0};
+    p.raw[0] = alt;
+    alt[0] = 1;
+    return h.raw[1][0] + h.raw[1][2] + h.raw[0][0];
 }
