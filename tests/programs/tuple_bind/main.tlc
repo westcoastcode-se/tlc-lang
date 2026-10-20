@@ -86,7 +86,7 @@ func main() i32 {
         return 11;
     }
     var flag, count = (true, 1);
-    if (flag == 0 || count != 1 || sizeof(flag) != 1) {
+    if (flag == false || count != 1 || sizeof(flag) != 1) {
         return 12;
     }
     return value[0] + value[1] + pair[0] + pair[1];

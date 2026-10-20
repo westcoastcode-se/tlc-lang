@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: for](for.md) · [Next: defer](defer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`switch` falls through until `break`. A `case` label is a constant `i32`. `case 1u32` is reported as `type mismatch`. Each value appears once, and `default` appears once.
+`switch` falls through until `break`. The value promotes to `i32`, so `i8` and `i16` match. `bool`, `u32`, `i64`, and `f32` are reported as `type mismatch: expected i32`. A `case` label is a constant `i32`. `case 1u32` is reported as `type mismatch`. Each value appears once, and `default` appears once.
 
 ```c
 func main() i32 {

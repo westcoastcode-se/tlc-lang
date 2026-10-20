@@ -1,14 +1,14 @@
 var calls i32 = 0;
 
-func bump() i32 {
+func bump() bool {
     calls = calls + 1;
-    return 1;
+    return true;
 }
 
 func main() i32 {
-    if (0 && bump()) {}
-    if (1 || bump()) {}
-    if (1 && bump()) {}
-    if (0 || bump()) {}
+    if (false && bump()) {}
+    if (true || bump()) {}
+    if (true && bump()) {}
+    if (false || bump()) {}
     return calls;
 }

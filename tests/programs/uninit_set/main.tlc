@@ -13,12 +13,12 @@ func main() i32 {
     var p = &raw;
     use(*i32(buf));
     value = 40;
-    if (1) {
+    if (true) {
         value = value + 1;
     } else {
         value = 0;
     }
-    if (0) {
+    if (false) {
         other = 5;
     } else {
         other = 1;
@@ -26,11 +26,11 @@ func main() i32 {
     s = 0;
     do {
         s = other;
-    } while (0);
+    } while (false);
     buf[0] = 0;
     buf[1] = 0;
-    if (0 && raw) {
+    if (false && raw != 0) {
         return 0;
     }
-    return value + s + buf[0] + buf[1] + n - n + len - len + (p == null);
+    return value + s + buf[0] + buf[1] + n - n + len - len + i32(p == null);
 }

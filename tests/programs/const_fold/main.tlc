@@ -17,7 +17,7 @@ func main() i32 {
     var local = 0.1f + 0.2f;
     var buf [N]i32;
     buf[0] = 29;
-    if (scale != 2.0f || sum != 2.0f || from_u != 1.0f || neg != -2.0f || less != 1) {
+    if (scale != 2.0f || sum != 2.0f || from_u != 1.0f || neg != -2.0f || less != true) {
         return 1;
     }
     if (rough != local) {

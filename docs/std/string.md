@@ -18,7 +18,7 @@ func main() i32 {
 }
 ```
 
-The program returns 3. `equals` is true when the lengths match and every byte matches. `equals("", "")` is true. `compare` walks unsigned bytes and returns `-1`, `0`, or `1`. A shared prefix leaves the shorter view first, so `compare("", "a")` is negative and `compare("", "")` is `0`. `find_first_of` returns the first index whose byte is in the set, or `-1`. An empty view and an empty set are `-1`. `find` returns the first index of the needle, or `-1`. An empty needle returns `0`, including on an empty view. `starts_with` and `ends_with` compare that range. `if (text.equals("hello"))` is a `bool` condition. `!text.equals("hello")` is the integer not of that `bool`.
+The program returns 3. `equals` is true when the lengths match and every byte matches. `equals("", "")` is true. `compare` walks unsigned bytes and returns `-1`, `0`, or `1`. A shared prefix leaves the shorter view first, so `compare("", "a")` is negative and `compare("", "")` is `0`. `find_first_of` returns the first index whose byte is in the set, or `-1`. An empty view and an empty set are `-1`. `find` returns the first index of the needle, or `-1`. An empty needle returns `0`, including on an empty view. `starts_with` and `ends_with` compare that range. `if (text.equals("hello"))` is a `bool` condition. `!text.equals("hello")` is the `bool` not of that result.
 
 `const greeting string.string_view = "hello"` keeps the alias. The header is the same slice as `const label = "hello"`.
 

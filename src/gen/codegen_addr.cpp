@@ -271,7 +271,7 @@ llvm::Value *CodeGen::emit_short_circuit(const Expr::Binary &expr, bool is_and) 
     auto *phi = builder_.CreatePHI(llvm::Type::getInt1Ty(context_), 2);
     phi->addIncoming(is_and ? llvm::ConstantInt::getFalse(context_) : llvm::ConstantInt::getTrue(context_), lhs_block);
     phi->addIncoming(rhs_flag, rhs_end);
-    return builder_.CreateZExt(phi, i32());
+    return phi;
 }
 
 // A local `[N]...T` decays by dropping the outer array. The pointer already addresses element 0.

@@ -220,7 +220,7 @@ func main() i32 {
     if (ch != 200) {
         return 16;
     }
-    if (flag != 1) {
+    if (flag != true) {
         return 17;
     }
     if (s != -2) {

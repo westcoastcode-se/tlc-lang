@@ -214,11 +214,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (node.op == TokenKind::Bang) {
                     std::swap(cond_true_, cond_false_);
                     cond_split_ = true;
-                    if (is_float(inner) || inner.kind == TypeKind::Bool) {
-                        return type_int();
+                    if (inner.kind == TypeKind::Invalid) {
+                        return inner;
                     }
-                    expect_integer(inner, node.loc);
-                    return inner.kind == TypeKind::Invalid ? inner : type_int();
+                    expect_condition(inner, node.loc);
+                    return inner.kind == TypeKind::Bool ? type_bool() : type_invalid();
                 }
                 if (is_float(inner) && (node.op == TokenKind::Plus || node.op == TokenKind::Minus)) {
                     return inner;
@@ -252,6 +252,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     assign_ = init_merge(cond_true_, cond_false_);
                     cond_split_ = true;
+                    if (lhs.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
+                        return type_invalid();
+                    }
+                    expect_condition(lhs, expr_loc(*node.lhs));
+                    expect_condition(rhs, expr_loc(*node.rhs));
+                    if (lhs.kind != TypeKind::Bool || rhs.kind != TypeKind::Bool) {
+                        return type_invalid();
+                    }
+                    return type_bool();
                 } else {
                     lhs = check_expr(*node.lhs, true);
                     rhs = check_expr(*node.rhs, true);
@@ -269,13 +278,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 error(node.loc, "type mismatch");
                                 return type_invalid();
                             }
-                            return type_int();
+                            return type_bool();
                         }
                         if (!lhs_ptr || !rhs_ptr) {
                             error(node.loc, "type mismatch");
                             return type_invalid();
                         }
-                        return type_int();
+                        return type_bool();
                     }
                 }
                 if (lhs.kind == TypeKind::Meta || rhs.kind == TypeKind::Meta) {
@@ -284,7 +293,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (lhs.kind == TypeKind::Meta && rhs.kind == TypeKind::Meta &&
                         (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq)) {
-                        return type_int();
+                        return type_bool();
                     }
                     error(node.loc, "type mismatch");
                     return type_invalid();
@@ -299,7 +308,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (lhs.kind == TypeKind::Enum && rhs.kind == TypeKind::Enum && same_type(lhs, rhs) &&
                         (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq)) {
-                        return type_int();
+                        return type_bool();
                     }
                     if (is_c_enum(lhs)) {
                         lhs = type_int();
@@ -336,16 +345,24 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     case TokenKind::Gt:
                     case TokenKind::Le:
                     case TokenKind::Ge:
-                        return type_int();
-                    case TokenKind::AmpAmp:
-                    case TokenKind::PipePipe:
-                        return type_int();
+                        return type_bool();
                     default:
                         if (lhs.alias_id != 0) {
                             return lhs;
                         }
                         return type_float(wide ? 64 : 32);
                     }
+                }
+                if (lhs.kind == TypeKind::Bool || rhs.kind == TypeKind::Bool) {
+                    if (lhs.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
+                        return type_invalid();
+                    }
+                    if (lhs.kind == TypeKind::Bool && rhs.kind == TypeKind::Bool &&
+                        (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq)) {
+                        return type_bool();
+                    }
+                    error(node.loc, "type mismatch");
+                    return type_invalid();
                 }
                 expect_integer(lhs, expr_loc(*node.lhs));
                 expect_integer(rhs, expr_loc(*node.rhs));
@@ -360,7 +377,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 case TokenKind::Gt:
                 case TokenKind::Le:
                 case TokenKind::Ge:
-                    return type_int();
+                    return type_bool();
                 default:
                     return common;
                 }

@@ -1,0 +1,21 @@
+assert(1 != 0, "one");
+
+func main() i32 {
+    var n i32 = 3;
+    var s i32 = 0;
+    if (n != 0) {
+        s = 10;
+    }
+    while (n != 0) {
+        n = n - 1;
+        s = s + 1;
+    }
+    do {
+        s = s + 1;
+    } while (false);
+    for (; s < 40; s = s + 1) {}
+    if (s == 40 && !false) {
+        return s + 2;
+    }
+    return 0;
+}

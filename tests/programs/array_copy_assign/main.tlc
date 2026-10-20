@@ -102,11 +102,11 @@ func main() i32 {
 
     var scale [2]f32;
     scale = {1.5f, 0.5f};
-    sum = sum + (scale[0] == 1.5f);
+    sum = sum + i32(scale[0] == 1.5f);
 
     var flags [2]bool;
     flags = {true, false};
-    sum = sum + flags[0];
+    sum = sum + i32(flags[0]);
 
     return sum;
 }

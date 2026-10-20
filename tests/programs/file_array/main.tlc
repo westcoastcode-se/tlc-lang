@@ -15,7 +15,7 @@ func sum(p *i32) i32 {
 }
 
 func main() i32 {
-    if (flags[0] == 0 || flags[1] != 0) {
+    if (flags[0] == false || flags[1] != false) {
         return 1;
     }
     live[0] = 3;

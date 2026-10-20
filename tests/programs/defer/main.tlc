@@ -40,7 +40,7 @@ func main() i32 {
         box.v = 4;
         box.w = 0;
         defer inner(2);
-        if (0) {
+        if (false) {
             defer put(2);
         }
         for (var k i32 = 0; k < 1; k = k + 1) {

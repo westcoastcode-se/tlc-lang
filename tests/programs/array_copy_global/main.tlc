@@ -37,7 +37,7 @@ unsafe func hidden() [2]i32 {
 var from_unsafe [2]i32 = unsafe hidden();
 
 func main() i32 {
-    if (flags_copy[0] == 0 || flags_copy[1] != 0) {
+    if (flags_copy[0] == false || flags_copy[1] != false) {
         return 1;
     }
     if (blank_copy[0] != 0 || blank_copy[1] != 0) {

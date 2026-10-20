@@ -62,9 +62,9 @@ func main() i32 {
     if (*viewed != 5.0) {
         return 9;
     }
-    var flag = 1.5 && 0.0;
-    var other = 0.0 || 2.5;
-    if (flag != 0 || other != 1) {
+    var flag = 1.5 != 0.0 && 0.0 != 0.0;
+    var other = 0.0 != 0.0 || 2.5 != 0.0;
+    if (flag != false || other != true) {
         return 10;
     }
     return 42;

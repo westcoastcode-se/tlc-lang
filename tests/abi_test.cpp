@@ -157,7 +157,7 @@ int run_abi_tests() {
                "    var f F2 = make_f2(1.5f, 2.5f);\n"
                "    if (f.a != 1.5f || f.b != 2.5f || sum_f2(f) != 4.0f) { return 9; }\n"
                "    var g Flag = make_flag(1, 1, 42);\n"
-               "    if (g.a != 1 || g.b != 1 || g.c != 42 || flag_c(g) != 42 || flag_b(g) != 1) { return 10; }\n"
+               "    if (g.a != 1 || g.b != true || g.c != 42 || flag_c(g) != 42 || flag_b(g) != 1) { return 10; }\n"
                "    var num Num = make_num(42);\n"
                "    if (num.n != 42 || num.m != 42 || num_m(num) != 42 || call_read() != 40) { return 11; }\n"
                "    var fl Fl = make_fl(1.0f);\n"

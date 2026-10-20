@@ -1,7 +1,7 @@
 func main() i32 {
     var x i32 = 1;
     var y i32;
-    if (x) { y = 10; } else { y = 20; }
-    if (0) { y = 0; } else { y = y + 1; }
+    if (x != 0) { y = 10; } else { y = 20; }
+    if (false) { y = 0; } else { y = y + 1; }
     return y;
 }

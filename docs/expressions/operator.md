@@ -23,7 +23,7 @@ func main() i32 {
 
 ## Cost
 
-Each operator below is the cost after its operands are in slots. Two `i32` locals make `+`, `-`, `*`, `&`, `|`, and `^` cost 2 instructions. `/` costs 3 and `%` costs 4. A shift costs 3. Unary `-` and `~` cost 2. A comparison costs 5 and yields 0 or 1. `f32` and `f64` addition cost 2, a reload and an add. The full sequences are on [Numeric types](../types/integer.md) and [void, bool, and floating-point types](../types/float.md).
+Each operator below is the cost after its operands are in slots. Two `i32` locals make `+`, `-`, `*`, `&`, `|`, and `^` cost 2 instructions. `/` costs 3 and `%` costs 4. A shift costs 3. Unary `-` and `~` cost 2. A comparison costs 4 and yields `bool`. `f32` and `f64` addition cost 2, a reload and an add. The full sequences are on [Numeric types](../types/integer.md) and [void, bool, and floating-point types](../types/float.md).
 
 Assignment of an `i32` is 1 store. Assignment of a struct is one load and one store per field. A call is 36 instructions in the caller when fewer than 32 frames are stored, plus the callee. Indexing and `.` are counted on [Arrays](../types/array.md), [Slices](../types/slice.md), and [Structs](../types/struct.md).
 

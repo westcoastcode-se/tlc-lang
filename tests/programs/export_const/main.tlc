@@ -11,5 +11,5 @@ func main() i32 {
     var e math.Entity;
     e.id = 10;
     return math.Entity.next + e.id + math.Box[i32].limit + spare + math.width() + Buf[4, i32].count +
-        (math.Entity.bias == 1.0f);
+        i32(math.Entity.bias == 1.0f);
 }

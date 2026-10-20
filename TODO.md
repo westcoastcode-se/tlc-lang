@@ -127,9 +127,8 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 ### Conditions
 
-- `if` accepts an integer after promotion, including `i64` and `u32`, and a `bool`. A pointer is `compare with null`. An `f32` is `type mismatch`. `switch` accepts a value that promotes to `i32`, so `bool`, `i8`, and `i16` match. `u32` and `i64` do not. `case 1u32` is `type mismatch`. Pages: `docs/expressions/condition.md`, `docs/statements/switch.md`.
-- A tlc enum is neither a condition nor a `switch` value. An `extern(abi="c")` enum converts to an integer and can be either. Pages: `docs/types/enum.md`, `docs/expressions/condition.md`, `docs/statements/switch.md`.
-- Prefix `!` is logical not and yields `i32`. Postfix `!` strips `?` from a pointer and inserts no null check. `if (p != null)` narrows the name for the rest of the block. `p!` applies to that use. `opt![2]` parses as `(opt!)[2]` and typechecks. Pages: `docs/expressions/narrowing.md`, `docs/types/pointer.md`, `docs/grammar.md`. The sentence in `docs/types/pointer.md` that parses `opt![i]` as `(opt[i])!` is under [Documentation](#documentation).
+- A tlc enum is neither a condition nor a `switch` value. An `extern(abi="c")` enum is not a condition. `switch` on that enum is `type mismatch: expected i32`. Pages: `docs/types/enum.md`, `docs/expressions/condition.md`, `docs/statements/switch.md`.
+- Postfix `!` strips `?` from a pointer and inserts no null check. `if (p != null)` narrows the name for the rest of the block. `p!` applies to that use. `opt![2]` parses as `(opt!)[2]` and typechecks. Pages: `docs/expressions/narrowing.md`, `docs/types/pointer.md`, `docs/grammar.md`. The sentence in `docs/types/pointer.md` that parses `opt![i]` as `(opt[i])!` is under [Documentation](#documentation).
 
 ### Spellings
 

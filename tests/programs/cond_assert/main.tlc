@@ -1,0 +1,5 @@
+assert(1, "no");
+
+func main() i32 {
+    return 0;
+}

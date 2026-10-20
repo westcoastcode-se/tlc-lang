@@ -7,25 +7,25 @@
 ```c
 var calls i32 = 0;
 
-func bump() i32 {
+func bump() bool {
     calls = calls + 1;
-    return 1;
+    return true;
 }
 
 func main() i32 {
-    if (0 && bump()) {}
-    if (1 || bump()) {}
-    if (1 && bump()) {}
-    if (0 || bump()) {}
+    if (false && bump()) {}
+    if (true || bump()) {}
+    if (true && bump()) {}
+    if (false || bump()) {}
     return calls;
 }
 ```
 
-A shift is evaluated in the common type.
+Both operands are `bool`. An integer operand is reported as `type mismatch: expected bool, found i32`. The result is `bool`. A shift is evaluated in the common type.
 
 ## Cost
 
-`a && b` stores both `i32` parameters, then compares `a` with 0. When `a` is 0 the function executes 10 instructions including `retq`, and the compare of `b` does not run. When `a` is not 0 it also compares `b`, which is 3 more instructions. `a || b` has the same shape and skips `b` when `a` is not 0.
+`a && b` on two `bool` parameters masks and stores both, then tests `a`. When `a` is false the function executes 15 instructions including `retq`, and `b` is not tested. When `a` is true it also tests `b`, which is 6 more instructions. `a || b` has the same shape and skips `b` when `a` is true.
 
 A call written as the right operand is skipped the same way, so its trace frame does not run. A shift of two locals is the 3-instruction shift on [Numeric types](../types/integer.md).
 

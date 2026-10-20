@@ -100,14 +100,14 @@ void Checker::expect_integer(const Type &got, SourceLoc loc) {
 }
 
 void Checker::expect_condition(const Type &got, SourceLoc loc) {
+    if (got.kind == TypeKind::Invalid || got.kind == TypeKind::Bool) {
+        return;
+    }
     if (got.kind == TypeKind::Pointer) {
         error(loc, "compare with null");
         return;
     }
-    if (got.kind == TypeKind::Bool) {
-        return;
-    }
-    expect_integer(got, loc);
+    error(loc, "type mismatch: expected bool, found " + type_desc(got));
 }
 
 FunctionDecl *Checker::inferred_function(const Expr &expr) const {

@@ -140,7 +140,7 @@ int run_sema_tests() {
             "func add(a i32, b i32) i32;\n"
             "func main() i32 {\n"
             "  var n i32 = add(1, 2);\n"
-            "  while (n) {\n"
+            "  while (n != 0) {\n"
             "    acc = acc + n;\n"
             "    n = n - 1;\n"
             "  }\n"
@@ -3269,7 +3269,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() i32 {\n"
-            "  while (1) {\n"
+            "  while (true) {\n"
             "    func f() i32 {\n"
             "      break;\n"
             "      return 1;\n"
@@ -3800,7 +3800,7 @@ int run_sema_tests() {
             "  for (i, k := add(1, 2); i < 2; i = i + 1) {\n"
             "    y = k;\n"
             "  }\n"
-            "  return x + y + fresh + take(1) + keep(1) + n + s + c + flag + inner() + outer + h1 + h2;\n"
+            "  return x + y + fresh + take(1) + keep(1) + n + s + c + i32(flag) + inner() + outer + h1 + h2;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -5820,7 +5820,7 @@ int run_sema_tests() {
             "func take(p *const i32) i32 { return p[0] + p[1]; }\n"
             "func main() i32 {\n"
             "  live[0] = 3;\n"
-            "  return take(*const i32(fixed)) + named[0] + other[1] + live[0] + flags[0] + bytes[0];\n"
+            "  return take(*const i32(fixed)) + named[0] + other[1] + live[0] + i32(flags[0]) + bytes[0];\n"
             "}\n");
         EXPECT(check, errors.empty());
     }

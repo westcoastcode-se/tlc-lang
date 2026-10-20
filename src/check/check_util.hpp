@@ -115,7 +115,11 @@ inline Type promote(const Type &type) {
     if (type.alias_id != 0) {
         return type;
     }
-    if (type.kind == TypeKind::Bool || type.kind == TypeKind::Char) {
+    // `bool` stays `bool`. A condition does not treat an integer as true or false.
+    if (type.kind == TypeKind::Bool) {
+        return type;
+    }
+    if (type.kind == TypeKind::Char) {
         return type_int();
     }
     if (type.kind == TypeKind::Int && rank_of(type) < 3) {

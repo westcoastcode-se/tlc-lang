@@ -6,7 +6,7 @@
 
 `typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*Type` uses the value `p` points at. `name` is a method of `Type`. `t.name()` returns `*u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box.spec.i32`. `name` takes no arguments. Another argument is reported as `argument count`. Another method is reported as `undeclared identifier`. `t.name` without the call is reported as `undeclared identifier`.
 
-`==` and `!=` compare two `Type` values and yield `i32`, either 0 or 1. Other operators on `Type` are reported as `type mismatch`.
+`==` and `!=` compare two `Type` values and yield `bool`. Other operators on `Type` are reported as `type mismatch`.
 
 ```c
 func main() i32 {

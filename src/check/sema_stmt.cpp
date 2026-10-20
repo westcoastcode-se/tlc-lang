@@ -15,8 +15,12 @@ void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &m
     if (got.kind == TypeKind::Invalid) {
         return;
     }
-    if (!is_integer(got) && !is_c_enum(got)) {
-        error(loc, "type mismatch");
+    if (got.kind != TypeKind::Bool) {
+        if (got.kind == TypeKind::Pointer) {
+            error(loc, "compare with null");
+        } else {
+            error(loc, "type mismatch: expected bool, found " + type_desc(got));
+        }
         return;
     }
     const std::optional<int> value = fold_int(*cond);

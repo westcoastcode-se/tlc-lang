@@ -22,6 +22,6 @@ func main() i32 {
 
 ## Cost
 
-`p == q` on two pointers is 5 instructions after the pointers are stored: load, `cmpq`, `sete`, mask, zero-extend. `p == null` compares with 0 and has that same shape. The comparison adds no branch of its own. A relational operator on a pointer is rejected while compiling and adds none.
+`p == q` on two pointers is 4 instructions after the pointers are stored: load each pointer, `subq`, `sete`. The result is `bool`. `p == null` compares with 0 and has that same shape. The comparison adds no branch of its own. A relational operator on a pointer is rejected while compiling and adds none.
 
 [Index](../README.md) · [Previous: Logical operators](logical.md) · [Next: Narrowing](narrowing.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

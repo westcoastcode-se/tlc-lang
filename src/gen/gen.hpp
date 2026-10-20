@@ -721,6 +721,10 @@ class CodeGen {
         if (dest->isIntegerTy(1)) {
             return as_bool(value);
         }
+        // `bool` is 0 or 1. Sign-extending `i1` would turn `true` into `-1`.
+        if (value->getType()->isIntegerTy(1)) {
+            return builder_.CreateZExt(value, dest);
+        }
         if (value->getType()->getIntegerBitWidth() > dest->getIntegerBitWidth()) {
             return builder_.CreateTrunc(value, dest);
         }

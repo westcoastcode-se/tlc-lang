@@ -211,19 +211,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return {builder_.CreateNot(inner), 0, false, -1, false, false, false, inner_value.elem_bits,
                             inner_value.elem_unsigned};
                 case TokenKind::Bang:
-                    if (inner_value.elem_float || (inner != nullptr && inner->getType()->isFloatingPointTy())) {
-                        llvm::Value *zero_fp = llvm::ConstantFP::get(inner->getType(), 0.0);
-                        return {builder_.CreateZExt(builder_.CreateFCmpOEQ(inner, zero_fp), i32()), 0};
-                    }
-                    return {builder_.CreateZExt(builder_.CreateICmpEQ(inner, typed_zero(inner)), i32()), 0};
+                    return {builder_.CreateNot(as_bool(inner)), 0, false, -1, false, false, true};
                 default: return {zero(), 0};
                 }
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
                 if (node.op == TokenKind::AmpAmp) {
-                    return {emit_short_circuit(node, true), 0};
+                    return {emit_short_circuit(node, true), 0, false, -1, false, false, true};
                 }
                 if (node.op == TokenKind::PipePipe) {
-                    return {emit_short_circuit(node, false), 0};
+                    return {emit_short_circuit(node, false), 0, false, -1, false, false, true};
                 }
                 const TypedValue left = emit_rvalue(*node.lhs);
                 const TypedValue right = emit_rvalue(*node.rhs);
@@ -244,7 +240,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     }
                     llvm::Value *cmp = node.op == TokenKind::EqEq ? builder_.CreateICmpEQ(lhs, rhs)
                                                                   : builder_.CreateICmpNE(lhs, rhs);
-                    return {builder_.CreateZExt(cmp, i32()), 0};
+                    return {cmp, 0, false, -1, false, false, true};
                 }
                 if (left.elem_float || right.elem_float ||
                     (lhs != nullptr && lhs->getType()->isFloatingPointTy()) ||
@@ -265,7 +261,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return {value, 0, false, -1, false, false, false, wide ? 64 : 32, false, -1, true};
                     };
                     auto compared_fp = [&](llvm::CmpInst::Predicate pred) -> TypedValue {
-                        return {builder_.CreateZExt(builder_.CreateFCmp(pred, lhs, rhs), i32()), 0};
+                        return {builder_.CreateFCmp(pred, lhs, rhs), 0, false, -1, false, false, true};
                     };
                     switch (node.op) {
                     case TokenKind::Plus: return widened_fp(builder_.CreateFAdd(lhs, rhs));
@@ -302,7 +298,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return {value, 0, false, -1, false, false, false, common_bits, common_unsigned};
                 };
                 auto compared = [&](llvm::CmpInst::Predicate pred) -> TypedValue {
-                    return {builder_.CreateZExt(builder_.CreateICmp(pred, lhs, rhs), i32()), 0};
+                    return {builder_.CreateICmp(pred, lhs, rhs), 0, false, -1, false, false, true};
                 };
                 const bool uns = common_unsigned;
                 switch (node.op) {

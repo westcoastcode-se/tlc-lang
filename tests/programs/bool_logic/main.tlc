@@ -12,15 +12,15 @@ func main() i32 {
         return 0;
     }
     b = 8;
-    if (b != 1) {
+    if (b != true) {
         return 0;
     }
     a = false;
-    if (a != 0) {
+    if (a != false) {
         return 0;
     }
     if (true == false) {
         return 0;
     }
-    return n + true + true;
+    return n + i32(true) + i32(true);
 }

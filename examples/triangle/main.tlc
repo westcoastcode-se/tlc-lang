@@ -60,7 +60,7 @@ func shader_status(object u32, pname u32, linked bool) bool {
     } else {
         GetShaderiv(object, pname, &ok);
     }
-    if (!ok) {
+    if (ok == 0) {
         var log [512]u8;
         if (linked) {
             GetProgramInfoLog(object, 512, null, log);

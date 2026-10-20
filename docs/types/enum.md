@@ -39,7 +39,7 @@ func main() i32 {
 }
 ```
 
-`sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `u8`. A value that does not fit is reported as `type mismatch`. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `i32`. Other operators are reported as `type mismatch`.
+`sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `u8`. A value that does not fit is reported as `type mismatch`. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `bool`. Other operators are reported as `type mismatch`.
 
 ## C enums
 

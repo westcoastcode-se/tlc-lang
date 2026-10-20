@@ -1,7 +1,7 @@
 func main() i32 {
     var n i32 = 0;
     var value i32;
-    if (n) {
+    if (n != 0) {
         value = 1;
     }
     return value;
