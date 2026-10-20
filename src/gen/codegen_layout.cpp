@@ -242,7 +242,10 @@ void CodeGen::prepare_structs() {
                 }
             }
             // An empty tlc struct stays zero-sized. An empty extern(abi="c") struct is one byte.
-            if (body.empty() && (item->is_union || item->extern_c)) {
+            // An empty `union(Enum)` is the tag alone.
+            if (body.empty() && item->is_union && structs_[static_cast<std::size_t>(id)].tag_enum >= 0) {
+                body.push_back(enum_mem_type(structs_[static_cast<std::size_t>(id)].tag_enum));
+            } else if (body.empty() && (item->is_union || item->extern_c)) {
                 body.push_back(i8());
             }
             if (item->align > 0) {

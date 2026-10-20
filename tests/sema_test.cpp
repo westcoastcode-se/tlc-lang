@@ -947,6 +947,29 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Kind enum {};\n"
+            "type Shape union(Kind) {};\n"
+            "func main() i32 { return sizeof(Shape); }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Kind enum { A };\n"
+            "type Shape union(Kind) {};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Word union {};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Color enum { A = 2147483647, B };\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");

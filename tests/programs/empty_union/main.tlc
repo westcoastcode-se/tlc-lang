@@ -1,0 +1,7 @@
+type Kind enum {}
+
+type Shape union(Kind) {}
+
+func main() i32 {
+    return sizeof(Shape);
+}

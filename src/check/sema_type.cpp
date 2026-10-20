@@ -470,8 +470,9 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         tags_[file_id][item->name] = id;
         if (item->fields.empty()) {
             // An empty tlc struct is zero-sized and may still have methods. An empty
-            // extern(abi="c") struct is a one-byte opaque handle. A union needs a field.
-            if (item->is_union) {
+            // extern(abi="c") struct is a one-byte opaque handle. An empty `union(Enum)` keeps
+            // the tag. An empty C union is not a type.
+            if (item->is_union && (item->extern_c || item->tag_name.empty())) {
                 error(item->loc, "not supported yet");
             }
             structs_.back().complete = true;
@@ -606,7 +607,16 @@ std::optional<int> Checker::type_size(const Type &type) const {
         }
         if (info.fields.empty()) {
             if (info.is_union) {
-                return std::nullopt;
+                // No arm. The value is the enum tag.
+                if (info.tag_enum < 0 || info.tag_enum >= static_cast<int>(enum_types_.size())) {
+                    return std::nullopt;
+                }
+                const Type &tag = enum_types_[static_cast<std::size_t>(info.tag_enum)].underlying;
+                const std::optional<int> tag_size = self(self, tag);
+                if (!tag_size) {
+                    return std::nullopt;
+                }
+                return align_up(*tag_size, std::max(min_align_of(tag), std::max(info.align, 1)));
             }
             if (info.extern_c) {
                 return 1;
