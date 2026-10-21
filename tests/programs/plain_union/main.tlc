@@ -1,0 +1,18 @@
+type Num union {
+    n i32;
+    m i32;
+};
+
+extern type Wide union {
+    n i32;
+    raw [8]u8;
+};
+
+func main() i32 {
+    var u Num;
+    u.n = 4;
+    if (sizeof(Num) != 4 || sizeof(Wide) != 8) {
+        return 0;
+    }
+    return u.m;
+}

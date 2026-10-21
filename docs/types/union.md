@@ -50,6 +50,25 @@ func main() i32 {
 
 The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `i32` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. Reading a field does not check the tag. A zero value has tag 0. A field of an inline payload may have a value, `n i32 = 1`. `Shape{.One = {}}` uses that value when the initializer does not name the field. Naming the field replaces it. The value is a constant, and a call is reported as `global initializer is not a constant`. `{.One = {0...}}` stores 0 and does not use the value. A union with no initializer does not choose an arm. Reading a field of that union is reported as `uninitialized`.
 
+### Untagged unions
+
+`type Word union` does not name an enum. The fields share one address, as in the C union below. `extern type Word union` is that same layout. `extern(abi="c")` is what makes the union a C type: a nested struct must then be `extern(abi="c")`. An empty `type Word union {}` is reported as `not supported yet`.
+
+```c
+type Num union {
+    n i32;
+    m i32;
+};
+
+func main() i32 {
+    var u Num;
+    u.n = 4;
+    return u.m;
+}
+```
+
+`Num` is 4 bytes. `u.n` and `u.m` are the same memory, so `main` returns 4.
+
 ### C unions
 
 `extern(abi="c") union` is the C union. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A struct or a union nested inside a C union must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.

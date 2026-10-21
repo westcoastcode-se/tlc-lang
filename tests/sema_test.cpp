@@ -3918,8 +3918,8 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("extern type Num union { n i32; }\nfunc main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        const std::string errors = diagnose("extern type Num union { n i32; }\nfunc main() i32 { return sizeof(Num); }\n");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -3950,8 +3950,8 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Num union { n i32; }\n"
-            "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+            "func main() i32 { return sizeof(Num); }\n");
+        EXPECT(check, errors.empty());
     }
 
     {

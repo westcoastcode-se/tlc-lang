@@ -648,11 +648,11 @@ int run_parser_tests() {
             "type Plain union { n i32; }\n"
             "extern type Tlc union { n i32; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(union Num extern(abi=\"c\")\n");
         EXPECT_HAS(check, parsed.dump, "(field n i32)\n");
-        EXPECT(check, parsed.dump.find("(union Plain") == std::string::npos);
-        EXPECT(check, parsed.dump.find("(union Tlc") == std::string::npos);
+        EXPECT_HAS(check, parsed.dump, "(union Plain\n");
+        EXPECT_HAS(check, parsed.dump, "(union Tlc extern\n");
     }
 
     {

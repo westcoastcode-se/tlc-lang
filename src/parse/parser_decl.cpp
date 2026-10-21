@@ -368,10 +368,6 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     if (variant_body && !push_union) {
         return;
     }
-    if (as_union && !extern_c && !variant_body) {
-        diags_.error(kind_loc, "not supported yet");
-        return;
-    }
     for (StructDecl &anon : variants.anonymous) {
         TopDecl top;
         top.data = std::move(anon);
@@ -382,8 +378,9 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     item.name = std::move(name);
     item.fields = std::move(fields);
     item.exported = exported;
-    // A C union is an extern overlay. A tlc union is an ordinary type.
-    item.is_extern = is_extern || (as_union && !variant_body);
+    // `extern(abi="c") union` is the C overlay. A plain union is the same layout
+    // without that ABI. `union(Enum)` stays a tlc type.
+    item.is_extern = is_extern || (as_union && extern_c && !variant_body);
     item.extern_c = extern_c;
     item.align = align;
     item.is_union = as_union;

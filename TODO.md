@@ -103,7 +103,6 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Structs, enums, and unions
 
-- A union that is not `extern(abi="c")` and does not name an enum, including `extern union`.
 - `extern` or `extern(abi="c")` on `union(Enum)`.
 - A qualified enum name in `union(Enum)`, such as `union(pkg.Kind)`.
 - A by-value field of a struct that is still incomplete, including the struct being defined. A pointer to that struct is fine.
