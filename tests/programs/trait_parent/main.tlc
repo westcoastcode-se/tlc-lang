@@ -1,0 +1,31 @@
+type Parent trait {
+    func area() i32;
+}
+
+type Shape trait(Parent) {
+    func extra() i32;
+}
+
+type Rect struct {
+    w i32;
+    h i32;
+}
+
+func Rect::area(self this) i32 {
+    return self.w;
+}
+
+func Rect::extra(self this) i32 {
+    return self.h;
+}
+
+func use(s Shape) i32 {
+    return s.area() + s.extra();
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 5;
+    r.h = 6;
+    return use(r);
+}

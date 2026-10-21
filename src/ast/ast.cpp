@@ -717,6 +717,10 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             out += item->name;
             if (!item->tag_name.empty()) {
                 out += ' ';
+                if (!item->tag_package.empty()) {
+                    out += item->tag_package;
+                    out += '.';
+                }
                 out += item->tag_name;
             }
             if (item->align > 0) {
@@ -798,6 +802,16 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             out += "(trait ";
             out += item->name;
             out += "\n";
+            if (!item->parent_name.empty()) {
+                append_indent(out, 2);
+                out += "(parent ";
+                if (!item->parent_package.empty()) {
+                    out += item->parent_package;
+                    out += '.';
+                }
+                out += item->parent_name;
+                out += ")\n";
+            }
             for (const FieldDecl &field : item->fields) {
                 dump_field(field, out, 2);
             }

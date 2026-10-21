@@ -1,0 +1,9 @@
+type Vec[T type] struct {
+    n T;
+}
+
+extern(abi="c") func Vec[T]::get(self this) T;
+
+func main() i32 {
+    return 0;
+}

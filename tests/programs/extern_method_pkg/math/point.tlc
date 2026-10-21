@@ -1,0 +1,10 @@
+package math;
+
+export type Point struct {
+    export x i32;
+    export y i32;
+}
+
+export extern func Point::read(self this) i32 {
+    return self.x + self.y;
+}

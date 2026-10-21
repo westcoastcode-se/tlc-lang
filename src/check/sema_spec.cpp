@@ -225,6 +225,10 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         if (owned.file_id != owner || owned.fn.method_struct != templ->name) {
             continue;
         }
+        // The declaration is already rejected. Do not specialize a C symbol.
+        if (owned.fn.extern_c) {
+            continue;
+        }
         FunctionDecl method = clone_function(owned.fn);
         method.method_struct = spec_name;
         method.type_params.clear();
@@ -256,24 +260,14 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         const bool is_static = method.static_method;
         const bool unsafe = method.unsafe;
         const bool exported = method.exported;
+        const bool extern_c = method.extern_c;
+        const std::string link_name = method.link_name;
         const std::string method_name = method.name;
-        deferred_methods_.push_back(OwnedFn{owner, std::move(method)});
-        FunctionDecl *stable = &deferred_methods_.back().fn;
         auto &table = methods_[owner][spec_name];
         const auto found = table.find(method_name);
-        if (found == table.end()) {
-            MethodInfo info;
-            info.type = std::move(signature);
-            info.has_body = has_body;
-            info.is_static = is_static;
-            info.unsafe_fn = unsafe;
-            info.exported = exported;
-            info.file_id = owner;
-            info.decl = stable;
-            table.emplace(method_name, std::move(info));
-        } else {
+        MethodInfo *slot = nullptr;
+        if (found != table.end()) {
             const bool skip = !is_static;
-            MethodInfo *slot = nullptr;
             if (same_selection(found->second.type, !found->second.is_static, signature, skip)) {
                 slot = &found->second;
             } else {
@@ -284,25 +278,54 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                     }
                 }
             }
-            if (slot != nullptr) {
-                const bool clash = !same_type(slot->type, signature) || (slot->has_body && has_body) ||
-                                   slot->unsafe_fn != unsafe;
-                if (!clash && has_body) {
-                    slot->has_body = true;
-                    slot->decl = stable;
-                    slot->type = signature;
-                }
-            } else {
-                MethodInfo extra;
-                extra.type = std::move(signature);
-                extra.has_body = has_body;
-                extra.is_static = is_static;
-                extra.unsafe_fn = unsafe;
-                extra.exported = exported;
-                extra.file_id = owner;
-                extra.decl = stable;
-                found->second.more.push_back(std::move(extra));
+        }
+        // One `name=` is one object symbol. The next specialization that would use it clashes.
+        // The copy is still recorded so the call is not a second error.
+        const bool introducing = !link_name.empty() && (slot == nullptr || slot->link_name.empty());
+        if (introducing && link_name_taken(link_name)) {
+            error(method.loc, "redefinition");
+        }
+        deferred_methods_.push_back(OwnedFn{owner, std::move(method)});
+        FunctionDecl *stable = &deferred_methods_.back().fn;
+        if (found == table.end()) {
+            MethodInfo info;
+            info.type = std::move(signature);
+            info.has_body = has_body;
+            info.is_static = is_static;
+            info.unsafe_fn = unsafe;
+            info.exported = exported;
+            info.extern_c = extern_c;
+            info.link_name = link_name;
+            info.file_id = owner;
+            info.decl = stable;
+            table.emplace(method_name, std::move(info));
+        } else if (slot != nullptr) {
+            const bool link_clash = !link_name.empty() && !slot->link_name.empty() && slot->link_name != link_name;
+            const bool clash = !same_type(slot->type, signature) || (slot->has_body && has_body) ||
+                               slot->unsafe_fn != unsafe || link_clash;
+            if (!clash && has_body) {
+                slot->has_body = true;
+                slot->decl = stable;
+                slot->type = signature;
             }
+            if (!clash) {
+                if (slot->link_name.empty()) {
+                    slot->link_name = link_name;
+                }
+                slot->extern_c = slot->extern_c || extern_c;
+            }
+        } else {
+            MethodInfo extra;
+            extra.type = std::move(signature);
+            extra.has_body = has_body;
+            extra.is_static = is_static;
+            extra.unsafe_fn = unsafe;
+            extra.exported = exported;
+            extra.extern_c = extern_c;
+            extra.link_name = link_name;
+            extra.file_id = owner;
+            extra.decl = stable;
+            found->second.more.push_back(std::move(extra));
         }
     }
     instantiate_assoc(owner, *templ, spec_name, bounds);
@@ -416,11 +439,19 @@ void Checker::generic_method_clash(const FunctionDecl &fn) {
         if (owned.fn.loc.file == fn.loc.file && owned.fn.loc.offset > fn.loc.offset) {
             continue;
         }
-        if (generic_param_key(owned.fn, params, !owned.fn.static_method) != want) {
+        const bool same_list = generic_param_key(owned.fn, params, !owned.fn.static_method) == want;
+        if (!same_list) {
+            // `name=` is one object symbol. `extern(abi="c")` on this method is rejected earlier.
+            if (!fn.link_name.empty() && owned.fn.link_name == fn.link_name) {
+                error(fn.loc, "redefinition");
+                return;
+            }
             continue;
         }
+        const bool link_clash =
+            !fn.link_name.empty() && !owned.fn.link_name.empty() && owned.fn.link_name != fn.link_name;
         if (generic_full_key(owned.fn, params) != full || (owned.fn.body != nullptr && fn.body != nullptr) ||
-            owned.fn.unsafe != fn.unsafe) {
+            owned.fn.unsafe != fn.unsafe || link_clash) {
             error(fn.loc, "redefinition");
             return;
         }
@@ -878,7 +909,7 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         return std::nullopt;
     }
     if (templ->body == nullptr || templ->is_extern || templ->extern_c || templ->variadic) {
-        error(call.loc, "not supported yet");
+        error(call.loc, templ->extern_c ? "extern(abi=\"c\") on a trait or a generic" : "not supported yet");
         return type_invalid();
     }
     if (templ->unsafe && unsafe_depth_ == 0) {
@@ -1060,7 +1091,14 @@ void Checker::register_trait_default(const FunctionDecl &fn) {
     if (trait_id < 0 || trait_id >= static_cast<int>(traits_.size())) {
         return;
     }
-    if (fn.is_extern || fn.variadic) {
+    // A C symbol is one library name. A trait default is copied onto each struct.
+    if (fn.extern_c) {
+        error(fn.loc, "extern(abi=\"c\") on a trait or a generic");
+        return;
+    }
+    // A variadic default has no body convention here.
+    // `name=` on a generic default cannot name every specialization.
+    if (fn.variadic || (!fn.link_name.empty() && !fn.type_params.empty())) {
         error(fn.loc, "not supported yet");
         return;
     }
@@ -1098,6 +1136,44 @@ void Checker::register_trait_default(const FunctionDecl &fn) {
         }
     }
     info.defaults.push_back(&fn);
+    // A child `trait(Parent)` requires this default too. The copy is the same function.
+    for (int id = 0; id < static_cast<int>(traits_.size()); ++id) {
+        if (id == trait_id) {
+            continue;
+        }
+        int walk = traits_[static_cast<std::size_t>(id)].parent_id;
+        bool child = false;
+        for (int guard = 0; walk >= 0 && guard < static_cast<int>(traits_.size()); ++guard) {
+            if (walk == trait_id) {
+                child = true;
+                break;
+            }
+            const int next = traits_[static_cast<std::size_t>(walk)].parent_id;
+            if (next == walk) {
+                break;
+            }
+            walk = next;
+        }
+        if (!child) {
+            continue;
+        }
+        TraitInfo &desc = traits_[static_cast<std::size_t>(id)];
+        bool skip = false;
+        for (const FunctionDecl *existing : desc.defaults) {
+            if (existing == &fn) {
+                skip = true;
+                break;
+            }
+            if (existing != nullptr && same_default_shape(*existing, fn)) {
+                error(fn.loc, "redefinition");
+                skip = true;
+                break;
+            }
+        }
+        if (!skip) {
+            desc.defaults.push_back(&fn);
+        }
+    }
 }
 
 void Checker::register_method_template(const FunctionDecl &fn) {
@@ -1113,6 +1189,10 @@ void Checker::register_method_template(const FunctionDecl &fn) {
     if (struct_id < 0) {
         // An alias such as `type Integer i32` is not a method template.
         error(fn.loc, "not supported yet");
+        return;
+    }
+    if (fn.extern_c) {
+        error(fn.loc, "extern(abi=\"c\") on a trait or a generic");
         return;
     }
     if (fn.is_extern || fn.variadic || fn.exported || fn.body == nullptr || fn.static_method) {
@@ -1188,6 +1268,60 @@ const Checker::MethodInfo *Checker::find_method_head(uint32_t file, const std::s
     return &found->second;
 }
 
+bool Checker::link_name_taken(const std::string &link_name) const {
+    if (link_name.empty()) {
+        return false;
+    }
+    const auto symbol_taken = [&](const Symbol &symbol) {
+        if (symbol.link_name == link_name) {
+            return true;
+        }
+        for (const FnList &list : symbol.lists) {
+            if (list.link_name == link_name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    for (const auto &file_entry : methods_) {
+        for (const auto &owner_entry : file_entry.second) {
+            for (const auto &name_entry : owner_entry.second) {
+                const MethodInfo &head = name_entry.second;
+                if (head.link_name == link_name) {
+                    return true;
+                }
+                for (const MethodInfo &extra : head.more) {
+                    if (extra.link_name == link_name) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    for (const Scope &scope : scopes_) {
+        for (const auto &entry : scope.symbols) {
+            if (symbol_taken(entry.second)) {
+                return true;
+            }
+        }
+    }
+    for (const auto &package_entry : package_syms_) {
+        for (const auto &entry : package_entry.second) {
+            if (symbol_taken(entry.second)) {
+                return true;
+            }
+        }
+    }
+    for (const auto &file_entry : statics_) {
+        for (const auto &entry : file_entry.second) {
+            if (symbol_taken(entry.second)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t struct_file, const std::string &struct_name,
                                              const std::string &spec_name, const std::vector<SpecArg> &bounds) {
     // `function_signature` can grow `structs_`. The caller's name must not be that storage.
@@ -1207,6 +1341,10 @@ const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t
         }
     }
     FunctionDecl method = clone_function(templ);
+    // `register_trait_default` rejects this. Do not copy a C symbol onto the struct.
+    if (method.extern_c) {
+        return nullptr;
+    }
     method.method_struct = owner;
     method.name = spec_name;
     const std::vector<TypeParam> params = templ.type_params;
@@ -1249,6 +1387,11 @@ const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t
             return slot->decl;
         }
     }
+    // One `name=` is one object symbol. The next struct that would gain this copy clashes.
+    if (link_name_taken(method.link_name)) {
+        error(templ.loc, "redefinition");
+        return nullptr;
+    }
     deferred_methods_.push_back(OwnedFn{struct_file, std::move(method)});
     FunctionDecl *stable = &deferred_methods_.back().fn;
     default_origin_.emplace(stable, &templ);
@@ -1258,6 +1401,8 @@ const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t
     info.is_static = false;
     info.unsafe_fn = templ.unsafe;
     info.exported = templ.exported;
+    info.extern_c = templ.extern_c;
+    info.link_name = templ.link_name;
     info.file_id = struct_file;
     info.decl = stable;
     auto &table = methods_[struct_file][owner];

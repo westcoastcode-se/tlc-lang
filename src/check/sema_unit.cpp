@@ -51,14 +51,20 @@ void Checker::declare_assoc(const VarDecl &var) {
     if (var.owner.empty() || var.name.empty()) {
         return;
     }
+    const bool generic = generic_struct_name(file_id_, var.owner);
+    const bool on_trait = package_trait(file_id_, var.owner) >= 0;
+    // A C symbol is one library name. A generic or a trait does not name one object.
+    if (var.extern_c && (generic || on_trait)) {
+        error(var.loc, "extern(abi=\"c\") on a trait or a generic");
+        return;
+    }
     if (var.is_extern) {
         error(var.loc, "not supported yet");
     }
-    if (package_trait(file_id_, var.owner) >= 0) {
+    if (on_trait) {
         error(var.loc, "type mismatch");
     }
     require_owner_params(var);
-    const bool generic = generic_struct_name(file_id_, var.owner);
     // `export var Box[T]::extra` stays unsupported. `export const Box[T]::limit` is `pkg.Box[i32].limit`.
     if (var.exported && generic && !var.is_const_decl) {
         error(var.loc, "not supported yet");
@@ -283,12 +289,42 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             }
         }
     };
+    // A result named `T` is a type parameter. Resolving it here is `not supported yet`.
+    // A result named `Shape` is a trait and has no size.
+    auto trait_result_name = [&](const FunctionDecl &fn) {
+        auto named = [&](const std::string &name, const std::string &package, int indirections) {
+            if (!package.empty() || indirections > 1 || name.empty()) {
+                return;
+            }
+            if (package_trait(file_id_, name) >= 0) {
+                error(fn.loc, "trait has no size");
+            }
+        };
+        if (fn.results.size() > 1) {
+            for (const ResultSlot &slot : fn.results) {
+                named(slot.type_name, slot.type_package, slot.indirections);
+            }
+            return;
+        }
+        if (fn.results.size() == 1) {
+            const ResultSlot &slot = fn.results.front();
+            named(slot.type_name, slot.type_package, slot.indirections);
+            return;
+        }
+        named(fn.return_type, fn.type_package, fn.indirections);
+    };
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+            // A trait has no size, so it is not a result. Checked before the paths that
+            // return early, and again below for an ordinary function.
             if (!fn->type_params.empty() && fn->method_struct.empty()) {
-                if (fn->is_extern || fn->extern_c || fn->variadic) {
+                // A C symbol is one library name. A generic function is specialized per call.
+                if (fn->extern_c) {
+                    error(fn->loc, "extern(abi=\"c\") on a trait or a generic");
+                } else if (fn->is_extern || fn->variadic) {
                     error(fn->loc, "not supported yet");
                 }
+                trait_result_name(*fn);
                 for (std::size_t i = 0; i < fn->type_params.size(); ++i) {
                     if (fn->type_params[i].is_pack && i + 1 != fn->type_params.size()) {
                         error(fn->type_params[i].loc, "not supported yet");
@@ -336,10 +372,14 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 require_method_params(*fn);
                 if (generic_struct_name(file_id_, fn->method_struct)) {
                     // `export` publishes `value.name(...)` and `pkg.Vec[i32].name(...)`.
-                    // `extern` on the method stays rejected.
-                    if (fn->is_extern) {
+                    // `extern` specializes with the struct. A C symbol is one library name,
+                    // so `extern(abi="c")` is not a method of a generic struct.
+                    if (fn->extern_c) {
+                        error(fn->loc, "extern(abi=\"c\") on a trait or a generic");
+                    } else if (fn->is_extern && fn->variadic) {
                         error(fn->loc, "not supported yet");
                     }
+                    trait_result_name(*fn);
                     if (fn->static_method) {
                         for (const OwnedVar &owned : owned_assoc_) {
                             if (owned.file_id == file_id_ && owned.var.owner == fn->method_struct &&
@@ -349,21 +389,25 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                             }
                         }
                     }
-                    generic_method_clash(*fn);
+                    if (!fn->extern_c) {
+                        generic_method_clash(*fn);
+                    }
                     continue;
                 }
                 if (package_trait(file_id_, fn->method_struct) >= 0) {
+                    trait_result_name(*fn);
                     register_trait_default(*fn);
                     continue;
                 }
                 if (!fn->type_params.empty()) {
+                    trait_result_name(*fn);
                     register_method_template(*fn);
                     continue;
                 }
             }
             Type signature = function_signature(*fn);
             if (signature.result != nullptr && mentions_trait(*signature.result)) {
-                error(fn->loc, "not supported yet");
+                error(fn->loc, "trait has no size");
             }
             bool generic = false;
             for (const Type &param : signature.params) {
@@ -371,41 +415,45 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     generic = true;
                 }
             }
-            if (fn->variadic && !fn->extern_c && (fn->is_extern || fn->body == nullptr)) {
-                error(fn->loc, "not supported yet");
-            }
-            if (fn->extern_c && fn->results.size() > 1) {
-                error(fn->loc, "extern function cannot return several results");
-            } else if (fn->extern_c) {
-                if (signature.result != nullptr) {
-                    require_extern_struct(*signature.result, fn->loc);
+            // A parameter that names a trait is specialized per struct. That is not one C symbol.
+            if (generic && fn->extern_c) {
+                error(fn->loc, "extern(abi=\"c\") on a trait or a generic");
+            } else {
+                if (fn->variadic && !fn->extern_c && (fn->is_extern || fn->body == nullptr)) {
+                    error(fn->loc, "not supported yet");
                 }
-                for (std::size_t index = 0; index < signature.params.size() && index < fn->params.size(); ++index) {
-                    require_extern_struct(signature.params[index], fn->params[index].loc);
-                }
-                bool many = signature.result != nullptr && uses_many_results(*signature.result);
-                if (!many) {
-                    for (const Type &param : signature.params) {
-                        if (uses_many_results(param)) {
-                            many = true;
-                            break;
+                if (fn->extern_c && fn->results.size() > 1) {
+                    error(fn->loc, "extern function cannot return several results");
+                } else if (fn->extern_c) {
+                    if (signature.result != nullptr) {
+                        require_extern_struct(*signature.result, fn->loc);
+                    }
+                    for (std::size_t index = 0; index < signature.params.size() && index < fn->params.size(); ++index) {
+                        require_extern_struct(signature.params[index], fn->params[index].loc);
+                    }
+                    bool many = signature.result != nullptr && uses_many_results(*signature.result);
+                    if (!many) {
+                        for (const Type &param : signature.params) {
+                            if (uses_many_results(param)) {
+                                many = true;
+                                break;
+                            }
                         }
                     }
-                }
-                if (many) {
-                    error(fn->loc, "extern function cannot use several results");
+                    if (many) {
+                        error(fn->loc, "extern function cannot use several results");
+                    }
                 }
             }
             if (generic && signature.result != nullptr && signature.result->kind == TypeKind::Tuple) {
                 error(fn->loc, "not supported yet");
             }
-            if (generic && (fn->exported || fn->is_extern || fn->variadic)) {
+            // `export` publishes the function. Each call is specialized. A tlc `extern` and `...`
+            // are still one symbol, which a trait parameter is not.
+            if (generic && !fn->extern_c && (fn->is_extern || fn->variadic)) {
                 error(fn->loc, "not supported yet");
             }
             if (!fn->method_struct.empty()) {
-                if (fn->is_extern) {
-                    error(fn->loc, "not supported yet");
-                }
                 const bool has_param = !fn->params.empty();
                 const int receiver_refs = has_param ? fn->params.front().indirections : -1;
                 const bool receiver_shape = !fn->static_method && has_param && fn->params.front().is_receiver &&
@@ -443,8 +491,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                         }
                     }
                     if (slot != nullptr) {
+                        // Same rule as a free function: two `name=` values on one list clash.
+                        const bool link_clash =
+                            !fn->link_name.empty() && !slot->link_name.empty() && slot->link_name != fn->link_name;
                         if (!same_type(slot->type, signature) || (slot->has_body && fn->body) ||
-                            slot->unsafe_fn != fn->unsafe) {
+                            slot->unsafe_fn != fn->unsafe || link_clash) {
                             error(fn->loc, "redefinition");
                         } else {
                             if (fn->body) {
@@ -454,17 +505,41 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                             if (fn->exported) {
                                 slot->exported = true;
                             }
+                            if (slot->link_name.empty()) {
+                                slot->link_name = fn->link_name;
+                            }
+                            slot->extern_c = slot->extern_c || fn->extern_c;
                         }
                     } else {
-                        MethodInfo extra;
-                        extra.type = std::move(signature);
-                        extra.has_body = fn->body != nullptr;
-                        extra.is_static = fn->static_method;
-                        extra.unsafe_fn = fn->unsafe;
-                        extra.exported = fn->exported;
-                        extra.file_id = file_id_;
-                        extra.decl = fn;
-                        found->second.more.push_back(std::move(extra));
+                        // `extern(abi="c")` keeps one C name per method, so a second list clashes.
+                        const auto taken = [&](const MethodInfo &info) {
+                            return (fn->extern_c && info.extern_c) ||
+                                   (!fn->link_name.empty() && info.link_name == fn->link_name);
+                        };
+                        bool clash = taken(found->second);
+                        if (!clash) {
+                            for (const MethodInfo &extra : found->second.more) {
+                                if (taken(extra)) {
+                                    clash = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (clash) {
+                            error(fn->loc, "redefinition");
+                        } else {
+                            MethodInfo extra;
+                            extra.type = std::move(signature);
+                            extra.has_body = fn->body != nullptr;
+                            extra.is_static = fn->static_method;
+                            extra.unsafe_fn = fn->unsafe;
+                            extra.exported = fn->exported;
+                            extra.extern_c = fn->extern_c;
+                            extra.link_name = fn->link_name;
+                            extra.file_id = file_id_;
+                            extra.decl = fn;
+                            found->second.more.push_back(std::move(extra));
+                        }
                     }
                 } else {
                     const int struct_id = find_tag(file_id_, fn->method_struct);
@@ -479,6 +554,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                         info.is_static = fn->static_method;
                         info.unsafe_fn = fn->unsafe;
                         info.exported = fn->exported;
+                        info.extern_c = fn->extern_c;
+                        info.link_name = fn->link_name;
                         info.file_id = file_id_;
                         info.decl = fn;
                         table.emplace(fn->name, std::move(info));
@@ -1436,8 +1513,10 @@ void Checker::analyze(const TranslationUnit &unit) {
     register_enums(unit, 0);
     register_typedefs(unit, 0);
     register_traits(unit, 0);
+    inherit_traits();
     define_struct_fields();
     define_trait_fields();
+    link_parent_fields();
     check_unions();
     publish_exports(unit, 0);
     analyze_unit(unit, 0, nullptr);
@@ -1554,12 +1633,14 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                     generic = true;
                 }
             }
-            if (generic) {
+            // A trait parameter is specialized per call. `extern` and `...` stay unpublished.
+            if (generic && (fn->extern_c || fn->is_extern || fn->variadic)) {
                 continue;
             }
             Symbol symbol;
             symbol.name = fn->name;
             symbol.type = function_signature(*fn);
+            symbol.loc = fn->loc;
             symbol.is_function = true;
             symbol.unsafe_fn = fn->unsafe;
             symbol.has_body = fn->body != nullptr;
@@ -1958,8 +2039,10 @@ void Checker::analyze_graph(const PackageGraph &graph) {
     for (const PackageNode &node : graph.nodes) {
         register_traits(node.unit, node.file_id);
     }
+    inherit_traits();
     define_struct_fields();
     define_trait_fields();
+    link_parent_fields();
     check_unions();
     for (const PackageNode &node : graph.nodes) {
         publish_exports(node.unit, node.file_id);

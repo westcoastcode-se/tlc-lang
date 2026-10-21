@@ -1,0 +1,46 @@
+import "geom";
+import "geom" as g;
+
+type Shape union(geom.Kind) {
+    A struct { n i32; };
+    B struct { n i32; };
+};
+
+type Holder struct {
+    data union(geom.Kind) {
+        A struct { n i32; };
+        B struct { n i32; };
+    };
+};
+
+type Via union(geom.Alias) {
+    A struct { n i32; };
+    B struct { n i32; };
+};
+
+func main() i32 {
+    var s Shape = {.B = {.n = 30}};
+    if (geom.Kind(s) != geom.Kind.B || g.Kind(s) != geom.Kind.B || s.B.n != 30) {
+        return 1;
+    }
+    var h Holder;
+    h.data.A.n = 6;
+    if (geom.Kind(h.data) != geom.Kind.A || h.data.A.n != 6) {
+        return 2;
+    }
+    var u union(geom.Kind) {
+        A struct { n i32; };
+        B struct { n i32; };
+    } = {.A = {.n = 4}};
+    if (geom.Kind(u) != geom.Kind.A || u.A.n != 4) {
+        return 3;
+    }
+    if (sizeof(Shape) != 8 || sizeof(Holder) != 8) {
+        return 4;
+    }
+    var via Via = {.A = {.n = 1}};
+    if (sizeof(Via) != 8 || geom.Alias(via) != geom.Kind.A || via.A.n != 1) {
+        return 5;
+    }
+    return s.B.n + h.data.A.n + u.A.n;
+}

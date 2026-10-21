@@ -1,0 +1,9 @@
+package math;
+
+export type Vec[T type] struct {
+    n T;
+}
+
+export extern(abi="c", name="vec_code") func Vec[T]::code(value T) i32 {
+    return value;
+}

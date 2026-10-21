@@ -24,6 +24,104 @@ bool Checker::allow_unsafe_fn(bool unsafe_fn, SourceLoc loc) {
     return true;
 }
 
+Checker::TraitHome::TraitHome(Checker &checker, uint32_t home) : checker(checker), saved(checker.trait_fn_home_) {
+    if (home != 0) {
+        checker.trait_fn_home_ = home;
+    }
+}
+
+Checker::TraitHome::~TraitHome() {
+    checker.trait_fn_home_ = saved;
+}
+
+uint32_t Checker::function_home(const Expr &callee) {
+    // `pkg.name` is the defining package. A bare name in this package uses `file_id_`:
+    // a string unit's source id is not that file, and the two ids are the same otherwise.
+    if (const auto *selector = std::get_if<Expr::Selector>(&callee.data)) {
+        if (selector->base == nullptr) {
+            return 0;
+        }
+        const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+        if (base == nullptr) {
+            return 0;
+        }
+        const Symbol *package = lookup(base->text);
+        if (package == nullptr || !package->is_package) {
+            return 0;
+        }
+        const Symbol *symbol = find_export(package->package_file, selector->field);
+        if (symbol == nullptr) {
+            return 0;
+        }
+        if (symbol->package_file != 0) {
+            return symbol->package_file;
+        }
+        if (!symbol->lists.empty() && symbol->lists.front().loc.valid()) {
+            return symbol->lists.front().loc.file;
+        }
+        return symbol->loc.valid() ? symbol->loc.file : 0;
+    }
+    const auto *named = std::get_if<Expr::Name>(&callee.data);
+    if (named == nullptr) {
+        return 0;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || !symbol->is_function) {
+        return 0;
+    }
+    if (symbol->package_file != 0 && symbol->package_file != file_id_) {
+        return symbol->package_file;
+    }
+    return file_id_;
+}
+
+void Checker::reject_trait_prototype(const Type &signature, bool has_body, SourceLoc loc) {
+    if (has_body) {
+        return;
+    }
+    for (const Type &param : signature.params) {
+        if (mentions_trait(param)) {
+            error(loc, "not supported yet");
+            return;
+        }
+    }
+}
+
+bool Checker::callee_has_body(const Expr &callee) {
+    const Symbol *symbol = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&callee.data)) {
+        symbol = lookup(named->text);
+    } else if (const auto *selector = std::get_if<Expr::Selector>(&callee.data)) {
+        if (selector->base != nullptr) {
+            if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
+                const Symbol *package = lookup(base->text);
+                if (package != nullptr && package->is_package) {
+                    symbol = find_export(package->package_file, selector->field);
+                }
+            }
+        }
+    }
+    if (symbol == nullptr || !symbol->is_function) {
+        return true;
+    }
+    if (!symbol->lists.empty()) {
+        return symbol->lists.front().has_body;
+    }
+    return symbol->has_body;
+}
+
+uint32_t Checker::trait_signature_home(const Type &signature, const Expr *callee) {
+    if (callee == nullptr) {
+        return 0;
+    }
+    for (const Type &param : signature.params) {
+        if (mentions_trait(param)) {
+            return function_home(*callee);
+        }
+    }
+    return 0;
+}
+
 void Checker::mismatch(SourceLoc loc, const Type &want, const Type &got) {
     error(loc, "type mismatch: expected " + type_desc(want) + ", found " + type_desc(got));
 }
@@ -40,11 +138,15 @@ void Checker::expect(const Type &got, const Type &want, SourceLoc loc) {
 void Checker::expect_value(const Type &got, const Type &want, const Expr &, SourceLoc loc) {
     if (want.kind == TypeKind::Trait && got.kind != TypeKind::Invalid) {
         if (got.kind == TypeKind::Trait) {
+            // `Shape` reaches `Parent` through the stored parent link. No table.
+            if (trait_is(got.trait_id, want.trait_id)) {
+                return;
+            }
             expect(got, want, loc);
             return;
         }
         if (got.kind == TypeKind::Struct) {
-            require_satisfies(got.struct_id, want.trait_id, false, loc);
+            require_satisfies(got.struct_id, want.trait_id, false, loc, trait_fn_home_);
             return;
         }
         mismatch(loc, want, got);
@@ -57,11 +159,14 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &, Sour
             return;
         }
         if (got.kind == TypeKind::Pointer && got.pointee && got.pointee->kind == TypeKind::Trait) {
+            if (trait_is(got.pointee->trait_id, want.pointee->trait_id)) {
+                return;
+            }
             expect(*got.pointee, *want.pointee, loc);
             return;
         }
         if (got.kind == TypeKind::Pointer && got.pointee && got.pointee->kind == TypeKind::Struct) {
-            require_satisfies(got.pointee->struct_id, want.pointee->trait_id, true, loc);
+            require_satisfies(got.pointee->struct_id, want.pointee->trait_id, true, loc, trait_fn_home_);
             return;
         }
         mismatch(loc, want, got);
@@ -312,7 +417,7 @@ Type Checker::elaborate_inferred(FunctionDecl &fn, const Type &want) {
     }
     Type concrete = function_signature(fn);
     if (concrete.result != nullptr && mentions_trait(*concrete.result)) {
-        generic = true;
+        error(fn.loc, "trait has no size");
     }
     if (generic) {
         error(fn.loc, "not supported yet");
@@ -754,12 +859,13 @@ bool Checker::accept_trait_lambda(const Expr &expr, const Type &want) {
         }
     }
     const Type signature = function_signature(fn);
-    if (signature.result != nullptr && mentions_trait(*signature.result)) {
-        generic = true;
+    const bool trait_result = signature.result != nullptr && mentions_trait(*signature.result);
+    if (trait_result) {
+        error(fn.loc, "trait has no size");
     }
     if (generic) {
         error(fn.loc, "not supported yet");
-    } else if (signature.kind != TypeKind::Function || !same_type(signature, *method)) {
+    } else if (!trait_result && (signature.kind != TypeKind::Function || !same_type(signature, *method))) {
         error(fn.loc, "type mismatch");
     }
     if (fn.body != nullptr) {
@@ -1423,6 +1529,8 @@ Type Checker::finish_overloaded(const Expr::Call &node, const Symbol &symbol, bo
             error(node.loc, "not supported yet");
         }
     }
+    const TraitHome home(*this, trait_signature_home(signature, node.callee.get()));
+    reject_trait_prototype(signature, winner->has_body, node.loc);
     const bool count_ok = signature.variadic ? node.args.size() >= signature.params.size()
                                              : node.args.size() == signature.params.size();
     for (std::size_t i = 0; i < node.args.size(); ++i) {
@@ -1449,6 +1557,15 @@ Type Checker::finish_static_call(const Expr::Call &node, const MethodInfo &metho
     if (deferring && method.type.variadic) {
         error(node.loc, "not supported yet");
     }
+    uint32_t trait_home = 0;
+    for (const Type &param : method.type.params) {
+        if (mentions_trait(param)) {
+            trait_home = method.file_id;
+            break;
+        }
+    }
+    const TraitHome home(*this, trait_home);
+    reject_trait_prototype(method.type, method.has_body, node.loc);
     const bool count_ok = method.type.variadic ? node.args.size() >= method.type.params.size()
                                                 : node.args.size() == method.type.params.size();
     if (!count_ok) {
@@ -1698,6 +1815,15 @@ Type Checker::finish_value_method(const Expr::Call &node, const Expr::Selector &
             expect(object, receiver, expr_loc(*selector.base));
         }
     }
+    uint32_t trait_home = 0;
+    for (const Type &param : method.type.params) {
+        if (mentions_trait(param)) {
+            trait_home = method.file_id;
+            break;
+        }
+    }
+    const TraitHome home(*this, trait_home);
+    reject_trait_prototype(method.type, method.has_body, node.loc);
     for (std::size_t i = 0; i < node.args.size(); ++i) {
         if (count_ok && i + 1 < arity) {
             check_call_arg(*node.args[i], method.type.params[i + 1]);

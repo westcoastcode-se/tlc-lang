@@ -1,0 +1,23 @@
+type Node struct {
+    kids [2]Row;
+}
+
+type Box struct {
+    grid [2][2]Row;
+}
+
+type Row struct {
+    n i32;
+}
+
+func main() i32 {
+    var node Node;
+    node.kids[0].n = 20;
+    node.kids[1].n = 22;
+    var box Box;
+    box.grid[1][0].n = 0;
+    if (sizeof(Node) != 8 || sizeof(Box) != 16 || node.kids.len != 2) {
+        return 1;
+    }
+    return node.kids[0].n + node.kids[1].n + box.grid[1][0].n;
+}

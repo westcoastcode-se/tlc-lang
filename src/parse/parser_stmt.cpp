@@ -65,7 +65,9 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
                 bool ignored_extern = false;
                 bool ignored_c = false;
                 std::string ignored_name;
-                take_extern(ignored_extern, ignored_c, ignored_name);
+                SourceLoc ignored_loc{};
+                take_extern(ignored_extern, ignored_c, ignored_name, ignored_loc);
+                reject_tlc_link_name(ignored_c, ignored_name, ignored_loc);
                 continue;
             }
             ++pos_;
@@ -84,6 +86,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         bool is_extern = false;
         bool extern_c = false;
         std::string link_name;
+        SourceLoc name_loc{};
         bool unsafe_fn = false;
         const SourceLoc storage_loc = peek().loc;
         while (true) {
@@ -91,7 +94,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
                 exported = true;
                 continue;
             }
-            if (take_extern(is_extern, extern_c, link_name)) {
+            if (take_extern(is_extern, extern_c, link_name, name_loc)) {
                 continue;
             }
             if (eat(TokenKind::KwUnsafe)) {
@@ -100,6 +103,7 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
             }
             break;
         }
+        reject_tlc_link_name(extern_c, link_name, name_loc);
         if (exported || is_extern) {
             diags_.error(storage_loc, "not supported yet");
         }

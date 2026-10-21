@@ -1,0 +1,24 @@
+type Point struct {
+    x i32;
+    y i32;
+}
+
+extern func Point::read(self this) i32;
+
+extern func Point::read(self this) i32 {
+    return self.x + self.y;
+}
+
+extern func Point::bump(self *this, n i32) void {
+    self.x = self.x + n;
+}
+
+extern func Point::origin() Point {
+    return Point{.x = 10, .y = 12};
+}
+
+func main() i32 {
+    var p = Point.origin();
+    p.bump(20);
+    return p.read();
+}

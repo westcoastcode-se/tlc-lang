@@ -1,0 +1,15 @@
+package math;
+
+export type Vec[T type] struct {
+    n T;
+}
+
+export extern func Vec[T]::get(self this) T {
+    return self.n;
+}
+
+export extern func Vec[T]::from(value T) Vec[T] {
+    var v Vec[T];
+    v.n = value;
+    return v;
+}

@@ -1,0 +1,18 @@
+type Node struct {
+    n i32;
+    kids *[2]Node;
+    more *[]Node;
+}
+
+func main() i32 {
+    var view []Node;
+    var row [2]Node = {
+        Node{.n = 20, .kids = &row, .more = &view},
+        Node{.n = 22, .kids = &row, .more = &view},
+    };
+    view = row[:];
+    if (row[0].kids.len != 2 || (*row[0].more).len != 2 || sizeof(Node) != 24) {
+        return 1;
+    }
+    return row[0].kids[0].n + row[0].kids[1].n + (*row[0].more)[0].n - row[0].n;
+}

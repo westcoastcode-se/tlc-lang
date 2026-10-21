@@ -1,0 +1,29 @@
+type Pair struct {
+    x i32;
+    y i32;
+}
+
+type Vec[T type] struct {
+    n T;
+}
+
+extern func Vec[T]::get(self this) T;
+
+extern func Vec[T]::get(self this) T {
+    return self.n;
+}
+
+extern func Vec[T]::from(value T) Vec[T] {
+    var v Vec[T];
+    v.n = value;
+    return v;
+}
+
+func main() i32 {
+    var a = Vec[i32].from(20);
+    var b Vec[Pair];
+    b.n.x = 10;
+    b.n.y = 12;
+    var p = b.get();
+    return a.get() + p.x + p.y;
+}

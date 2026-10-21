@@ -644,6 +644,40 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Point struct { x i32; }\n"
+            "type Shape trait { func read() i32; }\n"
+            "func Point::read(self **this) i32 { return self.x; }\n"
+            "func Point::deep(self ***this) i32 { return 0; }\n"
+            "func Shape::read(self **this) i32 { return 0; }\n"
+            "func main() i32 { var p Point; return p.read(); }\n");
+        EXPECT_HAS(check, errors, "expected 'this'");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        EXPECT(check, errors.find("undeclared identifier") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("expected 'this'", at)) != std::string::npos; at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 3);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  func area() i32 { return 1; }\n"
+            "  func grow(n i32) void;\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "expected ';'");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("expected ';'", at)) != std::string::npos; at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 1);
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Integer i32;\n"
             "type Word Integer;\n"
             "type Flag bool;\n"
@@ -859,8 +893,354 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Point struct { x i32; };\n"
             "extern func Point::get(self this) i32;\n"
+            "func main() i32 { var p Point; p.x = 1; return p.get(); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "extern func Point::read(self this) i32;\n"
+            "extern func Point::read(self this) i32 { return self.x + self.y; }\n"
+            "extern func Point::origin() Point { return Point{.x = 20, .y = 22}; }\n"
+            "extern func Point::bump(self *this, n i32) void { self.x = self.x + n; }\n"
+            "func main() i32 {\n"
+            "  var p = Point.origin();\n"
+            "  p.bump(0);\n"
+            "  return p.read();\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Point struct { x i32; };\n"
+            "extern(abi=\"c\") func Point::read(self this) i32;\n"
+            "extern(abi=\"c\") func Point::code() i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "extern(abi=\"c\") func Point::code() i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "extern(abi=\"c\") func Point::read(self this) i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "struct must be extern");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Point struct { x i32; };\n"
+            "extern(abi=\"c\", name=\"point_read\") func Point::read(self this) i32;\n"
+            "extern(abi=\"c\", name=\"other\") func Point::read(self this) i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Point struct { x i32; };\n"
+            "extern(abi=\"c\") func Point::read(self this) i32;\n"
+            "extern(abi=\"c\") func Point::read(self this, n i32) i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Text []const u8;\n"
+            "extern func Text::len(self this) i32 { return self.len; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red, Blue = 40 };\n"
+            "extern func Color::code(self this) i32 { return 2; }\n"
+            "func main() i32 { return Color.Blue.code(); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "func use(s *Shape) i32 { return s.twice(); }\n"
+            "func main() i32 { var r Rect; r.w = 5; r.h = 6; return r.twice() + use(&r); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"tlc\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "export extern func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern func Shape::twice(self *this) i32;\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "extern(abi=\"c\") type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "type Square struct { n i32; };\n"
+            "func Square::area(self *this) i32 { return self.n * self.n; }\n"
+            "func Square::twice(self *this) i32 { return 7; }\n"
+            "func use(s *Shape) i32 { return s.twice(); }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  r.w = 5;\n"
+            "  r.h = 6;\n"
+            "  var q Square;\n"
+            "  q.n = 3;\n"
+            "  return r.twice() + use(&r) + use(&q);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "func main() i32 { var r Rect; r.w = 5; r.h = 6; return r.twice(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "extern(abi=\"c\") type Rect struct { w i32; h i32; };\n"
+            "extern(abi=\"c\") func Rect::twice(self *this, n i32) i32 { return n; }\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "func main() i32 { var r Rect; return r.twice(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\") func Shape::with(self *this, p Point) i32 { return self.area() + p.x; }\n"
+            "extern(abi=\"c\") type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "func main() i32 { var r Rect; var p Point; return r.with(p); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\") func Shape::both(self *this) (i32, i32) { return self.area(), self.area(); }\n"
+            "extern(abi=\"c\") type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "func main() i32 { var r Rect; var a, b = r.both(); return a + b; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("extern function cannot return several results") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(name=\"shape_twice\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "name requires abi=\"c\"");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"tlc\", name=\"shape_twice\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "name requires abi=\"c\"");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\", name=\"shape_twice\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "extern(abi=\"c\") type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "type Square struct { n i32; };\n"
+            "func Square::area(self *this) i32 { return self.n * self.n; }\n"
+            "func Square::twice(self *this) i32 { return 7; }\n"
+            "func use(s *Shape) i32 { return s.twice(); }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  r.w = 5;\n"
+            "  r.h = 6;\n"
+            "  var q Square;\n"
+            "  q.n = 3;\n"
+            "  return r.twice() + use(&r) + use(&q);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\", name=\"shape_twice\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "extern(abi=\"c\") type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "extern(abi=\"c\") type Round struct { n i32; };\n"
+            "func Round::area(self *this) i32 { return self.n; }\n"
+            "func main() i32 { var r Rect; var c Round; return r.twice() + c.twice(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\", name=\"shape_twice\") func shape_twice() i32 { return 1; }\n"
+            "extern(abi=\"c\", name=\"shape_twice\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "extern(abi=\"c\") type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "func main() i32 { var r Rect; return r.twice(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\", name=\"shape_twice\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "extern(abi=\"c\") type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "func main() i32 { var r Rect; r.w = 5; r.h = 6; return r.twice(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\", name=\"shape_twice\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "type Rect struct { w i32; h i32; };\n"
+            "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
+            "func main() i32 { var r Rect; return r.twice(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\", name=\"shape_id\") func Shape::id[T type](self *this) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"tlc\", name=\"shape_twice\") func Shape::twice(self *this) i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "name requires abi=\"c\"");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(name=\"shape_show\") func Shape::show(self *this, ...) i32 { return self.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "name requires abi=\"c\"");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\") func Shape::twice(self *this) i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\") func Shape::show(self *this, ...) i32 { return self.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern func Shape::show(self *this, ...) i32 { return self.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "type Empty struct { n i32; };\n"
+            "func main() i32 { var e Empty; return e.twice(); }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"math/shape.tlc",
+             "package math;\n"
+             "export type Rect struct { export w i32; export h i32; };\n"
+             "type Shape trait { func area() i32; };\n"
+             "extern func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+             "export func Rect::area(self *this) i32 { return self.w * self.h; }\n"},
+            {"main.tlc",
+             "import \"math\";\n"
+             "func main() i32 { var r math.Rect; r.w = 5; r.h = 6; return r.twice(); }\n"},
+        });
+        EXPECT_HAS(check, errors, "twice is not exported");
     }
 
     {
@@ -2564,7 +2944,8 @@ int run_sema_tests() {
             "  var s Shape;\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "trait has no size");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
     }
 
     {
@@ -2572,10 +2953,165 @@ int run_sema_tests() {
             "type Shape trait {\n"
             "  func area() i32;\n"
             "};\n"
+            "type Rect struct { w i32; };\n"
+            "func Rect::area(self this) i32 { return self.w; }\n"
             "func main() i32 {\n"
+            "  var r Rect;\n"
             "  var s *Shape;\n"
+            "  var t Shape = r;\n"
             "  return 0;\n"
             "}\n");
+        EXPECT_HAS(check, errors, "trait has no size");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("trait has no size", at)) != std::string::npos; at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 2);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  func make() Shape;\n"
+            "  func area() i32;\n"
+            "};\n"
+            "type Rect struct { w i32; };\n"
+            "func Rect::area(self this) i32 { return self.w; }\n"
+            "func give() Shape {\n"
+            "  var r Rect;\n"
+            "  r.w = 1;\n"
+            "  return r;\n"
+            "}\n"
+            "func point() *Shape {\n"
+            "  var r Rect;\n"
+            "  return &r;\n"
+            "}\n"
+            "func Shape::twice(self *this) Shape { return self; }\n"
+            "func main() i32 {\n"
+            "  func local() Shape { return 0; }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "trait has no size");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        EXPECT(check, errors.find("return type:") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("trait has no size", at)) != std::string::npos; at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 5);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; }\n"
+            "type Rect struct { w i32; }\n"
+            "func Rect::area(self this) i32 { return self.w; }\n"
+            "type Box struct { items []Shape; row [2]Shape; }\n"
+            "func take(s []Shape) i32 { return 0; }\n"
+            "func sized(s [2]Shape) i32 { return 0; }\n"
+            "func give() []Shape { return 0; }\n"
+            "func main() i32 {\n"
+            "  var a [2]Shape;\n"
+            "  var b []Shape;\n"
+            "  var c [2]*Shape;\n"
+            "  var d []*Shape;\n"
+            "  var e [][]Shape;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "trait has no size");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("trait has no size", at)) != std::string::npos; at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 10);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; }\n"
+            "type Box struct { item Shape; ptr *Shape; }\n"
+            "type Bag trait { item Shape; ptr *Shape; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "trait has no size");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("trait has no size", at)) != std::string::npos; at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 4);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Parent trait {\n"
+            "  func area() i32;\n"
+            "  w i32;\n"
+            "}\n"
+            "type Shape trait(Parent) {\n"
+            "  func extra() i32;\n"
+            "}\n"
+            "type Rect struct { w i32; h i32; }\n"
+            "func Rect::area(self this) i32 { return self.w; }\n"
+            "func Rect::extra(self this) i32 { return self.h; }\n"
+            "func need(p Parent) i32 { return p.area() + p.w; }\n"
+            "func use(s Shape) i32 { return need(s) + s.extra(); }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  r.w = 5;\n"
+            "  r.h = 6;\n"
+            "  return use(r);\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Parent trait { func area() i32; }\n"
+            "func Parent::twice(self this) i32 { return self.area() + self.area(); }\n"
+            "type Shape trait(Parent) {}\n"
+            "type Rect struct { w i32; }\n"
+            "func Rect::area(self this) i32 { return self.w; }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  r.w = 4;\n"
+            "  return r.twice();\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Parent trait { func area() i32; }\n"
+            "type Shape trait(Parent) { func extra() i32; }\n"
+            "type Rect struct { w i32; }\n"
+            "func Rect::extra(self this) i32 { return self.w; }\n"
+            "func use(s Shape) i32 { return s.area(); }\n"
+            "func main() i32 { var r Rect; return use(r); }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Parent trait { func area() i32; }\n"
+            "type Shape trait(Parent) { func area() i32; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait(Missing) {}\n"
+            "type Rect struct { w i32; }\n"
+            "type Box trait(Rect) {}\n"
+            "type Loop trait(Loop) {}\n"
+            "type A trait(B) {}\n"
+            "type B trait(A) {}\n"
+            "type C trait(math.Parent) {}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "undeclared identifier");
+        EXPECT_HAS(check, errors, "type mismatch");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
@@ -2616,7 +3152,57 @@ int run_sema_tests() {
             "func Rect::area(self this) i32 { return self.w; }\n"
             "export func use(s Shape) i32;\n"
             "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait {\n"
+            "  func area() i32;\n"
+            "};\n"
+            "type Rect struct { w i32; };\n"
+            "func Rect::area(self this) i32 { return self.w; }\n"
+            "export func use(s Shape) i32 { return s.area(); }\n"
+            "export func use_at(s *Shape) i32 { return s.area(); }\n"
+            "export func Rect::paint(self *this, s Shape) i32 { return self.w + s.area(); }\n"
+            "func main() i32 {\n"
+            "  var r Rect;\n"
+            "  r.w = 4;\n"
+            "  return use(r) + use_at(&r) + r.paint(r);\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "type Rect struct { w i32; };\n"
+            "export extern(abi=\"c\") func use(s Shape) i32;\n"
+            "export extern(abi=\"c\", name=\"paint_c\") func Rect::paint(self *this, s Shape) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("extern(abi=\"c\") on a trait or a generic", at)) != std::string::npos;
+             at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 2);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern func use(s Shape) i32 { return 1; }\n"
+            "export extern func use(s Shape) i32 { return 1; }\n"
+            "export extern(abi=\"tlc\") func use(s Shape) i32 { return 1; }\n"
+            "func use(s Shape, ...) i32 { return 1; }\n"
+            "export func use(s Shape, ...) i32 { return 1; }\n"
+            "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.find("extern(abi=\"c\") on a trait or a generic") == std::string::npos);
     }
 
     {
@@ -2715,7 +3301,8 @@ int run_sema_tests() {
             "  var a Adder = (n) { return n; };\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "trait has no size");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
     }
 
     {
@@ -3093,7 +3680,9 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Node struct { n Node; };\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "recursive struct mem.Node -> mem.Node");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
     }
 
     {
@@ -3274,6 +3863,177 @@ int run_sema_tests() {
             "  return a.b.x;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { value i32; kids []Node; };\n"
+            "func main() i32 {\n"
+            "  var child = [_]Node{Node{.value = 30}};\n"
+            "  var root Node;\n"
+            "  root.value = 10;\n"
+            "  root.kids = child[:];\n"
+            "  return root.value + root.kids[0].value + root.kids.len;\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { kids [][]Node; };\n"
+            "type Holder struct { rows [2][]Node; };\n"
+            "type Box struct { grid [][2]Node; };\n"
+            "type Node2 struct { kids []Row; };\n"
+            "type Row struct { n i32; };\n"
+            "type A struct { b []B; };\n"
+            "type B struct { a []A; };\n"
+            "func main() i32 { return sizeof(Node) + sizeof(Holder) + sizeof(Box) + sizeof(Node2); }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { value i32; next Node; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "recursive struct mem.Node -> mem.Node");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { kids [2]Node; kids [2][2]Node; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "recursive struct mem.Node -> mem.Node");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type A struct { b B; };\n"
+            "type B struct { a A; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "recursive struct mem.A -> mem.B -> mem.A");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "package pkg;\n"
+            "type A struct { b B; };\n"
+            "type B struct { c C; };\n"
+            "type C struct { a A; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "recursive struct pkg.A -> pkg.B -> pkg.C -> pkg.A");
+        EXPECT_HAS(check, errors, "recursive struct pkg.B -> pkg.C -> pkg.A -> pkg.B");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"pkg/a.tlc", "type A struct { b B; };\nfunc main() i32 { return 0; }\n"},
+            {"pkg/b.tlc", "type B struct { c C; };\n"},
+            {"pkg/c.tlc", "type C struct { a A; };\n"},
+        });
+        EXPECT_HAS(check, errors, "recursive struct pkg.A -> pkg.B -> pkg.C -> pkg.A");
+        EXPECT_HAS(check, errors, "recursive struct pkg.B -> pkg.C -> pkg.A -> pkg.B");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Word union { n i32; w Word; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "recursive union mem.Word -> mem.Word");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { value i32; kids [2]*Node; next *Node; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { kids [2]Row; };\n"
+            "type Row struct { n i32; };\n"
+            "func main() i32 { return sizeof(Node); }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { kids [2][2]Row; };\n"
+            "type Row struct { n i32; };\n"
+            "func main() i32 { return sizeof(Node); }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"pkg/node.tlc", "type Node struct { kids [2]Row; };\nfunc main() i32 { return sizeof(Node); }\n"},
+            {"pkg/row.tlc", "type Row struct { n i32; };\n"},
+        });
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { kids *[2]Node; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { kids *[]Node; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { kids *[2][2]Node; grid ?*[2]Node; deep **[2]Node; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { kids *[2]Row; more *[]Row; };\n"
+            "type Row struct { n i32; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type A struct { b *[2]B; };\n"
+            "type B struct { a *[]A; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"pkg/node.tlc", "type Node struct { kids *[2]Row; };\nfunc main() i32 { return 0; }\n"},
+            {"pkg/row.tlc", "type Row struct { n i32; };\n"},
+        });
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Node struct { kids []Node; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -3899,8 +4659,8 @@ int run_sema_tests() {
         const std::filesystem::path path = std::filesystem::temp_directory_path() / "tlc-link-body.tlc";
         {
             std::ofstream out(path);
-            out << "extern(name=\"renamed_add\") func add(a i32, b i32) i32 { return a + b; }\n"
-                   "extern(name=\"renamed_add\") func sum(a i32, b i32) i32 { return a + b; }\n"
+            out << "extern(abi=\"c\", name=\"renamed_add\") func add(a i32, b i32) i32 { return a + b; }\n"
+                   "extern(abi=\"c\", name=\"renamed_add\") func sum(a i32, b i32) i32 { return a + b; }\n"
                    "func main() i32 { return add(1, 2); }\n";
         }
         tlc::Options opt;
@@ -4015,8 +4775,251 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "extern(abi=\"c\") type Kind enum { A }\n"
             "extern(abi=\"c\") type Num union(Kind) { A struct { n i32; }; }\n"
+            "extern(abi=\"c\") type Shape struct {\n"
+            "  data union(Kind) { A struct { n i32; }; };\n"
+            "};\n"
+            "extern(abi=\"c\") type Word union {\n"
+            "  data union(Kind) { A struct { n i32; }; };\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a tagged union");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("extern(abi=\"c\") on a tagged union", at)) != std::string::npos;
+             at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 3);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Kind enum { A }\n"
+            "extern type Plain union(Kind) { A struct { n i32; }; }\n"
+            "func main() i32 { return sizeof(Plain); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Kind enum { A }\n"
+            "type Shape union(Kind) { A struct { n i32; }; }\n"
+            "type Alias Shape;\n"
+            "extern(abi=\"c\") type Holder struct {\n"
+            "  value Shape;\n"
+            "  alias Alias;\n"
+            "  ptr *Shape;\n"
+            "  arr [2]Shape;\n"
+            "  point struct { inner Shape; };\n"
+            "};\n"
+            "extern(abi=\"c\") type Word union { item Shape; n i32; }\n"
+            "extern type Tlc struct { value Shape; }\n"
+            "type Plain struct { value Shape; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a tagged union");
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("extern(abi=\"c\") on a tagged union", at)) != std::string::npos;
+             at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 6);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Word union { n i32; }\n"
+            "extern(abi=\"c\") type Holder struct { item Word; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "struct must be extern");
+        EXPECT(check, errors.find("extern(abi=\"c\") on a tagged union") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"geom\";\n"
+             "import \"geom\" as g;\n"
+             "type Shape union(geom.Kind) {\n"
+             "  A struct { n i32; };\n"
+             "  B struct { n i32; };\n"
+             "};\n"
+             "type Holder struct {\n"
+             "  data union(geom.Kind) {\n"
+             "    A struct { n i32; };\n"
+             "    B struct { n i32; };\n"
+             "  };\n"
+             "};\n"
+             "type Via union(geom.Alias) {\n"
+             "  A struct { n i32; };\n"
+             "  B struct { n i32; };\n"
+             "};\n"
+             "type Aliased union(g.Kind) {\n"
+             "  A struct { n i32; };\n"
+             "  B struct { n i32; };\n"
+             "};\n"
+             "func main() i32 {\n"
+             "  var s Shape = {.B = {.n = 1}};\n"
+             "  var h Holder;\n"
+             "  h.data.A.n = 2;\n"
+             "  var u union(geom.Kind) {\n"
+             "    A struct { n i32; };\n"
+             "    B struct { n i32; };\n"
+             "  } = {.A = {.n = 3}};\n"
+             "  var via Via = {.A = {.n = 4}};\n"
+             "  if (geom.Kind(s) != geom.Kind.B || g.Kind(u) != g.Kind.A) { return 1; }\n"
+             "  if (geom.Alias(via) != geom.Kind.A || h.data.A.n != 2) { return 2; }\n"
+             "  return 0;\n"
+             "}\n"},
+            {"geom.tlc",
+             "package geom;\n"
+             "export type Kind enum { A = 1, B = 2 }\n"
+             "export type Alias Kind;\n"},
+        });
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import { Kind } from \"geom\";\n"
+             "type Shape union(geom.Kind) {\n"
+             "  A struct { n i32; };\n"
+             "  B struct { n i32; };\n"
+             "};\n"
+             "func main() i32 { return 0; }\n"},
+            {"geom.tlc", "package geom;\nexport type Kind enum { A, B }\n"},
+        });
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"geom\";\n"
+             "type Shape union(geom.Kind) {\n"
+             "  A struct { n i32; };\n"
+             "  B struct { n i32; };\n"
+             "};\n"
+             "func main() i32 { return 0; }\n"},
+            {"geom.tlc", "package geom;\ntype Kind enum { A, B }\n"},
+        });
+        EXPECT_HAS(check, errors, "Kind is not exported");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"geom\";\n"
+             "type Shape union(geom.Point) { x struct { n i32; }; };\n"
+             "func main() i32 { return 0; }\n"},
+            {"geom.tlc", "package geom;\nexport type Point struct { x i32; };\n"},
+        });
+        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT(check, errors.find("is not exported") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "type Shape union(geom.Kind) {\n"
+             "  A struct { n i32; };\n"
+             "  B struct { n i32; };\n"
+             "};\n"
+             "func main() i32 { return 0; }\n"},
+        });
+        EXPECT_HAS(check, errors, "undeclared identifier");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"geom\";\n"
+             "type Shape union(geom.Kind) { A struct { n i32; }; };\n"
+             "type Bad union(geom.Kind) { A i32; B i32; };\n"
+             "func main() i32 { return 0; }\n"},
+            {"geom.tlc", "package geom;\nexport type Kind enum { A, B }\n"},
+        });
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"geom\";\n"
+             "func main() i32 {\n"
+             "  var n i32 = 1;\n"
+             "  if (geom.Kind(n) == geom.Kind.A) { return 1; }\n"
+             "  return 0;\n"
+             "}\n"},
+            {"geom.tlc", "package geom;\nexport type Kind enum { A, B }\n"},
+        });
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc",
+             "import \"geom\";\n"
+             "extern(abi=\"c\") type Shape union(geom.Kind) { A struct { n i32; }; }\n"
+             "func main() i32 { return 0; }\n"},
+            {"geom.tlc", "package geom;\nexport type Kind enum { A }\n"},
+        });
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a tagged union");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+        EXPECT(check, errors.find("expected a type") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = errors.find("extern(abi=\"c\") on a tagged union", at)) != std::string::npos;
+             at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 1);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Holder struct {\n"
+            "  data union { n i32 = 4; m i32; };\n"
+            "};\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.find("expected ';'") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Kind enum { A, B }\n"
+            "type Holder struct {\n"
+            "  data export union { n i32; m i32; };\n"
+            "  value export union(Kind) {\n"
+            "    A struct { n i32; };\n"
+            "    B struct { n i32; };\n"
+            "  };\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Holder struct {\n"
+            "  data union {\n"
+            "    p func () ?*i32;\n"
+            "    q func () *const i32;\n"
+            "  };\n"
+            "};\n"
+            "func make() ?*i32 { return null; }\n"
+            "var kept i32 = 7;\n"
+            "func view() *const i32 { return &kept; }\n"
+            "func main() i32 {\n"
+            "  var h Holder;\n"
+            "  h.data.p = make;\n"
+            "  h.data.q = view;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -5699,6 +6702,95 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "extern(abi=\"c\") func id[T type](value T) T { return value; }\n"
+            "func main() i32 { return id(1); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "extern func Point::id[T type](self this) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "extern(abi=\"c\") func Point::id[T type](self this) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern func measure(s Shape) i32 { return s.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
+            "extern(abi=\"c\") func measure(s Shape) i32 { return s.area(); }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern type Shape trait { func area() i32; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Shape trait { func area() i32; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern type Vec[T type] struct { n T; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Vec[T type] struct { n T; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern var Vec[T]::extra i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\") var Vec[T]::extra i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Vec[T type] struct { n i32; };\n"
             "func Vec[T]::get[U type](self *this) i32 { return self.n; }\n"
             "func main() i32 { return 0; }\n");
@@ -5901,6 +6993,225 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Vec[T type] struct { n i32; };\n"
             "extern func Vec[T]::from() i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern func Vec[T]::get(self this) T { return self.n; }\n"
+            "func main() i32 {\n"
+            "  var v Vec[i32];\n"
+            "  v.n = 40;\n"
+            "  return v.get();\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\") func Vec[T]::get(self this) T;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\") func Vec[T]::id(value T) i32 { return 0; }\n"
+            "func main() i32 {\n"
+            "  var p Point;\n"
+            "  return Vec[Point].id(p);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\") func Vec[T]::code() i32 { return 1; }\n"
+            "func main() i32 { return Vec[i32].code(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\") func Vec[T]::code() i32;\n"
+            "extern(abi=\"c\") func Vec[T]::code(n i32) i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\") func Vec[T]::pair() (i32, i32);\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("extern function cannot return several results") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(name=\"get_n\") func Vec[T]::get(self this) T;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "name requires abi=\"c\"");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"tlc\", name=\"get_n\") func Vec[T]::code() i32 { return 1; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "name requires abi=\"c\"");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32 { return 1; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code(value T) i32 { return value; }\n"
+            "func main() i32 { return Vec[i32].code(42); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32;\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32 { return 7; }\n"
+            "func main() i32 { return Vec[i32].code(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32;\n"
+            "extern(abi=\"c\", name=\"other\") func Vec[T]::code() i32 { return 1; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32 { return 1; }\n"
+            "func main() i32 { return Vec[i32].code() + Vec[i64].code(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "type Box[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32 { return 1; }\n"
+            "extern(abi=\"c\", name=\"get_n\") func Box[T]::code() i32 { return 2; }\n"
+            "func main() i32 { return Vec[i32].code() + Box[i32].code(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32 { return 1; }\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::other() i32 { return 2; }\n"
+            "func main() i32 { return Vec[i32].code(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\", name=\"get_n\") func get_n() i32 { return 1; }\n"
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32 { return 2; }\n"
+            "func main() i32 { return Vec[i32].code(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Point struct { x i32; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Point::origin() i32 { return 1; }\n"
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32 { return 2; }\n"
+            "func main() i32 { return Vec[i32].code(); }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+        EXPECT(check, errors.find("redefinition") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::get(self this) T;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "type Vec[T type] struct { n T; };\n"
+            "extern(abi=\"c\", name=\"get_n\") func Vec[T]::id(value T) i32 { return 0; }\n"
+            "func main() i32 {\n"
+            "  var p Point;\n"
+            "  return Vec[Point].id(p);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+        EXPECT(check, errors.find("struct must be extern") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose_files({
+            {"main.tlc", "import \"math\";\nfunc main() i32 { return math.Vec[i32].code(); }\n"},
+            {"math.tlc",
+             "package math;\n"
+             "export type Vec[T type] struct { n T; };\n"
+             "extern(abi=\"c\", name=\"get_n\") func Vec[T]::code() i32 { return 1; }\n"},
+        });
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT_HAS(check, errors, "undeclared");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern func Vec[T]::get(self this, ...) i32;\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }

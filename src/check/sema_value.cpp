@@ -697,6 +697,30 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                         }
                     }
+                    // `geom.Kind(shape)` reads the tag. The enum is not a function.
+                    if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
+                        if (selector->base != nullptr) {
+                            if (const auto *pkg_name = std::get_if<Expr::Name>(&selector->base->data)) {
+                                const Symbol *package = lookup(pkg_name->text);
+                                if (package != nullptr && package->is_package) {
+                                    const Symbol *member = find_export(package->package_file, selector->field);
+                                    if (member != nullptr && member->is_type && member->type.kind == TypeKind::Enum) {
+                                        const int enum_id = member->type.enum_id;
+                                        const Type source = check_expr(*node.args.front(), true);
+                                        if (enum_id >= 0 && source.kind == TypeKind::Struct && source.struct_id >= 0 &&
+                                            source.struct_id < static_cast<int>(structs_.size()) &&
+                                            structs_[static_cast<std::size_t>(source.struct_id)].tag_enum == enum_id) {
+                                            return type_enum(enum_id);
+                                        }
+                                        if (source.kind != TypeKind::Invalid) {
+                                            error(node.loc, "type mismatch");
+                                        }
+                                        return type_invalid();
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
                     // `Point` is a type, not a value, so `lookup` does not see it. `Point.make(...)` is the static call.
@@ -1069,6 +1093,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                         expect(object, receiver, expr_loc(*selector->base));
                                     }
                                 }
+                                uint32_t trait_home = 0;
+                                for (const Type &param : method->type.params) {
+                                    if (mentions_trait(param)) {
+                                        trait_home = method->file_id;
+                                        break;
+                                    }
+                                }
+                                const TraitHome home(*this, trait_home);
+                                reject_trait_prototype(method->type, method->has_body, node.loc);
                                 for (std::size_t i = 0; i < node.args.size(); ++i) {
                                     if (count_ok && i + 1 < arity) {
                                         check_call_arg(*node.args[i], method->type.params[i + 1]);
@@ -1151,6 +1184,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "not supported yet");
                     }
                 }
+                const TraitHome home(*this, trait_signature_home(*signature, node.callee.get()));
+                reject_trait_prototype(*signature, callee_has_body(*node.callee), node.loc);
                 const bool count_ok = signature->variadic ? node.args.size() >= signature->params.size()
                                                          : node.args.size() == signature->params.size();
                 if (!count_ok) {
@@ -1630,7 +1665,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 Type signature = function_signature(fn);
                 if (signature.result != nullptr && mentions_trait(*signature.result)) {
-                    generic = true;
+                    error(fn.loc, "trait has no size");
                 }
                 if (generic) {
                     error(fn.loc, "not supported yet");

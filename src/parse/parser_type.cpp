@@ -25,7 +25,7 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             continue;
         }
         if (token.kind == TokenKind::KwExtern) {
-            take_extern(specs.is_extern, specs.extern_c, specs.link_name);
+            take_extern(specs.is_extern, specs.extern_c, specs.link_name, specs.name_loc);
             continue;
         }
         if (token.kind == TokenKind::KwVoid) {
@@ -98,27 +98,9 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             ++pos_;
             ++pos_;
             std::string tag;
-            if (check(TokenKind::Identifier)) {
-                tag = peek().text;
-                ++pos_;
-                if (check(TokenKind::Dot)) {
-                    diags_.error(peek().loc, "not supported yet");
-                    tag.clear();
-                    while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
-                        ++pos_;
-                    }
-                }
-            } else {
-                error_here("expected a type");
-                while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
-                    ++pos_;
-                }
-            }
-            expect(TokenKind::RParen, "expected ')'");
-            if (tag.empty() || !eat(TokenKind::LBrace)) {
-                if (tag.empty()) {
-                    // The missing tag was already reported.
-                } else {
+            std::string tag_package;
+            if (!parse_union_tag(tag_package, tag) || !eat(TokenKind::LBrace)) {
+                if (!tag.empty()) {
                     error_here("expected '{'");
                 }
                 specs.saw_type = true;
@@ -137,6 +119,7 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
             item.anonymous = true;
             item.is_union = true;
             item.tag_name = std::move(tag);
+            item.tag_package = std::move(tag_package);
             anonymous_structs_.push_back(std::move(item));
             specs.saw_type = true;
             specs.type_name = name;
@@ -220,6 +203,7 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
     if (!specs.type_name.empty() && specs.type_name != "invalid") {
         type_names_.insert(specs.type_name);
     }
+    reject_tlc_link_name(specs.extern_c, specs.link_name, specs.name_loc);
     return specs;
 }
 
@@ -270,7 +254,15 @@ std::string Parser::parse_enum_underlying() {
     return out;
 }
 
-bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name) {
+void Parser::reject_tlc_link_name(bool extern_c, const std::string &link_name, SourceLoc name_loc) {
+    // `name=` chooses a C object symbol. A tlc library name belongs to the compiler.
+    if (link_name.empty() || extern_c) {
+        return;
+    }
+    diags_.error(name_loc.valid() ? name_loc : peek().loc, "name requires abi=\"c\"");
+}
+
+bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name, SourceLoc &name_loc) {
     if (!eat(TokenKind::KwExtern)) {
         return false;
     }
@@ -333,6 +325,7 @@ bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name
                             diags_.error(peek().loc, "redefinition");
                         } else {
                             link_name = peek().text;
+                            name_loc = peek().loc;
                         }
                     }
                     ++pos_;
@@ -431,7 +424,7 @@ std::vector<Enumerator> Parser::parse_enumerators() {
     return enumerators;
 }
 
-bool Parser::parse_field(FieldDecl &field) {
+bool Parser::parse_field(FieldDecl &field, bool extern_c) {
     // A field is `name type`, and the type uses the same Go order as `var`.
     field.loc = peek().loc;
     if (!check(TokenKind::Identifier)) {
@@ -445,6 +438,29 @@ bool Parser::parse_field(FieldDecl &field) {
     field.name = peek().text;
     field.loc = peek().loc;
     ++pos_;
+    // A C union field is an ordinary type. `data union(Kind) { ... }` is a tagged union.
+    if (extern_c && check(TokenKind::KwUnion) && peek(1).kind == TokenKind::LParen) {
+        diags_.error(peek().loc, "extern(abi=\"c\") on a tagged union");
+        ++pos_;
+        ++pos_;
+        while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+            ++pos_;
+        }
+        expect(TokenKind::RParen, "expected ')'");
+        if (eat(TokenKind::LBrace)) {
+            int depth = 1;
+            while (depth > 0 && !eof()) {
+                if (check(TokenKind::LBrace)) {
+                    ++depth;
+                } else if (check(TokenKind::RBrace)) {
+                    --depth;
+                }
+                ++pos_;
+            }
+        }
+        eat(TokenKind::Semicolon);
+        return false;
+    }
     const PlacedType type = parse_go_type();
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
@@ -478,11 +494,11 @@ bool Parser::parse_field(FieldDecl &field) {
     return true;
 }
 
-std::vector<FieldDecl> Parser::parse_fields() {
+std::vector<FieldDecl> Parser::parse_fields(bool extern_c) {
     std::vector<FieldDecl> fields;
     while (!check(TokenKind::RBrace) && !eof()) {
         FieldDecl field;
-        if (parse_field(field)) {
+        if (parse_field(field, extern_c)) {
             fields.push_back(std::move(field));
         }
     }
@@ -941,6 +957,32 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
         param.loc = peek().loc;
         param.name = peek().text;
         ++pos_;
+        // A receiver is `name this` or `name *this`. A second `*` is where `this` belongs.
+        std::size_t ahead = 0;
+        int stars = 0;
+        SourceLoc extra_star;
+        while (peek(ahead).kind == TokenKind::Question || peek(ahead).kind == TokenKind::Star) {
+            if (peek(ahead).kind == TokenKind::Question) {
+                if (peek(ahead + 1).kind != TokenKind::Star) {
+                    break;
+                }
+                ++ahead;
+            }
+            if (peek(ahead).kind != TokenKind::Star) {
+                break;
+            }
+            ++stars;
+            if (stars == 2) {
+                extra_star = peek(ahead).loc;
+            }
+            ++ahead;
+            if (peek(ahead).kind == TokenKind::KwConst) {
+                ++ahead;
+            }
+        }
+        if (stars > 1) {
+            diags_.error(extra_star, "expected 'this'");
+        }
         const PointerPrefix prefix = parse_pointer_prefix();
         param.indirections = prefix.count;
         param.optional = prefix.optional;
@@ -949,9 +991,6 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
         param.type_name = method_struct;
         param.is_struct = true;
         param.is_receiver = as_receiver;
-        if (param.indirections > 1) {
-            diags_.error(param.loc, "not supported yet");
-        }
         return param;
     };
     if (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
@@ -1142,8 +1181,9 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
     parse_results(fn);
     if (check(TokenKind::LBrace)) {
+        // A trait method is `func name() type;`. A body belongs on `func Trait::name` outside.
         if (!allow_body) {
-            diags_.error(peek().loc, "not supported yet");
+            diags_.error(peek().loc, "expected ';'");
         }
         auto body = parse_block();
         if (allow_body) {

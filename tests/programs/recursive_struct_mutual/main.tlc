@@ -1,0 +1,11 @@
+type A struct {
+    b B;
+}
+
+type B struct {
+    a A;
+}
+
+func main() i32 {
+    return 0;
+}

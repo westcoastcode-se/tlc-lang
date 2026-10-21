@@ -35,7 +35,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 ## Generics and compile-time
 
 - A generic used as a value: `var f = id`.
-- `extern` on a generic, and a generic that is also `...`. A prototype followed by a body is accepted. A call of a generic that has no body is `not supported yet`. `[...U]` is a separate parameter and is accepted when it is the last type parameter, as in `[T type, ...U]`.
+- A tlc `extern` on a generic, and a generic that is also `...`. `extern(abi="c")` on a trait or a generic is rejected. A prototype followed by a body is accepted. A call of a generic that has no body is `not supported yet`. `[...U]` is a separate parameter and is accepted when it is the last type parameter, as in `[T type, ...U]`.
 - A pack that is not the last type parameter, `[...U, T type]`.
 - A pack on a struct or a union.
 - An empty pack.
@@ -44,7 +44,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - A tuple index that is not a constant, and assignment to a tuple element.
 - `count(U)` and `const for`.
 - A type-parameter list after the method name on a generic struct: `func Vec[T]::get[U type]`. `func Type::name[T type](self *this)` is a method template when the owner is not a generic struct. `func Vec[T]::get` names the struct's parameters.
-- A method template that is static, exported, `extern`, or `...`, and a method template on a type alias: `func Integer::id[T type]`. They are `not supported yet`.
+- A method template that is static, exported, a tlc `extern`, or `...`, and a method template on a type alias: `func Integer::id[T type]`. They are `not supported yet`. `extern(abi="c")` on that template is rejected.
 - Type parameters on an alias, an enum, a trait, or a union. Only `type Name[T type] struct` takes the list.
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.
@@ -101,19 +101,10 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A variadic `extern` or `extern(abi="tlc")`, and a variadic prototype with no body. `extern(abi="c")` may declare `...`. A function with a body may use `...`, and `builtin.va()` reads the extra arguments.
 - An inner function that uses a local or a parameter from an enclosing function, other than a function pointer it returns or calls. The inner function is called directly. `var f = pass` and passing that function as a value are the same gap. A prototype written before the body is the same gap when the body reads that pointer. It can call functions already in scope and use globals. `export`, `extern`, and a method on a function in a block are the same gap. A short anonymous function follows that function. A full anonymous function called directly can read the function pointer.
 
-## Structs, enums, and unions
-
-- `extern` or `extern(abi="c")` on `union(Enum)`.
-- A qualified enum name in `union(Enum)`, such as `union(pkg.Kind)`.
-- A by-value field of a struct that is still incomplete, including the struct being defined. A pointer to that struct is fine.
-
 ## Methods and traits
 
-- `extern` on a method. A method may be exported, including `export func Vec[T]::get`. Another package calls `value.name(...)`. `export` on a static function publishes `pkg.Type.name(...)`. A method without `export` is reported as `name is not exported`.
-- A receiver with more than one star: `self **this`.
-- A body on a trait method. The trait lists the method and its type. A default is `func Trait::name` outside the braces.
-- A trait used as a variable, a return type, an array, a type alias, a trait field, or `**Shape`. A parameter is `Shape` or `*Shape`.
-- `export`, `extern`, or `...` on a function that takes a trait parameter.
+- A trait used as a type alias, or `**Shape`. A parameter is `Shape` or `*Shape`. `var s Shape`, `var s *Shape`, `func give() Shape`, `func give() *Shape`, `[2]Shape`, `[]Shape`, and a field `item Shape` in a struct or a trait are `trait has no size`.
+- A tlc `extern` or `...` on a function that takes a trait parameter. `export` publishes that function when the ABI is not C. `extern(abi="c")` on that function is rejected.
 - A named function as the argument of a single-method trait. The argument is an anonymous function.
 - `(*a).apply(n)` when `a` is a trait pointer passed as an anonymous function. The call is `a.apply(n)`.
 - A value on a trait field, such as `w i32 = 1`. It is `not supported yet`.

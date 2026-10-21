@@ -1,0 +1,17 @@
+type Kind enum {
+    A,
+    B,
+};
+
+extern type Shape union(Kind) {
+    A struct { n i32; };
+    B struct { n i32; };
+};
+
+func main() i32 {
+    var u Shape = {.A = {.n = 40}};
+    if (Kind(u) != Kind.A || sizeof(Shape) != 8) {
+        return 0;
+    }
+    return u.A.n;
+}

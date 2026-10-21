@@ -1,0 +1,30 @@
+import "geom";
+import { measure } from "geom";
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+export func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+type Circle struct {
+    n i32;
+};
+
+export func Circle::area(self this) i32 {
+    return self.n;
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 6;
+    r.h = 7;
+    var c Circle;
+    c.n = 3;
+    var box geom.Rect;
+    box.w = 4;
+    return measure(r) + geom.measure_at(&r) + box.paint(c);
+}

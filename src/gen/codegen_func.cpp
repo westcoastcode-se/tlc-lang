@@ -80,11 +80,25 @@ bool CodeGen::function_is_generic(uint32_t file, const FunctionDecl &fn) const {
 
 CodeGen::Lowered CodeGen::trait_fn_lowered(const std::string &trait_name) const {
     const int id = trait_named(current_file_, trait_name);
-    if (id < 0 || id >= static_cast<int>(trait_decls_.size()) || trait_decls_[static_cast<std::size_t>(id)] == nullptr ||
-        trait_decls_[static_cast<std::size_t>(id)]->methods.size() != 1) {
+    if (id < 0 || id >= static_cast<int>(trait_decls_.size()) || trait_decls_[static_cast<std::size_t>(id)] == nullptr) {
         return {};
     }
-    const FunctionDecl &method = trait_decls_[static_cast<std::size_t>(id)]->methods.front();
+    const TraitDecl *trait = trait_decls_[static_cast<std::size_t>(id)];
+    const FunctionDecl *only = nullptr;
+    int methods = 0;
+    int fields = 0;
+    for (int guard = 0; trait != nullptr && guard < static_cast<int>(trait_decls_.size()); ++guard) {
+        fields += static_cast<int>(trait->fields.size());
+        for (const FunctionDecl &method : trait->methods) {
+            ++methods;
+            only = &method;
+        }
+        trait = trait_parent(current_file_, trait);
+    }
+    if (methods != 1 || fields != 0 || only == nullptr) {
+        return {};
+    }
+    const FunctionDecl &method = *only;
     Lowered out;
     out.depth = 1;
     out.type = ptr_type();
@@ -122,8 +136,10 @@ CodeGen::Lowered CodeGen::spec_param(const FunctionDecl &fn, std::size_t index, 
         return trait_fn_lowered(param.type_name);
     }
     if (index < spec.size() && spec[index] >= 0 && spec[index] < static_cast<int>(structs_.size())) {
-        return lower(current_file_, structs_[static_cast<std::size_t>(spec[index])].name, "", true, param.indirections,
-                     false, 0, true);
+        // The id is the struct that was passed. Its name may also exist in the function's package.
+        const StructLayout &layout = structs_[static_cast<std::size_t>(spec[index])];
+        const uint32_t home = layout.file_id != 0 ? layout.file_id : current_file_;
+        return lower(home, layout.name, "", true, param.indirections, false, 0, true);
     }
     return lower_param_type(current_file_, param);
 }

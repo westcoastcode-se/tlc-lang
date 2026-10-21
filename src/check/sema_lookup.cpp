@@ -186,7 +186,7 @@ Type Checker::type_of_var(const VarDecl &var) {
                                      var.ret_optional, var.ret_const_pointee)
                     : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
                                   var.type_package, var.is_struct, var.is_enum, false, var.optional, var.const_pointee,
-                                  false, var.elem_const, var.elem_slice, written.shells);
+                                  false, var.elem_const, var.elem_slice, written.shells, true);
     // A pointer shell is already applied. The flag is the flat spelling of `*[N]T`.
     if (!written.shells.empty() || !var.ptr_to_array || type.kind == TypeKind::Invalid) {
         return type;
@@ -337,7 +337,7 @@ void Checker::check_local_function(const FunctionDecl &fn) {
     }
     Type signature = function_signature(fn);
     if (signature.result != nullptr && mentions_trait(*signature.result)) {
-        error(fn.loc, "not supported yet");
+        error(fn.loc, "trait has no size");
     }
     auto &table = scopes_.back().symbols;
     const auto found = table.find(fn.name);
@@ -1086,25 +1086,37 @@ const Checker::MethodInfo *Checker::find_method(int struct_id, const std::string
 }
 
 const Checker::TraitInfo::Method *Checker::find_trait_method(int trait_id, const std::string &name) const {
-    if (trait_id < 0 || trait_id >= static_cast<int>(traits_.size())) {
-        return nullptr;
-    }
-    for (const TraitInfo::Method &method : traits_[static_cast<std::size_t>(trait_id)].methods) {
-        if (method.name == name) {
-            return &method;
+    const int count = static_cast<int>(traits_.size());
+    int walk = trait_id;
+    for (int guard = 0; walk >= 0 && walk < count && guard < count; ++guard) {
+        for (const TraitInfo::Method &method : traits_[static_cast<std::size_t>(walk)].methods) {
+            if (method.name == name) {
+                return &method;
+            }
         }
+        const int next = traits_[static_cast<std::size_t>(walk)].parent_id;
+        if (next == walk) {
+            break;
+        }
+        walk = next;
     }
     return nullptr;
 }
 
 const Checker::TraitInfo::Field *Checker::find_trait_field(int trait_id, const std::string &name) const {
-    if (trait_id < 0 || trait_id >= static_cast<int>(traits_.size())) {
-        return nullptr;
-    }
-    for (const TraitInfo::Field &field : traits_[static_cast<std::size_t>(trait_id)].fields) {
-        if (field.name == name) {
-            return &field;
+    const int count = static_cast<int>(traits_.size());
+    int walk = trait_id;
+    for (int guard = 0; walk >= 0 && walk < count && guard < count; ++guard) {
+        for (const TraitInfo::Field &field : traits_[static_cast<std::size_t>(walk)].fields) {
+            if (field.name == name) {
+                return &field;
+            }
         }
+        const int next = traits_[static_cast<std::size_t>(walk)].parent_id;
+        if (next == walk) {
+            break;
+        }
+        walk = next;
     }
     return nullptr;
 }

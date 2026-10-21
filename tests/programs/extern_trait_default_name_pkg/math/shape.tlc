@@ -1,0 +1,18 @@
+package math;
+
+export extern(abi="c") type Rect struct {
+    export w i32;
+    export h i32;
+};
+
+type Shape trait {
+    func area() i32;
+};
+
+export extern(abi="c", name="shape_twice") func Shape::twice(self *this) i32 {
+    return self.area() + self.area();
+}
+
+export func Rect::area(self *this) i32 {
+    return self.w * self.h;
+}

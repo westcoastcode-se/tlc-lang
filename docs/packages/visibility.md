@@ -24,9 +24,9 @@ export func add(a i32, b i32) i32 {
 
 `secret` can be called from any file in the package. An importer sees `add`.
 
-`export func Point::sum` publishes that value method. Another package calls `value.sum(...)`. A method without `export` is reported as `sum is not exported`. `extern` on a method is reported as `not supported yet`. `pkg.Point.sum` is reported as `not supported yet`.
+`export func Point::sum` publishes that value method. Another package calls `value.sum(...)`. A method without `export` is reported as `sum is not exported`. `export func use(s Shape)` publishes a function whose parameter is a trait. Another package calls `pkg.use(r)`. When the struct is in another package, its method is exported, or the call is `area is not exported`. `extern func Point::read` names the same method in a tlc library. The call stays `value.read(...)`. `extern func Vec[T]::get` is that rule for a generic struct. The call stays `value.get(...)`. `pkg.Point.sum` is reported as `not supported yet`.
 
-`export` applies to functions, variables, constants, variables on a type, and `type` declarations. `export extern(abi="c")` is allowed on a function, and the symbol keeps its C name. `name="symbol"` overrides that object name. `export` together with `extern` on a variable is written `export extern`.
+`export` applies to functions, variables, constants, variables on a type, and `type` declarations. `export extern(abi="c")` is allowed on a function, and the symbol keeps its C name. `extern(abi="c", name="symbol")` overrides that C object name. `name` without `abi="c"` is `name requires abi="c"`. `export` together with `extern` on a variable is written `export extern`.
 
 ```c
 package math;

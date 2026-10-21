@@ -1,0 +1,1 @@
+compile-error: recursive struct pkg.A -> pkg.B -> pkg.C -> pkg.A

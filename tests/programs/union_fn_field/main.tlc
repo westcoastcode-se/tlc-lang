@@ -1,0 +1,25 @@
+var kept i32 = 7;
+
+type Holder struct {
+    data union {
+        p func () ?*i32;
+        q func () *const i32;
+        n i32;
+    };
+};
+
+func make_opt() ?*i32 { return null; }
+
+func make_const() *const i32 { return &kept; }
+
+func main() i32 {
+    var h Holder;
+    h.data.p = make_opt;
+    var opt func () ?*i32 = h.data.p;
+    if (opt() != null) {
+        return 0;
+    }
+    h.data.q = make_const;
+    var view func () *const i32 = h.data.q;
+    return *view();
+}

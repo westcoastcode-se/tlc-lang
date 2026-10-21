@@ -1,0 +1,17 @@
+package pkg;
+
+type A struct {
+    b B;
+}
+
+type B struct {
+    c C;
+}
+
+type C struct {
+    a A;
+}
+
+func main() i32 {
+    return 0;
+}

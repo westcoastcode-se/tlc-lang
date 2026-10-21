@@ -6,7 +6,8 @@
 
 namespace tlc {
 
-Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
+Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bool extern_c, bool is_extern,
+                                               bool publish) {
     UnionBody body;
     while (!check(TokenKind::RBrace) && !eof()) {
         const std::size_t before = pos_;
@@ -34,16 +35,24 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
                 eat(TokenKind::Semicolon);
                 continue;
             }
-            field.inline_fields = parse_fields();
+            const std::string arm_name =
+                (!union_name.empty() && !field.name.empty()) ? union_name + "." + field.name : std::string{};
+            StructMembers nested = parse_struct_members(arm_name, publish, extern_c, is_extern);
             expect(TokenKind::RBrace, "expected '}'");
             expect(TokenKind::Semicolon, "expected ';'");
-            if (!union_name.empty() && !field.name.empty()) {
+            field.inline_fields = nested.fields;
+            body.anonymous.insert(body.anonymous.end(), std::make_move_iterator(nested.anonymous.begin()),
+                                  std::make_move_iterator(nested.anonymous.end()));
+            if (!arm_name.empty()) {
                 StructDecl anon;
                 anon.loc = field.loc;
-                anon.name = union_name + "." + field.name;
+                anon.name = arm_name;
                 anon.fields = field.inline_fields;
                 anon.anonymous = true;
                 anon.union_payload = true;
+                anon.exported = publish;
+                anon.extern_c = extern_c;
+                anon.is_extern = is_extern || extern_c;
                 field.type_name = anon.name;
                 body.anonymous.push_back(std::move(anon));
             }
@@ -69,11 +78,17 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
             field.type_args = type.type_args;
             field.is_fn_ptr = type.is_fn_ptr;
             field.ret_indirections = type.ret_indirections;
+            field.ret_optional = type.ret_optional;
+            field.ret_const_pointee = type.ret_const_pointee;
             field.fn_params = type.fn_params;
             field.fn_variadic = type.fn_variadic;
             field.fn_results = type.fn_results;
-            body.fields.push_back(std::move(field));
+            // `n i32 = 4` is the same field form as in a struct. A union field rejects the value in sema.
+            if (eat(TokenKind::Eq)) {
+                field.init = parse_expr();
+            }
             expect(TokenKind::Semicolon, "expected ';'");
+            body.fields.push_back(std::move(field));
         }
         if (pos_ == before) {
             ++pos_;
@@ -82,7 +97,8 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name) {
     return body;
 }
 
-Parser::StructMembers Parser::parse_struct_members(const std::string &owner, bool publish) {
+Parser::StructMembers Parser::parse_struct_members(const std::string &owner, bool publish, bool extern_c,
+                                                    bool is_extern) {
     StructMembers body;
     auto skip_member = [&]() {
         while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
@@ -138,32 +154,87 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
                 field.name = peek().text;
                 field.exported = exported;
                 ++pos_;
-                if (check(TokenKind::KwExport) && peek(1).kind == TokenKind::KwStruct) {
+                if (check(TokenKind::KwExport) &&
+                    (peek(1).kind == TokenKind::KwStruct || peek(1).kind == TokenKind::KwUnion)) {
                     field.exported = true;
                     ++pos_;
                 }
-                if (check(TokenKind::KwStruct)) {
-                    const SourceLoc struct_loc = peek().loc;
+                if (check(TokenKind::KwStruct) || check(TokenKind::KwUnion)) {
+                    const bool as_union = check(TokenKind::KwUnion);
+                    const SourceLoc kind_loc = peek().loc;
                     ++pos_;
-                    if (!eat(TokenKind::LBrace)) {
-                        diags_.error(struct_loc, "expected '{'");
+                    std::string tag;
+                    std::string tag_package;
+                    bool tagged = false;
+                    bool forbid = false;
+                    if (as_union && check(TokenKind::LParen)) {
+                        // A C struct cannot hold a tagged union. The tag's place is not a C rule.
+                        if (extern_c) {
+                            diags_.error(kind_loc, "extern(abi=\"c\") on a tagged union");
+                            forbid = true;
+                        }
+                        ++pos_;
+                        if (forbid) {
+                            while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+                                ++pos_;
+                            }
+                            expect(TokenKind::RParen, "expected ')'");
+                        } else {
+                            tagged = parse_union_tag(tag_package, tag);
+                        }
+                    }
+                    if (forbid) {
+                        if (eat(TokenKind::LBrace)) {
+                            int depth = 1;
+                            while (depth > 0 && !eof()) {
+                                if (check(TokenKind::LBrace)) {
+                                    ++depth;
+                                } else if (check(TokenKind::RBrace)) {
+                                    --depth;
+                                }
+                                ++pos_;
+                            }
+                        }
+                        eat(TokenKind::Semicolon);
+                    } else if (!eat(TokenKind::LBrace)) {
+                        diags_.error(kind_loc, "expected '{'");
                         skip_member();
+                    } else if (as_union && !tagged && check(TokenKind::RBrace)) {
+                        diags_.error(kind_loc, "not supported yet");
+                        ++pos_;
+                        eat(TokenKind::Semicolon);
                     } else {
                         const std::string anon_name = owner.empty() ? field.name : owner + "." + field.name;
-                        StructMembers nested = parse_struct_members(anon_name, field.exported);
-                        expect(TokenKind::RBrace, "expected '}'");
-                        expect(TokenKind::Semicolon, "expected ';'");
                         StructDecl anon;
                         anon.loc = field.loc;
                         anon.name = anon_name;
-                        anon.fields = nested.fields;
                         anon.anonymous = true;
                         anon.exported = field.exported;
+                        anon.extern_c = extern_c;
+                        anon.is_extern = is_extern || extern_c;
+                        if (as_union) {
+                            UnionBody variants = parse_union_variants(anon_name, extern_c, anon.is_extern, field.exported);
+                            expect(TokenKind::RBrace, "expected '}'");
+                            expect(TokenKind::Semicolon, "expected ';'");
+                            anon.is_union = true;
+                            anon.tag_name = tagged ? tag : std::string{};
+                            anon.tag_package = tagged ? tag_package : std::string{};
+                            anon.fields = std::move(variants.fields);
+                            field.inline_fields = anon.fields;
+                            body.anonymous.insert(body.anonymous.end(),
+                                                  std::make_move_iterator(variants.anonymous.begin()),
+                                                  std::make_move_iterator(variants.anonymous.end()));
+                        } else {
+                            StructMembers nested = parse_struct_members(anon_name, field.exported, extern_c, is_extern);
+                            expect(TokenKind::RBrace, "expected '}'");
+                            expect(TokenKind::Semicolon, "expected ';'");
+                            anon.fields = std::move(nested.fields);
+                            field.inline_fields = anon.fields;
+                            body.anonymous.insert(body.anonymous.end(),
+                                                  std::make_move_iterator(nested.anonymous.begin()),
+                                                  std::make_move_iterator(nested.anonymous.end()));
+                        }
                         field.type_name = anon.name;
-                        // The name is the synthesized struct. `is_struct` is the C form `struct Name`.
-                        field.inline_fields = anon.fields;
-                        body.anonymous.insert(body.anonymous.end(), std::make_move_iterator(nested.anonymous.begin()),
-                                              std::make_move_iterator(nested.anonymous.end()));
                         body.anonymous.push_back(std::move(anon));
                         body.fields.push_back(std::move(field));
                     }
@@ -189,6 +260,39 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
     return body;
 }
 
+bool Parser::parse_union_tag(std::string &package, std::string &name) {
+    package.clear();
+    name.clear();
+    if (!check(TokenKind::Identifier)) {
+        error_here("expected a type");
+        while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+            ++pos_;
+        }
+        expect(TokenKind::RParen, "expected ')'");
+        return false;
+    }
+    std::string first = peek().text;
+    ++pos_;
+    // `union(pkg.Kind)` names an enum in another package. `union(Kind)` stays one identifier.
+    if (eat(TokenKind::Dot)) {
+        if (!check(TokenKind::Identifier)) {
+            error_here("expected a type");
+            while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
+                ++pos_;
+            }
+            expect(TokenKind::RParen, "expected ')'");
+            return false;
+        }
+        package = std::move(first);
+        name = peek().text;
+        ++pos_;
+    } else {
+        name = std::move(first);
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    return !name.empty();
+}
+
 void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c, std::string name,
                             SourceLoc name_loc, std::vector<TypeParam> type_params) {
     const TokenKind kind = peek().kind;
@@ -197,7 +301,12 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     int align = 0;
     std::string underlying;
     std::string tag_name;
-    // `union(ShapeType)` is a tlc union. `extern` keeps the C union and cannot take this form.
+    std::string tag_package;
+    std::string parent_name;
+    std::string parent_package;
+    SourceLoc parent_loc{};
+    // `union(ShapeType)` is a tlc union. Plain `extern` may mark it.
+    // `extern(abi="c")` is rejected: C does not place the tag before or after the payload.
     bool variant_body = false;
     bool push_union = true;
     if (kind == TokenKind::KwStruct && check(TokenKind::LParen)) {
@@ -206,43 +315,29 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         underlying = parse_enum_underlying();
     } else if (kind == TokenKind::KwUnion && check(TokenKind::LParen)) {
         variant_body = true;
-        if (is_extern || extern_c) {
-            diags_.error(peek().loc, "not supported yet");
+        // C does not say whether a tag sits before or after the payload.
+        if (extern_c) {
+            diags_.error(kind_loc, "extern(abi=\"c\") on a tagged union");
             push_union = false;
-            int depth = 0;
-            do {
-                if (check(TokenKind::LParen)) {
-                    ++depth;
-                } else if (check(TokenKind::RParen)) {
-                    --depth;
-                }
-                ++pos_;
-            } while (depth > 0 && !eof());
-        } else {
             ++pos_;
-            if (check(TokenKind::Identifier)) {
-                tag_name = peek().text;
+            while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
                 ++pos_;
-                if (check(TokenKind::Dot)) {
-                    diags_.error(peek().loc, "not supported yet");
-                    tag_name.clear();
-                    push_union = false;
-                    while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
-                        ++pos_;
-                    }
-                }
-            } else {
-                error_here("expected a type");
-                push_union = false;
-                while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !eof()) {
-                    ++pos_;
-                }
             }
             expect(TokenKind::RParen, "expected ')'");
-            if (tag_name.empty()) {
+        } else {
+            ++pos_;
+            if (!parse_union_tag(tag_package, tag_name)) {
                 push_union = false;
             }
         }
+    } else if (kind == TokenKind::KwTrait && check(TokenKind::LParen)) {
+        // `type Shape trait(Parent)` copies Parent at compile time. One name, no table.
+        parent_loc = peek().loc;
+        ++pos_;
+        if (check(TokenKind::Identifier)) {
+            parent_loc = peek().loc;
+        }
+        parse_union_tag(parent_package, parent_name);
     } else if (check(TokenKind::LParen)) {
         diags_.error(peek().loc, "not supported yet");
         int depth = 0;
@@ -282,12 +377,18 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         type_names_.insert(name);
     }
     if (kind == TokenKind::KwTrait) {
-        if (exported || is_extern) {
+        // A C type is one concrete layout. A trait is not a C type.
+        if (extern_c) {
+            diags_.error(name_loc, "extern(abi=\"c\") on a trait or a generic");
+        } else if (exported || is_extern) {
             diags_.error(name_loc, "not supported yet");
         }
         TraitDecl trait;
         trait.loc = name_loc;
         trait.name = std::move(name);
+        trait.parent_name = std::move(parent_name);
+        trait.parent_package = std::move(parent_package);
+        trait.parent_loc = parent_loc;
         while (!check(TokenKind::RBrace) && !eof()) {
             const std::size_t before = pos_;
             bool unsafe_fn = false;
@@ -357,11 +458,11 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         variants = parse_union_variants(name);
         fields = std::move(variants.fields);
     } else if (kind == TokenKind::KwStruct) {
-        StructMembers members = parse_struct_members(name);
+        StructMembers members = parse_struct_members(name, false, extern_c, is_extern);
         fields = std::move(members.fields);
         variants.anonymous = std::move(members.anonymous);
     } else {
-        fields = parse_fields();
+        fields = parse_fields(extern_c);
     }
     expect(TokenKind::RBrace, "expected '}'");
     eat(TokenKind::Semicolon);
@@ -369,6 +470,10 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         return;
     }
     for (StructDecl &anon : variants.anonymous) {
+        // Nested anonymous structs and unions keep the enclosing type's extern flags.
+        // A tagged `extern(abi="c")` union is dropped before this loop.
+        anon.is_extern = is_extern;
+        anon.extern_c = extern_c;
         TopDecl top;
         top.data = std::move(anon);
         unit.decls.push_back(std::move(top));
@@ -385,6 +490,7 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     item.align = align;
     item.is_union = as_union;
     item.tag_name = std::move(tag_name);
+    item.tag_package = std::move(tag_package);
     item.type_params = std::move(type_params);
     TopDecl top;
     top.data = std::move(item);
@@ -393,7 +499,7 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
 
 void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c,
                              std::string link_name) {
-    if (!link_name.empty()) {
+    if (extern_c && !link_name.empty()) {
         diags_.error(peek().loc, "not supported yet");
     }
     eat(TokenKind::KwType);
@@ -472,6 +578,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     bool is_extern = false;
     bool extern_c = false;
     std::string link_name;
+    SourceLoc name_loc{};
     bool unsafe_fn = false;
     while (true) {
         if (check(TokenKind::KwExport)) {
@@ -479,7 +586,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             ++pos_;
             continue;
         }
-        if (take_extern(is_extern, extern_c, link_name)) {
+        if (take_extern(is_extern, extern_c, link_name, name_loc)) {
             continue;
         }
         if (eat(TokenKind::KwUnsafe)) {
@@ -488,6 +595,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         }
         break;
     }
+    reject_tlc_link_name(extern_c, link_name, name_loc);
     if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
         if (is_extern) {
             diags_.error(peek().loc, "not supported yet");
@@ -553,7 +661,8 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     }
     pos_ = marker;
     const Specifiers specs = parse_specifiers(true);
-    if (!specs.link_name.empty() && (specs.union_definition || specs.struct_definition || specs.enum_definition)) {
+    if (specs.extern_c && !specs.link_name.empty() &&
+        (specs.union_definition || specs.struct_definition || specs.enum_definition)) {
         diags_.error(specs.loc, "not supported yet");
     }
     if (specs.union_definition) {

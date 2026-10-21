@@ -1,0 +1,8 @@
+import "math";
+
+func main() i32 {
+    var r math.Rect;
+    r.w = 5;
+    r.h = 6;
+    return r.twice();
+}

@@ -465,6 +465,22 @@ llvm::Type *CodeGen::shell_type(const std::vector<TypeShell> &shells, int depth,
             if (shell.length <= 0) {
                 return i32();
             }
+            // `*[2]Node` is stored as a pointer. An array of a struct that is still
+            // opaque is not an LLVM array type, and a pointer or a slice outside it
+            // does not put that array in the field.
+            if (type != nullptr && !type->isSized()) {
+                bool covered = false;
+                for (int outer = index - 1; outer >= 0; --outer) {
+                    const TypeShell::Kind kind = shells[static_cast<std::size_t>(outer)].kind;
+                    if (kind == TypeShell::Kind::Pointer || kind == TypeShell::Kind::Slice) {
+                        covered = true;
+                        break;
+                    }
+                }
+                if (covered) {
+                    continue;
+                }
+            }
             type = llvm::ArrayType::get(type, static_cast<uint64_t>(shell.length));
         } else {
             type = ptr_type();

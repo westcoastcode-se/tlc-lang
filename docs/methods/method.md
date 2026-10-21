@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Function pointers](../functions/pointer.md) · [Next: Generic methods](generic.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A method belongs to a struct, an enum, or a primitive type alias such as `type Integer i32`, and it is written in the same file as that type. A method in any other file is reported as `method in another file`. The receiver is the first parameter. It is the name, then `this`: `self this`. `this` stands for that struct, enum, or alias. A pointer receiver is `self *this`, the same order as `*Point`. `self ?*this` may be `null`. A `*T` value is not passed to it. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value. On `type Integer i32`, the receiver is an `Integer`, not an `i32`. A function with no receiver is a static function. The builtin name `i32` cannot have a method. A pointer alias, a sized-array alias, and a struct alias cannot either. A static function on those aliases is `Ptr.from(...)`, described in [Static functions](static.md). A slice alias such as `type string_view []const u8` can, and the receiver is the value `self this`. `self *this` on a slice alias is a pointer to that slice. The functions on that alias live in [`std/string`](../std/string.md), which is `lib/tlc/std/string`.
+A method belongs to a struct, an enum, or a primitive type alias such as `type Integer i32`, and it is written in the same file as that type. A method in any other file is reported as `method in another file`. The receiver is the first parameter. It is the name, then `this`: `self this`. `this` stands for that struct, enum, or alias. A pointer receiver is `self *this`, the same order as `*Point`. `self **this` is reported as `expected 'this'`. `self ?*this` may be `null`. A `*T` value is not passed to it. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value. On `type Integer i32`, the receiver is an `Integer`, not an `i32`. A function with no receiver is a static function. The builtin name `i32` cannot have a method. A pointer alias, a sized-array alias, and a struct alias cannot either. A static function on those aliases is `Ptr.from(...)`, described in [Static functions](static.md). A slice alias such as `type string_view []const u8` can, and the receiver is the value `self this`. `self *this` on a slice alias is a pointer to that slice. The functions on that alias live in [`std/string`](../std/string.md), which is `lib/tlc/std/string`.
 
 The call omits the receiver. The program below returns 42.
 
@@ -91,13 +91,36 @@ The program returns 0. `q.read()` passes the optional pointer.
 
 The same method name may exist on different structs and as a free function. The call `p.sum(...)` selects the struct's method. A free call `sum(...)` selects the function.
 
-Every file in the package can call the method. `export func Point::sum` publishes that method. Another package calls `value.sum(...)`. A method without `export` is reported as `sum is not exported`. `extern` on a method and `pkg.Point.sum` are reported as `not supported yet`. `export func Vec[T]::get` publishes that instance method. Another package calls `value.get(...)`. `export` on a static function publishes `pkg.Type.name(...)`, including `pkg.Vec[i32].name(...)`. `Point::sum(p, 1)` is not a call.
+Every file in the package can call the method. `export func Point::sum` publishes that method. Another package calls `value.sum(...)`. A method without `export` is reported as `sum is not exported`. `export func Vec[T]::get` publishes that instance method. Another package calls `value.get(...)`. `export` on a static function publishes `pkg.Type.name(...)`, including `pkg.Vec[i32].name(...)`. `Point::sum(p, 1)` is not a call. `pkg.Point.sum` is reported as `not supported yet`.
+
+`extern func Point::read` names that method in a tlc library. The call is still `p.read()`. A function with no receiver is still `Point.origin()`. The symbol is `qualifier.Point.read`, the same spelling an exported method uses. A body defines that symbol. `extern(abi="c")` keeps the name `Point.read` and the C calling convention. A struct in that signature, including the receiver, must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`. `extern(abi="c", name="symbol")` sets the C object symbol and leaves the call unchanged. `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`. Two different names on one parameter list are `redefinition`. Two `extern(abi="c")` parameter lists on one method are `redefinition`. `extern func Vec[T]::get` is the same rule on a generic struct: each specialization is its own symbol, and the call stays `value.get(...)`. `extern(abi="c")` and `extern(abi="c", name="symbol")` on that method are `extern(abi="c") on a trait or a generic`. `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`. `extern func Shape::twice` names a trait default. The default is copied onto each struct that gains it, and each copy is its own symbol, the same spelling an exported method on that struct uses. The call stays `s.twice()` or `r.twice()`. `extern(abi="c")` and `extern(abi="c", name="symbol")` on that default are `extern(abi="c") on a trait or a generic`. `extern(name="symbol")` is `name requires abi="c"`. A prototype with no body is `not supported yet`. `extern` on a method template is `not supported yet`. `extern(abi="c")` on a method template is `extern(abi="c") on a trait or a generic`.
+
+```c
+type Point struct {
+    x i32;
+    y i32;
+};
+
+extern func Point::read(self this) i32 {
+    return self.x + self.y;
+}
+
+extern func Point::origin() Point {
+    return Point{.x = 20, .y = 22};
+}
+
+func main() i32 {
+    return Point.origin().read();
+}
+```
+
+The program returns 42.
 
 ## Cost
 
-A value method on a struct of two `i32` fields receives those fields in registers. `return self.x + self.y` is 5 instructions, the same as a free function of two `i32` parameters. The caller copies the fields with 2 `movl` and then pays the traced call, 36 instructions plus those copies when fewer than 32 frames are stored.
+A value method on a struct of two `i32` fields receives those fields in registers. `return self.x + self.y` is 5 instructions, the same as a free function of two `i32` parameters. The caller copies the fields with 2 `movl` and then pays the traced call, 36 instructions plus those copies when fewer than 32 frames are stored. `extern func Point::read` with a body is that same call. `extern` changes the linkage and adds no instruction.
 
-A pointer method receives the address. `self.x = self.x + n` is 6 instructions: store the pointer, store `n`, reload the pointer twice, add, and store. The caller passes the address with 1 `leaq` plus the traced call.
+A pointer method receives the address. `self.x = self.x + n` is 6 instructions: store the pointer, store `n`, reload the pointer twice, add, and store. The caller passes the address with 1 `leaq` plus the traced call. `self **this` is rejected and adds no instructions.
 
 `self ?*this` uses the same pointer. The null test is the pointer compare on [Pointers and null](../expressions/null.md). A const check is rejected while compiling and adds no instruction.
 

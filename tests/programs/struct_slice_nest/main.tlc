@@ -1,0 +1,42 @@
+type Node struct {
+    value i32;
+    kids [][]Node;
+    rows [2][]Node;
+    grid [][2]Node;
+}
+
+type Later struct {
+    kids []Row;
+}
+
+type Row struct {
+    n i32;
+}
+
+type A struct {
+    b []B;
+}
+
+type B struct {
+    a []A;
+    n i32;
+}
+
+func main() i32 {
+    var child = [_]Node{Node{.value = 3}};
+    var headers = [_][]Node{child[:]};
+    var pair = [_][2]Node{[_]Node{Node{.value = 4}, Node{.value = 5}}};
+    var root Node;
+    root.value = 10;
+    root.kids = headers[:];
+    root.rows[0] = child[:];
+    root.grid = pair[:];
+    var row = [_]Row{Row{.n = 7}};
+    var later Later;
+    later.kids = row[:];
+    var b = [_]B{B{.n = 9}};
+    var a A;
+    a.b = b[:];
+    b[0].a = [_]A{a}[:];
+    return root.value + root.kids[0][0].value + root.rows[0][0].value + root.grid[0][1].value + later.kids[0].n + a.b[0].n + a.b[0].a.len;
+}

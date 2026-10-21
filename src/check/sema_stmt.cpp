@@ -805,7 +805,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(var.loc, "type mismatch");
                     } else if (var.is_array && !var.ptr_to_array && var.init && !array_list && !slice && !array_value) {
                         error(var.loc, "not supported yet");
-                    } else if (var.init) {
+                    } else if (var.init && type.kind != TypeKind::Invalid) {
                         const std::size_t before = diags_.size();
                         const bool saved_new = init_new_partial_;
                         if (!var.is_const_decl) {
@@ -868,7 +868,15 @@ void Checker::check_function(const FunctionDecl &fn) {
     switches_.clear();
     variadic_function_ = fn.variadic;
     resolve_result_typeof(const_cast<FunctionDecl &>(fn));
+    // The signature already reported a trait result. Building it again must not repeat that.
+    const bool saved_quiet = quiet_;
+    quiet_ = true;
     return_type_ = function_result(fn);
+    quiet_ = saved_quiet;
+    // The result was already rejected. Do not also report the returned expression.
+    if (mentions_trait(return_type_)) {
+        return_type_ = type_invalid();
+    }
     // Codegen reads `return_type`. Preparing the result slot rewrites `Vec[i32]` to the specialization.
     if (fn.results.size() == 1 && !fn.results.front().is_fn_ptr) {
         FunctionDecl &written = const_cast<FunctionDecl &>(fn);
@@ -882,7 +890,10 @@ void Checker::check_function(const FunctionDecl &fn) {
         written.const_pointee = first.const_pointee;
     }
     for (const Param &param : fn.params) {
+        const bool saved_param_quiet = quiet_;
+        quiet_ = true;
         Type type = type_of_param(param);
+        quiet_ = saved_param_quiet;
         Symbol symbol;
         symbol.name = param.name;
         symbol.type = std::move(type);

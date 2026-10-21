@@ -1141,6 +1141,7 @@ class CodeGen {
     void publish_spec_types();
     void prepare_traits();
     int trait_named(uint32_t file, const std::string &name) const;
+    const TraitDecl *trait_parent(uint32_t file, const TraitDecl *trait) const;
     bool param_is_trait(uint32_t file, const Param &param) const;
     bool function_is_generic(uint32_t file, const FunctionDecl &fn) const;
     // A trait parameter specialized to the function pointer of its one method.
@@ -1159,6 +1160,8 @@ class CodeGen {
     void prepare_aliases();
     void prepare_enums();
     int enum_named(uint32_t file, const std::string &name) const;
+    // An enum in `file`'s package, or a typedef of one.
+    int enum_id_of(uint32_t file, const std::string &name) const;
     int selective_enum(uint32_t file, const std::string &name) const;
     int enum_type_designator(const Expr &expr) const;
     int enum_value_id(const Expr &expr) const;
@@ -1258,6 +1261,9 @@ class CodeGen {
     std::vector<Binding> capture_bindings(const FunctionDecl &fn) const;
     void alias_capture(const std::string &name, const Binding &binding);
     void append_captures(const FunctionDecl *decl, std::vector<llvm::Value *> &args, SourceLoc loc);
+    // Logical arguments, receiver first, packed into the C struct ABI already stored for `function`.
+    std::vector<llvm::Value *> pack_extern_args(llvm::Function *function, const ExternLayout &layout,
+                                                const std::vector<TypedValue> &sources, PreparedCall &prepared);
     PreparedCall prepare_call(const Expr::Call &node);
     TypedValue emit_prepared(const PreparedCall &call);
     // A call whose one result is a function pointer keeps that pointer's type on the value.

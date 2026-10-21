@@ -5,6 +5,69 @@
 
 namespace tlc {
 
+std::vector<llvm::Value *> CodeGen::pack_extern_args(llvm::Function *function, const ExternLayout &layout,
+                                                       const std::vector<TypedValue> &sources, PreparedCall &prepared) {
+    std::vector<llvm::Value *> args;
+    unsigned attr_index = 0;
+    if (layout.sret && layout.ret_struct != nullptr) {
+        llvm::AllocaInst *slot = aligned_slot(layout.ret_struct, std::max(layout.ret.natural_align, 1u), "sret");
+        args.push_back(slot);
+        prepared.abi_return = true;
+        prepared.abi_sret = true;
+        prepared.abi_slot = slot;
+        prepared.abi_struct = layout.ret_struct;
+        prepared.abi_struct_id = layout.ret_struct_id;
+        prepared.abi_ret = layout.ret;
+        AbiMark mark;
+        mark.index = attr_index++;
+        mark.sret = true;
+        mark.type = layout.ret_struct;
+        mark.align = layout.ret.natural_align == 0 ? 1 : layout.ret.natural_align;
+        prepared.abi_attrs.push_back(mark);
+    } else if (layout.ret_struct != nullptr) {
+        llvm::AllocaInst *slot = aligned_slot(layout.ret_struct, std::max(layout.ret.natural_align, 8u), "cret");
+        prepared.abi_return = true;
+        prepared.abi_slot = slot;
+        prepared.abi_struct = layout.ret_struct;
+        prepared.abi_struct_id = layout.ret_struct_id;
+        prepared.abi_ret = layout.ret;
+    }
+    std::size_t source = 0;
+    for (const TypedValue &value : sources) {
+        if (source < layout.args.size() && layout.args[source].is_struct) {
+            const ExternLayout::Arg &info = layout.args[source];
+            llvm::AllocaInst *slot = aligned_slot(info.struct_type, std::max(info.abi.natural_align, 8u), "carg");
+            if (value.value != nullptr && value.value->getType() == info.struct_type) {
+                builder_.CreateStore(value.value, slot);
+            } else if (info.struct_type != nullptr) {
+                builder_.CreateStore(llvm::ConstantAggregateZero::get(info.struct_type), slot);
+            }
+            if (info.abi.memory) {
+                args.push_back(slot);
+                AbiMark mark;
+                mark.index = attr_index++;
+                mark.type = info.struct_type;
+                mark.align = info.abi.indirect_align == 0 ? 8 : info.abi.indirect_align;
+                prepared.abi_attrs.push_back(mark);
+            } else {
+                for (std::size_t part = 0; part < info.abi.parts.size(); ++part) {
+                    const uint64_t offset = part < info.abi.offsets.size() ? info.abi.offsets[part] : 0;
+                    args.push_back(load_at(slot, info.abi.parts[part], offset));
+                    ++attr_index;
+                }
+            }
+        } else {
+            llvm::Type *param = attr_index < function->getFunctionType()->getNumParams()
+                                    ? function->getFunctionType()->getParamType(attr_index)
+                                    : nullptr;
+            args.push_back(adapt(value, param, prepared.loc));
+            ++attr_index;
+        }
+        ++source;
+    }
+    return args;
+}
+
 CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
     PreparedCall prepared;
     prepared.loc = node.loc;
@@ -31,6 +94,41 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         prepared.elem_bits = elem_bits;
         prepared.elem_unsigned = elem_unsigned;
     };
+    // A method call is a function call. `extern(abi="c")` packs the receiver with the other arguments.
+    auto extern_method = [&](llvm::Function *function, llvm::Value *receiver, const Binding &method,
+                             bool with_enum) -> bool {
+        const auto abi = extern_abis_.find(function);
+        if (abi == extern_abis_.end() || !abi->second.active) {
+            return false;
+        }
+        std::vector<TypedValue> sources;
+        sources.reserve((receiver != nullptr ? 1 : 0) + node.args.size());
+        if (receiver != nullptr) {
+            TypedValue typed;
+            typed.value = receiver;
+            sources.push_back(std::move(typed));
+        }
+        for (const auto &arg : node.args) {
+            sources.push_back(emit_rvalue(*arg));
+        }
+        remember(function, pack_extern_args(function, abi->second, sources, prepared), method.depth, method.elem_char,
+                 method.struct_id, method.elem_void, method.elem_bool, method.elem_bits, method.elem_unsigned);
+        prepared.decl = method.decl;
+        prepared.elem_float = method.elem_float;
+        if (with_enum) {
+            prepared.enum_id = method.enum_id;
+        }
+        return true;
+    };
+    // `extern(abi="c")` may pass a struct as an integer or a pointer. The receiver is still `self` or `self *this`.
+    auto pointer_receiver = [&](llvm::Function *function, const Binding &method) {
+        const auto abi = extern_abis_.find(function);
+        if (abi != extern_abis_.end() && abi->second.active && method.decl != nullptr && !method.decl->params.empty()) {
+            return method.decl->params.front().indirections > 0;
+        }
+        return function->getFunctionType()->getNumParams() > 0 &&
+               function->getFunctionType()->getParamType(0)->isPointerTy();
+    };
     if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data);
         selector != nullptr && selector->base != nullptr) {
         const auto *base_name = std::get_if<Expr::Name>(&selector->base->data);
@@ -54,8 +152,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 error(node.loc, "type mismatch");
                 return prepared;
             }
-            const bool receiver_pointer = function->getFunctionType()->getNumParams() > 0 &&
-                                          function->getFunctionType()->getParamType(0)->isPointerTy();
+            const bool receiver_pointer = pointer_receiver(function, *method);
             llvm::Value *receiver_arg = nullptr;
             if (receiver_pointer) {
                 receiver_arg = addr.depth > 0 ? builder_.CreateLoad(ptr_type(), addr.value) : addr.value;
@@ -64,6 +161,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             }
             if (receiver_arg == nullptr) {
                 error(node.loc, "type mismatch");
+                return prepared;
+            }
+            if (extern_method(function, receiver_arg, *method, true)) {
                 return prepared;
             }
             std::vector<llvm::Value *> args;
@@ -93,6 +193,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     auto *function = llvm::dyn_cast<llvm::Function>(method->value);
                     if (function == nullptr) {
                         error(node.loc, "type mismatch");
+                        return prepared;
+                    }
+                    if (extern_method(function, nullptr, *method, true)) {
                         return prepared;
                     }
                     std::vector<llvm::Value *> args;
@@ -156,6 +259,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     error(node.loc, "type mismatch");
                     return prepared;
                 }
+                if (extern_method(function, nullptr, *method, true)) {
+                    return prepared;
+                }
                 std::vector<llvm::Value *> args;
                 args.reserve(node.args.size());
                 unsigned index = 0;
@@ -205,8 +311,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     error(node.loc, "type mismatch");
                     return prepared;
                 }
-                const bool receiver_pointer = function->getFunctionType()->getNumParams() > 0 &&
-                                              function->getFunctionType()->getParamType(0)->isPointerTy();
+                const bool receiver_pointer = pointer_receiver(function, *method);
                 llvm::Value *receiver_arg = nullptr;
                 if (receiver_pointer) {
                     if (!addressable(*selector->base)) {
@@ -224,6 +329,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 }
                 if (receiver_arg == nullptr) {
                     error(node.loc, "type mismatch");
+                    return prepared;
+                }
+                if (extern_method(function, receiver_arg, *method, true)) {
                     return prepared;
                 }
                 std::vector<llvm::Value *> args;
@@ -253,8 +361,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     error(node.loc, "type mismatch");
                     return prepared;
                 }
-                const bool receiver_pointer = function->getFunctionType()->getNumParams() > 0 &&
-                                              function->getFunctionType()->getParamType(0)->isPointerTy();
+                const bool receiver_pointer = pointer_receiver(function, *method);
                 llvm::Value *receiver_arg = nullptr;
                 if (receiver_pointer) {
                     if (!addressable(*selector->base)) {
@@ -289,6 +396,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 }
                 if (receiver_arg == nullptr) {
                     error(node.loc, "type mismatch");
+                    return prepared;
+                }
+                if (extern_method(function, receiver_arg, *method, true)) {
                     return prepared;
                 }
                 std::vector<llvm::Value *> args;
@@ -388,8 +498,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 error(node.loc, "type mismatch");
                 return prepared;
             }
-            const bool receiver_pointer = function->getFunctionType()->getNumParams() > 0 &&
-                                          function->getFunctionType()->getParamType(0)->isPointerTy();
+            const bool receiver_pointer = pointer_receiver(function, *method);
             llvm::Value *receiver_arg = nullptr;
             if (receiver_pointer) {
                 if (pointer_value != nullptr) {
@@ -406,6 +515,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             }
             if (receiver_arg == nullptr) {
                 error(node.loc, "type mismatch");
+                return prepared;
+            }
+            if (extern_method(function, receiver_arg, *method, false)) {
                 return prepared;
             }
             std::vector<llvm::Value *> args;
@@ -471,69 +583,13 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
     }
     const auto abi = extern_abis_.find(function);
     if (abi != extern_abis_.end() && abi->second.active) {
-        const ExternLayout layout = abi->second;
-        std::vector<llvm::Value *> args;
-        unsigned attr_index = 0;
-        if (layout.sret && layout.ret_struct != nullptr) {
-            llvm::AllocaInst *slot = aligned_slot(layout.ret_struct, std::max(layout.ret.natural_align, 1u), "sret");
-            args.push_back(slot);
-            prepared.abi_return = true;
-            prepared.abi_sret = true;
-            prepared.abi_slot = slot;
-            prepared.abi_struct = layout.ret_struct;
-            prepared.abi_struct_id = layout.ret_struct_id;
-            prepared.abi_ret = layout.ret;
-            AbiMark mark;
-            mark.index = attr_index++;
-            mark.sret = true;
-            mark.type = layout.ret_struct;
-            mark.align = layout.ret.natural_align == 0 ? 1 : layout.ret.natural_align;
-            prepared.abi_attrs.push_back(mark);
-        } else if (layout.ret_struct != nullptr) {
-            llvm::AllocaInst *slot = aligned_slot(layout.ret_struct, std::max(layout.ret.natural_align, 8u), "cret");
-            prepared.abi_return = true;
-            prepared.abi_slot = slot;
-            prepared.abi_struct = layout.ret_struct;
-            prepared.abi_struct_id = layout.ret_struct_id;
-            prepared.abi_ret = layout.ret;
-        }
-        std::size_t source = 0;
+        std::vector<TypedValue> sources;
+        sources.reserve(node.args.size());
         for (const auto &arg : node.args) {
-            const TypedValue value = emit_rvalue(*arg);
-            if (source < layout.args.size() && layout.args[source].is_struct) {
-                const ExternLayout::Arg &info = layout.args[source];
-                llvm::AllocaInst *slot =
-                    aligned_slot(info.struct_type, std::max(info.abi.natural_align, 8u), "carg");
-                if (value.value != nullptr && value.value->getType() == info.struct_type) {
-                    builder_.CreateStore(value.value, slot);
-                } else if (info.struct_type != nullptr) {
-                    builder_.CreateStore(llvm::ConstantAggregateZero::get(info.struct_type), slot);
-                }
-                if (info.abi.memory) {
-                    args.push_back(slot);
-                    AbiMark mark;
-                    mark.index = attr_index++;
-                    mark.type = info.struct_type;
-                    mark.align = info.abi.indirect_align == 0 ? 8 : info.abi.indirect_align;
-                    prepared.abi_attrs.push_back(mark);
-                } else {
-                    for (std::size_t part = 0; part < info.abi.parts.size(); ++part) {
-                        const uint64_t offset = part < info.abi.offsets.size() ? info.abi.offsets[part] : 0;
-                        args.push_back(load_at(slot, info.abi.parts[part], offset));
-                        ++attr_index;
-                    }
-                }
-            } else {
-                llvm::Type *param = attr_index < function->getFunctionType()->getNumParams()
-                                        ? function->getFunctionType()->getParamType(attr_index)
-                                        : nullptr;
-                args.push_back(adapt(value, param, node.loc));
-                ++attr_index;
-            }
-            ++source;
+            sources.push_back(emit_rvalue(*arg));
         }
-        remember(function, std::move(args), callee.depth, callee.elem_char, callee.struct_id, callee.elem_void,
-                 callee.elem_bool, callee.elem_bits, callee.elem_unsigned);
+        remember(function, pack_extern_args(function, abi->second, sources, prepared), callee.depth, callee.elem_char,
+                 callee.struct_id, callee.elem_void, callee.elem_bool, callee.elem_bits, callee.elem_unsigned);
         prepared.elem_float = callee.elem_float;
         return prepared;
     }
@@ -781,6 +837,16 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
         error(loc, "argument count");
         return nullptr;
     }
+    // Traits and the body belong to the function's package. The call is emitted in the caller.
+    const uint32_t saved_file = current_file_;
+    if (fn.loc.valid()) {
+        current_file_ = fn.loc.file;
+    }
+    struct RestoreFile {
+        CodeGen *self;
+        uint32_t file;
+        ~RestoreFile() { self->current_file_ = file; }
+    } restore{this, saved_file};
     std::vector<int> spec(fn.params.size(), -1);
     for (std::size_t i = 0; i < fn.params.size(); ++i) {
         if (!param_is_trait(current_file_, fn.params[i])) {
@@ -804,6 +870,10 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
         }
         spec[i] = arg.struct_id;
     }
+    if (fn.body == nullptr) {
+        error(loc, "not supported yet");
+        return nullptr;
+    }
     const PackageNode *owner = find_node(current_file_);
     if (owner == nullptr) {
         error(loc, "type mismatch");
@@ -826,7 +896,16 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
             continue;
         }
         if (sid >= 0 && sid < static_cast<int>(structs_.size())) {
-            symbol += structs_[static_cast<std::size_t>(sid)].name;
+            const StructLayout &layout = structs_[static_cast<std::size_t>(sid)];
+            // Same-package structs keep `main.use.spec.Rect`. A foreign struct adds its package.
+            if (layout.file_id != 0) {
+                if (const PackageNode *home = find_node(layout.file_id);
+                    home != nullptr && !home->qualifier.empty() && home->qualifier != owner->qualifier) {
+                    symbol += home->qualifier;
+                    symbol += '.';
+                }
+            }
+            symbol += layout.name;
         }
     }
     llvm::Function *function = nullptr;

@@ -414,7 +414,9 @@ struct StructDecl {
     // An `extern(abi="c") union` overlays its fields. A tlc union stores `tag_name` and one payload.
     bool is_union = false;
     // Enum that selects the active field. Empty on an `extern(abi="c")` union.
+    // `union(pkg.Kind)` stores the qualifier in `tag_package`. A bare name leaves it empty.
     std::string tag_name;
+    std::string tag_package;
     std::vector<TypeParam> type_params;
     // The struct synthesized for an inline variant. Its name is not a type the program can write.
     bool anonymous = false;
@@ -726,6 +728,10 @@ struct FunctionDecl {
 struct TraitDecl {
     SourceLoc loc{};
     std::string name;
+    // `type Shape trait(Parent)`. Empty when the trait has no parent.
+    std::string parent_name;
+    std::string parent_package;
+    SourceLoc parent_loc{};
     // A field the struct must have. It is not stored on the trait.
     std::vector<FieldDecl> fields;
     std::vector<FunctionDecl> methods;

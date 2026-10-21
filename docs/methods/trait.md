@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A trait is a list of methods and fields. The receiver is implicit and is omitted from the trait type. A field is a name and a type, the same form as a struct field. A value on the field, `w i32 = 1`, is reported as `not supported yet`.
+A trait is a list of methods and fields. The receiver is implicit and is omitted from the trait type. A method inside the braces ends with `;`. `func area() i32 { return 1; }` is reported as `expected ';'`. A field is a name and a type, the same form as a struct field. A value on the field, `w i32 = 1`, is reported as `not supported yet`. `extern(abi="c") type Shape trait` is `extern(abi="c") on a trait or a generic`. `export type Shape trait` and `extern type Shape trait` are `not supported yet`.
 
 ```c
 type Shape trait {
@@ -43,6 +43,8 @@ func main() i32 {
 
 `apply(&r, 1)` changes the width and height to 6 and 7. `area` returns 42.
 
+`type Shape trait(Parent)` copies `Parent`'s methods and fields into `Shape` while compiling. The child still stores `Parent` as its parent. A copied field or method keeps that trait as the place it was declared. `func need(p Parent)` accepts `s` when `s` is `Shape`. The call is still the struct's method. There is no table. A struct passed as `Shape` must provide those methods and fields too. Writing the same method or field again is `redefinition`. A missing parent is `undeclared identifier`. A parent that is not a trait, or a cycle, is `type mismatch`. `trait(pkg.Parent)` is `not supported yet`.
+
 There is no `impl` keyword. A struct satisfies a trait by defining the methods, with the same result type and the same parameters after the receiver, and by having each field with the same type. The check happens where a concrete struct value or a concrete pointer is passed to a trait parameter.
 
 - `s Shape` requires every method to have a value receiver.
@@ -57,9 +59,9 @@ There is no `impl` keyword. A struct satisfies a trait by defining the methods, 
 
 A generic function writes the same constraint as `T Shape`. `value *T` follows `*Shape`, and `value T` follows `Shape`. See [Generics](../functions/generic.md).
 
-`trait` is written only in `type Shape trait`. A parameter is `Shape` or `*Shape`. `var s trait Shape`, `sizeof(trait Shape)`, and `alignof(trait Shape)` are reported as `expected a type`. `sizeof(Shape)` and `alignof(Shape)` are reported as `undeclared identifier`.
+`trait` is written only in `type Shape trait`. A parameter is `Shape` or `*Shape`. `var s Shape`, `var s *Shape`, `func give() Shape`, `func give() *Shape`, `[2]Shape`, and `[]Shape` are `trait has no size`. That includes `[2]*Shape`, `[]*Shape`, a parameter `[]Shape`, and a field `item Shape` or `item *Shape` in a struct or a trait. `var s trait Shape`, `sizeof(trait Shape)`, and `alignof(trait Shape)` are reported as `expected a type`. `sizeof(Shape)` and `alignof(Shape)` are reported as `undeclared identifier`.
 
-The function is monomorphized. Each struct that is passed in gets its own copy, and the call `s.area()` becomes a direct call of that struct's method. Passing the same trait onward, as `measure(s)` inside `apply`, is not checked again.
+The function is monomorphized. Each struct that is passed in gets its own copy, and the call `s.area()` becomes a direct call of that struct's method. `type Shape trait(Parent)` adds no instruction and no table. `main` that stores 5 and 6 and returns `use(r)`, where `area` is copied from `Parent`, executes 8 instructions. The call is `main.use.spec.Rect`, and `s.area()` inside it is a direct call of `Rect.area`. Passing the same trait onward, as `measure(s)` inside `apply`, is not checked again.
 
 A trait method may return several results, the same way a function does. `var a, b = p.both()` unpacks them. One name binds the tuple. A different count is reported as `type mismatch`. The struct method returns that same list. A default is `func Pair::both` outside the braces.
 
@@ -152,7 +154,7 @@ func main() i32 {
 
 `this` inside a trait method is reported as `type mismatch`. `s.area` without a call is reported as `undeclared identifier`.
 
-A default method is a function written on the trait, with a body, outside the braces. The call writes that trait. `s.twice()` when `s` is `*Shape` runs the body. `r.twice()` when `r` is `Rect` is reported as `undeclared identifier`. The struct's own method with the same parameters after the receiver is a method of that struct. A call on the struct uses that body, and the call through the trait uses it too. A different parameter list is another method. A missing method that the trait requires, and that no default supplies, is reported as `undeclared identifier`. A default whose parameters, result, and `unsafe` match a required method supplies that method when the struct omits it. That call is still written on the trait.
+A default method is a function written on the trait, with a body, outside the braces. `extern func Shape::twice` names that default in a tlc library. The default is copied onto each struct that gains it. Each copy is its own symbol, the same spelling an exported method on that struct uses, so the copy on `Rect` is `qualifier.Rect.twice`. A body defines that symbol. `extern(abi="tlc")` is the same declaration. `extern(abi="c")` and `extern(abi="c", name="symbol")` on that default are `extern(abi="c") on a trait or a generic`. A C symbol is one concrete library name, and the default is copied onto each struct. `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`. A prototype with no body is `not supported yet`. `s.twice()` when `s` is `*Shape` runs the body. `r.twice()` when `r` is `Rect` runs the copy `Rect` gained. The struct's own method with the same parameters after the receiver is a method of that struct. A call on the struct uses that body, and the call through the trait uses it too. A different parameter list is another method. A missing method that the trait requires, and that no default supplies, is reported as `undeclared identifier`. A default whose parameters, result, and `unsafe` match a required method supplies that method when the struct omits it. That call is still written on the trait, or on the struct that gained the copy.
 
 ```c
 type Shape trait {
@@ -186,9 +188,39 @@ func main() i32 {
 
 `use(&r)` is 60. `a.malloc[i32]()` when `a` is `*Allocator` is the same default as `arena.malloc[i32]()`. The call is specialized for the struct that was passed. A struct method `Arena::malloc[T type]` wins over that default. The result is `?*T`, and the caller handles `null`. The call is `unsafe`.
 
+`export func use(s Shape)` publishes that function. Another package calls `pkg.use(r)`, or `use(r)` after `import { use }`. `export func Rect::paint(self *this, s Shape)` publishes that method. Another package calls `value.paint(s)`. The parameter is `Shape` or `*Shape`. The call is still specialized. The symbol of `use(r)` when `use` is in `main` is `main.use.spec.Rect`. When the struct is in another package, its package is part of that symbol. The struct's method is exported when the function and the struct are in different packages. Without that `export`, the call is `area is not exported`. A method in the same package does not need `export`. `extern(abi="c")` and `extern(abi="c", name="symbol")` on that function are `extern(abi="c") on a trait or a generic`. `extern`, `extern(abi="tlc")`, and `...` are `not supported yet`. A prototype with no body is accepted. A call that specializes it is `not supported yet`.
+
+```c
+type Shape trait {
+    func area() i32;
+};
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+export func use(s Shape) i32 {
+    return s.area();
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 5;
+    r.h = 6;
+    return use(r);
+}
+```
+
+`use(r)` returns 30. `Rect::area` needs no `export` here, because `use` and `Rect` are in the same package.
+
 ## Cost
 
-`s.twice()` on `*Shape` is a direct call, the same as another method of that trait. A trait parameter is specialized. There is no table. `measure(r)` for a struct of two `i32` fields executes 8 instructions in `main` and does not push a trace frame: store the fields, copy them into the argument registers, call. The struct is not zeroed first. `s.area()` inside that copy is a direct traced call of `Rect.area`, which is 5 instructions for two `i32` fields multiplied. `var a, b = p.both()` when `both` returns `(i32, i32)` is that same direct call. The two results come back in `%eax` and `%edx`.
+`s.twice()` on `*Shape` is a direct call, the same as another method of that trait. A trait parameter is specialized. There is no table. `var s Shape`, `var s *Shape`, a result `Shape` or `*Shape`, `[2]Shape`, `[]Shape`, and a field `item Shape` are rejected and add no instructions. `measure(r)` for a struct of two `i32` fields executes 8 instructions in `main` and does not push a trace frame: store the fields, copy them into the argument registers, call. The struct is not zeroed first. `export func use(s Shape)` is that same call and adds no instruction. When `use` is in another package, `main` that stores 5 and 6 and returns `pkg.use(r)` executes 8 instructions. The call is `pkg.use.spec.main.Rect`. `main` that stores 5 and 7 and returns `r.paint(c)`, where `export func Rect::paint` takes `Shape`, executes 43 instructions when fewer than 32 frames are stored. That call pushes a trace frame. The specialized method is `main.Rect.paint.spec.Circle` when `paint` is in `main`. `extern(abi="c")`, a tlc `extern`, and `...` on that function are rejected and add no instructions. A call that specializes a prototype with no body is rejected and adds no instructions. `s.area()` inside that copy is a direct traced call of `Rect.area`, which is 5 instructions for two `i32` fields multiplied. `var a, b = p.both()` when `both` returns `(i32, i32)` is that same direct call. The two results come back in `%eax` and `%edx`. `extern func Shape::twice` is that same call. `main` that stores 5 and 6 into `Rect` and returns `use(&r)` executes 7 instructions: the two fields are stored, the pointer is passed, and `callq` runs. There is no trace frame at that call. The copy is `qualifier.Rect.twice`. `extern` changes the linkage and adds no instruction. `extern(abi="c")` and `extern(abi="c", name="symbol")` on that default are rejected, so they add no instructions. A `{` body on a method inside the trait is rejected and adds no instructions. `Square::twice` stays that struct's own function.
 
 A field named by the trait is the struct field. Reading it is 1 load. Writing it through `*Shape` reloads the pointer and stores, the same as a field of `*Rect`.
 

@@ -138,6 +138,8 @@ class Checker {
         bool is_union = false;
         // Enum that tags a tlc union. Empty until check_unions resolves `tag_name`.
         std::string tag_name;
+        // `union(pkg.Kind)`. Empty when the enum is in this package.
+        std::string tag_package;
         int tag_enum = -1;
         // Set on a specialization. Empty on a struct written in source.
         std::string template_name;
@@ -152,6 +154,10 @@ class Checker {
         bool unsafe_fn = false;
         // `export func Type::name`. Another package calls `value.name`.
         bool exported = false;
+        // `extern(abi="c")`. Two such lists on one name are `redefinition`.
+        bool extern_c = false;
+        // `name="symbol"`. Two different names on one list are `redefinition`.
+        std::string link_name;
         // File that wrote the method. Zero when the method has not been registered.
         uint32_t file_id = 0;
         const FunctionDecl *decl = nullptr;
@@ -181,14 +187,25 @@ class Checker {
             Type type;
             // The call is `unsafe value.name(...)`. The struct method repeats `unsafe`.
             bool unsafe_fn = false;
+            SourceLoc loc{};
+            // Trait that declared this method. A copy on a child keeps the parent's id.
+            int home = -1;
         };
         struct Field {
             std::string name;
             Type type;
             SourceLoc loc{};
+            // Trait that declared this field. A copy on a child keeps the parent's id.
+            int home = -1;
         };
         std::vector<Method> methods;
         std::vector<Field> fields;
+        // `type Name trait(Parent)`. Stays set after methods and fields are copied.
+        // Negative when this trait has no parent.
+        int parent_id = -1;
+        std::string parent_name;
+        std::string parent_package;
+        SourceLoc parent_loc{};
         // `func Trait::name`. A struct that satisfies the trait gains these. The struct's own
         // method with the same parameters after the receiver wins. The decl stays in the unit,
         // or in `owned_defaults_` for the built-in `Allocator.malloc[T]`.
@@ -248,6 +265,8 @@ class Checker {
     };
 
     uint32_t file_id_ = 0;
+    // File that defines the function whose trait arguments are being checked. Zero keeps the caller's view.
+    uint32_t trait_fn_home_ = 0;
     Type return_type_ = type_invalid();
     // Set while folding `sizeof`, so a second lookup does not repeat a diagnostic.
     bool quiet_ = false;
@@ -320,7 +339,7 @@ class Checker {
                      bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
                      bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0,
                      bool allow_incomplete = false, bool elem_const = false, bool elem_slice = false,
-                     const std::vector<TypeShell> &shells = {});
+                     const std::vector<TypeShell> &shells = {}, bool variable = false);
     Type spelled_type(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
                       int indirections, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
     // A store through this lvalue would change a `const` binding or a `*const` pointee.
@@ -393,6 +412,22 @@ class Checker {
     // `body_home` is the package that will compile the specialized body. Zero keeps the caller's view.
     // A method counts only when that body can call it, and when the caller can see it.
     bool require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc, uint32_t body_home = 0);
+    // The file that defines `callee`, when it is a name or `pkg.name`. Zero when that file is unknown.
+    uint32_t function_home(const Expr &callee);
+    // Non-zero when `signature` takes a trait and `callee` names that function.
+    uint32_t trait_signature_home(const Type &signature, const Expr *callee);
+    // A trait parameter is specialized from a body. A prototype alone cannot be called.
+    void reject_trait_prototype(const Type &signature, bool has_body, SourceLoc loc);
+    bool callee_has_body(const Expr &callee);
+    // Restores the caller's trait-function file when checking one call's arguments.
+    struct TraitHome {
+        Checker &checker;
+        uint32_t saved;
+        TraitHome(Checker &checker, uint32_t home);
+        ~TraitHome();
+        TraitHome(const TraitHome &) = delete;
+        TraitHome &operator=(const TraitHome &) = delete;
+    };
     // The one method of a trait or `*Trait`. Null when the trait has a field or any other method count.
     const Type *sole_trait_method(const Type &want) const;
     // An anonymous function used as a single-method trait argument. The body is checked
@@ -404,10 +439,20 @@ class Checker {
                              const Type &base, bool through_pointer);
     void register_structs(const TranslationUnit &unit, uint32_t file_id);
     void require_extern_struct(const Type &type, SourceLoc loc);
+    // A tagged union, or a pointer or array of one. An alias keeps the union's `struct_id`.
+    bool mentions_tagged_union(const Type &type) const;
     void register_enums(const TranslationUnit &unit, uint32_t file_id);
     void check_unions();
+    // `pkg.Kind` on a union. Reports the diagnostic and returns -1 when the enum is not usable.
+    int imported_enum(uint32_t file, const std::string &package, const std::string &name, SourceLoc loc);
     void register_traits(const TranslationUnit &unit, uint32_t file_id);
+    // Copy a parent's methods, fields, and defaults into each `trait(Parent)`.
+    void inherit_traits();
     void define_trait_fields();
+    // Copy typed fields from the parent. Each copy keeps `home` pointing at that trait.
+    void link_parent_fields();
+    // True when `got` is `want`, or `got`'s parent chain reaches `want`.
+    bool trait_is(int got, int want) const;
     void register_typedefs(const TranslationUnit &unit, uint32_t file_id);
     bool name_taken(const std::string &name) const;
     Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
@@ -730,6 +775,8 @@ class Checker {
     void install_trait_generics(uint32_t struct_file, const std::string &struct_name, int trait_id);
     void grant_covered_defaults(int struct_id);
     const MethodInfo *find_method_head(uint32_t file, const std::string &owner, const std::string &name) const;
+    // `name="symbol"` is one object name. A function or a variable already using it is `redefinition`.
+    bool link_name_taken(const std::string &link_name) const;
     const FunctionDecl *install_default(const FunctionDecl &templ, uint32_t struct_file, const std::string &struct_name,
                                         const std::string &spec_name, const std::vector<SpecArg> &bounds);
     std::optional<Type> try_method_template(Expr &expr, bool used);

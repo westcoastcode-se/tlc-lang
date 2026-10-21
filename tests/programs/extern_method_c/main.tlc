@@ -1,0 +1,20 @@
+extern(abi="c") type Point struct {
+    x i32;
+    y i32;
+}
+
+extern(abi="c") func Point::read(self this) i32 {
+    return self.x + self.y;
+}
+
+extern(abi="c", name="point_origin") func Point::origin() Point {
+    var p Point;
+    p.x = 20;
+    p.y = 22;
+    return p;
+}
+
+func main() i32 {
+    var p = Point.origin();
+    return p.read();
+}

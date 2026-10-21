@@ -30,6 +30,17 @@ bool CodeGen::addressable(const Expr &expr) const {
     return false;
 }
 
+const TraitDecl *CodeGen::trait_parent(uint32_t file, const TraitDecl *trait) const {
+    if (trait == nullptr || trait->parent_name.empty() || !trait->parent_package.empty()) {
+        return nullptr;
+    }
+    const int id = trait_named(file, trait->parent_name);
+    if (id < 0 || id >= static_cast<int>(trait_decls_.size())) {
+        return nullptr;
+    }
+    return trait_decls_[static_cast<std::size_t>(id)];
+}
+
 int CodeGen::trait_named(uint32_t file, const std::string &name) const {
     for (const uint32_t id : package_files(file)) {
         const auto found = trait_names_.find(id);
@@ -126,8 +137,20 @@ void CodeGen::prepare_structs() {
                 }
                 const Lowered low = lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
                                           field.is_array, field.array_len, false, field.elem_slice, field.shells);
-                if (low.depth == 0 && !low.is_array && low.struct_id >= 0 &&
-                    !structs_[static_cast<std::size_t>(low.struct_id)].ready) {
+                // A slice or a pointer does not store the element. A sized array does, so the
+                // element struct has to be ready before this struct gets a body.
+                if (low.struct_id < 0 || low.depth > 0 || low.is_slice || low.elem_slice || low.ptr_to_array ||
+                    structs_[static_cast<std::size_t>(low.struct_id)].ready) {
+                    continue;
+                }
+                bool array_only = true;
+                for (const TypeShell &shell : low.shells) {
+                    if (shell.kind != TypeShell::Kind::Array) {
+                        array_only = false;
+                        break;
+                    }
+                }
+                if (array_only) {
                     waiting = true;
                     break;
                 }
@@ -140,7 +163,16 @@ void CodeGen::prepare_structs() {
             structs_[static_cast<std::size_t>(id)].is_union = item->is_union;
             structs_[static_cast<std::size_t>(id)].file_id = file;
             if (!item->tag_name.empty()) {
-                structs_[static_cast<std::size_t>(id)].tag_enum = enum_named(file, item->tag_name);
+                int tag_id = -1;
+                if (item->tag_package.empty()) {
+                    tag_id = enum_id_of(file, item->tag_name);
+                } else {
+                    const uint32_t target = package_file(file, item->tag_package);
+                    if (target != 0) {
+                        tag_id = enum_id_of(target, item->tag_name);
+                    }
+                }
+                structs_[static_cast<std::size_t>(id)].tag_enum = tag_id;
             }
             auto c_memory = [&](auto &&self, llvm::Type *ty) -> llvm::Type * {
                 if (ty == nullptr) {
@@ -419,6 +451,8 @@ void CodeGen::prepare_aliases() {
             alias.fn_ret_bool = low.fn_ret_bool;
             alias.fn_ret_struct = low.fn_ret_struct;
             alias.fn_results = low.fn_results;
+            // `type Alias Kind` keeps the enum. `union(Alias)` and `union(pkg.Alias)` read it back.
+            alias.enum_id = low.enum_id;
             alias.is_slice = low.is_slice;
             alias.elem_slice = low.elem_slice;
             alias.shells = low.shells;
@@ -471,6 +505,18 @@ void CodeGen::note_enum(Alias &base, int id) const {
     base.elem_char = layout.is_char;
     base.elem_unsigned = layout.is_unsigned;
     base.elem_bits = layout.is_bool ? 0 : layout.bits;
+}
+
+int CodeGen::enum_id_of(uint32_t file, const std::string &name) const {
+    const int id = enum_named(file, name);
+    if (id >= 0) {
+        return id;
+    }
+    const Alias *alias = find_alias(file, name);
+    if (alias == nullptr || alias->enum_id < 0) {
+        return -1;
+    }
+    return alias->enum_id;
 }
 
 int CodeGen::enum_named(uint32_t file, const std::string &name) const {
@@ -814,6 +860,7 @@ const Binding *CodeGen::trait_spec_method(uint32_t caller, uint32_t resolved_fil
         return nullptr;
     }
     const TraitDecl *trait = nullptr;
+    int concrete = -1;
     for (std::size_t index = 0; index < emitting_fn_->params.size(); ++index) {
         const Param &param = emitting_fn_->params[index];
         if (param.name != base_name->text || !param_is_trait(caller, param)) {
@@ -822,6 +869,7 @@ const Binding *CodeGen::trait_spec_method(uint32_t caller, uint32_t resolved_fil
         if (index >= active_spec_.size() || active_spec_[index] < 0) {
             return nullptr;
         }
+        concrete = active_spec_[index];
         const int trait_id = trait_named(caller, param.type_name);
         if (trait_id < 0 || static_cast<std::size_t>(trait_id) >= trait_decls_.size()) {
             return nullptr;
@@ -835,19 +883,35 @@ const Binding *CodeGen::trait_spec_method(uint32_t caller, uint32_t resolved_fil
     // The required method of this name is the call. A default is used only when the trait
     // does not require the name, and only one default has this argument count.
     const FunctionDecl *signature = nullptr;
-    for (const FunctionDecl &method : trait->methods) {
-        if (method.name == selector.field) {
-            signature = &method;
-            break;
+    const TraitDecl *listed = trait;
+    std::vector<const TraitDecl *> chain;
+    for (int guard = 0; listed != nullptr && signature == nullptr && guard < static_cast<int>(trait_decls_.size());
+         ++guard) {
+        chain.push_back(listed);
+        for (const FunctionDecl &method : listed->methods) {
+            if (method.name == selector.field) {
+                signature = &method;
+                break;
+            }
         }
+        listed = trait_parent(caller, listed);
     }
     if (signature == nullptr) {
         int hits = 0;
         for (const PackageNode &pkg : graph_->nodes) {
             for (const TopDecl &decl : pkg.unit.decls) {
                 const auto *fn = std::get_if<FunctionDecl>(&decl.data);
-                if (fn == nullptr || fn->name != selector.field || fn->method_struct != trait->name ||
-                    !fn->type_params.empty() || fn->body == nullptr) {
+                bool on_chain = fn != nullptr && fn->method_struct == trait->name;
+                if (fn != nullptr && !on_chain) {
+                    for (const TraitDecl *item : chain) {
+                        if (item != nullptr && fn->method_struct == item->name) {
+                            on_chain = true;
+                            break;
+                        }
+                    }
+                }
+                if (fn == nullptr || fn->name != selector.field || !on_chain || !fn->type_params.empty() ||
+                    fn->body == nullptr) {
                     continue;
                 }
                 const std::size_t skip = !fn->static_method && !fn->params.empty() && fn->params.front().is_receiver ? 1 : 0;
@@ -903,9 +967,32 @@ const Binding *CodeGen::trait_spec_method(uint32_t caller, uint32_t resolved_fil
             }
         }
     };
-    scan(home);
+    const uint32_t concrete_file = concrete >= 0 && concrete < static_cast<int>(structs_.size())
+                                       ? structs_[static_cast<std::size_t>(concrete)].file_id
+                                       : 0;
+    auto in_package = [&](uint32_t file, uint32_t package) {
+        if (file == 0 || package == 0) {
+            return false;
+        }
+        for (const uint32_t id : package_files(package)) {
+            if (id == file) {
+                return true;
+            }
+        }
+        return false;
+    };
+    // The struct may be in the caller's package while this body is specialized elsewhere.
+    if (concrete_file != 0 && !in_package(concrete_file, home)) {
+        scan(concrete_file);
+    }
+    if (found == nullptr) {
+        scan(home);
+    }
     if (found == nullptr && home != resolved_file && resolved_file != 0) {
         scan(resolved_file);
+    }
+    if (found == nullptr && concrete_file != 0) {
+        scan(concrete_file);
     }
     return found;
 }

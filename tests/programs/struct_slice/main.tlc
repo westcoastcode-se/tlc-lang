@@ -1,0 +1,18 @@
+type Node struct {
+    value i32;
+    kids []Node;
+}
+
+func main() i32 {
+    var grand = [_]Node{Node{.value = 7}};
+    var child = [_]Node{Node{.value = 30}};
+    child[0].kids = grand[:];
+    var root Node;
+    root.value = 10;
+    root.kids = child[:];
+    if (sizeof(Node) != 24 || root.kids.len != 1 || root.kids[0].kids.len != 1) {
+        return 1;
+    }
+    child[0].value = 5;
+    return root.value + root.kids[0].value + root.kids[0].kids[0].value;
+}

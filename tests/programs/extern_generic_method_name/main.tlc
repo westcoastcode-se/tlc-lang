@@ -1,0 +1,11 @@
+type Vec[T type] struct {
+    n T;
+}
+
+extern(abi="c", name="get_n") func Vec[T]::code(value T) i32 {
+    return value;
+}
+
+func main() i32 {
+    return Vec[i32].code(42);
+}

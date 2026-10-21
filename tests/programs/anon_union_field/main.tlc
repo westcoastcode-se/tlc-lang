@@ -1,0 +1,43 @@
+type Holder struct {
+    data union {
+        n i32;
+        m i32;
+    };
+};
+
+type Kind enum {
+    A,
+    B,
+};
+
+type Box struct {
+    value union(Kind) {
+        A struct { n i32; };
+        B struct { n i32; };
+    };
+};
+
+extern(abi="c") type Shape struct {
+    data union {
+        n i32;
+        raw [4]u8;
+    };
+    point struct {
+        x i32;
+        y i32;
+    };
+};
+
+func main() i32 {
+    var h Holder;
+    h.data.n = 4;
+    var b Box = {.value = {.A = {.n = 3}}};
+    var s Shape;
+    s.data.n = 7;
+    s.point.x = 1;
+    s.point.y = 2;
+    if (h.data.m != 4 || Kind(b.value) != Kind.A || s.data.n != 7 || s.point.x != 1) {
+        return 0;
+    }
+    return h.data.m + s.data.n + s.point.y + b.value.A.n;
+}

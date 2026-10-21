@@ -73,7 +73,7 @@ func main() i32 {
 
 `measure(r)` returns 42. `value *T` accepts a value receiver and a pointer receiver. Passing the struct where the parameter is `*T` is `type mismatch`. The call is `measure(&r)`. A parameter written `T` requires a value receiver. A pointer receiver there is `type mismatch`.
 
-`export func measure[T Shape]` publishes that function. Another package calls `pkg.measure(r)`. The trait is the one in the function's package. The method on the struct is exported. Without `export` on that method, the call is `area is not exported`.
+`export func measure[T Shape]` publishes that function. Another package calls `pkg.measure(r)`. The trait is the one in the function's package. The method on the struct is exported. Without `export` on that method, the call is `area is not exported`. `export func use(s Shape)` publishes that call without a type-parameter list. See [Traits](../methods/trait.md).
 
 `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[i32](1)` writes the type. A type that cannot be inferred is reported as `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[i32]` and `Vec[u8]` for `Vec[T]`, is reported as `type mismatch`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
 
@@ -104,11 +104,11 @@ func main() i32 {
 
 One generic name may have several parameter lists. A call uses the types of the arguments, the same way as a function that is not generic. `func id[T type](value T) T` and `func id[T type](value T, extra i32) T` are both `id`. Type-parameter names are not part of that list, so `id[T type](value T)` and `id[U type](value U)` are one list. The same parameter list is `redefinition`. A generic function and a concrete function of the same name are `redefinition`. A call that matches none or more than one list is `type mismatch` or `argument count`.
 
-A method on a generic struct follows the same rule. The receiver is not one of those parameters. `func Box[T]::get(self *this) T` and `func Box[T]::get(self *this, n i32) T` are two methods, chosen from the remaining arguments. `func Box[T]::get(self this)` beside `func Box[T]::get(self *this)` stays `redefinition`.
+A method on a generic struct follows the same rule. The receiver is not one of those parameters. `func Box[T]::get(self *this) T` and `func Box[T]::get(self *this, n i32) T` are two methods, chosen from the remaining arguments. `func Box[T]::get(self this)` beside `func Box[T]::get(self *this)` stays `redefinition`. `extern(abi="c")` on a generic function, or on a function whose parameter is a trait, is `extern(abi="c") on a trait or a generic`. `extern` and `extern(abi="tlc")` on a generic function are `not supported yet`.
 
 ## Cost
 
-A generic function is specialized while compiling. `return id(40)` calls `id` for `i32` and pushes a trace frame. `main` executes 38 instructions when fewer than 32 frames are stored, which is the no-argument frame plus 1 `movl` of the argument. The specialized `id` is 3 instructions: store the parameter, load it, `retq`.
+A generic function is specialized while compiling. `return id(40)` calls `id` for `i32` and pushes a trace frame. `main` executes 38 instructions when fewer than 32 frames are stored, which is the no-argument frame plus 1 `movl` of the argument. The specialized `id` is 3 instructions: store the parameter, load it, `retq`. `extern(abi="c")` on that function is rejected and adds no instructions.
 
 `T Shape` is also specialized. `measure(r)` for a struct of two `i32` fields stores those fields and copies them into the argument registers. The struct is not zeroed first. `main` executes 44 instructions when fewer than 32 frames are stored. The call pushes a trace frame. Inside the copy, `value.area()` is an ordinary traced call.
 

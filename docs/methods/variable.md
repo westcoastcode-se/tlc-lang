@@ -52,7 +52,7 @@ The program returns 42. `Entity.next` is one variable for `Entity`. `Box[i32].ex
 
 `var` inside the struct is reported as `not supported yet`. The variable is written beside the type. A member may use the same name: `e.next` is the member and `Entity.next` is the variable. `sizeof` stays the size of the members.
 
-`export var Entity::next i32 = 40` publishes that variable. Another package reads and assigns `pkg.Entity.next` when `Entity` is exported. Without `export`, the name is reported as `next is not exported`. `extern` on the variable, and `export var Box[T]::extra`, are reported as `not supported yet`. A member another package can name is `export next i32` inside the struct.
+`export var Entity::next i32 = 40` publishes that variable. Another package reads and assigns `pkg.Entity.next` when `Entity` is exported. Without `export`, the name is reported as `next is not exported`. `extern` on the variable, and `export var Box[T]::extra`, are reported as `not supported yet`. `extern(abi="c") var Box[T]::extra` and `extern(abi="c")` on a trait are `extern(abi="c") on a trait or a generic`. A member another package can name is `export next i32` inside the struct.
 
 ```c
 package math;
@@ -77,6 +77,6 @@ The program returns 42.
 
 ## Cost
 
-`Entity.next` is a global. Reading it is 1 `movl`. Assigning it is 1 load, the arithmetic, and 1 store. It is not inside the struct, so a value of the struct does not copy it. Each specialization of a generic struct has its own global. A use of one specialization does not load the other. A zero initializer occupies the binary and adds no instruction at startup.
+`Entity.next` is a global. Reading it is 1 `movl`. Assigning it is 1 load, the arithmetic, and 1 store. It is not inside the struct, so a value of the struct does not copy it. Each specialization of a generic struct has its own global. A use of one specialization does not load the other. A zero initializer occupies the binary and adds no instruction at startup. `extern(abi="c")` on a generic or a trait variable is rejected and adds no instructions.
 
 [Index](../README.md) · [Previous: Methods on primitive aliases](alias.md) · [Next: Constants on a type](constant.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

@@ -434,6 +434,53 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             }
                         }
                     }
+                    // `geom.Kind(shape)` reads the tag. The enum is not a function.
+                    if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
+                        if (selector->base != nullptr && node.args.size() == 1 && node.args.front() != nullptr) {
+                            if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
+                                if (packages_.contains(base->text)) {
+                                    const uint32_t target = package_file(current_file_, base->text);
+                                    const int enum_id = target == 0 ? -1 : enum_id_of(target, selector->field);
+                                    if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size())) {
+                                        const TypedValue source = emit_rvalue(*node.args.front());
+                                        if (source.value != nullptr && source.depth == 0 && source.struct_id >= 0 &&
+                                            source.struct_id < static_cast<int>(structs_.size()) &&
+                                            source.value->getType()->isStructTy() &&
+                                            structs_[static_cast<std::size_t>(source.struct_id)].tag_enum == enum_id) {
+                                            llvm::Value *tag = builder_.CreateExtractValue(source.value, 2);
+                                            const EnumLayout &enumeration = enums_[static_cast<std::size_t>(enum_id)];
+                                            TypedValue value;
+                                            value.value = tag;
+                                            value.enum_id = enum_id;
+                                            value.elem_bool = enumeration.is_bool;
+                                            value.elem_char = enumeration.is_char;
+                                            value.elem_unsigned = enumeration.is_unsigned;
+                                            value.elem_bits = enumeration.is_bool ? 0 : enumeration.bits;
+                                            return value;
+                                        }
+                                        error(node.loc, "type mismatch");
+                                        return {zero(), 0};
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // `geom.use(r)` specializes an exported function whose parameter is a trait.
+                    // A template such as `measure[T Shape]` is not in this table.
+                    if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
+                        if (selector->base != nullptr) {
+                            if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
+                                const auto package = packages_.find(base->text);
+                                if (package != packages_.end()) {
+                                    if (const Binding *binding = visible(package->second, selector->field, true);
+                                        binding != nullptr && binding->is_generic && binding->decl != nullptr &&
+                                        binding->decl->type_params.empty()) {
+                                        return emit_generic_call(*binding, node);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 return emit_prepared(prepare_call(node));
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {

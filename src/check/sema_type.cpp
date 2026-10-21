@@ -104,12 +104,13 @@ void Checker::ensure_allocator_trait() {
     const Type size = type_int();
     TraitInfo info;
     info.name = "Allocator";
-    info.methods.push_back(TraitInfo::Method{"malloc", type_function(optional, {size, size}), true});
-    info.methods.push_back(TraitInfo::Method{"free", type_function(type_void(), {pointer}), false});
-    info.methods.push_back(TraitInfo::Method{"realloc", type_function(optional, {pointer, size, size}), true});
+    const int id = static_cast<int>(traits_.size());
+    info.methods.push_back(TraitInfo::Method{"malloc", type_function(optional, {size, size}), true, {}, id});
+    info.methods.push_back(TraitInfo::Method{"free", type_function(type_void(), {pointer}), false, {}, id});
+    info.methods.push_back(TraitInfo::Method{"realloc", type_function(optional, {pointer, size, size}), true, {}, id});
     owned_defaults_.push_back(allocator_malloc_default());
     info.defaults.push_back(&owned_defaults_.back());
-    allocator_trait_id_ = static_cast<int>(traits_.size());
+    allocator_trait_id_ = id;
     traits_.push_back(std::move(info));
 }
 
@@ -131,6 +132,9 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
         TraitInfo info;
         info.name = item->name;
         info.file_id = file_id;
+        info.parent_name = item->parent_name;
+        info.parent_package = item->parent_package;
+        info.parent_loc = item->parent_loc;
         info.pending = item->fields;
         traits_.push_back(std::move(info));
         trait_names_[file_id][item->name] = id;
@@ -160,12 +164,107 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
             }
             Type signature = function_signature(method);
             if (signature.result != nullptr && mentions_trait(*signature.result)) {
-                error(method.loc, "not supported yet");
+                error(method.loc, "trait has no size");
                 continue;
             }
-            traits_[static_cast<std::size_t>(id)].methods.push_back(
-                TraitInfo::Method{method.name, std::move(signature), method.unsafe});
+            TraitInfo::Method saved;
+            saved.name = method.name;
+            saved.type = std::move(signature);
+            saved.unsafe_fn = method.unsafe;
+            saved.loc = method.loc;
+            saved.home = id;
+            traits_[static_cast<std::size_t>(id)].methods.push_back(std::move(saved));
         }
+    }
+}
+
+void Checker::inherit_traits() {
+    const int count = static_cast<int>(traits_.size());
+    std::vector<uint8_t> done(static_cast<std::size_t>(count), 0);
+    std::vector<uint8_t> stack(static_cast<std::size_t>(count), 0);
+    for (int id = 0; id < count; ++id) {
+        TraitInfo &info = traits_[static_cast<std::size_t>(id)];
+        if (info.parent_name.empty()) {
+            continue;
+        }
+        file_id_ = info.file_id;
+        if (!info.parent_package.empty()) {
+            // A trait in another package is not exported yet.
+            error(info.parent_loc, "not supported yet");
+            info.parent_name.clear();
+            continue;
+        }
+        if (info.parent_name == info.name) {
+            error(info.parent_loc, "type mismatch");
+            info.parent_name.clear();
+            continue;
+        }
+        const int parent = package_trait(info.file_id, info.parent_name);
+        if (parent < 0) {
+            const bool other = find_tag(info.file_id, info.parent_name) >= 0 ||
+                               package_has_enum(info.file_id, info.parent_name);
+            error(info.parent_loc, other ? "type mismatch" : "undeclared identifier");
+            info.parent_name.clear();
+            continue;
+        }
+        info.parent_id = parent;
+    }
+    const auto inherit_one = [&](auto &&self, int id) -> void {
+        if (id < 0 || id >= count || done[static_cast<std::size_t>(id)] != 0) {
+            return;
+        }
+        if (stack[static_cast<std::size_t>(id)] != 0) {
+            error(traits_[static_cast<std::size_t>(id)].parent_loc, "type mismatch");
+            traits_[static_cast<std::size_t>(id)].parent_id = -1;
+            done[static_cast<std::size_t>(id)] = 1;
+            return;
+        }
+        stack[static_cast<std::size_t>(id)] = 1;
+        TraitInfo &info = traits_[static_cast<std::size_t>(id)];
+        if (info.parent_id >= 0) {
+            self(self, info.parent_id);
+        }
+        stack[static_cast<std::size_t>(id)] = 0;
+        done[static_cast<std::size_t>(id)] = 1;
+        if (info.parent_id < 0 || info.parent_id >= count) {
+            return;
+        }
+        const TraitInfo &parent = traits_[static_cast<std::size_t>(info.parent_id)];
+        for (const TraitInfo::Method &method : parent.methods) {
+            bool clash = false;
+            for (const TraitInfo::Method &own : info.methods) {
+                if (own.name == method.name) {
+                    error(own.loc, "redefinition");
+                    clash = true;
+                }
+            }
+            if (!clash) {
+                // The copy is visible on the child. `home` still names the trait that declared it.
+                TraitInfo::Method copy = method;
+                if (copy.home < 0) {
+                    copy.home = info.parent_id;
+                }
+                info.methods.push_back(std::move(copy));
+            }
+        }
+        for (const FunctionDecl *def : parent.defaults) {
+            if (def == nullptr) {
+                continue;
+            }
+            bool have = false;
+            for (const FunctionDecl *own : info.defaults) {
+                if (own == def) {
+                    have = true;
+                    break;
+                }
+            }
+            if (!have) {
+                info.defaults.push_back(def);
+            }
+        }
+    };
+    for (int id = 0; id < count; ++id) {
+        inherit_one(inherit_one, id);
     }
 }
 
@@ -331,7 +430,7 @@ void Checker::define_trait_fields() {
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
                                               field.optional, field.const_pointee, false, field.elem_const,
-                                              field.elem_slice, field.shells);
+                                              field.elem_slice, field.shells, true);
             if (field_type.kind == TypeKind::Invalid) {
                 continue;
             }
@@ -339,15 +438,87 @@ void Checker::define_trait_fields() {
                 error(field.loc, "not supported yet");
                 continue;
             }
-            info.fields.push_back(TraitInfo::Field{field.name, std::move(field_type), field.loc});
+            TraitInfo::Field saved;
+            saved.name = field.name;
+            saved.type = std::move(field_type);
+            saved.loc = field.loc;
+            saved.home = static_cast<int>(&info - traits_.data());
+            info.fields.push_back(std::move(saved));
         }
         info.pending.clear();
     }
 }
 
+void Checker::link_parent_fields() {
+    const int count = static_cast<int>(traits_.size());
+    std::vector<uint8_t> done(static_cast<std::size_t>(count), 0);
+    const auto link = [&](auto &&self, int id) -> void {
+        if (id < 0 || id >= count || done[static_cast<std::size_t>(id)] != 0) {
+            return;
+        }
+        done[static_cast<std::size_t>(id)] = 1;
+        TraitInfo &info = traits_[static_cast<std::size_t>(id)];
+        if (info.parent_id < 0) {
+            return;
+        }
+        self(self, info.parent_id);
+        // The child's parent id stays. A copied field keeps the trait that declared it.
+        const TraitInfo &parent = traits_[static_cast<std::size_t>(info.parent_id)];
+        for (const TraitInfo::Field &field : parent.fields) {
+            bool clash = false;
+            for (const TraitInfo::Field &own : info.fields) {
+                if (own.name == field.name) {
+                    error(own.loc, "redefinition");
+                    clash = true;
+                }
+            }
+            if (clash) {
+                continue;
+            }
+            TraitInfo::Field copy = field;
+            if (copy.home < 0) {
+                copy.home = info.parent_id;
+            }
+            info.fields.push_back(std::move(copy));
+        }
+    };
+    for (int id = 0; id < count; ++id) {
+        link(link, id);
+    }
+}
+
+bool Checker::trait_is(int got, int want) const {
+    if (got < 0 || want < 0) {
+        return false;
+    }
+    const int count = static_cast<int>(traits_.size());
+    int walk = got;
+    for (int guard = 0; walk >= 0 && walk < count && guard < count; ++guard) {
+        if (walk == want) {
+            return true;
+        }
+        const int next = traits_[static_cast<std::size_t>(walk)].parent_id;
+        if (next == walk) {
+            return false;
+        }
+        walk = next;
+    }
+    return false;
+}
+
 bool Checker::field_waits(const FieldDecl &field) const {
-    if (field.is_array || field.indirections > 0 || !field.shells.empty() || !field.type_package.empty() || field.is_enum ||
+    if (field.indirections > 0 || field.is_fn_ptr || !field.type_package.empty() || field.is_enum ||
         field.type_name.empty()) {
+        return false;
+    }
+    // A sized array stores the element. A pointer or a slice does not, so it does not wait.
+    if (!field.shells.empty()) {
+        for (const TypeShell &shell : field.shells) {
+            if (shell.kind != TypeShell::Kind::Array) {
+                return false;
+            }
+        }
+    } else if (field.elem_slice || (field.is_array && field.array_len < 0)) {
         return false;
     }
     const int id = find_tag(file_id_, field.type_name);
@@ -388,6 +559,40 @@ void Checker::require_extern_struct(const Type &type, SourceLoc loc) {
     if (!structs_[static_cast<std::size_t>(type.struct_id)].extern_c) {
         error(loc, "struct must be extern(abi=\"c\")");
     }
+}
+
+bool Checker::mentions_tagged_union(const Type &type) const {
+    if (type.kind == TypeKind::Pointer && type.pointee) {
+        return mentions_tagged_union(*type.pointee);
+    }
+    if (type.kind == TypeKind::Array && type.element) {
+        return mentions_tagged_union(*type.element);
+    }
+    if (type.kind == TypeKind::Function) {
+        if (type.result != nullptr && mentions_tagged_union(*type.result)) {
+            return true;
+        }
+        for (const Type &param : type.params) {
+            if (mentions_tagged_union(param)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (type.kind == TypeKind::Tuple) {
+        for (const Type &part : type.results) {
+            if (mentions_tagged_union(part)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (type.kind != TypeKind::Struct || type.struct_id < 0 ||
+        type.struct_id >= static_cast<int>(structs_.size())) {
+        return false;
+    }
+    const StructInfo &info = structs_[static_cast<std::size_t>(type.struct_id)];
+    return info.is_union && !info.tag_name.empty();
 }
 
 void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id) {
@@ -436,7 +641,10 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
             continue;
         }
         if (!item->type_params.empty()) {
-            if (item->is_extern || item->extern_c || item->is_union) {
+            // A C type is one concrete layout. A generic struct is specialized per use.
+            if (item->extern_c) {
+                error(item->loc, "extern(abi=\"c\") on a trait or a generic");
+            } else if (item->is_extern || item->is_union) {
                 error(item->loc, "not supported yet");
             }
             for (const TypeParam &param : item->type_params) {
@@ -466,6 +674,7 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         created.align = item->align;
         created.is_union = item->is_union;
         created.tag_name = item->tag_name;
+        created.tag_package = item->tag_package;
         structs_.push_back(std::move(created));
         tags_[file_id][item->name] = id;
         if (item->fields.empty()) {
@@ -682,6 +891,152 @@ std::optional<int> Checker::type_size(const Type &type) const {
 }
 
 void Checker::define_struct_fields() {
+    // A slice header does not store the element. The element struct may still be incomplete,
+    // including the struct being defined. A sized array of that struct still needs its size.
+    auto slice_hides_leaf = [](const FieldDecl &decl) {
+        if (!decl.shells.empty()) {
+            if (decl.shells.front().kind == TypeShell::Kind::Pointer) {
+                return false;
+            }
+            for (const TypeShell &shell : decl.shells) {
+                if (shell.kind == TypeShell::Kind::Slice) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return decl.elem_slice || (decl.is_array && decl.array_len < 0);
+    };
+    // `kids *[2]Node` and `kids *[]Node` store a pointer. The element can still be incomplete.
+    auto pointer_hides_leaf = [](const FieldDecl &decl) {
+        for (const TypeShell &shell : decl.shells) {
+            if (shell.kind == TypeShell::Kind::Pointer) {
+                return true;
+            }
+        }
+        return false;
+    };
+    // The struct stored by value, including through sized arrays. A pointer or a slice hides it.
+    // `next Node` and `kids [2]Node` have no finite size. `kids [2]*Node` and `kids []Node` do.
+    auto stored_by_value = [&](const FieldDecl &field) -> int {
+        if (field.indirections > 0 || field.is_fn_ptr || !field.type_package.empty() || field.type_name.empty() ||
+            field.is_enum || slice_hides_leaf(field)) {
+            return -1;
+        }
+        for (const TypeShell &shell : field.shells) {
+            if (shell.kind == TypeShell::Kind::Slice || shell.kind == TypeShell::Kind::Pointer) {
+                return -1;
+            }
+        }
+        const int id = find_tag(file_id_, field.type_name);
+        if (id < 0 || id >= static_cast<int>(structs_.size())) {
+            return -1;
+        }
+        return id;
+    };
+    // Struct ids from `from` to `target`, including both. Empty when `target` is not stored.
+    // A failed branch is forgotten so a later field can walk the same struct.
+    auto value_path = [&](auto &self, int from, int target, std::unordered_set<int> &seen) -> std::vector<int> {
+        if (!seen.insert(from).second) {
+            return {};
+        }
+        const PendingStruct *item = nullptr;
+        for (const PendingStruct &pending : pending_structs_) {
+            if (pending.id == from && pending.decl != nullptr) {
+                item = &pending;
+                break;
+            }
+        }
+        if (item == nullptr) {
+            seen.erase(from);
+            return {};
+        }
+        const uint32_t saved = file_id_;
+        file_id_ = item->file_id;
+        std::vector<int> path;
+        for (const FieldDecl &field : item->decl->fields) {
+            const int leaf = stored_by_value(field);
+            if (leaf < 0) {
+                continue;
+            }
+            if (leaf == target) {
+                path = {from, target};
+                break;
+            }
+            std::vector<int> rest = self(self, leaf, target, seen);
+            if (!rest.empty()) {
+                rest.insert(rest.begin(), from);
+                path = std::move(rest);
+                break;
+            }
+        }
+        file_id_ = saved;
+        if (path.empty()) {
+            seen.erase(from);
+        }
+        return path;
+    };
+    // Package qualifier for a struct. An imported package uses its directory or `package` name.
+    // The entry file uses its `package` name, or the file name without `.tlc`.
+    auto package_of = [&](int id) -> std::string {
+        if (id < 0 || id >= static_cast<int>(structs_.size())) {
+            return {};
+        }
+        const StructInfo &info = structs_[static_cast<std::size_t>(id)];
+        if (const PackageNode *node = find_node(info.file_id)) {
+            return node->qualifier;
+        }
+        if (info.file_id == 0 && primary_unit_ != nullptr && primary_unit_->package &&
+            !primary_unit_->package->name.empty()) {
+            return primary_unit_->package->name;
+        }
+        const uint32_t source_id = info.file_id != 0 ? info.file_id : info.loc.file;
+        const SourceFile *file = diags_.source(source_id);
+        if (file == nullptr) {
+            return {};
+        }
+        std::string name = file->path();
+        const auto slash = name.find_last_of("/\\");
+        if (slash != std::string::npos) {
+            name.erase(0, slash + 1);
+        }
+        const auto dot = name.rfind('.');
+        if (dot != std::string::npos) {
+            name.resize(dot);
+        }
+        return name;
+    };
+    // `pkg.Node`. An anonymous struct or union has no name the program can write.
+    auto cycle_name = [&](int id) -> std::string {
+        if (id < 0 || id >= static_cast<int>(structs_.size())) {
+            return "struct";
+        }
+        const std::string &name = structs_[static_cast<std::size_t>(id)].name;
+        if (name.rfind(".struct.", 0) == 0) {
+            return "struct";
+        }
+        if (name.rfind(".union.", 0) == 0 && name.find('.', std::string(".union.").size()) == std::string::npos) {
+            return "union";
+        }
+        const std::string package = package_of(id);
+        if (package.empty()) {
+            return name;
+        }
+        return package + "." + name;
+    };
+    // `recursive struct pkg.A -> pkg.B -> pkg.C -> pkg.A`.
+    auto recursive_message = [&](const std::vector<int> &ids) -> std::string {
+        const bool as_union = !ids.empty() && ids.front() >= 0 && ids.front() < static_cast<int>(structs_.size()) &&
+                              structs_[static_cast<std::size_t>(ids.front())].is_union;
+        std::string message = as_union ? "recursive union " : "recursive struct ";
+        for (std::size_t i = 0; i < ids.size(); ++i) {
+            if (i != 0) {
+                message += " -> ";
+            }
+            message += cycle_name(ids[i]);
+        }
+        return message;
+    };
     auto type_fields = [&](PendingStruct &pending, bool complain_waiting) {
         file_id_ = pending.file_id;
         StructInfo &info = structs_[static_cast<std::size_t>(pending.id)];
@@ -694,16 +1049,33 @@ void Checker::define_struct_fields() {
                     error(field.loc, "redefinition");
                 }
             }
-            if (complain_waiting && field_waits(field)) {
-                error(field.loc, "not supported yet");
-                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
-                continue;
-            }
             FieldDecl &written = const_cast<FieldDecl &>(field);
             prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
                             written.indirections, written.optional, written.is_array, written.array_len,
                             written.array_len_name, written.type_args, written.loc);
             fold_shells(written.shells, written.loc);
+            // A by-value cycle has no finite size. Name it. This is not `type mismatch`.
+            const int stored = stored_by_value(written);
+            std::vector<int> cycle;
+            if (stored == pending.id) {
+                cycle = {pending.id, pending.id};
+            } else if (stored >= 0 && !structs_[static_cast<std::size_t>(stored)].complete) {
+                std::unordered_set<int> seen;
+                cycle = value_path(value_path, stored, pending.id, seen);
+                if (!cycle.empty()) {
+                    cycle.insert(cycle.begin(), pending.id);
+                }
+            }
+            if (!cycle.empty()) {
+                error(field.loc, recursive_message(cycle));
+                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
+                continue;
+            }
+            if (complain_waiting && field_waits(field)) {
+                error(field.loc, "not supported yet");
+                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
+                continue;
+            }
             Type field_type =
                 field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                  field.ret_indirections, field.indirections, field.fn_params,
@@ -711,8 +1083,9 @@ void Checker::define_struct_fields() {
                                                  field.ret_const_pointee)
                                 : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                               false, field.type_package, field.is_struct, field.is_enum, false,
-                                              field.optional, field.const_pointee, false, field.elem_const,
-                                              field.elem_slice, written.shells);
+                                              field.optional, field.const_pointee,
+                                              slice_hides_leaf(written) || pointer_hides_leaf(written),
+                                              field.elem_const, field.elem_slice, written.shells, true);
             // A slice is a tlc value, `{ptr, i32}`. An `extern(abi="c")` struct keeps the C layout.
             if (is_slice(field_type) && info.extern_c) {
                 error(field.loc, "not supported yet");
@@ -720,7 +1093,12 @@ void Checker::define_struct_fields() {
                 continue;
             }
             if (info.extern_c) {
-                require_extern_struct(field_type, field.loc);
+                // A tagged union is not a C layout, and it cannot be marked `extern(abi="c")`.
+                if (mentions_tagged_union(field_type)) {
+                    error(field.loc, "extern(abi=\"c\") on a tagged union");
+                } else {
+                    require_extern_struct(field_type, field.loc);
+                }
             }
             info.fields.push_back(StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
             if (field.init != nullptr) {
@@ -754,10 +1132,15 @@ void Checker::define_struct_fields() {
             file_id_ = pending.file_id;
             bool waits = false;
             for (const FieldDecl &field : pending.decl->fields) {
-                if (field_waits(field)) {
-                    waits = true;
-                    break;
+                if (!field_waits(field)) {
+                    continue;
                 }
+                // `next Node` is rejected below. It does not keep this struct incomplete.
+                if (find_tag(file_id_, field.type_name) == pending.id) {
+                    continue;
+                }
+                waits = true;
+                break;
             }
             if (waits) {
                 continue;
@@ -915,14 +1298,61 @@ void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
     }
 }
 
+int Checker::imported_enum(uint32_t file, const std::string &package, const std::string &name, SourceLoc loc) {
+    const PackageNode *node = find_node(file);
+    if (node == nullptr) {
+        error(loc, "undeclared identifier");
+        return -1;
+    }
+    const PackageNode *target = nullptr;
+    for (const ImportDecl &import : node->unit.imports) {
+        if (import.form == ImportDecl::Form::Selective) {
+            continue;
+        }
+        const PackageNode *candidate = target_of(*node, import);
+        if (candidate == nullptr) {
+            continue;
+        }
+        const std::string binding = import.form == ImportDecl::Form::Alias ? import.alias : candidate->qualifier;
+        if (binding == package) {
+            target = candidate;
+            break;
+        }
+    }
+    if (target == nullptr) {
+        error(loc, "undeclared identifier");
+        return -1;
+    }
+    const Symbol *member = find_export(target->file_id, name);
+    if (member == nullptr) {
+        error(loc, name + " is not exported");
+        return -1;
+    }
+    // `export type Alias Kind` is an enum. A struct or another export is not a tag.
+    if (!member->is_type || member->type.kind != TypeKind::Enum || member->type.enum_id < 0) {
+        error(loc, "type mismatch");
+        return -1;
+    }
+    return member->type.enum_id;
+}
+
 void Checker::check_unions() {
     for (StructInfo &info : structs_) {
         if (info.tag_name.empty()) {
             continue;
         }
         file_id_ = info.file_id;
-        int enum_id = find_enum(info.file_id, info.tag_name);
-        if (enum_id < 0) {
+        int enum_id = -1;
+        if (!info.tag_package.empty()) {
+            // Package names are not bound yet. The import edge names the package.
+            enum_id = imported_enum(info.file_id, info.tag_package, info.tag_name, info.loc);
+            if (enum_id < 0) {
+                continue;
+            }
+        } else {
+            enum_id = find_enum(info.file_id, info.tag_name);
+        }
+        if (info.tag_package.empty() && enum_id < 0) {
             Type alias;
             if (package_typedef(info.file_id, info.tag_name, alias)) {
                 if (alias.kind == TypeKind::Enum) {
@@ -949,9 +1379,11 @@ void Checker::check_unions() {
             if (find_enum_member(enum_id, field.name) == nullptr) {
                 error(field.loc, "undeclared identifier");
             }
-            if (field.type.kind != TypeKind::Struct || field.type.struct_id < 0 ||
-                field.type.struct_id >= static_cast<int>(structs_.size()) ||
-                structs_[static_cast<std::size_t>(field.type.struct_id)].is_union) {
+            // An invalid arm was already diagnosed. A second type mismatch adds nothing.
+            if (field.type.kind != TypeKind::Invalid &&
+                (field.type.kind != TypeKind::Struct || field.type.struct_id < 0 ||
+                 field.type.struct_id >= static_cast<int>(structs_.size()) ||
+                 structs_[static_cast<std::size_t>(field.type.struct_id)].is_union)) {
                 error(field.loc, "type mismatch");
             }
         }
@@ -1155,7 +1587,7 @@ void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
 Type Checker::object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum, bool receiver,
                           uint32_t optional, uint32_t const_pointee, bool allow_incomplete, bool elem_const,
-                          bool elem_slice, const std::vector<TypeShell> &shells) {
+                          bool elem_slice, const std::vector<TypeShell> &shells, bool variable) {
     if (!receiver) {
         note_struct_use(is_struct, name, loc);
     }
@@ -1194,8 +1626,21 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         type = with_indirections(type_of_name(name, loc, indirections > 0 || allow_incomplete), indirections, loc,
                                  optional, const_pointee);
     }
-    if (mentions_trait(type) && (is_array || elem_slice || !shells.empty() || !parameter)) {
-        error(loc, "not supported yet");
+    // A trait has no size. An array or a slice of one has no element to store, whether
+    // it is a variable or a parameter. `Shape` and `*Shape` stay legal as parameters.
+    bool trait_aggregate = is_array || elem_slice;
+    for (const TypeShell &shell : shells) {
+        if (shell.kind == TypeShell::Kind::Array || shell.kind == TypeShell::Kind::Slice) {
+            trait_aggregate = true;
+        }
+    }
+    if (mentions_trait(type) && trait_aggregate) {
+        error(loc, "trait has no size");
+        return type_invalid();
+    }
+    if (mentions_trait(type) && !parameter) {
+        const bool stored = shells.empty();
+        error(loc, variable && stored ? "trait has no size" : "not supported yet");
         return type_invalid();
     }
     // Shells are the type. `[]T`, `[][][]T`, `*[]T`, and `[N][M]T` are the same walk.

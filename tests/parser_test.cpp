@@ -471,6 +471,20 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "type Kind enum { A, B }\n"
+            "type Holder struct {\n"
+            "  data export union { n i32; m i32; };\n"
+            "  value export union(Kind) { A struct { n i32; }; B struct { n i32; }; };\n"
+            "};\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(field export data struct\n");
+        EXPECT_HAS(check, parsed.dump, "(field n i32)\n");
+        EXPECT_HAS(check, parsed.dump, "(field m i32)\n");
+        EXPECT_HAS(check, parsed.dump, "(field export value struct\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "type Entity struct {\n"
             "  id i32;\n"
             "};\n"
@@ -546,7 +560,7 @@ int run_parser_tests() {
             "extern(name=\"printf\", abi=\"c\") func show(fmt *const u8, ...) i32;\n"
             "extern(name=\"other.add\") func add(a i32, b i32) i32;\n"
             "extern(abi=\"c\", name=\"errno\") var last_error i32;\n");
-        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.errors, "name requires abi=\"c\"");
         EXPECT_HAS(check, parsed.dump, "(fn print (params (fmt const u8*) ...) i32 extern(abi=\"c\", name=\"printf\")\n");
         EXPECT_HAS(check, parsed.dump, "(fn show (params (fmt const u8*) ...) i32 extern(abi=\"c\", name=\"printf\")\n");
         EXPECT_HAS(check, parsed.dump, "(fn add (params (a i32) (b i32)) i32 extern(name=\"other.add\")\n");
@@ -571,9 +585,14 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("extern(name=\"Handle\") type Handle struct { n i32; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.errors, "name requires abi=\"c\"");
         EXPECT_HAS(check, parsed.dump, "(struct Handle extern\n");
         EXPECT(check, parsed.dump.find("name=") == std::string::npos);
+    }
+
+    {
+        const Parsed parsed = parse_source("extern(abi=\"c\", name=\"Handle\") type Handle struct { n i32; }\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
     {
@@ -669,7 +688,8 @@ int run_parser_tests() {
             "extern(abi=\"c\") type Ext union(ShapeType) { Circle struct { radius f32; }; }\n"
             "extern type Plain union(ShapeType) { Circle Circle; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.errors, "extern(abi=\"c\") on a tagged union");
+        EXPECT(check, parsed.errors.find("not supported yet") == std::string::npos);
         EXPECT_HAS(check, parsed.dump, "(union Shape ShapeType\n");
         EXPECT_HAS(check, parsed.dump, "(field Circle struct\n");
         EXPECT_HAS(check, parsed.dump, "(field radius f32)\n");
@@ -682,7 +702,30 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(cast ShapeType (name s))");
         EXPECT(check, parsed.dump.find("(struct Shape.") == std::string::npos);
         EXPECT(check, parsed.dump.find("(union Ext") == std::string::npos);
-        EXPECT(check, parsed.dump.find("(union Plain") == std::string::npos);
+        EXPECT_HAS(check, parsed.dump, "(union Plain ShapeType extern\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "type Shape union(geom.Kind) {\n"
+            "    A struct { n i32; };\n"
+            "    B struct { n i32; };\n"
+            "}\n"
+            "type Holder struct {\n"
+            "    data union(geom.Kind) { A struct { n i32; }; B struct { n i32; }; };\n"
+            "};\n"
+            "extern(abi=\"c\") type Ext union(geom.Kind) { A struct { n i32; }; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, parsed.dump, "(union Shape geom.Kind\n");
+        EXPECT(check, parsed.dump.find("(union Ext") == std::string::npos);
+        EXPECT(check, parsed.errors.find("expected a type") == std::string::npos);
+        EXPECT(check, parsed.errors.find("not supported yet") == std::string::npos);
+        int count = 0;
+        for (std::size_t at = 0; (at = parsed.errors.find("extern(abi=\"c\") on a tagged union", at)) != std::string::npos;
+             at += 1) {
+            ++count;
+        }
+        EXPECT(check, count == 1);
     }
 
     {
@@ -1043,7 +1086,8 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func Point::add(self **this) void { return; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.errors, "expected 'this'");
+        EXPECT(check, parsed.errors.find("not supported yet") == std::string::npos);
     }
 
     {
@@ -1065,6 +1109,16 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
+            "type Shape trait(Parent) {\n"
+            "  func extra() i32;\n"
+            "};\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(parent Parent)");
+        EXPECT_HAS(check, parsed.dump, "(fn extra (params) i32");
+    }
+
+    {
+        const Parsed parsed = parse_source(
             "type Shape trait {\n"
             "  w i32;\n"
             "  func area() i32;\n"
@@ -1079,7 +1133,9 @@ int run_parser_tests() {
             "type Shape trait {\n"
             "  func area(self this) i32 { return 1; }\n"
             "};\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.errors, "expected ';'");
+        EXPECT_HAS(check, parsed.errors, "type mismatch");
+        EXPECT(check, parsed.errors.find("not supported yet") == std::string::npos);
     }
 
     {
@@ -1087,7 +1143,8 @@ int run_parser_tests() {
             "type Shape trait {\n"
             "  func grow(self **this) void;\n"
             "};\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.errors, "expected 'this'");
+        EXPECT(check, parsed.errors.find("not supported yet") == std::string::npos);
     }
 
     {

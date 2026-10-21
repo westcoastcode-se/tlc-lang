@@ -35,6 +35,7 @@ class Parser {
         bool extern_c = false;
         // `extern(..., name="symbol")`. Empty keeps the usual object name.
         std::string link_name;
+        SourceLoc name_loc{};
         // `struct(align=N)`. Zero means the natural alignment.
         int align = 0;
         bool is_const = false;
@@ -128,29 +129,40 @@ class Parser {
     bool is_type_keyword(TokenKind kind) const;
 
     Specifiers parse_specifiers(bool file_scope, bool allow_const = false, bool type_only = false);
-    // `extern` is `abi="tlc"`. `extern(abi="c")` is a C library. `name="symbol"` is the object symbol.
-    bool take_extern(bool &is_extern, bool &extern_c, std::string &link_name);
+    // `extern` is `abi="tlc"`. `extern(abi="c")` is a C library. `name="symbol"` is a C object symbol.
+    bool take_extern(bool &is_extern, bool &extern_c, std::string &link_name, SourceLoc &name_loc);
+    // `name=` with `abi="tlc"`, or with no `abi`, is `name requires abi="c"`.
+    void reject_tlc_link_name(bool extern_c, const std::string &link_name, SourceLoc name_loc);
     int parse_struct_align();
     // `enum(i32)`. Empty means `int` when the caller saw no parentheses.
     std::string parse_enum_underlying();
+    // `union(Kind)` or `union(pkg.Kind)`. The caller has consumed `(`.
+    // False when the tag is missing. The diagnostic is already reported.
+    bool parse_union_tag(std::string &package, std::string &name);
     std::vector<Enumerator> parse_enumerators();
     // One `name type;` field. False when the next token is not a name.
-    bool parse_field(FieldDecl &field);
-    std::vector<FieldDecl> parse_fields();
+    // `extern_c` rejects `name union(Enum)`: a C union has no tag.
+    bool parse_field(FieldDecl &field, bool extern_c = false);
+    std::vector<FieldDecl> parse_fields(bool extern_c = false);
     struct StructMembers {
         std::vector<FieldDecl> fields;
         std::vector<StructDecl> anonymous;
     };
-    // Members are `name type;` or `export name type;`. `name export struct { ... }` is an inline struct.
+    // Members are `name type;` or `export name type;`. `name export struct { ... }` and
+    // `name export union { ... }` are inline aggregates.
     // `var` and `const` inside the struct are rejected. `publish` marks every member exported,
     // which is what an exported inline struct does to the members inside it.
-    StructMembers parse_struct_members(const std::string &owner, bool publish = false);
+    StructMembers parse_struct_members(const std::string &owner, bool publish = false, bool extern_c = false,
+                                       bool is_extern = false);
     struct UnionBody {
         std::vector<FieldDecl> fields;
         std::vector<StructDecl> anonymous;
     };
     // `Circle struct { ... };` or `Circle Circle;`. The enum name was already parsed.
-    UnionBody parse_union_variants(const std::string &union_name);
+    // The arm body is struct members, so `data union { ... }` inside it is the same form as a struct field.
+    // `publish` exports those members, as it does for an exported inline struct.
+    UnionBody parse_union_variants(const std::string &union_name, bool extern_c = false, bool is_extern = false,
+                                   bool publish = false);
     Declarator parse_declarator();
     void parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, std::vector<FnParam> &params, bool &variadic);
     FnParam fn_param_from(const PlacedType &type) const;
@@ -184,6 +196,7 @@ class Parser {
     // A pointer is prefix in every other position too: `*int`, `*const char`.
     PlacedType parse_go_type();
     // `method_struct` is empty for a free function. A method receiver is `name this` or `name *this`.
+    // `name **this` is `expected 'this'`.
     std::vector<Param> parse_params(bool allow_const, bool &variadic, const std::string &method_struct = {});
     void take_result(FunctionDecl &fn, const PlacedType &type);
     void parse_results(FunctionDecl &fn);

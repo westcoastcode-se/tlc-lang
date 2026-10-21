@@ -1,0 +1,1 @@
+compile-error: extern(abi="c") on a trait or a generic

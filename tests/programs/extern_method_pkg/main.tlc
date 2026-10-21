@@ -1,0 +1,8 @@
+import "math";
+
+func main() i32 {
+    var p math.Point;
+    p.x = 20;
+    p.y = 22;
+    return p.read();
+}

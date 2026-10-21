@@ -1,0 +1,41 @@
+type Shape trait {
+    func area() i32;
+};
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+type Circle struct {
+    n i32;
+};
+
+func Circle::area(self this) i32 {
+    return self.n;
+}
+
+export func use(s Shape) i32 {
+    return s.area();
+}
+
+export func use_at(s *Shape) i32 {
+    return s.area();
+}
+
+export func Rect::paint(self *this, s Shape) i32 {
+    return self.w + s.area();
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 5;
+    r.h = 6;
+    var c Circle;
+    c.n = 7;
+    return use(r) + use_at(&r) + r.paint(c);
+}
