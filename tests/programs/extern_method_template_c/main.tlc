@@ -1,0 +1,11 @@
+type Point struct {
+    x i32;
+};
+
+extern(abi="c") func Point::id[T type](self *this, value T) T {
+    return value;
+}
+
+func main() i32 {
+    return 0;
+}

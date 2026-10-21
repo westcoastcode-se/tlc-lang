@@ -44,7 +44,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - A tuple index that is not a constant, and assignment to a tuple element.
 - `count(U)` and `const for`.
 - A type-parameter list after the method name on a generic struct: `func Vec[T]::get[U type]`. `func Type::name[T type](self *this)` is a method template when the owner is not a generic struct. `func Vec[T]::get` names the struct's parameters.
-- A method template that is static, exported, a tlc `extern`, or `...`, and a method template on a type alias: `func Integer::id[T type]`. They are `not supported yet`. `extern(abi="c")` on that template is rejected.
+- A method template that is static, exported, or `...`, and a method template on a type alias: `func Integer::id[T type]`. They are `not supported yet`. `extern` and `extern(abi="tlc")` on a method template are accepted. Each specialization is its own symbol. The call stays `value.id[i32](...)`. A body defines that symbol. A prototype with no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`. `extern(abi="c")` on that template is rejected.
 - Type parameters on an alias, an enum, a trait, or a union. Only `type Name[T type] struct` takes the list.
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.

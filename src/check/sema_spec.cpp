@@ -1238,7 +1238,10 @@ void Checker::register_method_template(const FunctionDecl &fn) {
         error(fn.loc, "extern(abi=\"c\") on a trait or a generic");
         return;
     }
-    if (fn.is_extern || fn.variadic || fn.exported || fn.body == nullptr || fn.static_method) {
+    // A tlc `extern` is one symbol per specialization. `...`, `export`, a static template,
+    // a missing body, and a trait parameter are still not one concrete method.
+    if (fn.variadic || fn.exported || fn.body == nullptr || fn.static_method ||
+        extern_generic_trait_param(file_id_, fn)) {
         error(fn.loc, "not supported yet");
         return;
     }

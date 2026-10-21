@@ -1,0 +1,37 @@
+type Shape trait {
+    func area() i32;
+};
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+type Point struct {
+    x i32;
+};
+
+extern func Point::id[T type](self *this, value T) T {
+    return value;
+}
+
+extern(abi="tlc") func Point::add[T type](self *this, n T) i32 {
+    return self.x + n;
+}
+
+extern func Point::measure[T Shape](self *this, value T) i32 {
+    return value.area();
+}
+
+func main() i32 {
+    var p Point;
+    p.x = 2;
+    var r Rect;
+    r.w = 1;
+    r.h = 2;
+    return p.id[i32](18) + p.add[i32](20) + p.measure[Rect](r);
+}

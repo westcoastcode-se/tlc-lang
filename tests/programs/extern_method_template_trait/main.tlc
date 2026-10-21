@@ -1,0 +1,15 @@
+type Shape trait {
+    func area() i32;
+};
+
+type Point struct {
+    x i32;
+};
+
+extern func Point::use[T type](self *this, s Shape, n T) T {
+    return n;
+}
+
+func main() i32 {
+    return 0;
+}

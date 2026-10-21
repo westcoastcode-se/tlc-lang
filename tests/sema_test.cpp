@@ -6720,7 +6720,7 @@ int run_sema_tests() {
             "type Point struct { x i32; };\n"
             "extern func Point::id[T type](self this) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {
