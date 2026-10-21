@@ -449,9 +449,10 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (generic && signature.result != nullptr && signature.result->kind == TypeKind::Tuple) {
                 error(fn->loc, "not supported yet");
             }
-            // `export` publishes the function. Each call is specialized. A tlc `extern` and `...`
-            // are still one symbol, which a trait parameter is not.
-            if (generic && !fn->extern_c && (fn->is_extern || fn->variadic)) {
+            // `export` publishes the function. Each call is specialized. A tlc `extern` is one
+            // symbol per struct. `...` is still one list. A variadic `extern` or a missing body
+            // was already reported above.
+            if (generic && !fn->extern_c && fn->variadic && !fn->is_extern && fn->body != nullptr) {
                 error(fn->loc, "not supported yet");
             }
             if (!fn->method_struct.empty()) {
@@ -1634,8 +1635,8 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                     generic = true;
                 }
             }
-            // A trait parameter is specialized per call. `extern` and `...` stay unpublished.
-            if (generic && (fn->extern_c || fn->is_extern || fn->variadic)) {
+            // A trait parameter is specialized per call. `...` and a C symbol stay unpublished.
+            if (generic && (fn->extern_c || fn->variadic)) {
                 continue;
             }
             Symbol symbol;

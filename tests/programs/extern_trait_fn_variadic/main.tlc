@@ -1,0 +1,19 @@
+type Shape trait {
+    func area() i32;
+};
+
+type Rect struct {
+    w i32;
+};
+
+extern func use(s Shape, ...) i32 {
+    return 1;
+}
+
+extern(abi="tlc") func Rect::paint(self *this, s Shape, ...) i32 {
+    return 1;
+}
+
+func main() i32 {
+    return 0;
+}

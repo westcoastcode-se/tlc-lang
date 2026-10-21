@@ -1,0 +1,17 @@
+package geom;
+
+type Shape trait {
+    func area() i32;
+};
+
+export extern func measure(s Shape) i32 {
+    return s.area();
+}
+
+export type Rect struct {
+    export w i32;
+};
+
+export extern func Rect::paint(self *this, s Shape) i32 {
+    return self.w + s.area();
+}

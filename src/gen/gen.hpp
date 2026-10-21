@@ -284,6 +284,8 @@ struct Binding {
     int trait_id = -1;
     bool is_generic = false;
     bool is_static = false;
+    // A tlc `extern` on a trait parameter. The prototype may be the declaration that says it.
+    bool is_extern = false;
     // `const name = expr`. `value` is null and `const_value` is the folded integer.
     bool immediate = false;
     int const_value = 0;

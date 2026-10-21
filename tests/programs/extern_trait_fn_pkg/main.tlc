@@ -1,0 +1,17 @@
+import "geom";
+
+type Circle struct {
+    n i32;
+};
+
+export func Circle::area(self this) i32 {
+    return self.n;
+}
+
+func main() i32 {
+    var box geom.Rect;
+    box.w = 20;
+    var c Circle;
+    c.n = 11;
+    return geom.measure(c) + box.paint(c);
+}

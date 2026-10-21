@@ -1,0 +1,21 @@
+type Shape trait {
+    func area() i32;
+};
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+extern func use(s Shape) i32;
+
+func main() i32 {
+    var r Rect;
+    r.w = 1;
+    r.h = 1;
+    return use(r);
+}

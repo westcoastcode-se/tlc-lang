@@ -912,7 +912,10 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
     if (const auto found = specs_.find(symbol); found != specs_.end()) {
         function = found->second;
     } else {
-        function = llvm::Function::Create(spec_type(fn, spec), llvm::GlobalValue::InternalLinkage, symbol, module_);
+        // `extern` names this specialization. The binding keeps a prototype that said it.
+        const auto linkage = fn.is_extern || meta.is_extern ? llvm::GlobalValue::ExternalLinkage
+                                                            : llvm::GlobalValue::InternalLinkage;
+        function = llvm::Function::Create(spec_type(fn, spec), linkage, symbol, module_);
         function->setCallingConv(llvm::CallingConv::C);
         unsigned index = 0;
         for (auto &arg : function->args()) {

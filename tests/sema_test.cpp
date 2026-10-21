@@ -3196,10 +3196,17 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Shape trait { func area() i32; };\n"
             "extern func use(s Shape) i32 { return 1; }\n"
-            "export extern func use(s Shape) i32 { return 1; }\n"
-            "export extern(abi=\"tlc\") func use(s Shape) i32 { return 1; }\n"
+            "export extern func take(s Shape) i32 { return 1; }\n"
+            "export extern(abi=\"tlc\") func read(s Shape) i32 { return 1; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Shape trait { func area() i32; };\n"
             "func use(s Shape, ...) i32 { return 1; }\n"
-            "export func use(s Shape, ...) i32 { return 1; }\n"
+            "export func take(s Shape, ...) i32 { return 1; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
         EXPECT(check, errors.find("extern(abi=\"c\") on a trait or a generic") == std::string::npos);
@@ -6737,7 +6744,7 @@ int run_sema_tests() {
             "type Shape trait { func area() i32; };\n"
             "extern func measure(s Shape) i32 { return s.area(); }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {

@@ -96,6 +96,8 @@ void CodeGen::declare_functions(const PackageNode &node) {
             binding.is_function = true;
             binding.is_generic = true;
             binding.is_static = acc.is_static;
+            // The body is the decl. A prototype may be the declaration that says `extern`.
+            binding.is_extern = acc.is_extern;
             binding.decl = acc.fn;
             binding.depth = returns_void ? 0 : ret.depth;
             binding.elem_char = !returns_void && ret.elem_char;

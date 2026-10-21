@@ -1,0 +1,11 @@
+type Shape trait {
+    func area() i32;
+};
+
+extern(name="use_c") func use(s Shape) i32 {
+    return 1;
+}
+
+func main() i32 {
+    return 0;
+}
