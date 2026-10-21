@@ -45,7 +45,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 - `count(U)` and `const for`.
 - A type-parameter list after the method name on a generic struct: `func Vec[T]::get[U type]`. `func Type::name[T type](self *this)` is a method template when the owner is not a generic struct. `func Vec[T]::get` names the struct's parameters.
 - A method template that is static, exported, or `...`, and a method template on a type alias: `func Integer::id[T type]`. They are `not supported yet`. `extern` and `extern(abi="tlc")` on a method template are accepted. Each specialization is its own symbol. The call stays `value.id[i32](...)`. A body defines that symbol. A prototype with no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`. `extern(abi="c")` on that template is rejected.
-- Type parameters on an alias, an enum, a trait, or a union. Only `type Name[T type] struct` takes the list.
+- Type parameters on an alias, an enum, or a union. Only `type Name[T type] struct` takes the list. A type parameter on a trait is specified under [for each](#for-each).
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.
 - `sizeof(T)` when `T` is an array.
@@ -88,7 +88,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A file-scope array whose written length is `[0]i32`. An element may be an integer, `bool`, a float, a pointer, a struct, an enum, a typedef, a function pointer, an empty `[_]T{}`, a nested array `[_][2][3]i32`, a pointer to an array `[_]*[4]i32`, or an array value `[_][2]i32{inner}`.
 - A file-scope array element that is an expression such as `n + 1` when `n` is a `var`, or `give() + 1`. That is `global initializer is not a constant`. A call element runs before `main`: `var row = [_]i32{give(), 2}`, `var row [2]i32 = {give(), 2}`, `[_]Point{give()}`, and `var row = [_][2]i32{give()}`. The same call in a `const`, and `var n = give(); var row = [_]i32{n}`, are `global initializer is not a constant`. `var row = [_]i32{1u32}` folds. `var row = [_]i32{n}` copies the initializer of `n` when that initializer is a constant. `const row = [_]i32{n}` when `n` is a `var` is `global initializer is not a constant`.
 - Another abi than `"c"` and `"tlc"`.
-- `export type Name trait`.
+- `export type Name trait` with no type parameter. Export of the iteration trait is specified under [for each](#for-each).
 
 ## Functions
 
@@ -108,6 +108,40 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A named function as the argument of a single-method trait. The argument is an anonymous function.
 - `(*a).apply(n)` when `a` is a trait pointer passed as an anonymous function. The call is `a.apply(n)`.
 - A value on a trait field, such as `w i32 = 1`. It is `not supported yet`.
+
+## for each
+
+`for (item := range items)` is `not supported yet`. The three-clause `for` stays as it is. `range` stays an identifier. It is recognized only in this clause, so this form adds no token. `&range` in that same place binds a pointer to the element. It is not the address of a variable named `range`. The binding is written with `:=`. The name is new in the loop and hides an outer name of the same spelling. It does not assign that outer name. `break`, `continue`, and `defer` are the ones the three-clause `for` already has.
+
+`item := range items` binds the element. Assigning that name does not write the collection. `item := &range items` binds `*E`, where `E` is the element type. The pointer is never `?*E`. A const element, such as `[]const E` or a const array, binds `*const E`, and a store through it is `type mismatch`. `item.field` and `*item` write the element when the pointer is `*E`. `item = &other` reseats the local pointer. The next iteration stores the next address.
+
+There is one iteration trait. It is parsed from `lib/tlc/std/seq`. The compiler does not build a second trait in the checker the way it builds `Allocator`. Arrays and slices satisfy that trait, and a struct that satisfies it is accepted here. Both decisions ask the same question. A file does not import the package to iterate. Importing it is how another file names the trait.
+
+The bullets below are the order to land this. Each bullet is one change.
+
+- A type parameter on a trait: `extern type Seq[T type] trait`. `T type` is a type, as on a struct. `Seq[i32]` and `Seq[u8]` are different traits. A method may use `T` as a parameter or a result. An integer parameter, a pack, several parameters, and `trait(Parent)` on that list stay `not supported yet`. An alias, an enum, and a union stay as they are. `func use[T type](items Seq[T])` stays the existing gap for a trait parameter beside `[T type]`. A concrete parameter `items Seq[i32]` is the form this work adds.
+- `extern` and `extern(abi="tlc")` on that trait. `extern(abi="c")` and `extern(abi="c", name="symbol")` stay `extern(abi="c") on a trait or a generic`. `export` publishes it. Another package names `seq.Seq[i32]` after `import "std/seq"`. The trait still has no size. `var s Seq[i32]`, a result, an array, a slice, and a field of the trait stay `trait has no size`.
+- The package `lib/tlc/std/seq` declares that trait, and its `link` file names a library this repository builds and installs under the compiler prefix. The compiler treats the `extern` trait in the package that links that library as the iteration trait. It reads the methods from that declaration. It does not keep a second list. A copy of the source that does not link that library is an ordinary trait: a struct may satisfy the copy, an array does not, and `for` does not select it. `Allocator` stays synthesized for `new` and `delete`.
+
+```c
+package seq;
+
+export extern type Seq[T type] trait {
+    func len() i32;
+    func at(i i32) T;
+    func ref(i i32) *T;
+};
+```
+
+The length method has no parameter after the receiver and its result is `i32`. The element method has one `i32` parameter and its result is `T`. `ref` has one `i32` parameter and its result is `*T`. The names in that file are the names a struct writes. `len` and `at` have value receivers. `ref` has a pointer receiver, `self *this`, because its result points into the struct. A value parameter `Seq[T]` checks `len` and `at`. The pointer receiver on `ref` does not reject that value. `*Seq[T]` checks `ref` too. A field, a further method, or a default on this trait stays `not supported yet` until the array side grows the same method.
+
+- `[N]T` and `[]T` satisfy `Seq[E]`, where `E` is the type of an index. That includes a parameter written `[N]T`, a string `[]const u8`, `[N][M]T`, and `[N][]T`. The element of `[N][M]T` is `[M]T`. `len` is `.len`. `at` is the index. `ref` is the address of that element, `&items[i]`. `range` does not copy the collection on each call beyond what `.len` and `[i]` already do. `&range` requires an lvalue. A temporary is `not an lvalue`. A slice alias such as `type Row []i32` does not satisfy the trait unless it has the methods. A pointer to an array or a slice, `*[N]T` or `*[]T`, is `type mismatch`, and so is a number. A struct is not given this implementation. It satisfies the trait only by its own methods. An array or a slice satisfies no other trait.
+- The same trait the other way. `func use(items Seq[i32])` accepts `[N]i32`, `[]i32`, and a struct that has the methods. Inside that function the calls are `items.len()` and `items.at(i)`, specialized per value, as a trait parameter already is. `[4]i32` and `[8]i32` are different copies. `[]i32` is one. A missing method is `undeclared identifier`. A wrong signature or a pointer receiver is `type mismatch`. The address is not taken automatically.
+- A struct satisfies it by `len` and `at`, with value receivers, and no `impl`. `&range` also calls `func Bag::ref(self *this, i i32) *T`. A missing `ref` leaves `range` working and reports `&range` as `undeclared identifier`. A generic struct uses its own parameters: `func Bag::at(self this, i i32) T` on `type Bag[T type] struct` satisfies `Seq[T]` for that specialization. `item := range bag` is then the same loop as an array. The file that defines `Bag` does not import `std/seq`.
+- The statement `for (name := range expression) { ... }`, and `for (name := &range expression) { ... }`. The expression's type must satisfy the iteration trait. The body is a block. The name is visible only in the loop. `range` walks an index from `0` to `len()` and binds `at` of the index. `&range` binds `ref` of the index. These spellings stay `not supported yet`: `for (var name := range items)`, `for (name = range items)`, `for (name in items)`, `for (i, name := range items)`, `for (name := range items)` without parentheses, and `for (const name := range items)`.
+- The name is a binding in the language-server index. Completion, hover, and definition see it. Rename, formatting, and the other missing answers stay as they are.
+
+When a bullet lands, the behavior goes on [for](docs/statements/for.md), the syntax on [grammar](docs/grammar.md), and the trait on a page under `docs/std/` linked from [the index](docs/README.md). The cost is measured then, from the instructions the three-clause `for` and an index already run.
 
 ## Inconsistencies
 
