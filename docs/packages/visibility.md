@@ -48,7 +48,7 @@ func main() i32 {
 }
 ```
 
-The program returns 42. `math.bias` is the exported constant. `math.Entity.next` is the exported variable on `Entity`. A constant or variable without `export` is reported as `name is not exported`. Assigning `math.bias` is reported as `not an lvalue`. `export func Entity::make` publishes `math.Entity.make(...)`. Without `export` that call is reported as `make is not exported`.
+The program returns 42. `math.bias` is the exported constant. `math.Entity.next` is the exported variable on `Entity`. `export var Box[T]::extra` publishes a variable on a generic struct. Another package reads and assigns `pkg.Box[i32].extra` when `Box` and the variable are exported. A constant or variable without `export` is reported as `name is not exported`. Assigning `math.bias` is reported as `not an lvalue`. `export func Entity::make` publishes `math.Entity.make(...)`. Without `export` that call is reported as `make is not exported`.
 
 `export id i32` publishes a member. Another package reads and assigns `value.id`. A member without `export` is reported as `name is not exported`. `var` inside the struct is reported as `not supported yet`. `export var bonus = 4` and `export spare := 2` publish inferred globals. Another package assigns them. `sizeof` still counts only the fields.
 

@@ -65,10 +65,6 @@ void Checker::declare_assoc(const VarDecl &var) {
         error(var.loc, "type mismatch");
     }
     require_owner_params(var);
-    // `export var Box[T]::extra` stays unsupported. `export const Box[T]::limit` is `pkg.Box[i32].limit`.
-    if (var.exported && generic && !var.is_const_decl) {
-        error(var.loc, "not supported yet");
-    }
     const bool known = generic || named_type_owner(var.owner);
     if (!known) {
         error(var.loc, "type mismatch");

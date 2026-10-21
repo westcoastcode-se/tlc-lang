@@ -1,0 +1,8 @@
+import "math";
+
+func main() i32 {
+    math.Box[i32].extra = math.Box[i32].extra + 4;
+    var p *i32 = &math.Box[math.Point].extra;
+    *p = 20;
+    return math.Box[i32].extra + math.Box[math.Point].extra + math.Box[i32].bias + math.Buf[7, i32].count;
+}

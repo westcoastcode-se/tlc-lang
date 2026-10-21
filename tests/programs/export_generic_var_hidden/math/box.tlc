@@ -1,0 +1,7 @@
+package math;
+
+export type Box[T type] struct {
+    value T;
+};
+
+var Box[T]::extra i32 = 1;

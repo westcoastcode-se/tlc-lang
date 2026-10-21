@@ -8180,8 +8180,12 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "type Box[T type] struct { value T; };\n"
             "export var Box[T]::extra i32 = 1;\n"
-            "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+            "export var Box[T]::spare = 3;\n"
+            "func main() i32 {\n"
+            "  Box[i32].extra = Box[i32].extra + Box[i32].spare;\n"
+            "  return Box[i32].extra;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
     }
 
     {

@@ -52,7 +52,7 @@ The program returns 42. `Entity.next` is one variable for `Entity`. `Box[i32].ex
 
 `var` inside the struct is reported as `not supported yet`. The variable is written beside the type. A member may use the same name: `e.next` is the member and `Entity.next` is the variable. `sizeof` stays the size of the members.
 
-`export var Entity::next i32 = 40` publishes that variable. Another package reads and assigns `pkg.Entity.next` when `Entity` is exported. Without `export`, the name is reported as `next is not exported`. `extern` on the variable, and `export var Box[T]::extra`, are reported as `not supported yet`. `extern(abi="c") var Box[T]::extra` and `extern(abi="c")` on a trait are `extern(abi="c") on a trait or a generic`. A member another package can name is `export next i32` inside the struct.
+`export var Entity::next i32 = 40` publishes that variable. Another package reads and assigns `pkg.Entity.next` when `Entity` is exported. `export var Box[T]::extra` publishes that variable on a generic struct. Another package reads and assigns `pkg.Box[i32].extra` when `Box` and the variable are exported. `Box[i32].extra` and `Box[Point].extra` stay two variables. Without `export`, the name is reported as `next is not exported`. An unexported type is reported as `Box is not exported`. `extern` on the variable is reported as `not supported yet`. `extern(abi="c") var Box[T]::extra` and `extern(abi="c")` on a trait are `extern(abi="c") on a trait or a generic`. A member another package can name is `export next i32` inside the struct.
 
 ```c
 package math;
@@ -75,8 +75,29 @@ func main() i32 {
 
 The program returns 42.
 
+```c
+package math;
+
+export type Box[T type] struct {
+    value T;
+};
+
+export var Box[T]::extra i32 = 40;
+```
+
+```c
+import "math";
+
+func main() i32 {
+    math.Box[i32].extra = math.Box[i32].extra + 2;
+    return math.Box[i32].extra;
+}
+```
+
+The program returns 42. `math.Box[i32].extra` and `math.Box[Point].extra` are two globals.
+
 ## Cost
 
-`Entity.next` is a global. Reading it is 1 `movl`. Assigning it is 1 load, the arithmetic, and 1 store. It is not inside the struct, so a value of the struct does not copy it. Each specialization of a generic struct has its own global. A use of one specialization does not load the other. A zero initializer occupies the binary and adds no instruction at startup. `extern(abi="c")` on a generic or a trait variable is rejected and adds no instructions.
+`Entity.next` is a global. Reading it is 1 `movl`. Assigning it is 1 load, the arithmetic, and 1 store. It is not inside the struct, so a value of the struct does not copy it. Each specialization of a generic struct has its own global. A use of one specialization does not load the other. A zero initializer occupies the binary and adds no instruction at startup. `return Box[i32].extra` without `export` executes 2 instructions, `movl` and `retq`. `export var Box[T]::extra` keeps that global and gives it external linkage. The symbol is `qualifier.Box.spec.i32.extra`. `return pkg.Box[i32].extra` executes 3 instructions: the address is loaded, the `i32` is loaded, and `retq` runs. Assigning `pkg.Box[i32].extra = pkg.Box[i32].extra + 2` and returning it executes 8 instructions. That is the same access as `export var Entity::next`. `extern(abi="c")` on a generic or a trait variable is rejected and adds no instructions.
 
 [Index](../README.md) · [Previous: Methods on primitive aliases](alias.md) · [Next: Constants on a type](constant.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

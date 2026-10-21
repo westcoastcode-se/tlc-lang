@@ -1,0 +1,19 @@
+package math;
+
+export type Point struct {
+    export x i32;
+};
+
+export type Box[T type] struct {
+    value T;
+};
+
+export var Box[T]::extra i32 = 10;
+
+export var Box[T]::bias = 1;
+
+export type Buf[N i32, T type] struct {
+    value T;
+};
+
+export var Buf[N, T]::count i32 = N;
