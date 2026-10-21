@@ -1,0 +1,5 @@
+package hidden;
+
+type Seq[T type] trait {
+    func at(i i32) T;
+};

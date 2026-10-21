@@ -982,6 +982,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.type_name = item->name;
             sym.package_key = node.package_key;
             sym.uri = uri;
+            sym.exported = item->exported;
             sym.bare = entry;
             sym.outline = entry;
             sym.role = Role::Trait;

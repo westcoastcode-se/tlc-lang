@@ -377,24 +377,29 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         type_names_.insert(name);
     }
     if (kind == TokenKind::KwTrait) {
-        // A C type is one concrete layout. A trait is not a C type.
-        if (extern_c) {
-            diags_.error(name_loc, "extern(abi=\"c\") on a trait or a generic");
-        } else if (exported || is_extern) {
-            diags_.error(name_loc, "not supported yet");
-        }
         // One `T type`. An integer, a pack, several parameters, and `trait(Parent)` stay rejected.
+        bool generic_ok = false;
         if (!type_params.empty()) {
-            const bool one_type = type_params.size() == 1 && type_params[0].is_type && !type_params[0].is_pack &&
-                                  !type_params[0].is_value && !type_params[0].is_trait;
-            if (!one_type || !parent_name.empty()) {
+            const TypeParam &param = type_params[0];
+            generic_ok = type_params.size() == 1 && param.is_type && !param.is_pack && !param.is_value &&
+                         !param.is_trait && parent_name.empty();
+            if (!generic_ok) {
                 diags_.error(kind_loc, "not supported yet");
                 type_params.clear();
             }
         }
+        // A C type is one concrete layout. A trait is not a C type.
+        // `export` and `extern` are accepted on the one-type-parameter trait. It has no symbol.
+        if (extern_c) {
+            diags_.error(name_loc, "extern(abi=\"c\") on a trait or a generic");
+        } else if ((exported || is_extern) && !generic_ok) {
+            diags_.error(name_loc, "not supported yet");
+        }
         TraitDecl trait;
         trait.loc = name_loc;
         trait.name = std::move(name);
+        trait.exported = generic_ok && exported && !extern_c;
+        trait.is_extern = generic_ok && is_extern && !extern_c;
         trait.type_params = std::move(type_params);
         trait.parent_name = std::move(parent_name);
         trait.parent_package = std::move(parent_package);

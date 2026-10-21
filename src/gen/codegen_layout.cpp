@@ -52,7 +52,23 @@ int CodeGen::trait_named(uint32_t file, const std::string &name) const {
             return trait->second;
         }
     }
-    return -1;
+    // A specialized trait lives on the package that defines the template.
+    // A user name cannot contain `.spec`, so this spelling is the compiler's.
+    if (name.find(".spec") == std::string::npos) {
+        return -1;
+    }
+    int found_id = -1;
+    for (const auto &entry : trait_names_) {
+        const auto trait = entry.second.find(name);
+        if (trait == entry.second.end()) {
+            continue;
+        }
+        if (found_id >= 0 && found_id != trait->second) {
+            return -1;
+        }
+        found_id = trait->second;
+    }
+    return found_id;
 }
 
 void CodeGen::prepare_traits() {

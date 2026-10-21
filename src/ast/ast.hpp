@@ -728,6 +728,10 @@ struct FunctionDecl {
 struct TraitDecl {
     SourceLoc loc{};
     std::string name;
+    // `export` publishes the template. Another package names `pkg.Seq[i32]`.
+    bool exported = false;
+    // `extern` or `extern(abi="tlc")`. The trait has no symbol. `extern(abi="c")` is rejected.
+    bool is_extern = false;
     // `type Seq[T type] trait`. Empty on `type Shape trait`. One `name type` parameter.
     std::vector<TypeParam> type_params;
     // `type Shape trait(Parent)`. Empty when the trait has no parent.

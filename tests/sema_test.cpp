@@ -6773,6 +6773,32 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "export type Shape trait { func area() i32; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"c\") type Seq[T type] trait { func at(i i32) T; };\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "export type Seq[T type] trait { func at(i i32) T; };\n"
+            "func main() i32 {\n"
+            "    var s Seq[i32];\n"
+            "    return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "trait has no size");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
             "extern type Vec[T type] struct { n T; };\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");

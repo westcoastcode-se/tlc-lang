@@ -35,6 +35,8 @@ void Checker::queue_spec(uint32_t file, FunctionDecl fn) {
 
 std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, const std::vector<TypeArg> &args,
                                        SourceLoc loc) {
+    // The use is written in the importing file. The spec is stored on the defining package.
+    const uint32_t caller = file_id_;
     if (args.size() != templ.type_params.size()) {
         error(loc, "argument count");
         return {};
@@ -51,10 +53,20 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
     disambiguate_bounds(owner, bounds);
     const std::string spec_name = mangle_spec(templ.name, bounds);
     const std::string key = std::to_string(owner) + "\n" + spec_name;
-    if (spec_ready_.contains(key) || package_trait(owner, spec_name) >= 0) {
+    // The importer looks the mangled name up in its own file. The trait info stays one entry.
+    const auto note_caller = [&](int trait_id) {
+        if (caller == owner || trait_id < 0) {
+            return;
+        }
+        trait_names_[caller][spec_name] = trait_id;
+    };
+    const int known = package_trait(owner, spec_name);
+    if (spec_ready_.contains(key) || known >= 0) {
+        note_caller(known);
         return spec_name;
     }
     if (spec_checking_.contains(key)) {
+        note_caller(package_trait(owner, spec_name));
         return spec_name;
     }
     spec_checking_.insert(key);
@@ -170,6 +182,7 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
     appended.decl.data = std::move(spec_decl);
     pending_appends_.push_back(std::move(appended));
     file_id_ = saved_file;
+    note_caller(id);
     spec_checking_.erase(key);
     spec_ready_.insert(key);
     return spec_name;
@@ -201,6 +214,31 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             owner = id;
             templ = found->second;
             break;
+        }
+        if (templ == nullptr) {
+            // `pkg.Seq[i32]`. Export publishes the template. The spec stays on that package.
+            const TraitDecl *trait = nullptr;
+            uint32_t trait_owner = owner;
+            for (const uint32_t id : files_in_package(symbol->package_file)) {
+                const auto file = trait_templates_.find(id);
+                if (file == trait_templates_.end()) {
+                    continue;
+                }
+                const auto found = file->second.find(name);
+                if (found == file->second.end()) {
+                    continue;
+                }
+                trait_owner = id;
+                trait = found->second;
+                break;
+            }
+            if (trait != nullptr) {
+                if (!trait->exported) {
+                    error(loc, name + " is not exported");
+                    return {};
+                }
+                return specialize_trait(*trait, trait_owner, args, loc);
+            }
         }
         if (templ == nullptr || !templ->exported) {
             if (templ == nullptr) {
