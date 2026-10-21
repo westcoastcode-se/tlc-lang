@@ -1,0 +1,7 @@
+type Seq[N i32] trait {
+    func at(i i32) i32;
+};
+
+func main() i32 {
+    return 0;
+}

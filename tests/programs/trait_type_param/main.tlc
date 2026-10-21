@@ -1,0 +1,56 @@
+type Seq[T type] trait {
+    n T;
+    func at(i i32) T;
+    func put(value T) i32;
+    func echo(p *T) *T;
+};
+
+type Bag struct {
+    n i32;
+};
+
+func Bag::at(self this, i i32) i32 {
+    return self.n + i;
+}
+
+func Bag::put(self this, value i32) i32 {
+    return value;
+}
+
+func Bag::echo(self this, p *i32) *i32 {
+    return p;
+}
+
+type Bytes struct {
+    n u8;
+};
+
+func Bytes::at(self this, i i32) u8 {
+    return self.n;
+}
+
+func Bytes::put(self this, value u8) i32 {
+    return i32(value);
+}
+
+func Bytes::echo(self this, p *u8) *u8 {
+    return p;
+}
+
+func use(items Seq[i32]) i32 {
+    var n i32 = items.at(2);
+    var p *i32 = items.echo(&n);
+    return *p;
+}
+
+func use_byte(items *Seq[u8]) i32 {
+    return i32(items.at(0)) + items.put(items.n);
+}
+
+func main() i32 {
+    var bag Bag;
+    bag.n = 40;
+    var bytes Bytes;
+    bytes.n = 2;
+    return use(bag) + use_byte(&bytes) - 4;
+}

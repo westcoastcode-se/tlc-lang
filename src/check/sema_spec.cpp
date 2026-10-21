@@ -33,6 +33,148 @@ void Checker::queue_spec(uint32_t file, FunctionDecl fn) {
     pending_appends_.push_back(std::move(item));
 }
 
+std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, const std::vector<TypeArg> &args,
+                                       SourceLoc loc) {
+    if (args.size() != templ.type_params.size()) {
+        error(loc, "argument count");
+        return {};
+    }
+    std::vector<SpecArg> bounds;
+    bounds.reserve(args.size());
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        SpecArg bound;
+        if (!bind_type_arg(templ.type_params[i], args[i], bound, args[i].loc.valid() ? args[i].loc : loc)) {
+            return {};
+        }
+        bounds.push_back(std::move(bound));
+    }
+    disambiguate_bounds(owner, bounds);
+    const std::string spec_name = mangle_spec(templ.name, bounds);
+    const std::string key = std::to_string(owner) + "\n" + spec_name;
+    if (spec_ready_.contains(key) || package_trait(owner, spec_name) >= 0) {
+        return spec_name;
+    }
+    if (spec_checking_.contains(key)) {
+        return spec_name;
+    }
+    spec_checking_.insert(key);
+    const uint32_t saved_file = file_id_;
+    file_id_ = owner;
+    expose_bounds(owner, bounds);
+    // Registered before the methods are typed, so a result that names this same specialization can find it.
+    const int id = static_cast<int>(traits_.size());
+    TraitInfo info;
+    info.name = spec_name;
+    info.file_id = owner;
+    traits_.push_back(std::move(info));
+    trait_names_[owner][spec_name] = id;
+    // Codegen reads the trait from the unit. The specialized declaration is that trait with `T` replaced.
+    TraitDecl spec_decl;
+    spec_decl.loc = templ.loc;
+    spec_decl.name = spec_name;
+    for (const FunctionDecl &src : templ.methods) {
+        if (src.name.empty()) {
+            continue;
+        }
+        bool duplicate = false;
+        for (const TraitInfo::Method &existing : traits_[static_cast<std::size_t>(id)].methods) {
+            if (existing.name == src.name) {
+                error(src.loc, "redefinition");
+                duplicate = true;
+            }
+        }
+        if (duplicate) {
+            continue;
+        }
+        bool wrote_receiver = false;
+        for (const Param &param : src.params) {
+            if (param.is_receiver) {
+                wrote_receiver = true;
+            }
+        }
+        if (wrote_receiver || src.variadic) {
+            error(src.loc, src.variadic && !wrote_receiver ? "not supported yet" : "type mismatch");
+            continue;
+        }
+        FunctionDecl method = clone_function(src);
+        substitute_function(method, templ.type_params, bounds);
+        Type signature = function_signature(method);
+        if (signature.result != nullptr && mentions_trait(*signature.result)) {
+            error(method.loc, "trait has no size");
+            continue;
+        }
+        TraitInfo::Method saved;
+        saved.name = method.name;
+        saved.type = std::move(signature);
+        saved.unsafe_fn = method.unsafe;
+        saved.loc = method.loc;
+        saved.home = id;
+        traits_[static_cast<std::size_t>(id)].methods.push_back(std::move(saved));
+        spec_decl.methods.push_back(std::move(method));
+    }
+    for (const FieldDecl &source : templ.fields) {
+        if (source.name.empty()) {
+            continue;
+        }
+        bool duplicate = false;
+        for (const TraitInfo::Method &method : traits_[static_cast<std::size_t>(id)].methods) {
+            if (method.name == source.name) {
+                error(source.loc, "redefinition");
+                duplicate = true;
+            }
+        }
+        for (const TraitInfo::Field &existing : traits_[static_cast<std::size_t>(id)].fields) {
+            if (existing.name == source.name) {
+                error(source.loc, "redefinition");
+                duplicate = true;
+            }
+        }
+        if (duplicate) {
+            continue;
+        }
+        if (source.init != nullptr) {
+            error(source.loc, "not supported yet");
+        }
+        FieldDecl field = source;
+        substitute_type(templ.type_params, bounds, field.type_name, field.type_package, field.is_struct, field.is_enum,
+                        field.indirections, field.optional, field.is_array, field.array_len, field.array_len_name,
+                        field.type_args, field.loc, &field.shells, &field.elem_const, &field.const_pointee);
+        prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
+                        field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args, field.loc);
+        fold_shells(field.shells, field.loc);
+        Type field_type = field.is_fn_ptr
+                              ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                                               field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
+                                               field.fn_results, field.loc, field.ret_optional, field.ret_const_pointee)
+                              : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
+                                            false, field.type_package, field.is_struct, field.is_enum, false, field.optional,
+                                            field.const_pointee, false, field.elem_const, field.elem_slice, field.shells,
+                                            true);
+        if (field_type.kind == TypeKind::Invalid) {
+            continue;
+        }
+        if (mentions_trait(field_type)) {
+            error(field.loc, "not supported yet");
+            continue;
+        }
+        TraitInfo::Field saved;
+        saved.name = field.name;
+        saved.type = std::move(field_type);
+        saved.loc = field.loc;
+        saved.home = id;
+        traits_[static_cast<std::size_t>(id)].fields.push_back(std::move(saved));
+        spec_decl.fields.push_back(std::move(field));
+    }
+    PendingAppend appended;
+    appended.file_id = owner;
+    appended.decl.data = std::move(spec_decl);
+    pending_appends_.push_back(std::move(appended));
+    file_id_ = saved_file;
+    spec_checking_.erase(key);
+    spec_ready_.insert(key);
+    return spec_name;
+}
+
 std::string Checker::specialize_type_app(const std::string &package, const std::string &name, const std::vector<TypeArg> &args,
                                          SourceLoc loc) {
     // `pkg.Vec[i32]` is written in the importing file. The spec is stored on the defining package,
@@ -74,6 +216,11 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     } else {
         templ = find_struct_template(name, owner);
         if (templ == nullptr) {
+            uint32_t trait_owner = file_id_;
+            const TraitDecl *trait = find_trait_template(name, trait_owner);
+            if (trait != nullptr) {
+                return specialize_trait(*trait, trait_owner, args, loc);
+            }
             error(loc, "type mismatch");
             return {};
         }
@@ -719,6 +866,33 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
     return bounds;
 }
 
+bool Checker::generic_trait_parameter(const FunctionDecl &fn) const {
+    for (const Param &param : fn.params) {
+        if (param.is_receiver || param.is_struct || param.is_enum || param.is_array || param.is_fn_ptr ||
+            param.is_tuple || !param.type_package.empty()) {
+            continue;
+        }
+        bool type_param = false;
+        for (const TypeParam &item : fn.type_params) {
+            if (item.name == param.type_name) {
+                type_param = true;
+                break;
+            }
+        }
+        if (type_param) {
+            continue;
+        }
+        if (package_trait(file_id_, param.type_name) >= 0) {
+            return true;
+        }
+        uint32_t owner = file_id_;
+        if (find_trait_template(param.type_name, owner) != nullptr) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Checker::extern_generic_trait_param(uint32_t file, const FunctionDecl &fn) const {
     if (!fn.is_extern || fn.extern_c) {
         return false;
@@ -1033,6 +1207,13 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     file_id_ = saved_file;
     if (signature.kind != TypeKind::Function || signature.result == nullptr || signature.result->kind == TypeKind::Invalid) {
         return type_invalid();
+    }
+    // `func use[T type](items Seq[T])` is a trait parameter beside `[T type]`.
+    for (const Type &param : signature.params) {
+        if (mentions_trait(param)) {
+            error(call.loc, "not supported yet");
+            return type_invalid();
+        }
     }
     Symbol symbol;
     symbol.name = spec_name;

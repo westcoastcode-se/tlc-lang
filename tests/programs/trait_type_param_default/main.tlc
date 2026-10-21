@@ -1,0 +1,11 @@
+type Seq[T type] trait {
+    func at(i i32) T;
+};
+
+func Seq::at(self this, i i32) i32 {
+    return i;
+}
+
+func main() i32 {
+    return 0;
+}

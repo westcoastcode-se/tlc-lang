@@ -986,8 +986,25 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.outline = entry;
             sym.role = Role::Trait;
             sym.detail = "type " + item->name + " trait";
+            if (item->type_params.size() == 1 && item->type_params[0].is_type) {
+                sym.detail = "type " + item->name + "[" + item->type_params[0].name + " type] trait";
+            }
             put_loc(sym, text, item->loc, item->name);
             add_sym(out, std::move(sym));
+            const uint32_t trait_end = next_mark(item->loc.offset);
+            for (const TypeParam &param : item->type_params) {
+                Sym type_param;
+                type_param.name = param.name;
+                type_param.detail = param.is_type ? param.name + " type" : param.name;
+                type_param.uri = uri;
+                type_param.bare = true;
+                type_param.local = true;
+                type_param.role = Role::TypeParam;
+                type_param.scope_end = trait_end;
+                put_loc(type_param, text, param.loc, param.name);
+                type_param.scope_begin = param.loc.valid() ? param.loc.offset : 0;
+                add_sym(out, std::move(type_param));
+            }
             for (const FieldDecl &field : item->fields) {
                 Sym member;
                 member.name = field.name;

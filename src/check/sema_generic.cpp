@@ -677,6 +677,25 @@ std::string Checker::mangle_spec(const std::string &base, const std::vector<Spec
     return name;
 }
 
+const TraitDecl *Checker::find_trait_template(const std::string &name, uint32_t &owner) const {
+    if (name.empty()) {
+        return nullptr;
+    }
+    for (const uint32_t id : files_in_package(file_id_)) {
+        const auto file = trait_templates_.find(id);
+        if (file == trait_templates_.end()) {
+            continue;
+        }
+        const auto found = file->second.find(name);
+        if (found == file->second.end()) {
+            continue;
+        }
+        owner = id;
+        return found->second;
+    }
+    return nullptr;
+}
+
 const StructDecl *Checker::find_struct_template(const std::string &name, uint32_t &owner) const {
     for (const uint32_t id : files_in_package(file_id_)) {
         const auto file = struct_templates_.find(id);

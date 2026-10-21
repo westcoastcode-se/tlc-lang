@@ -394,6 +394,9 @@ class Checker {
                                    uint32_t owner);
     // `extern func use[T type](s Shape, n T)` still takes a trait. `T Shape` does not.
     bool extern_generic_trait_param(uint32_t file, const FunctionDecl &fn) const;
+    // A parameter of a generic function whose type is a trait or `Seq[T]`.
+    // `value T` on `[T type]` is not one. That parameter stays `not supported yet`.
+    bool generic_trait_parameter(const FunctionDecl &fn) const;
     FnList function_list(const FunctionDecl &fn, Type signature) const;
     // Picks the parameter list a call uses. Null when none matches or more than one matches.
     const MethodInfo *choose_method(const Expr::Call &node, const MethodInfo &head, bool want_static, bool foreign,
@@ -704,6 +707,8 @@ class Checker {
     std::deque<StructDecl> owned_structs_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::vector<FunctionDecl *>>> fn_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, StructDecl *>> struct_templates_;
+    // `type Seq[T type] trait`. The decl stays in the unit. A use `Seq[i32]` builds one trait.
+    std::unordered_map<uint32_t, std::unordered_map<std::string, const TraitDecl *>> trait_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, ConstBinding>> const_values_;
     std::deque<OwnedFn> deferred_methods_;
     // The built-in `Allocator.malloc[T type]`. Pointers into this deque stay valid.
@@ -767,6 +772,7 @@ class Checker {
                          int &indirections, uint32_t &optional, bool &is_array, int &array_len,
                          std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);
     const StructDecl *find_struct_template(const std::string &name, uint32_t &owner) const;
+    const TraitDecl *find_trait_template(const std::string &name, uint32_t &owner) const;
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
     void register_trait_default(const FunctionDecl &fn);
     void register_method_template(const FunctionDecl &fn);
@@ -789,6 +795,9 @@ class Checker {
     std::string mangle_spec(const std::string &base, const std::vector<SpecArg> &args) const;
     std::string specialize_type_app(const std::string &package, const std::string &name, const std::vector<TypeArg> &args,
                                     SourceLoc loc);
+    // `Seq[i32]`. The result is the specialized trait's name. Empty when the arguments do not bind.
+    std::string specialize_trait(const TraitDecl &templ, uint32_t owner, const std::vector<TypeArg> &args,
+                                 SourceLoc loc);
     bool bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg &out, SourceLoc loc);
     void expose_bounds(uint32_t owner, const std::vector<SpecArg> &bounds);
     // A struct name that already means a different struct in `owner`, or that exists in two packages,

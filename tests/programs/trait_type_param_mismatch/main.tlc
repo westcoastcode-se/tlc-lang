@@ -1,0 +1,21 @@
+type Seq[T type] trait {
+    func at(i i32) T;
+};
+
+type Bag struct {
+    n i32;
+};
+
+func Bag::at(self this, i i32) i32 {
+    return self.n;
+}
+
+func use(items Seq[u8]) i32 {
+    return 0;
+}
+
+func main() i32 {
+    var bag Bag;
+    bag.n = 1;
+    return use(bag);
+}

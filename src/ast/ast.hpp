@@ -728,6 +728,8 @@ struct FunctionDecl {
 struct TraitDecl {
     SourceLoc loc{};
     std::string name;
+    // `type Seq[T type] trait`. Empty on `type Shape trait`. One `name type` parameter.
+    std::vector<TypeParam> type_params;
     // `type Shape trait(Parent)`. Empty when the trait has no parent.
     std::string parent_name;
     std::string parent_package;

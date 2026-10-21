@@ -1,0 +1,11 @@
+type Shape trait {
+    func area() i32;
+};
+
+type Seq[T type] trait(Shape) {
+    func at(i i32) i32;
+};
+
+func main() i32 {
+    return 0;
+}

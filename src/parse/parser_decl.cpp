@@ -383,9 +383,19 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         } else if (exported || is_extern) {
             diags_.error(name_loc, "not supported yet");
         }
+        // One `T type`. An integer, a pack, several parameters, and `trait(Parent)` stay rejected.
+        if (!type_params.empty()) {
+            const bool one_type = type_params.size() == 1 && type_params[0].is_type && !type_params[0].is_pack &&
+                                  !type_params[0].is_value && !type_params[0].is_trait;
+            if (!one_type || !parent_name.empty()) {
+                diags_.error(kind_loc, "not supported yet");
+                type_params.clear();
+            }
+        }
         TraitDecl trait;
         trait.loc = name_loc;
         trait.name = std::move(name);
+        trait.type_params = std::move(type_params);
         trait.parent_name = std::move(parent_name);
         trait.parent_package = std::move(parent_package);
         trait.parent_loc = parent_loc;
@@ -518,7 +528,8 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     }
     if (check(TokenKind::KwStruct) || check(TokenKind::KwEnum) || check(TokenKind::KwTrait) ||
         check(TokenKind::KwUnion)) {
-        if (!type_params.empty() && peek().kind != TokenKind::KwStruct) {
+        // A trait takes one `T type`. An enum, a union, and an alias do not.
+        if (!type_params.empty() && peek().kind != TokenKind::KwStruct && peek().kind != TokenKind::KwTrait) {
             diags_.error(peek().loc, "not supported yet");
             type_params.clear();
         }

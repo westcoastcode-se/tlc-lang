@@ -295,6 +295,10 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (package_trait(file_id_, name) >= 0) {
                 error(fn.loc, "trait has no size");
             }
+            uint32_t trait_owner = file_id_;
+            if (find_trait_template(name, trait_owner) != nullptr) {
+                error(fn.loc, "trait has no size");
+            }
         };
         if (fn.results.size() > 1) {
             for (const ResultSlot &slot : fn.results) {
@@ -318,7 +322,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 // `...` is still one list, and a trait parameter is not a specialization of `T`.
                 if (fn->extern_c) {
                     error(fn->loc, "extern(abi=\"c\") on a trait or a generic");
-                } else if (fn->variadic || extern_generic_trait_param(file_id_, *fn)) {
+                } else if (fn->variadic || extern_generic_trait_param(file_id_, *fn) || generic_trait_parameter(*fn)) {
                     error(fn->loc, "not supported yet");
                 }
                 trait_result_name(*fn);
@@ -366,6 +370,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 continue;
             }
             if (!fn->method_struct.empty()) {
+                uint32_t trait_owner = file_id_;
+                if (find_trait_template(fn->method_struct, trait_owner) != nullptr) {
+                    error(fn->loc, "not supported yet");
+                    continue;
+                }
                 require_method_params(*fn);
                 if (generic_struct_name(file_id_, fn->method_struct)) {
                     // `export` publishes `value.name(...)` and `pkg.Vec[i32].name(...)`.

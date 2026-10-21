@@ -123,9 +123,23 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
         if (item == nullptr || item->name.empty()) {
             continue;
         }
+        uint32_t template_owner = file_id;
+        const bool generic_trait = find_trait_template(item->name, template_owner) != nullptr;
         if (package_trait(file_id, item->name) >= 0 || package_has_enum(file_id, item->name) ||
-            find_tag(file_id, item->name) >= 0) {
+            find_tag(file_id, item->name) >= 0 || generic_struct_name(file_id, item->name) || generic_trait) {
             error(item->loc, "redefinition");
+            continue;
+        }
+        if (!item->type_params.empty()) {
+            const TypeParam &param = item->type_params[0];
+            const bool one_type = item->type_params.size() == 1 && param.is_type && !param.is_pack && !param.is_value &&
+                                  !param.is_trait && item->parent_name.empty();
+            if (!one_type) {
+                error(item->loc, "not supported yet");
+                continue;
+            }
+            // The methods mention `T`. They are typed when a use specializes the trait.
+            trait_templates_[file_id][item->name] = item;
             continue;
         }
         const int id = static_cast<int>(traits_.size());
