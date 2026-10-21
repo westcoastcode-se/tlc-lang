@@ -347,6 +347,19 @@ void Checker::absorb_template(Symbol &existing, const FunctionDecl &fn, Function
         }
         return;
     }
+    // The prototype may be the declaration that says `extern`. The body that is specialized
+    // has to keep that flag, or the symbol stays internal.
+    auto note_extern = [&](const FunctionDecl *decl) {
+        if (decl == nullptr || decl->is_extern) {
+            return;
+        }
+        for (OwnedFn &owned : owned_fns_) {
+            if (&owned.fn == decl) {
+                owned.fn.is_extern = true;
+                return;
+            }
+        }
+    };
     const std::string want = generic_param_key(fn, fn.type_params, false);
     const std::string full = generic_full_key(fn, fn.type_params);
     for (std::size_t i = 0; i < existing.fn_templates.size(); ++i) {
@@ -360,6 +373,9 @@ void Checker::absorb_template(Symbol &existing, const FunctionDecl &fn, Function
                 error(fn.loc, "redefinition");
             }
             return;
+        }
+        if (fn.is_extern || slot->is_extern) {
+            note_extern(fn.body != nullptr ? stable : slot);
         }
         if (fn.body != nullptr) {
             existing.fn_templates[i] = stable;
@@ -703,10 +719,36 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
     return bounds;
 }
 
+bool Checker::extern_generic_trait_param(uint32_t file, const FunctionDecl &fn) const {
+    if (!fn.is_extern || fn.extern_c) {
+        return false;
+    }
+    for (const Param &param : fn.params) {
+        if (param.is_receiver || param.is_struct || param.is_enum || param.is_array || param.is_fn_ptr ||
+            param.is_tuple || !param.type_package.empty()) {
+            continue;
+        }
+        bool type_param = false;
+        for (const TypeParam &item : fn.type_params) {
+            if (item.name == param.type_name) {
+                type_param = true;
+                break;
+            }
+        }
+        if (type_param) {
+            continue;
+        }
+        if (package_trait(file, param.type_name) >= 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::Call &call,
                                        const std::vector<Type> &arg_types, uint32_t owner) {
-    (void)owner;
-    if (templ.body == nullptr || templ.is_extern || templ.extern_c || templ.variadic || templ.type_params.empty()) {
+    if (templ.body == nullptr || templ.extern_c || templ.variadic || templ.type_params.empty() ||
+        extern_generic_trait_param(owner, templ)) {
         return false;
     }
     const std::optional<std::vector<SpecArg>> bounds = infer_generic_bounds(templ, call, arg_types);
@@ -908,7 +950,8 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     if (templ == nullptr || templ->type_params.empty()) {
         return std::nullopt;
     }
-    if (templ->body == nullptr || templ->is_extern || templ->extern_c || templ->variadic) {
+    // A body defines the symbol. A trait parameter is not specialized away with `T`.
+    if (templ->body == nullptr || templ->extern_c || templ->variadic || extern_generic_trait_param(owner, *templ)) {
         error(call.loc, templ->extern_c ? "extern(abi=\"c\") on a trait or a generic" : "not supported yet");
         return type_invalid();
     }

@@ -318,10 +318,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             // A trait has no size, so it is not a result. Checked before the paths that
             // return early, and again below for an ordinary function.
             if (!fn->type_params.empty() && fn->method_struct.empty()) {
-                // A C symbol is one library name. A generic function is specialized per call.
+                // A C symbol is one library name. A tlc `extern` is one symbol per specialization.
+                // `...` is still one list, and a trait parameter is not a specialization of `T`.
                 if (fn->extern_c) {
                     error(fn->loc, "extern(abi=\"c\") on a trait or a generic");
-                } else if (fn->is_extern || fn->variadic) {
+                } else if (fn->variadic || extern_generic_trait_param(file_id_, *fn)) {
                     error(fn->loc, "not supported yet");
                 }
                 trait_result_name(*fn);

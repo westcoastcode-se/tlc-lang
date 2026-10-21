@@ -1,0 +1,41 @@
+extern func id[T type](value T) T;
+
+func id[T type](value T) T {
+    return value;
+}
+
+extern(abi="tlc") func add[T type](left T, right T) T {
+    return left + right;
+}
+
+type Shape trait {
+    func area() i32;
+};
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+extern func measure[T Shape](value T) i32 {
+    return value.area();
+}
+
+extern func pick[T type](value T) i32 {
+    return value;
+}
+
+extern func pick[T type](value T, extra i32) i32 {
+    return value + extra;
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 1;
+    r.h = 2;
+    return id(17) + add(10, 10) + measure(r) + pick(1) + pick(1, 1);
+}

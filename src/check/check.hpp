@@ -392,6 +392,8 @@ class Checker {
                                                             const std::vector<Type> &arg_types);
     bool generic_candidate_matches(const FunctionDecl &templ, const Expr::Call &call, const std::vector<Type> &arg_types,
                                    uint32_t owner);
+    // `extern func use[T type](s Shape, n T)` still takes a trait. `T Shape` does not.
+    bool extern_generic_trait_param(uint32_t file, const FunctionDecl &fn) const;
     FnList function_list(const FunctionDecl &fn, Type signature) const;
     // Picks the parameter list a call uses. Null when none matches or more than one matches.
     const MethodInfo *choose_method(const Expr::Call &node, const MethodInfo &head, bool want_static, bool foreign,

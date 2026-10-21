@@ -1,0 +1,7 @@
+extern(abi="c") func id[T type](value T) T {
+    return value;
+}
+
+func main() i32 {
+    return id(1);
+}
