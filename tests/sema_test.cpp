@@ -3,6 +3,7 @@
 #include "lex/lexer.hpp"
 #include "parse/parser.hpp"
 #include "check/sema.hpp"
+#include "pkg/pkg.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -28,6 +29,40 @@ std::string check_program(const std::string &source) {
     std::error_code ec;
     std::filesystem::remove(path, ec);
     return output.compiler_stderr;
+}
+
+std::string check_linked_trait(const std::string &body, bool link) {
+    static int seq = 0;
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / ("tlc-iter-" + std::to_string(++seq));
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root / "lib" / "tlc" / "std" / "seq", ec);
+    {
+        std::ofstream out(root / "lib" / "tlc" / "std" / "seq" / "seq.tlc");
+        out << "package seq;\n\nexport extern type Seq[T type] trait {\n" << body << "};\n";
+    }
+    if (link) {
+        std::ofstream out(root / "lib" / "tlc" / "std" / "seq" / "link");
+        out << "../../../libseq.a\n";
+        std::ofstream archive(root / "lib" / "libseq.a");
+        archive << "archive\n";
+    }
+    {
+        std::ofstream out(root / "main.tlc");
+        out << "import \"std/seq\";\n\nfunc main() i32 {\n    return 0;\n}\n";
+    }
+    tlc::SourceSet sources;
+    tlc::DiagnosticEngine diags(sources);
+    tlc::ResolveRequest request;
+    request.entry = (root / "main.tlc").string();
+    request.std_root = (root / "lib" / "tlc").string();
+    tlc::PackageGraph graph;
+    tlc::resolve_packages(request, sources, diags, graph);
+    tlc::analyze(graph, diags);
+    const std::string errors = diags.render();
+    std::filesystem::remove_all(root, ec);
+    return errors;
 }
 
 std::string diagnose(const std::string &source, bool keep_going = false) {
@@ -6794,6 +6829,33 @@ int run_sema_tests() {
             "    return 0;\n"
             "}\n");
         EXPECT_HAS(check, errors, "trait has no size");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string body = "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n";
+        const std::string errors = check_linked_trait(body, true);
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string body =
+            "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n    n i32;\n";
+        const std::string errors = check_linked_trait(body, true);
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string body =
+            "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n    func extra(i i32) i32;\n";
+        const std::string errors = check_linked_trait(body, true);
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string body =
+            "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n    n i32;\n";
+        const std::string errors = check_linked_trait(body, false);
         EXPECT(check, errors.find("not supported yet") == std::string::npos);
     }
 

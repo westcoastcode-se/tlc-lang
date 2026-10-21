@@ -114,6 +114,105 @@ void Checker::ensure_allocator_trait() {
     traits_.push_back(std::move(info));
 }
 
+bool Checker::file_links_iteration(uint32_t file) const {
+    if (graph_ == nullptr) {
+        return false;
+    }
+    for (const PackageNode &node : graph_->nodes) {
+        if (node.file_id == file) {
+            return node.iteration_library;
+        }
+    }
+    return false;
+}
+
+namespace {
+
+bool plain_i32_param(const Param &param) {
+    return param.type_name == "i32" && param.type_package.empty() && !param.is_struct && !param.is_enum &&
+           param.indirections == 0 && param.optional == 0 && param.const_pointee == 0 && !param.is_array &&
+           !param.is_fn_ptr && param.type_args.empty() && param.shells.empty() && !param.is_receiver;
+}
+
+bool plain_result(const FunctionDecl &method, const std::string &name, int indirections) {
+    if (method.results.size() != 1 || method.return_type != name || !method.type_package.empty() || method.is_struct ||
+        method.is_enum || method.indirections != indirections || method.optional != 0 || method.const_pointee != 0) {
+        return false;
+    }
+    const ResultSlot &slot = method.results.front();
+    return !slot.is_array && !slot.is_fn_ptr && slot.type_args.empty() && slot.shells.empty() && slot.type_package.empty();
+}
+
+} // namespace
+
+Checker::IterationMethod Checker::iteration_method(const FunctionDecl &method, const std::string &type_param) const {
+    if (method.unsafe || method.variadic || method.body != nullptr || !method.type_params.empty() || type_param.empty()) {
+        return IterationMethod::Other;
+    }
+    for (const Param &param : method.params) {
+        if (param.is_receiver) {
+            return IterationMethod::Other;
+        }
+    }
+    if (method.params.empty() && plain_result(method, "i32", 0)) {
+        return IterationMethod::Length;
+    }
+    if (method.params.size() == 1 && plain_i32_param(method.params.front())) {
+        if (plain_result(method, type_param, 0)) {
+            return IterationMethod::Element;
+        }
+        if (plain_result(method, type_param, 1)) {
+            return IterationMethod::Ref;
+        }
+    }
+    return IterationMethod::Other;
+}
+
+void Checker::reject_iteration_extras(const TraitDecl &trait) {
+    for (const FieldDecl &field : trait.fields) {
+        if (!field.name.empty()) {
+            error(field.loc, "not supported yet");
+        }
+    }
+    if (trait.type_params.empty()) {
+        return;
+    }
+    const std::string &type_param = trait.type_params.front().name;
+    bool seen_length = false;
+    bool seen_element = false;
+    bool seen_ref = false;
+    for (const FunctionDecl &method : trait.methods) {
+        if (method.name.empty()) {
+            continue;
+        }
+        bool receiver = false;
+        for (const Param &param : method.params) {
+            if (param.is_receiver) {
+                receiver = true;
+            }
+        }
+        // A receiver or `...` keeps the diagnostic specialize_trait already reports.
+        if (receiver || method.variadic) {
+            continue;
+        }
+        const IterationMethod kind = iteration_method(method, type_param);
+        const bool repeat = (kind == IterationMethod::Length && seen_length) ||
+                            (kind == IterationMethod::Element && seen_element) ||
+                            (kind == IterationMethod::Ref && seen_ref);
+        if (kind == IterationMethod::Other || repeat) {
+            error(method.loc, "not supported yet");
+            continue;
+        }
+        if (kind == IterationMethod::Length) {
+            seen_length = true;
+        } else if (kind == IterationMethod::Element) {
+            seen_element = true;
+        } else {
+            seen_ref = true;
+        }
+    }
+}
+
 void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
     file_id_ = file_id;
     ensure_allocator_trait();
@@ -140,6 +239,9 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
             }
             // The methods mention `T`. They are typed when a use specializes the trait.
             trait_templates_[file_id][item->name] = item;
+            if (item->is_extern && file_links_iteration(file_id)) {
+                reject_iteration_extras(*item);
+            }
             continue;
         }
         const int id = static_cast<int>(traits_.size());
@@ -326,6 +428,10 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
         return true;
     };
     for (const TraitInfo::Method &method : traits_[static_cast<std::size_t>(trait_id)].methods) {
+        // `ref` has a pointer receiver. A value `Seq[T]` checks `len` and `at` and does not require it.
+        if (!through_pointer && method.iteration_ref) {
+            continue;
+        }
         const MethodInfo *head = nullptr;
         if (info != nullptr) {
             for (const uint32_t id : files_in_package(info->file_id)) {

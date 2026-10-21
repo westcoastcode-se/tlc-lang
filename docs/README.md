@@ -103,6 +103,7 @@ Each feature page ends with the instructions that feature runs. [Cost](cost.md) 
 ### Standard library
 
 - [`string`](std/string.md)
+- [`seq`](std/seq.md)
 
 ## Grammar
 

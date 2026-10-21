@@ -190,6 +190,8 @@ class Checker {
             SourceLoc loc{};
             // Trait that declared this method. A copy on a child keeps the parent's id.
             int home = -1;
+            // The iteration trait's pointer-result method. A value parameter does not require it.
+            bool iteration_ref = false;
         };
         struct Field {
             std::string name;
@@ -451,6 +453,12 @@ class Checker {
     // `pkg.Kind` on a union. Reports the diagnostic and returns -1 when the enum is not usable.
     int imported_enum(uint32_t file, const std::string &package, const std::string &name, SourceLoc loc);
     void register_traits(const TranslationUnit &unit, uint32_t file_id);
+    // The package's link file names libseq.a. The extern trait there is the iteration trait.
+    bool file_links_iteration(uint32_t file) const;
+    enum class IterationMethod { Other, Length, Element, Ref };
+    // Classifies one method of the iteration trait from the declaration. Names are not a second list.
+    IterationMethod iteration_method(const FunctionDecl &method, const std::string &type_param) const;
+    void reject_iteration_extras(const TraitDecl &trait);
     // Copy a parent's methods, fields, and defaults into each `trait(Parent)`.
     void inherit_traits();
     void define_trait_fields();

@@ -1,6 +1,6 @@
 # string
 
-[Index](../README.md) · [Previous: Strings](../types/string.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: seq](seq.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
 `import "std/string"` loads `lib/tlc/std/string`. The package is ordinary tlc source. The compiler does not implement these functions.
 
@@ -40,4 +40,4 @@ Inside `equals`, different lengths return false in 15 instructions. Two empty vi
 
 `starts_with` returns false in 17 instructions when the view is shorter than the prefix, and does not call `equals`. Otherwise it is 62 instructions plus `equals`. `ends_with` is 17 on that short path and 71 plus `equals` otherwise. The 62 and the 71 include the trace frame of `equals`.
 
-[Index](../README.md) · [Previous: Strings](../types/string.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: seq](seq.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

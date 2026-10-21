@@ -194,6 +194,7 @@ class Resolver {
     std::unordered_map<std::string, std::size_t> by_path_;
     std::unordered_map<std::string, std::size_t> by_package_;
     std::vector<std::string> package_stack_;
+    bool saw_iteration_library_ = false;
 
     std::size_t load_new(const fs::path &canonical) {
         std::optional<std::string> text;
@@ -426,8 +427,14 @@ class Resolver {
         }
         by_package_.emplace(key, created.front());
         add_edge(from_file, key, import);
+        saw_iteration_library_ = false;
         if (is_under(dir, vendor_root_) || is_under(dir, std_root_)) {
             append_vendor_libraries(dir, import.loc);
+        }
+        if (saw_iteration_library_) {
+            for (const std::size_t index : created) {
+                graph_.nodes[index].iteration_library = true;
+            }
         }
         walk_package(key);
     }
@@ -471,10 +478,32 @@ class Resolver {
             return;
         }
         if (!token.empty() && token[0] != '-') {
-            graph_.link_args.push_back(rooted_path(dir, token));
+            const std::string path = rooted_path(dir, token);
+            note_iteration_library(path);
+            graph_.link_args.push_back(path);
             return;
         }
         graph_.link_args.push_back(token);
+    }
+
+    // `<prefix>/lib/libseq.a`, next to `<prefix>/lib/tlc`. The std/seq link file names that archive.
+    void note_iteration_library(const std::string &path) {
+        if (std_root_.empty() || path.empty()) {
+            return;
+        }
+        const fs::path library = (std_root_.parent_path() / "libseq.a").lexically_normal();
+        const fs::path given = fs::path(path).lexically_normal();
+        if (given == library) {
+            saw_iteration_library_ = true;
+            return;
+        }
+        std::error_code left_ec;
+        std::error_code right_ec;
+        const fs::path left = fs::weakly_canonical(library, left_ec);
+        const fs::path right = fs::weakly_canonical(given, right_ec);
+        if (!left_ec && !right_ec && left == right) {
+            saw_iteration_library_ = true;
+        }
     }
 
     void append_link_file(const fs::path &dir, const fs::path &link_file, SourceLoc loc) {

@@ -1,0 +1,27 @@
+import "seq";
+
+type Bag struct {
+    n i32;
+};
+
+func Bag::len(self this) i32 {
+    return 2;
+}
+
+func Bag::at(self this, i i32) i32 {
+    return self.n + i;
+}
+
+func Bag::ref(self this, i i32) *i32 {
+    return &self.n;
+}
+
+func use(items seq.Seq[i32]) i32 {
+    return items.len() + items.at(0);
+}
+
+func main() i32 {
+    var bag Bag;
+    bag.n = 40;
+    return use(bag);
+}

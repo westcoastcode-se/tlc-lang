@@ -84,6 +84,11 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
     TraitDecl spec_decl;
     spec_decl.loc = templ.loc;
     spec_decl.name = spec_name;
+    const bool iteration = templ.is_extern && file_links_iteration(owner);
+    const std::string type_param = templ.type_params.empty() ? std::string{} : templ.type_params.front().name;
+    bool seen_length = false;
+    bool seen_element = false;
+    bool seen_ref = false;
     for (const FunctionDecl &src : templ.methods) {
         if (src.name.empty()) {
             continue;
@@ -108,6 +113,24 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
             error(src.loc, src.variadic && !wrote_receiver ? "not supported yet" : "type mismatch");
             continue;
         }
+        IterationMethod kind = IterationMethod::Other;
+        if (iteration) {
+            kind = iteration_method(src, type_param);
+            const bool repeat = (kind == IterationMethod::Length && seen_length) ||
+                                (kind == IterationMethod::Element && seen_element) ||
+                                (kind == IterationMethod::Ref && seen_ref);
+            // A field, a further method, or a repeated shape was reported when the template was registered.
+            if (kind == IterationMethod::Other || repeat) {
+                continue;
+            }
+            if (kind == IterationMethod::Length) {
+                seen_length = true;
+            } else if (kind == IterationMethod::Element) {
+                seen_element = true;
+            } else {
+                seen_ref = true;
+            }
+        }
         FunctionDecl method = clone_function(src);
         substitute_function(method, templ.type_params, bounds);
         Type signature = function_signature(method);
@@ -121,11 +144,13 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
         saved.unsafe_fn = method.unsafe;
         saved.loc = method.loc;
         saved.home = id;
+        saved.iteration_ref = kind == IterationMethod::Ref;
         traits_[static_cast<std::size_t>(id)].methods.push_back(std::move(saved));
         spec_decl.methods.push_back(std::move(method));
     }
     for (const FieldDecl &source : templ.fields) {
-        if (source.name.empty()) {
+        // The iteration trait's fields were reported when the template was registered.
+        if (iteration || source.name.empty()) {
             continue;
         }
         bool duplicate = false;
