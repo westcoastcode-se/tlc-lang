@@ -85,9 +85,11 @@ int symbol_kind(Role role) {
     return 13;
 }
 
-void mark_direct(Sym &sym, const std::string &type_name, int indirections, bool is_array, int array_len ) {
+void mark_direct(Sym &sym, const std::string &type_name, int indirections, bool is_array, int array_len,
+                 uint32_t optional) {
     sym.type_name = type_name;
     sym.indirections = indirections;
+    sym.optional = optional;
     sym.is_array = is_array;
     sym.array_len = array_len;
     sym.direct_type = indirections == 0 && !is_array && !type_name.empty() && type_name != "invalid";
@@ -101,7 +103,7 @@ void apply_result(Sym &sym, const FunctionDecl &fn) {
     if (slot.is_fn_ptr) {
         return;
     }
-    mark_direct(sym, slot.type_name, slot.indirections, slot.is_array, slot.array_len);
+    mark_direct(sym, slot.type_name, slot.indirections, slot.is_array, slot.array_len, slot.optional);
 }
 
 // The receiver is not a parameter the call uses to choose a list.
@@ -580,7 +582,7 @@ void add_function_locals(const FunctionDecl &fn, const std::string &text, const 
         Sym sym;
         sym.name = param.name;
         sym.detail = param.name + " " + spell_param(param);
-        mark_direct(sym, param.type_name, param.indirections, param.is_array, param.array_len);
+        mark_direct(sym, param.type_name, param.indirections, param.is_array, param.array_len, param.optional);
         sym.uri = uri;
         sym.bare = true;
         sym.local = true;
@@ -691,7 +693,7 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
         for (const VarDecl &var : decl->vars) {
             Sym sym;
             sym.name = var.name;
-            mark_direct(sym, var.type_name, var.indirections, var.is_array, var.array_len);
+            mark_direct(sym, var.type_name, var.indirections, var.is_array, var.array_len, var.optional);
             sym.detail = var.is_const_decl ? "const " + var.name : var.name;
             if (!var.type_name.empty()) {
                 sym.detail += " ";
@@ -932,7 +934,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
         if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
             Sym sym;
             sym.name = var->name;
-            mark_direct(sym, var->type_name, var->indirections, var->is_array, var->array_len);
+            mark_direct(sym, var->type_name, var->indirections, var->is_array, var->array_len, var->optional);
             sym.owner = var->owner;
             sym.package_key = node.package_key;
             sym.uri = uri;
@@ -1006,7 +1008,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 Sym member;
                 member.name = field.name;
                 member.owner = item->name;
-                mark_direct(member, field.type_name, field.indirections, field.is_array, field.array_len);
+                mark_direct(member, field.type_name, field.indirections, field.is_array, field.array_len, field.optional);
                 member.package_key = node.package_key;
                 member.uri = uri;
                 member.exported = field.exported || item->is_extern || item->extern_c || item->is_union;
@@ -1050,7 +1052,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
         if (const auto *item = std::get_if<TypedefDecl>(&decl.data)) {
             Sym sym;
             sym.name = item->name;
-            mark_direct(sym, item->type_name, item->indirections, item->is_array, item->array_len);
+            mark_direct(sym, item->type_name, item->indirections, item->is_array, item->array_len, item->optional);
             sym.package_key = node.package_key;
             sym.uri = uri;
             sym.exported = item->exported;
@@ -1106,7 +1108,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 Sym member;
                 member.name = field.name;
                 member.owner = item->name;
-                mark_direct(member, field.type_name, field.indirections, field.is_array, field.array_len);
+                mark_direct(member, field.type_name, field.indirections, field.is_array, field.array_len, field.optional);
                 member.package_key = node.package_key;
                 member.uri = uri;
                 member.role = Role::Field;

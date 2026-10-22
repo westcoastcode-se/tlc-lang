@@ -755,6 +755,536 @@ bool sized_array_receiver(const Doc &doc, const Sym &sym) {
     return alias_sized_array(doc, sym);
 }
 
+namespace {
+
+struct View {
+    enum class Kind { None, Value, Type, Func };
+    Kind kind = Kind::None;
+    Sym sym;
+};
+
+bool ident_ending(const std::string &text, uint32_t end, std::string &name, uint32_t &begin) {
+    end = skip_back(text, end);
+    if (end == 0 || !ident_char(static_cast<unsigned char>(text[end - 1]))) {
+        return false;
+    }
+    begin = end;
+    while (begin > 0 && ident_char(static_cast<unsigned char>(text[begin - 1]))) {
+        --begin;
+    }
+    const unsigned char first = static_cast<unsigned char>(text[begin]);
+    if (first >= '0' && first <= '9') {
+        return false;
+    }
+    name = text.substr(begin, end - begin);
+    return true;
+}
+
+bool call_shape(const std::string &text, uint32_t open) {
+    const uint32_t at = skip_back(text, open);
+    if (at == 0) {
+        return false;
+    }
+    const unsigned char c = static_cast<unsigned char>(text[at - 1]);
+    return text[at - 1] == ']' || ident_char(c);
+}
+
+bool bracket_range(const std::string &text, uint32_t open, uint32_t close) {
+    int depth = 0;
+    uint32_t i = open + 1;
+    while (i < close && i < text.size()) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            i = next;
+            continue;
+        }
+        const char c = text[i];
+        if (c == '(' || c == '[' || c == '{') {
+            ++depth;
+        } else if ((c == ')' || c == ']' || c == '}') && depth > 0) {
+            --depth;
+        } else if (c == ':' && depth == 0) {
+            return true;
+        }
+        ++i;
+    }
+    return false;
+}
+
+const Sym *pick_arity(const std::vector<const Sym *> &cands, int nargs) {
+    if (cands.size() == 1) {
+        return cands.front();
+    }
+    if (nargs < 0) {
+        return nullptr;
+    }
+    const Sym *matched = nullptr;
+    int matches = 0;
+    for (const Sym *sym : cands) {
+        if (sym->arity < 0) {
+            continue;
+        }
+        const bool ok = sym->variadic ? nargs >= sym->arity : nargs == sym->arity;
+        if (!ok) {
+            continue;
+        }
+        ++matches;
+        matched = sym;
+    }
+    return matches == 1 ? matched : nullptr;
+}
+
+View view_of(const Sym &sym) {
+    View view;
+    view.sym = sym;
+    switch (sym.role) {
+    case Role::Module:
+        view.kind = View::Kind::Type;
+        view.sym.role = Role::Module;
+        break;
+    case Role::StructType:
+    case Role::EnumType:
+    case Role::Alias:
+    case Role::Trait:
+        view.kind = View::Kind::Type;
+        break;
+    case Role::Function:
+    case Role::Method:
+        view.kind = View::Kind::Func;
+        break;
+    case Role::Variable:
+    case Role::Constant:
+    case Role::Field:
+        view.kind = View::Kind::Value;
+        view.sym.role = Role::Variable;
+        break;
+    default:
+        break;
+    }
+    return view;
+}
+
+View value_result(const Sym &fn) {
+    if (fn.type_name.empty()) {
+        return {};
+    }
+    View view;
+    view.kind = View::Kind::Value;
+    view.sym.role = Role::Variable;
+    view.sym.type_name = fn.type_name;
+    view.sym.indirections = fn.indirections;
+    view.sym.optional = fn.optional;
+    view.sym.is_array = fn.is_array;
+    view.sym.array_len = fn.array_len;
+    view.sym.package_key = fn.package_key;
+    view.sym.uri = fn.uri;
+    return view;
+}
+
+const Sym *alias_target(const Doc &doc, const Sym &sym) {
+    if (sym.indirections != 0 || sym.is_array || sym.type_name.empty()) {
+        return nullptr;
+    }
+    const Sym *same = nullptr;
+    const Sym *exported = nullptr;
+    for (const Sym &other : doc.syms) {
+        if (other.role != Role::Alias || other.name != sym.type_name) {
+            continue;
+        }
+        if (sym.package_key.empty() || other.package_key == sym.package_key) {
+            same = &other;
+            break;
+        }
+        if (exported == nullptr && other.exported) {
+            exported = &other;
+        }
+    }
+    const Sym *match = same != nullptr ? same : exported;
+    if (match == nullptr || (!match->is_array && match->indirections == 0)) {
+        return nullptr;
+    }
+    return match;
+}
+
+// One shell written into `type_name`, such as `[2]i32` left by a nested array.
+void adopt_spelled(Sym &sym) {
+    const std::string &name = sym.type_name;
+    if (name.size() >= 2 && name[0] == '[') {
+        const std::size_t end = name.find(']');
+        if (end == std::string::npos || end == 0) {
+            return;
+        }
+        const std::string inside = name.substr(1, end - 1);
+        sym.is_array = true;
+        sym.array_len = -1;
+        if (!inside.empty()) {
+            bool digits = true;
+            int len = 0;
+            for (unsigned char c : inside) {
+                if (c < '0' || c > '9') {
+                    digits = false;
+                    break;
+                }
+                len = len * 10 + (c - '0');
+            }
+            sym.array_len = digits ? len : 0;
+        }
+        sym.type_name = name.substr(end + 1);
+        return;
+    }
+    if (name.starts_with("?*")) {
+        sym.optional |= 1u;
+        sym.indirections += 1;
+        sym.type_name = name.substr(2);
+        return;
+    }
+    if (name.starts_with("*")) {
+        sym.indirections += 1;
+        sym.type_name = name.substr(1);
+    }
+}
+
+View element_view(Sym sym) {
+    if (sym.indirections == 0 && sym.is_array) {
+        sym.is_array = false;
+        sym.array_len = 0;
+        adopt_spelled(sym);
+    } else if (sym.indirections > 0 && sym.is_array && sym.array_len >= 0) {
+        // `*[N]T` is `(*p)[i]`, one element.
+        --sym.indirections;
+        sym.optional >>= 1u;
+        sym.is_array = false;
+        sym.array_len = 0;
+        adopt_spelled(sym);
+    } else if (sym.indirections > 0 && sym.is_array) {
+        // A pointer to a slice steps by one slice header.
+        --sym.indirections;
+        sym.optional >>= 1u;
+    } else if (sym.indirections > 0) {
+        --sym.indirections;
+        sym.optional >>= 1u;
+        adopt_spelled(sym);
+    } else {
+        return {};
+    }
+    if (sym.type_name.empty()) {
+        return {};
+    }
+    sym.role = Role::Variable;
+    sym.owner.clear();
+    sym.name.clear();
+    View view;
+    view.kind = View::Kind::Value;
+    view.sym = std::move(sym);
+    return view;
+}
+
+bool can_range(const Sym &sym) {
+    if ((sym.optional & 1u) != 0) {
+        return false;
+    }
+    if (sym.indirections == 0 && sym.is_array) {
+        return true;
+    }
+    return sym.indirections == 1 && sym.is_array && sym.array_len >= 0;
+}
+
+View index_view(const Doc &doc, Sym sym, bool range) {
+    bool slice_alias = false;
+    std::string alias_name;
+    if (sym.indirections == 0 && !sym.is_array) {
+        if (const Sym *alias = alias_target(doc, sym)) {
+            slice_alias = alias->is_array && alias->array_len < 0;
+            alias_name = sym.type_name;
+            sym.type_name = alias->type_name;
+            sym.indirections = alias->indirections;
+            sym.optional = alias->optional;
+            sym.is_array = alias->is_array;
+            sym.array_len = alias->array_len;
+            sym.package_key = alias->package_key;
+        }
+    }
+    if ((sym.optional & 1u) != 0) {
+        return {};
+    }
+    if (range) {
+        if (!can_range(sym)) {
+            return {};
+        }
+        View elem = element_view(sym);
+        if (elem.kind != View::Kind::Value) {
+            return {};
+        }
+        if (slice_alias) {
+            elem.sym.type_name = std::move(alias_name);
+            elem.sym.indirections = 0;
+            elem.sym.optional = 0;
+            elem.sym.is_array = false;
+            elem.sym.array_len = 0;
+        } else {
+            elem.sym.is_array = true;
+            elem.sym.array_len = -1;
+            elem.sym.indirections = 0;
+            elem.sym.optional = 0;
+        }
+        elem.sym.role = Role::Variable;
+        return elem;
+    }
+    return element_view(std::move(sym));
+}
+
+std::vector<const Sym *> methods_named(const Doc &doc, const std::string &owner, const std::string &package, const std::string &name,
+                                       bool is_static) {
+    std::vector<const Sym *> found;
+    for (const Sym &sym : doc.syms) {
+        if (sym.role != Role::Method || sym.owner != owner || sym.name != name || sym.static_method != is_static) {
+            continue;
+        }
+        if (!package.empty() && sym.package_key != package) {
+            continue;
+        }
+        found.push_back(&sym);
+    }
+    return found;
+}
+
+View select_member(const Doc &doc, const View &base, const std::string &name, bool want_func, int nargs) {
+    if (base.kind == View::Kind::None) {
+        return {};
+    }
+    if (base.sym.role == Role::Module) {
+        if (want_func) {
+            std::vector<const Sym *> fns;
+            for (const Sym &sym : doc.syms) {
+                if (sym.role == Role::Function && sym.package_key == base.sym.package_key && sym.owner.empty() &&
+                    sym.name == name && (sym.exported || sym.bare)) {
+                    fns.push_back(&sym);
+                }
+            }
+            if (const Sym *fn = pick_arity(fns, nargs)) {
+                return view_of(*fn);
+            }
+            return {};
+        }
+        if (const Sym *type = exported_type(doc.syms, base.sym.package_key, name)) {
+            return view_of(*type);
+        }
+        for (const Sym &sym : doc.syms) {
+            if (sym.package_key == base.sym.package_key && sym.owner.empty() && sym.name == name && sym.exported &&
+                (sym.role == Role::Variable || sym.role == Role::Constant || sym.role == Role::Function)) {
+                return view_of(sym);
+            }
+        }
+        return {};
+    }
+    if (base.kind == View::Kind::Type) {
+        if (want_func) {
+            if (const Sym *fn = pick_arity(methods_named(doc, base.sym.name, base.sym.package_key, name, true), nargs)) {
+                return view_of(*fn);
+            }
+            return {};
+        }
+        for (const Sym &sym : doc.syms) {
+            if (sym.owner != base.sym.name || sym.name != name) {
+                continue;
+            }
+            if (!base.sym.package_key.empty() && sym.package_key != base.sym.package_key) {
+                continue;
+            }
+            if (sym.role == Role::Variable || sym.role == Role::Constant) {
+                return view_of(sym);
+            }
+        }
+        return {};
+    }
+    if (base.kind != View::Kind::Value) {
+        return {};
+    }
+    if (want_func) {
+        if (const Sym *fn = pick_arity(methods_named(doc, base.sym.type_name, base.sym.package_key, name, false), nargs)) {
+            return view_of(*fn);
+        }
+        return {};
+    }
+    for (const Sym &sym : doc.syms) {
+        if (sym.role == Role::Field && sym.owner == base.sym.type_name && sym.name == name) {
+            if (!base.sym.package_key.empty() && sym.package_key != base.sym.package_key && !sym.package_key.empty()) {
+                continue;
+            }
+            return view_of(sym);
+        }
+    }
+    return {};
+}
+
+View parse_ending(const Doc &doc, uint32_t end, uint32_t scope, bool want_func, int nargs, int depth);
+
+View name_view(const Doc &doc, const std::string &name, uint32_t scope, bool want_func, int nargs) {
+    if (want_func) {
+        std::vector<const Sym *> fns;
+        for (const Sym *sym : bare_candidates(doc.syms, doc.uri, name, scope)) {
+            if (sym->role == Role::Function) {
+                fns.push_back(sym);
+            }
+        }
+        if (const Sym *fn = pick_arity(fns, nargs)) {
+            return view_of(*fn);
+        }
+        return {};
+    }
+    if (const Sym *sym = lookup_bare(doc.syms, doc.uri, name, scope)) {
+        if (sym->role == Role::Function || sym->role == Role::Method) {
+            return {};
+        }
+        return view_of(*sym);
+    }
+    return {};
+}
+
+View parse_ending(const Doc &doc, uint32_t end, uint32_t scope, bool want_func, int nargs, int depth) {
+    if (depth > 40) {
+        return {};
+    }
+    end = skip_back(doc.text, end);
+    if (end == 0 || end > doc.text.size()) {
+        return {};
+    }
+    const char last = doc.text[end - 1];
+    if (last == ')') {
+        const uint32_t open = matching_open(doc.text, end - 1);
+        if (open == static_cast<uint32_t>(-1)) {
+            return {};
+        }
+        if (call_shape(doc.text, open)) {
+            const View callee = parse_ending(doc, open, scope, true, call_nargs(doc.text, open), depth + 1);
+            if (callee.kind != View::Kind::Func) {
+                return {};
+            }
+            return value_result(callee.sym);
+        }
+        const View inner = parse_ending(doc, end - 1, scope, false, -1, depth + 1);
+        return inner.kind == View::Kind::Value ? inner : View{};
+    }
+    if (last == ']') {
+        const uint32_t open = matching_bracket(doc.text, end - 1);
+        if (open == static_cast<uint32_t>(-1)) {
+            return {};
+        }
+        const bool range = bracket_range(doc.text, open, end - 1);
+        const View base = parse_ending(doc, open, scope, false, -1, depth + 1);
+        if (base.kind == View::Kind::Type && !range && base.sym.role != Role::Module) {
+            return base;
+        }
+        if (base.kind == View::Kind::Func && !range) {
+            return base;
+        }
+        if (base.kind != View::Kind::Value) {
+            return {};
+        }
+        return index_view(doc, base.sym, range);
+    }
+    std::string name;
+    uint32_t begin = 0;
+    if (!ident_ending(doc.text, end, name, begin)) {
+        return {};
+    }
+    const uint32_t before = skip_back(doc.text, begin);
+    if (before > 0 && doc.text[before - 1] == '.') {
+        const View base = parse_ending(doc, before - 1, scope, false, -1, depth + 1);
+        return select_member(doc, base, name, want_func, nargs);
+    }
+    return name_view(doc, name, scope, want_func, nargs);
+}
+
+template <typename Push>
+void offer_members(const Doc &doc, const Sym &base, Push push) {
+    if (base.role == Role::Module) {
+        for (const Sym &sym : doc.syms) {
+            if (sym.role != Role::Module && sym.package_key == base.package_key && sym.owner.empty() &&
+                (sym.exported || sym.bare)) {
+                push(sym.name, sym.completion_kind, sym.detail);
+            }
+        }
+        return;
+    }
+    if (slice_receiver(doc, base) || sized_array_receiver(doc, base)) {
+        // `v.len` is the number of elements. The element type's fields are `v[i].field`.
+        push("len", 5, "i32");
+        if (alias_slice(doc, base)) {
+            for (const Sym &sym : doc.syms) {
+                if (sym.role != Role::Method || sym.static_method || sym.owner != base.type_name) {
+                    continue;
+                }
+                if (!sym.exported && !document_owns(doc, sym.package_key)) {
+                    continue;
+                }
+                push(sym.name, sym.completion_kind, sym.detail);
+            }
+        }
+        return;
+    }
+    const std::string type = (base.role == Role::StructType || base.role == Role::EnumType || base.role == Role::Alias ||
+                              base.role == Role::Trait)
+                                 ? base.name
+                                 : base.type_name;
+    const bool on_type = base.role == Role::StructType || base.role == Role::EnumType || base.role == Role::Trait ||
+                         base.role == Role::Alias;
+    for (const Sym &sym : doc.syms) {
+        if (type.empty() || sym.owner != type) {
+            continue;
+        }
+        if (sym.role == Role::Field && !sym.exported && !document_owns(doc, sym.package_key)) {
+            continue;
+        }
+        if (sym.role == Role::Method && on_type != sym.static_method) {
+            continue;
+        }
+        if (sym.role == Role::Method && !sym.exported && !document_owns(doc, sym.package_key)) {
+            continue;
+        }
+        // A trait field is offered on a value. `Shape.` is the type name.
+        if (sym.role == Role::Field && on_type && base.role == Role::Trait) {
+            continue;
+        }
+        // `Entity.next` is offered on the type. `e.next` is a field.
+        // Another package sees the variable only when it is exported.
+        if ((sym.role == Role::Variable || sym.role == Role::Constant) && !sym.owner.empty() &&
+            (!on_type || sym.package_key != base.package_key || (!sym.exported && !document_owns(doc, base.package_key)))) {
+            continue;
+        }
+        push(sym.name, sym.completion_kind, sym.detail);
+    }
+}
+
+} // namespace
+
+// `Point.make(1).`, `slice[0].`, and `(p).` name a value. A bare `p.` does not.
+ExprBase expression_base(const Doc &doc, const Cursor &cursor) {
+    ExprBase out;
+    if (cursor.literal || cursor.member) {
+        return out;
+    }
+    const uint32_t after_dot = skip_back(doc.text, cursor.prefix_begin);
+    if (after_dot == 0 || doc.text[after_dot - 1] != '.') {
+        return out;
+    }
+    const uint32_t receiver = skip_back(doc.text, after_dot - 1);
+    if (receiver == 0) {
+        return out;
+    }
+    const char last = doc.text[receiver - 1];
+    if (last != ')' && last != ']') {
+        return out;
+    }
+    // The receiver is not a name. An unresolved call or index offers nothing, not keywords.
+    out.handled = true;
+    const View view = parse_ending(doc, after_dot - 1, cursor.offset, false, -1, 0);
+    if (view.kind == View::Kind::Value || view.kind == View::Kind::Type) {
+        out.sym = view.sym;
+    }
+    return out;
+}
+
 Json completion_item(const std::string &label, int kind, const std::string &detail, const Doc &doc, const Cursor &cursor) {
     std::vector<std::pair<std::string, Json>> fields;
     fields.emplace_back("label", jstr(label));
@@ -819,63 +1349,14 @@ Json complete(const Doc &doc, const Cursor &cursor) {
             return jobj({{"isIncomplete", jbool(false)}, {"items", jarr(std::move(items))}});
         }
         if (const Sym *base = lookup_bare(doc.syms, doc.uri, cursor.base, cursor.offset)) {
-            if (base->role == Role::Module) {
-                for (const Sym &sym : doc.syms) {
-                    if (sym.role != Role::Module && sym.package_key == base->package_key && sym.owner.empty() &&
-                        (sym.exported || sym.bare)) {
-                        push(sym.name, sym.completion_kind, sym.detail);
-                    }
-                }
-            } else if (slice_receiver(doc, *base) || sized_array_receiver(doc, *base)) {
-                // `v.len` is the number of elements. The element type's fields are `v[i].field`.
-                push("len", 5, "i32");
-                if (alias_slice(doc, *base)) {
-                    for (const Sym &sym : doc.syms) {
-                        if (sym.role != Role::Method || sym.static_method || sym.owner != base->type_name) {
-                            continue;
-                        }
-                        if (!sym.exported && !document_owns(doc, sym.package_key)) {
-                            continue;
-                        }
-                        push(sym.name, sym.completion_kind, sym.detail);
-                    }
-                }
-            } else {
-                const std::string type = (base->role == Role::StructType || base->role == Role::EnumType ||
-                                          base->role == Role::Alias || base->role == Role::Trait)
-                                             ? base->name
-                                             : base->type_name;
-                const bool on_type = base->role == Role::StructType || base->role == Role::EnumType ||
-                                     base->role == Role::Trait || base->role == Role::Alias;
-                for (const Sym &sym : doc.syms) {
-                    if (type.empty() || sym.owner != type) {
-                        continue;
-                    }
-                    if (sym.role == Role::Field && !sym.exported && !document_owns(doc, sym.package_key)) {
-                        continue;
-                    }
-                    if (sym.role == Role::Method && on_type != sym.static_method) {
-                        continue;
-                    }
-                    if (sym.role == Role::Method && !sym.exported && !document_owns(doc, sym.package_key)) {
-                        continue;
-                    }
-                    // A trait field is offered on a value. `Shape.` is the type name.
-                    if (sym.role == Role::Field && on_type && base->role == Role::Trait) {
-                        continue;
-                    }
-                    // `Entity.next` is offered on the type. `e.next` is a field.
-                    // Another package sees the variable only when it is exported.
-                    if ((sym.role == Role::Variable || sym.role == Role::Constant) && !sym.owner.empty() &&
-                        (!on_type || sym.package_key != base->package_key ||
-                         (!sym.exported && !document_owns(doc, base->package_key)))) {
-                        continue;
-                    }
-                    push(sym.name, sym.completion_kind, sym.detail);
-                }
-            }
+            offer_members(doc, *base, push);
         }
     } else if (!cursor.literal) {
+        const ExprBase expr = expression_base(doc, cursor);
+        if (expr.handled) {
+            offer_members(doc, expr.sym, push);
+            return jobj({{"isIncomplete", jbool(false)}, {"items", jarr(std::move(items))}});
+        }
         for (const Sym &sym : doc.syms) {
             if (!sym.bare) {
                 continue;

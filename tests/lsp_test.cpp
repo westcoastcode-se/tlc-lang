@@ -216,6 +216,19 @@ int run_lsp_tests() {
         "    return self.x;\n"
         "}\n"
         "\n"
+        "func Point::copy(self this) Point {\n"
+        "    return self;\n"
+        "}\n"
+        "\n"
+        "func points() []Point {\n"
+        "    var out []Point;\n"
+        "    return out;\n"
+        "}\n"
+        "\n"
+        "func maybe() ?*Point {\n"
+        "    return null;\n"
+        "}\n"
+        "\n"
         "type Shape trait {\n"
         "    w i32;\n"
         "    func area() i32;\n"
@@ -286,6 +299,24 @@ int run_lsp_tests() {
         "    var bare_n = bare.len;\n"
         "    var optp ?*[4]i32 = null;\n"
         "    var optp_n = optp.len;\n"
+        "    var crowd [1]Point;\n"
+        "    var headed *[1]Point = &crowd;\n"
+        "    var opt ?*Point = null;\n"
+        "    var shown = Point.make(1).x;\n"
+        "    var copied_p = p.copy().x;\n"
+        "    var nlen = points().len;\n"
+        "    var cell = slice[0].x;\n"
+        "    var at = crowd[0].x;\n"
+        "    var paren = (p).x;\n"
+        "    var wrapped = (Point.make(1)).x;\n"
+        "    var ranged = slice[0:0].len;\n"
+        "    var bad_opt = opt[0].x;\n"
+        "    var kept_paren = (kept).x;\n"
+        "    var summed = p.sum().x;\n"
+        "    var span_cell = span[0].x;\n"
+        "    var grid_row = grid[0].len;\n"
+        "    var head_cell = headed[0].x;\n"
+        "    var maybe_cell = maybe()[0].x;\n"
         "}\n";
 
     int to_child[2] = {-1, -1};
@@ -661,6 +692,110 @@ int run_lsp_tests() {
     EXPECT(check, optp_dot.line >= 0);
     const std::string optp_items = request_at(to_child[1], from_child[0], 40, "textDocument/completion", uri, optp_dot);
     EXPECT(check, optp_items.find("\"len\"") == std::string::npos);
+
+    const LineCol made_dot = at_needle(source, "Point.make(1).", true);
+    EXPECT(check, made_dot.line >= 0);
+    const std::string made_items = request_at(to_child[1], from_child[0], 90, "textDocument/completion", uri, made_dot);
+    EXPECT_HAS(check, made_items, "\"x\"");
+    EXPECT_HAS(check, made_items, "\"sum\"");
+    EXPECT(check, made_items.find("\"make\"") == std::string::npos);
+
+    const LineCol copy_dot = at_needle(source, "p.copy().", true);
+    EXPECT(check, copy_dot.line >= 0);
+    const std::string copy_items = request_at(to_child[1], from_child[0], 91, "textDocument/completion", uri, copy_dot);
+    EXPECT_HAS(check, copy_items, "\"x\"");
+    EXPECT_HAS(check, copy_items, "\"sum\"");
+    EXPECT(check, copy_items.find("\"make\"") == std::string::npos);
+
+    const LineCol points_dot = at_needle(source, "points().", true);
+    EXPECT(check, points_dot.line >= 0);
+    const std::string points_items = request_at(to_child[1], from_child[0], 92, "textDocument/completion", uri, points_dot);
+    EXPECT_HAS(check, points_items, "\"len\"");
+    EXPECT(check, points_items.find("\"x\"") == std::string::npos);
+
+    const LineCol slice_cell = at_needle(source, "slice[0].", true);
+    EXPECT(check, slice_cell.line >= 0);
+    const std::string slice_cell_items = request_at(to_child[1], from_child[0], 93, "textDocument/completion", uri, slice_cell);
+    EXPECT_HAS(check, slice_cell_items, "\"x\"");
+    EXPECT_HAS(check, slice_cell_items, "\"sum\"");
+    EXPECT(check, slice_cell_items.find("\"len\"") == std::string::npos);
+
+    const LineCol crowd_dot = at_needle(source, "crowd[0].", true);
+    EXPECT(check, crowd_dot.line >= 0);
+    const std::string crowd_items = request_at(to_child[1], from_child[0], 94, "textDocument/completion", uri, crowd_dot);
+    EXPECT_HAS(check, crowd_items, "\"x\"");
+    EXPECT(check, crowd_items.find("\"len\"") == std::string::npos);
+
+    const LineCol paren_dot = at_needle(source, "(p).", true);
+    EXPECT(check, paren_dot.line >= 0);
+    const std::string paren_items = request_at(to_child[1], from_child[0], 95, "textDocument/completion", uri, paren_dot);
+    EXPECT_HAS(check, paren_items, "\"x\"");
+    EXPECT_HAS(check, paren_items, "\"sum\"");
+    EXPECT(check, paren_items.find("\"make\"") == std::string::npos);
+
+    const LineCol wrapped_dot = at_needle(source, "(Point.make(1)).", true);
+    EXPECT(check, wrapped_dot.line >= 0);
+    const std::string wrapped_items = request_at(to_child[1], from_child[0], 96, "textDocument/completion", uri, wrapped_dot);
+    EXPECT_HAS(check, wrapped_items, "\"x\"");
+    EXPECT_HAS(check, wrapped_items, "\"sum\"");
+
+    const LineCol range_dot = at_needle(source, "slice[0:0].", true);
+    EXPECT(check, range_dot.line >= 0);
+    const std::string range_items = request_at(to_child[1], from_child[0], 97, "textDocument/completion", uri, range_dot);
+    EXPECT_HAS(check, range_items, "\"len\"");
+    EXPECT(check, range_items.find("\"x\"") == std::string::npos);
+
+    const LineCol opt_dot = at_needle(source, "opt[0].", true);
+    EXPECT(check, opt_dot.line >= 0);
+    const std::string opt_items = request_at(to_child[1], from_child[0], 98, "textDocument/completion", uri, opt_dot);
+    EXPECT(check, opt_items.find("\"x\"") == std::string::npos);
+    EXPECT(check, opt_items.find("\"func\"") == std::string::npos);
+
+    const LineCol kept_dot = at_needle(source, "(kept).", true);
+    EXPECT(check, kept_dot.line >= 0);
+    const std::string kept_dot_items = request_at(to_child[1], from_child[0], 99, "textDocument/completion", uri, kept_dot);
+    EXPECT(check, kept_dot_items.find("\"x\"") == std::string::npos);
+    EXPECT(check, kept_dot_items.find("\"func\"") == std::string::npos);
+
+    const LineCol sum_dot = at_needle(source, "p.sum().", true);
+    EXPECT(check, sum_dot.line >= 0);
+    const std::string sum_items = request_at(to_child[1], from_child[0], 100, "textDocument/completion", uri, sum_dot);
+    EXPECT(check, sum_items.find("\"x\"") == std::string::npos);
+    EXPECT(check, sum_items.find("\"func\"") == std::string::npos);
+
+    const LineCol span_cell = at_needle(source, "span[0].", true);
+    EXPECT(check, span_cell.line >= 0);
+    const std::string span_cell_items = request_at(to_child[1], from_child[0], 101, "textDocument/completion", uri, span_cell);
+    EXPECT(check, span_cell_items.find("\"len\"") == std::string::npos);
+
+    const LineCol grid_dot = at_needle(source, "grid[0].", true);
+    EXPECT(check, grid_dot.line >= 0);
+    const std::string grid_items = request_at(to_child[1], from_child[0], 102, "textDocument/completion", uri, grid_dot);
+    EXPECT_HAS(check, grid_items, "\"len\"");
+    EXPECT(check, grid_items.find("\"x\"") == std::string::npos);
+
+    const LineCol headed_dot = at_needle(source, "headed[0].", true);
+    EXPECT(check, headed_dot.line >= 0);
+    const std::string headed_items = request_at(to_child[1], from_child[0], 103, "textDocument/completion", uri, headed_dot);
+    EXPECT_HAS(check, headed_items, "\"x\"");
+    EXPECT_HAS(check, headed_items, "\"sum\"");
+    EXPECT(check, headed_items.find("\"len\"") == std::string::npos);
+    EXPECT(check, headed_items.find("\"make\"") == std::string::npos);
+
+    const LineCol maybe_dot = at_needle(source, "maybe()[0].", true);
+    EXPECT(check, maybe_dot.line >= 0);
+    const std::string maybe_items = request_at(to_child[1], from_child[0], 104, "textDocument/completion", uri, maybe_dot);
+    EXPECT(check, maybe_items.find("\"x\"") == std::string::npos);
+    EXPECT(check, maybe_items.find("\"func\"") == std::string::npos);
+
+    LineCol shown_x = at_needle(source, "Point.make(1).x", true);
+    EXPECT(check, shown_x.line >= 0);
+    shown_x.character -= 1;
+    const std::string shown_hover = request_at(to_child[1], from_child[0], 105, "textDocument/hover", uri, shown_x);
+    EXPECT_HAS(check, shown_hover, "x i32");
+
+    const std::string points_hover = request_at(to_child[1], from_child[0], 106, "textDocument/hover", uri, points_dot);
+    EXPECT_HAS(check, points_hover, "len i32");
 
     const std::string over_source =
         "func once(n i32) i32;\n"

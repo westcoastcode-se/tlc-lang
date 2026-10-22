@@ -370,6 +370,8 @@ struct Sym {
     // The type is a struct value, so `{.field = ...}` can name its fields.
     bool direct_type = false;
     int indirections = 0;
+    // Bit 0 is the outermost pointer. A set bit is `?*`.
+    uint32_t optional = 0;
     bool is_array = false;
     int array_len = 0;
     // A function on a struct or enum with no `this` parameter.
@@ -421,7 +423,8 @@ struct Doc {
 
 int completion_kind(Role role);
 int symbol_kind(Role role);
-void mark_direct(Sym &sym, const std::string &type_name, int indirections, bool is_array, int array_len = 0);
+void mark_direct(Sym &sym, const std::string &type_name, int indirections, bool is_array, int array_len = 0,
+                 uint32_t optional = 0);
 void apply_result(Sym &sym, const FunctionDecl &fn);
 void note_params(Sym &sym, const FunctionDecl &fn);
 void put_loc(Sym &sym, const std::string &text, SourceLoc loc, const std::string &name);
@@ -525,6 +528,15 @@ bool slice_receiver(const Doc &doc, const Sym &sym);
 bool alias_sized_array(const Doc &doc, const Sym &sym);
 bool sized_array_receiver(const Doc &doc, const Sym &sym);
 Json completion_item(const std::string &label, int kind, const std::string &detail, const Doc &doc, const Cursor &cursor);
+
+// The value before `.` when that receiver is a call, an index, or a parenthesized expression.
+// `handled` is false when the receiver is a name. `sym` is then the value, or the type `Name[args]`.
+struct ExprBase {
+    bool handled = false;
+    Sym sym;
+};
+
+ExprBase expression_base(const Doc &doc, const Cursor &cursor);
 Json complete(const Doc &doc, const Cursor &cursor);
 Json hover_text(const std::string &value, Pos start, Pos end);
 Json hover_of(const Sym &sym, Pos start, Pos end);

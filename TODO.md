@@ -16,7 +16,6 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 `tlc lsp` publishes diagnostics and answers completion, hover, definition, and document symbols. These are not in place:
 
-- Completion after a dot when the receiver is a call, an index, or a parenthesized expression. `{.field = ...}` completes the struct's fields. A name bound with `:=`, `var name = expression`, or `const name = expression` completes from that expression when it is a call, a name, a field, a cast, or a struct value `Name{}`.
 - Semantic tokens from the server. Colors come from the tree-sitter grammar.
 
 ## `const if`

@@ -180,6 +180,7 @@ int run_lsp() {
                 continue;
             }
             const Sym *sym = nullptr;
+            const ExprBase expr = expression_base(*doc, cursor);
             if (const std::string init_type = designated_struct(*doc, cursor); !init_type.empty()) {
                 sym = find_field(*doc, init_type, cursor.word);
             } else if (cursor.member) {
@@ -188,15 +189,19 @@ int run_lsp() {
                 } else if (const Sym *base = lookup_bare(doc->syms, doc->uri, cursor.base, cursor.offset)) {
                     sym = refine_overloads(member_candidates(doc->syms, *base, cursor.word), doc->text, cursor, true);
                 }
+            } else if (expr.handled) {
+                // `Point.make(1).x` is the field of the call. A missing member is not a bare name.
+                sym = refine_overloads(member_candidates(doc->syms, expr.sym, cursor.word), doc->text, cursor, true);
             } else {
                 sym = refine_overloads(bare_candidates(doc->syms, doc->uri, cursor.word, cursor.offset), doc->text, cursor,
                                        false);
             }
             if (sym == nullptr) {
                 // `len` is the element count. It is not a field, so it has no symbol of its own.
-                if (method == "textDocument/hover" && cursor.member && cursor.qualifier.empty() && cursor.word == "len") {
-                    if (const Sym *base = lookup_bare(doc->syms, doc->uri, cursor.base, cursor.offset);
-                        base != nullptr && (slice_receiver(*doc, *base) || sized_array_receiver(*doc, *base))) {
+                if (method == "textDocument/hover" && cursor.qualifier.empty() && cursor.word == "len") {
+                    const Sym *base = cursor.member ? lookup_bare(doc->syms, doc->uri, cursor.base, cursor.offset)
+                                                    : (expr.handled ? &expr.sym : nullptr);
+                    if (base != nullptr && (slice_receiver(*doc, *base) || sized_array_receiver(*doc, *base))) {
                         const Pos start = locate(doc->text, cursor.prefix_begin);
                         const Pos end = locate(doc->text, cursor.prefix_begin + static_cast<uint32_t>(cursor.word.size()));
                         send_json(result_response(*id, hover_text("len i32", start, end)));
