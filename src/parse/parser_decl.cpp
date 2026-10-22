@@ -136,8 +136,9 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
                                                               peek(1).kind == TokenKind::KwConst ||
                                                               peek(1).kind == TokenKind::KwExtern));
         if (rejected) {
-            // A member is `name type` or `export name type`. A constant is
-            // `const Type::name` beside the type. `var` belongs outside: `var Type::name`.
+            // A member is `name type` or `export name type`. It is already a
+            // variable, so `var` is not written here. A constant is
+            // `const Type::name` beside the type. `var Type::name` is beside it too.
             diags_.error(peek().loc, "not supported yet");
             skip_member();
         } else {
