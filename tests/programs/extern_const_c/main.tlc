@@ -1,0 +1,8 @@
+type Entity struct { n i32; };
+extern(abi="c") const shown i32 = 20;
+extern(abi="c", name="mark") const flag = 7;
+extern(abi="c") const Entity::next = 15;
+
+func main() i32 {
+    return shown + flag + Entity.next;
+}

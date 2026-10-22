@@ -58,7 +58,8 @@ void Checker::declare_assoc(const VarDecl &var) {
         error(var.loc, "extern(abi=\"c\") on a trait or a generic");
         return;
     }
-    if (var.is_extern) {
+    // `extern var Type::name` is not a constant. `extern const Type::name` is file scope.
+    if (var.is_extern && !var.is_const_decl) {
         error(var.loc, "not supported yet");
     }
     if (on_trait) {
@@ -614,10 +615,6 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 continue;
             }
             if (var->is_const_decl) {
-                if (var->is_extern) {
-                    error(var->loc, "not supported yet");
-                    continue;
-                }
                 VarDecl &written = const_cast<VarDecl &>(*var);
                 // Folded before typedefs, so `[N]i32` can use it. A later const keeps its own type.
                 if (written.has_const) {

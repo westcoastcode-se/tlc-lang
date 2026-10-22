@@ -1,0 +1,10 @@
+type Entity struct { n i32; };
+extern const limit = 4;
+extern const Entity::next = 15;
+extern(abi="tlc") const step = 3;
+type Box[T type] struct { value T; };
+extern const Box[T]::extra = 8;
+
+func main() i32 {
+    return limit + Entity.next + step + Box[i32].extra;
+}

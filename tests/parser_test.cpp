@@ -568,6 +568,19 @@ int run_parser_tests() {
     }
 
     {
+        const Parsed parsed = parse_source(
+            "extern const limit = 4;\n"
+            "extern const Entity::next = 15;\n"
+            "extern(abi=\"c\", name=\"mark\") const flag = 7;\n"
+            "extern(abi=\"tlc\") const step = 3;\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var limit := (int 4) extern)\n");
+        EXPECT_HAS(check, parsed.dump, "(var Entity::next := (int 15) extern)\n");
+        EXPECT_HAS(check, parsed.dump, "(var flag := (int 7) extern(abi=\"c\", name=\"mark\"))\n");
+        EXPECT_HAS(check, parsed.dump, "(var step := (int 3) extern)\n");
+    }
+
+    {
         const Parsed parsed = parse_source("extern(name=\"\") func missing() i32;\n");
         EXPECT_HAS(check, parsed.errors, "type mismatch");
     }

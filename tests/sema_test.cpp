@@ -8618,6 +8618,41 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "extern const limit = 4;\n"
+            "type Entity struct { id i32; };\n"
+            "extern const Entity::next = 15;\n"
+            "extern(abi=\"tlc\") const step = 3;\n"
+            "type Box[T type] struct { value T; };\n"
+            "extern const Box[T]::extra = 8;\n"
+            "func main() i32 { return limit + Entity.next + step + Box[i32].extra; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "extern(abi=\"c\") const Box[T]::limit = 4;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") on a trait or a generic");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "extern var Entity::next i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(name=\"limit\") const n = 4;\n"
+            "func main() i32 { return n; }\n");
+        EXPECT_HAS(check, errors, "name requires abi=\"c\"");
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Entity struct { id i32; };\n"
             "const Entity::next = 40;\n"
             "func main() i32 { Entity.next = 1; return 0; }\n");

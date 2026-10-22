@@ -8,7 +8,6 @@ What the language pages leave out. The compiler reports most of these as `not su
 
 A function on a struct or enum with no `this` parameter is called as `Type.name(...)`. `export` publishes `pkg.Type.name(...)` and `pkg.Vec[i32].name(...)`. A constant is not a struct member. It is `const Entity::next = 1` or `const Box[T]::limit = 1`, written beside the type, at file scope. `const next` inside the braces stays `not supported yet`. `const Entity::next` inside a function stays `not supported yet`. These forms are not supported yet:
 
-- `extern` on `const Entity::next`.
 - `var next` inside a struct. The variable is `var Entity::next` or `export var Box[T]::extra`, written beside the type. Another package reads and assigns `pkg.Box[i32].extra`.
 - `var Entity::next` inside a function. The variable is file scope.
 - `Entity::next := 1`. The form is `var Entity::next i32 = 1` or `var Entity::next = 1`.

@@ -784,6 +784,10 @@ void Checker::instantiate_assoc(uint32_t owner_file, const StructDecl &templ, co
         if (src == nullptr || src->name.empty() || assoc_defined(owner_file, spec_name, src->name)) {
             continue;
         }
+        // `extern(abi="c") const Box[T]::limit` is one C name. It is not specialized.
+        if (src->extern_c) {
+            continue;
+        }
         VarDecl copy = clone_var(*src);
         copy.owner = spec_name;
         copy.owner_params.clear();

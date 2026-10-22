@@ -614,10 +614,11 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     }
     reject_tlc_link_name(extern_c, link_name, name_loc);
     if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
-        if (is_extern) {
-            diags_.error(peek().loc, "not supported yet");
-        }
+        // `extern const name` and `extern const Type::name` are file scope.
         VarDecl var = parse_const_decl(exported);
+        var.is_extern = is_extern;
+        var.extern_c = extern_c;
+        var.link_name = link_name;
         TopDecl top;
         top.data = std::move(var);
         unit.decls.push_back(std::move(top));
