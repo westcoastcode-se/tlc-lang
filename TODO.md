@@ -105,9 +105,9 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 - A trait used as a type alias, or `**Shape`. A parameter is `Shape` or `*Shape`. `var s Shape`, `var s *Shape`, `func give() Shape`, `func give() *Shape`, `[2]Shape`, `[]Shape`, and a field `item Shape` in a struct or a trait are `trait has no size`.
 - `...` on a function that takes a trait parameter. `extern` and `extern(abi="tlc")` on that function are accepted. Each struct is its own symbol. The call stays `use(r)` or `value.paint(s)`. A body defines that symbol. A prototype with no body is accepted. A call that specializes it is `not supported yet`. `export` publishes that function when the ABI is not C. `extern(abi="c")` on that function is rejected.
-- A named function as the argument of a single-method trait. The argument is an anonymous function.
 - `(*a).apply(n)` when `a` is a trait pointer passed as an anonymous function. The call is `a.apply(n)`.
 - A value on a trait field, such as `w i32 = 1`. It is `not supported yet`.
+- `SomeTrait(value)` chooses that trait when one function or one method has several parameter lists and those lists take different traits. `use(Drawable(s))` and `p.show(Movable(s))` name the list. A child trait is one of those lists: `use(Named(r))` and `use(Shape(r))` when `Named` is `trait(Shape)`. The value has to satisfy the trait that was written. `use(s)` and `p.show(s)` are `type mismatch`, including when the value satisfies only one list. `Drawable(s)` is `type mismatch`. `var d Drawable = Drawable(s)` is `trait has no size`. `use(*Drawable(&s))` is a pointer cast: `--check` accepts it and `--run` reports `type mismatch`.
 
 ## for each
 

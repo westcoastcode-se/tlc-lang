@@ -880,8 +880,70 @@ bool Checker::accept_trait_lambda(const Expr &expr, const Type &want) {
     return true;
 }
 
+bool Checker::accept_trait_named(const Expr &expr, const Type &want) {
+    const Type *method = sole_trait_method(want);
+    if (method == nullptr) {
+        return false;
+    }
+    // One concrete function. An overload, a generic, and `unsafe func` keep their own diagnostics.
+    // A prototype has no address to pass. `extern(abi="c")` is that address in another object.
+    const auto matches = [&](const Symbol &symbol) {
+        if (!symbol.is_function || symbol.is_template || symbol.unsafe_fn || symbol.fn_captures ||
+            symbol.lists.size() != 1) {
+            return false;
+        }
+        const FnList &list = symbol.lists.front();
+        if (!list.has_body && !list.extern_c) {
+            return false;
+        }
+        return symbol.type.kind == TypeKind::Function && same_type(symbol.type, *method);
+    };
+    if (const auto *name = std::get_if<Expr::Name>(&expr.data)) {
+        const Symbol *symbol = lookup(name->text);
+        if (symbol == nullptr || !matches(*symbol)) {
+            return false;
+        }
+        check_raw(expr, true);
+        return true;
+    }
+    const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+    if (selector == nullptr || selector->base == nullptr) {
+        return false;
+    }
+    const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+    if (base == nullptr) {
+        return false;
+    }
+    const Symbol *symbol = lookup(base->text);
+    if (symbol != nullptr && symbol->is_package) {
+        const Symbol *member = find_export(symbol->package_file, selector->field);
+        if (member == nullptr || !matches(*member)) {
+            return false;
+        }
+        check_raw(expr, true);
+        return true;
+    }
+    // `Point.step` is the static function. A shadowed name is an ordinary value.
+    if (symbol != nullptr && !symbol->is_type) {
+        return false;
+    }
+    if (!static_type_owner(base->text)) {
+        return false;
+    }
+    const MethodInfo *info = find_named_method(base->text, selector->field);
+    if (info == nullptr || !info->is_static || !info->more.empty() || info->unsafe_fn || info->type.kind != TypeKind::Function ||
+        !same_type(info->type, *method)) {
+        return false;
+    }
+    if (!info->has_body && !info->extern_c) {
+        return false;
+    }
+    check_raw(expr, true);
+    return true;
+}
+
 void Checker::check_call_arg(const Expr &expr, const Type &want) {
-    if (accept_trait_lambda(expr, want)) {
+    if (accept_trait_named(expr, want) || accept_trait_lambda(expr, want)) {
         return;
     }
     const std::size_t before = diags_.size();

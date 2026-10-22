@@ -451,6 +451,9 @@ class Checker {
     // An anonymous function used as a single-method trait argument. The body is checked
     // against that method, with no receiver.
     bool accept_trait_lambda(const Expr &expr, const Type &want);
+    // A named function with that method's signature. A prototype, an overload, an
+    // `unsafe func`, and a function-pointer variable stay on the ordinary path.
+    bool accept_trait_named(const Expr &expr, const Type &want);
     void check_call_arg(const Expr &expr, const Type &want);
     // Receiver checks shared by an enum value and a primitive alias.
     Type finish_value_method(const Expr::Call &node, const Expr::Selector &selector, const MethodInfo &method,

@@ -1,0 +1,36 @@
+type Adder trait {
+    func apply(n i32) i32;
+};
+
+func inc(n i32) i32 {
+    return n + 1;
+}
+
+func take(a Adder) i32 {
+    return a.apply(1);
+}
+
+func take_ptr(a *Adder) i32 {
+    return a.apply(4);
+}
+
+type Counter struct {
+    base i32;
+};
+
+func Counter::add(self *this, a Adder) i32 {
+    return self.base + a.apply(1);
+}
+
+func Counter::step(n i32) i32 {
+    return n + 3;
+}
+
+func main() i32 {
+    func local(n i32) i32 {
+        return n + 4;
+    }
+    var c Counter;
+    c.base = 6;
+    return take(inc) + take_ptr(inc) + c.add(inc) + take(Counter.step) + take(local);
+}

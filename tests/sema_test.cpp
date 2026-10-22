@@ -3330,8 +3330,94 @@ int run_sema_tests() {
             "};\n"
             "func inc(n i32) i32 { return n + 1; }\n"
             "func take(a Adder) i32 { return a.apply(1); }\n"
+            "func take_ptr(a *Adder) i32 { return a.apply(1); }\n"
+            "export func bump(n i32) i32 { return n + 2; }\n"
+            "type Counter struct { base i32; };\n"
+            "func Counter::add(self *this, a Adder) i32 { return self.base + a.apply(1); }\n"
+            "func Counter::step(n i32) i32 { return n + 3; }\n"
+            "func main() i32 {\n"
+            "  func local(n i32) i32 { return n + 4; }\n"
+            "  var c Counter;\n"
+            "  c.base = 1;\n"
+            "  return take(inc) + take_ptr(inc) + take(bump) + c.add(inc) + take(Counter.step) + take(local);\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n i32) i32;\n"
+            "};\n"
+            "func boom(n i32) void {}\n"
+            "func take(a Adder) i32 { return a.apply(1); }\n"
+            "func main() i32 { return take(boom); }\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected Adder, found func(i32) void");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n i32) i32;\n"
+            "};\n"
+            "func inc(n i32) i32;\n"
+            "func take(a Adder) i32 { return a.apply(1); }\n"
+            "func main() i32 { return take(inc); }\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected Adder, found func(i32) i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n i32) i32;\n"
+            "};\n"
+            "func inc(n i32) i32 { return n + 1; }\n"
+            "func inc(n i32, m i32) i32 { return n + m; }\n"
+            "func take(a Adder) i32 { return a.apply(1); }\n"
+            "func main() i32 { return take(inc); }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.find("type mismatch") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n i32) i32;\n"
+            "};\n"
+            "func inc(n i32) i32 { return n + 1; }\n"
+            "func take(a Adder) i32 { return a.apply(1); }\n"
+            "func main() i32 {\n"
+            "  var f = inc;\n"
+            "  return take(f);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected Adder, found *func(i32) i32");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n i32) i32;\n"
+            "};\n"
+            "unsafe func inc(n i32) i32 { return n + 1; }\n"
+            "func take(a Adder) i32 { return a.apply(1); }\n"
             "func main() i32 { return take(inc); }\n");
         EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Adder trait {\n"
+            "  func apply(n i32) i32;\n"
+            "};\n"
+            "func take(a Adder) i32 {\n"
+            "  var x = 1;\n"
+            "  func local(n i32) i32 { return n + x; }\n"
+            "  return take(local);\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {

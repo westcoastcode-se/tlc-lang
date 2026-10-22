@@ -1,0 +1,13 @@
+import "geom";
+
+type Adder trait {
+    func apply(n i32) i32;
+};
+
+func take(a Adder) i32 {
+    return a.apply(40);
+}
+
+func main() i32 {
+    return take(geom.inc);
+}
