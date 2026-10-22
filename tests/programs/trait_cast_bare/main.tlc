@@ -1,0 +1,29 @@
+type Drawable trait {
+    func draw() i32;
+};
+
+type Movable trait {
+    func move() i32;
+};
+
+type Sprite struct {
+    n i32;
+};
+
+func Sprite::draw(self this) i32 {
+    return self.n;
+}
+
+func use(s Drawable) i32 {
+    return s.draw();
+}
+
+func use(s Movable) i32 {
+    return s.move();
+}
+
+func main() i32 {
+    var s Sprite;
+    s.n = 4;
+    return use(s);
+}

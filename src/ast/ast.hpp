@@ -128,6 +128,8 @@ struct Expr {
         mutable bool type_name = false;
         // The parameter list selected for this call. Null when the name has one list.
         mutable const FunctionDecl *selected = nullptr;
+        // `seq.Seq(items)` names that trait. The argument is the value, not a call.
+        mutable bool trait_cast = false;
         // `a.malloc[i32]()` through a trait. The concrete struct's method has this name.
         mutable std::string trait_method;
     };
@@ -225,7 +227,11 @@ struct Expr {
         std::vector<FnParam> fn_params;
         bool fn_variadic = false;
         std::vector<FnParam> fn_results;
+        // `Getter[i32](value)`. Empty when the cast writes `Getter(value)` and the type is inferred.
+        std::vector<TypeArg> type_args;
         std::unique_ptr<Expr> expr;
+        // The cast names a trait. Codegen passes the value through.
+        mutable bool trait_value = false;
     };
     struct Bool {
         SourceLoc loc{};

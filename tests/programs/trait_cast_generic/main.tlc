@@ -1,0 +1,25 @@
+type Getter[T type] trait {
+    func get() T;
+};
+
+type Hold struct {
+    n i32;
+};
+
+func Hold::get(self this) i32 {
+    return self.n;
+}
+
+func use(g Getter[i32]) i32 {
+    return g.get();
+}
+
+func use(g Getter[u8]) i32 {
+    return 1;
+}
+
+func main() i32 {
+    var h Hold;
+    h.n = 9;
+    return use(Getter(h)) + use(Getter[i32](h));
+}

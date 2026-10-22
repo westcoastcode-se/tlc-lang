@@ -110,6 +110,12 @@ void CodeGen::declare_functions(const PackageNode &node) {
             binding.trait_id = returns_void ? -1 : ret.trait_id;
             binding.enum_id = returns_void ? -1 : ret.enum_id;
             file.functions.emplace(name, binding);
+            // Overloads are not stored under the plain name. The chosen list is found from its decl.
+            for (const FunctionDecl *decl : acc.decls) {
+                if (decl != nullptr && decl->type_params.empty()) {
+                    decl_keys_[decl] = DeclKey{node.file_id, name};
+                }
+            }
             continue;
         }
         const std::string object = acc.extern_c ? acc.plain : name;

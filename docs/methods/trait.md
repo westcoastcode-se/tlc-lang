@@ -67,6 +67,8 @@ A trait method may return several results, the same way a function does. `var a,
 
 A trait names a field that the struct already has. `s.w` reads it, and `s.w = 1` writes it, for both `s Shape` and `s *Shape`. Writing through `*const Shape` is reported as `type mismatch`.
 
+`Drawable(value)` names that trait when one function or one method has several parameter lists and those lists take different traits. `use(Drawable(s))` and `p.show(Movable(s))` select the list. A child trait is one of those lists: `use(Named(r))` and `use(Shape(r))` when `Named` is `trait(Shape)`. The value has to satisfy the trait that was written. `use(s)` and `p.show(s)` are `type mismatch`, including when the value satisfies only one list. A generic trait takes its type from the value. `Getter(h)` is `Getter[i32]` when `h.get()` returns `i32`, and `seq.Seq(items)` is `seq.Seq[i32]` when `items` is an array of `i32`. `Getter[i32](h)` and `seq.Seq[i32](items)` write that type. `var d Drawable = Drawable(s)` is `trait has no size`. `use(*Drawable(&s))` is a pointer cast: `--check` accepts it and `--run` reports `type mismatch`. The cast adds no instruction. `main` that stores 4 and returns `use(Drawable(s))` executes 6 instructions, the same as `use(s)`: the store, the copy into the argument register, and `callq`, with no trace frame at that call. One list keeps the symbol `main.use.spec.Sprite`. Several lists put the trait in the name, such as `main.take.spec.Named.Rect`.
+
 ```c
 type Shape trait {
     w i32;

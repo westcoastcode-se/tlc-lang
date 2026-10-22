@@ -925,12 +925,33 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
     }
     symbol += fn.name;
     symbol += ".spec";
+    // One list stays `main.use.spec.Rect`. Two lists that take the same struct need the trait name.
+    bool several = false;
+    if (const auto file = files_.find(current_file_); file != files_.end()) {
+        const std::string key = function_key(fn);
+        int lists = 0;
+        for (const auto &entry : file->second.functions) {
+            if (entry.second.decl != nullptr && function_key(*entry.second.decl) == key) {
+                ++lists;
+            }
+        }
+        several = lists > 1;
+    }
     for (std::size_t i = 0; i < spec.size(); ++i) {
         const int sid = spec[i];
         if (sid == -1) {
             continue;
         }
         symbol += '.';
+        if (several && i < fn.params.size() && param_is_trait(current_file_, fn.params[i])) {
+            if (!fn.params[i].type_package.empty()) {
+                symbol += fn.params[i].type_package;
+                symbol += '.';
+            }
+            symbol += fn.params[i].type_name;
+            append_type_args_key(symbol, fn.params[i].type_args);
+            symbol += '.';
+        }
         if (sid == kFnSpec) {
             symbol += "fn";
             continue;
@@ -1032,7 +1053,8 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
 
 void CodeGen::generic_method_call(const Binding &method, const TypedValue *receiver, const Expr::Call &node,
                                   PreparedCall &prepared) {
-    if (method.decl == nullptr) {
+    const FunctionDecl *fn = node.selected != nullptr ? node.selected : method.decl;
+    if (fn == nullptr) {
         error(node.loc, "type mismatch");
         return;
     }
@@ -1045,7 +1067,7 @@ void CodeGen::generic_method_call(const Binding &method, const TypedValue *recei
         values.push_back(arg == nullptr ? TypedValue{} : emit_rvalue(*arg));
     }
     std::vector<llvm::Value *> stored;
-    llvm::Function *function = specialize(*method.decl, method, values, node.loc, stored);
+    llvm::Function *function = specialize(*fn, method, values, node.loc, stored);
     if (function == nullptr) {
         return;
     }

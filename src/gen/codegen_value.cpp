@@ -377,6 +377,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return rhs;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (node.trait_cast && node.args.size() == 1 && node.args.front() != nullptr) {
+                    return emit_rvalue(*node.args.front());
+                }
                 if (node.type_name) {
                     const auto *selector = node.callee == nullptr ? nullptr : std::get_if<Expr::Selector>(&node.callee->data);
                     if (selector == nullptr || selector->base == nullptr) {
@@ -409,6 +412,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 if (node.callee != nullptr) {
                     if (const auto *named = std::get_if<Expr::Name>(&node.callee->data)) {
+                        // An overloaded trait parameter is stored under a suffixed name.
+                        // `selected` is the list sema chose. Its binding has no concrete function yet.
+                        if (node.selected != nullptr && function_is_generic(current_file_, *node.selected)) {
+                            Binding meta;
+                            if (const Binding *chosen = binding_for_decl(node.selected)) {
+                                meta = *chosen;
+                            }
+                            meta.decl = node.selected;
+                            meta.is_generic = true;
+                            return emit_generic_call(meta, node);
+                        }
                         if (const Binding *binding = lookup(named->text);
                             binding != nullptr && binding->is_generic && binding->decl != nullptr) {
                             return emit_generic_call(*binding, node);
@@ -824,6 +838,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 return {null_ptr(), 1, false, -1, false, true};
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 const TypedValue source = node.expr ? emit_rvalue(*node.expr) : TypedValue{};
+                // `Drawable(value)` is the value. The trait has no representation.
+                if (node.trait_value) {
+                    return source;
+                }
                 const Lowered target =
                     node.is_fn_ptr ? lower_fnptr(current_file_, node.type_name, node.type_package, node.is_struct,
                                                  node.is_enum, node.ret_indirections, node.indirections, node.fn_params,

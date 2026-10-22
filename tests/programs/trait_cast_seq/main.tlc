@@ -1,0 +1,15 @@
+import "std/seq";
+
+func use(items seq.Seq[i32]) i32 {
+    return items.at(0);
+}
+
+func use(items seq.Seq[u8]) i32 {
+    return 1;
+}
+
+func main() i32 {
+    var items [2]i32;
+    items[0] = 20;
+    return use(seq.Seq(items)) + use(seq.Seq[i32](items));
+}

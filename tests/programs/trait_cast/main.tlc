@@ -1,0 +1,79 @@
+type Drawable trait {
+    func draw() i32;
+};
+
+type Movable trait {
+    func move() i32;
+};
+
+type Sprite struct {
+    n i32;
+};
+
+func Sprite::draw(self this) i32 {
+    return self.n;
+}
+
+func Sprite::move(self this) i32 {
+    return self.n + 1;
+}
+
+func use(s Drawable) i32 {
+    return s.draw();
+}
+
+func use(s Movable) i32 {
+    return s.move();
+}
+
+type Painter struct {
+    k i32;
+};
+
+func Painter::show(self this, s Drawable) i32 {
+    return self.k + s.draw();
+}
+
+func Painter::show(self this, s Movable) i32 {
+    return self.k + s.move();
+}
+
+type Shape trait {
+    func area() i32;
+};
+
+type Named trait(Shape) {
+    func label() i32;
+};
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+func Rect::label(self this) i32 {
+    return self.w;
+}
+
+func take(s Shape) i32 {
+    return s.area();
+}
+
+func take(s Named) i32 {
+    return s.label();
+}
+
+func main() i32 {
+    var s Sprite;
+    s.n = 4;
+    var p Painter;
+    p.k = 10;
+    var r Rect;
+    r.w = 3;
+    r.h = 5;
+    return use(Drawable(s)) + p.show(Movable(s)) + take(Shape(r)) + take(Named(r));
+}

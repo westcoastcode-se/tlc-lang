@@ -658,6 +658,34 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (deferring) {
                     checking_defer_ = false;
                 }
+                if (node.callee != nullptr && node.args.size() == 1 && node.args.front() != nullptr) {
+                    std::string trait_name;
+                    std::string trait_package;
+                    std::vector<TypeArg> trait_args = node.type_args;
+                    bool trait_callee = false;
+                    if (const auto *named = std::get_if<Expr::Name>(&node.callee->data)) {
+                        trait_name = named->text;
+                        trait_callee = true;
+                    } else if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
+                        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+                        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+                        if (package != nullptr && package->is_package) {
+                            trait_package = base->text;
+                            trait_name = selector->field;
+                            if (trait_args.empty()) {
+                                trait_args = selector->type_args;
+                            }
+                            trait_callee = true;
+                        }
+                    }
+                    if (trait_callee) {
+                        Type picked;
+                        if (as_trait_cast(trait_package, trait_name, trait_args, node.args.front().get(), node.loc, picked)) {
+                            node.trait_cast = true;
+                            return picked;
+                        }
+                    }
+                }
                 if (node.callee != nullptr) {
                     if (const std::optional<Type> generic = maybe_generic_call(const_cast<Expr &>(expr), used)) {
                         return *generic;
@@ -1505,6 +1533,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_meta();
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 (void)used;
+                if (!node.is_fn_ptr && node.indirections == 0) {
+                    Type picked;
+                    if (as_trait_cast(node.type_package, node.type_name, node.type_args, node.expr.get(), node.loc, picked)) {
+                        node.trait_value = true;
+                        return picked;
+                    }
+                }
                 if (node.is_fn_ptr && node.type_name == "invalid") {
                     if (node.expr) {
                         check_expr(*node.expr, true);

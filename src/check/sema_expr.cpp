@@ -836,6 +836,260 @@ const Type *Checker::sole_trait_method(const Type &want) const {
     return &methods.front().type;
 }
 
+bool Checker::as_trait_cast(const std::string &package, const std::string &name, const std::vector<TypeArg> &written, Expr *value,
+                           SourceLoc loc, Type &out) {
+    out = type_invalid();
+    if (name.empty()) {
+        return false;
+    }
+    uint32_t root = file_id_;
+    if (!package.empty()) {
+        const Symbol *symbol = lookup(package);
+        if (symbol == nullptr || !symbol->is_package) {
+            return false;
+        }
+        root = symbol->package_file;
+    }
+    const TraitDecl *templ = nullptr;
+    uint32_t owner = root;
+    for (const uint32_t id : files_in_package(root)) {
+        const auto file = trait_templates_.find(id);
+        if (file == trait_templates_.end()) {
+            continue;
+        }
+        const auto found = file->second.find(name);
+        if (found == file->second.end()) {
+            continue;
+        }
+        owner = id;
+        templ = found->second;
+        break;
+    }
+    int concrete = -1;
+    if (templ == nullptr) {
+        for (const uint32_t id : files_in_package(root)) {
+            concrete = package_trait(id, name);
+            if (concrete >= 0) {
+                break;
+            }
+        }
+        if (concrete < 0) {
+            return false;
+        }
+    }
+    if (templ != nullptr && !package.empty() && !templ->exported) {
+        bool same = false;
+        for (const uint32_t id : files_in_package(file_id_)) {
+            if (id == owner) {
+                same = true;
+            }
+        }
+        if (!same) {
+            error(loc, name + " is not exported");
+            return true;
+        }
+    }
+    const auto finish = [&](const Type &trait, const Type *known) -> bool {
+        if (trait.kind != TypeKind::Trait) {
+            return true;
+        }
+        if (value != nullptr && known == nullptr &&
+            (accept_trait_named(*value, trait) || accept_trait_lambda(*value, trait))) {
+            out = trait;
+            return true;
+        }
+        if (value == nullptr) {
+            error(loc, "type mismatch");
+            return true;
+        }
+        Type source = known != nullptr ? *known : check_raw(*value, true);
+        if (source.kind == TypeKind::Invalid) {
+            return true;
+        }
+        if (source.kind == TypeKind::Function) {
+            const Type *method = sole_trait_method(trait);
+            if (method == nullptr || !same_type(source, *method)) {
+                error(loc, "type mismatch");
+                return true;
+            }
+            out = trait;
+            return true;
+        }
+        const std::size_t before = diags_.size();
+        expect_value(source, trait, *value, loc);
+        if (diags_.size() == before) {
+            out = trait;
+        }
+        return true;
+    };
+    if (templ == nullptr) {
+        if (!written.empty()) {
+            error(loc, "type mismatch");
+            return true;
+        }
+        return finish(type_trait(concrete), nullptr);
+    }
+    std::vector<TypeArg> args = written;
+    Type source;
+    const Type *known = nullptr;
+    if (args.empty()) {
+        if (value == nullptr) {
+            error(loc, "type mismatch");
+            return true;
+        }
+        if (std::holds_alternative<Expr::Func>(value->data)) {
+            error(loc, "type mismatch");
+            return true;
+        }
+        source = check_raw(*value, true);
+        known = &source;
+        if (source.kind == TypeKind::Invalid) {
+            return true;
+        }
+        const TypeParam &param = templ->type_params.front();
+        Type bound;
+        bool have = false;
+        const auto agree = [&](const Type &got) {
+            if (!have) {
+                bound = got;
+                have = true;
+                return true;
+            }
+            return same_type(bound, got);
+        };
+        const bool iteration_value = templ->is_extern && file_links_iteration(owner) &&
+                                     ((source.kind == TypeKind::Array && source.element != nullptr) ||
+                                      (source.kind == TypeKind::Pointer && source.decayed_len > 0 && source.pointee != nullptr));
+        if (iteration_value) {
+            Type element = source.kind == TypeKind::Array ? *source.element : *source.pointee;
+            element.is_const = false;
+            if (!agree(element)) {
+                error(loc, "type mismatch");
+                return true;
+            }
+        } else if (source.kind == TypeKind::Struct) {
+            const auto mention = [&](const std::string &written_name, const std::string &written_package, int indirections, bool is_array,
+                                      const std::vector<TypeArg> &type_args) {
+                return written_name == param.name && written_package.empty() && type_args.empty() && !is_array &&
+                       (indirections == 0 || indirections == 1);
+            };
+            const auto take = [&](int indirections, const Type &got) {
+                if (indirections == 0) {
+                    return agree(got);
+                }
+                if (got.kind != TypeKind::Pointer || got.pointee == nullptr) {
+                    return false;
+                }
+                return agree(*got.pointee);
+            };
+            if (source.struct_id >= 0 && source.struct_id < static_cast<int>(structs_.size())) {
+                const StructInfo &info = structs_[static_cast<std::size_t>(source.struct_id)];
+                for (const FunctionDecl &method : templ->methods) {
+                    if (method.name.empty()) {
+                        continue;
+                    }
+                    bool hidden = false;
+                    const MethodInfo *head = find_visible_method(info.file_id, info.name, method.name, hidden);
+                    if (head == nullptr) {
+                        continue;
+                    }
+                    const bool result_t = mention(method.return_type, method.type_package, method.indirections, false, {});
+                    bool param_t = false;
+                    for (const Param &slot : method.params) {
+                        if (!slot.is_receiver && mention(slot.type_name, slot.type_package, slot.indirections, slot.is_array, slot.type_args)) {
+                            param_t = true;
+                        }
+                    }
+                    if (!result_t && !param_t) {
+                        continue;
+                    }
+                    const auto unify = [&](const MethodInfo &candidate) {
+                        if (!candidate.has_body || candidate.is_static || candidate.type.kind != TypeKind::Function ||
+                            candidate.type.result == nullptr || candidate.type.params.empty()) {
+                            return false;
+                        }
+                        if (result_t && !take(method.indirections, *candidate.type.result)) {
+                            return false;
+                        }
+                        std::size_t index = 1;
+                        for (const Param &slot : method.params) {
+                            if (slot.is_receiver) {
+                                continue;
+                            }
+                            if (!mention(slot.type_name, slot.type_package, slot.indirections, slot.is_array, slot.type_args)) {
+                                ++index;
+                                continue;
+                            }
+                            if (index >= candidate.type.params.size() || !take(slot.indirections, candidate.type.params[index])) {
+                                return false;
+                            }
+                            ++index;
+                        }
+                        return true;
+                    };
+                    bool matched = unify(*head);
+                    for (const MethodInfo &extra : head->more) {
+                        matched = unify(extra) || matched;
+                    }
+                    (void)matched;
+                }
+                const Type object = type_struct(source.struct_id);
+                for (const FieldDecl &field : templ->fields) {
+                    if (!mention(field.type_name, field.type_package, field.indirections, field.is_array, field.type_args)) {
+                        continue;
+                    }
+                    Type got;
+                    if (!lookup_field(object, field.name, got) || !take(field.indirections, got)) {
+                        error(loc, "type mismatch");
+                        return true;
+                    }
+                }
+            }
+        } else if (source.kind == TypeKind::Function) {
+            if (templ->methods.size() == 1) {
+                const FunctionDecl &method = templ->methods.front();
+                const bool result_t = method.return_type == param.name && method.type_package.empty() && method.indirections == 0;
+                if (result_t && source.result != nullptr) {
+                    agree(*source.result);
+                }
+            }
+        }
+        if (!have) {
+            error(loc, "type mismatch");
+            return true;
+        }
+        TypeArg arg;
+        arg.loc = loc;
+        SpecArg spelled;
+        if (!spell_type(bound, spelled)) {
+            error(loc, "type mismatch");
+            return true;
+        }
+        arg.type_name = spelled.type_name;
+        arg.type_package = spelled.type_package;
+        arg.is_struct = spelled.is_struct;
+        arg.is_enum = spelled.is_enum;
+        arg.indirections = spelled.indirections;
+        arg.optional = spelled.optional;
+        arg.const_pointee = spelled.const_pointee;
+        arg.is_array = spelled.is_array;
+        arg.elem_const = spelled.elem_const;
+        arg.array_len = spelled.array_len;
+        arg.shells = spelled.shells;
+        args.push_back(std::move(arg));
+    }
+    const std::string spec = specialize_trait(*templ, owner, args, loc);
+    if (spec.empty()) {
+        return true;
+    }
+    const int id = package_trait(file_id_, spec);
+    if (id < 0) {
+        error(loc, "type mismatch");
+        return true;
+    }
+    return finish(type_trait(id), known);
+}
+
 bool Checker::accept_trait_lambda(const Expr &expr, const Type &want) {
     const Type *method = sole_trait_method(want);
     if (method == nullptr) {

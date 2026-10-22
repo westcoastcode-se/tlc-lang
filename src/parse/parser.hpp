@@ -294,6 +294,7 @@ class Parser {
         std::vector<FnParam> fn_params;
         bool fn_variadic = false;
         std::vector<FnParam> fn_results;
+        std::vector<TypeArg> type_args;
     };
     struct PointerPrefix {
         int count = 0;

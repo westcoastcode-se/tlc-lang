@@ -246,16 +246,19 @@ bool Parser::skip_type_base(std::size_t &index, int leading, bool cast) const {
     if (head.kind != TokenKind::Identifier) {
         return false;
     }
-    // `ShapeType(value)` after the type is declared in this file. `f()` stays a call.
-    if (cast && type_names_.count(head.text) != 0 && peek(index + 1).kind == TokenKind::LParen) {
+    // `ShapeType(value)` and `Getter[i32](value)` after the type is declared in this file.
+    // `f()` stays a call. `*Point(p)` is a cast. `*f()` stays a dereference.
+    if (cast && type_names_.count(head.text) != 0) {
         ++index;
-        return true;
-    }
-    // `*Point(p)` after Point is declared. `*f()` stays a dereference.
-    // `sizeof(*Point)` is an expression; sema treats a type name as a type.
-    if (cast && leading > 0 && type_names_.count(head.text) != 0) {
-        ++index;
-        return true;
+        if (peek(index).kind == TokenKind::LBracket) {
+            if (!skip_balanced(index, TokenKind::LBracket, TokenKind::RBracket)) {
+                return false;
+            }
+        }
+        if (peek(index).kind == TokenKind::LParen) {
+            return true;
+        }
+        return leading > 0;
     }
     // `Point *` is the old postfix cast. The caller reports type mismatch.
     if (leading == 0 && peek(index + 1).kind == TokenKind::Star) {
@@ -484,6 +487,10 @@ Parser::ParenType Parser::parse_cast_type() {
         type.name = peek().text;
         ++pos_;
     }
+    // `Getter[i32](value)`. `[N]T` is written with the brackets in front, so these are type arguments.
+    if (!type.name.empty() && type.name != "invalid" && check(TokenKind::LBracket)) {
+        type.type_args = parse_type_args();
+    }
     if (check(TokenKind::Star)) {
         // `int*(p)` and `sizeof(int *)`. The star belongs in front of the type.
         diags_.error(peek().loc, "type mismatch");
@@ -521,6 +528,7 @@ std::unique_ptr<Expr> Parser::parse_cast_expr() {
     node.fn_params = type.fn_params;
     node.fn_variadic = type.fn_variadic;
     node.fn_results = type.fn_results;
+    node.type_args = std::move(type.type_args);
     expect(TokenKind::LParen, "expected '('");
     if (check(TokenKind::RParen)) {
         error_here("expected an expression");
