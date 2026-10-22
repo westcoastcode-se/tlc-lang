@@ -835,6 +835,28 @@ void Checker::check_stmt(const Stmt &stmt) {
                         init_mark_all(tracked);
                     }
                 };
+                // A `new` pointee and an `&name` address keep the same field bits as a written `var p *T`.
+                auto note_pointer = [&](Symbol &live) {
+                    if (node.value == nullptr || live.type.kind != TypeKind::Pointer || live.type.pointee == nullptr) {
+                        return;
+                    }
+                    if (const auto *created = std::get_if<Expr::New>(&node.value->data);
+                        created != nullptr && created->count == nullptr && !created->count_inferred) {
+                        init_track_pointee(live, *live.type.pointee, created->init.get(), false);
+                        return;
+                    }
+                    const auto *unary = std::get_if<Expr::Unary>(&node.value->data);
+                    if (unary == nullptr || unary->op != TokenKind::Amp || unary->expr == nullptr) {
+                        return;
+                    }
+                    const auto *named = std::get_if<Expr::Name>(&unary->expr->data);
+                    if (named == nullptr) {
+                        return;
+                    }
+                    if (const Symbol *target = lookup(named->text); target != nullptr && target->init_id != 0) {
+                        live.pointee_id = target->init_id;
+                    }
+                };
                 auto declare_new = [&](std::size_t index) {
                     const SourceLoc loc = index < node.name_locs.size() ? node.name_locs[index] : node.loc;
                     Symbol symbol;
@@ -852,11 +874,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         if (Symbol *live = in_current(node.names[index])) {
                             init_open(*live);
                             init_cover(*live, node.value.get());
-                            if (const auto *created = std::get_if<Expr::New>(&node.value->data);
-                                created != nullptr && created->count == nullptr && !created->count_inferred &&
-                                live->type.kind == TypeKind::Pointer && live->type.pointee != nullptr) {
-                                init_track_pointee(*live, *live->type.pointee, created->init.get(), false);
-                            }
+                            note_pointer(*live);
                         }
                     }
                 };
@@ -883,6 +901,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         if (Symbol *live = in_current(node.names[index])) {
                             init_open(*live);
                             init_cover(*live, node.value.get());
+                            note_pointer(*live);
                         }
                     }
                 };
@@ -921,7 +940,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                         continue;
                     }
                     Type type = type_of_var(var);
-                    const bool hides = !var.is_const_decl && !scopes_.empty() && scopes_.back().symbols.contains(var.name);
+                    // Same-block `var n i32 = n + 1` replaces the name. An outer `n` stays, and the
+                    // initializer still reads it. A name with no earlier binding is opened first.
+                    const bool same_block =
+                        !var.is_const_decl && !scopes_.empty() && scopes_.back().symbols.contains(var.name);
+                    const bool outer = !var.is_const_decl && !same_block && lookup(var.name) != nullptr;
+                    const bool sees_previous = same_block || outer;
                     const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
                     const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
                     const bool slice = var.is_array && !var.ptr_to_array && var.array_len < 0;
@@ -931,7 +955,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                                             !(var.is_array && !var.ptr_to_array && !array_list && !slice && !array_value);
                     // The previous binding is still visible while this initializer is checked.
                     bool init_ready = false;
-                    if (hides && plain_init) {
+                    if (sees_previous && plain_init) {
                         const std::size_t before = diags_.size();
                         const bool saved_new = init_new_partial_;
                         init_allow_partial_ = true;
@@ -942,8 +966,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                         init_allow_partial_ = false;
                         init_new_partial_ = saved_new;
                         init_ready = diags_.size() == before;
-                        scopes_.back().symbols.erase(var.name);
-                    } else if (hides) {
+                        if (same_block) {
+                            scopes_.back().symbols.erase(var.name);
+                        }
+                    } else if (same_block) {
                         scopes_.back().symbols.erase(var.name);
                     }
                     Symbol symbol;
@@ -972,8 +998,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(var.loc, "not supported yet");
                     } else if (var.init && type.kind != TypeKind::Invalid) {
                         const std::size_t before = diags_.size();
-                        // `hides && plain_init` was checked while the previous binding was visible.
-                        if (!(hides && plain_init)) {
+                        // `sees_previous && plain_init` was checked while the previous binding was visible.
+                        if (!(sees_previous && plain_init)) {
                             const bool saved_new = init_new_partial_;
                             if (!var.is_const_decl) {
                                 init_allow_partial_ = true;
@@ -985,7 +1011,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             init_allow_partial_ = false;
                             init_new_partial_ = saved_new;
                         }
-                        if ((init_ready || (!(hides && plain_init) && diags_.size() == before)) && live != nullptr) {
+                        if ((init_ready || (!(sees_previous && plain_init) && diags_.size() == before)) && live != nullptr) {
                             init_cover(*live, var.init.get());
                             if (const auto *created = std::get_if<Expr::New>(&var.init->data);
                                 created != nullptr && created->count == nullptr && !created->count_inferred &&

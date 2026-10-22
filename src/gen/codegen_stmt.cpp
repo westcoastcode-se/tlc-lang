@@ -1235,9 +1235,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     if (var.name.empty()) {
                         continue;
                     }
-                    // A second `var` in this block hides the previous slot. Emit the
-                    // initializer before publishing the new slot so it reads the old one.
-                    const bool hides = !var.is_const_decl && scopes_.back().contains(var.name);
+                    // A previous slot with this name, in this block or an outer one, stays
+                    // visible while the initializer runs. Publish the new slot after that.
+                    const bool hides = !var.is_const_decl && lookup(var.name) != nullptr;
                     auto publish = [&](const Binding &binding) {
                         scopes_.back()[var.name] = binding;
                         alias_capture(var.name, binding);

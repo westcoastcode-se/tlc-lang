@@ -1,0 +1,23 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func main() i32 {
+    var n = 1;
+    var inner = 0;
+    {
+        var n i32 = n + 1;
+        inner = n;
+    }
+    var sum = 0;
+    for (var i i32 = 0; i < 3; i = i + 1) {
+        var i i32 = i + 10;
+        sum = sum + i;
+    }
+    var p = new Point{.x = 1, .y = 2};
+    var p = new Point{.x = 4, .y = 9};
+    var got = p.y;
+    delete p;
+    return inner + sum + got;
+}

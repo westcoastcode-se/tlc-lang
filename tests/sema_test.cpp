@@ -9166,5 +9166,124 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "uninitialized");
     }
 
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var p = new Point{.x = 1, .y = 2};\n"
+            "  var p = new Point{.x = 4};\n"
+            "  return p.y;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var p = new Point{.x = 1, .y = 2};\n"
+            "  p := new Point{.x = 4};\n"
+            "  return p.y;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Node struct { value i32; next ?*Node; };\n"
+            "func main() i32 {\n"
+            "  var p = new Node{.value = 1, .next = null};\n"
+            "  var p = new Node{.value = 2};\n"
+            "  if (p.next == null) {\n"
+            "    return p.value;\n"
+            "  }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var p = new Point{.x = 1, .y = 2};\n"
+            "  var p = new Point{.x = 4, .y = 9};\n"
+            "  return p.y;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var s Point;\n"
+            "  s.x = 3;\n"
+            "  var p = &s;\n"
+            "  return p.y;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var s Point;\n"
+            "  s.x = 3;\n"
+            "  var p = &s;\n"
+            "  var p = &s;\n"
+            "  return p.y;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func main() i32 {\n"
+            "  var s Point;\n"
+            "  s.x = 3;\n"
+            "  s.y = 5;\n"
+            "  var p = &s;\n"
+            "  return p.y;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var n = 1;\n"
+            "  {\n"
+            "    var n i32 = n + 1;\n"
+            "    return n;\n"
+            "  }\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var sum = 0;\n"
+            "  for (var i i32 = 0; i < 3; i = i + 1) {\n"
+            "    var i i32 = i + 10;\n"
+            "    sum = sum + i;\n"
+            "  }\n"
+            "  return sum;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var n i32 = n;\n"
+            "  return n;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "uninitialized");
+    }
+
     return check.failed;
 }
