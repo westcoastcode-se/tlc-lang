@@ -60,6 +60,7 @@ std::string help_text() {
         "Vendor packages live in lib/tlc/vendor next to the compiler prefix, or in TLC_LIB.\n"
         "import \"vendor/name\" loads that package. Static and shared libraries beside its\n"
         ".tlc files are linked. A file named link in the package adds further linker arguments.\n"
+        "link_unix or link_windows adds arguments for that OS family after link.\n"
         "Standard packages live in lib/tlc. import \"std/testing\" loads the testing package.\n"
         "import \"builtin\" is the compiler package.\n"
         "import \"builtin/env/consts\" supplies consts.family, unix or windows.\n";

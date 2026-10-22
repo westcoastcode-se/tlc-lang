@@ -560,7 +560,8 @@ class Resolver {
     }
 
     // A static archive wins over a shared library of the same stem. The
-    // optional link file adds arguments after those libraries.
+    // optional link file adds arguments after those libraries. link_unix or
+    // link_windows is read for this compiler's family and added after link.
     void append_vendor_libraries(const fs::path &dir, SourceLoc loc) {
         struct Chosen {
             std::string filename;
@@ -645,6 +646,10 @@ class Resolver {
         const fs::path link_file = dir / "link";
         if (fs::is_regular_file(link_file, ec) && !ec) {
             append_link_file(dir, link_file, loc);
+        }
+        const fs::path family_link = dir / (std::string("link_") + host_os_family());
+        if (fs::is_regular_file(family_link, ec) && !ec) {
+            append_link_file(dir, family_link, loc);
         }
     }
 

@@ -50,7 +50,8 @@ struct ResolveRequest {
     std::string vendor_root;
     // Directory of standard packages, `<prefix>/lib/tlc`. Searched after the
     // entry directory and each `-P` root. `import "std/testing"` loads
-    // `<std_root>/std/testing`. A `link` file there is added to `link_args`.
+    // `<std_root>/std/testing`. A `link` file there is added to `link_args`,
+    // then `link_unix` or `link_windows` for this compiler's family.
     std::string std_root;
     // Replacement text keyed by the path the loader opens. The language server
     // uses this for the unsaved buffer. A missing file is still loaded when its

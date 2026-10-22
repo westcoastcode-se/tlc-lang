@@ -37,7 +37,7 @@ lib/tlc/vendor/sdl3/
     link
 ```
 
-`examples/triangle` imports `vendor/sdl3` and `vendor/gl`. Each of those packages names a system library in its `link` file.
+`examples/triangle` imports `vendor/sdl3` and `vendor/gl`. Each of those packages names a system library in its `link` file. `link_unix` or `link_windows` adds arguments for that family.
 
 ## Cost
 

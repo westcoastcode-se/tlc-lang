@@ -64,13 +64,14 @@ struct Resolved {
 };
 
 Resolved resolve_at(const std::string &entry, const std::vector<std::string> &roots = {},
-                    const std::string &vendor = {}) {
+                    const std::string &vendor = {}, const std::string &std_root = {}) {
     tlc::SourceSet sources;
     tlc::DiagnosticEngine diags(sources);
     tlc::ResolveRequest request;
     request.entry = entry;
     request.package_paths = roots;
     request.vendor_root = vendor;
+    request.std_root = std_root;
     Resolved result;
     result.ok = tlc::resolve_packages(request, sources, diags, result.graph);
     result.errors = diags.render();
@@ -386,6 +387,98 @@ int run_pkg_tests() {
         EXPECT_HAS(check, args, "-Wl,-Bstatic");
         EXPECT_HAS(check, args, "-Wl,-rpath," + (listed / "run").lexically_normal().string());
         EXPECT(check, args.find("\n-Bstatic") == std::string::npos);
+    }
+
+    {
+        TempTree entry;
+        TempTree vendor;
+        EXPECT(check, entry.ok());
+        EXPECT(check, vendor.ok());
+        entry.write("main.tlc", "import \"vendor/fam\";\nfunc main() i32 { return 0; }\n");
+        vendor.write("fam/fam.tlc", "export extern(abi=\"c\") func fam() i32;\n");
+        vendor.write("fam/libfam.a", "");
+        vendor.write("fam/link", "-lfromlink\n");
+        vendor.write("fam/link_unix", "-lfromunix\n");
+        vendor.write("fam/link_windows", "-lfromwindows\n");
+        vendor.write("fam/link_linux", "-lfromlinux\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
+        EXPECT(check, resolved.ok);
+        const std::string args = join_args(resolved.graph.link_args);
+#if defined(_WIN32)
+        const std::string family_flag = "-lfromwindows";
+        const std::string other_flag = "-lfromunix";
+#else
+        const std::string family_flag = "-lfromunix";
+        const std::string other_flag = "-lfromwindows";
+#endif
+        const auto archive = args.find("libfam.a");
+        const auto from_link = args.find("-lfromlink");
+        const auto from_family = args.find(family_flag);
+        EXPECT(check, archive != std::string::npos && from_link != std::string::npos && from_family != std::string::npos);
+        EXPECT(check, archive < from_link && from_link < from_family);
+        EXPECT(check, args.find(other_flag) == std::string::npos);
+        EXPECT(check, args.find("-lfromlinux") == std::string::npos);
+    }
+
+    {
+        TempTree entry;
+        TempTree vendor;
+        EXPECT(check, entry.ok());
+        EXPECT(check, vendor.ok());
+        entry.write("main.tlc", "import \"vendor/onlyfam\";\nfunc main() i32 { return 0; }\n");
+        vendor.write("onlyfam/onlyfam.tlc", "export extern(abi=\"c\") func onlyfam() i32;\n");
+#if defined(_WIN32)
+        vendor.write("onlyfam/link_windows", "-lonlyfam\n");
+        vendor.write("onlyfam/link_unix", "-lotherfam\n");
+#else
+        vendor.write("onlyfam/link_unix", "-lonlyfam\n");
+        vendor.write("onlyfam/link_windows", "-lotherfam\n");
+#endif
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory());
+        EXPECT(check, resolved.ok);
+        EXPECT(check, resolved.graph.link_args.size() == 1);
+        EXPECT_EQ(check, resolved.graph.link_args[0], "-lonlyfam");
+    }
+
+    {
+        TempTree entry;
+        TempTree library;
+        EXPECT(check, entry.ok());
+        EXPECT(check, library.ok());
+        entry.write("main.tlc", "import \"std/demo\";\nfunc main() i32 { return 0; }\n");
+        library.write("std/demo/demo.tlc", "package demo;\n");
+        library.write("std/demo/link", "-lstdbase\n");
+        library.write("std/demo/link_unix", "-lstdunix\n");
+        library.write("std/demo/link_windows", "-lstdwindows\n");
+        library.write("std/demo/link_linux", "-lstdlinux\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, {}, library.directory());
+        EXPECT(check, resolved.ok);
+        const std::string args = join_args(resolved.graph.link_args);
+#if defined(_WIN32)
+        const std::string family_flag = "-lstdwindows";
+        const std::string other_flag = "-lstdunix";
+#else
+        const std::string family_flag = "-lstdunix";
+        const std::string other_flag = "-lstdwindows";
+#endif
+        const auto base = args.find("-lstdbase");
+        const auto family = args.find(family_flag);
+        EXPECT(check, base != std::string::npos && family != std::string::npos && base < family);
+        EXPECT(check, args.find(other_flag) == std::string::npos);
+        EXPECT(check, args.find("-lstdlinux") == std::string::npos);
+    }
+
+    {
+        TempTree entry;
+        EXPECT(check, entry.ok());
+        entry.write("main.tlc", "import \"a\";\nfunc main() i32 { return 0; }\n");
+        entry.write("a/a.tlc", "export func a() i32 { return 1; }\n");
+        entry.write("a/link", "-lnope\n");
+        entry.write("a/link_unix", "-lnopefam\n");
+        entry.write("a/link_windows", "-lnopefam\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"));
+        EXPECT(check, resolved.ok);
+        EXPECT(check, resolved.graph.link_args.empty());
     }
 
     {
