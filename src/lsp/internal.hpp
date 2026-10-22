@@ -379,6 +379,9 @@ struct Sym {
     bool variadic = false;
     uint32_t scope_begin = 0;
     uint32_t scope_end = 0;
+    // The initializer of this binding. A use inside it still names the previous binding.
+    uint32_t init_begin = 0;
+    uint32_t init_end = 0;
     Role role = Role::Variable;
     int completion_kind = 6;
     int symbol_kind = 13;
@@ -412,6 +415,7 @@ struct Doc {
     std::string text;
     int version = 0;
     std::vector<Sym> syms;
+    std::vector<Note> notes;
     std::vector<std::string> published;
 };
 
@@ -532,5 +536,10 @@ void recheck(Doc &doc);
 const Json *text_document(const Json &params);
 Json error_response(const Json &id, int code, const std::string &message);
 Json result_response(const Json &id, Json result);
+const Sym *symbol_at(const Doc &doc, const Cursor &cursor);
+Json rename_edits(const Doc &doc, const Cursor &cursor, const std::string &new_name);
+Json format_edits(const Doc &doc);
+Json code_actions(const Doc &doc, Pos start, Pos end);
+Json signature_help(const Doc &doc, uint32_t offset);
 
 } // namespace tlc::lsp_impl

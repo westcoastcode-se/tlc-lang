@@ -58,6 +58,7 @@ add_library(tlc_lib
     src/lsp/lsp_json.cpp
     src/lsp/lsp_index.cpp
     src/lsp/lsp_complete.cpp
+    src/lsp/lsp_edit.cpp
     src/lsp/lsp.cpp
 )
 target_include_directories(tlc_lib PUBLIC "${CMAKE_SOURCE_DIR}/src" ${LLVM_INCLUDE_DIRS})

@@ -633,6 +633,58 @@ Shape each_element(const Expr &expr, const UnitIndex &index, const std::vector<S
     return shape;
 }
 
+// Uses between `=` or `:=` and `;` still name the previous binding. `var n = n + 1` is that span.
+void note_init(Sym &sym, const std::string &text) {
+    if (sym.name.empty() || sym.scope_begin + sym.name.size() > text.size()) {
+        return;
+    }
+    uint32_t i = sym.scope_begin + static_cast<uint32_t>(sym.name.size());
+    bool found = false;
+    while (i < text.size()) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            i = next;
+            continue;
+        }
+        if (i + 1 < text.size() && text[i] == ':' && text[i + 1] == '=') {
+            i += 2;
+            found = true;
+            break;
+        }
+        if (text[i] == '=' && (i + 1 >= text.size() || text[i + 1] != '=')) {
+            ++i;
+            found = true;
+            break;
+        }
+        if (text[i] == ';' || text[i] == '\n') {
+            return;
+        }
+        ++i;
+    }
+    if (!found) {
+        return;
+    }
+    sym.init_begin = i;
+    int depth = 0;
+    while (i < text.size()) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            i = next;
+            continue;
+        }
+        const char c = text[i];
+        if (c == '(' || c == '[' || c == '{') {
+            ++depth;
+        } else if ((c == ')' || c == ']' || c == '}') && depth > 0) {
+            --depth;
+        } else if (c == ';' && depth == 0) {
+            break;
+        }
+        ++i;
+    }
+    sym.init_end = i;
+}
+
 void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri, uint32_t scope_end, std::vector<Sym> &out,
                const UnitIndex &index) {
     if (const auto *decl = std::get_if<Stmt::Decl>(&stmt.data)) {
@@ -652,6 +704,7 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             sym.scope_end = scope_end;
             put_loc(sym, text, var.loc, var.name);
             sym.scope_begin = var.loc.valid() ? var.loc.offset : 0;
+            note_init(sym, text);
             add_sym(out, std::move(sym));
         }
         return;
@@ -680,6 +733,7 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             const SourceLoc loc = n < bind->name_locs.size() ? bind->name_locs[n] : bind->loc;
             put_loc(sym, text, loc, bind->names[n]);
             sym.scope_begin = loc.valid() ? loc.offset : 0;
+            note_init(sym, text);
             add_sym(out, std::move(sym));
         }
         return;

@@ -989,7 +989,8 @@ void publish(Doc &doc, const std::vector<Note> &notes) {
 void recheck(Doc &doc) {
     Checked checked = check_buffer(doc.path, doc.text, doc.uri);
     doc.syms = std::move(checked.syms);
-    publish(doc, checked.notes);
+    doc.notes = checked.notes;
+    publish(doc, doc.notes);
 }
 
 const Json *text_document(const Json &params) {

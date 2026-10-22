@@ -841,6 +841,64 @@ int run_lsp_tests() {
     EXPECT(check, after_items.find("\"label\":\"cell\"") == std::string::npos);
     EXPECT(check, after_items.find("\"label\":\"part\"") == std::string::npos);
 
+    const std::string edit_source =
+        "func add(x i32, y i32) i32 {\n"
+        "return x + y;\n"
+        "}\n"
+        "func main() i32 {\n"
+        "    var n = 1;\n"
+        "    var n = n + 1;\n"
+        "    return n + add(1, 2);\n"
+        "}\n";
+    const std::string edit_uri = "file:///tmp/tlc-lsp-edit.tlc";
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  edit_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(edit_source) + R"("}}})");
+
+    LineCol rename_use = at_needle(edit_source, "return n", false);
+    rename_use.character += static_cast<int>(std::string("return ").size());
+    send_json(to_child[1], std::string(R"({"jsonrpc":"2.0","id":70,"method":"textDocument/rename","params":{"textDocument":{"uri":")") +
+                         edit_uri + R"("},"position":{"line":)" + std::to_string(rename_use.line) + R"(,"character":)" +
+                         std::to_string(rename_use.character) + R"(},"newName":"m"}})");
+    const std::string renamed = read_until(from_child[0], "\"id\":70", 3000);
+    EXPECT_HAS(check, renamed, "\"newText\":\"m\"");
+    EXPECT(check, renamed.find("\"newText\":\"m\"") != renamed.rfind("\"newText\":\"m\""));
+
+    LineCol rename_old = at_needle(edit_source, "var n = 1", false);
+    rename_old.character += static_cast<int>(std::string("var ").size());
+    send_json(to_child[1], std::string(R"({"jsonrpc":"2.0","id":71,"method":"textDocument/rename","params":{"textDocument":{"uri":")") +
+                         edit_uri + R"("},"position":{"line":)" + std::to_string(rename_old.line) + R"(,"character":)" +
+                         std::to_string(rename_old.character) + R"(},"newName":"kept"}})");
+    const std::string renamed_old = read_until(from_child[0], "\"id\":71", 3000);
+    EXPECT_HAS(check, renamed_old, "\"newText\":\"kept\"");
+
+    send_json(to_child[1], std::string(R"({"jsonrpc":"2.0","id":72,"method":"textDocument/formatting","params":{"textDocument":{"uri":")") +
+                         edit_uri + R"("},"options":{"tabSize":4,"insertSpaces":true}}})");
+    const std::string formatted = read_until(from_child[0], "\"id\":72", 3000);
+    EXPECT_HAS(check, formatted, "    return x + y;");
+
+    LineCol call_at = at_needle(edit_source, "add(1, 2)", false);
+    call_at.character += static_cast<int>(std::string("add(").size());
+    send_json(to_child[1], std::string(R"({"jsonrpc":"2.0","id":73,"method":"textDocument/signatureHelp","params":{"textDocument":{"uri":")") +
+                         edit_uri + R"("},"position":{"line":)" + std::to_string(call_at.line) + R"(,"character":)" +
+                         std::to_string(call_at.character) + "}}}");
+    const std::string signature = read_until(from_child[0], "\"id\":73", 3000);
+    EXPECT_HAS(check, signature, "x i32");
+    EXPECT_HAS(check, signature, "y i32");
+    EXPECT_HAS(check, signature, "\"activeParameter\":0");
+
+    const std::string semi_source = "func main() i32 {\n    return 1\n}\n";
+    const std::string semi_uri = "file:///tmp/tlc-lsp-semi.tlc";
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  semi_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(semi_source) + R"("}}})");
+    send_json(to_child[1], std::string(R"({"jsonrpc":"2.0","id":74,"method":"textDocument/codeAction","params":{"textDocument":{"uri":")") +
+                         semi_uri +
+                         R"("},"range":{"start":{"line":0,"character":0},"end":{"line":3,"character":0}},"context":{"diagnostics":[]}}})");
+    const std::string action = read_until(from_child[0], "\"id\":74", 3000);
+    EXPECT_HAS(check, action, "Insert ';'");
+    EXPECT_HAS(check, action, "\"newText\":\";\"");
+
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);
     EXPECT_HAS(check, stopped, "\"result\":null");

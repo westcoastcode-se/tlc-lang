@@ -66,7 +66,13 @@ int run_lsp() {
                                  {"completionProvider", jobj({{"triggerCharacters", jarr({jstr(".")})}, {"resolveProvider", jbool(false)}})},
                                  {"hoverProvider", jbool(true)},
                                  {"definitionProvider", jbool(true)},
-                                 {"documentSymbolProvider", jbool(true)}})},
+                                 {"documentSymbolProvider", jbool(true)},
+                                 {"renameProvider", jbool(true)},
+                                 {"documentFormattingProvider", jbool(true)},
+                                 {"codeActionProvider", jbool(true)},
+                                 {"signatureHelpProvider",
+                                  jobj({{"triggerCharacters", jarr({jstr("("), jstr(",")})},
+                                       {"retriggerCharacters", jarr({jstr(")")})}})}})},
                            {"serverInfo", jobj({{"name", jstr("tlc")}, {"version", jstr(kVersion)}})}})));
             continue;
         }
@@ -204,6 +210,48 @@ int run_lsp() {
             } else {
                 send_json(result_response(*id, location_of(*sym)));
             }
+            continue;
+        }
+        if (method == "textDocument/rename" || method == "textDocument/formatting" || method == "textDocument/codeAction" ||
+            method == "textDocument/signatureHelp") {
+            const Json *doc_json = text_document(*params);
+            const std::string uri = doc_json == nullptr ? std::string{} : doc_json->str("uri");
+            Doc *doc = find_doc(uri);
+            if (doc == nullptr) {
+                const bool list = method == "textDocument/formatting" || method == "textDocument/codeAction";
+                send_json(result_response(*id, list ? jarr({}) : jnull()));
+                continue;
+            }
+            if (method == "textDocument/formatting") {
+                send_json(result_response(*id, format_edits(*doc)));
+                continue;
+            }
+            if (method == "textDocument/codeAction") {
+                const Json *range = params->find("range");
+                Pos start;
+                Pos end;
+                if (range != nullptr) {
+                    if (const Json *from = range->find("start"); from != nullptr) {
+                        start.line = static_cast<int>(from->integer("line", 0));
+                        start.character = static_cast<int>(from->integer("character", 0));
+                    }
+                    if (const Json *to = range->find("end"); to != nullptr) {
+                        end.line = static_cast<int>(to->integer("line", 0));
+                        end.character = static_cast<int>(to->integer("character", 0));
+                    }
+                }
+                send_json(result_response(*id, code_actions(*doc, start, end)));
+                continue;
+            }
+            const Json *position = params->find("position");
+            const int line = position == nullptr ? 0 : static_cast<int>(position->integer("line", 0));
+            const int character = position == nullptr ? 0 : static_cast<int>(position->integer("character", 0));
+            if (method == "textDocument/rename") {
+                const Cursor cursor = cursor_at(doc->text, line, character);
+                send_json(result_response(*id, rename_edits(*doc, cursor, params->str("newName"))));
+                continue;
+            }
+            send_json(result_response(*id, signature_help(*doc, offset_at(doc->text, line, character))));
             continue;
         }
         send_json(error_response(*id, -32601, "method not found"));
