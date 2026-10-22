@@ -760,6 +760,87 @@ int run_lsp_tests() {
     const std::string local_n_def = request_at(to_child[1], from_child[0], 53, "textDocument/definition", over_uri, local_n);
     EXPECT_HAS(check, local_n_def, "\"line\":36,");
 
+    const std::string each_source =
+        "type Bag struct { n i32; };\n"
+        "func main() i32 {\n"
+        "    var item i32 = 7;\n"
+        "    var items [4]i32 = {1, 2, 3, 4};\n"
+        "    var view []i32 = items[:];\n"
+        "    var bag Bag;\n"
+        "    var sum i32 = 0;\n"
+        "    for (var item : items) {\n"
+        "        sum = sum + item;\n"
+        "    }\n"
+        "    for (const cell : items) {\n"
+        "        sum = sum + cell;\n"
+        "    }\n"
+        "    for (var p : ptr_of(items)) {\n"
+        "        sum = sum + *p;\n"
+        "    }\n"
+        "    for (var n : view) {\n"
+        "        sum = sum + n;\n"
+        "    }\n"
+        "    for (var part : bag) {\n"
+        "        sum = sum + 0;\n"
+        "    }\n"
+        "    return item + sum;\n"
+        "}\n";
+    const std::string each_uri = "file:///tmp/tlc-for-each-lsp.tlc";
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  each_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(each_source) + R"("}}})");
+
+    const LineCol each_decl = at_needle(each_source, "for (var item :", false);
+    const LineCol each_use = at_needle(each_source, "item;", false);
+    const std::string each_def = request_at(to_child[1], from_child[0], 54, "textDocument/definition", each_uri, each_use);
+    EXPECT(check, each_decl.line >= 0 && each_use.line >= 0);
+    EXPECT_HAS(check, each_def, "\"line\":" + std::to_string(each_decl.line) + ",");
+    const LineCol outer_item = at_needle(each_source, "var item i32", false);
+    EXPECT(check, each_def.find("\"line\":" + std::to_string(outer_item.line) + ",") == std::string::npos);
+    const std::string each_hover = request_at(to_child[1], from_child[0], 55, "textDocument/hover", each_uri, each_use);
+    EXPECT_HAS(check, each_hover, "item i32");
+    const LineCol each_complete = at_needle(each_source, "item;", false);
+    const std::string each_items =
+        request_at(to_child[1], from_child[0], 56, "textDocument/completion", each_uri, each_complete);
+    EXPECT_HAS(check, each_items, "\"label\":\"item\"");
+
+    const LineCol cell_use = at_needle(each_source, "cell;", false);
+    const std::string cell_hover = request_at(to_child[1], from_child[0], 57, "textDocument/hover", each_uri, cell_use);
+    EXPECT_HAS(check, cell_hover, "const cell i32");
+    const LineCol cell_decl = at_needle(each_source, "for (const cell :", false);
+    const std::string cell_def = request_at(to_child[1], from_child[0], 58, "textDocument/definition", each_uri, cell_use);
+    EXPECT_HAS(check, cell_def, "\"line\":" + std::to_string(cell_decl.line) + ",");
+
+    const LineCol ptr_use = at_needle(each_source, "p;", false);
+    const std::string ptr_hover = request_at(to_child[1], from_child[0], 59, "textDocument/hover", each_uri, ptr_use);
+    EXPECT_HAS(check, ptr_hover, "p *i32");
+    const LineCol ptr_decl = at_needle(each_source, "for (var p :", false);
+    const std::string ptr_def = request_at(to_child[1], from_child[0], 60, "textDocument/definition", each_uri, ptr_use);
+    EXPECT_HAS(check, ptr_def, "\"line\":" + std::to_string(ptr_decl.line) + ",");
+
+    const LineCol slice_use = at_needle(each_source, "n;", false);
+    const std::string slice_hover = request_at(to_child[1], from_child[0], 61, "textDocument/hover", each_uri, slice_use);
+    EXPECT_HAS(check, slice_hover, "n i32");
+
+    const LineCol part_use = at_needle(each_source, "part :", false);
+    const std::string part_hover = request_at(to_child[1], from_child[0], 62, "textDocument/hover", each_uri, part_use);
+    EXPECT_HAS(check, part_hover, "\"value\":\"part\"");
+    EXPECT(check, part_hover.find("part Bag") == std::string::npos);
+    const LineCol part_body = at_needle(each_source, "sum + 0", false);
+    const std::string each_part_items =
+        request_at(to_child[1], from_child[0], 63, "textDocument/completion", each_uri, part_body);
+    EXPECT_HAS(check, each_part_items, "\"label\":\"part\"");
+
+    const LineCol after_item = at_needle(each_source, "item +", false);
+    const std::string after_item_def =
+        request_at(to_child[1], from_child[0], 65, "textDocument/definition", each_uri, after_item);
+    EXPECT_HAS(check, after_item_def, "\"line\":" + std::to_string(outer_item.line) + ",");
+    EXPECT(check, after_item_def.find("\"line\":" + std::to_string(each_decl.line) + ",") == std::string::npos);
+    const std::string after_items =
+        request_at(to_child[1], from_child[0], 66, "textDocument/completion", each_uri, after_item);
+    EXPECT(check, after_items.find("\"label\":\"cell\"") == std::string::npos);
+    EXPECT(check, after_items.find("\"label\":\"part\"") == std::string::npos);
+
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);
     EXPECT_HAS(check, stopped, "\"result\":null");

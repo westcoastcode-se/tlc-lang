@@ -107,10 +107,6 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 - A trait used as a type alias, or `**Shape`. A parameter is `Shape` or `*Shape`. `var s Shape`, `var s *Shape`, `func give() Shape`, `func give() *Shape`, `[2]Shape`, `[]Shape`, and a field `item Shape` in a struct or a trait are `trait has no size`.
 - `...` is not added to a function or a method that takes a trait. `func use(s Shape, ...)`, `func use(s *Shape, ...)`, `func Rect::paint(self *this, s Shape, ...)`, `extern func use(s Shape, ...)`, and a prototype `func use(s Shape, ...) i32;` are `not supported yet`. `extern(abi="c")` on that function, with or without `...`, is `extern(abi="c") on a trait or a generic`. Further TLC arguments are a generic, not `...`. `extern` and `extern(abi="tlc")` without `...` are accepted. Each struct is its own symbol. The call stays `use(r)` or `value.paint(s)`. A body defines that symbol. A prototype with no body is accepted. A call that specializes it is `not supported yet`. `export` publishes that function when the ABI is not C.
 
-## for each
-
-- The name in `for (var item : items)` is a binding in the language-server index. Completion, hover, and definition see it. Rename, formatting, and the other missing answers stay as they are.
-
 ## Packages
 
 - A vendor `link` file is the only link file that is read. `link_unix` and `link_windows` are ignored. `link_<family>` is read for the compiler's family and left out for the other. The families are `unix` and `windows`, the same names as `*_unix.tlc`, `*_windows.tlc`, and `consts.family`. `link` is still read on every family. The family file uses the same lines and is added after `link`. `link_linux` is not a family file. A package under `lib/tlc` uses that same reader.

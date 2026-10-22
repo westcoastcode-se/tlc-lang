@@ -608,6 +608,31 @@ void add_function_locals(const FunctionDecl &fn, const std::string &text, const 
     }
 }
 
+// The element of an array or a slice. `ptr_of` adds one pointer. A struct has no element type here.
+Shape each_element(const Expr &expr, const UnitIndex &index, const std::vector<Sym> &syms, const std::string &uri,
+                   uint32_t offset) {
+    const Expr *source = &expr;
+    bool pointer = false;
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        const auto *named = call->callee == nullptr ? nullptr : std::get_if<Expr::Name>(&call->callee->data);
+        if (named != nullptr && named->text == "ptr_of" && call->args.size() == 1 && call->args.front() != nullptr) {
+            source = call->args.front().get();
+            pointer = true;
+        }
+    }
+    const std::vector<Shape> shapes = shapes_of(*source, index, syms, uri, offset);
+    if (shapes.size() != 1 || !shapes.front().is_array) {
+        return {};
+    }
+    Shape shape = shapes.front();
+    shape.is_array = false;
+    shape.array_len = 0;
+    if (pointer) {
+        ++shape.indirections;
+    }
+    return shape;
+}
+
 void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri, uint32_t scope_end, std::vector<Sym> &out,
                const UnitIndex &index) {
     if (const auto *decl = std::get_if<Stmt::Decl>(&stmt.data)) {
@@ -722,6 +747,23 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
                     end = match_brace(text, body->loc.offset);
                 }
             }
+        }
+        if (item->each && !item->each_name.empty()) {
+            Sym sym;
+            sym.name = item->each_name;
+            sym.detail = item->each_const ? "const " + item->each_name : item->each_name;
+            if (item->each_expr != nullptr) {
+                const uint32_t at = item->each_name_loc.valid() ? item->each_name_loc.offset : 0;
+                note_shape(sym, each_element(*item->each_expr, index, out, uri, at));
+            }
+            sym.uri = uri;
+            sym.bare = true;
+            sym.local = true;
+            sym.role = item->each_const ? Role::Constant : Role::Variable;
+            sym.scope_end = end;
+            put_loc(sym, text, item->each_name_loc, item->each_name);
+            sym.scope_begin = item->each_name_loc.valid() ? item->each_name_loc.offset : 0;
+            add_sym(out, std::move(sym));
         }
         if (item->init) {
             walk_stmt(*item->init, text, uri, end, out, index);
