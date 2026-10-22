@@ -135,6 +135,43 @@ Json text_edit(const std::string &text, uint32_t begin, uint32_t end, const std:
 
 } // namespace
 
+std::string apply_content_changes(const std::string &text, const Json &changes) {
+    std::string current = text;
+    if (changes.kind != Json::Kind::Array) {
+        return current;
+    }
+    for (const Json &change : changes.a) {
+        if (change.kind != Json::Kind::Object || change.find("text") == nullptr) {
+            continue;
+        }
+        const Json *range = change.find("range");
+        if (range == nullptr) {
+            current = change.str("text");
+            continue;
+        }
+        const Json *start = range->find("start");
+        const Json *end = range->find("end");
+        if (start == nullptr || end == nullptr) {
+            continue;
+        }
+        uint32_t from = offset_at(current, static_cast<int>(start->integer("line", 0)),
+                                  static_cast<int>(start->integer("character", 0)));
+        uint32_t to = offset_at(current, static_cast<int>(end->integer("line", 0)),
+                                static_cast<int>(end->integer("character", 0)));
+        if (from > current.size()) {
+            from = static_cast<uint32_t>(current.size());
+        }
+        if (to > current.size()) {
+            to = static_cast<uint32_t>(current.size());
+        }
+        if (to < from) {
+            std::swap(to, from);
+        }
+        current.replace(from, to - from, change.str("text"));
+    }
+    return current;
+}
+
 const Sym *symbol_at(const Doc &doc, const Cursor &cursor) {
     if (cursor.literal || cursor.word.empty()) {
         return nullptr;

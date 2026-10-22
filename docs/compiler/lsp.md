@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Debug information](debug.md) · [Next: Linking](link.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`tlc lsp` is the language server. Its sources are under `src/lsp/`, and the `tlc` binary includes them. Any editor can start that command. It reads the editor's buffer and typechecks that text, including when it differs from the file on disk. The server publishes diagnostics and answers completion, hover, go to definition, and document symbols.
+`tlc lsp` is the language server. Its sources are under `src/lsp/`, and the `tlc` binary includes them. Any editor can start that command. It reads the editor's buffer and typechecks that text, including when it differs from the file on disk. The server publishes diagnostics and answers completion, hover, go to definition, and document symbols. `textDocumentSync` is incremental. A `didChange` applies each range in order, and a change with no range still replaces the whole buffer.
 
 In Zed, hold Ctrl and click a function name to open its definition. That includes a function brought in by `import { name } from "pkg"`.
 

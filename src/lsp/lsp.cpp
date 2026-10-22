@@ -62,7 +62,7 @@ int run_lsp() {
             send_json(result_response(
                 *id, jobj({{"capabilities",
                             jobj({{"positionEncoding", jstr("utf-16")},
-                                 {"textDocumentSync", jint(1)},
+                                 {"textDocumentSync", jint(2)},
                                  {"completionProvider", jobj({{"triggerCharacters", jarr({jstr(".")})}, {"resolveProvider", jbool(false)}})},
                                  {"hoverProvider", jbool(true)},
                                  {"definitionProvider", jbool(true)},
@@ -105,11 +105,19 @@ int run_lsp() {
                 got_text = true;
             } else if (const Json *changes = params->find("contentChanges");
                        changes != nullptr && changes->kind == Json::Kind::Array && !changes->a.empty()) {
-                const Json &last = changes->a.back();
-                if (last.kind == Json::Kind::Object && last.find("range") == nullptr && last.find("text") != nullptr) {
-                    text = last.str("text");
-                    got_text = true;
+                // Later ranges in this array are positions in the text after earlier changes.
+                const Doc *existing = find_doc(uri);
+                bool ranged = false;
+                for (const Json &change : changes->a) {
+                    if (change.kind == Json::Kind::Object && change.find("range") != nullptr) {
+                        ranged = true;
+                    }
                 }
+                if (existing == nullptr && ranged) {
+                    continue;
+                }
+                text = apply_content_changes(existing == nullptr ? std::string{} : existing->text, *changes);
+                got_text = true;
             }
             if (!got_text) {
                 continue;

@@ -536,6 +536,7 @@ void recheck(Doc &doc);
 const Json *text_document(const Json &params);
 Json error_response(const Json &id, int code, const std::string &message);
 Json result_response(const Json &id, Json result);
+std::string apply_content_changes(const std::string &text, const Json &changes);
 const Sym *symbol_at(const Doc &doc, const Cursor &cursor);
 Json rename_edits(const Doc &doc, const Cursor &cursor, const std::string &new_name);
 Json format_edits(const Doc &doc);

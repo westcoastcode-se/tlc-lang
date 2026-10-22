@@ -899,6 +899,27 @@ int run_lsp_tests() {
     EXPECT_HAS(check, action, "Insert ';'");
     EXPECT_HAS(check, action, "\"newText\":\";\"");
 
+    const std::string sync_source = "func main() i32 {\n    return 1;\n}\n";
+    const std::string sync_uri = "file:///tmp/tlc-lsp-sync.tlc";
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  sync_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(sync_source) + R"("}}})");
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")") +
+                  sync_uri +
+                  R"(","version":2},"contentChanges":[{"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":0}},"text":"    var n = 4;\n"},{"range":{"start":{"line":2,"character":11},"end":{"line":2,"character":12}},"text":"n"}]}})");
+    const LineCol sync_use = {2, 11};
+    const std::string sync_hover = request_at(to_child[1], from_child[0], 80, "textDocument/hover", sync_uri, sync_use);
+    EXPECT_HAS(check, sync_hover, "\"value\":\"n\"");
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")") +
+                  sync_uri +
+                  R"(","version":3},"contentChanges":[{"text":"func main() i32 {\n    var kept = 9;\n    return kept;\n}\n"}]}})");
+    const LineCol kept_use = {2, 11};
+    const std::string kept_hover = request_at(to_child[1], from_child[0], 81, "textDocument/hover", sync_uri, kept_use);
+    EXPECT_HAS(check, kept_hover, "kept");
+    EXPECT(check, kept_hover.find("\"value\":\"n\"") == std::string::npos);
+
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);
     EXPECT_HAS(check, stopped, "\"result\":null");
