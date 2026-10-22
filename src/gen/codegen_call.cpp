@@ -131,6 +131,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
     };
     if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data);
         selector != nullptr && selector->base != nullptr) {
+        if (emit_iter_call(node, *selector, prepared)) {
+            return prepared;
+        }
         const auto *base_name = std::get_if<Expr::Name>(&selector->base->data);
         const bool package_call = base_name != nullptr && packages_.contains(base_name->text);
         if (!package_call && !node.trait_method.empty()) {
@@ -627,6 +630,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
 }
 
 TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
+    if (call.yielded) {
+        return call.yield;
+    }
     if (terminated() || (call.function == nullptr && (call.indirect == nullptr || call.fn_ty == nullptr))) {
         return {zero(), 0};
     }
@@ -653,10 +659,26 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         result.array_len = -1;
         result.elem_float = call.elem_float;
         result.enum_id = call.enum_id;
+        auto stamp_alias = [&](const std::string &name, const std::string &package, bool is_struct, int indirections,
+                               bool elem_slice, const std::vector<TypeShell> &shells) {
+            const Lowered low = lower(current_file_, name, package, is_struct, indirections, false, 0, false, elem_slice,
+                                      shells);
+            if (low.alias_owner.empty()) {
+                return;
+            }
+            result.alias_owner = std::move(low.alias_owner);
+            result.alias_file = low.alias_file;
+        };
         if (call.decl != nullptr && call.decl->results.size() == 1) {
-            result.elem_slice = call.decl->results.front().elem_slice;
+            const ResultSlot &slot = call.decl->results.front();
+            result.elem_slice = slot.elem_slice;
+            stamp_alias(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.elem_slice,
+                        slot.shells);
         } else if (call.fn_results.size() == 1) {
-            result.elem_slice = call.fn_results.front().elem_slice;
+            const FnParam &slot = call.fn_results.front();
+            result.elem_slice = slot.elem_slice;
+            stamp_alias(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.elem_slice,
+                        slot.shells);
         }
         return result;
     }
@@ -848,6 +870,7 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
         ~RestoreFile() { self->current_file_ = file; }
     } restore{this, saved_file};
     std::vector<int> spec(fn.params.size(), -1);
+    std::vector<IterSlot> iters(fn.params.size());
     for (std::size_t i = 0; i < fn.params.size(); ++i) {
         if (!param_is_trait(current_file_, fn.params[i])) {
             continue;
@@ -862,6 +885,20 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
             continue;
         }
         const int indirections = fn.params[i].indirections;
+        // An array or a slice satisfies a value parameter. `*[N]T` keeps its length in
+        // `ptr_array_len` and leaves `array_len` at 0. A decayed `[N][M]T` is also
+        // `ptr_to_array`, and `array_len` is that outer `N`. A returned array keeps its
+        // length on `array_type` and may leave `array_len` at 0.
+        const bool has_array_type = arg.array_type != nullptr && arg.array_type->isArrayTy();
+        const bool sized = has_array_type || arg.array_len > 0;
+        const bool decayed_rows = arg.ptr_to_array && arg.array_len > 0;
+        if (indirections == 0 &&
+            (arg.is_slice || decayed_rows ||
+             (!arg.ptr_to_array && sized && (has_array_type || arg.depth >= 1 || !arg.shells.empty())))) {
+            spec[i] = kIterSpec;
+            iters[i] = iter_slot(arg);
+            continue;
+        }
         const bool value_ok = indirections == 0 && arg.depth == 0 && arg.struct_id >= 0;
         const bool pointer_ok = indirections == 1 && arg.depth == 1 && arg.struct_id >= 0;
         if (!value_ok && !pointer_ok) {
@@ -886,13 +923,18 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
     }
     symbol += fn.name;
     symbol += ".spec";
-    for (int sid : spec) {
+    for (std::size_t i = 0; i < spec.size(); ++i) {
+        const int sid = spec[i];
         if (sid == -1) {
             continue;
         }
         symbol += '.';
         if (sid == kFnSpec) {
             symbol += "fn";
+            continue;
+        }
+        if (sid == kIterSpec) {
+            symbol += iters[i].fragment;
             continue;
         }
         if (sid >= 0 && sid < static_cast<int>(structs_.size())) {
@@ -915,7 +957,14 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
         // `extern` names this specialization. The binding keeps a prototype that said it.
         const auto linkage = fn.is_extern || meta.is_extern ? llvm::GlobalValue::ExternalLinkage
                                                             : llvm::GlobalValue::InternalLinkage;
-        function = llvm::Function::Create(spec_type(fn, spec), linkage, symbol, module_);
+        const std::vector<IterSlot> saved_pending = std::move(pending_iter_);
+        const bool saved_on = pending_iter_on_;
+        pending_iter_ = iters;
+        pending_iter_on_ = true;
+        llvm::FunctionType *spec_fn = spec_type(fn, spec);
+        pending_iter_on_ = saved_on;
+        pending_iter_ = saved_pending;
+        function = llvm::Function::Create(spec_fn, linkage, symbol, module_);
         function->setCallingConv(llvm::CallingConv::C);
         unsigned index = 0;
         for (auto &arg : function->args()) {
@@ -934,6 +983,7 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
         llvm::Type *saved_return = return_type_;
         const int saved_depth = return_depth_;
         auto saved_spec = active_spec_;
+        auto saved_iter = std::move(active_iter_);
         auto saved_loops = std::move(loops_);
         auto saved_defers = std::move(defers_);
         auto saved_cases = std::move(case_blocks_);
@@ -944,6 +994,7 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
         defers_.clear();
         case_blocks_.clear();
         active_spec_ = spec;
+        active_iter_ = iters;
         push();
         bind_package_globals();
         if (const PackageNode *node_owner = find_node(current_file_)) {
@@ -957,6 +1008,7 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
         return_type_ = saved_return;
         return_depth_ = saved_depth;
         active_spec_ = std::move(saved_spec);
+        active_iter_ = std::move(saved_iter);
         loops_ = std::move(saved_loops);
         defers_ = std::move(saved_defers);
         case_blocks_ = std::move(saved_cases);
@@ -1074,6 +1126,330 @@ TypedValue CodeGen::emit_generic_call(const Binding &binding, const Expr::Call &
     result.enum_id = meta.enum_id;
     attach_returned_fn(result, fn);
     return result;
+}
+
+CodeGen::IterSlot CodeGen::iter_slot(const TypedValue &arg) const {
+    IterSlot slot;
+    slot.active = true;
+    slot.alias_owner = arg.alias_owner;
+    slot.alias_file = arg.alias_file;
+    const bool has_array_type = arg.array_type != nullptr && arg.array_type->isArrayTy();
+    int length = arg.array_len;
+    if (length <= 0 && has_array_type) {
+        length = static_cast<int>(llvm::cast<llvm::ArrayType>(arg.array_type)->getNumElements());
+    }
+    auto leaf_name = [&]() {
+        if (arg.struct_id >= 0 && arg.struct_id < static_cast<int>(structs_.size())) {
+            return structs_[static_cast<std::size_t>(arg.struct_id)].name;
+        }
+        if (arg.enum_id >= 0 && arg.enum_id < static_cast<int>(enums_.size())) {
+            return enums_[static_cast<std::size_t>(arg.enum_id)].name;
+        }
+        if (arg.elem_bool) {
+            return std::string("bool");
+        }
+        if (arg.elem_float) {
+            return arg.elem_bits >= 64 ? std::string("f64") : std::string("f32");
+        }
+        if (arg.elem_char || arg.elem_bits == 8) {
+            return arg.elem_unsigned || arg.elem_char ? std::string("u8") : std::string("i8");
+        }
+        if (arg.elem_bits == 16) {
+            return arg.elem_unsigned ? std::string("u16") : std::string("i16");
+        }
+        if (arg.elem_bits == 64) {
+            return arg.elem_unsigned ? std::string("u64") : std::string("i64");
+        }
+        return arg.elem_unsigned ? std::string("u32") : std::string("i32");
+    };
+    if (!arg.alias_owner.empty()) {
+        slot.fragment = "alias." + std::to_string(arg.alias_file) + "." + arg.alias_owner;
+    } else {
+        // `is_slice` already names the outer header. The shell list may still
+        // start with that header. Skipping it keeps every `[]T` on one copy.
+        slot.fragment = arg.is_slice ? std::string("slice") : std::to_string(length);
+        bool outer_slice = arg.is_slice;
+        for (const TypeShell &shell : arg.shells) {
+            if (shell.kind == TypeShell::Kind::Pointer) {
+                continue;
+            }
+            if (shell.kind == TypeShell::Kind::Slice) {
+                if (outer_slice) {
+                    outer_slice = false;
+                    continue;
+                }
+                slot.fragment += ".slice";
+                continue;
+            }
+            if (shell.kind == TypeShell::Kind::Array) {
+                slot.fragment += '.';
+                slot.fragment += std::to_string(shell.length);
+            }
+        }
+        if (arg.shells.empty() && arg.elem_slice) {
+            slot.fragment += ".slice";
+        }
+        if (arg.shells.empty() && arg.inner_array_len > 0) {
+            slot.fragment += '.';
+            slot.fragment += std::to_string(arg.inner_array_len);
+        }
+        slot.fragment += '.';
+        slot.fragment += leaf_name();
+    }
+    auto fill = [&](Lowered &dest, int depth) {
+        dest.depth = depth;
+        dest.elem_char = arg.elem_char;
+        dest.struct_id = arg.struct_id;
+        dest.elem_void = arg.elem_void;
+        dest.elem_bool = arg.elem_bool;
+        dest.elem_bits = arg.elem_bits;
+        dest.elem_unsigned = arg.elem_unsigned;
+        dest.elem_float = arg.elem_float;
+        dest.enum_id = arg.enum_id;
+        dest.alias_owner = arg.alias_owner;
+        dest.alias_file = arg.alias_file;
+    };
+    if (arg.is_slice) {
+        Lowered param;
+        const bool raw = arg.value == nullptr || arg.value->getType() != slice_type();
+        fill(param, raw && arg.depth > 0 ? arg.depth - 1 : arg.depth);
+        param.is_slice = true;
+        param.array_len = -1;
+        param.type = slice_type();
+        param.elem_slice = arg.elem_slice;
+        param.inner_array_len = arg.inner_array_len;
+        param.shells = arg.shells;
+        slot.is_slice = true;
+        slot.array_len = -1;
+        slot.param = std::move(param);
+        return slot;
+    }
+    const bool rewrap = has_array_type || (!arg.shells.empty() && arg.shells.front().kind == TypeShell::Kind::Array);
+    if (!rewrap) {
+        Lowered param;
+        fill(param, arg.depth);
+        param.type = ptr_type();
+        param.array_len = length;
+        param.elem_slice = arg.elem_slice;
+        param.inner_array_len = arg.inner_array_len;
+        param.ptr_to_array = arg.ptr_to_array;
+        param.ptr_array_len = arg.ptr_array_len;
+        param.shells = arg.shells;
+        slot.is_slice = false;
+        slot.array_len = length;
+        slot.param = std::move(param);
+        return slot;
+    }
+    std::vector<TypeShell> shells;
+    TypeShell outer;
+    outer.kind = TypeShell::Kind::Array;
+    outer.length = length;
+    shells.push_back(outer);
+    shells.insert(shells.end(), arg.shells.begin(), arg.shells.end());
+    if (arg.shells.empty() && arg.elem_slice) {
+        TypeShell header;
+        header.kind = TypeShell::Kind::Slice;
+        shells.push_back(header);
+    } else if (arg.shells.empty() && arg.inner_array_len > 0) {
+        TypeShell row;
+        row.kind = TypeShell::Kind::Array;
+        row.length = arg.inner_array_len;
+        shells.push_back(row);
+    }
+    Lowered leaf;
+    // `compose_shells` peels an array off the leaf. The leaf is the element.
+    fill(leaf, arg.depth > 0 ? arg.depth - 1 : 0);
+    slot.param = compose_shells(std::move(leaf), std::move(shells), true);
+    slot.is_slice = slot.param.is_slice;
+    slot.array_len = slot.param.array_len;
+    return slot;
+}
+
+bool CodeGen::emit_iter_call(const Expr::Call &node, const Expr::Selector &selector, PreparedCall &prepared) {
+    if (emitting_fn_ == nullptr || selector.base == nullptr) {
+        return false;
+    }
+    const auto *base_name = std::get_if<Expr::Name>(&selector.base->data);
+    if (base_name == nullptr) {
+        return false;
+    }
+    std::size_t index = emitting_fn_->params.size();
+    for (std::size_t i = 0; i < emitting_fn_->params.size(); ++i) {
+        const Param &param = emitting_fn_->params[i];
+        if (param.name != base_name->text || !param_is_trait(current_file_, param)) {
+            continue;
+        }
+        index = i;
+        break;
+    }
+    if (index == emitting_fn_->params.size()) {
+        return false;
+    }
+    if (index >= active_spec_.size() || active_spec_[index] != kIterSpec) {
+        return false;
+    }
+    if (index >= active_iter_.size() || !active_iter_[index].active) {
+        error(node.loc, "type mismatch");
+        return true;
+    }
+    const IterSlot &slot = active_iter_[index];
+    const Binding *self = lookup(base_name->text);
+    if (self == nullptr || self->value == nullptr) {
+        error(node.loc, "type mismatch");
+        return true;
+    }
+    if (!slot.alias_owner.empty()) {
+        const std::string key = slot.alias_owner + "." + selector.field;
+        const Binding *method = method_binding(current_file_, slot.alias_file, key);
+        if (node.selected != nullptr) {
+            if (const Binding *chosen = binding_for_decl(node.selected); chosen != nullptr) {
+                method = chosen;
+            }
+        }
+        auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
+        if (function == nullptr || method->decl == nullptr || method->decl->static_method) {
+            error(node.loc, "type mismatch");
+            return true;
+        }
+        const bool receiver_pointer = !method->decl->params.empty() && method->decl->params.front().indirections > 0;
+        llvm::Value *receiver = nullptr;
+        if (receiver_pointer) {
+            // The parameter alloca is the slice. A pointer receiver wants that address.
+            receiver = self->value;
+        } else {
+            const TypedValue value = value_of_binding(*self);
+            llvm::Type *param_ty = function->getFunctionType()->getNumParams() > 0
+                                       ? function->getFunctionType()->getParamType(0)
+                                       : nullptr;
+            receiver = adapt(value, param_ty, node.loc);
+        }
+        if (receiver == nullptr) {
+            error(node.loc, "type mismatch");
+            return true;
+        }
+        std::vector<llvm::Value *> args;
+        args.reserve(node.args.size() + 1);
+        args.push_back(receiver);
+        unsigned arg_index = 1;
+        for (const auto &arg : node.args) {
+            const TypedValue value = emit_rvalue(*arg);
+            llvm::Type *param_ty = arg_index < function->getFunctionType()->getNumParams()
+                                       ? function->getFunctionType()->getParamType(arg_index)
+                                       : nullptr;
+            args.push_back(adapt(value, param_ty, node.loc));
+            ++arg_index;
+        }
+        prepared.function = function;
+        prepared.args = std::move(args);
+        prepared.depth = method->depth;
+        prepared.elem_char = method->elem_char;
+        prepared.struct_id = method->struct_id;
+        prepared.elem_void = method->elem_void;
+        prepared.elem_bool = method->elem_bool;
+        prepared.elem_bits = method->elem_bits;
+        prepared.elem_unsigned = method->elem_unsigned;
+        prepared.decl = method->decl;
+        prepared.elem_float = method->elem_float;
+        prepared.enum_id = method->enum_id;
+        return true;
+    }
+    int kind = 0;
+    const int trait_id = trait_named(current_file_, emitting_fn_->params[index].type_name);
+    if (trait_id >= 0 && static_cast<std::size_t>(trait_id) < trait_decls_.size()) {
+        const TraitDecl *listed = trait_decls_[static_cast<std::size_t>(trait_id)];
+        for (int guard = 0; listed != nullptr && kind == 0 && guard < static_cast<int>(trait_decls_.size()); ++guard) {
+            for (const FunctionDecl &method : listed->methods) {
+                if (method.name == selector.field) {
+                    kind = method.iteration_kind;
+                    break;
+                }
+            }
+            listed = trait_parent(current_file_, listed);
+        }
+    }
+    if (kind == 0) {
+        error(node.loc, "not supported yet");
+        return true;
+    }
+    if (kind == 1) {
+        if (slot.is_slice) {
+            const TypedValue value = value_of_binding(*self);
+            if (value.value == nullptr) {
+                error(node.loc, "type mismatch");
+                return true;
+            }
+            llvm::Value *header = value.value->getType() == slice_type() ? value.value : as_slice_value(value, node.loc);
+            prepared.yield = {builder_.CreateExtractValue(header, 1), 0};
+        } else {
+            prepared.yield = {const_i32(slot.array_len), 0};
+        }
+        prepared.yielded = true;
+        return true;
+    }
+    if (node.args.size() != 1 || node.args.front() == nullptr) {
+        error(node.loc, "argument count");
+        return true;
+    }
+    const TypedValue base = value_of_binding(*self);
+    const TypedValue subscript = emit_rvalue(*node.args.front());
+    const TypedValue addr = index_address(base, subscript.value, node.loc);
+    if (addr.value == nullptr) {
+        return true;
+    }
+    if (kind == 3) {
+        if (addr.is_slice || (!addr.shells.empty() && addr.shells.front().kind == TypeShell::Kind::Slice)) {
+            TypedValue pointer = addr;
+            pointer.is_slice = false;
+            pointer.array_len = 0;
+            pointer.elem_slice = false;
+            TypeShell shell;
+            shell.kind = TypeShell::Kind::Pointer;
+            pointer.shells.insert(pointer.shells.begin(), shell);
+            prepared.yield = std::move(pointer);
+        } else {
+            prepared.yield = {addr.value,     addr.depth + 1, addr.elem_char,     addr.struct_id, false,
+                              addr.elem_void, addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.trait_id,
+                              addr.elem_float};
+        }
+        prepared.yielded = true;
+        return true;
+    }
+    if (addr.row_decay) {
+        TypedValue row = addr;
+        row.row_decay = false;
+        prepared.yield = std::move(row);
+        prepared.yielded = true;
+        return true;
+    }
+    if (addr.is_slice) {
+        prepared.yield = load_field(addr);
+        prepared.yielded = true;
+        return true;
+    }
+    TypedValue loaded = load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void, addr.elem_bool,
+                                    addr.elem_bits, addr.elem_unsigned, addr.elem_float);
+    loaded.fn_ty = addr.fn_ty;
+    loaded.fn_ret_depth = addr.fn_ret_depth;
+    loaded.fn_ret_float = addr.fn_ret_float;
+    loaded.fn_ret_bits = addr.fn_ret_bits;
+    loaded.fn_ret_unsigned = addr.fn_ret_unsigned;
+    loaded.fn_ret_char = addr.fn_ret_char;
+    loaded.fn_ret_bool = addr.fn_ret_bool;
+    loaded.fn_ret_struct = addr.fn_ret_struct;
+    loaded.fn_results = addr.fn_results;
+    loaded.shells = addr.shells;
+    loaded.array_len = addr.array_len;
+    loaded.inner_array_len = addr.inner_array_len;
+    loaded.elem_slice = addr.elem_slice;
+    loaded.array_type = addr.array_type;
+    loaded.ptr_to_array = addr.ptr_to_array;
+    loaded.ptr_array_len = addr.ptr_array_len;
+    if (loaded.enum_id < 0) {
+        loaded.enum_id = addr.enum_id;
+    }
+    prepared.yield = std::move(loaded);
+    prepared.yielded = true;
+    return true;
 }
 
 } // namespace tlc

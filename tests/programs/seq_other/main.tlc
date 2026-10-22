@@ -1,0 +1,12 @@
+type Shape trait {
+    func area() i32;
+};
+
+func use(s Shape) i32 {
+    return s.area();
+}
+
+func main() i32 {
+    var items [4]i32;
+    return use(items);
+}

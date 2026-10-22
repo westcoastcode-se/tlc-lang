@@ -145,8 +145,25 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
         saved.loc = method.loc;
         saved.home = id;
         saved.iteration_ref = kind == IterationMethod::Ref;
+        saved.iteration_element = kind == IterationMethod::Element;
+        if (kind == IterationMethod::Length) {
+            method.iteration_kind = 1;
+        } else if (kind == IterationMethod::Element) {
+            method.iteration_kind = 2;
+        } else if (kind == IterationMethod::Ref) {
+            method.iteration_kind = 3;
+        }
         traits_[static_cast<std::size_t>(id)].methods.push_back(std::move(saved));
         spec_decl.methods.push_back(std::move(method));
+    }
+    if (iteration) {
+        TraitInfo &info = traits_[static_cast<std::size_t>(id)];
+        info.iteration = true;
+        for (const TraitInfo::Method &method : info.methods) {
+            if (method.iteration_element && method.type.result != nullptr) {
+                info.iteration_elem = method.type.result;
+            }
+        }
     }
     for (const FieldDecl &source : templ.fields) {
         // The iteration trait's fields were reported when the template was registered.

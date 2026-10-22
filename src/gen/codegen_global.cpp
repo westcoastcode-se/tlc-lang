@@ -274,6 +274,8 @@ void CodeGen::declare_globals(const PackageNode &node) {
         binding.inner_array_len = low.inner_array_len;
         binding.is_slice = low.is_slice;
         binding.elem_slice = low.elem_slice;
+        binding.alias_owner = low.alias_owner;
+        binding.alias_file = low.alias_file;
         binding.is_static = var->is_static;
         // `[N][M]T` keeps every shell so an index steps by the row, then by the element.
         if (low.is_array) {

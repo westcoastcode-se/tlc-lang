@@ -1,0 +1,13 @@
+import "std/seq";
+
+func peek(items seq.Seq[i32]) i32 {
+    return *items.ref(0);
+}
+
+func main() i32 {
+    var items [4]i32;
+    items[0] = 40;
+    var row = [_]i32{2};
+    var slice []i32 = row;
+    return peek(items) + peek(slice);
+}

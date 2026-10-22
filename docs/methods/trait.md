@@ -244,7 +244,7 @@ func main() i32 {
 }
 ```
 
-`use(bag)` returns 42. `at` is a direct call of `Bag.at`. Passing a struct whose `at` returns `u8` where `Seq[i32]` is expected is reported as `type mismatch`. `import "std/seq"` names that trait as the iteration trait. A value `seq.Seq[T]` checks `len` and `at`. A pointer `*seq.Seq[T]` checks `ref` as well. The declaration is on [seq](../std/seq.md).
+`use(bag)` returns 42. `at` is a direct call of `Bag.at`. Passing a struct whose `at` returns `u8` where `Seq[i32]` is expected is reported as `type mismatch`. `import "std/seq"` names that trait as the iteration trait. A value `seq.Seq[T]` checks `len` and `at`. A pointer `*seq.Seq[T]` checks `ref` as well. An array `[N]E` and a slice `[]E` satisfy `seq.Seq[E]`. On those values `len` is `.len` and `at` is the index. A struct still satisfies the trait by its own methods. The declaration is on [seq](../std/seq.md).
 
 ## Cost
 
@@ -252,7 +252,7 @@ func main() i32 {
 
 A field named by the trait is the struct field. Reading it is 1 load. Writing it through `*Shape` reloads the pointer and stores, the same as a field of `*Rect`.
 
-`export` and `extern` on `type Seq[T type] trait` add no instructions. The trait has no size and no symbol. The check that a value satisfies `seq.Seq[T]` adds no instructions. `items.len()` and `items.at(i)` are the same direct calls as another trait parameter.
+`export` and `extern` on `type Seq[T type] trait` add no instructions. The trait has no size and no symbol. The check that a value satisfies `seq.Seq[T]` adds no instructions. `items.len()` and `items.at(i)` on a struct are the same direct calls as another trait parameter. On an array or a slice they are `.len` and the index, and they do not push a trace frame.
 
 An anonymous function passed to a one-method trait is a function pointer. `twice((n) { return n + 1; }, 20)` executes 6 instructions in `main`: the address and the argument are placed, and `callq` runs, with no trace frame at that call. Inside the specialized function, `a.apply(n)` is an indirect traced call. The anonymous function `return n + 1` is 4 instructions.
 

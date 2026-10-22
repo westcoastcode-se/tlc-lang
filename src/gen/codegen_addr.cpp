@@ -70,125 +70,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
         }
         const TypedValue base = emit_rvalue(*index->base);
         const TypedValue subscript = emit_rvalue(*index->index);
-        if (!base.shells.empty() && subscript.value != nullptr) {
-            return index_shells(base, subscript.value);
-        }
-        if (base.is_slice) {
-            if (base.value == nullptr || subscript.value == nullptr) {
-                error(index->loc, "not an lvalue");
-                return {};
-            }
-            // A packed slice stores `{ ptr, len }` and `depth` is the element.
-            // A string literal is still the array. Its depth is one above the byte.
-            const bool packed = base.value->getType() == slice_type();
-            llvm::Value *data = base.value;
-            int elem_depth = base.depth;
-            if (packed) {
-                data = builder_.CreateExtractValue(base.value, 0);
-            } else {
-                if (llvm::Type *object = object_type(base.value); object != nullptr && object->isArrayTy()) {
-                    data = builder_.CreateInBoundsGEP(object, base.value,
-                                                      llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(0)});
-                }
-                if (elem_depth > 0) {
-                    --elem_depth;
-                }
-            }
-            llvm::Type *element = leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
-                                            base.elem_float);
-            // `view[i]` on a slice of `[M]T` is that row, the same pointer `grid[i]` yields.
-            if (base.elem_slice) {
-                llvm::Value *slot =
-                    builder_.CreateInBoundsGEP(slice_type(), data, llvm::ArrayRef<llvm::Value *>{subscript.value});
-                TypedValue out{slot,       elem_depth, base.elem_char, base.struct_id, false,          base.elem_void,
-                               base.elem_bool, base.elem_bits, base.elem_unsigned, -1,         base.elem_float};
-                out.is_slice = true;
-                out.array_len = -1;
-                out.enum_id = base.enum_id;
-                return out;
-            }
-            if (base.inner_array_len > 0) {
-                llvm::Type *row = llvm::ArrayType::get(element, static_cast<uint64_t>(base.inner_array_len));
-                llvm::Value *slot = builder_.CreateInBoundsGEP(row, data, llvm::ArrayRef<llvm::Value *>{subscript.value});
-                TypedValue out{slot, elem_depth + 1, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool,
-                               base.elem_bits, base.elem_unsigned, -1, base.elem_float};
-                out.row_decay = true;
-                out.array_len = base.inner_array_len;
-                out.array_type = row;
-                out.enum_id = base.enum_id;
-                return out;
-            }
-            llvm::Value *slot =
-                builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{subscript.value});
-            TypedValue out{slot,       elem_depth, base.elem_char, base.struct_id, false,          base.elem_void,
-                           base.elem_bool, base.elem_bits, base.elem_unsigned, -1,         base.elem_float};
-            out.enum_id = base.enum_id;
-            return out;
-        }
-        if (base.depth <= 0 || base.value == nullptr || subscript.value == nullptr) {
-            error(index->loc, "not an lvalue");
-            return {};
-        }
-        llvm::Value *offset = subscript.value;
-        if (base.elem_slice) {
-            llvm::Value *slot =
-                builder_.CreateInBoundsGEP(slice_type(), base.value, llvm::ArrayRef<llvm::Value *>{offset});
-            TypedValue out{slot, base.depth > 0 ? base.depth - 1 : 0, base.elem_char, base.struct_id, false,
-                           base.elem_void, base.elem_bool, base.elem_bits, base.elem_unsigned, -1, base.elem_float};
-            out.is_slice = true;
-            out.array_len = -1;
-            out.enum_id = base.enum_id;
-            return out;
-        }
-        if (base.inner_array_len > 0) {
-            llvm::Type *leaf =
-                leaf_type(base.depth - 1, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
-            llvm::Type *row = llvm::ArrayType::get(leaf, static_cast<uint64_t>(base.inner_array_len));
-            llvm::Value *slot = builder_.CreateInBoundsGEP(row, base.value, llvm::ArrayRef<llvm::Value *>{offset});
-            TypedValue out{slot, base.depth, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool,
-                           base.elem_bits, base.elem_unsigned, -1, base.elem_float};
-            // The address is the row `[M]T`. The length stays so the row converts to `[]T`.
-            out.row_decay = true;
-            out.array_len = base.inner_array_len;
-            out.array_type = row;
-            return out;
-        }
-        if (base.ptr_to_array) {
-            const int depth = base.depth - 1;
-            llvm::Type *element =
-                leaf_type(depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
-            llvm::Type *array = llvm::ArrayType::get(element, static_cast<uint64_t>(base.ptr_array_len));
-            llvm::Value *slot = builder_.CreateInBoundsGEP(
-                array, base.value, llvm::ArrayRef<llvm::Value *>{const_i32(0), offset});
-            return {slot, depth, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool, base.elem_bits,
-                    base.elem_unsigned, -1, base.elem_float};
-        }
-        const int depth = base.depth - 1;
-        llvm::Value *slot = builder_.CreateInBoundsGEP(
-            leaf_type(depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float), base.value,
-            llvm::ArrayRef<llvm::Value *>{offset});
-        TypedValue out{slot,
-                       depth,
-                       base.elem_char,
-                       base.struct_id,
-                       false,
-                       base.elem_void,
-                       base.elem_bool,
-                       base.elem_bits,
-                       base.elem_unsigned,
-                       -1,
-                       base.elem_float};
-        out.fn_ty = base.fn_ty;
-        out.fn_ret_depth = base.fn_ret_depth;
-        out.fn_ret_float = base.fn_ret_float;
-        out.fn_ret_bits = base.fn_ret_bits;
-        out.fn_ret_unsigned = base.fn_ret_unsigned;
-        out.fn_ret_char = base.fn_ret_char;
-        out.fn_ret_bool = base.fn_ret_bool;
-        out.fn_ret_struct = base.fn_ret_struct;
-        out.fn_results = base.fn_results;
-        out.enum_id = base.enum_id;
-        return out;
+        return index_address(base, subscript.value, index->loc);
     }
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         if (!selector->resolved_owner.empty()) {
@@ -272,6 +154,128 @@ llvm::Value *CodeGen::emit_short_circuit(const Expr::Binary &expr, bool is_and) 
     phi->addIncoming(is_and ? llvm::ConstantInt::getFalse(context_) : llvm::ConstantInt::getTrue(context_), lhs_block);
     phi->addIncoming(rhs_flag, rhs_end);
     return phi;
+}
+
+TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript, SourceLoc loc) {
+    if (!base.shells.empty() && subscript != nullptr) {
+        return index_shells(base, subscript);
+    }
+    if (base.is_slice) {
+        if (base.value == nullptr || subscript == nullptr) {
+            error(loc, "not an lvalue");
+            return {};
+        }
+        // A packed slice stores `{ ptr, len }` and `depth` is the element.
+        // A string literal is still the array. Its depth is one above the byte.
+        const bool packed = base.value->getType() == slice_type();
+        llvm::Value *data = base.value;
+        int elem_depth = base.depth;
+        if (packed) {
+            data = builder_.CreateExtractValue(base.value, 0);
+        } else {
+            if (llvm::Type *object = object_type(base.value); object != nullptr && object->isArrayTy()) {
+                data = builder_.CreateInBoundsGEP(object, base.value,
+                                                  llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(0)});
+            }
+            if (elem_depth > 0) {
+                --elem_depth;
+            }
+        }
+        llvm::Type *element = leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
+                                        base.elem_float);
+        // `view[i]` on a slice of `[M]T` is that row, the same pointer `grid[i]` yields.
+        if (base.elem_slice) {
+            llvm::Value *slot =
+                builder_.CreateInBoundsGEP(slice_type(), data, llvm::ArrayRef<llvm::Value *>{subscript});
+            TypedValue out{slot,       elem_depth, base.elem_char, base.struct_id, false,          base.elem_void,
+                           base.elem_bool, base.elem_bits, base.elem_unsigned, -1,         base.elem_float};
+            out.is_slice = true;
+            out.array_len = -1;
+            out.enum_id = base.enum_id;
+            return out;
+        }
+        if (base.inner_array_len > 0) {
+            llvm::Type *row = llvm::ArrayType::get(element, static_cast<uint64_t>(base.inner_array_len));
+            llvm::Value *slot = builder_.CreateInBoundsGEP(row, data, llvm::ArrayRef<llvm::Value *>{subscript});
+            TypedValue out{slot, elem_depth + 1, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool,
+                           base.elem_bits, base.elem_unsigned, -1, base.elem_float};
+            out.row_decay = true;
+            out.array_len = base.inner_array_len;
+            out.array_type = row;
+            out.enum_id = base.enum_id;
+            return out;
+        }
+        llvm::Value *slot =
+            builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{subscript});
+        TypedValue out{slot,       elem_depth, base.elem_char, base.struct_id, false,          base.elem_void,
+                       base.elem_bool, base.elem_bits, base.elem_unsigned, -1,         base.elem_float};
+        out.enum_id = base.enum_id;
+        return out;
+    }
+    if (base.depth <= 0 || base.value == nullptr || subscript == nullptr) {
+        error(loc, "not an lvalue");
+        return {};
+    }
+    llvm::Value *offset = subscript;
+    if (base.elem_slice) {
+        llvm::Value *slot =
+            builder_.CreateInBoundsGEP(slice_type(), base.value, llvm::ArrayRef<llvm::Value *>{offset});
+        TypedValue out{slot, base.depth > 0 ? base.depth - 1 : 0, base.elem_char, base.struct_id, false,
+                       base.elem_void, base.elem_bool, base.elem_bits, base.elem_unsigned, -1, base.elem_float};
+        out.is_slice = true;
+        out.array_len = -1;
+        out.enum_id = base.enum_id;
+        return out;
+    }
+    if (base.inner_array_len > 0) {
+        llvm::Type *leaf =
+            leaf_type(base.depth - 1, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
+        llvm::Type *row = llvm::ArrayType::get(leaf, static_cast<uint64_t>(base.inner_array_len));
+        llvm::Value *slot = builder_.CreateInBoundsGEP(row, base.value, llvm::ArrayRef<llvm::Value *>{offset});
+        TypedValue out{slot, base.depth, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool,
+                       base.elem_bits, base.elem_unsigned, -1, base.elem_float};
+        // The address is the row `[M]T`. The length stays so the row converts to `[]T`.
+        out.row_decay = true;
+        out.array_len = base.inner_array_len;
+        out.array_type = row;
+        return out;
+    }
+    if (base.ptr_to_array) {
+        const int depth = base.depth - 1;
+        llvm::Type *element =
+            leaf_type(depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
+        llvm::Type *array = llvm::ArrayType::get(element, static_cast<uint64_t>(base.ptr_array_len));
+        llvm::Value *slot = builder_.CreateInBoundsGEP(
+            array, base.value, llvm::ArrayRef<llvm::Value *>{const_i32(0), offset});
+        return {slot, depth, base.elem_char, base.struct_id, false, base.elem_void, base.elem_bool, base.elem_bits,
+                base.elem_unsigned, -1, base.elem_float};
+    }
+    const int depth = base.depth - 1;
+    llvm::Value *slot = builder_.CreateInBoundsGEP(
+        leaf_type(depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float), base.value,
+        llvm::ArrayRef<llvm::Value *>{offset});
+    TypedValue out{slot,
+                   depth,
+                   base.elem_char,
+                   base.struct_id,
+                   false,
+                   base.elem_void,
+                   base.elem_bool,
+                   base.elem_bits,
+                   base.elem_unsigned,
+                   -1,
+                   base.elem_float};
+    out.fn_ty = base.fn_ty;
+    out.fn_ret_depth = base.fn_ret_depth;
+    out.fn_ret_float = base.fn_ret_float;
+    out.fn_ret_bits = base.fn_ret_bits;
+    out.fn_ret_unsigned = base.fn_ret_unsigned;
+    out.fn_ret_char = base.fn_ret_char;
+    out.fn_ret_bool = base.fn_ret_bool;
+    out.fn_ret_struct = base.fn_ret_struct;
+    out.fn_results = base.fn_results;
+    out.enum_id = base.enum_id;
+    return out;
 }
 
 // A local `[N]...T` decays by dropping the outer array. The pointer already addresses element 0.

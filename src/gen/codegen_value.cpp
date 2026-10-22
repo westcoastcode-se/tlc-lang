@@ -880,6 +880,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     value.elem_unsigned = target.elem_unsigned;
                     value.elem_float = target.elem_float;
                     value.struct_id = target.struct_id;
+                    value.alias_owner = target.alias_owner;
+                    value.alias_file = target.alias_file;
                     return value;
                 }
                 if (target.depth > 0 && source.depth > 0) {

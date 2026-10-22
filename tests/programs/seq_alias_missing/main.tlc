@@ -1,0 +1,13 @@
+import "std/seq";
+
+type Row []i32;
+
+func use(items seq.Seq[i32]) i32 {
+    return items.len();
+}
+
+func main() i32 {
+    var xs = [_]i32{1, 2, 3};
+    var row Row = xs;
+    return use(row);
+}

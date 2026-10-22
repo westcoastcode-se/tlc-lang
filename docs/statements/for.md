@@ -32,7 +32,7 @@ func main() i32 {
 }
 ```
 
-`import "std/seq"` names the iteration trait. A value `seq.Seq[T]` checks `len` and `at`. A pointer `*seq.Seq[T]` checks `ref` as well. The three-clause `for` does not call those methods. The trait is on [seq](../std/seq.md).
+`import "std/seq"` names the iteration trait. A value `seq.Seq[T]` checks `len` and `at`. A pointer `*seq.Seq[T]` checks `ref` as well. `[N]T` and `[]T` satisfy `seq.Seq[E]`, where `E` is the element an index reads. `len` is `.len`, `at` is the index, and `ref` is the address of that element. A slice alias satisfies the trait only when it has the methods. A pointer to the array or the slice does not satisfy it. The three-clause `for` does not call those methods. The trait is on [seq](../std/seq.md).
 
 ## Cost
 

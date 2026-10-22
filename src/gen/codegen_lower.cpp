@@ -768,6 +768,11 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.array_len = -1;
         fill(out, base_depth + indirections);
         out.type = slice_type();
+        // `type Row []i32` keeps the alias. `[]i32` and `[]Row` do not.
+        if (base_slice && indirections == 0 && !is_array) {
+            out.alias_owner = name;
+            out.alias_file = package.empty() ? file : package_file(file, package);
+        }
         return out;
     }
     if (base_array && (indirections > 0 || is_array)) {
@@ -1002,6 +1007,8 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.shells = low.shells;
     binding.is_array = low.is_array;
     binding.array_len = low.array_len;
+    binding.alias_owner = low.alias_owner;
+    binding.alias_file = low.alias_file;
 }
 
 llvm::StructType *CodeGen::slice_type() const {

@@ -1,0 +1,14 @@
+import "std/seq";
+
+func use(rows seq.Seq[[2]i32]) i32 {
+    return rows.len() + rows.at(1)[0];
+}
+
+func pass(grid [3][2]i32) i32 {
+    return use(grid);
+}
+
+func main() i32 {
+    var grid [3][2]i32 = {{1, 2}, {39, 0}, {0, 0}};
+    return use(grid) + pass(grid) - 42;
+}

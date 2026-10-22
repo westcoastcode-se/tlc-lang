@@ -1,0 +1,21 @@
+import "std/seq";
+
+type Row []i32;
+
+func Row::len(self *this) i32 {
+    return (*self).len;
+}
+
+func Row::at(self this, i i32) i32 {
+    return self[i];
+}
+
+func use(items seq.Seq[i32]) i32 {
+    return items.len() + items.at(0);
+}
+
+func main() i32 {
+    var xs = [_]i32{1, 2, 3};
+    var row Row = xs;
+    return use(row);
+}

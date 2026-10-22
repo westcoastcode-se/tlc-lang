@@ -60,6 +60,8 @@ Type type_float(int bits);
 bool uses_many_results(const Type &type);
 bool mentions_trait(const Type &type);
 bool same_type(const Type &lhs, const Type &rhs);
+// `got` may add `const` and still match `want`. `[]i32` matches `[]const i32`.
+bool allows_added_const(const Type &got, const Type &want);
 // Parameter lists used to tell two functions of one name apart. A method skips its receiver.
 bool same_selection(const Type &lhs, bool skip_lhs, const Type &rhs, bool skip_rhs);
 // `[]T`: an array whose length is unknown. `[]const T` does not store an element.

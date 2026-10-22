@@ -1,0 +1,16 @@
+import "std/seq";
+
+func use(rows seq.Seq[[]i32]) i32 {
+    return rows.at(0).len * 20 + rows.at(1)[0];
+}
+
+func pass(table [2][]i32) i32 {
+    return use(table);
+}
+
+func main() i32 {
+    var a = [_]i32{1, 2};
+    var b = [_]i32{2};
+    var rows = [_][]i32{a[:], b[:]};
+    return use(rows) + pass(rows) - 42;
+}

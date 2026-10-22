@@ -1,0 +1,14 @@
+import "std/seq";
+
+func give() [4]i32 {
+    var row = [_]i32{38, 0, 0, 0};
+    return row;
+}
+
+func use(items seq.Seq[i32]) i32 {
+    return items.len() + items.at(0);
+}
+
+func main() i32 {
+    return use(give());
+}

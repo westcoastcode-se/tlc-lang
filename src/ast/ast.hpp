@@ -723,6 +723,9 @@ struct FunctionDecl {
     std::vector<FnCapture> captures;
     // Names this function owns that an inner function reads.
     std::vector<std::string> captured_here;
+    // Specialized method of the iteration trait. 1 is length, 2 is the element, 3 is the address.
+    // Zero on a declaration the program wrote.
+    int iteration_kind = 0;
 };
 
 struct TraitDecl {

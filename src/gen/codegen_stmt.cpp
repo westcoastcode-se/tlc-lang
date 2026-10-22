@@ -303,6 +303,8 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.enum_id = got.enum_id;
             binding.inner_array_len = got.inner_array_len;
             binding.elem_slice = got.elem_slice;
+            binding.alias_owner = got.alias_owner;
+            binding.alias_file = got.alias_file;
             scopes_.back()[name] = binding;
             alias_capture(name, binding);
             note(name, binding);

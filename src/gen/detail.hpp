@@ -18,6 +18,8 @@ inline bool array_brace(const Expr::Init &init) { return !init.is_tuple && init.
 
 // A trait argument that is a function pointer. -1 still means "not a trait parameter".
 inline constexpr int kFnSpec = -2;
+// A trait argument that is an array or a slice. The shape is `active_iter_`, not a struct id.
+inline constexpr int kIterSpec = -3;
 
 inline bool trait_fn_argument(const TypedValue &arg) {
     if (arg.value != nullptr && llvm::isa<llvm::Function>(arg.value)) {

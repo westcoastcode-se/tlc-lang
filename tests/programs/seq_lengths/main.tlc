@@ -1,0 +1,11 @@
+import "std/seq";
+
+func use(items seq.Seq[i32]) i32 {
+    return items.len();
+}
+
+func main() i32 {
+    var a [4]i32;
+    var b [8]i32;
+    return use(a) * use(b) + 10;
+}

@@ -1,0 +1,13 @@
+import "std/seq";
+
+func use(items seq.Seq[u8]) i32 {
+    return items.len() * i32(items.at(0));
+}
+
+func main() i32 {
+    var text []const u8 = "*";
+    if (use("*") != 42) {
+        return 1;
+    }
+    return use(text);
+}

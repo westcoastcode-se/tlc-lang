@@ -131,6 +131,12 @@ CodeGen::Lowered CodeGen::trait_fn_lowered(const std::string &trait_name) const 
 
 CodeGen::Lowered CodeGen::spec_param(const FunctionDecl &fn, std::size_t index, const std::vector<int> &spec) const {
     const Param &param = fn.params[index];
+    if (index < spec.size() && spec[index] == kIterSpec) {
+        const std::vector<IterSlot> &slots = pending_iter_on_ ? pending_iter_ : active_iter_;
+        if (index < slots.size() && slots[index].active) {
+            return slots[index].param;
+        }
+    }
     if (index < spec.size() && spec[index] == kFnSpec) {
         // `Shape` and `*Shape` are both this one function pointer. The call is `s.method(...)`.
         return trait_fn_lowered(param.type_name);
@@ -522,9 +528,12 @@ void CodeGen::emit_nested_body(const FunctionDecl &fn, llvm::Function *function,
     defers_.clear();
     case_blocks_.clear();
     auto saved_spec = active_spec_;
+    auto saved_iter = std::move(active_iter_);
     active_spec_.clear();
+    active_iter_.clear();
     emit_function_body(fn, function, depth, captures.empty() ? nullptr : &captures);
     active_spec_ = std::move(saved_spec);
+    active_iter_ = std::move(saved_iter);
     scopes_ = std::move(saved_scopes);
     function_ = saved_function;
     return_type_ = saved_return;

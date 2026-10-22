@@ -149,6 +149,9 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &, Sour
             require_satisfies(got.struct_id, want.trait_id, false, loc, trait_fn_home_);
             return;
         }
+        if (accept_iteration(got, want, loc)) {
+            return;
+        }
         mismatch(loc, want, got);
         return;
     }
@@ -1001,6 +1004,14 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
             expect_value(value, want, expr, expr_loc(expr));
             return value;
         }
+    }
+    // A parameter `[N]T` is a pointer that still records N. `value_type` drops that length.
+    if (want.kind == TypeKind::Trait) {
+        const Type got = check_raw(expr, true);
+        if (got.kind != TypeKind::Invalid) {
+            expect_value(got, want, expr, expr_loc(expr));
+        }
+        return got;
     }
     const Type got = check_expr(expr, true);
     expect_value(got, want, expr, expr_loc(expr));

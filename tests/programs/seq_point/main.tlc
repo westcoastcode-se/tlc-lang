@@ -1,0 +1,15 @@
+import "std/seq";
+
+type Point struct {
+    n i32;
+};
+
+func use(items seq.Seq[Point]) i32 {
+    return items.len() + items.at(0).n;
+}
+
+func main() i32 {
+    var items [2]Point;
+    items[0].n = 40;
+    return use(items);
+}

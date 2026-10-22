@@ -311,6 +311,9 @@ struct Binding {
     // The element of this slice or array is one `[]E`. A further slice stays rejected.
     bool elem_slice = false;
     std::vector<TypeShell> shells;
+    // `type Row []i32`. Empty when this value is the slice itself.
+    std::string alias_owner;
+    uint32_t alias_file = 0;
 };
 
 struct TypedValue {
@@ -355,6 +358,9 @@ struct TypedValue {
     // The element is one `[]E`. Indexing loads a header, not `E`.
     bool elem_slice = false;
     std::vector<TypeShell> shells{};
+    // `type Row []i32`. Empty when this value is the slice itself.
+    std::string alias_owner;
+    uint32_t alias_file = 0;
 };
 
 // How an extern function passes one struct on x86-64 System V.
@@ -508,6 +514,9 @@ class CodeGen {
         // Push a call-stack frame around this call. `builtin.trace` and `builtin.va` leave it
         // off, so those calls are not part of the text. `builtin.panic` keeps the frame.
         bool trace = false;
+        // `items.len()` on an array or a slice. The value is the length, the element, or its address.
+        bool yielded = false;
+        TypedValue yield;
     };
     struct AbiLeaf {
         uint64_t offset = 0;
@@ -579,6 +588,9 @@ class CodeGen {
         // The element is one `[]E`. `[N][]T` is `[N x tlc.slice]`.
         bool elem_slice = false;
         std::vector<TypeShell> shells;
+        // `type Row []i32`. Empty when the lowered type is the slice itself.
+        std::string alias_owner;
+        uint32_t alias_file = 0;
     };
     struct EnumLayout {
         std::string name;
@@ -654,6 +666,21 @@ class CodeGen {
     std::unordered_map<std::string, llvm::GlobalVariable *> type_names_;
     std::unordered_set<std::string> emitting_specs_;
     std::vector<int> active_spec_;
+    // One entry per parameter of the specialization being emitted. Parallel to `active_spec_`.
+    // A slot is live when that parameter is `kIterSpec`.
+    struct IterSlot {
+        bool active = false;
+        bool is_slice = false;
+        int array_len = 0;
+        Lowered param;
+        std::string fragment;
+        std::string alias_owner;
+        uint32_t alias_file = 0;
+    };
+    std::vector<IterSlot> active_iter_;
+    // Set while `spec_type` builds the signature of a specialization that is not yet `active_iter_`.
+    std::vector<IterSlot> pending_iter_;
+    bool pending_iter_on_ = false;
     std::unordered_map<uint32_t, std::unordered_map<std::string, int>> tags_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, Alias>> aliases_;
 
@@ -961,6 +988,8 @@ class CodeGen {
             loaded.inner_array_len = binding.inner_array_len;
             loaded.elem_slice = binding.elem_slice;
             loaded.shells = binding.shells;
+            loaded.alias_owner = binding.alias_owner;
+            loaded.alias_file = binding.alias_file;
             return loaded;
         }
         if (binding.is_array) {
@@ -1324,6 +1353,10 @@ class CodeGen {
     // Writes the named fields of `init` through `slot`. Omitted fields are left as they are.
     void store_init_fields(int struct_id, llvm::Value *slot, const Expr::Init &init);
     TypedValue emit_addr(const Expr &expr);
+    // Address of `base[subscript]`. `base` is the rvalue of the collection.
+    TypedValue index_address(const TypedValue &base, llvm::Value *subscript, SourceLoc loc);
+    IterSlot iter_slot(const TypedValue &arg) const;
+    bool emit_iter_call(const Expr::Call &node, const Expr::Selector &selector, PreparedCall &prepared);
     llvm::Type *shape_type(const Shape &shape) const;
     Shape decay_shape(Shape shape) const;
     Shape shape_from_binding(const Binding &binding) const;

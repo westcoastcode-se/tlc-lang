@@ -192,6 +192,8 @@ class Checker {
             int home = -1;
             // The iteration trait's pointer-result method. A value parameter does not require it.
             bool iteration_ref = false;
+            // The iteration trait's element method. Its result is the element type.
+            bool iteration_element = false;
         };
         struct Field {
             std::string name;
@@ -214,6 +216,10 @@ class Checker {
         std::vector<const FunctionDecl *> defaults;
         // Field declarations, typed after structs are complete.
         std::vector<FieldDecl> pending;
+        // The extern trait whose package links libseq.a, after it is specialized.
+        bool iteration = false;
+        // Result of the element method. Null when that method is missing.
+        std::shared_ptr<Type> iteration_elem;
     };
 
     std::vector<Scope> scopes_;
@@ -419,6 +425,11 @@ class Checker {
     // `body_home` is the package that will compile the specialized body. Zero keeps the caller's view.
     // A method counts only when that body can call it, and when the caller can see it.
     bool require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc, uint32_t body_home = 0);
+    // `[N]T` and `[]T` satisfy the iteration trait when an index yields its element.
+    // A slice alias is accepted only when it has the methods. True when the value is
+    // accepted, or when the failure was already reported.
+    bool accept_iteration(const Type &got, const Type &want, SourceLoc loc);
+    void alias_satisfies(const Type &alias, int trait_id, SourceLoc loc);
     // The file that defines `callee`, when it is a name or `pkg.name`. Zero when that file is unknown.
     uint32_t function_home(const Expr &callee);
     // Non-zero when `signature` takes a trait and `callee` names that function.

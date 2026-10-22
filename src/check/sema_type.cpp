@@ -510,6 +510,108 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
     return ok;
 }
 
+bool Checker::accept_iteration(const Type &got, const Type &want, SourceLoc loc) {
+    if (want.kind != TypeKind::Trait || want.trait_id < 0 || want.trait_id >= static_cast<int>(traits_.size())) {
+        return false;
+    }
+    const TraitInfo &trait = traits_[static_cast<std::size_t>(want.trait_id)];
+    if (!trait.iteration || trait.iteration_elem == nullptr) {
+        return false;
+    }
+    // A slice alias is a different type. It satisfies the trait only by its own methods.
+    if (got.alias_id != 0) {
+        if (!is_slice(got)) {
+            return false;
+        }
+        alias_satisfies(got, want.trait_id, loc);
+        return true;
+    }
+    const Type *element = nullptr;
+    if (got.kind == TypeKind::Array && got.element != nullptr) {
+        element = got.element.get();
+    } else if (got.kind == TypeKind::Pointer && !got.optional && got.decayed_len > 0 && got.pointee != nullptr) {
+        // A parameter `[N]T` is a pointer to the element. `*[N]T` has no decayed length.
+        element = got.pointee.get();
+    }
+    if (element == nullptr) {
+        return false;
+    }
+    // `[]const u8` indexes a const byte. `Seq[u8]` still accepts that string.
+    return allows_added_const(*trait.iteration_elem, *element);
+}
+
+void Checker::alias_satisfies(const Type &alias, int trait_id, SourceLoc loc) {
+    if (trait_id < 0 || trait_id >= static_cast<int>(traits_.size())) {
+        error(loc, "type mismatch");
+        return;
+    }
+    const std::string owner = type_desc(alias);
+    uint32_t home = 0;
+    if (alias.alias_id > 0 && static_cast<std::size_t>(alias.alias_id) < alias_file_.size()) {
+        home = alias_file_[static_cast<std::size_t>(alias.alias_id)];
+    }
+    const auto matches = [&](const Type &trait_fn, const Type &concrete) {
+        if (trait_fn.kind != TypeKind::Function || concrete.kind != TypeKind::Function || trait_fn.result == nullptr ||
+            concrete.result == nullptr || trait_fn.variadic || concrete.variadic || concrete.params.empty() ||
+            trait_fn.params.size() + 1 != concrete.params.size() || !same_type(*trait_fn.result, *concrete.result)) {
+            return false;
+        }
+        const Type &receiver = concrete.params[0];
+        if (receiver.kind == TypeKind::Pointer) {
+            if (receiver.pointee == nullptr || !same_type(*receiver.pointee, alias)) {
+                return false;
+            }
+        } else if (!same_type(receiver, alias)) {
+            return false;
+        }
+        for (std::size_t i = 0; i < trait_fn.params.size(); ++i) {
+            if (!same_type(trait_fn.params[i], concrete.params[i + 1])) {
+                return false;
+            }
+        }
+        return true;
+    };
+    for (const TraitInfo::Method &method : traits_[static_cast<std::size_t>(trait_id)].methods) {
+        if (method.iteration_ref) {
+            continue;
+        }
+        bool hidden = false;
+        const MethodInfo *head = find_visible_method(home, owner, method.name, hidden);
+        if (head == nullptr) {
+            error(loc, hidden ? method.name + " is not exported" : "undeclared identifier");
+            continue;
+        }
+        const auto signature_ok = [&](const MethodInfo &candidate) {
+            if (!candidate.has_body || candidate.is_static || candidate.unsafe_fn != method.unsafe_fn ||
+                !matches(method.type, candidate.type)) {
+                return false;
+            }
+            const bool pointer_method = candidate.type.kind == TypeKind::Function && !candidate.type.params.empty() &&
+                                        candidate.type.params[0].kind == TypeKind::Pointer;
+            return !pointer_method;
+        };
+        const MethodInfo *concrete = nullptr;
+        bool mismatched = false;
+        auto consider = [&](const MethodInfo &candidate) {
+            if (!candidate.has_body) {
+                return;
+            }
+            mismatched = true;
+            if (!signature_ok(candidate)) {
+                return;
+            }
+            concrete = &candidate;
+        };
+        consider(*head);
+        for (const MethodInfo &extra : head->more) {
+            consider(extra);
+        }
+        if (concrete == nullptr) {
+            error(loc, mismatched ? "type mismatch" : "undeclared identifier");
+        }
+    }
+}
+
 void Checker::define_trait_fields() {
     for (TraitInfo &info : traits_) {
         file_id_ = info.file_id;
