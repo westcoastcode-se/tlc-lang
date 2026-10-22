@@ -1549,6 +1549,9 @@ void Checker::substitute_stmt(const std::vector<TypeParam> &params, const std::v
                 if (node.step) {
                     substitute_expr(params, bounds, *node.step);
                 }
+                if (node.each_expr) {
+                    substitute_expr(params, bounds, *node.each_expr);
+                }
                 if (node.body) {
                     substitute_stmt(params, bounds, *node.body);
                 }

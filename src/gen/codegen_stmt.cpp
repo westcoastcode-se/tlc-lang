@@ -629,6 +629,200 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
     }
 }
 
+void CodeGen::emit_for_each(const Stmt::For &node) {
+    if (node.each_expr == nullptr || terminated()) {
+        return;
+    }
+    const Expr *collection = node.each_expr.get();
+    bool want_ref = false;
+    if (const auto *call = std::get_if<Expr::Call>(&node.each_expr->data)) {
+        const auto *named = call->callee == nullptr ? nullptr : std::get_if<Expr::Name>(&call->callee->data);
+        if (named != nullptr && named->text == "ptr_of" && call->args.size() == 1 && call->args.front() != nullptr) {
+            want_ref = true;
+            collection = call->args.front().get();
+        }
+    }
+    push();
+    const bool ref_struct = [&]() {
+        if (!want_ref) {
+            return false;
+        }
+        if (const auto *name = std::get_if<Expr::Name>(&collection->data)) {
+            const Binding *binding = lookup(name->text);
+            return binding != nullptr && binding->struct_id >= 0 && !binding->is_array && !binding->is_slice;
+        }
+        return false;
+    }();
+    TypedValue base = ref_struct ? emit_addr(*collection) : emit_rvalue(*collection);
+    if (base.value == nullptr || terminated()) {
+        pop();
+        return;
+    }
+    const bool struct_value = base.struct_id >= 0 && !base.is_slice && base.array_len <= 0 &&
+                              (base.array_type == nullptr || !base.array_type->isArrayTy()) &&
+                              (ref_struct || base.depth == 0);
+    auto length_of = [&](const TypedValue &value) -> llvm::Value * {
+        if (value.is_slice) {
+            llvm::Value *header = value.value;
+            if (header->getType() != slice_type()) {
+                header = builder_.CreateLoad(slice_type(), header);
+            }
+            return builder_.CreateExtractValue(header, 1);
+        }
+        if (value.array_len > 0) {
+            return const_i32(value.array_len);
+        }
+        if (value.array_type != nullptr && value.array_type->isArrayTy()) {
+            return const_i32(static_cast<int>(value.array_type->getArrayNumElements()));
+        }
+        return nullptr;
+    };
+    const StructLayout *layout = nullptr;
+    if (struct_value && base.struct_id >= 0 && base.struct_id < static_cast<int>(structs_.size())) {
+        layout = &structs_[static_cast<std::size_t>(base.struct_id)];
+    }
+    auto find_method = [&](const char *name) -> llvm::Function * {
+        if (layout == nullptr) {
+            return nullptr;
+        }
+        const Binding *method = method_binding(current_file_, layout->file_id, layout->name + "." + name);
+        return method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
+    };
+    llvm::Value *length = nullptr;
+    if (struct_value) {
+        llvm::Function *len = find_method("len");
+        llvm::Value *self = base.value;
+        if (!ref_struct && base.depth == 1) {
+            self = builder_.CreateLoad(layout->type, base.value);
+        }
+        if (ref_struct) {
+            // `len` takes the struct by value.
+            self = builder_.CreateLoad(layout->type, base.value);
+        }
+        if (len == nullptr || self == nullptr) {
+            error(node.loc, "type mismatch");
+            pop();
+            return;
+        }
+        length = builder_.CreateCall(len, {self});
+    } else {
+        length = length_of(base);
+    }
+    if (length == nullptr) {
+        error(node.loc, "type mismatch");
+        pop();
+        return;
+    }
+    llvm::AllocaInst *index = alloca_typed(i32(), "each.i");
+    builder_.CreateStore(const_i32(0), index);
+    llvm::Type *slot_type = want_ref ? static_cast<llvm::Type *>(ptr_type()) : i32();
+    int slot_depth = want_ref ? 1 : 0;
+    int slot_struct = -1;
+    bool slot_char = false;
+    bool slot_bool = false;
+    int slot_bits = 0;
+    bool slot_unsigned = false;
+    bool slot_float = false;
+    if (!want_ref && !struct_value) {
+        const int elem_depth = base.depth > 0 ? base.depth - 1 : 0;
+        slot_type = leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
+        slot_struct = base.struct_id;
+        slot_char = base.elem_char;
+        slot_bool = base.elem_bool;
+        slot_bits = base.elem_bits;
+        slot_unsigned = base.elem_unsigned;
+        slot_float = base.elem_float;
+    } else if (!want_ref && layout != nullptr && layout->type != nullptr) {
+        llvm::Function *at = find_method("at");
+        if (at != nullptr && at->getFunctionType()->getReturnType() != nullptr) {
+            slot_type = at->getReturnType();
+        }
+        if (slot_type != nullptr && slot_type->isStructTy() && base.struct_id >= 0) {
+            // The element is not the collection. A scalar result stays an integer.
+        }
+    }
+    if (want_ref && !struct_value) {
+        slot_struct = base.struct_id;
+        slot_char = base.elem_char;
+        slot_bool = base.elem_bool;
+        slot_bits = base.elem_bits;
+        slot_unsigned = base.elem_unsigned;
+        slot_float = base.elem_float;
+    }
+    llvm::AllocaInst *slot = alloca_typed(slot_type == nullptr ? i32() : slot_type, node.each_name);
+    Binding item;
+    item.value = slot;
+    item.depth = slot_depth;
+    item.struct_id = slot_struct;
+    item.elem_char = slot_char;
+    item.elem_bool = slot_bool;
+    item.elem_bits = slot_bits;
+    item.elem_unsigned = slot_unsigned;
+    item.elem_float = slot_float;
+    scopes_.back()[node.each_name] = item;
+    llvm::BasicBlock *cond_block = llvm::BasicBlock::Create(context_, "each.cond", function_);
+    llvm::BasicBlock *body_block = llvm::BasicBlock::Create(context_, "each.body", function_);
+    llvm::BasicBlock *step_block = llvm::BasicBlock::Create(context_, "each.step", function_);
+    llvm::BasicBlock *end_block = llvm::BasicBlock::Create(context_, "each.end", function_);
+    if (!terminated()) {
+        builder_.CreateBr(cond_block);
+    }
+    builder_.SetInsertPoint(cond_block);
+    llvm::Value *current = builder_.CreateLoad(i32(), index);
+    llvm::Value *more = builder_.CreateICmpSLT(current, length);
+    if (!terminated()) {
+        builder_.CreateCondBr(more, body_block, end_block);
+    }
+    builder_.SetInsertPoint(body_block);
+    llvm::Value *here = builder_.CreateLoad(i32(), index);
+    if (struct_value) {
+        llvm::Function *method = find_method(want_ref ? "ref" : "at");
+        llvm::Value *self = base.value;
+        if (ref_struct || base.depth == 0) {
+            if (!want_ref || !ref_struct) {
+                self = base.depth == 0 ? base.value : builder_.CreateLoad(layout->type, base.value);
+            }
+        }
+        if (want_ref && ref_struct) {
+            self = base.value;
+        } else if (layout != nullptr && layout->type != nullptr && base.depth == 0) {
+            self = base.value;
+        }
+        if (method == nullptr) {
+            error(node.loc, "type mismatch");
+        } else {
+            llvm::Value *produced = builder_.CreateCall(method, {self, here});
+            builder_.CreateStore(produced, slot);
+        }
+    } else {
+        TypedValue address = index_address(base, here, node.loc);
+        if (address.value != nullptr) {
+            if (want_ref) {
+                builder_.CreateStore(address.value, slot);
+            } else {
+                llvm::Value *loaded = builder_.CreateLoad(slot_type, address.value);
+                builder_.CreateStore(loaded, slot);
+            }
+        }
+    }
+    loops_.push_back(LoopTargets{step_block, end_block});
+    if (node.body && !terminated()) {
+        emit_stmt(*node.body);
+    }
+    loops_.pop_back();
+    if (!terminated()) {
+        builder_.CreateBr(step_block);
+    }
+    builder_.SetInsertPoint(step_block);
+    if (!terminated()) {
+        llvm::Value *next = builder_.CreateAdd(builder_.CreateLoad(i32(), index), const_i32(1));
+        builder_.CreateStore(next, index);
+        builder_.CreateBr(cond_block);
+    }
+    builder_.SetInsertPoint(end_block);
+    pop();
+}
+
 void CodeGen::emit_stmt(const Stmt &stmt) {
     set_loc(std::visit(
         [](const auto &node) -> SourceLoc {
@@ -941,6 +1135,10 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
             } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
                 emit_switch(node);
             } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.each) {
+                    emit_for_each(node);
+                    return;
+                }
                 push();
                 if (node.init) {
                     emit_stmt(*node.init);

@@ -1,0 +1,19 @@
+func main() i32 {
+    var items [4]i32;
+    items[0] = 1;
+    items[1] = 2;
+    items[2] = 3;
+    items[3] = 4;
+    var item = 7;
+    var sum = 0;
+    for (var item : items) {
+        if (item == 2) {
+            continue;
+        }
+        if (item == 4) {
+            break;
+        }
+        sum = sum + item;
+    }
+    return item + sum;
+}

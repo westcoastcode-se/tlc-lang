@@ -1,0 +1,7 @@
+func main() i32 {
+    var items [1]i32;
+    for (item : items) {
+        return item;
+    }
+    return 0;
+}

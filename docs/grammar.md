@@ -205,6 +205,7 @@ statement   = block
             | "while" "(" expression ")" block
             | "do" statement "while" "(" expression ")" ";"
             | "for" "(" for-init [ expression ] ";" [ expression ] ")" block
+            | "for" "(" ( "var" | "const" ) identifier ":" expression ")" block
             | "switch" "(" expression ")" statement
             | "case" expression ":" statement
             | "default" ":" statement

@@ -2144,6 +2144,9 @@ void relocate_stmt(Stmt &stmt, const std::unordered_map<const FunctionDecl *, co
                 if (node.step) {
                     relocate_expr(*node.step, moved);
                 }
+                if (node.each_expr) {
+                    relocate_expr(*node.each_expr, moved);
+                }
                 if (node.body) {
                     relocate_stmt(*node.body, moved);
                 }

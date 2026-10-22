@@ -232,6 +232,143 @@ Type Checker::method_pointer(const Type &base, const Type &object, bool through_
     return type_pointer(std::move(value));
 }
 
+void Checker::check_for_each(const Stmt::For &node) {
+    if (node.each_expr == nullptr || node.each_name.empty()) {
+        error(node.loc, "type mismatch");
+        return;
+    }
+    const Expr *collection = node.each_expr.get();
+    bool want_ref = false;
+    if (const auto *call = std::get_if<Expr::Call>(&node.each_expr->data)) {
+        const auto *named = call->callee == nullptr ? nullptr : std::get_if<Expr::Name>(&call->callee->data);
+        if (named != nullptr && named->text == "ptr_of") {
+            if (call->args.size() != 1 || call->args.front() == nullptr) {
+                error(call->loc, "type mismatch");
+                return;
+            }
+            want_ref = true;
+            collection = call->args.front().get();
+            const bool lvalue = [&]() {
+                if (const auto *name = std::get_if<Expr::Name>(&collection->data)) {
+                    const Symbol *symbol = lookup(name->text);
+                    return symbol != nullptr && !symbol->is_function && !symbol->is_package && !symbol->is_constant;
+                }
+                if (const auto *index = std::get_if<Expr::Index>(&collection->data)) {
+                    return index->base != nullptr && !index->is_range;
+                }
+                if (const auto *selector = std::get_if<Expr::Selector>(&collection->data)) {
+                    return selector->base != nullptr;
+                }
+                if (const auto *star = std::get_if<Expr::Unary>(&collection->data)) {
+                    return star->op == TokenKind::Star && star->expr != nullptr;
+                }
+                return false;
+            }();
+            if (!lvalue) {
+                error(expr_loc(*collection), "not an lvalue");
+                return;
+            }
+        }
+    }
+    const Type got = check_expr(*collection, true);
+    if (got.kind == TypeKind::Invalid) {
+        return;
+    }
+    Type element;
+    if (got.kind == TypeKind::Array && got.element != nullptr && got.alias_id == 0) {
+        element = *got.element;
+        if (got.is_const) {
+            element.is_const = true;
+        }
+    } else if (got.kind == TypeKind::Pointer && !got.optional && got.decayed_len > 0 && got.pointee != nullptr &&
+               got.alias_id == 0) {
+        element = *got.pointee;
+    } else if (got.kind == TypeKind::Struct && got.struct_id >= 0 && got.struct_id < static_cast<int>(structs_.size())) {
+        const StructInfo &info = structs_[static_cast<std::size_t>(got.struct_id)];
+        bool hidden = false;
+        const MethodInfo *len = find_visible_method(info.file_id, info.name, "len", hidden);
+        const char *value_name = want_ref ? "ref" : "at";
+        const MethodInfo *value = find_visible_method(info.file_id, info.name, value_name, hidden);
+        if (len == nullptr || value == nullptr) {
+            error(expr_loc(*collection), want_ref ? "type mismatch" : (hidden ? std::string(value_name) + " is not exported" : "undeclared identifier"));
+            return;
+        }
+        const auto receiver_ok = [&](const MethodInfo &method, bool pointer) {
+            if (!method.has_body || method.is_static || method.type.kind != TypeKind::Function || method.type.result == nullptr ||
+                method.type.params.empty()) {
+                return false;
+            }
+            const Type &receiver = method.type.params[0];
+            if (pointer) {
+                return receiver.kind == TypeKind::Pointer && receiver.pointee != nullptr &&
+                       receiver.pointee->kind == TypeKind::Struct && receiver.pointee->struct_id == got.struct_id;
+            }
+            return receiver.kind == TypeKind::Struct && receiver.struct_id == got.struct_id;
+        };
+        if (!receiver_ok(*len, false) || len->type.params.size() != 1 || !same_type(*len->type.result, type_int())) {
+            error(expr_loc(*collection), "type mismatch");
+            return;
+        }
+        if (!receiver_ok(*value, want_ref) || value->type.params.size() != 2 ||
+            !same_type(value->type.params[1], type_int())) {
+            error(expr_loc(*collection), "type mismatch");
+            return;
+        }
+        if (want_ref) {
+            if (value->type.result->kind != TypeKind::Pointer || value->type.result->pointee == nullptr) {
+                error(expr_loc(*collection), "type mismatch");
+                return;
+            }
+            element = *value->type.result->pointee;
+        } else {
+            element = *value->type.result;
+        }
+    } else {
+        error(expr_loc(*collection), "type mismatch");
+        return;
+    }
+    const bool element_const = element.is_const;
+    Type bound = element;
+    if (want_ref) {
+        bound = type_pointer(element);
+        if (element_const && bound.pointee != nullptr) {
+            bound.pointee->is_const = true;
+        }
+    } else if (!node.each_const) {
+        bound.is_const = false;
+    }
+    const AssignState before = assign_;
+    push();
+    FlowFrame frame;
+    frame.kind = FlowFrame::Kind::Loop;
+    flow_frames_.push_back(std::move(frame));
+    ++loop_depth_;
+    Symbol symbol;
+    symbol.name = node.each_name;
+    symbol.type = bound;
+    symbol.is_auto = true;
+    symbol.is_immutable = node.each_const;
+    if (node.each_const) {
+        symbol.type.is_const = true;
+    }
+    symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
+    symbol.loc = node.each_name_loc;
+    if (declare(std::move(symbol), node.each_name_loc)) {
+        if (Symbol *live = lookup(node.each_name); live != nullptr && !node.each_const) {
+            init_open(*live);
+            init_mark_all(live->init_id);
+        }
+    }
+    if (node.body) {
+        check_stmt(*node.body);
+    }
+    const FlowFrame done = std::move(flow_frames_.back());
+    flow_frames_.pop_back();
+    assign_ = init_loop_exit(done.breaks, before, true);
+    --loop_depth_;
+    pop();
+}
+
 void Checker::check_stmt(const Stmt &stmt) {
     std::visit(
         [&](const auto &node) {
@@ -534,6 +671,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_stmt(*node.stmt);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.each) {
+                    check_for_each(node);
+                    return;
+                }
                 push();
                 FlowFrame frame;
                 frame.kind = FlowFrame::Kind::Loop;

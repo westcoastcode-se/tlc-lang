@@ -560,6 +560,12 @@ struct Stmt {
         std::unique_ptr<Expr> cond;
         std::unique_ptr<Expr> step;
         std::unique_ptr<Stmt> body;
+        // `for (var name : expression)` or `for (const name : expression)`.
+        bool each = false;
+        bool each_const = false;
+        std::string each_name;
+        SourceLoc each_name_loc{};
+        std::unique_ptr<Expr> each_expr;
     };
     struct DoWhile {
         SourceLoc loc{};

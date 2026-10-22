@@ -512,6 +512,7 @@ class Checker {
     Type elaborate_inferred(FunctionDecl &fn, const Type &want);
     Type check_against(const Expr &expr, const Type &want);
     void check_stmt(const Stmt &stmt);
+    void check_for_each(const Stmt::For &node);
     void check_assert(SourceLoc loc, const Expr *cond, const std::string &message);
     void check_test(const TestDecl &test);
     bool is_std_builtin_file(uint32_t file_id) const;

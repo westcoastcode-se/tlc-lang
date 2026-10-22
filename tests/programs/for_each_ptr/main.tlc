@@ -1,0 +1,9 @@
+func main() i32 {
+    var items [2]i32;
+    items[0] = 10;
+    items[1] = 20;
+    for (var item : ptr_of(items)) {
+        *item = *item + 1;
+    }
+    return items[0] + items[1];
+}

@@ -256,6 +256,22 @@ std::unique_ptr<Stmt> Parser::parse_for() {
     stmt.loc = peek().loc;
     eat(TokenKind::KwFor);
     expect(TokenKind::LParen, "expected '('");
+    const bool each_var = check(TokenKind::KwVar) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Colon;
+    const bool each_const =
+        check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Colon;
+    if (each_var || each_const) {
+        stmt.each = true;
+        stmt.each_const = each_const;
+        ++pos_;
+        stmt.each_name = peek().text;
+        stmt.each_name_loc = peek().loc;
+        ++pos_;
+        expect(TokenKind::Colon, "expected ':'");
+        stmt.each_expr = parse_expr();
+        expect(TokenKind::RParen, "expected ')'");
+        stmt.body = parse_required_block();
+        return make_stmt(std::move(stmt));
+    }
     if (eat(TokenKind::Semicolon)) {
         stmt.init = nullptr;
     } else if (const_on_type()) {

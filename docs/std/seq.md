@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: string](string.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`import "std/seq"` loads `lib/tlc/std/seq`. The package declares one trait, `seq.Seq[T]`. The compiler treats that `extern` trait as the iteration trait because the package's `link` file names `libseq.a`. It reads `len`, `at`, and `ref` from the declaration. A file names the trait by importing the package. A copy of the source that does not link that library is an ordinary trait.
+`import "std/seq"` loads `lib/tlc/std/seq`. The package declares `seq.Seq[T]` and `ptr_of[T]`. The compiler treats the `extern` trait `Seq` as the iteration trait because the package's `link` file names `libseq.a`. It reads `len`, `at`, and `ref` from that declaration. A file names the trait by importing the package. A copy of the source that does not link that library is an ordinary trait. `ptr_of[T]` has `len` and `ref`. `for (var item : ptr_of(items))` selects it without an import. A missing `ref` on that value is `type mismatch`.
 
 `len` has no parameter after the receiver and returns `i32`. `at` takes one `i32` and returns `T`. `ref` takes one `i32` and returns `*T`. A struct writes those names. `len` and `at` take the value. `ref` takes `self *this`, because the pointer refers to the struct. A value parameter `seq.Seq[T]` checks `len` and `at`. The pointer receiver on `ref` does not reject that value. A pointer parameter `*seq.Seq[T]` checks `ref` as well. A field, a further method, or a default on this trait is reported as `not supported yet`.
 

@@ -1305,6 +1305,7 @@ class CodeGen {
     void emit_defers_from(int min_loop_index);
     void finish_function();
     void emit_stmt(const Stmt &stmt);
+    void emit_for_each(const Stmt::For &node);
     void emit_bind(const Stmt::Bind &node);
     // A missing local initializer. One store per leaf, so a later store or an unread leaf can be deleted.
     void zero_slot(llvm::Value *slot, llvm::Type *ty);

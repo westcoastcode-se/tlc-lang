@@ -1112,6 +1112,11 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
                 copy.step = node.step ? clone_expr(*node.step) : nullptr;
                 copy.body = node.body ? clone_stmt(*node.body) : nullptr;
+                copy.each = node.each;
+                copy.each_const = node.each_const;
+                copy.each_name = node.each_name;
+                copy.each_name_loc = node.each_name_loc;
+                copy.each_expr = node.each_expr ? clone_expr(*node.each_expr) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
                 Stmt::DoWhile copy;

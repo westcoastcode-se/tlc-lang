@@ -1,0 +1,26 @@
+type Bag struct {
+    a i32;
+    b i32;
+};
+
+func Bag::len(self this) i32 {
+    return 2;
+}
+
+func Bag::at(self this, i i32) i32 {
+    if (i == 0) {
+        return self.a;
+    }
+    return self.b;
+}
+
+func main() i32 {
+    var bag Bag;
+    bag.a = 20;
+    bag.b = 22;
+    var sum = 0;
+    for (var item : bag) {
+        sum = sum + item;
+    }
+    return sum;
+}
