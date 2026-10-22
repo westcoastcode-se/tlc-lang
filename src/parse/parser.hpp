@@ -142,7 +142,7 @@ class Parser {
     std::vector<Enumerator> parse_enumerators();
     // One `name type;` field. False when the next token is not a name.
     // `extern_c` rejects `name union(Enum)`: a C union has no tag.
-    bool parse_field(FieldDecl &field, bool extern_c = false);
+    bool parse_field(FieldDecl &field, bool extern_c = false, bool allow_init = true);
     std::vector<FieldDecl> parse_fields(bool extern_c = false);
     struct StructMembers {
         std::vector<FieldDecl> fields;

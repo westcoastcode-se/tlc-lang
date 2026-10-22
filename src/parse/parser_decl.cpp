@@ -431,7 +431,7 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
                 trait.methods.push_back(std::move(method));
             } else if (check(TokenKind::Identifier)) {
                 FieldDecl field;
-                if (parse_field(field)) {
+                if (parse_field(field, false, false)) {
                     trait.fields.push_back(std::move(field));
                 }
             } else {

@@ -424,7 +424,7 @@ std::vector<Enumerator> Parser::parse_enumerators() {
     return enumerators;
 }
 
-bool Parser::parse_field(FieldDecl &field, bool extern_c) {
+bool Parser::parse_field(FieldDecl &field, bool extern_c, bool allow_init) {
     // A field is `name type`, and the type uses the same Go order as `var`.
     field.loc = peek().loc;
     if (!check(TokenKind::Identifier)) {
@@ -487,7 +487,17 @@ bool Parser::parse_field(FieldDecl &field, bool extern_c) {
     field.fn_variadic = type.fn_variadic;
     field.fn_results = type.fn_results;
     // `x i32 = 1` is the value of a field that an initializer does not name.
-    if (eat(TokenKind::Eq)) {
+    // A trait field is `name type;`. A value there is not that syntax.
+    if (check(TokenKind::Eq)) {
+        if (!allow_init) {
+            diags_.error(peek().loc, "expected ';'");
+            while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
+                ++pos_;
+            }
+            eat(TokenKind::Semicolon);
+            return true;
+        }
+        ++pos_;
         field.init = parse_expr();
     }
     expect(TokenKind::Semicolon, "expected ';'");

@@ -635,7 +635,7 @@ void Checker::define_trait_fields() {
             if (duplicate) {
                 continue;
             }
-            // A trait lists the field. A value on it is not a trait form.
+            // The parser rejects `w i32 = 1` on a trait. A value that still arrives is not a trait field.
             if (source.init != nullptr) {
                 error(source.loc, "not supported yet");
             }

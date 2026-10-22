@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A trait is a list of methods and fields. The receiver is implicit and is omitted from the trait type. A method inside the braces ends with `;`. `func area() i32 { return 1; }` is reported as `expected ';'`. A field is a name and a type, the same form as a struct field. A value on the field, `w i32 = 1`, is reported as `not supported yet`. `extern(abi="c") type Shape trait` is `extern(abi="c") on a trait or a generic`. `export type Shape trait` and `extern type Shape trait` are `not supported yet`.
+A trait is a list of methods and fields. The receiver is implicit and is omitted from the trait type. A method inside the braces ends with `;`. `func area() i32 { return 1; }` is reported as `expected ';'`. A field is a name and a type, and it ends with `;`. A value on the field, `w i32 = 1`, is reported as `expected ';'`. `extern(abi="c") type Shape trait` is `extern(abi="c") on a trait or a generic`. `export type Shape trait` and `extern type Shape trait` are `not supported yet`.
 
 ```c
 type Shape trait {
