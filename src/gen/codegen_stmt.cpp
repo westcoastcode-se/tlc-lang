@@ -432,17 +432,11 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         note(name, binding);
     };
     auto destination = [&](const std::string &name, bool &create) -> llvm::Value * {
-        create = node.is_var || node.is_const;
+        // `var` and `:=` allocate a new slot. The value was already emitted, so it
+        // still reads the binding this name hides.
+        create = node.is_var || node.is_const || node.is_define;
         if (create) {
             return nullptr;
-        }
-        if (node.is_define) {
-            const auto found = scopes_.back().find(name);
-            if (found == scopes_.back().end()) {
-                create = true;
-                return nullptr;
-            }
-            return found->second.value;
         }
         const Binding *found = lookup(name);
         return found == nullptr ? nullptr : found->value;
@@ -1241,6 +1235,14 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     if (var.name.empty()) {
                         continue;
                     }
+                    // A second `var` in this block hides the previous slot. Emit the
+                    // initializer before publishing the new slot so it reads the old one.
+                    const bool hides = !var.is_const_decl && scopes_.back().contains(var.name);
+                    auto publish = [&](const Binding &binding) {
+                        scopes_.back()[var.name] = binding;
+                        alias_capture(var.name, binding);
+                        debug_declare(var.name, var.loc, binding, 0);
+                    };
                     const Lowered low = lower_declared(current_file_, var);
                     if (low.is_slice) {
                         llvm::AllocaInst *slot = alloca_typed(slice_type(), var.name);
@@ -1248,9 +1250,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         binding.value = slot;
                         apply_low(binding, low);
                         binding.is_slice = true;
-                        scopes_.back()[var.name] = binding;
-                        alias_capture(var.name, binding);
-                        debug_declare(var.name, var.loc, binding, 0);
+                        if (!hides) {
+                            publish(binding);
+                        }
                         if (var.init != nullptr) {
                             const TypedValue value = emit_rvalue(*var.init);
                             if (!terminated()) {
@@ -1258,6 +1260,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                             }
                         } else if (!var.is_extern && !var.is_const_decl) {
                             zero_slot(slot, slice_type());
+                        }
+                        if (hides) {
+                            publish(binding);
                         }
                         continue;
                     }
@@ -1285,9 +1290,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         binding.elem_slice = low.elem_slice;
                         binding.inner_array_len = low.inner_array_len;
                         binding.shells = low.shells;
-                        scopes_.back()[var.name] = binding;
-                        alias_capture(var.name, binding);
-                        debug_declare(var.name, var.loc, binding, 0);
+                        if (!hides) {
+                            publish(binding);
+                        }
                         // A brace list and an array value share one store. The name is in scope first,
                         // so an element can read it. A struct value is not this list.
                         if (var.init != nullptr && array_ty != nullptr) {
@@ -1302,6 +1307,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                             std::unordered_set<int> seen;
                             paint_omitted_elements(slot, array_ty, low.struct_id, nullptr, seen);
                         }
+                        if (hides) {
+                            publish(binding);
+                        }
                         continue;
                     }
                     llvm::Type *ty = stored_type(low);
@@ -1314,9 +1322,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     binding.elem_void = low.elem_void;
                     binding.elem_bool = low.elem_bool;
                     apply_low(binding, low);
-                    scopes_.back()[var.name] = binding;
-                    alias_capture(var.name, binding);
-                    debug_declare(var.name, var.loc, binding, 0);
+                    if (!hides) {
+                        publish(binding);
+                    }
                     if (var.init) {
                         const auto *made = std::get_if<Expr::Init>(&var.init->data);
                         if (made != nullptr && made->struct_id >= 0 && made->elements.empty() && !made->is_tuple) {
@@ -1340,6 +1348,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                                !low.is_array && !low.is_slice) {
                         std::unordered_set<int> seen;
                         store_struct_defaults(slot, low.struct_id, seen);
+                    }
+                    if (hides) {
+                        publish(binding);
                     }
                 }
             }

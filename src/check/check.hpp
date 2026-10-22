@@ -308,6 +308,8 @@ class Checker {
     Symbol *lookup(const std::string &name);
     Symbol *lookup_scope(const std::string &name);
     bool declare(Symbol symbol, SourceLoc loc);
+    // Replaces a local in the current block. The initializer has already seen the previous binding.
+    bool shadow(Symbol symbol, SourceLoc loc);
     bool remember_shared(const Symbol &symbol, SourceLoc loc);
     void note_body(const std::string &name);
     bool shared_has(const std::string &name) const;

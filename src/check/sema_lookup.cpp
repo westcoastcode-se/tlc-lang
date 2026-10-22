@@ -698,6 +698,15 @@ bool Checker::declare(Symbol symbol, SourceLoc loc) {
     return true;
 }
 
+bool Checker::shadow(Symbol symbol, SourceLoc loc) {
+    if (symbol.name.empty() || scopes_.empty()) {
+        return false;
+    }
+    (void)loc;
+    scopes_.back().symbols.insert_or_assign(symbol.name, std::move(symbol));
+    return true;
+}
+
 Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_incomplete) {
     Type builtin;
     if (fill_builtin(name, builtin)) {

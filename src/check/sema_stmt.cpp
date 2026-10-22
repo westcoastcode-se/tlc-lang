@@ -860,7 +860,33 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     }
                 };
-                if (node.is_var || node.is_const) {
+                // `var` and `:=` hide an earlier binding in this block. The value above
+                // was checked first, so it still names that binding. `const` does not hide.
+                auto hide_current = [&](std::size_t index) {
+                    const SourceLoc loc = index < node.name_locs.size() ? node.name_locs[index] : node.loc;
+                    if (parts[index].kind == TypeKind::Nullptr) {
+                        error(loc, "type mismatch");
+                        return;
+                    }
+                    if (in_current(node.names[index]) == nullptr) {
+                        declare_new(index);
+                        return;
+                    }
+                    Symbol symbol;
+                    symbol.name = node.names[index];
+                    symbol.type = parts[index];
+                    symbol.is_auto = true;
+                    symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
+                    symbol.loc = loc;
+                    shadow(std::move(symbol), loc);
+                    if (node.names.size() == 1 && node.value != nullptr) {
+                        if (Symbol *live = in_current(node.names[index])) {
+                            init_open(*live);
+                            init_cover(*live, node.value.get());
+                        }
+                    }
+                };
+                if (node.is_const) {
                     for (std::size_t i = 0; i < node.names.size(); ++i) {
                         const SourceLoc loc = i < node.name_locs.size() ? node.name_locs[i] : node.loc;
                         if (parts[i].kind == TypeKind::Nullptr) {
@@ -871,30 +897,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                             declare_new(i);
                         }
                     }
-                } else if (node.is_define) {
-                    bool any_new = false;
+                } else if (node.is_var || node.is_define) {
                     for (std::size_t i = 0; i < node.names.size(); ++i) {
-                        const SourceLoc loc = i < node.name_locs.size() ? node.name_locs[i] : node.loc;
-                        if (const Symbol *existing = in_current(node.names[i])) {
-                            assignable(*existing, loc, parts[i]);
-                        } else {
-                            any_new = true;
-                        }
-                    }
-                    if (!any_new) {
-                        error(node.loc, "type mismatch");
-                    } else {
-                        for (std::size_t i = 0; i < node.names.size(); ++i) {
-                            if (in_current(node.names[i]) != nullptr) {
-                                continue;
-                            }
-                            const SourceLoc loc = i < node.name_locs.size() ? node.name_locs[i] : node.loc;
-                            if (parts[i].kind == TypeKind::Nullptr) {
-                                error(loc, "type mismatch");
-                            } else {
-                                declare_new(i);
-                            }
-                        }
+                        hide_current(i);
                     }
                 } else {
                     for (std::size_t i = 0; i < node.names.size(); ++i) {
@@ -916,6 +921,31 @@ void Checker::check_stmt(const Stmt &stmt) {
                         continue;
                     }
                     Type type = type_of_var(var);
+                    const bool hides = !var.is_const_decl && !scopes_.empty() && scopes_.back().symbols.contains(var.name);
+                    const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
+                    const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
+                    const bool slice = var.is_array && !var.ptr_to_array && var.array_len < 0;
+                    const bool array_value = var.is_array && !var.ptr_to_array && var.array_len > 0 &&
+                                             var.init != nullptr && list == nullptr;
+                    const bool plain_init = var.init != nullptr && type.kind != TypeKind::Invalid &&
+                                            !(var.is_array && !var.ptr_to_array && !array_list && !slice && !array_value);
+                    // The previous binding is still visible while this initializer is checked.
+                    bool init_ready = false;
+                    if (hides && plain_init) {
+                        const std::size_t before = diags_.size();
+                        const bool saved_new = init_new_partial_;
+                        init_allow_partial_ = true;
+                        if (std::holds_alternative<Expr::New>(var.init->data)) {
+                            init_new_partial_ = true;
+                        }
+                        check_against(*var.init, type);
+                        init_allow_partial_ = false;
+                        init_new_partial_ = saved_new;
+                        init_ready = diags_.size() == before;
+                        scopes_.back().symbols.erase(var.name);
+                    } else if (hides) {
+                        scopes_.back().symbols.erase(var.name);
+                    }
                     Symbol symbol;
                     symbol.name = var.name;
                     symbol.type = type;
@@ -931,34 +961,31 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     int tracked = 0;
                     // Open before the initializer so `var n i32 = n` reads an uninitialized local.
+                    // A name that hides an earlier binding was checked above, while that binding was visible.
                     if (live != nullptr && live->function_id != 0 && !var.is_extern && !var.is_const_decl) {
                         init_open(*live);
                         tracked = live->init_id;
                     }
-                    const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
-                    const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
-                    // `var v []i32 = row` converts. `var copy [2]i32 = row` copies that array.
-                    // A brace list is the other initializer. A file-scope copy is checked with the globals.
-                    const bool slice = var.is_array && !var.ptr_to_array && var.array_len < 0;
-                    const bool array_value = var.is_array && !var.ptr_to_array && var.array_len > 0 &&
-                                             var.init != nullptr && list == nullptr;
                     if (var.is_const_decl && var.init == nullptr) {
                         error(var.loc, "type mismatch");
                     } else if (var.is_array && !var.ptr_to_array && var.init && !array_list && !slice && !array_value) {
                         error(var.loc, "not supported yet");
                     } else if (var.init && type.kind != TypeKind::Invalid) {
                         const std::size_t before = diags_.size();
-                        const bool saved_new = init_new_partial_;
-                        if (!var.is_const_decl) {
-                            init_allow_partial_ = true;
-                            if (std::holds_alternative<Expr::New>(var.init->data)) {
-                                init_new_partial_ = true;
+                        // `hides && plain_init` was checked while the previous binding was visible.
+                        if (!(hides && plain_init)) {
+                            const bool saved_new = init_new_partial_;
+                            if (!var.is_const_decl) {
+                                init_allow_partial_ = true;
+                                if (std::holds_alternative<Expr::New>(var.init->data)) {
+                                    init_new_partial_ = true;
+                                }
                             }
+                            check_against(*var.init, type);
+                            init_allow_partial_ = false;
+                            init_new_partial_ = saved_new;
                         }
-                        check_against(*var.init, type);
-                        init_allow_partial_ = false;
-                        init_new_partial_ = saved_new;
-                        if (diags_.size() == before && live != nullptr) {
+                        if ((init_ready || (!(hides && plain_init) && diags_.size() == before)) && live != nullptr) {
                             init_cover(*live, var.init.get());
                             if (const auto *created = std::get_if<Expr::New>(&var.init->data);
                                 created != nullptr && created->count == nullptr && !created->count_inferred &&

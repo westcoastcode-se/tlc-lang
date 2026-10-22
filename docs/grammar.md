@@ -103,7 +103,7 @@ binding     = "var" name-list "=" expression ";"
             | name-list "=" expression ";" ;
 ```
 
-`name :=` defines a name that is new in the block and assigns a name that already exists there. At least one name must be new. A `:=` whose names are all already in the block is `type mismatch`. `=` assigns names that already exist. `var` defines every name.
+`name :=` and `var` each define a binding. A later one in the same block hides the earlier binding. The initializer sees the previous binding. `=` assigns names that already exist. A second `const` in the block is `redefinition`. Two of the same name in one `var` or `:=` are `redefinition`.
 
 A variable whose type is a function pointer is a `var` whose type is a `func-type`, as in `var fp func (i32, i32) i32 = add`. `var name = function` infers that pointer from a function or a static function.
 

@@ -8,10 +8,6 @@ What the language pages leave out. The compiler reports most of these as `not su
 
 A function on a struct or enum with no `this` parameter is called as `Type.name(...)`. `export` publishes `pkg.Type.name(...)` and `pkg.Vec[i32].name(...)`. A constant is not a struct member. It is `const Entity::next = 1` or `const Box[T]::limit = 1`, written beside the type, at file scope. `const next` inside the braces stays `not supported yet`. `const Entity::next` inside a function stays `not supported yet`. A member is already a variable, written `name type`. `var` is not written inside the braces, and that keyword there stays `not supported yet`. The variable on the type is `var Entity::next` or `export var Box[T]::extra`, beside the type. A member is defined inside the struct as `name type`. It is not defined in a function, and `Entity::next := 1` is not a declaration. `var Entity::next` inside a function stays `not supported yet`. `Entity::next := 1` is `expected a declaration`.
 
-## Names
-
-- A name may be declared again in the same block, as Rust does with `let`. `var n = 1` followed by `var n = n + 1` in that block is `redefinition`.
-
 ## Language server
 
 `tlc lsp` publishes diagnostics and answers completion, hover, definition, and document symbols. These are not in place:

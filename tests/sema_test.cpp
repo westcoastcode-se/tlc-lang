@@ -214,7 +214,7 @@ int run_sema_tests() {
             "  var x i32;\n"
             "  return x;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT_HAS(check, errors, "uninitialized");
     }
 
     {
@@ -257,7 +257,7 @@ int run_sema_tests() {
             "  var n i32;\n"
             "  return n;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT_HAS(check, errors, "uninitialized");
     }
 
     {
@@ -4644,7 +4644,7 @@ int run_sema_tests() {
             "  a, b := add(3, 4);\n"
             "  return a;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -4655,7 +4655,7 @@ int run_sema_tests() {
             "  var a, c = add(3, 4);\n"
             "  return a;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "redefinition");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -5314,7 +5314,7 @@ int run_sema_tests() {
             "  x := 2;\n"
             "  return x;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT(check, errors.empty());
     }
 
     {
