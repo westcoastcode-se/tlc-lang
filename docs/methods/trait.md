@@ -122,7 +122,7 @@ func main() i32 {
 }
 ```
 
-`twice` calls that function twice. The `func` form is the same argument, and so is `inc`. `twice(inc, 3)` returns 8. A method takes the function the same way: `c.add(inc)`. `*Adder` takes it directly, as `take_ptr(inc)`. One monomorphized copy calls it through a function pointer. A struct argument still gets its own copy and a direct call. Passing the parameter onward, when the next parameter is the same trait, uses that same copy.
+`twice` calls that function twice. The `func` form is the same argument, and so is `inc`. `twice(inc, 3)` returns 8. A method takes the function the same way: `c.add(inc)`. `*Adder` takes it directly, as `take_ptr(inc)`. `(*a).apply(n)` is that same call when `a` is `*Adder`. One monomorphized copy calls it through a function pointer. A struct argument still gets its own copy and a direct call, including `(*a).apply(n)`. Passing the parameter onward, when the next parameter is the same trait, uses that same copy.
 
 ```c
 type Adder trait {
@@ -134,7 +134,7 @@ type Counter struct {
 };
 
 func through(a *Adder, n i32) i32 {
-    return a.apply(n);
+    return (*a).apply(n);
 }
 
 func Counter::add(self *this, a Adder) i32 {
@@ -258,6 +258,6 @@ A field named by the trait is the struct field. Reading it is 1 load. Writing it
 
 `export` and `extern` on `type Seq[T type] trait` add no instructions. The trait has no size and no symbol. The check that a value satisfies `seq.Seq[T]` adds no instructions. `items.len()` and `items.at(i)` on a struct are the same direct calls as another trait parameter. On an array or a slice they are `.len` and the index, and they do not push a trace frame.
 
-An anonymous function passed to a one-method trait is a function pointer. `twice((n) { return n + 1; }, 20)` executes 6 instructions in `main`: the address and the argument are placed, and `callq` runs, with no trace frame at that call. Inside the specialized function, `a.apply(n)` is an indirect traced call. The anonymous function `return n + 1` is 4 instructions. `twice(inc, 20)` is that same call. `main` executes 6 instructions: `leaq` of `inc`, the argument, and `callq`, with no trace frame at that call. `inc`, `return n + 1`, is 4 instructions. The indirect call inside the copy is the same one the anonymous function uses.
+An anonymous function passed to a one-method trait is a function pointer. `twice((n) { return n + 1; }, 20)` executes 6 instructions in `main`: the address and the argument are placed, and `callq` runs, with no trace frame at that call. Inside the specialized function, `a.apply(n)` is an indirect traced call. The anonymous function `return n + 1` is 4 instructions. `twice(inc, 20)` is that same call. `main` executes 6 instructions: `leaq` of `inc`, the argument, and `callq`, with no trace frame at that call. `inc`, `return n + 1`, is 4 instructions. The indirect call inside the copy is the same one the anonymous function uses. `(*a).apply(n)` is that same indirect call.
 
 [Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

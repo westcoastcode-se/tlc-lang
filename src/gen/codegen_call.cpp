@@ -433,7 +433,9 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     return prepared;
                 }
                 if (addr.fn_ty != nullptr && addr.struct_id < 0) {
-                    call_trait_fn(builder_.CreateLoad(ptr_type(), addr.value), addr, node, prepared);
+                    // A parameter slot is loaded. `*a` is already that function pointer.
+                    llvm::Value *fnptr = addr.depth > 0 ? builder_.CreateLoad(ptr_type(), addr.value) : addr.value;
+                    call_trait_fn(fnptr, addr, node, prepared);
                     return prepared;
                 }
                 struct_id = addr.struct_id;

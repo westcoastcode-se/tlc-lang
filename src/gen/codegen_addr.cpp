@@ -40,6 +40,12 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {
         const TypedValue inner = emit_rvalue(*star->expr);
+        // `*Adder` passed a function is that function pointer. `*a` does not load through it.
+        if (inner.value != nullptr && trait_fn_argument(inner)) {
+            TypedValue fn = inner;
+            fn.depth = 0;
+            return fn;
+        }
         const bool pointer_shell = !inner.shells.empty() && inner.shells.front().kind == TypeShell::Kind::Pointer;
         if ((!pointer_shell && inner.depth <= 0) || inner.value == nullptr) {
             error(star->loc, "not an lvalue");

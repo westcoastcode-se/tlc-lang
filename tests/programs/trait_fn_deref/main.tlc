@@ -1,0 +1,28 @@
+type Adder trait {
+    func apply(n i32) i32;
+};
+
+func inc(n i32) i32 {
+    return n + 1;
+}
+
+func through(a *Adder, n i32) i32 {
+    return (*a).apply(n);
+}
+
+type Box struct {
+    base i32;
+};
+
+func Box::apply(self *this, n i32) i32 {
+    return self.base + n;
+}
+
+func main() i32 {
+    func local(n i32) i32 {
+        return n + 4;
+    }
+    var b Box;
+    b.base = 10;
+    return through(inc, 4) + through((n) { return n + 1; }, 6) + through(local, 1) + through(&b, 4);
+}

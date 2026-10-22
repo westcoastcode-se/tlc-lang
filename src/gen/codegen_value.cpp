@@ -152,6 +152,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         }
                         return peeled;
                     }
+                    // `*Adder` passed a function is that function pointer. `*a` does not load through it.
+                    if (trait_fn_argument(inner)) {
+                        TypedValue fn = inner;
+                        fn.depth = 0;
+                        return fn;
+                    }
                     return load_object(inner.value, inner.depth - 1, inner.elem_char, inner.struct_id, inner.elem_void,
                                        inner.elem_bool, inner.elem_bits, inner.elem_unsigned, inner.elem_float);
                 }
