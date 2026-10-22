@@ -375,6 +375,7 @@ bool Parser::var_is_inferred() const {
     return check(TokenKind::KwVar) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq;
 }
 
+// `const Entity::next` is file scope. The same spelling inside a function is not a declaration.
 bool Parser::const_on_type() const {
     if (!check(TokenKind::KwConst) || peek(1).kind != TokenKind::Identifier) {
         return false;
