@@ -372,6 +372,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (slot.depth == 0 && slot.elem_bool && stored != nullptr) {
                     return {builder_.CreateZExt(stored, i32()), 0};
                 }
+                // A function stored in a function-pointer field is that pointer. The function
+                // value itself has depth 0, which is the result, not a null data pointer.
+                if (slot.fn_ty != nullptr && stored != nullptr) {
+                    TypedValue out{stored, slot.depth};
+                    copy_fn_sig(out, slot);
+                    return out;
+                }
                 if (rhs.depth == 0 && slot.depth > 0) {
                     return {null_ptr(), slot.depth, slot.elem_char, slot.struct_id, false, slot.elem_void};
                 }
@@ -651,8 +658,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (field->depth == 0 && field->elem_unsigned) {
                     return {extracted, 0, false, -1, false, false, false, 32, true};
                 }
-                return {extracted, field->depth, field->elem_char, field->struct_id, false, field->elem_void,
-                        field->elem_bool, field->elem_bits, field->elem_unsigned, -1, field->elem_float};
+                TypedValue loaded{extracted, field->depth, field->elem_char, field->struct_id, false, field->elem_void,
+                                  field->elem_bool, field->elem_bits, field->elem_unsigned, -1, field->elem_float};
+                copy_fn_sig(loaded, *field);
+                return loaded;
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 llvm::Constant *data = llvm::ConstantDataArray::getString(context_, node.text, true);
                 auto *global = new llvm::GlobalVariable(module_, data->getType(), true,

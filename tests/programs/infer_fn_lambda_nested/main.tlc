@@ -1,0 +1,19 @@
+func add(n i32) i32 {
+    return n + 1;
+}
+
+func id(n i32) func (i32) i32 {
+    return add;
+}
+
+func make() func () func (i32) func (i32) i32 {
+    return () { return id; };
+}
+
+func apply(op func (func (i32) func (i32) i32) i32) i32 {
+    return op(id);
+}
+
+func main() i32 {
+    return make()()(1)(40) + apply((f) { return f(0)(1); });
+}

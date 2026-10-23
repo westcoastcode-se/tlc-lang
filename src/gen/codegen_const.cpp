@@ -96,6 +96,12 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
         if (std::holds_alternative<Expr::Nullptr>(expr.data)) {
             return null_ptr();
         }
+        // `var box Box = {.op = inc}` at file scope. A data pointer stays non-constant.
+        if (slot.fn_ty != nullptr) {
+            if (const Binding *designator = function_designator(current_file_, expr)) {
+                return llvm::dyn_cast_or_null<llvm::Function>(designator->value);
+            }
+        }
         return nullptr;
     }
     if (slot.elem_float) {

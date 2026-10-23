@@ -886,8 +886,10 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         }
         return value;
     }
-    return load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void, addr.elem_bool,
-                       addr.elem_bits, addr.elem_unsigned, addr.elem_float);
+    TypedValue loaded = load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,
+                                    addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.elem_float);
+    copy_fn_sig(loaded, addr);
+    return loaded;
 }
 
 // `p[i:j]` on `*[N]...T` is still the pointer. A decayed `[N]T` already stores N in `array_len`.

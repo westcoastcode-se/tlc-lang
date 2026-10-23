@@ -1,0 +1,39 @@
+func inc(n i32) i32 {
+    return n + 1;
+}
+
+func add(n i32) i32 {
+    return n + 2;
+}
+
+func id(n i32) func (i32) i32 {
+    return inc;
+}
+
+type Point struct {
+    x i32;
+};
+
+func Point::make(n i32) i32 {
+    return n + 4;
+}
+
+type Box struct {
+    op func (i32) i32;
+};
+
+type Nest struct {
+    op func (i32) func (i32) i32;
+};
+
+var kept Box = {.op = inc};
+var made Box = {.op = Point.make};
+
+func main() i32 {
+    var named Box = {.op = add};
+    var copied = named.op;
+    var lam Box = {.op = (n) { return n + 3; }};
+    named.op = inc;
+    var nest Nest = {.op = id};
+    return (kept.op)(10) + (made.op)(10) + copied(10) + (lam.op)(10) + (named.op)(10) + (nest.op)(10)(10);
+}

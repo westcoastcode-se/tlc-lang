@@ -500,6 +500,35 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             }
             auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
             if (function == nullptr || (method->decl != nullptr && method->decl->static_method)) {
+                // `box.op(1)` calls the function pointer in the field. Parentheses do not
+                // change the callee, so `(box.op)(1)` is this same selector.
+                if (method == nullptr) {
+                    const TypedValue field = emit_rvalue(*node.callee);
+                    if (field.fn_ty != nullptr && field.value != nullptr && !llvm::isa<llvm::Function>(field.value)) {
+                        std::vector<llvm::Value *> args;
+                        args.reserve(node.args.size());
+                        unsigned index = 0;
+                        for (const auto &arg : node.args) {
+                            const TypedValue value = emit_rvalue(*arg);
+                            llvm::Type *param = index < field.fn_ty->getNumParams() ? field.fn_ty->getParamType(index)
+                                                                                    : nullptr;
+                            args.push_back(adapt(value, param, node.loc));
+                            ++index;
+                        }
+                        prepared.indirect = field.value;
+                        prepared.fn_ty = field.fn_ty;
+                        prepared.args = std::move(args);
+                        prepared.depth = field.fn_ret_depth;
+                        prepared.elem_float = field.fn_ret_float;
+                        prepared.elem_bits = field.fn_ret_bits;
+                        prepared.elem_unsigned = field.fn_ret_unsigned;
+                        prepared.elem_char = field.fn_ret_char;
+                        prepared.elem_bool = field.fn_ret_bool;
+                        prepared.struct_id = field.fn_ret_struct;
+                        prepared.fn_results = field.fn_results;
+                        return prepared;
+                    }
+                }
                 error(node.loc, "type mismatch");
                 return prepared;
             }

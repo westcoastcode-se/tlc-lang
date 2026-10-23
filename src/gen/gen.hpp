@@ -545,6 +545,17 @@ class CodeGen {
         // The element of this slice or array field is one `[]E`.
         bool elem_slice = false;
         std::vector<TypeShell> shells;
+        // A function-pointer field. The address keeps this signature, so a store of a
+        // function is that pointer. Without it the function's depth is 0 and the store is null.
+        llvm::FunctionType *fn_ty = nullptr;
+        int fn_ret_depth = 0;
+        bool fn_ret_float = false;
+        int fn_ret_bits = 0;
+        bool fn_ret_unsigned = false;
+        bool fn_ret_char = false;
+        bool fn_ret_bool = false;
+        int fn_ret_struct = -1;
+        std::vector<FnParam> fn_results{};
         // `name type = expr`. Null when the field has no value, or when that value is rejected.
         const Expr *init = nullptr;
     };
@@ -1165,6 +1176,8 @@ class CodeGen {
     bool infer_global(uint32_t file, const Expr &expr, Lowered &out) const;
     void apply_low(Binding &binding, const Lowered &low) const;
     const FieldLayout *find_field(int struct_id, const std::string &name, int &index) const;
+    void copy_fn_sig(TypedValue &out, const FieldLayout &field) const;
+    void copy_fn_sig(TypedValue &out, const TypedValue &src) const;
     TypedValue field_addr(int struct_id, llvm::Value *pointer, const std::string &field, SourceLoc loc);
     void store_union_tag(int struct_id, llvm::Value *pointer, const std::string &field);
     llvm::Type *enum_mem_type(int enum_id) const;

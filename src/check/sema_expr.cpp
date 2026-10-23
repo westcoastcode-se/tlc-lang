@@ -345,7 +345,14 @@ Type Checker::elaborate_inferred(FunctionDecl &fn, const Type &want) {
                     } else {
                         const Spelling result = self(self, *target.result);
                         if (result.is_fn_ptr) {
-                            spelled.type_name = "invalid";
+                            // The nested pointer is the one entry in `fn_results`. The flattened
+                            // name is the innermost result, as on a written `func (i32) func (i32) i32`.
+                            spelled.type_name = result.type_name;
+                            spelled.type_package = result.type_package;
+                            spelled.ret_indirections = result.ret_indirections;
+                            spelled.ret_optional = result.ret_optional;
+                            spelled.ret_const_pointee = result.ret_const_pointee;
+                            spelled.fn_results.push_back(fn_param_from_spelling(result));
                         } else {
                             spelled.type_name = result.type_name;
                             spelled.type_package = result.type_package;

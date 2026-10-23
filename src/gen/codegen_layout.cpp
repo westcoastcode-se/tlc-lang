@@ -231,6 +231,15 @@ void CodeGen::prepare_structs() {
                 slot.is_slice = low.is_slice;
                 slot.elem_slice = low.elem_slice;
                 slot.shells = low.shells;
+                slot.fn_ty = low.fn_ty;
+                slot.fn_ret_depth = low.fn_ret_depth;
+                slot.fn_ret_float = low.fn_ret_float;
+                slot.fn_ret_bits = low.fn_ret_bits;
+                slot.fn_ret_unsigned = low.fn_ret_unsigned;
+                slot.fn_ret_char = low.fn_ret_char;
+                slot.fn_ret_bool = low.fn_ret_bool;
+                slot.fn_ret_struct = low.fn_ret_struct;
+                slot.fn_results = low.fn_results;
                 // A union arm is not a field value. The inline payload keeps the values on its fields.
                 if (field.init != nullptr && !item->is_union) {
                     slot.init = field.init.get();

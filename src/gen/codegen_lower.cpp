@@ -1079,6 +1079,30 @@ llvm::Value *CodeGen::adapt(const TypedValue &value, llvm::Type *slot, SourceLoc
     return as_stored(value.value, value.depth, slot, value.elem_unsigned);
 }
 
+void CodeGen::copy_fn_sig(TypedValue &out, const FieldLayout &field) const {
+    out.fn_ty = field.fn_ty;
+    out.fn_ret_depth = field.fn_ret_depth;
+    out.fn_ret_float = field.fn_ret_float;
+    out.fn_ret_bits = field.fn_ret_bits;
+    out.fn_ret_unsigned = field.fn_ret_unsigned;
+    out.fn_ret_char = field.fn_ret_char;
+    out.fn_ret_bool = field.fn_ret_bool;
+    out.fn_ret_struct = field.fn_ret_struct;
+    out.fn_results = field.fn_results;
+}
+
+void CodeGen::copy_fn_sig(TypedValue &out, const TypedValue &src) const {
+    out.fn_ty = src.fn_ty;
+    out.fn_ret_depth = src.fn_ret_depth;
+    out.fn_ret_float = src.fn_ret_float;
+    out.fn_ret_bits = src.fn_ret_bits;
+    out.fn_ret_unsigned = src.fn_ret_unsigned;
+    out.fn_ret_char = src.fn_ret_char;
+    out.fn_ret_bool = src.fn_ret_bool;
+    out.fn_ret_struct = src.fn_ret_struct;
+    out.fn_results = src.fn_results;
+}
+
 const CodeGen::FieldLayout *CodeGen::find_field(int struct_id, const std::string &name, int &index) const {
     index = -1;
     if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
@@ -1111,6 +1135,7 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
         out.is_slice = slot->is_slice;
         out.elem_slice = slot->elem_slice;
         out.shells = slot->shells;
+        copy_fn_sig(out, *slot);
         // `h.raw = row` stores this array. The address is the field, not a decayed pointer.
         if (slot->type != nullptr && slot->type->isArrayTy()) {
             out.array_type = slot->type;
