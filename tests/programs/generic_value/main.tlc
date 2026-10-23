@@ -1,32 +1,19 @@
-import "math";
-
-type Vec[T type] struct {
-    n T;
-    extra i32;
-};
-
-type Box[T type] struct {
-    value T;
-};
-
-type Buf[N i32, T type] struct {
-    n T;
-};
-
-func Vec[T]::get(self this) T {
-    return self.n;
+func id[T type](value T) T {
+    return value;
 }
 
-const origin = Vec[i32]{0...};
+func id[T type](value T, extra i32) T {
+    return value + extra;
+}
 
 func main() i32 {
-    var filled = Vec[i32]{.n = 40, 0...};
-    q := Vec[i32]{.extra = 1};
-    var nested = Box[Vec[i32]]{.value = Vec[i32]{.n = 3}};
-    var buf = Buf[4, i32]{.n = 2};
-    var remote = math.Vec[i32]{.n = 7};
-    var wide = math.Buf[4, i32]{};
-    wide.n = 1;
-    var empty = math.Vec[i32]{0...};
-    return filled.get() + q.extra + origin.n + nested.value.n + buf.n + remote.n + wide.n + empty.n - 54;
+    var f = id;
+    const g = id;
+    h := f;
+    var k = h;
+    func inner() i32 {
+        var local = f;
+        return local(1);
+    }
+    return f(40) + f[i32](0) + g(0) + h(1, 0) + k[i32](0) + inner();
 }

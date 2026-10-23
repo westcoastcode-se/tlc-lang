@@ -1,21 +1,17 @@
-# typeof as a result
+# typeof is not a result
 
 [Index](../README.md) · [Previous: Generics](generic.md) · [Next: Structs and arrays](aggregate.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A result may be `typeof(expression)`. The expression is checked after the parameters exist, so `func id(x i32) typeof(x)` has result `i32`. That spelling is the result type. An expression `typeof(x)` still has type `Type`.
+`typeof` is not a result type. `func id(x i32) typeof(x)` is `expected a type` on `typeof`. `(typeof(x))` is the same error. An expression `typeof(x)` still has type `Type`. A result whose type comes from the value is a generic `T`, or no written type. `any` is not a keyword.
 
 ```c
 func id(x i32) typeof(x) {
     return x;
 }
-
-func main() i32 {
-    return id(42);
-}
 ```
 
 ## Cost
 
-`typeof(x)` written as a result type is resolved while compiling. `return x` from `func id(x i32) typeof(x)` is 3 instructions: store the parameter, load it, `retq`. The `typeof` adds none.
+`func id(x i32) typeof(x)` is rejected and adds no instructions.
 
 [Index](../README.md) · [Previous: Generics](generic.md) · [Next: Structs and arrays](aggregate.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

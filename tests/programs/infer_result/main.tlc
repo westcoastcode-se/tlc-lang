@@ -1,0 +1,43 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Box[T type] struct {
+    n T;
+};
+
+func add(a i32, b i32) i32;
+
+func main() {
+    var p Point;
+    p.x = 10;
+    p.y = 11;
+    var box Box[i32];
+    box.n = 1;
+    return add(18, 0) + id(1) + p.sum() + box.get() + nest();
+}
+
+func add(a i32, b i32) {
+    var n = a + b;
+    return n;
+}
+
+func id[T type](value T) {
+    return value;
+}
+
+func Point::sum(self this) {
+    return self.x + self.y;
+}
+
+func Box[T]::get(self this) {
+    return self.n;
+}
+
+func nest() {
+    func inner(n i32) {
+        return n;
+    }
+    return inner(1);
+}

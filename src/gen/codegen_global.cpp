@@ -62,6 +62,17 @@ void CodeGen::declare_functions(const PackageNode &node) {
         }
     }
     for (const auto &[name, acc] : functions) {
+        // `var f = id` names this template. `T` is not a type yet, so the binding has no value.
+        if (acc.fn != nullptr && !acc.fn->type_params.empty() && acc.fn->method_struct.empty()) {
+            Binding binding;
+            binding.is_function = true;
+            binding.is_generic = true;
+            binding.is_static = acc.is_static;
+            binding.is_extern = acc.is_extern;
+            binding.decl = acc.fn;
+            file.functions.emplace(name, binding);
+            continue;
+        }
         if (!acc.fn->type_params.empty()) {
             continue;
         }

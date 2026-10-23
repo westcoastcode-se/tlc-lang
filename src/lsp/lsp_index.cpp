@@ -159,6 +159,12 @@ Shape shape_from_slot(const ResultSlot &slot) {
 
 Shape shape_from_sym(const Sym &sym) {
     Shape shape;
+    if (sym.is_tuple) {
+        shape.is_tuple = true;
+        shape.array_len = sym.array_len;
+        shape.known = true;
+        return shape;
+    }
     if (sym.type_name.empty() || sym.type_name == "invalid") {
         return shape;
     }
@@ -398,6 +404,13 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
         if (parts.size() == 1) {
             return parts.front();
         }
+        if (parts.size() > 1) {
+            Shape tuple;
+            tuple.is_tuple = true;
+            tuple.array_len = static_cast<int>(parts.size());
+            tuple.known = true;
+            return tuple;
+        }
         return {};
     }
     if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
@@ -456,6 +469,12 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
             base = shape_of_expr(*selector->base, index, syms, uri, offset);
         }
         if (selector->field == "len") {
+            if (base.known && base.is_tuple) {
+                Shape length;
+                length.type_name = "i32";
+                length.known = true;
+                return length;
+            }
             bool array = base.known && base.is_array;
             if (!array && named_sym != nullptr && !named_sym->type_name.empty()) {
                 for (const Sym &other : syms) {
@@ -524,6 +543,12 @@ Shape shape_of_expr(const Expr &expr, const UnitIndex &index, const std::vector<
     }
     if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
         Shape shape;
+        if (init->is_tuple) {
+            shape.is_tuple = true;
+            shape.array_len = static_cast<int>(init->elements.size());
+            shape.known = true;
+            return shape;
+        }
         if (init->array_literal) {
             if ((init->type_name.empty() || init->type_name == "invalid") && !init->elem_fn) {
                 return shape;
@@ -561,6 +586,11 @@ std::vector<Shape> shapes_of(const Expr &expr, const UnitIndex &index, const std
 
 void note_shape(Sym &sym, const Shape &shape) {
     if (!shape.known) {
+        return;
+    }
+    if (shape.is_tuple) {
+        sym.is_tuple = true;
+        sym.array_len = shape.array_len;
         return;
     }
     mark_direct(sym, shape.type_name, shape.indirections, shape.is_array, shape.array_len);
@@ -719,6 +749,18 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
         }
         if (shapes.size() != bind->names.size()) {
             shapes.clear();
+        }
+        if (shapes.empty() && bind->names.size() == 1 && bind->value != nullptr) {
+            if (const auto *call = std::get_if<Expr::Call>(&bind->value->data)) {
+                const std::vector<Shape> parts = call_shapes(*call, index, out, uri, at);
+                if (parts.size() > 1) {
+                    Shape tuple;
+                    tuple.is_tuple = true;
+                    tuple.array_len = static_cast<int>(parts.size());
+                    tuple.known = true;
+                    shapes.push_back(tuple);
+                }
+            }
         }
         for (std::size_t n = 0; n < bind->names.size(); ++n) {
             Sym sym;

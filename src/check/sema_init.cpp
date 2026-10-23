@@ -189,7 +189,8 @@ Checker::InitTouch Checker::init_resolve(Type type, int offset, int count, const
         if (step.kind == InitStep::Kind::Range && sized_array(type)) {
             return {};
         }
-        if (step.kind == InitStep::Kind::Field && step.field == "len" && sized_array(type)) {
+        if (step.kind == InitStep::Kind::Field && step.field == "len" &&
+            (sized_array(type) || type.kind == TypeKind::Tuple)) {
             return {};
         }
         if (step.kind == InitStep::Kind::Field) {

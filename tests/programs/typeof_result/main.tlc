@@ -1,0 +1,7 @@
+func id(x i32) typeof(x) {
+    return x;
+}
+
+func main() i32 {
+    return id(1);
+}

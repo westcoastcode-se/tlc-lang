@@ -9,6 +9,9 @@ namespace tlc {
 void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
     auto saved_scopes = std::move(scopes_);
     const uint32_t saved_file = file_id_;
+    // The caller may be learning a result type. This body is the real check of the specialization.
+    const bool saved_quiet = quiet_;
+    quiet_ = false;
     scopes_.clear();
     file_id_ = file;
     push();
@@ -24,6 +27,7 @@ void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
     pop();
     scopes_ = std::move(saved_scopes);
     file_id_ = saved_file;
+    quiet_ = saved_quiet;
 }
 
 void Checker::queue_spec(uint32_t file, FunctionDecl fn) {
@@ -458,12 +462,31 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         }
         FunctionDecl method = clone_function(owned.fn);
         method.method_struct = spec_name;
-        method.type_params.clear();
         if (!method.static_method && !method.params.empty()) {
             method.params.front().type_name = spec_name;
             method.params.front().is_struct = true;
         }
+        // Substitute the struct's parameters only. `[U type]` stays open until the call.
         substitute_function(method, templ->type_params, bounds);
+        if (!method.type_params.empty()) {
+            // `T` is filled in. `U` is chosen at the call `value.get[i32](...)`.
+            bool shadow = false;
+            for (const TypeParam &param : method.type_params) {
+                for (const std::string &used : method.method_params) {
+                    if (param.name == used) {
+                        shadow = true;
+                    }
+                }
+            }
+            const bool rejected = method.variadic || method.exported || method.static_method || method.body == nullptr ||
+                                  method.extern_c || shadow;
+            if (!rejected) {
+                held_method_templates_.push_back(OwnedFn{owner, std::move(method)});
+                FunctionDecl *stable = &held_method_templates_.back().fn;
+                method_templates_[owner][spec_name][stable->name].push_back(stable);
+            }
+            continue;
+        }
         for (Param &param : method.params) {
             prepare_written(param.type_name, param.type_package, param.is_struct, param.is_enum, param.indirections,
                             param.optional, param.is_array, param.array_len, param.array_len_name, param.type_args,
@@ -483,6 +506,9 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             method.optional = first.optional;
         }
         Type signature = function_signature(method);
+        if (method.infer_result && method.results.empty()) {
+            error(method.loc, "not supported yet");
+        }
         const bool has_body = method.body != nullptr;
         const bool is_static = method.static_method;
         const bool unsafe = method.unsafe;
@@ -683,6 +709,9 @@ void Checker::generic_method_clash(const FunctionDecl &fn) {
             continue;
         }
         const bool same_list = generic_param_key(owned.fn, params, !owned.fn.static_method) == want;
+        if (same_list && owned.fn.type_params.size() != fn.type_params.size()) {
+            continue;
+        }
         if (!same_list) {
             // `name=` is one object symbol. `extern(abi="c")` on this method is rejected earlier.
             if (!fn.link_name.empty() && owned.fn.link_name == fn.link_name) {
@@ -721,6 +750,34 @@ bool constraint_through_pointer(const FunctionDecl &templ, const TypeParam &para
     return pointer && !value;
 }
 
+// A bare `[...U]` parameter, not `*U` or `[N]U`. The index is the type parameter.
+int bare_pack_slot(const FunctionDecl &fn, const Param &param) {
+    if (param.is_receiver || param.indirections != 0 || param.is_array || !param.type_args.empty() ||
+        !param.type_package.empty()) {
+        return -1;
+    }
+    const int index = param_index(fn.type_params, param.type_name);
+    if (index < 0 || !fn.type_params[static_cast<std::size_t>(index)].is_pack) {
+        return -1;
+    }
+    return index;
+}
+
+// Arguments line up from the left. A missing suffix is an empty pack: `keep()` and `head(40)`.
+bool pack_suffix_fits(const FunctionDecl &fn, std::size_t arg_count) {
+    const std::size_t receiver = !fn.params.empty() && fn.params.front().is_receiver ? 1 : 0;
+    if (receiver > fn.params.size() || arg_count + receiver > fn.params.size()) {
+        return false;
+    }
+    const std::size_t missing = fn.params.size() - receiver - arg_count;
+    for (std::size_t k = 0; k < missing; ++k) {
+        if (bare_pack_slot(fn, fn.params[fn.params.size() - 1 - k]) < 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const FunctionDecl &templ, const Expr::Call &call,
@@ -743,10 +800,15 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         return std::nullopt;
     }
     // A method's first parameter is the receiver. The call does not pass it.
+    // A missing suffix of bare pack parameters is an empty pack. `keep()` and `head(40)`.
     const std::size_t receiver = !templ.params.empty() && templ.params.front().is_receiver ? 1 : 0;
-    if (call.args.size() + receiver != templ.params.size()) {
+    if (!pack_suffix_fits(templ, arg_types.size())) {
         error(call.loc, "argument count");
         return std::nullopt;
+    }
+    std::vector<int> source(templ.params.size(), -1);
+    for (std::size_t i = 0; i < arg_types.size(); ++i) {
+        source[receiver + i] = static_cast<int>(i);
     }
     std::vector<SpecArg> bounds(templ.type_params.size());
     std::vector<char> set(templ.type_params.size(), 0);
@@ -796,10 +858,28 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
     };
     for (std::size_t param_i = 0; param_i < templ.params.size(); ++param_i) {
         const Param &param = templ.params[param_i];
-        if (param.is_receiver || param_i < receiver || param_i - receiver >= arg_types.size()) {
+        if (param.is_receiver || param_i < receiver) {
             continue;
         }
-        const Type &got = arg_types[param_i - receiver];
+        if (source[param_i] < 0) {
+            const int index = bare_pack_slot(templ, param);
+            if (index < 0) {
+                error(call.loc, "argument count");
+                return std::nullopt;
+            }
+            if (set[static_cast<std::size_t>(index)]) {
+                const SpecArg &bound = bounds[static_cast<std::size_t>(index)];
+                if (!bound.is_pack || !bound.parts.empty()) {
+                    error(call.loc, "argument count");
+                    return std::nullopt;
+                }
+                continue;
+            }
+            bounds[static_cast<std::size_t>(index)] = pack_bound({});
+            set[static_cast<std::size_t>(index)] = 1;
+            continue;
+        }
+        const Type &got = arg_types[static_cast<std::size_t>(source[param_i])];
         if (got.kind == TypeKind::Invalid) {
             continue;
         }
@@ -1171,7 +1251,22 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         }
         std::vector<const FunctionDecl *> arity;
         for (const FunctionDecl *item : candidates) {
-            if (item != nullptr && item->params.size() == call.args.size()) {
+            if (item == nullptr) {
+                continue;
+            }
+            // The same count as before, plus a call that omits a suffix of bare pack parameters.
+            bool empty_suffix = false;
+            if (call.args.size() < item->params.size()) {
+                empty_suffix = true;
+                const std::size_t missing = item->params.size() - call.args.size();
+                for (std::size_t k = 0; k < missing; ++k) {
+                    if (bare_pack_slot(*item, item->params[item->params.size() - 1 - k]) < 0) {
+                        empty_suffix = false;
+                        break;
+                    }
+                }
+            }
+            if (item->params.size() == call.args.size() || empty_suffix) {
                 arity.push_back(item);
             }
         }
@@ -1283,15 +1378,23 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         file_id_ = saved_file;
         return type_invalid();
     }
+    // The body may call this function. Mark it before the result is read so that call does not
+    // start a second specialization of the same copy.
+    spec_checking_.insert(key);
     Type signature = function_signature(spec);
     file_id_ = saved_file;
     if (signature.kind != TypeKind::Function || signature.result == nullptr || signature.result->kind == TypeKind::Invalid) {
+        if (spec.infer_result && spec.results.empty()) {
+            error(spec.loc, "not supported yet");
+        }
+        spec_checking_.erase(key);
         return type_invalid();
     }
     // `func use[T type](items Seq[T])` is a trait parameter beside `[T type]`.
     for (const Type &param : signature.params) {
         if (mentions_trait(param)) {
             error(call.loc, "not supported yet");
+            spec_checking_.erase(key);
             return type_invalid();
         }
     }
@@ -1484,9 +1587,10 @@ void Checker::register_method_template(const FunctionDecl &fn) {
     if (fn.type_params.empty()) {
         return;
     }
-    for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
-        if (fn.type_params[i].is_pack && i + 1 != fn.type_params.size()) {
-            error(fn.type_params[i].loc, "not supported yet");
+    for (const TypeParam &param : fn.type_params) {
+        // `...T` is not a type parameter. The parser already reported it.
+        if (param.is_pack) {
+            return;
         }
     }
     const int struct_id = find_tag(file_id_, fn.method_struct);
@@ -1668,6 +1772,9 @@ const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t
     Type signature = function_signature(method);
     file_id_ = saved_file;
     if (signature.kind != TypeKind::Function || signature.result == nullptr || signature.result->kind == TypeKind::Invalid) {
+        if (method.infer_result && method.results.empty()) {
+            error(method.loc, "not supported yet");
+        }
         return nullptr;
     }
     if (const MethodInfo *head = find_method_head(struct_file, owner, spec_name)) {
@@ -2086,6 +2193,9 @@ void Checker::drain_deferred() {
     while (index < deferred_methods_.size()) {
         OwnedFn &item = deferred_methods_[index];
         ++index;
+        if (!item.fn.type_params.empty()) {
+            continue;
+        }
         check_isolated(item.file_id, item.fn);
     }
 }

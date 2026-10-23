@@ -18,23 +18,18 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 ## `const if`
 
-Compile-time branching was left out on purpose. `const if` is not a form yet.
+Compile-time branching was left out on purpose. `const if` is not a form yet. It stays that way until the syntax of a `macro` function is chosen. `const if (1 == 1)` is `not supported yet`.
 
 ## Generics and compile-time
 
-- A generic used as a value: `var f = id`.
-- A generic that is also `...`. `...` stays the C form, not a TLC argument list. `extern` and `extern(abi="tlc")` on a generic function are accepted. Each specialization is its own symbol. `extern(abi="c")` on a trait or a generic is rejected. A prototype followed by a body is accepted. A call of a generic that has no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`. `[...U]` is a separate parameter and is accepted when it is the last type parameter, as in `[T type, ...U]`.
-- `any` is a parameter type. It is a compile-time alternative to a generic type parameter, and it may replace that parameter. Over time `any`, or a variant of that name, replaces `[...U]` as the way generic arguments are unpacked. The direction is one compile-time argument, as Zig does with `anytype` and a tuple, rather than a splat `...` in the call. Several values are one tuple, the same `(40, 2)` a pack already takes. `func id(value any)` specializes at the call, one body per argument type, with no runtime value of type `any` and no table. `extern`, `extern(abi="c")`, and `extern(abi="tlc")` are rejected on a function that uses it, because the argument is specialized while compiling. `[...U]` still typechecks. The variant's spelling is not chosen. Today `any` is not reserved. `func id(value any)` is `not supported yet`. `type any i32` is an ordinary alias, and passing an `i32` where that alias is written is `type mismatch: expected any, found i32`. `func id[T any]` is a trait constraint, and the call is `undeclared identifier`.
-- A pack that is not the last type parameter, `[...U, T type]`.
-- A pack on a struct or a union.
-- An empty pack.
-- A pack of several types used as `*U`, `[N]U`, a type argument, or a field.
-- `typeof` inside a parenthesized result list. A bare result `typeof(expression)` is accepted.
-- A tuple index that is not a constant, and assignment to a tuple element.
+`...` is not added to a generic. It is only legal on `extern(abi="c")`. `extern(abi="c")` on a generic is `extern(abi="c") on a trait or a generic`, so a generic does not take `...`. `func id[T type](value T, ...) T` is `not supported yet`. Other use cases use other forms. Those spellings are not chosen. `any` is not a keyword. `extern` and `extern(abi="tlc")` on a generic function are accepted. Each specialization is its own symbol. A prototype followed by a body is accepted. A call of a generic that has no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`. A type parameter is `T type`, not `...T`. `...` in that list is `expected an identifier`. `[...U]`, `[T type, ...U]`, and `[...U, T type]` are that error. `T` is the type of one value, a tuple of several types, or a struct with several fields.
+
+- A tuple index that is not a constant. `t[i]` is `not supported yet`. The field is chosen while compiling, so `t[0]` and `t[0] = 1` are accepted. The element type and size are known then, including when the elements differ.
 - `count(U)` and `const for`.
-- A type-parameter list after the method name on a generic struct: `func Vec[T]::get[U type]`. `func Type::name[T type](self *this)` is a method template when the owner is not a generic struct. `func Vec[T]::get` names the struct's parameters.
-- A method template that is static, exported, or `...`, and a method template on a type alias: `func Integer::id[T type]`. They are `not supported yet`. `extern` and `extern(abi="tlc")` on a method template are accepted. Each specialization is its own symbol. The call stays `value.id[i32](...)`. A body defines that symbol. A prototype with no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`. `extern(abi="c")` on that template is rejected.
+- A method template that is static or exported, and a method template on a type alias: `func Integer::id[T type]`. They are `not supported yet`. An instance method with a body, `func Vec[T]::get[U type](self *this, value U) U`, is accepted. The call is `value.get[i32](value)`. `func Vec[T]::get` still names the struct's parameters. `...` on a method template is not a form. `...` is only legal on `extern(abi="c")`, and that ABI on the template is rejected. `extern` and `extern(abi="tlc")` on a method template are accepted. Each specialization is its own symbol. The call stays `value.id[i32](...)`. A body defines that symbol. A prototype with no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`. `extern(abi="c")` on that template is rejected.
 - Type parameters on an alias, an enum, or a union. Only `type Name[T type] struct` takes the list. A type parameter on a trait is specified under [for each](#for-each).
+- An alias of a tuple, including a generic one: `type Something (i32, f32);` and `type Something[K,V] (K,V);`. `type Something (i32, f32);` is `expected a type` on `(`. `type Something[K,V] (K,V);` is `expected ']'` on the comma. A bracket list on `type` is read as type parameters only when `struct`, `enum`, `trait`, or `union` follows, so `[K,V]` is parsed as an array length. `type Something[K type, V type] (K, V);` is that same `expected ']'`.
+- A tuple as a parameter of a generic function or method: `func SomeFunc[P1, P2](value i32, other (P1, P2))`. The same parameter on a method is `func Point::take[P1, P2](self *this, other (P1, P2))` and `func Vec[T]::take[P1, P2](self *this, other (P1, P2))`. `[P1, P2]` is `expected a type` on the comma, because a type parameter is written `P1 type`. With `[P1 type, P2 type]`, `(P1, P2)` is `expected a type` on `(`. A parameter `(i32, f32)` without generics is that same `expected a type`. Passing a tuple as one `T`, `id((40, 2))`, already typechecks.
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.
 - `sizeof(T)` when `T` is an array.
@@ -60,6 +55,10 @@ Compile-time branching was left out on purpose. `const if` is not a form yet.
 
 An `assert` whose condition is not one of those constants is `not supported yet`. A call is not a constant. `const x f32 = n` when `n` is a `var` is `global initializer is not a constant`. A suffix whose value does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
 
+## Reflection
+
+Type information for generating code while compiling. The goal is a `macro` keyword whose body can use `typeof` to read methods, struct fields, and the types of those fields. The syntax of a macro function is not chosen, and it has to be chosen before [`const if`](#const-if) is specified. The compiler has no `macro` form.
+
 ## Types and operators
 
 - `?` on a type that is not a pointer: `?i32`.
@@ -71,6 +70,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Declarations
 
+- A variable named `_` is a hint that the value may be ignored, and the compiler may use that hint when optimizing. `var _ = give()` is the spelling. `_` is already a name: that declaration typechecks, and a later `_` reads the binding. The hint is not implemented.
 - `var a, b =` at file scope. Inside a function, several names unpack one tuple.
 - `extern` on an inferred variable, `var name = expr` or `name := expr`. `export var name = expr` and `export name := expr` are accepted. Another package uses `pkg.name` or `import { name }`.
 - A local `type`, including a local struct or enum.
@@ -81,19 +81,21 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Functions
 
+- A body with no `return`, a bare `return;`, and `return` expressions whose types differ are `not supported yet`. An omitted result that is a function pointer or a trait is `not supported yet`. A `return` that calls a function whose result is not known yet, including a call of the function being inferred, is `not supported yet`.
 - An overloaded name used as a value, `var f = show` when `show` has several parameter lists, is `not supported yet`. A call selects the list.
 - A `test` inside a function. `test` is file scope.
 - A struct argument to `testing.error`.
 - `builtin.va` outside a variadic function.
 - Calling `builtin.panic` on a fatal failure other than an allocation that returned `null`. `new` calls `builtin.panic("out of memory")` in that case. A non-positive element count and a size that does not fit abort without that call.
 - A function pointer whose result is itself a function pointer: `func (i32) func (i32) i32`.
-- `...` is only legal on `extern(abi="c")`. A function with a body may use `...` today, and `builtin.va()` reads the extra arguments. That body is not the TLC form. A variadic `extern`, `extern(abi="tlc")`, and a variadic prototype with no body stay `not supported yet`. Further TLC arguments are a generic, not `...`. `[...U]` is the pack that already typechecks. Over time that argument list is `any`, or a variant of `any`.
+- `...` is only legal on `extern(abi="c")`. A function with a body may use `...` today, and `builtin.va()` reads the extra arguments. That body is not the TLC form. A variadic `extern`, `extern(abi="tlc")`, and a variadic prototype with no body stay `not supported yet`. Further TLC arguments are a generic, not `...`. Other use cases use other forms. Those spellings are not chosen. `any` is not a keyword.
 - An inner function that uses a local or a parameter from an enclosing function, other than a function pointer it returns or calls. The inner function is called directly. `var f = pass` and passing that function as a value are the same gap. A prototype written before the body is the same gap when the body reads that pointer. It can call functions already in scope and use globals. `export`, `extern`, and a method on a function in a block are the same gap. A short anonymous function follows that function. A full anonymous function called directly can read the function pointer.
 
 ## Methods and traits
 
+- The pointer receiver `self *this` is fixed. `self = ...` is rejected. `*self = ...` and a store such as `self.x = ...` stay, so the compiler can keep the pointer instead of reloading it for each use. Today `self = other`, when `other` is also `*Point`, typechecks. A value receiver `self this` is unchanged.
 - A trait used as a type alias, or `**Shape`. A parameter is `Shape` or `*Shape`. `var s Shape`, `var s *Shape`, `func give() Shape`, `func give() *Shape`, `[2]Shape`, `[]Shape`, and a field `item Shape` in a struct or a trait are `trait has no size`.
-- `...` is not added to a function or a method that takes a trait. `func use(s Shape, ...)`, `func use(s *Shape, ...)`, `func Rect::paint(self *this, s Shape, ...)`, `extern func use(s Shape, ...)`, and a prototype `func use(s Shape, ...) i32;` are `not supported yet`. `extern(abi="c")` on that function, with or without `...`, is `extern(abi="c") on a trait or a generic`. Further TLC arguments are a generic, not `...`. `extern` and `extern(abi="tlc")` without `...` are accepted. Each struct is its own symbol. The call stays `use(r)` or `value.paint(s)`. A body defines that symbol. A prototype with no body is accepted. A call that specializes it is `not supported yet`. `export` publishes that function when the ABI is not C.
+- `...` is not added to a function or a method that takes a trait. `func use(s Shape, ...)`, `func use(s *Shape, ...)`, `func Rect::paint(self *this, s Shape, ...)`, `extern func use(s Shape, ...)`, and a prototype `func use(s Shape, ...) i32;` are `not supported yet`. `extern(abi="c")` on that function, with or without `...`, is `extern(abi="c") on a trait or a generic`. Further TLC arguments are a generic, not `...`. Other use cases use other forms. Those spellings are not chosen. `any` is not a keyword. `extern` and `extern(abi="tlc")` without `...` are accepted. Each struct is its own symbol. The call stays `use(r)` or `value.paint(s)`. A body defines that symbol. A prototype with no body is accepted. A call that specializes it is `not supported yet`. `export` publishes that function when the ABI is not C.
 
 ## Inconsistencies
 

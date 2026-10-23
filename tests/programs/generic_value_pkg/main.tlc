@@ -1,0 +1,6 @@
+import "math";
+
+func main() i32 {
+    var f = math.id;
+    return 0;
+}

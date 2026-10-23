@@ -616,6 +616,23 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
         out.is_enum = true;
         out.enum_id = cursor->enum_id;
         return true;
+    case TypeKind::Tuple: {
+        // `T` is the whole tuple. A pointer to a tuple, or a tuple inside a tuple, stays rejected.
+        if (depth != 0 || out.is_array || cursor->results.size() < 2) {
+            return false;
+        }
+        std::vector<SpecArg> parts;
+        parts.reserve(cursor->results.size());
+        for (const Type &part : cursor->results) {
+            SpecArg spelled;
+            if (part.kind == TypeKind::Tuple || !spell_type(part, spelled) || spelled.is_pack) {
+                return false;
+            }
+            parts.push_back(std::move(spelled));
+        }
+        out = pack_bound(std::move(parts));
+        return out.is_pack;
+    }
     default:
         return false;
     }
@@ -626,7 +643,7 @@ std::string Checker::mangle_spec(const std::string &base, const std::vector<Spec
     auto append = [&](auto &&self, const SpecArg &arg) -> void {
         name += '.';
         if (arg.is_pack) {
-            name += "pack";
+            name += "tuple";
             for (const SpecArg &part : arg.parts) {
                 self(self, part);
             }
@@ -1600,6 +1617,56 @@ void Checker::substitute_stmt(const std::vector<TypeParam> &params, const std::v
 }
 
 void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds) {
+    // `return args` of an empty pack is `return;`. The name is not a value.
+    const auto drop_empty_returns = [](auto &&self, Stmt &stmt, const std::vector<std::string> &names) -> void {
+        std::visit(
+            [&](auto &node) {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Stmt::Block>) {
+                    for (const auto &child : node.statements) {
+                        if (child) {
+                            self(self, *child, names);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                    if (node.extra.empty() && node.value != nullptr) {
+                        const auto *name = std::get_if<Expr::Name>(&node.value->data);
+                        if (name != nullptr) {
+                            for (const std::string &erased_name : names) {
+                                if (erased_name == name->text) {
+                                    node.value.reset();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                    if (node.then_arm) {
+                        self(self, *node.then_arm, names);
+                    }
+                    if (node.else_arm) {
+                        self(self, *node.else_arm, names);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile> ||
+                                     std::is_same_v<T, Stmt::Switch>) {
+                    if (node.body) {
+                        self(self, *node.body, names);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                    if (node.init) {
+                        self(self, *node.init, names);
+                    }
+                    if (node.body) {
+                        self(self, *node.body, names);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                    if (node.stmt) {
+                        self(self, *node.stmt, names);
+                    }
+                }
+            },
+            stmt.data);
+    };
     auto bare_pack = [&](const std::string &type_name, const std::string &type_package, int indirections, bool is_array,
                          const std::vector<TypeArg> &type_args) -> const SpecArg * {
         if (!type_package.empty() || indirections != 0 || is_array || !type_args.empty()) {
@@ -1632,15 +1699,26 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         param.indirections, param.optional, param.is_array, param.array_len, array_len_name,
                         param.type_args, loc);
     };
+    std::vector<Param> kept;
+    std::vector<std::string> erased;
+    kept.reserve(fn.params.size());
     for (Param &param : fn.params) {
         if (const SpecArg *pack = bare_pack(param.type_name, param.type_package, param.indirections, param.is_array,
                                             param.type_args)) {
+            // An empty pack is not passed. `keep()` and `head(40)` omit this parameter.
+            if (pack->parts.empty()) {
+                if (!param.name.empty()) {
+                    erased.push_back(param.name);
+                }
+                continue;
+            }
             param.is_tuple = true;
             param.tuple_parts.clear();
             for (const SpecArg &part : pack->parts) {
                 param.tuple_parts.push_back(slot_from_spec(part));
             }
             param.type_name.clear();
+            kept.push_back(std::move(param));
             continue;
         }
         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
@@ -1652,18 +1730,35 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         for (FnParam &inner : param.fn_results) {
             subst_fn_param(subst_fn_param, inner, param.loc);
         }
+        kept.push_back(std::move(param));
     }
+    fn.params = std::move(kept);
+    bool empty_result = false;
     if (fn.results.size() == 1) {
         ResultSlot &slot = fn.results.front();
         if (const SpecArg *pack =
                 bare_pack(slot.type_name, slot.type_package, slot.indirections, slot.is_array, slot.type_args)) {
-            std::vector<ResultSlot> expanded;
-            expanded.reserve(pack->parts.size());
-            for (const SpecArg &part : pack->parts) {
-                expanded.push_back(slot_from_spec(part));
+            if (pack->parts.empty()) {
+                // No parts. The result is `void`, and `return args` returns nothing.
+                empty_result = true;
+                fn.results.clear();
+                fn.result_typeof.clear();
+                fn.return_type = "void";
+                fn.type_package.clear();
+                fn.is_struct = false;
+                fn.is_enum = false;
+                fn.indirections = 0;
+                fn.optional = 0;
+                fn.const_pointee = 0;
+            } else {
+                std::vector<ResultSlot> expanded;
+                expanded.reserve(pack->parts.size());
+                for (const SpecArg &part : pack->parts) {
+                    expanded.push_back(slot_from_spec(part));
+                }
+                fn.results = std::move(expanded);
+                fn.result_typeof.clear();
             }
-            fn.results = std::move(expanded);
-            fn.result_typeof.clear();
         }
     }
     for (ResultSlot &slot : fn.results) {
@@ -1694,6 +1789,9 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
     }
     if (fn.body) {
         substitute_stmt(params, bounds, *fn.body);
+        if (empty_result) {
+            drop_empty_returns(drop_empty_returns, *fn.body, erased);
+        }
     }
 }
 

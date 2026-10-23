@@ -863,17 +863,22 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
             continue;
         }
         if (!item->type_params.empty()) {
+            // `...` in the list is already `expected an identifier`.
+            bool type_pack = false;
+            for (const TypeParam &param : item->type_params) {
+                if (param.is_pack) {
+                    type_pack = true;
+                    break;
+                }
+            }
+            if (type_pack) {
+                continue;
+            }
             // A C type is one concrete layout. A generic struct is specialized per use.
             if (item->extern_c) {
                 error(item->loc, "extern(abi=\"c\") on a trait or a generic");
             } else if (item->is_extern || item->is_union) {
                 error(item->loc, "not supported yet");
-            }
-            for (const TypeParam &param : item->type_params) {
-                if (param.is_pack) {
-                    error(item->loc, "not supported yet");
-                    break;
-                }
             }
             owned_structs_.push_back(*item);
             struct_templates_[file_id][item->name] = &owned_structs_.back();

@@ -27,11 +27,13 @@ func main() i32 {
 }
 ```
 
+`value[0]` reads one element. The index is a constant, so the element type and size are known while compiling, including when the elements differ, as in `(40, 'a')[1]`. `value[i]` when `i` is not a constant is `not supported yet`. An index past the last element is `type mismatch`. `value[0] = 1` stores into that field of a tuple variable. A temporary, `(40, 2)[0] = 1`, and a `const` tuple are `not an lvalue`. `value.len` is `i32` and is the number of elements. It is a constant. `(40, 'a').len` is 2. `value.len = 1` is `not an lvalue`.
+
 `var` defines every name in the current block. `:=` defines a name that is new in the current block and assigns a name that already exists there. At least one name must be new. A name from an outer block is shadowed. The same bind may be the first clause of `for`. A call used as a statement, or as the call in `defer`, discards every result. The call may be a function, a method on a field, a subscript, a dereference, or a temporary value. An `extern(abi="c")` function cannot return several results. A type error names the expected type and the found type.
 
 ## Cost
 
-`return x + y, x` for two `i32` parameters is 7 instructions. The sum is in `%eax` and the second result is in `%edx`.
+`return x + y, x` for two `i32` parameters is 7 instructions. The sum is in `%eax` and the second result is in `%edx`. `t[0] = 1` stores into that field at a fixed offset. A non-constant index adds no instructions. `return t.len` on `var t = (40, 2)` is 2 instructions: `movl` of 2 and `retq`. The tuple is not stored.
 
 The caller of `a, b = pair(20, 22)` pays the traced call and then 2 stores from those registers into `a` and `b`. With both locals declared as `var a i32 = 0` and `var b i32 = 0`, `main` executes 45 instructions on the path where the trace holds fewer than 32 frames. A call used as a statement still calls, and it does not store the results.
 

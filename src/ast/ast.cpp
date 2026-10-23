@@ -1204,6 +1204,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.static_method = fn.static_method;
     copy.method_params = fn.method_params;
     copy.type_params = fn.type_params;
+    copy.infer_result = fn.infer_result;
     for (const auto &expr : fn.result_typeof) {
         copy.result_typeof.push_back(expr ? clone_expr(*expr) : nullptr);
     }

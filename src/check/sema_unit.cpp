@@ -192,10 +192,21 @@ void Checker::absorb_function(Symbol &existing, const FunctionDecl &fn, Type sig
     }
     if (slot != nullptr) {
         const bool link_clash = !fn.link_name.empty() && !slot->link_name.empty() && slot->link_name != fn.link_name;
-        if (!same_type(slot->type, signature) || (slot->has_body && fn.body != nullptr) || slot->unsafe_fn != fn.unsafe ||
-            link_clash) {
+        // An omitted result is not known yet. Either side may be that placeholder.
+        const bool new_pending = fn.infer_result && fn.results.empty();
+        const bool slot_pending = slot->decl != nullptr && slot->decl->infer_result && slot->decl->results.empty();
+        const bool pending = new_pending || slot_pending;
+        if ((!pending && !same_type(slot->type, signature)) || (slot->has_body && fn.body != nullptr) ||
+            slot->unsafe_fn != fn.unsafe || link_clash) {
             error(fn.loc, "redefinition");
             return;
+        }
+        // The body was registered first. The prototype names the result until the body is read.
+        if (slot_pending && !new_pending) {
+            slot->type = signature;
+            if (slot == &existing.lists.front()) {
+                existing.type = slot->type;
+            }
         }
         if (slot->link_name.empty()) {
             slot->link_name = fn.link_name;
@@ -223,6 +234,9 @@ void Checker::absorb_function(Symbol &existing, const FunctionDecl &fn, Type sig
 }
 
 void Checker::declare_globals(const TranslationUnit &unit) {
+    // Record every signature first. An omitted result is read in `infer_file_results`, after the
+    // later functions in this file exist. The next file starts again from that same point.
+    allow_lazy_infer_ = false;
     std::vector<VarDecl *> pending_consts;
     // A file-scope const is bound after the vars, so it can name a later var.
     // Bind one early when every name it uses is already declared, so
@@ -319,6 +333,17 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             // A trait has no size, so it is not a result. Checked before the paths that
             // return early, and again below for an ordinary function.
             if (!fn->type_params.empty() && fn->method_struct.empty()) {
+                // `...T` is not a type parameter. The parser already reported it.
+                bool type_pack = false;
+                for (const TypeParam &param : fn->type_params) {
+                    if (param.is_pack) {
+                        type_pack = true;
+                        break;
+                    }
+                }
+                if (type_pack) {
+                    continue;
+                }
                 // A C symbol is one library name. A tlc `extern` is one symbol per specialization.
                 // `...` is still one list, and a trait parameter is not a specialization of `T`.
                 if (fn->extern_c) {
@@ -327,11 +352,6 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     error(fn->loc, "not supported yet");
                 }
                 trait_result_name(*fn);
-                for (std::size_t i = 0; i < fn->type_params.size(); ++i) {
-                    if (fn->type_params[i].is_pack && i + 1 != fn->type_params.size()) {
-                        error(fn->type_params[i].loc, "not supported yet");
-                    }
-                }
                 FunctionDecl *stable = stable_template(file_id_, *fn);
                 Symbol *existing = lookup_scope(fn->name);
                 if (existing == nullptr && !fn->is_static) {
@@ -378,6 +398,21 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 }
                 require_method_params(*fn);
                 if (generic_struct_name(file_id_, fn->method_struct)) {
+                    // `func Vec[T]::get[U type]` is a method template on each specialization.
+                    // `export`, a static method, and a missing body stay rejected.
+                    if (!fn->type_params.empty()) {
+                        for (const TypeParam &param : fn->type_params) {
+                            for (const std::string &used : fn->method_params) {
+                                if (param.name == used) {
+                                    error(param.loc, "redefinition");
+                                }
+                            }
+                        }
+                        if (fn->variadic || fn->exported || fn->static_method || fn->body == nullptr ||
+                            extern_generic_trait_param(file_id_, *fn)) {
+                            error(fn->loc, "not supported yet");
+                        }
+                    }
                     // `export` publishes `value.name(...)` and `pkg.Vec[i32].name(...)`.
                     // `extern` specializes with the struct. A C symbol is one library name,
                     // so `extern(abi="c")` is not a method of a generic struct.
@@ -502,10 +537,17 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                         // Same rule as a free function: two `name=` values on one list clash.
                         const bool link_clash =
                             !fn->link_name.empty() && !slot->link_name.empty() && slot->link_name != fn->link_name;
-                        if (!same_type(slot->type, signature) || (slot->has_body && fn->body) ||
+                        const bool new_pending = fn->infer_result && fn->results.empty();
+                        const bool slot_pending =
+                            slot->decl != nullptr && slot->decl->infer_result && slot->decl->results.empty();
+                        const bool pending = new_pending || slot_pending;
+                        if ((!pending && !same_type(slot->type, signature)) || (slot->has_body && fn->body) ||
                             slot->unsafe_fn != fn->unsafe || link_clash) {
                             error(fn->loc, "redefinition");
                         } else {
+                            if (slot_pending && !new_pending) {
+                                slot->type = signature;
+                            }
                             if (fn->body) {
                                 slot->has_body = true;
                                 slot->decl = fn;
@@ -685,6 +727,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             bind_file_const(*var);
         }
     }
+    infer_file_results(unit);
 }
 
 bool Checker::integer_const_type(const Type &type) const {
@@ -1597,6 +1640,16 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             }
             if (!fn->type_params.empty()) {
                 if (!fn->exported || fn->is_static || fn->name.empty()) {
+                    continue;
+                }
+                bool type_pack = false;
+                for (const TypeParam &param : fn->type_params) {
+                    if (param.is_pack) {
+                        type_pack = true;
+                        break;
+                    }
+                }
+                if (type_pack) {
                     continue;
                 }
                 FunctionDecl *stable = stable_template(file_id, *fn);

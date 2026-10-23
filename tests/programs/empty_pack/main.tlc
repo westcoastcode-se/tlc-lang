@@ -1,0 +1,17 @@
+func keep[...U](args U) U { return args; }
+
+func head[T type, ...U](value T, rest U) T { return value; }
+
+func bare[...U](args U) i32 { return 7; }
+
+func main() i32 {
+    keep();
+    if (head(40) != 40) { return 1; }
+    if (bare() != 7) { return 2; }
+    if (head(40, (1, 2)) != 40) { return 3; }
+    if (keep(2) != 2) { return 4; }
+    if (head[i32](40) != 40) { return 5; }
+    a, b := keep((40, 2));
+    if (a != 40 || b != 2) { return 6; }
+    return 42;
+}

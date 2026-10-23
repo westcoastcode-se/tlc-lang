@@ -374,6 +374,8 @@ struct Sym {
     uint32_t optional = 0;
     bool is_array = false;
     int array_len = 0;
+    // `var t = (40, 2)`. `array_len` is the element count. `.len` is that count.
+    bool is_tuple = false;
     // A function on a struct or enum with no `this` parameter.
     bool static_method = false;
     // Remaining parameters. The receiver is not one of them. -1 when this symbol is not a function.
@@ -445,6 +447,8 @@ struct Shape {
     int indirections = 0;
     bool is_array = false;
     int array_len = 0;
+    // `array_len` is the element count.
+    bool is_tuple = false;
     bool known = false;
 };
 

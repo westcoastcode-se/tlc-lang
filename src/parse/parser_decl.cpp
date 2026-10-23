@@ -386,7 +386,17 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
             generic_ok = type_params.size() == 1 && param.is_type && !param.is_pack && !param.is_value &&
                          !param.is_trait && parent_name.empty();
             if (!generic_ok) {
-                diags_.error(kind_loc, "not supported yet");
+                // `...` in the list is already `expected an identifier`.
+                bool type_pack = false;
+                for (const TypeParam &item : type_params) {
+                    if (item.is_pack) {
+                        type_pack = true;
+                        break;
+                    }
+                }
+                if (!type_pack) {
+                    diags_.error(kind_loc, "not supported yet");
+                }
                 type_params.clear();
             }
         }

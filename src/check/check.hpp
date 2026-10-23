@@ -35,7 +35,7 @@ struct SpecArg {
     int array_len = 0;
     int struct_id = -1;
     int enum_id = -1;
-    // Several types bound to `[...U]`. One type is stored in the fields above instead.
+    // A tuple bound to `T`. One type is stored in the fields above instead.
     bool is_pack = false;
     std::vector<SpecArg> parts;
 };
@@ -278,6 +278,17 @@ class Checker {
     Type return_type_ = type_invalid();
     // Set while folding `sizeof`, so a second lookup does not repeat a diagnostic.
     bool quiet_ = false;
+    // A generic specialization may learn an omitted result. File signatures stay pending until
+    // every function in the file is registered.
+    bool allow_lazy_infer_ = false;
+    // The walk is recording `return` types for an omitted result. Nested functions do not record.
+    bool collect_returns_ = false;
+    struct InferredReturn {
+        bool bare = false;
+        std::vector<Type> parts;
+    };
+    std::vector<InferredReturn> inferred_returns_;
+    std::unordered_set<FunctionDecl *> infer_running_;
     // Set while checking a variadic function body. `builtin.va` is valid only then.
     bool variadic_function_ = false;
     // The callee of a call is being checked. That callee is a name, a function expression, or a selector.
@@ -304,6 +315,13 @@ class Checker {
     void adopt_captures(const FunctionDecl &fn);
     Type function_result(const FunctionDecl &fn);
     Type function_signature(const FunctionDecl &fn);
+    // Fill `fn.results` from the body's `return` expressions. The body is checked again later.
+    bool infer_omitted_result(FunctionDecl &fn);
+    void infer_file_results(const TranslationUnit &unit);
+    void publish_inferred(FunctionDecl &fn);
+    bool commit_inferred(FunctionDecl &fn);
+    bool install_inferred_type(const Type &type, ResultSlot &slot);
+    void clear_inferred_result(FunctionDecl &fn);
     void check_local_function(const FunctionDecl &fn);
     Symbol *lookup(const std::string &name);
     Symbol *lookup_scope(const std::string &name);
@@ -740,6 +758,9 @@ class Checker {
     std::unordered_map<uint32_t, std::unordered_map<std::string, const TraitDecl *>> trait_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, ConstBinding>> const_values_;
     std::deque<OwnedFn> deferred_methods_;
+    // `func Vec[T]::get[U type]` after `Vec` is specialized. `U` is still open.
+    // Pointers into this deque stay valid. Codegen does not emit these copies.
+    std::deque<OwnedFn> held_method_templates_;
     // The built-in `Allocator.malloc[T type]`. Pointers into this deque stay valid.
     std::deque<FunctionDecl> owned_defaults_;
     // file, owner, name. `func Arena::malloc[T type]`. The decl stays in the unit.

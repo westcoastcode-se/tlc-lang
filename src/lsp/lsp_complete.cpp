@@ -1207,6 +1207,10 @@ void offer_members(const Doc &doc, const Sym &base, Push push) {
         }
         return;
     }
+    if (base.is_tuple) {
+        push("len", 5, "i32");
+        return;
+    }
     if (slice_receiver(doc, base) || sized_array_receiver(doc, base)) {
         // `v.len` is the number of elements. The element type's fields are `v[i].field`.
         push("len", 5, "i32");
@@ -1599,7 +1603,8 @@ bool len_property(const Doc &doc, const Cursor &cursor) {
     const ExprBase expr = expression_base(doc, cursor);
     const Sym *base = cursor.member ? lookup_bare(doc.syms, doc.uri, cursor.base, cursor.offset)
                                     : (expr.handled ? &expr.sym : nullptr);
-    return base != nullptr && (slice_receiver(doc, *base) || sized_array_receiver(doc, *base));
+    return base != nullptr &&
+           (base->is_tuple || slice_receiver(doc, *base) || sized_array_receiver(doc, *base));
 }
 
 struct Emitted {

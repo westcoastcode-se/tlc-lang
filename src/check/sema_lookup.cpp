@@ -283,6 +283,13 @@ Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
 }
 
 Type Checker::function_result(const FunctionDecl &fn) {
+    if (fn.infer_result && fn.results.empty() && fn.body != nullptr && fn.type_params.empty() && allow_lazy_infer_) {
+        infer_omitted_result(const_cast<FunctionDecl &>(fn));
+    }
+    // The body has not been read yet. Callers see no result until `infer_file_results`.
+    if (fn.infer_result && fn.results.empty()) {
+        return type_invalid();
+    }
     if (fn.results.size() > 1) {
         std::vector<Type> parts;
         parts.reserve(fn.results.size());

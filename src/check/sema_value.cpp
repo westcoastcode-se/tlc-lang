@@ -452,9 +452,44 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         base = check_raw(*index->base, true);
                     }
                     if (base.kind == TypeKind::Tuple) {
-                        error(node.loc, "not supported yet");
-                        check_expr(*node.rhs, true);
-                        return type_invalid();
+                        // `t[0] = 1` stores one element. The index is a constant.
+                        // A temporary has no place to store into.
+                        if (index->base == nullptr || !std::holds_alternative<Expr::Name>(index->base->data)) {
+                            error(node.loc, "not an lvalue");
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        if (const auto *named = std::get_if<Expr::Name>(&index->base->data)) {
+                            if (const Symbol *symbol = lookup(named->text);
+                                symbol != nullptr && symbol->is_immutable) {
+                                error(node.loc, "not an lvalue");
+                                check_expr(*node.rhs, true);
+                                return type_invalid();
+                            }
+                        }
+                        const std::optional<int> folded = index->index ? fold_int(*index->index) : std::nullopt;
+                        // The slot is chosen while compiling. A runtime index has no single field.
+                        if (!folded) {
+                            error(node.loc, "not supported yet");
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        if (*folded < 0 || static_cast<std::size_t>(*folded) >= base.results.size()) {
+                            error(node.loc, "type mismatch");
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        index->tuple_index = *folded;
+                        Type element = base.results[static_cast<std::size_t>(*folded)];
+                        if (element.is_const || base.is_const) {
+                            error(node.loc, "type mismatch");
+                            check_expr(*node.rhs, true);
+                            return type_invalid();
+                        }
+                        const std::size_t before = diags_.size();
+                        check_against(*node.rhs, element);
+                        init_store_if(*node.lhs, before);
+                        return element;
                     }
                     if (base.kind == TypeKind::Pointer && base.optional) {
                         error(node.loc, "type mismatch");
@@ -1302,8 +1337,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     InitPush push(*this, std::move(step));
                     raw = check_raw(*node.base, true);
                 }
-                // `name.len` is the number of elements, for a slice and for a sized array.
+                // `name.len` is the number of elements, for a slice, a sized array, and a tuple.
                 // The array decays to a pointer only when the field is not `len`.
+                // A tuple's length is the element count. It does not depend on the values.
+                if (raw.kind == TypeKind::Tuple && node.field == "len") {
+                    node.slice_len = true;
+                    node.len_value = static_cast<int>(raw.results.size());
+                    return type_int();
+                }
                 if (raw.kind == TypeKind::Array && raw.element != nullptr && node.field == "len") {
                     node.slice_len = true;
                     if (raw.length >= 0) {
@@ -1464,6 +1505,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (base.kind == TypeKind::Tuple) {
                     const std::optional<int> folded = node.index ? fold_int(*node.index) : std::nullopt;
                     if (!folded) {
+                        // A tuple slot is chosen while compiling. `i` does not name a field.
                         error(node.loc, "not supported yet");
                         return type_invalid();
                     }

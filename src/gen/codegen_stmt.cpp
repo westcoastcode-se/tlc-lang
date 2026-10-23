@@ -257,6 +257,32 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         error(node.loc, "type mismatch");
         return;
     }
+    // The name is the template. A call was already rewritten to the specialization.
+    auto generic_alias = [&](const Expr &expr) -> const Binding * {
+        if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+            const Binding *binding = lookup(named->text);
+            if (binding != nullptr && binding->is_generic && binding->decl != nullptr) {
+                return binding;
+            }
+            return nullptr;
+        }
+        const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+        const auto *base = selector == nullptr || selector->base == nullptr
+                               ? nullptr
+                               : std::get_if<Expr::Name>(&selector->base->data);
+        if (base == nullptr) {
+            return nullptr;
+        }
+        const auto package = packages_.find(base->text);
+        if (package == packages_.end()) {
+            return nullptr;
+        }
+        const Binding *binding = visible(package->second, selector->field, true);
+        if (binding != nullptr && binding->is_generic && binding->decl != nullptr) {
+            return binding;
+        }
+        return nullptr;
+    };
     auto note = [&](const std::string &name, const Binding &binding) {
         SourceLoc loc = node.loc;
         for (std::size_t i = 0; i < node.names.size() && i < node.name_locs.size(); ++i) {
@@ -442,6 +468,20 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         return found == nullptr ? nullptr : found->value;
     };
     if (node.names.size() == 1) {
+        if (const Binding *generic = generic_alias(*node.value)) {
+            bool create = false;
+            destination(node.names[0], create);
+            if (!create) {
+                error(node.loc, "not an lvalue");
+                return;
+            }
+            Binding binding = *generic;
+            binding.value = nullptr;
+            binding.immediate = false;
+            alias_capture(node.names[0], binding);
+            scopes_.back()[node.names[0]] = std::move(binding);
+            return;
+        }
         if (const auto *init = std::get_if<Expr::Init>(&node.value->data); init != nullptr && init->array_literal) {
             bool create = false;
             destination(node.names[0], create);

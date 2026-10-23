@@ -382,6 +382,24 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 pop();
             } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                // Learning an omitted result. The real check of this body matches the type afterwards.
+                if (collect_returns_) {
+                    InferredReturn item;
+                    if (node.value == nullptr && node.extra.empty()) {
+                        item.bare = true;
+                    } else {
+                        if (node.value != nullptr) {
+                            item.parts.push_back(check_expr(*node.value, true));
+                        }
+                        for (const auto &extra : node.extra) {
+                            if (extra != nullptr) {
+                                item.parts.push_back(check_expr(*extra, true));
+                            }
+                        }
+                    }
+                    inferred_returns_.push_back(std::move(item));
+                    return;
+                }
                 UnreachableAfter exit(*this);
                 auto match_return = [&](const Type &got, const Type &want) {
                     const bool null_pointer =
@@ -758,6 +776,74 @@ void Checker::check_stmt(const Stmt &stmt) {
                     error(node.loc, "type mismatch");
                     return;
                 }
+                // `var f = id` names the generic. The call specializes it. There is no slot.
+                if (node.names.size() == 1 && (node.is_var || node.is_define || node.is_const)) {
+                    const Symbol *source = nullptr;
+                    if (const auto *named = std::get_if<Expr::Name>(&node.value->data)) {
+                        source = lookup(named->text);
+                    } else if (const auto *selector = std::get_if<Expr::Selector>(&node.value->data)) {
+                        const auto *base =
+                            selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+                        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+                        if (package != nullptr && package->is_package) {
+                            source = find_export(package->package_file, selector->field);
+                        }
+                    }
+                    if (source != nullptr && source->is_template && source->is_function &&
+                        (!source->fn_templates.empty() || source->fn_template != nullptr)) {
+                        const SourceLoc loc = node.name_locs.empty() ? node.loc : node.name_locs.front();
+                        // A call of this alias is rewritten to a name in this package. Another package stays `pkg.id(...)`.
+                        const uint32_t owner = source->package_file != 0 ? source->package_file : file_id_;
+                        bool here = owner == file_id_;
+                        if (!here) {
+                            for (const uint32_t id : files_in_package(file_id_)) {
+                                if (id == owner) {
+                                    here = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!here) {
+                            SourceLoc at = loc;
+                            if (const auto *named = std::get_if<Expr::Name>(&node.value->data)) {
+                                at = named->loc;
+                            } else if (const auto *selector = std::get_if<Expr::Selector>(&node.value->data)) {
+                                at = selector->loc;
+                            }
+                            error(at, "not supported yet");
+                            return;
+                        }
+                        if (scopes_.empty()) {
+                            error(loc, "type mismatch");
+                            return;
+                        }
+                        const bool exists = scopes_.back().symbols.contains(node.names[0]);
+                        if (node.is_const && exists) {
+                            error(loc, "redefinition");
+                            return;
+                        }
+                        Symbol symbol;
+                        symbol.name = node.names[0];
+                        symbol.is_function = true;
+                        symbol.is_template = true;
+                        symbol.fn_template = source->fn_template;
+                        symbol.fn_templates = source->fn_templates;
+                        symbol.package_file = source->package_file != 0 ? source->package_file : file_id_;
+                        symbol.has_body = source->has_body;
+                        symbol.unsafe_fn = source->unsafe_fn;
+                        symbol.type = type_function(type_invalid(), {});
+                        symbol.function_id = scopes_.back().function_id;
+                        symbol.loc = loc;
+                        symbol.is_auto = true;
+                        symbol.is_immutable = node.is_const;
+                        if (exists) {
+                            shadow(std::move(symbol), loc);
+                        } else {
+                            declare(std::move(symbol), loc);
+                        }
+                        return;
+                    }
+                }
                 Type rhs = type_invalid();
                 const bool brace = std::holds_alternative<Expr::Init>(node.value->data) &&
                                    !std::get<Expr::Init>(node.value->data).is_tuple;
@@ -1041,6 +1127,9 @@ void Checker::check_stmt(const Stmt &stmt) {
 
 void Checker::check_function(const FunctionDecl &fn) {
     InitSuspend suspend(*this);
+    // A quiet walk may be learning the caller's result. This body is not part of that list.
+    const bool saved_collect = collect_returns_;
+    collect_returns_ = false;
     const int saved_unsafe = unsafe_depth_;
     unsafe_depth_ = fn.unsafe ? 1 : 0;
     if (fn.results.size() > 1) {
@@ -1095,6 +1184,10 @@ void Checker::check_function(const FunctionDecl &fn) {
         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
         declare(std::move(symbol), param.loc);
     }
+    // The quiet walk that learned the result recorded captures. This walk is the one that owns them.
+    FunctionDecl &fresh = const_cast<FunctionDecl &>(fn);
+    fresh.captures.clear();
+    fresh.captured_here.clear();
     if (fn.body) {
         if (const auto *block = std::get_if<Stmt::Block>(&fn.body->data)) {
             for (const auto &child : block->statements) {
@@ -1114,6 +1207,325 @@ void Checker::check_function(const FunctionDecl &fn) {
     unsafe_depth_ = saved_unsafe;
     pop();
     checking_.pop_back();
+    collect_returns_ = saved_collect;
+}
+
+namespace {
+
+ResultSlot slot_from_inferred(const SpecArg &arg) {
+    ResultSlot slot;
+    slot.type_name = arg.type_name;
+    slot.type_package = arg.type_package;
+    slot.is_struct = arg.is_struct;
+    slot.is_enum = arg.is_enum;
+    slot.indirections = arg.indirections;
+    slot.optional = arg.optional;
+    slot.const_pointee = arg.const_pointee;
+    slot.is_array = arg.is_array;
+    slot.elem_const = arg.elem_const;
+    slot.elem_slice = arg.elem_slice;
+    slot.shells = arg.shells;
+    slot.array_len = arg.array_len;
+    return slot;
+}
+
+} // namespace
+
+void Checker::clear_inferred_result(FunctionDecl &fn) {
+    fn.results.clear();
+    fn.return_type.clear();
+    fn.type_package.clear();
+    fn.is_struct = false;
+    fn.is_enum = false;
+    fn.indirections = 0;
+    fn.optional = 0;
+    fn.const_pointee = 0;
+}
+
+bool Checker::install_inferred_type(const Type &type, ResultSlot &slot) {
+    if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Void || type.kind == TypeKind::Tuple ||
+        type.kind == TypeKind::Function || type.kind == TypeKind::Trait) {
+        return false;
+    }
+    // `type Integer i32` and `type Ptr *i32` are the names the program wrote. The alias sits on the
+    // outer type. A pointer to an alias is peeled by `spell_type` and keeps that inner name.
+    if (type.alias_id > 0) {
+        const std::string name = type_desc(type);
+        if (name.empty() || name == "invalid") {
+            return false;
+        }
+        slot = ResultSlot{};
+        slot.type_name = name;
+        return true;
+    }
+    SpecArg spelled;
+    if (!spell_type(type, spelled) || spelled.is_pack || spelled.type_name.empty() || spelled.type_name == "invalid") {
+        return false;
+    }
+    slot = slot_from_inferred(spelled);
+    return true;
+}
+
+bool Checker::commit_inferred(FunctionDecl &fn) {
+    if (inferred_returns_.empty()) {
+        return false;
+    }
+    const InferredReturn &first = inferred_returns_.front();
+    if (first.bare || first.parts.empty()) {
+        return false;
+    }
+    for (const InferredReturn &item : inferred_returns_) {
+        if (item.bare || item.parts.size() != first.parts.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < item.parts.size(); ++i) {
+            const Type &part = item.parts[i];
+            if (part.kind == TypeKind::Invalid || part.kind == TypeKind::Void || !same_type(part, first.parts[i])) {
+                return false;
+            }
+        }
+    }
+    std::vector<Type> parts;
+    if (first.parts.size() == 1 && first.parts.front().kind == TypeKind::Tuple) {
+        const Type &tuple = first.parts.front();
+        if (tuple.results.size() < 2) {
+            return false;
+        }
+        for (const Type &part : tuple.results) {
+            if (part.kind == TypeKind::Tuple) {
+                return false;
+            }
+            parts.push_back(part);
+        }
+    } else {
+        for (const Type &part : first.parts) {
+            // One tuple among several expressions has no single spelling.
+            if (part.kind == TypeKind::Tuple) {
+                return false;
+            }
+            parts.push_back(part);
+        }
+    }
+    std::vector<ResultSlot> slots;
+    slots.reserve(parts.size());
+    for (const Type &part : parts) {
+        ResultSlot slot;
+        if (!install_inferred_type(part, slot)) {
+            return false;
+        }
+        slots.push_back(std::move(slot));
+    }
+    if (slots.empty()) {
+        return false;
+    }
+    fn.results = std::move(slots);
+    const ResultSlot &head = fn.results.front();
+    fn.return_type = head.type_name;
+    fn.type_package = head.type_package;
+    fn.is_struct = head.is_struct;
+    fn.is_enum = head.is_enum;
+    fn.indirections = head.indirections;
+    fn.optional = head.optional;
+    fn.const_pointee = head.const_pointee;
+    const bool saved_quiet = quiet_;
+    quiet_ = true;
+    const Type got = function_result(fn);
+    quiet_ = saved_quiet;
+    if (got.kind == TypeKind::Invalid || (fn.results.size() == 1 && got.kind == TypeKind::Void)) {
+        clear_inferred_result(fn);
+        return false;
+    }
+    return true;
+}
+
+bool Checker::infer_omitted_result(FunctionDecl &fn) {
+    if (!fn.infer_result || fn.body == nullptr) {
+        return false;
+    }
+    if (!fn.results.empty()) {
+        return true;
+    }
+    if (!infer_running_.insert(&fn).second) {
+        return false;
+    }
+    const bool saved_collect = collect_returns_;
+    const bool saved_quiet = quiet_;
+    auto saved_got = std::move(inferred_returns_);
+    inferred_returns_.clear();
+    collect_returns_ = true;
+    quiet_ = true;
+    InitSuspend suspend(*this);
+    const int saved_unsafe = unsafe_depth_;
+    unsafe_depth_ = fn.unsafe ? 1 : 0;
+    checking_.push_back(&fn);
+    push_function();
+    const Type saved_ret = return_type_;
+    return_type_ = type_invalid();
+    const bool saved_variadic = variadic_function_;
+    variadic_function_ = fn.variadic;
+    const int saved_loops = loop_depth_;
+    auto saved_switches = std::move(switches_);
+    loop_depth_ = 0;
+    switches_.clear();
+    for (const Param &param : fn.params) {
+        Type type = type_of_param(param);
+        Symbol symbol;
+        symbol.name = param.name;
+        symbol.type = std::move(type);
+        symbol.is_auto = true;
+        symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
+        declare(std::move(symbol), param.loc);
+    }
+    if (const auto *block = std::get_if<Stmt::Block>(&fn.body->data)) {
+        for (const auto &child : block->statements) {
+            if (child) {
+                check_stmt(*child);
+            }
+        }
+    } else {
+        check_stmt(*fn.body);
+    }
+    const bool ok = commit_inferred(fn);
+    switches_ = std::move(saved_switches);
+    loop_depth_ = saved_loops;
+    variadic_function_ = saved_variadic;
+    return_type_ = saved_ret;
+    unsafe_depth_ = saved_unsafe;
+    pop();
+    checking_.pop_back();
+    collect_returns_ = saved_collect;
+    quiet_ = saved_quiet;
+    inferred_returns_ = std::move(saved_got);
+    infer_running_.erase(&fn);
+    if (ok) {
+        publish_inferred(fn);
+    }
+    return ok;
+}
+
+void Checker::publish_inferred(FunctionDecl &fn) {
+    if (fn.results.empty()) {
+        return;
+    }
+    if (fn.extern_c && fn.results.size() > 1) {
+        error(fn.loc, "extern function cannot return several results");
+    }
+    const Type signature = function_signature(fn);
+    if (fn.extern_c && signature.result != nullptr) {
+        require_extern_struct(*signature.result, fn.loc);
+    }
+    const auto pending = [](const Type &type) {
+        return type.kind != TypeKind::Function || type.result == nullptr || type.result->kind == TypeKind::Invalid;
+    };
+    bool reported = false;
+    auto install = [&](Type &slot) {
+        if (pending(slot)) {
+            slot = signature;
+            return;
+        }
+        if (!same_type(slot, signature) && !reported) {
+            error(fn.loc, "redefinition");
+            reported = true;
+        }
+    };
+    if (!fn.method_struct.empty()) {
+        const auto file = methods_.find(file_id_);
+        if (file == methods_.end()) {
+            return;
+        }
+        const auto owner = file->second.find(fn.method_struct);
+        if (owner == file->second.end()) {
+            return;
+        }
+        const auto found = owner->second.find(fn.name);
+        if (found == owner->second.end()) {
+            return;
+        }
+        MethodInfo *slot = nullptr;
+        if (found->second.decl == &fn) {
+            slot = &found->second;
+        } else {
+            for (MethodInfo &extra : found->second.more) {
+                if (extra.decl == &fn) {
+                    slot = &extra;
+                    break;
+                }
+            }
+        }
+        if (slot != nullptr) {
+            install(slot->type);
+        }
+        return;
+    }
+    if (Symbol *symbol = lookup(fn.name); symbol != nullptr && symbol->is_function && !symbol->is_template) {
+        for (std::size_t i = 0; i < symbol->lists.size(); ++i) {
+            if (symbol->lists[i].decl != &fn) {
+                continue;
+            }
+            install(symbol->lists[i].type);
+            if (i == 0) {
+                symbol->type = symbol->lists[0].type;
+            }
+            mirror_function(*symbol);
+            break;
+        }
+    }
+    const auto exported = exports_.find(file_id_);
+    if (exported == exports_.end()) {
+        return;
+    }
+    const auto found = exported->second.find(fn.name);
+    if (found == exported->second.end() || !found->second.is_function || found->second.is_template) {
+        return;
+    }
+    for (std::size_t i = 0; i < found->second.lists.size(); ++i) {
+        if (found->second.lists[i].decl != &fn) {
+            continue;
+        }
+        install(found->second.lists[i].type);
+        if (i == 0) {
+            found->second.type = found->second.lists[0].type;
+        }
+        break;
+    }
+}
+
+void Checker::infer_file_results(const TranslationUnit &unit) {
+    // Later checks, generic specializations, and nested functions read an omitted result on demand.
+    allow_lazy_infer_ = true;
+    std::vector<FunctionDecl *> pending;
+    for (const TopDecl &decl : unit.decls) {
+        const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+        if (fn == nullptr || !fn->infer_result || fn->body == nullptr || !fn->results.empty() ||
+            !fn->type_params.empty()) {
+            continue;
+        }
+        // A generic struct method and a trait default are specialized later, with `T` filled in.
+        if (!fn->method_struct.empty() &&
+            (generic_struct_name(file_id_, fn->method_struct) || package_trait(file_id_, fn->method_struct) >= 0)) {
+            continue;
+        }
+        pending.push_back(const_cast<FunctionDecl *>(fn));
+    }
+    for (std::size_t pass = 0; pass < pending.size(); ++pass) {
+        bool progress = false;
+        for (FunctionDecl *fn : pending) {
+            if (fn == nullptr || !fn->results.empty()) {
+                continue;
+            }
+            if (infer_omitted_result(*fn)) {
+                progress = true;
+            }
+        }
+        if (!progress) {
+            break;
+        }
+    }
+    for (FunctionDecl *fn : pending) {
+        if (fn != nullptr && fn->results.empty()) {
+            error(fn->loc, "not supported yet");
+        }
+    }
 }
 
 } // namespace tlc

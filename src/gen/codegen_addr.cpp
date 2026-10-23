@@ -71,8 +71,29 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             return {};
         }
         if (index->tuple_index >= 0) {
-            error(index->loc, "not supported yet");
-            return {};
+            // `t[0] = 1` stores into the tuple alloca. The field was chosen while compiling.
+            const auto *named = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
+            const Binding *binding = named == nullptr ? nullptr : lookup(named->text);
+            llvm::Type *object = binding == nullptr ? nullptr : object_type(binding->value);
+            auto *aggregate = llvm::dyn_cast_or_null<llvm::StructType>(object);
+            const int part = index->tuple_index;
+            if (binding == nullptr || !binding->is_tuple || aggregate == nullptr || part < 0 ||
+                static_cast<std::size_t>(part) >= binding->tuple_parts.size()) {
+                error(index->loc, "not an lvalue");
+                return {};
+            }
+            llvm::Value *field = builder_.CreateInBoundsGEP(
+                aggregate, binding->value, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(part)});
+            const ResultSlot &slot = binding->tuple_parts[static_cast<std::size_t>(part)];
+            const Lowered low = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
+                                      slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
+            TypedValue out{field,        low.depth,     low.elem_char, low.struct_id, false,           low.elem_void,
+                           low.elem_bool, low.elem_bits, low.elem_unsigned, -1,        low.elem_float};
+            out.enum_id = low.enum_id;
+            out.is_slice = low.is_slice;
+            out.array_len = low.array_len;
+            out.elem_slice = low.elem_slice;
+            return out;
         }
         const TypedValue base = emit_rvalue(*index->base);
         const TypedValue subscript = emit_rvalue(*index->index);
@@ -629,7 +650,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     const auto *named = std::get_if<Expr::Name>(&node.base->data);
                     const Binding *binding = named == nullptr ? nullptr : lookup(named->text);
                     if (binding != nullptr && binding->is_tuple &&
-                        node.tuple_index < static_cast<int>(binding->tuple_parts.size())) {
+                        static_cast<std::size_t>(node.tuple_index) < binding->tuple_parts.size()) {
                         const ResultSlot &slot = binding->tuple_parts[static_cast<std::size_t>(node.tuple_index)];
                         const Lowered low = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct,
                                                   slot.indirections, slot.is_array, slot.array_len, false,

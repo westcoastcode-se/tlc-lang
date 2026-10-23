@@ -1,0 +1,8 @@
+func id[T type](value T) T {
+    return value;
+}
+
+func main() i32 {
+    var f = id;
+    return f;
+}

@@ -212,7 +212,8 @@ int run_lsp() {
                 if (method == "textDocument/hover" && cursor.qualifier.empty() && cursor.word == "len") {
                     const Sym *base = cursor.member ? lookup_bare(doc->syms, doc->uri, cursor.base, cursor.offset)
                                                     : (expr.handled ? &expr.sym : nullptr);
-                    if (base != nullptr && (slice_receiver(*doc, *base) || sized_array_receiver(*doc, *base))) {
+                    if (base != nullptr &&
+                        (base->is_tuple || slice_receiver(*doc, *base) || sized_array_receiver(*doc, *base))) {
                         const Pos start = locate(doc->text, cursor.prefix_begin);
                         const Pos end = locate(doc->text, cursor.prefix_begin + static_cast<uint32_t>(cursor.word.size()));
                         send_json(result_response(*id, hover_text("len i32", start, end)));

@@ -1099,6 +1099,22 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
 }
 
 void Parser::parse_results(FunctionDecl &fn) {
+    // A body with no written result takes the type from its `return` expressions.
+    // A prototype still writes the type: `func add(a i32, b i32);` is `expected a type`.
+    if (check(TokenKind::LBrace)) {
+        fn.infer_result = true;
+        return;
+    }
+    // `typeof` is not a result. `(typeof(x))` is the same error, from `parse_placed_type`.
+    if (check(TokenKind::KwTypeof)) {
+        error_here("expected a type");
+        parse_unary();
+        ResultSlot slot;
+        slot.type_name = "invalid";
+        fn.results.push_back(std::move(slot));
+        fn.return_type = "invalid";
+        return;
+    }
     if (check(TokenKind::LParen)) {
         const SourceLoc loc = peek().loc;
         ++pos_;
@@ -1114,12 +1130,6 @@ void Parser::parse_results(FunctionDecl &fn) {
             }
             expect(TokenKind::RParen, "expected ')'");
         }
-    } else if (check(TokenKind::KwTypeof)) {
-        ResultSlot slot;
-        slot.type_name = "invalid";
-        fn.results.push_back(std::move(slot));
-        fn.result_typeof.resize(fn.results.size());
-        fn.result_typeof.back() = parse_unary();
     } else {
         take_result(fn, parse_placed_type(false));
     }
@@ -1179,13 +1189,8 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         error_here("expected an identifier");
     }
     if (check(TokenKind::LBracket)) {
-        // `func Vec[T]::get[U type]` stays rejected. `func Type::name[T type]` is a method template.
-        if (fn.method_params.empty()) {
-            fn.type_params = parse_type_params();
-        } else {
-            diags_.error(peek().loc, "not supported yet");
-            parse_type_params();
-        }
+        // `func Type::name[T type]` and `func Vec[T]::get[U type]` are method templates.
+        fn.type_params = parse_type_params();
     }
     fn.params = parse_params(extern_c, fn.variadic, fn.method_struct);
     fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
@@ -1587,8 +1592,9 @@ std::vector<TypeParam> Parser::parse_type_params() {
         TypeParam param;
         param.loc = peek().loc;
         if (check(TokenKind::Ellipsis)) {
-            // `[...U]` is a type pack. It may follow other parameters. It is the last one.
+            // `...` is not a type parameter. The list starts with a name.
             const SourceLoc pack_loc = peek().loc;
+            diags_.error(pack_loc, "expected an identifier");
             ++pos_;
             if (!check(TokenKind::Identifier)) {
                 error_here("expected an identifier");
@@ -1611,8 +1617,7 @@ std::vector<TypeParam> Parser::parse_type_params() {
                 }
             }
             params.push_back(std::move(param));
-            if (eat(TokenKind::Comma) && !check(TokenKind::RBracket)) {
-                diags_.error(peek().loc, "not supported yet");
+            if (eat(TokenKind::Comma)) {
                 while (!check(TokenKind::RBracket) && !eof()) {
                     ++pos_;
                 }

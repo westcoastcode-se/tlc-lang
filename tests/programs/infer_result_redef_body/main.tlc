@@ -1,0 +1,9 @@
+func pick(n i32) {
+    return n;
+}
+
+func pick(n i32) bool;
+
+func main() i32 {
+    return 0;
+}

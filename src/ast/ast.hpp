@@ -28,7 +28,7 @@ struct TypeShell {
 };
 
 // One slot of `func id[T type, N int]`. `T type` is a type. `T Shape` is a trait.
-// `N int` is a compile-time integer. `[...U]` is a type pack and is the last parameter.
+// `N int` is a compile-time integer. `...` in these brackets is rejected.
 struct TypeParam {
     SourceLoc loc{};
     std::string name;
@@ -143,9 +143,9 @@ struct Expr {
         mutable std::string resolved_owner;
         // File that defines the method. Zero when the call is in that method's package.
         mutable uint32_t resolved_file = 0;
-        // `name.len` on a slice or a sized array. The length is `i32` and is not a field.
+        // `name.len` on a slice, a sized array, or a tuple. The length is `i32` and is not a field.
         mutable bool slice_len = false;
-        // A sized array's `.len`. Negative when the length is loaded from a slice.
+        // A sized array's or a tuple's `.len`. Negative when the length is loaded from a slice.
         mutable int len_value = -1;
     };
     struct String {
@@ -725,6 +725,8 @@ struct FunctionDecl {
     std::vector<TypeParam> type_params;
     // Parallel to `results`. A non-null entry is `typeof(expr)` and is resolved while checking.
     std::vector<std::unique_ptr<Expr>> result_typeof;
+    // The result was omitted. The body supplies one type from its `return` expressions.
+    bool infer_result = false;
     // `(a, b) { ... }` takes its parameter and result types from the expected function pointer.
     bool inferred = false;
     bool elaborated = false;

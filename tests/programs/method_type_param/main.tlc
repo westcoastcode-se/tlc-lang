@@ -1,0 +1,32 @@
+type Vec[T type] struct {
+    value T;
+};
+
+func Vec[T]::put[U type](self *this, extra U) U {
+    return extra;
+}
+
+func Vec[T]::keep[U type](self *this, extra U) T {
+    return self.value;
+}
+
+func Vec[T]::get(self *this) T {
+    return self.value;
+}
+
+func main() i32 {
+    var v Vec[i32] = {.value = 40};
+    if (v.put[i32](2) != 2) {
+        return 1;
+    }
+    if (v.keep[i32](7) != 40) {
+        return 2;
+    }
+    if (v.keep[bool](true) != 40) {
+        return 3;
+    }
+    if (v.get() != 40) {
+        return 4;
+    }
+    return v.put[i32](2) + v.keep[bool](false);
+}
