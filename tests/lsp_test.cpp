@@ -177,6 +177,66 @@ LineCol at_needle(const std::string &text, std::string_view needle, bool after) 
     return pos;
 }
 
+// `id_needle` is `"id":110`. The returned text is `name type modifiers` per token.
+// A missing payload returns the raw messages so the failure shows the server reply.
+std::string semantic_summary(const std::string &message, const std::string &source, std::string_view id_needle) {
+    const std::size_t id_at = message.find(id_needle);
+    if (id_at == std::string::npos) {
+        return message;
+    }
+    const std::string key = "\"data\":[";
+    const std::size_t data_at = message.find(key, id_at);
+    if (data_at == std::string::npos) {
+        return message;
+    }
+    std::size_t i = data_at + key.size();
+    std::vector<int> nums;
+    while (i < message.size() && message[i] != ']') {
+        if (message[i] == ',') {
+            ++i;
+            continue;
+        }
+        int value = 0;
+        const std::from_chars_result parsed = std::from_chars(message.data() + i, message.data() + message.size(), value);
+        if (parsed.ec != std::errc{}) {
+            return message;
+        }
+        nums.push_back(value);
+        i = static_cast<std::size_t>(parsed.ptr - message.data());
+    }
+    std::string out;
+    int line = 0;
+    int character = 0;
+    for (std::size_t n = 0; n + 4 < nums.size(); n += 5) {
+        line += nums[n];
+        if (nums[n] == 0) {
+            character += nums[n + 1];
+        } else {
+            character = nums[n + 1];
+        }
+        int row = 0;
+        std::size_t at = 0;
+        while (at < source.size() && row < line) {
+            if (source[at] == '\n') {
+                ++row;
+            }
+            ++at;
+        }
+        std::string text = "?";
+        if (row == line && character >= 0 &&
+            at + static_cast<std::size_t>(character) + static_cast<std::size_t>(nums[n + 2]) <= source.size()) {
+            text = source.substr(at + static_cast<std::size_t>(character), static_cast<std::size_t>(nums[n + 2]));
+        }
+        out += text;
+        out.push_back(' ');
+        out += std::to_string(nums[n + 3]);
+        out.push_back(' ');
+        out += std::to_string(nums[n + 4]);
+        out.push_back('\n');
+    }
+    return out;
+}
+
 } // namespace
 
 int run_lsp_tests() {
@@ -344,6 +404,14 @@ int run_lsp_tests() {
     const std::string hello = read_message(from_child[0], 3000);
     EXPECT_HAS(check, hello, "completionProvider");
     EXPECT_HAS(check, hello, "tlc");
+    EXPECT_HAS(check, hello, "semanticTokensProvider");
+    EXPECT_HAS(check, hello,
+               "\"tokenTypes\":[\"namespace\",\"type\",\"struct\",\"enum\",\"interface\",\"typeParameter\",\"variable\","
+               "\"property\",\"enumMember\",\"function\",\"method\"]");
+    EXPECT_HAS(check, hello, "\"tokenModifiers\":[\"declaration\",\"readonly\",\"static\"]");
+    EXPECT_HAS(check, hello, "\"range\":true");
+    EXPECT_HAS(check, hello, "\"full\":true");
+    EXPECT(check, hello.find("delta") == std::string::npos);
 
     send_json(to_child[1], R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     send_json(to_child[1],
@@ -1055,6 +1123,103 @@ int run_lsp_tests() {
     EXPECT_HAS(check, kept_hover, "kept");
     EXPECT(check, kept_hover.find("\"value\":\"n\"") == std::string::npos);
 
+    char token_path[] = "/tmp/tlc-lsp-tokens-XXXXXX.tlc";
+    const int token_file = ::mkstemps(token_path, 4);
+    EXPECT(check, token_file >= 0);
+    const std::string token_source =
+        "// Point stays a comment\n"
+        "type Point struct {\n"
+        "    x i32;\n"
+        "};\n"
+        "\n"
+        "func Point::make(n i32) Point {\n"
+        "    var p Point;\n"
+        "    p.x = n;\n"
+        "    return p;\n"
+        "}\n"
+        "\n"
+        "type Color enum {\n"
+        "    Red;\n"
+        "};\n"
+        "\n"
+        "const limit = 4;\n"
+        "\n"
+        "func main() i32 {\n"
+        "    var row []Point;\n"
+        "    var n = row.len;\n"
+        "    var label = \"Point\";\n"
+        "    return Point.make(1).x + Color.Red + limit;\n"
+        "}\n";
+    if (token_file >= 0) {
+        EXPECT(check, ::write(token_file, token_source.data(), token_source.size()) == static_cast<ssize_t>(token_source.size()));
+        ::close(token_file);
+    }
+    const std::string token_uri = std::string("file://") + token_path;
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  token_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(token_source) + R"("}}})");
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":110,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":")") +
+                  token_uri + "\"}}}");
+    const std::string colored = read_until(from_child[0], "\"id\":110", 4000);
+    const std::string want_tokens =
+        "Point 2 1\n"
+        "x 7 1\n"
+        "Point 2 0\n"
+        "make 10 5\n"
+        "n 6 1\n"
+        "Point 2 0\n"
+        "p 6 1\n"
+        "Point 2 0\n"
+        "p 6 0\n"
+        "x 7 0\n"
+        "n 6 0\n"
+        "p 6 0\n"
+        "Color 3 1\n"
+        "Red 8 1\n"
+        "limit 6 3\n"
+        "main 9 1\n"
+        "row 6 1\n"
+        "Point 2 0\n"
+        "n 6 1\n"
+        "row 6 0\n"
+        "len 7 0\n"
+        "label 6 1\n"
+        "Point 2 0\n"
+        "make 10 4\n"
+        "x 7 0\n"
+        "Color 3 0\n"
+        "Red 8 0\n"
+        "limit 6 2\n";
+    EXPECT_EQ(check, semantic_summary(colored, token_source, "\"id\":110"), want_tokens);
+
+    const LineCol call_start = at_needle(token_source, "Point.make(1).x", false);
+    const LineCol call_end = at_needle(token_source, "Point.make(1).x", true);
+    EXPECT(check, call_start.line >= 0);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":111,"method":"textDocument/semanticTokens/range","params":{"textDocument":{"uri":")") +
+                  token_uri + R"("},"range":{"start":{"line":)" + std::to_string(call_start.line) + R"(,"character":)" +
+                  std::to_string(call_start.character) + R"(},"end":{"line":)" + std::to_string(call_end.line) +
+                  R"(,"character":)" + std::to_string(call_end.character) + "}}}}");
+    const std::string call_tokens = read_until(from_child[0], "\"id\":111", 3000);
+    EXPECT_EQ(check, semantic_summary(call_tokens, token_source, "\"id\":111"),
+              std::string("Point 2 0\nmake 10 4\nx 7 0\n"));
+
+    send_json(to_child[1],
+              R"({"jsonrpc":"2.0","id":112,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"file:///tmp/tlc-lsp-missing.tlc"}}})");
+    const std::string missing_tokens = read_until(from_child[0], "\"id\":112", 3000);
+    EXPECT_HAS(check, missing_tokens, "\"result\":null");
+
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")") +
+                  token_uri + R"(","version":2},"contentChanges":[{"text":"// note\n"}]}})");
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","id":113,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":")") +
+                  token_uri + "\"}}}");
+    const std::string blank_tokens = read_until(from_child[0], "\"id\":113", 3000);
+    EXPECT_HAS(check, blank_tokens, "\"id\":113");
+    EXPECT_HAS(check, blank_tokens, "\"data\":[]");
+
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);
     EXPECT_HAS(check, stopped, "\"result\":null");
@@ -1077,5 +1242,6 @@ int run_lsp_tests() {
     EXPECT(check, WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ::close(from_child[0]);
     ::unlink(path);
+    ::unlink(token_path);
     return check.failed;
 }

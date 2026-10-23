@@ -72,7 +72,18 @@ int run_lsp() {
                                  {"codeActionProvider", jbool(true)},
                                  {"signatureHelpProvider",
                                   jobj({{"triggerCharacters", jarr({jstr("("), jstr(",")})},
-                                       {"retriggerCharacters", jarr({jstr(")")})}})}})},
+                                       {"retriggerCharacters", jarr({jstr(")")})}})},
+                                 {"semanticTokensProvider",
+                                  jobj({{"legend",
+                                         jobj({{"tokenTypes",
+                                                jarr({jstr("namespace"), jstr("type"), jstr("struct"), jstr("enum"),
+                                                      jstr("interface"), jstr("typeParameter"), jstr("variable"),
+                                                      jstr("property"), jstr("enumMember"), jstr("function"),
+                                                      jstr("method")})},
+                                              {"tokenModifiers",
+                                               jarr({jstr("declaration"), jstr("readonly"), jstr("static")})}})},
+                                       {"range", jbool(true)},
+                                       {"full", jbool(true)}})}})},
                            {"serverInfo", jobj({{"name", jstr("tlc")}, {"version", jstr(kVersion)}})}})));
             continue;
         }
@@ -265,6 +276,33 @@ int run_lsp() {
                 continue;
             }
             send_json(result_response(*id, signature_help(*doc, offset_at(doc->text, line, character))));
+            continue;
+        }
+        if (method == "textDocument/semanticTokens/full" || method == "textDocument/semanticTokens/range") {
+            const Json *doc_json = text_document(*params);
+            const std::string uri = doc_json == nullptr ? std::string{} : doc_json->str("uri");
+            Doc *doc = find_doc(uri);
+            if (doc == nullptr) {
+                send_json(result_response(*id, jnull()));
+                continue;
+            }
+            const bool ranged = method == "textDocument/semanticTokens/range";
+            Pos start;
+            Pos end;
+            if (ranged) {
+                const Json *range = params->find("range");
+                if (range != nullptr) {
+                    if (const Json *from = range->find("start"); from != nullptr) {
+                        start.line = static_cast<int>(from->integer("line", 0));
+                        start.character = static_cast<int>(from->integer("character", 0));
+                    }
+                    if (const Json *to = range->find("end"); to != nullptr) {
+                        end.line = static_cast<int>(to->integer("line", 0));
+                        end.character = static_cast<int>(to->integer("character", 0));
+                    }
+                }
+            }
+            send_json(result_response(*id, semantic_tokens(*doc, ranged, start, end)));
             continue;
         }
         send_json(error_response(*id, -32601, "method not found"));

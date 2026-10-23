@@ -1,4 +1,4 @@
-// Completion, hover, and publishing diagnostics.
+// Completion, hover, diagnostics, and semantic tokens.
 #include "lsp/lsp.hpp"
 
 #include "diag/diag.hpp"
@@ -1490,6 +1490,211 @@ Json error_response(const Json &id, int code, const std::string &message) {
 
 Json result_response(const Json &id, Json result) {
     return jobj({{"jsonrpc", jstr("2.0")}, {"id", id}, {"result", std::move(result)}});
+}
+
+namespace {
+
+bool name_start(unsigned char c) { return ident_char(c) && (c < '0' || c > '9'); }
+
+// Keywords and built-in types stay colored by the grammar, even when a symbol sits on that spelling.
+bool reserved_word(std::string_view word) {
+    for (const char *keyword : kKeywords) {
+        if (word == keyword) {
+            return true;
+        }
+    }
+    for (const char *builtin : kBuiltinTypes) {
+        if (word == builtin) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Indexes match the legend advertised by `initialize`.
+int token_type_of(Role role) {
+    switch (role) {
+    case Role::Module:
+        return 0;
+    case Role::Alias:
+        return 1;
+    case Role::StructType:
+        return 2;
+    case Role::EnumType:
+        return 3;
+    case Role::Trait:
+        return 4;
+    case Role::TypeParam:
+        return 5;
+    case Role::Variable:
+    case Role::Constant:
+        return 6;
+    case Role::Field:
+        return 7;
+    case Role::EnumMember:
+        return 8;
+    case Role::Function:
+        return 9;
+    case Role::Method:
+        return 10;
+    }
+    return 6;
+}
+
+// Bit 0 is declaration, bit 1 is readonly, bit 2 is static.
+int token_modifiers_of(const Sym &sym, bool declaration) {
+    int bits = 0;
+    if (declaration) {
+        bits |= 1;
+    }
+    if (sym.role == Role::Constant) {
+        bits |= 2;
+    }
+    if (sym.static_method) {
+        bits |= 4;
+    }
+    return bits;
+}
+
+// Fields, methods, and enum members are not bare, so a use lookup misses the declaration.
+const Sym *declared_here(const std::vector<std::pair<uint32_t, const Sym *>> &decls, uint32_t offset,
+                         std::string_view word) {
+    for (const auto &decl : decls) {
+        if (decl.first == offset && decl.second->name == word) {
+            return decl.second;
+        }
+    }
+    return nullptr;
+}
+
+// The same choice hover makes, including a call, an index, or a parenthesized receiver.
+const Sym *resolve_name(const Doc &doc, const Cursor &cursor) {
+    if (cursor.literal || cursor.word.empty()) {
+        return nullptr;
+    }
+    if (const std::string init_type = designated_struct(doc, cursor); !init_type.empty()) {
+        return find_field(doc, init_type, cursor.word);
+    }
+    if (cursor.member) {
+        if (!cursor.qualifier.empty()) {
+            return qualified_member(doc.syms, doc.uri, cursor);
+        }
+        if (const Sym *base = lookup_bare(doc.syms, doc.uri, cursor.base, cursor.offset)) {
+            return refine_overloads(member_candidates(doc.syms, *base, cursor.word), doc.text, cursor, true);
+        }
+        return nullptr;
+    }
+    const ExprBase expr = expression_base(doc, cursor);
+    if (expr.handled) {
+        return refine_overloads(member_candidates(doc.syms, expr.sym, cursor.word), doc.text, cursor, true);
+    }
+    return refine_overloads(bare_candidates(doc.syms, doc.uri, cursor.word, cursor.offset), doc.text, cursor, false);
+}
+
+// `len` is the element count. It is not a field, so it has no symbol of its own.
+bool len_property(const Doc &doc, const Cursor &cursor) {
+    if (!cursor.qualifier.empty() || cursor.word != "len") {
+        return false;
+    }
+    const ExprBase expr = expression_base(doc, cursor);
+    const Sym *base = cursor.member ? lookup_bare(doc.syms, doc.uri, cursor.base, cursor.offset)
+                                    : (expr.handled ? &expr.sym : nullptr);
+    return base != nullptr && (slice_receiver(doc, *base) || sized_array_receiver(doc, *base));
+}
+
+struct Emitted {
+    int line = 0;
+    int character = 0;
+    int length = 0;
+    int type = 0;
+    int modifiers = 0;
+};
+
+} // namespace
+
+Json semantic_tokens(const Doc &doc, bool ranged, Pos start, Pos end) {
+    std::vector<std::pair<uint32_t, const Sym *>> decls;
+    for (const Sym &sym : doc.syms) {
+        if (!sym.has_loc || sym.uri != doc.uri || sym.name.empty()) {
+            continue;
+        }
+        const uint32_t at = offset_at(doc.text, sym.start.line, sym.start.character);
+        if (at >= doc.text.size() || doc.text.compare(at, sym.name.size(), sym.name) != 0) {
+            continue;
+        }
+        decls.emplace_back(at, &sym);
+    }
+    const uint32_t range_from = ranged ? offset_at(doc.text, start.line, start.character) : 0;
+    const uint32_t range_to = ranged ? offset_at(doc.text, end.line, end.character) : 0;
+    std::vector<Emitted> tokens;
+    uint32_t i = 0;
+    while (i < doc.text.size()) {
+        const uint32_t next = skip_lex(doc.text, i);
+        if (next != i) {
+            i = next;
+            continue;
+        }
+        if (!name_start(static_cast<unsigned char>(doc.text[i]))) {
+            ++i;
+            continue;
+        }
+        uint32_t word_end = i + 1;
+        while (word_end < doc.text.size() && ident_char(static_cast<unsigned char>(doc.text[word_end]))) {
+            ++word_end;
+        }
+        const std::string_view word(doc.text.data() + i, word_end - i);
+        const uint32_t begin = i;
+        i = word_end;
+        if (reserved_word(word)) {
+            continue;
+        }
+        if (ranged && (begin >= range_to || word_end <= range_from)) {
+            continue;
+        }
+        const Pos pos = locate(doc.text, begin);
+        const Cursor cursor = cursor_at(doc.text, pos.line, pos.character);
+        if (cursor.word != word) {
+            continue;
+        }
+        const Sym *decl = declared_here(decls, begin, word);
+        const Sym *sym = decl != nullptr ? decl : resolve_name(doc, cursor);
+        bool declaration = decl != nullptr;
+        if (sym != nullptr && !declaration && sym->has_loc && sym->uri == doc.uri && sym->name == cursor.word) {
+            declaration = offset_at(doc.text, sym->start.line, sym->start.character) == begin;
+        }
+        Emitted token;
+        token.line = pos.line;
+        token.character = pos.character;
+        token.length = utf16_units(word);
+        if (sym != nullptr) {
+            token.type = token_type_of(sym->role);
+            token.modifiers = token_modifiers_of(*sym, declaration);
+        } else if (len_property(doc, cursor)) {
+            token.type = token_type_of(Role::Field);
+            token.modifiers = 0;
+        } else {
+            continue;
+        }
+        if (token.length <= 0) {
+            continue;
+        }
+        tokens.push_back(token);
+    }
+    std::vector<Json> data;
+    int prev_line = 0;
+    int prev_char = 0;
+    for (const Emitted &token : tokens) {
+        const int delta_line = token.line - prev_line;
+        const int delta_char = delta_line == 0 ? token.character - prev_char : token.character;
+        data.push_back(jint(delta_line));
+        data.push_back(jint(delta_char));
+        data.push_back(jint(token.length));
+        data.push_back(jint(token.type));
+        data.push_back(jint(token.modifiers));
+        prev_line = token.line;
+        prev_char = token.character;
+    }
+    return jobj({{"data", jarr(std::move(data))}});
 }
 
 } // namespace tlc::lsp_impl

@@ -14,9 +14,7 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 ## Language server
 
-`tlc lsp` publishes diagnostics and answers completion, hover, definition, and document symbols. These are not in place:
-
-- Semantic tokens from the server. Colors come from the tree-sitter grammar.
+`tlc lsp` publishes diagnostics and answers completion, hover, definition, document symbols, and semantic tokens. Keyword and literal colors stay in the tree-sitter grammar.
 
 ## `const if`
 

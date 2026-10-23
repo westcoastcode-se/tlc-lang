@@ -56,14 +56,14 @@ The first comment in a `.cpp` file says what that file owns. Put the change in t
 | Diagnostics text | `diag/diag.cpp` |
 | JSON and the language-server bytes | `lsp/lsp_json.cpp` |
 | Index for completion, hover, and definition | `lsp/lsp_index.cpp` |
-| Completion, hover, and diagnostics | `lsp/lsp_complete.cpp` |
+| Completion, hover, diagnostics, and semantic tokens | `lsp/lsp_complete.cpp` |
 | Language server loop | `lsp/lsp.cpp` |
 
 A new `.cpp` goes in `tlc_lib` or `tlc_tests` in `CMakeLists.txt`. The build is C++23 with `-fno-exceptions`, `-Wall`, `-Wextra`, and `-Wpedantic`. Do not throw. Match the surrounding file: namespace `tlc`, `snake_case` methods, trailing-underscore members. Comments are English and only explain a constraint the code does not show. Prefer a short, obvious function.
 
 `assert`, `const`, and compile-time integers share one evaluator in `check/sema_fold.cpp` and `check/sema_unit.cpp`. `CodeGen::fold` and `CodeGen::fold_number` in `gen/codegen_fold.cpp` repeat it. A constant that one side folds and the other rejects is a bug. Update both.
 
-`tlc lsp` publishes diagnostics from `analyze`. Completion, hover, definition, and document symbols come from `index_unit` and `index_imports` in `lsp/lsp_index.cpp`. That index reads the parse and does not use the checker. A new declaration, field, method, or binding form has to be indexed there, or the editor will not offer it. Rename, formatting, code actions, signature help, and semantic tokens stay missing until `TODO.md` says otherwise.
+`tlc lsp` publishes diagnostics from `analyze`. Completion, hover, definition, document symbols, and semantic tokens come from `index_unit` and `index_imports` in `lsp/lsp_index.cpp`. That index reads the parse and does not use the checker. A new declaration, field, method, or binding form has to be indexed there, or the editor will not offer it. Semantic tokens color names from that index. Keywords, literals, and built-in types stay in the tree-sitter grammar.
 
 A form you can parse but cannot check and emit is reported as `not supported yet` and written into `TODO.md`. Do not accept it and emit the wrong code.
 

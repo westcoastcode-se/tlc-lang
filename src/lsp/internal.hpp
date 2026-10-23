@@ -554,5 +554,8 @@ Json rename_edits(const Doc &doc, const Cursor &cursor, const std::string &new_n
 Json format_edits(const Doc &doc);
 Json code_actions(const Doc &doc, Pos start, Pos end);
 Json signature_help(const Doc &doc, uint32_t offset);
+// Names in `doc`, encoded as semantic-token deltas. `ranged` keeps tokens that overlap `[start, end)`.
+// The result is `{"data":[...]}` even when nothing matches. The caller sends null for an unknown document.
+Json semantic_tokens(const Doc &doc, bool ranged, Pos start, Pos end);
 
 } // namespace tlc::lsp_impl
