@@ -1270,6 +1270,10 @@ bool Checker::spell_inferred_component(const Type &type, FnParam &out, bool allo
         if (element.is_fn_ptr || element.is_array || !element.shells.empty()) {
             return false;
         }
+        // `[N]const T` decays to a pointer. `const` stays on the element, which `same_type` does compare.
+        if (type.pointee->is_const && type.pointee->kind != TypeKind::Pointer) {
+            element.elem_const = true;
+        }
         out = std::move(element);
         TypeShell shell;
         shell.kind = TypeShell::Kind::Array;
@@ -1285,8 +1289,7 @@ bool Checker::spell_inferred_component(const Type &type, FnParam &out, bool allo
         return true;
     }
     SpecArg spelled;
-    if (!spell_type(type, spelled) || spelled.is_pack || spelled.type_name.empty() || spelled.type_name == "invalid" ||
-        spelled.elem_const) {
+    if (!spell_type(type, spelled) || spelled.is_pack || spelled.type_name.empty() || spelled.type_name == "invalid") {
         return false;
     }
     // `is_struct` would report `struct outside definition` when this slot is read back.
@@ -1297,6 +1300,7 @@ bool Checker::spell_inferred_component(const Type &type, FnParam &out, bool allo
     out.const_pointee = spelled.const_pointee;
     out.shells = std::move(spelled.shells);
     out.elem_slice = spelled.elem_slice;
+    out.elem_const = spelled.elem_const;
     out.is_array = spelled.is_array && spelled.array_len < 0;
     out.array_len = out.is_array ? spelled.array_len : 0;
     return true;

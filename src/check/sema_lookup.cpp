@@ -119,8 +119,8 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
                     written.optional, written.is_array, written.array_len, array_len_name, written.type_args, loc);
     fold_shells(written.shells, loc);
     return object_type(param.type_name, param.indirections, param.is_array, param.array_len, loc, true, param.type_package,
-                       param.is_struct, param.is_enum, false, param.optional, param.const_pointee, false, false,
-                       param.elem_slice, written.shells);
+                       param.is_struct, param.is_enum, false, param.optional, param.const_pointee, false,
+                       param.elem_const, param.elem_slice, written.shells);
 }
 
 Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
@@ -141,7 +141,7 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
             Type one = part.is_array || !written.shells.empty()
                            ? object_type(part.type_name, part.indirections, true, part.array_len, loc, false,
                                          part.type_package, part.is_struct, part.is_enum, false, part.optional,
-                                         part.const_pointee, false, false, part.elem_slice, written.shells)
+                                         part.const_pointee, false, part.elem_const, part.elem_slice, written.shells)
                            : (part.is_struct || part.is_enum || !part.type_package.empty()
                                   ? object_type(part.type_name, part.indirections, false, 0, loc, false, part.type_package,
                                                 part.is_struct, part.is_enum, false, part.optional, part.const_pointee)

@@ -510,6 +510,9 @@ std::string spell_type(const Place &place) {
         }
     }
     std::string core = place.type_name;
+    if (place.elem_const) {
+        core = "const " + core;
+    }
     if (place.elem_slice) {
         core = "[]" + core;
     }
@@ -521,22 +524,22 @@ std::string spell_type(const Place &place) {
 
 Place place_of_slot(const ResultSlot &slot) {
     return Place{slot.type_name, slot.indirections, slot.optional, slot.const_pointee, slot.is_array, slot.array_len,
-                 slot.elem_slice};
+                 slot.elem_slice, slot.elem_const};
 }
 
 Place place_of_param(const Param &param) {
     return Place{param.type_name, param.indirections, param.optional, param.const_pointee, param.is_array, param.array_len,
-                 param.elem_slice};
+                 param.elem_slice, param.elem_const};
 }
 
 Place place_of_var(const VarDecl &var) {
     return Place{var.type_name, var.indirections, var.optional, var.const_pointee, var.is_array, var.array_len,
-                 var.elem_slice};
+                 var.elem_slice, var.elem_const};
 }
 
 Place place_of_field(const FieldDecl &field) {
-    return Place{field.type_name, field.indirections, field.optional, field.const_pointee, field.is_array, field.array_len,
-                 field.elem_slice};
+    return Place{field.type_name, field.indirections, field.optional, field.const_pointee, field.is_array,
+                 field.array_len, field.elem_slice, field.elem_const};
 }
 
 std::string spell_fn_params(const std::vector<FnParam> &params, bool variadic) {
@@ -577,7 +580,7 @@ std::string spell_fn_results(const std::string &type_name, int indirections, uin
 std::string spell_fn_param(const FnParam &param) {
     if (!param.is_fn_ptr) {
         return spell_type(Place{param.type_name, param.indirections, param.optional, param.const_pointee, param.is_array,
-                                param.array_len, param.elem_slice});
+                                param.array_len, param.elem_slice, param.elem_const});
     }
     return "func (" + spell_fn_params(param.params, param.variadic) + ") " +
            spell_fn_results(param.type_name, param.ret_indirections, param.ret_optional, param.ret_const_pointee, param.results);

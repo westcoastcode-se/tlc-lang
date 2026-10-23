@@ -172,6 +172,9 @@ void append_fn_shape(std::string &out, const FnParam &param, const std::vector<T
             out += std::to_string(param.array_len);
         }
         out.push_back(']');
+        if (param.elem_const) {
+            out += "const.";
+        }
     }
     for (int bit = param.indirections - 1; bit >= 0; --bit) {
         const uint32_t mask = 1u << static_cast<unsigned>(bit);

@@ -77,6 +77,8 @@ struct FnParam {
     int array_len = 0;
     // `[][]T`. The element of this slice is one slice.
     bool elem_slice = false;
+    // `[]const u8`. The element type is const.
+    bool elem_const = false;
     // Constructors outside the leaf, outermost first.
     std::vector<TypeShell> shells;
     bool is_fn_ptr = false;

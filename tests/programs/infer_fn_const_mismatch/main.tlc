@@ -1,0 +1,11 @@
+func len_text(text []const u8) i32 {
+    return text.len;
+}
+
+func pick() func ([]u8) i32 {
+    return len_text;
+}
+
+func main() i32 {
+    return 0;
+}

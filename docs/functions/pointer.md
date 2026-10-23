@@ -38,6 +38,28 @@ func main() i32 {
 
 The program returns 42.
 
+A parameter of that pointer may be `[]const u8`. Omitting the result and writing `func ([]const u8) i32` are the same type. `pick()("hi")` calls the pointer with a string.
+
+```c
+func len_text(text []const u8) i32 {
+    return text.len;
+}
+
+func pick() {
+    return len_text;
+}
+
+func written() func ([]const u8) i32 {
+    return len_text;
+}
+
+func main() i32 {
+    return pick()("hi") + written()("yo");
+}
+```
+
+The program returns 4.
+
 ```c
 func make() func (i32) i32 {
     return (n) { return n + 1; };
@@ -149,7 +171,7 @@ func main() i32 {
 
 ## Cost
 
-Loading a function pointer is the address of the function. `var ptr = add` is 1 `leaq` and 1 store of that address. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call. `return add` from `func pick()` is 2 instructions: `leaq` of `add` and `retq`. Omitting the result type adds no instructions. `return add` from `func pick() func (i32, i32) i32` is those same 2.
+Loading a function pointer is the address of the function. `var ptr = add` is 1 `leaq` and 1 store of that address. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call. `return add` from `func pick()` is 2 instructions: `leaq` of `add` and `retq`. Omitting the result type adds no instructions. `return add` from `func pick() func (i32, i32) i32` is those same 2. `return len_text`, when `len_text` takes `[]const u8`, is those same 2 whether the result is omitted or written `func ([]const u8) i32`.
 
 `return p(20, 22)` where `p` is a `func (i32, i32) i32` parameter executes 42 instructions on the path where the trace holds fewer than 32 frames. The pointer is stored and reloaded, the frame is pushed, the two arguments are moved, and `callq *%rax` runs. The callee is extra. A cast of a pointer to a function pointer is a copy of the address, 1 `movq` once the source is loaded. An anonymous function called directly is a direct traced call, the same as a nested function.
 

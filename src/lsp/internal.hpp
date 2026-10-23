@@ -327,6 +327,8 @@ struct Place {
     int array_len = 0;
     // One extra empty `[]` before the named type: `[][]i32` and `[2][]i32`.
     bool elem_slice = false;
+    // `[]const u8`. Const sits on the leaf, inside the brackets.
+    bool elem_const = false;
 };
 
 std::string spell_type(const Place &place);

@@ -45,6 +45,9 @@ inline void append_fn_param_key(std::string &out, const FnParam &param) {
             out += std::to_string(param.array_len);
         }
         out.push_back(']');
+        if (param.elem_const) {
+            out += "const.";
+        }
     }
     for (int bit = param.indirections - 1; bit >= 0; --bit) {
         const uint32_t mask = 1u << static_cast<unsigned>(bit);
@@ -256,6 +259,7 @@ inline FnParam fn_param_from_slot(const ResultSlot &slot) {
     param.is_array = slot.is_array && slot.array_len < 0;
     param.array_len = param.is_array ? slot.array_len : 0;
     param.elem_slice = param.is_array && slot.elem_slice;
+    param.elem_const = slot.elem_const;
     param.is_fn_ptr = slot.is_fn_ptr;
     param.ret_indirections = slot.ret_indirections;
     param.ret_optional = slot.ret_optional;

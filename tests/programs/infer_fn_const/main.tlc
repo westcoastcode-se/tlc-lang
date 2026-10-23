@@ -1,0 +1,56 @@
+type Point struct {
+    x i32;
+};
+
+func main() i32 {
+    var p Point;
+    p.x = 0;
+    var wide = [_]i32{20, 1};
+    return pick()("hi") + written()("yo") + agreed()("ok") + p.choose()("ab") + hold(1)("z") + nest()("nm") +
+           pick2()(wide) + pick2_written()(wide);
+}
+
+func len_text(text []const u8) i32 {
+    return text.len;
+}
+
+func pick() {
+    return len_text;
+}
+
+func written() func ([]const u8) i32 {
+    return len_text;
+}
+
+func agreed() func ([]const u8) i32;
+
+func agreed() {
+    return len_text;
+}
+
+func Point::choose(self this) {
+    return len_text;
+}
+
+func hold[T type](value T) {
+    return len_text;
+}
+
+func nest() {
+    func inner() {
+        return len_text;
+    }
+    return inner();
+}
+
+func sum2(row [2]const i32) i32 {
+    return row[0] + row[1];
+}
+
+func pick2() {
+    return sum2;
+}
+
+func pick2_written() func ([2]const i32) i32 {
+    return sum2;
+}
