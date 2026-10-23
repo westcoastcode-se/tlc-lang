@@ -1,0 +1,17 @@
+func add(n i32) i32 {
+    return n + 1;
+}
+
+func id(n i32) func (i32) i32 {
+    return add;
+}
+
+func outer() func (i32) i32;
+
+func outer() {
+    return id;
+}
+
+func main() i32 {
+    return 0;
+}

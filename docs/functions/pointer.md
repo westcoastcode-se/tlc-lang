@@ -60,6 +60,32 @@ func main() i32 {
 
 The program returns 4.
 
+A function pointer's result may itself be a function pointer. Omitting the result and writing `func (i32) func (i32) i32` are the same type. `outer()(1)` is the pointer `id` returns, and `outer()(1)(40)` calls that pointer. The same form with no arguments is `func () func (i32) i32`. A method returns one the same way.
+
+```c
+func add(n i32) i32 {
+    return n + 1;
+}
+
+func id(n i32) func (i32) i32 {
+    return add;
+}
+
+func outer() {
+    return id;
+}
+
+func written() func (i32) func (i32) i32 {
+    return id;
+}
+
+func main() i32 {
+    return outer()(1)(40) + written()(0)(1);
+}
+```
+
+The program returns 43.
+
 ```c
 func make() func (i32) i32 {
     return (n) { return n + 1; };
@@ -171,7 +197,7 @@ func main() i32 {
 
 ## Cost
 
-Loading a function pointer is the address of the function. `var ptr = add` is 1 `leaq` and 1 store of that address. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call. `return add` from `func pick()` is 2 instructions: `leaq` of `add` and `retq`. Omitting the result type adds no instructions. `return add` from `func pick() func (i32, i32) i32` is those same 2. `return len_text`, when `len_text` takes `[]const u8`, is those same 2 whether the result is omitted or written `func ([]const u8) i32`.
+Loading a function pointer is the address of the function. `var ptr = add` is 1 `leaq` and 1 store of that address. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call. `return add` from `func pick()` is 2 instructions: `leaq` of `add` and `retq`. Omitting the result type adds no instructions. `return add` from `func pick() func (i32, i32) i32` is those same 2. `return len_text`, when `len_text` takes `[]const u8`, is those same 2 whether the result is omitted or written `func ([]const u8) i32`. `return id`, when `id` is `func (i32) func (i32) i32`, is those same 2 whether the result is omitted or written `func (i32) func (i32) i32`. `return inner`, when `inner` is `func () func (i32) i32`, is those same 2 whether the result is omitted or written `func () func (i32) i32`.
 
 `return p(20, 22)` where `p` is a `func (i32, i32) i32` parameter executes 42 instructions on the path where the trace holds fewer than 32 frames. The pointer is stored and reloaded, the frame is pushed, the two arguments are moved, and `callq *%rax` runs. The callee is extra. A cast of a pointer to a function pointer is a copy of the address, 1 `movq` once the source is loaded. An anonymous function called directly is a direct traced call, the same as a nested function.
 

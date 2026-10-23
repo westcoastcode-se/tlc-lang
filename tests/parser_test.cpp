@@ -246,6 +246,12 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func f(p func (i32) func (i32) i32) i32 { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(p i32* fnptr (i32* fnptr))");
+    }
+
+    {
+        const Parsed parsed = parse_source("func f(p func (i32) (func (i32) i32, i32)) i32 { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -275,7 +281,8 @@ int run_parser_tests() {
             "func main() i32 {\n"
             "  return func (i32) func (i32) i32(raw);\n"
             "}\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(cast i32* fnptr (i32* fnptr) (name raw))");
     }
 
     {

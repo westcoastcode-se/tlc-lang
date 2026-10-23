@@ -879,6 +879,13 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
         out.fn_results = results;
         return out;
     }
+    if (results.size() == 1 && results.front().is_fn_ptr) {
+        // The bits are the address of the next function. Its signature is that one result.
+        out.fn_ty = llvm::FunctionType::get(ptr_type(), args, variadic);
+        out.fn_ret_depth = 1;
+        out.fn_results = results;
+        return out;
+    }
     const Lowered ret = lower(file, ret_name, ret_package, ret_struct, ret_indirections, false, 0, false);
     llvm::Type *ret_ty = ret.depth == 0 && ret.elem_void ? llvm::Type::getVoidTy(context_) : stored_type(ret);
     out.fn_ty = llvm::FunctionType::get(ret_ty, args, variadic);

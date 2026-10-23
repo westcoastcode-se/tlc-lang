@@ -87,7 +87,7 @@ struct FnParam {
     uint32_t ret_const_pointee = 0;
     std::vector<FnParam> params;
     bool variadic = false;
-    // Set when this function pointer returns more than one result.
+    // Several results, or one result that is itself a function pointer.
     std::vector<FnParam> results;
     // `Box[i32]` on this parameter, or on the result when `is_fn_ptr` is set.
     std::vector<TypeArg> type_args;

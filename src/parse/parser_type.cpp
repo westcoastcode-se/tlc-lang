@@ -573,7 +573,8 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     bool reject = false;
     SourceLoc reject_loc = type.loc;
     for (const PlacedType &result : results) {
-        if (result.is_fn_ptr || result.struct_definition || result.enum_definition) {
+        // One result may be a function pointer. Several results may not include one.
+        if (result.struct_definition || result.enum_definition || (result.is_fn_ptr && results.size() != 1)) {
             reject = true;
             reject_loc = result.loc.valid() ? result.loc : reject_loc;
         }
@@ -587,6 +588,22 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
         return type;
     }
     const PlacedType &first = results.front();
+    if (first.is_fn_ptr) {
+        // The nested pointer is the one entry in `fn_results`. The flattened name is the
+        // innermost result, so a later empty check still sees a type. Stars on that name
+        // are not this pointer.
+        if (first.type_name == "invalid") {
+            type.type_name = "invalid";
+            type.fn_params.clear();
+            return type;
+        }
+        type.fn_results.push_back(fn_param_from(first));
+        type.type_name = first.type_name;
+        type.ret_indirections = first.ret_indirections;
+        type.ret_optional = first.ret_optional;
+        type.ret_const_pointee = first.ret_const_pointee;
+        return type;
+    }
     type.type_name = first.type_name;
     type.type_package = first.type_package;
     type.is_struct = first.is_struct;

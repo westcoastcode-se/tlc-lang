@@ -1,15 +1,50 @@
-func add(a i32, b i32) i32 {
-    return a + b;
+func add(n i32) i32 {
+    return n + 1;
 }
 
-func inner() func (i32, i32) i32 {
+func id(n i32) func (i32) i32 {
+    return add;
+}
+
+func inner() func (i32) i32 {
     return add;
 }
 
 func outer() {
+    return id;
+}
+
+func written() func (i32) func (i32) i32 {
+    return id;
+}
+
+func bare() {
+    return inner;
+}
+
+func bare_written() func () func (i32) i32 {
+    return inner;
+}
+
+func agreed() func (i32) func (i32) i32;
+
+func agreed() {
+    return id;
+}
+
+type Point struct {
+    x i32;
+}
+
+func Point::choose(self this) {
     return inner;
 }
 
 func main() i32 {
-    return 0;
+    var p Point;
+    p.x = 1;
+    func nest() {
+        return inner;
+    }
+    return outer()(1)(40) + written()(0)(1) + bare()()(2) + bare_written()()(3) + agreed()(0)(4) + p.choose()()(5) + nest()()(6) + p.x;
 }

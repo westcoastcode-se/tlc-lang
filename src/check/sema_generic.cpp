@@ -205,6 +205,11 @@ void append_fn_shape(std::string &out, const FnParam &param, const std::vector<T
         out += "...";
     }
     out.push_back(')');
+    if (param.results.size() == 1 && param.results.front().is_fn_ptr) {
+        out.push_back('(');
+        append_fn_shape(out, param.results.front(), params);
+        out.push_back(')');
+    }
 }
 
 void append_type_arg_shape_list(std::string &out, const std::vector<TypeArg> &args, const std::vector<TypeParam> &params) {
@@ -260,6 +265,11 @@ void append_result_shape(std::string &out, const ResultSlot &slot, const std::ve
         append_fn_shape(out, slot.fn_params[i], params);
     }
     out.push_back(')');
+    if (slot.fn_results.size() == 1 && slot.fn_results.front().is_fn_ptr) {
+        out.push_back('(');
+        append_fn_shape(out, slot.fn_results.front(), params);
+        out.push_back(')');
+    }
 }
 
 void append_param_shape(std::string &out, const Param &param, const std::vector<TypeParam> &params) {
@@ -315,6 +325,11 @@ void append_param_shape(std::string &out, const Param &param, const std::vector<
         out += "...";
     }
     out.push_back(')');
+    if (param.fn_results.size() == 1 && param.fn_results.front().is_fn_ptr) {
+        out.push_back('(');
+        append_fn_shape(out, param.fn_results.front(), params);
+        out.push_back(')');
+    }
 }
 
 // The value parameters a call uses. A method omits the receiver. Type-parameter names are indices.

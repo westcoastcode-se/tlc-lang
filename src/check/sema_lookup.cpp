@@ -153,6 +153,9 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
             parts.push_back(std::move(one));
         }
         result = type_tuple(std::move(parts));
+    } else if (results.size() == 1 && results.front().is_fn_ptr) {
+        // `func (i32) func (i32) i32`. The result is that pointer, not the flattened name.
+        result = type_of_fn_param(results.front(), loc);
     } else {
         // Same result spelling as a function result, so `void` and a bare struct tag stay valid.
         result = ret_struct || ret_enum || !ret_package.empty()

@@ -1334,16 +1334,24 @@ bool Checker::spell_inferred_fn_param(const Type &type, FnParam &out) {
         spelled.ret_const_pointee = first.const_pointee;
     } else {
         FnParam result;
-        // `func (i32) func (i32) i32` stays rejected. The result of this pointer is one value.
-        if (!spell_inferred_component(*fn.result, result, true) || result.is_fn_ptr || result.is_array ||
-            !result.shells.empty()) {
+        // A slice result stays rejected. A function-pointer result is the one entry in `results`.
+        if (!spell_inferred_component(*fn.result, result, true) || result.is_array || !result.shells.empty()) {
             return false;
         }
-        spelled.type_name = result.type_name;
-        spelled.type_package = result.type_package;
-        spelled.ret_indirections = result.indirections;
-        spelled.ret_optional = result.optional;
-        spelled.ret_const_pointee = result.const_pointee;
+        if (result.is_fn_ptr) {
+            spelled.type_name = result.type_name;
+            spelled.type_package = result.type_package;
+            spelled.ret_indirections = result.ret_indirections;
+            spelled.ret_optional = result.ret_optional;
+            spelled.ret_const_pointee = result.ret_const_pointee;
+            spelled.results.push_back(std::move(result));
+        } else {
+            spelled.type_name = result.type_name;
+            spelled.type_package = result.type_package;
+            spelled.ret_indirections = result.indirections;
+            spelled.ret_optional = result.optional;
+            spelled.ret_const_pointee = result.const_pointee;
+        }
     }
     if (spelled.type_name.empty() || spelled.type_name == "invalid") {
         return false;

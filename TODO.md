@@ -81,13 +81,12 @@ Type information for generating code while compiling. The goal is a `macro` keyw
 
 ## Functions
 
-- A body with no `return`, a bare `return;`, and `return` expressions whose types differ are `not supported yet`. An omitted result that is a trait is `not supported yet`. An omitted result whose function pointer returns another function pointer is `not supported yet`. A `return` that calls a function whose result is not known yet, including a call of the function being inferred, is `not supported yet`.
+- A body with no `return`, a bare `return;`, and `return` expressions whose types differ are `not supported yet`. An omitted result that is a trait is `not supported yet`. A `return` that calls a function whose result is not known yet, including a call of the function being inferred, is `not supported yet`.
 - An overloaded name used as a value, `var f = show` when `show` has several parameter lists, is `not supported yet`. A call selects the list.
 - A `test` inside a function. `test` is file scope.
 - A struct argument to `testing.error`.
 - `builtin.va` outside a variadic function.
 - Calling `builtin.panic` on a fatal failure other than an allocation that returned `null`. `new` calls `builtin.panic("out of memory")` in that case. A non-positive element count and a size that does not fit abort without that call.
-- A function pointer whose result is itself a function pointer: `func (i32) func (i32) i32`.
 - `...` is only legal on `extern(abi="c")`. A function with a body may use `...` today, and `builtin.va()` reads the extra arguments. That body is not the TLC form. A variadic `extern`, `extern(abi="tlc")`, and a variadic prototype with no body stay `not supported yet`. Further TLC arguments are a generic, not `...`. Other use cases use other forms. Those spellings are not chosen. `any` is not a keyword.
 - An inner function that uses a local or a parameter from an enclosing function, other than a function pointer it returns or calls. The inner function is called directly. `var f = pass` and passing that function as a value are the same gap. A prototype written before the body is the same gap when the body reads that pointer. It can call functions already in scope and use globals. `export`, `extern`, and a method on a function in a block are the same gap. A short anonymous function follows that function. A full anonymous function called directly can read the function pointer.
 

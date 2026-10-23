@@ -676,7 +676,7 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
             result.elem_slice = slot.elem_slice;
             stamp_alias(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.elem_slice,
                         slot.shells);
-        } else if (call.fn_results.size() == 1) {
+        } else if (call.fn_results.size() == 1 && !call.fn_results.front().is_fn_ptr) {
             const FnParam &slot = call.fn_results.front();
             result.elem_slice = slot.elem_slice;
             stamp_alias(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.elem_slice,
@@ -744,7 +744,7 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         const ResultSlot &slot = call.decl->results.front();
         stamp_array_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
                         slot.array_len, slot.elem_slice, slot.shells);
-    } else if (call.fn_results.size() == 1) {
+    } else if (call.fn_results.size() == 1 && !call.fn_results.front().is_fn_ptr) {
         const FnParam &slot = call.fn_results.front();
         stamp_array_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
                         slot.array_len, slot.elem_slice, slot.shells);
@@ -773,6 +773,31 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         }
     }
     attach_returned_fn(result, call.decl);
+    // A direct call stamps its result from the declaration. An indirect call has none.
+    // The one function-pointer result is the signature of the pointer this call returned.
+    if (result.fn_ty == nullptr && call.fn_results.size() == 1 && call.fn_results.front().is_fn_ptr) {
+        const FnParam &nested = call.fn_results.front();
+        const Lowered ret = lower_fnptr(current_file_, nested.type_name, nested.type_package, nested.is_struct,
+                                         nested.is_enum, nested.ret_indirections, nested.indirections, nested.params,
+                                         nested.variadic, nested.results);
+        result.depth = ret.depth;
+        result.elem_char = false;
+        result.elem_void = false;
+        result.elem_bool = false;
+        result.elem_bits = 0;
+        result.elem_unsigned = false;
+        result.elem_float = false;
+        result.struct_id = -1;
+        result.fn_ty = ret.fn_ty;
+        result.fn_ret_depth = ret.fn_ret_depth;
+        result.fn_ret_float = ret.fn_ret_float;
+        result.fn_ret_bits = ret.fn_ret_bits;
+        result.fn_ret_unsigned = ret.fn_ret_unsigned;
+        result.fn_ret_char = ret.fn_ret_char;
+        result.fn_ret_bool = ret.fn_ret_bool;
+        result.fn_ret_struct = ret.fn_ret_struct;
+        result.fn_results = ret.fn_results;
+    }
     return result;
 }
 

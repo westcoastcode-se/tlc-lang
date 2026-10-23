@@ -137,6 +137,16 @@ void dump_field(const FieldDecl &field, std::string &out, int indent) {
 }
 
 void append_many_results(std::string &out, const std::vector<FnParam> &results) {
+    if (results.size() == 1 && results.front().is_fn_ptr) {
+        const FnParam &part = results.front();
+        out += " (";
+        out += type_text(part.type_name, part.type_package, part.is_struct, part.is_enum, part.indirections,
+                         part.is_array, part.array_len, part.optional, {}, part.const_pointee);
+        out += " fnptr";
+        append_many_results(out, part.results);
+        out += ')';
+        return;
+    }
     if (results.size() < 2) {
         return;
     }
@@ -573,6 +583,7 @@ std::string dump_expr(const Expr &expr) {
                 if constexpr (std::is_same_v<T, Expr::Cast>) {
                     if (node.is_fn_ptr) {
                         spelled += " fnptr";
+                        append_many_results(spelled, node.fn_results);
                     }
                 }
                 if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof>) {

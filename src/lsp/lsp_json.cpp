@@ -563,6 +563,9 @@ std::string spell_fn_params(const std::vector<FnParam> &params, bool variadic) {
 
 std::string spell_fn_results(const std::string &type_name, int indirections, uint32_t optional, uint32_t const_pointee,
                              const std::vector<FnParam> &many) {
+    if (many.size() == 1 && many.front().is_fn_ptr) {
+        return spell_fn_param(many.front());
+    }
     if (many.size() > 1) {
         std::string out = "(";
         for (std::size_t n = 0; n < many.size(); ++n) {
