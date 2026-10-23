@@ -1,0 +1,75 @@
+type Point struct {
+    x i32;
+};
+
+type Box[T type] struct {
+    n T;
+};
+
+func main() i32 {
+    var p Point;
+    p.x = 0;
+    var box Box[i32];
+    box.n = 1;
+    var row = [_]i32{3, 1};
+    var wide = [_]i32{2, 2};
+    var n = 1;
+    return pick()(10, 1) + p.choose()(8, 1) + hold(1)(6, 1) + nest()(5, 0) + pick_row()(row[:]) +
+           pick_wide()(wide) + box.choose()(1, 0) + pick_ptr()(&n) + *give(&n);
+}
+
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+func pick() {
+    return add;
+}
+
+func Point::choose(self this) {
+    var fp = add;
+    return fp;
+}
+
+func hold[T type](value T) {
+    return add;
+}
+
+func Box[T]::choose(self this) {
+    return add;
+}
+
+func nest() {
+    func inner() {
+        return add;
+    }
+    return inner();
+}
+
+func first(row []i32) i32 {
+    return row[0];
+}
+
+func pick_row() {
+    return first;
+}
+
+func head(row [2]i32) i32 {
+    return row[0] + row[1];
+}
+
+func pick_wide() {
+    return head;
+}
+
+func read(p *i32) i32 {
+    return *p;
+}
+
+func pick_ptr() {
+    return read;
+}
+
+func give(p *i32) {
+    return p;
+}

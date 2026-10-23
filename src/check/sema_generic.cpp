@@ -500,15 +500,17 @@ std::optional<int> Checker::lookup_const_value(const std::string &name) {
 
 bool Checker::spell_type(const Type &type, SpecArg &out) const {
     const Type *cursor = &type;
+    // Look through pointers only to find an array. A plain `*T` stays on `cursor` and is counted below.
+    const Type *look = cursor;
     int outer = 0;
-    while (cursor->kind == TypeKind::Pointer && cursor->pointee != nullptr) {
+    while (look->kind == TypeKind::Pointer && look->pointee != nullptr) {
         ++outer;
-        cursor = cursor->pointee.get();
+        look = look->pointee.get();
         if (outer > 31) {
             return false;
         }
     }
-    if (cursor->kind == TypeKind::Array) {
+    if (look->kind == TypeKind::Array) {
         const Type *layer = &type;
         bool saw_array = false;
         while (layer != nullptr && (layer->kind == TypeKind::Pointer || layer->kind == TypeKind::Array)) {

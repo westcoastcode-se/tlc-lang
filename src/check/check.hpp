@@ -321,6 +321,8 @@ class Checker {
     void publish_inferred(FunctionDecl &fn);
     bool commit_inferred(FunctionDecl &fn);
     bool install_inferred_type(const Type &type, ResultSlot &slot);
+    bool spell_inferred_component(const Type &type, FnParam &out, bool allow_void);
+    bool spell_inferred_fn_param(const Type &type, FnParam &out);
     void clear_inferred_result(FunctionDecl &fn);
     void check_local_function(const FunctionDecl &fn);
     Symbol *lookup(const std::string &name);

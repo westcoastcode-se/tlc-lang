@@ -14,7 +14,7 @@ func main() i32 {
 }
 ```
 
-A body may omit the result. The type is taken from the `return` expressions, and every `return` has to agree. `func add(a i32, b i32) { return a + b; }` is `i32`. A local may be written before that `return`. One expression uses that expression's type. Several expressions in one `return` are several results when every `return` agrees. A prototype still writes the result, and a later body has to agree or the program is `redefinition`. A generic omits the result the same way: `func id[T type](value T) { return value; }`. A method body may omit it too. A body with no `return`, a bare `return;`, and `return` expressions whose types differ are `not supported yet`. `typeof` is not a result type. An anonymous function that omits the result is `void`.
+A body may omit the result. The type is taken from the `return` expressions, and every `return` has to agree. `func add(a i32, b i32) { return a + b; }` is `i32`. A local may be written before that `return`. One expression uses that expression's type. Several expressions in one `return` are several results when every `return` agrees. A prototype still writes the result, and a later body has to agree or the program is `redefinition`. A generic omits the result the same way: `func id[T type](value T) { return value; }`. A method body may omit it too. The omitted result may be a function pointer: `func pick() { return add; }` is `func (i32, i32) i32` when `add` is that function. A body with no `return`, a bare `return;`, and `return` expressions whose types differ are `not supported yet`. `typeof` is not a result type. An anonymous function that omits the result is `void`.
 
 ```c
 func add(a i32, b i32) {

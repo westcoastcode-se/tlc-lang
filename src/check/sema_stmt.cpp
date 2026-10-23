@@ -1242,6 +1242,120 @@ void Checker::clear_inferred_result(FunctionDecl &fn) {
     fn.const_pointee = 0;
 }
 
+bool Checker::spell_inferred_component(const Type &type, FnParam &out, bool allow_void) {
+    out = FnParam{};
+    if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Trait || type.kind == TypeKind::Tuple ||
+        type.kind == TypeKind::Meta || type.kind == TypeKind::Nullptr || type.kind == TypeKind::Function) {
+        return false;
+    }
+    if (type.alias_id > 0) {
+        out.type_name = type_desc(type);
+        return !out.type_name.empty() && out.type_name != "invalid";
+    }
+    if (fn_pointer(type)) {
+        if (type.optional) {
+            return false;
+        }
+        return spell_inferred_fn_param(type, out);
+    }
+    // `[N]T` as a parameter is a pointer that still records N. `same_type` does not compare that length.
+    if (type.kind == TypeKind::Pointer && type.decayed_len > 0 && type.pointee != nullptr) {
+        if (type.optional) {
+            return false;
+        }
+        FnParam element;
+        if (!spell_inferred_component(*type.pointee, element, false)) {
+            return false;
+        }
+        if (element.is_fn_ptr || element.is_array || !element.shells.empty()) {
+            return false;
+        }
+        out = std::move(element);
+        TypeShell shell;
+        shell.kind = TypeShell::Kind::Array;
+        shell.length = type.decayed_len;
+        out.shells.push_back(std::move(shell));
+        return !out.type_name.empty() && out.type_name != "invalid";
+    }
+    if (type.kind == TypeKind::Void) {
+        if (!allow_void) {
+            return false;
+        }
+        out.type_name = "void";
+        return true;
+    }
+    SpecArg spelled;
+    if (!spell_type(type, spelled) || spelled.is_pack || spelled.type_name.empty() || spelled.type_name == "invalid" ||
+        spelled.elem_const) {
+        return false;
+    }
+    // `is_struct` would report `struct outside definition` when this slot is read back.
+    out.type_name = spelled.type_name;
+    out.type_package = spelled.type_package;
+    out.indirections = spelled.indirections;
+    out.optional = spelled.optional;
+    out.const_pointee = spelled.const_pointee;
+    out.shells = std::move(spelled.shells);
+    out.elem_slice = spelled.elem_slice;
+    out.is_array = spelled.is_array && spelled.array_len < 0;
+    out.array_len = out.is_array ? spelled.array_len : 0;
+    return true;
+}
+
+bool Checker::spell_inferred_fn_param(const Type &type, FnParam &out) {
+    if (!fn_pointer(type) || type.pointee == nullptr || type.pointee->result == nullptr) {
+        return false;
+    }
+    const Type &fn = *type.pointee;
+    FnParam spelled;
+    spelled.is_fn_ptr = true;
+    spelled.indirections = 1;
+    spelled.variadic = fn.variadic;
+    if (fn.result->kind == TypeKind::Tuple) {
+        if (fn.result->results.size() < 2) {
+            return false;
+        }
+        for (const Type &part : fn.result->results) {
+            FnParam one;
+            if (!spell_inferred_component(part, one, false) || one.is_fn_ptr || one.is_array || !one.shells.empty()) {
+                return false;
+            }
+            spelled.results.push_back(std::move(one));
+        }
+        const FnParam &first = spelled.results.front();
+        spelled.type_name = first.type_name;
+        spelled.type_package = first.type_package;
+        spelled.ret_indirections = first.indirections;
+        spelled.ret_optional = first.optional;
+        spelled.ret_const_pointee = first.const_pointee;
+    } else {
+        FnParam result;
+        // `func (i32) func (i32) i32` stays rejected. The result of this pointer is one value.
+        if (!spell_inferred_component(*fn.result, result, true) || result.is_fn_ptr || result.is_array ||
+            !result.shells.empty()) {
+            return false;
+        }
+        spelled.type_name = result.type_name;
+        spelled.type_package = result.type_package;
+        spelled.ret_indirections = result.indirections;
+        spelled.ret_optional = result.optional;
+        spelled.ret_const_pointee = result.const_pointee;
+    }
+    if (spelled.type_name.empty() || spelled.type_name == "invalid") {
+        return false;
+    }
+    spelled.params.reserve(fn.params.size());
+    for (const Type &param : fn.params) {
+        FnParam one;
+        if (!spell_inferred_component(param, one, false)) {
+            return false;
+        }
+        spelled.params.push_back(std::move(one));
+    }
+    out = std::move(spelled);
+    return true;
+}
+
 bool Checker::install_inferred_type(const Type &type, ResultSlot &slot) {
     if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Void || type.kind == TypeKind::Tuple ||
         type.kind == TypeKind::Function || type.kind == TypeKind::Trait) {
@@ -1256,6 +1370,35 @@ bool Checker::install_inferred_type(const Type &type, ResultSlot &slot) {
         }
         slot = ResultSlot{};
         slot.type_name = name;
+        return true;
+    }
+    if (fn_pointer(type)) {
+        if (type.optional) {
+            return false;
+        }
+        ResultSlot filled;
+        FnParam spelled;
+        if (!spell_inferred_fn_param(type, spelled)) {
+            return false;
+        }
+        filled.is_fn_ptr = true;
+        filled.indirections = spelled.indirections;
+        filled.type_name = spelled.type_name;
+        filled.type_package = spelled.type_package;
+        filled.ret_indirections = spelled.ret_indirections;
+        filled.ret_optional = spelled.ret_optional;
+        filled.ret_const_pointee = spelled.ret_const_pointee;
+        filled.fn_params = std::move(spelled.params);
+        filled.fn_variadic = spelled.variadic;
+        filled.fn_results = std::move(spelled.results);
+        const bool saved_quiet = quiet_;
+        quiet_ = true;
+        const Type rebuilt = type_of_result(filled, {});
+        quiet_ = saved_quiet;
+        if (rebuilt.kind == TypeKind::Invalid || !same_type(rebuilt, type)) {
+            return false;
+        }
+        slot = std::move(filled);
         return true;
     }
     SpecArg spelled;

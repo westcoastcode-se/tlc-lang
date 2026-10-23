@@ -30,7 +30,7 @@ func main() i32 {
 }
 ```
 
-A method body may omit the result the same way a function does. The type comes from the `return` expressions. `add` takes a pointer, so `p` must be an lvalue. The compiler passes `&p`. `sum` takes a value. A call on a `*Point` loads the struct. A pointer method on a temporary struct value is reported as `not an lvalue`.
+A method body may omit the result the same way a function does, including when that result is a function pointer. The type comes from the `return` expressions. `add` takes a pointer, so `p` must be an lvalue. The compiler passes `&p`. `sum` takes a value. A call on a `*Point` loads the struct. A pointer method on a temporary struct value is reported as `not an lvalue`.
 
 A const variable, and a `*const Point`, cannot call a method whose receiver is a non-const pointer. `origin.bump()` and `frozen.bump()`, when `bump` is `self *this`, are reported as `type mismatch: expected *Point, found *const Point`. The same call through `?*this` is reported the same way, with `?*Point` as the expected type. `self *const this` and a value receiver can be called on that variable. A store through `self *const this` is reported as `type mismatch`. A const binding of a mutable pointer still calls `self *this`: `const p = &live` then `p.bump()` changes `live`.
 

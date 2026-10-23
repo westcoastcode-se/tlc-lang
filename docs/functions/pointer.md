@@ -14,7 +14,7 @@ func myfunc(ptr func (i32, i32) i32) i32 {
 }
 ```
 
-A function returns a function pointer the same way it returns any other value. `var fp = pick()` infers that pointer, and `fp(20, 10)` calls it. `pick()(20, 10)` calls it without naming the pointer. A method returns one the same way: `box.choose()` and `Box.static_choose()` are pointers, and calling the pointer passes the arguments. The returned value may be an anonymous function. The full form writes the parameter types and the result. The short form writes the parameter names, and their types and the result come from the function pointer being returned.
+A function returns a function pointer the same way it returns any other value. The result may be omitted: `plain` is that same pointer. `var fp = pick()` infers that pointer, and `fp(20, 10)` calls it. `pick()(20, 10)` calls it without naming the pointer. A method returns one the same way: `box.choose()` and `Box.static_choose()` are pointers, and calling the pointer passes the arguments. The returned value may be an anonymous function. The full form writes the parameter types and the result. The short form writes the parameter names, and their types and the result come from the function pointer being returned.
 
 ```c
 func add(a i32, b i32) i32 {
@@ -22,6 +22,10 @@ func add(a i32, b i32) i32 {
 }
 
 func pick() func (i32, i32) i32 {
+    return add;
+}
+
+func plain() {
     return add;
 }
 
@@ -145,7 +149,7 @@ func main() i32 {
 
 ## Cost
 
-Loading a function pointer is the address of the function. `var ptr = add` is 1 `leaq` and 1 store of that address. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call.
+Loading a function pointer is the address of the function. `var ptr = add` is 1 `leaq` and 1 store of that address. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call. `return add` from `func pick()` is 2 instructions: `leaq` of `add` and `retq`. Omitting the result type adds no instructions. `return add` from `func pick() func (i32, i32) i32` is those same 2.
 
 `return p(20, 22)` where `p` is a `func (i32, i32) i32` parameter executes 42 instructions on the path where the trace holds fewer than 32 frames. The pointer is stored and reloaded, the frame is pushed, the two arguments are moved, and `callq *%rax` runs. The callee is extra. A cast of a pointer to a function pointer is a copy of the address, 1 `movq` once the source is loaded. An anonymous function called directly is a direct traced call, the same as a nested function.
 
