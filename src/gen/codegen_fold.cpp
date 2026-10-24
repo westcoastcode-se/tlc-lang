@@ -221,25 +221,15 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                     return std::nullopt;
                 }
                 for (const ImportDecl &import : owner->unit.imports) {
-                    if (import.form != ImportDecl::Form::Selective) {
+                    if (!import_selects(import, node.text)) {
                         continue;
                     }
-                    bool wanted = false;
-                    for (const std::string &item : import.names) {
-                        if (item == node.text) {
-                            wanted = true;
-                        }
-                    }
-                    if (!wanted) {
+                    const PackageNode *target = import_target(graph_, current_file_, import);
+                    if (target == nullptr) {
                         continue;
                     }
-                    for (const ImportEdge &edge : graph_->edges) {
-                        if (edge.from_file == current_file_ && edge.spec == import.path && edge.loc.file == import.loc.file &&
-                            edge.loc.offset == import.loc.offset) {
-                            if (const auto imported = fold_global(edge.to_file, node.text, false)) {
-                                return imported;
-                            }
-                        }
+                    if (const auto imported = fold_global(target->file_id, node.text, false)) {
+                        return imported;
                     }
                 }
                 return std::nullopt;

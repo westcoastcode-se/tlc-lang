@@ -52,6 +52,19 @@ inline TypedValue decay_outer_array(TypedValue array) {
     return array;
 }
 
+template <typename Sig>
+void copy_fn_sig(TypedValue &out, const Sig &src) {
+    out.fn_ty = src.fn_ty;
+    out.fn_ret_depth = src.fn_ret_depth;
+    out.fn_ret_float = src.fn_ret_float;
+    out.fn_ret_bits = src.fn_ret_bits;
+    out.fn_ret_unsigned = src.fn_ret_unsigned;
+    out.fn_ret_char = src.fn_ret_char;
+    out.fn_ret_bool = src.fn_ret_bool;
+    out.fn_ret_struct = src.fn_ret_struct;
+    out.fn_results = src.fn_results;
+}
+
 inline bool nested_array_element(const std::vector<TypeShell> &shells, std::size_t array_at) {
     const std::size_t next = array_at + 1;
     if (next >= shells.size()) {

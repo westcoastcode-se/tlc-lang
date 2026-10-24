@@ -41,6 +41,60 @@ struct PackageGraph {
     std::vector<std::string> link_args;
 };
 
+inline const PackageNode *package_node(const PackageGraph *graph, uint32_t file_id) {
+    if (graph == nullptr) {
+        return nullptr;
+    }
+    for (const PackageNode &node : graph->nodes) {
+        if (node.file_id == file_id) {
+            return &node;
+        }
+    }
+    return nullptr;
+}
+
+// The file itself, then every other file that shares its package directory.
+inline std::vector<uint32_t> package_file_ids(const PackageGraph *graph, uint32_t file_id) {
+    std::vector<uint32_t> ids;
+    ids.push_back(file_id);
+    const PackageNode *self = package_node(graph, file_id);
+    if (self == nullptr || self->package_key.empty()) {
+        return ids;
+    }
+    for (const PackageNode &node : graph->nodes) {
+        if (node.package_key == self->package_key && node.file_id != file_id) {
+            ids.push_back(node.file_id);
+        }
+    }
+    return ids;
+}
+
+// One import writes one edge. The first match is that package.
+inline const PackageNode *import_target(const PackageGraph *graph, uint32_t from_file, const ImportDecl &import) {
+    if (graph == nullptr) {
+        return nullptr;
+    }
+    for (const ImportEdge &edge : graph->edges) {
+        if (edge.from_file == from_file && edge.spec == import.path && edge.loc.file == import.loc.file &&
+            edge.loc.offset == import.loc.offset) {
+            return package_node(graph, edge.to_file);
+        }
+    }
+    return nullptr;
+}
+
+inline bool import_selects(const ImportDecl &import, const std::string &name) {
+    if (import.form != ImportDecl::Form::Selective) {
+        return false;
+    }
+    for (const std::string &item : import.names) {
+        if (item == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 struct ResolveRequest {
     std::string entry;
     std::vector<std::string> package_paths;

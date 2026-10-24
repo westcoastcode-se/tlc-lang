@@ -560,31 +560,20 @@ int CodeGen::enum_named(uint32_t file, const std::string &name) const {
 
 int CodeGen::selective_enum(uint32_t file, const std::string &name) const {
     const PackageNode *node = find_node(file);
-    if (node == nullptr || graph_ == nullptr) {
+    if (node == nullptr) {
         return -1;
     }
     for (const ImportDecl &import : node->unit.imports) {
-        if (import.form != ImportDecl::Form::Selective) {
+        if (!import_selects(import, name)) {
             continue;
         }
-        bool wanted = false;
-        for (const std::string &item : import.names) {
-            if (item == name) {
-                wanted = true;
-            }
-        }
-        if (!wanted) {
+        const PackageNode *target = import_target(graph_, file, import);
+        if (target == nullptr) {
             continue;
         }
-        for (const ImportEdge &edge : graph_->edges) {
-            if (edge.from_file != file || edge.spec != import.path || edge.loc.file != import.loc.file ||
-                edge.loc.offset != import.loc.offset) {
-                continue;
-            }
-            const int id = enum_named(edge.to_file, name);
-            if (id >= 0) {
-                return id;
-            }
+        const int id = enum_named(target->file_id, name);
+        if (id >= 0) {
+            return id;
         }
     }
     return -1;
@@ -736,17 +725,7 @@ CodeGen::SymbolForm CodeGen::symbol_form(const PackageNode &node, const std::str
     return form;
 }
 
-const PackageNode *CodeGen::find_node(uint32_t file_id) const {
-    if (graph_ == nullptr) {
-        return nullptr;
-    }
-    for (const PackageNode &node : graph_->nodes) {
-        if (node.file_id == file_id) {
-            return &node;
-        }
-    }
-    return nullptr;
-}
+const PackageNode *CodeGen::find_node(uint32_t file_id) const { return package_node(graph_, file_id); }
 
 bool CodeGen::type_known(const std::string &name) const {
     if (name.empty()) {
@@ -1028,30 +1007,14 @@ const Binding *CodeGen::call_callee(uint32_t file, const Expr &callee) const {
     };
     auto selective = [&](const std::string &name) -> const Binding * {
         const PackageNode *node = find_node(file);
-        if (node == nullptr || graph_ == nullptr) {
+        if (node == nullptr) {
             return nullptr;
         }
         for (const ImportDecl &import : node->unit.imports) {
-            if (import.form != ImportDecl::Form::Selective) {
+            if (!import_selects(import, name)) {
                 continue;
             }
-            bool wanted = false;
-            for (const std::string &item : import.names) {
-                if (item == name) {
-                    wanted = true;
-                }
-            }
-            if (!wanted) {
-                continue;
-            }
-            const PackageNode *target = nullptr;
-            for (const ImportEdge &edge : graph_->edges) {
-                if (edge.from_file == file && edge.spec == import.path && edge.loc.file == import.loc.file &&
-                    edge.loc.offset == import.loc.offset) {
-                    target = find_node(edge.to_file);
-                    break;
-                }
-            }
+            const PackageNode *target = import_target(graph_, file, import);
             if (target == nullptr) {
                 continue;
             }

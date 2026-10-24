@@ -1439,7 +1439,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     if (var->is_extern || var->is_const_decl || !var->owner.empty()) {
                         return;
                     }
-                    Symbol *symbol = self->symbol_slot(var->name);
+                    Symbol *symbol = self->lookup_scope(var->name);
                     if (symbol == nullptr) {
                         return;
                     }
@@ -1573,17 +1573,7 @@ void Checker::analyze(const TranslationUnit &unit) {
     primary_unit_ = nullptr;
 }
 
-const PackageNode *Checker::find_node(uint32_t file_id) const {
-    if (graph_ == nullptr) {
-        return nullptr;
-    }
-    for (const PackageNode &node : graph_->nodes) {
-        if (node.file_id == file_id) {
-            return &node;
-        }
-    }
-    return nullptr;
-}
+const PackageNode *Checker::find_node(uint32_t file_id) const { return package_node(graph_, file_id); }
 
 const Symbol *Checker::find_export(uint32_t file_id, const std::string &name) const {
     for (const uint32_t id : files_in_package(file_id)) {
@@ -1600,16 +1590,7 @@ const Symbol *Checker::find_export(uint32_t file_id, const std::string &name) co
 }
 
 const PackageNode *Checker::target_of(const PackageNode &from, const ImportDecl &import) const {
-    if (graph_ == nullptr) {
-        return nullptr;
-    }
-    for (const ImportEdge &edge : graph_->edges) {
-        if (edge.from_file == from.file_id && edge.spec == import.path && edge.loc.file == import.loc.file &&
-            edge.loc.offset == import.loc.offset) {
-            return find_node(edge.to_file);
-        }
-    }
-    return nullptr;
+    return import_target(graph_, from.file_id, import);
 }
 
 Checker::SelectorTarget Checker::resolve_selector(const Expr::Selector &selector) {

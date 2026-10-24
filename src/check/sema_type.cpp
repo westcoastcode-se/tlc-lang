@@ -115,15 +115,8 @@ void Checker::ensure_allocator_trait() {
 }
 
 bool Checker::file_links_iteration(uint32_t file) const {
-    if (graph_ == nullptr) {
-        return false;
-    }
-    for (const PackageNode &node : graph_->nodes) {
-        if (node.file_id == file) {
-            return node.iteration_library;
-        }
-    }
-    return false;
+    const PackageNode *node = find_node(file);
+    return node != nullptr && node->iteration_library;
 }
 
 namespace {

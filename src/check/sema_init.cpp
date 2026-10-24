@@ -17,6 +17,15 @@ namespace {
 // array: an element store does not mark it, and an element read needs all of it.
 constexpr int kInitLeafCap = 1 << 20;
 
+bool bits_full(const std::vector<uint8_t> &bits) {
+    for (const uint8_t bit : bits) {
+        if (bit == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool sized_array(const Type &type) {
     return type.kind == TypeKind::Array && type.length >= 0 && type.element != nullptr;
 }
@@ -124,12 +133,9 @@ void Checker::init_mark_span(int id, int offset, int count) {
     for (int i = offset; i < end; ++i) {
         bits[static_cast<std::size_t>(i)] = 1;
     }
-    for (const uint8_t bit : bits) {
-        if (bit == 0) {
-            return;
-        }
+    if (bits_full(bits)) {
+        assign_.open.erase(found);
     }
-    assign_.open.erase(found);
 }
 
 void Checker::init_mark_all(int id) {
@@ -414,31 +420,11 @@ void Checker::init_replace(const Expr &lhs, const Expr &rhs) {
         init_store(lhs);
         return;
     }
-    const Expr *walk = &lhs;
-    const Expr::Name *named = nullptr;
-    while (walk != nullptr && named == nullptr) {
-        if (const auto *unary = std::get_if<Expr::Unary>(&walk->data)) {
-            if ((unary->op == TokenKind::KwUnsafe || unary->op == TokenKind::Star) && unary->expr != nullptr) {
-                walk = unary->expr.get();
-                continue;
-            }
-            break;
-        }
-        if (const auto *index = std::get_if<Expr::Index>(&walk->data)) {
-            walk = index->base.get();
-            continue;
-        }
-        if (const auto *selector = std::get_if<Expr::Selector>(&walk->data)) {
-            walk = selector->base.get();
-            continue;
-        }
-        named = std::get_if<Expr::Name>(&walk->data);
-        break;
-    }
+    const Expr::Name *named = init_root(lhs, true);
     if (named == nullptr) {
         return;
     }
-    Symbol *symbol = symbol_slot(named->text);
+    Symbol *symbol = lookup_scope(named->text);
     if (symbol == nullptr) {
         return;
     }
@@ -503,14 +489,7 @@ void Checker::init_replace(const Expr &lhs, const Expr &rhs) {
             bits[static_cast<std::size_t>(at)] = i < static_cast<int>(cover.size()) ? cover[static_cast<std::size_t>(i)] : 0;
         }
     }
-    bool all = true;
-    for (const uint8_t bit : bits) {
-        if (bit == 0) {
-            all = false;
-            break;
-        }
-    }
-    if (all) {
+    if (bits_full(bits)) {
         assign_.open.erase(id);
     } else {
         assign_.open[id] = std::move(bits);
@@ -531,27 +510,7 @@ void Checker::init_store(const Expr &lhs) {
     if (!init_collect(lhs, steps)) {
         return;
     }
-    const Expr *walk = &lhs;
-    const Expr::Name *named = nullptr;
-    while (walk != nullptr && named == nullptr) {
-        if (const auto *unary = std::get_if<Expr::Unary>(&walk->data)) {
-            if ((unary->op == TokenKind::KwUnsafe || unary->op == TokenKind::Star) && unary->expr != nullptr) {
-                walk = unary->expr.get();
-                continue;
-            }
-            break;
-        }
-        if (const auto *index = std::get_if<Expr::Index>(&walk->data)) {
-            walk = index->base.get();
-            continue;
-        }
-        if (const auto *selector = std::get_if<Expr::Selector>(&walk->data)) {
-            walk = selector->base.get();
-            continue;
-        }
-        named = std::get_if<Expr::Name>(&walk->data);
-        break;
-    }
+    const Expr::Name *named = init_root(lhs, true);
     if (named == nullptr) {
         return;
     }
@@ -600,27 +559,7 @@ void Checker::init_require_receiver(const Expr &expr) {
     if (!init_collect(expr, steps)) {
         return;
     }
-    const Expr *walk = &expr;
-    const Expr::Name *named = nullptr;
-    while (walk != nullptr && named == nullptr) {
-        if (const auto *unary = std::get_if<Expr::Unary>(&walk->data)) {
-            if (unary->op == TokenKind::KwUnsafe && unary->expr != nullptr) {
-                walk = unary->expr.get();
-                continue;
-            }
-            break;
-        }
-        if (const auto *index = std::get_if<Expr::Index>(&walk->data)) {
-            walk = index->base.get();
-            continue;
-        }
-        if (const auto *selector = std::get_if<Expr::Selector>(&walk->data)) {
-            walk = selector->base.get();
-            continue;
-        }
-        named = std::get_if<Expr::Name>(&walk->data);
-        break;
-    }
+    const Expr::Name *named = init_root(expr, false);
     if (named == nullptr) {
         return;
     }
@@ -825,12 +764,26 @@ Checker::InitSuspend::InitSuspend(Checker &self) : self_(&self) { self.init_susp
 
 Checker::InitSuspend::~InitSuspend() { self_->init_resume(*this); }
 
-Symbol *Checker::symbol_slot(const std::string &name) {
-    for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
-        const auto found = it->symbols.find(name);
-        if (found != it->symbols.end()) {
-            return &found->second;
+const Expr::Name *Checker::init_root(const Expr &expr, bool peel_deref) const {
+    const Expr *walk = &expr;
+    while (walk != nullptr) {
+        if (const auto *unary = std::get_if<Expr::Unary>(&walk->data)) {
+            const bool peel = unary->op == TokenKind::KwUnsafe || (peel_deref && unary->op == TokenKind::Star);
+            if (peel && unary->expr != nullptr) {
+                walk = unary->expr.get();
+                continue;
+            }
+            return nullptr;
         }
+        if (const auto *index = std::get_if<Expr::Index>(&walk->data)) {
+            walk = index->base.get();
+            continue;
+        }
+        if (const auto *selector = std::get_if<Expr::Selector>(&walk->data)) {
+            walk = selector->base.get();
+            continue;
+        }
+        return std::get_if<Expr::Name>(&walk->data);
     }
     return nullptr;
 }
@@ -942,14 +895,7 @@ void Checker::init_cover(Symbol &symbol, const Expr *init) {
     }
     std::vector<uint8_t> bits(static_cast<std::size_t>(leaves->second), 0);
     init_fill(symbol.type, init, bits, 0);
-    bool all = true;
-    for (const uint8_t bit : bits) {
-        if (bit == 0) {
-            all = false;
-            break;
-        }
-    }
-    if (all) {
+    if (bits_full(bits)) {
         assign_.open.erase(symbol.init_id);
         return;
     }
@@ -971,14 +917,7 @@ void Checker::init_track_pointee(Symbol &symbol, const Type &object, const Expr 
     }
     std::vector<uint8_t> bits(static_cast<std::size_t>(leaves), 0);
     init_fill(object, init, bits, 0);
-    bool all = true;
-    for (const uint8_t bit : bits) {
-        if (bit == 0) {
-            all = false;
-            break;
-        }
-    }
-    if (!all) {
+    if (!bits_full(bits)) {
         assign_.open[id] = std::move(bits);
     }
 }
@@ -996,27 +935,7 @@ void Checker::init_address_span(const Expr &expr, bool mark, SourceLoc loc, bool
     if (!init_collect(*cursor, steps)) {
         return;
     }
-    const Expr *walk = cursor;
-    const Expr::Name *named = nullptr;
-    while (walk != nullptr && named == nullptr) {
-        if (const auto *unary = std::get_if<Expr::Unary>(&walk->data)) {
-            if ((unary->op == TokenKind::KwUnsafe || unary->op == TokenKind::Star) && unary->expr != nullptr) {
-                walk = unary->expr.get();
-                continue;
-            }
-            break;
-        }
-        if (const auto *index = std::get_if<Expr::Index>(&walk->data)) {
-            walk = index->base.get();
-            continue;
-        }
-        if (const auto *selector = std::get_if<Expr::Selector>(&walk->data)) {
-            walk = selector->base.get();
-            continue;
-        }
-        named = std::get_if<Expr::Name>(&walk->data);
-        break;
-    }
+    const Expr::Name *named = init_root(*cursor, true);
     if (named == nullptr) {
         return;
     }
@@ -1057,14 +976,7 @@ void Checker::init_address_span(const Expr &expr, bool mark, SourceLoc loc, bool
             bits = found->second;
         }
         init_set_span(bits, offset, count);
-        bool all = true;
-        for (const uint8_t bit : bits) {
-            if (bit == 0) {
-                all = false;
-                break;
-            }
-        }
-        if (all) {
+        if (bits_full(bits)) {
             assign_.open.erase(id);
         } else {
             assign_.open[id] = std::move(bits);

@@ -1,6 +1,8 @@
 // Symbol tables and lowering a type to LLVM.
 #include "gen/gen.hpp"
 
+#include "gen/detail.hpp"
+
 namespace tlc {
 
 const Binding *CodeGen::lookup(const std::string &name) const {
@@ -34,20 +36,7 @@ const Binding *CodeGen::lookup(const std::string &name) const {
     return nullptr;
 }
 
-std::vector<uint32_t> CodeGen::package_files(uint32_t file) const {
-    std::vector<uint32_t> ids;
-    ids.push_back(file);
-    const PackageNode *self = find_node(file);
-    if (self == nullptr || self->package_key.empty() || graph_ == nullptr) {
-        return ids;
-    }
-    for (const PackageNode &node : graph_->nodes) {
-        if (node.package_key == self->package_key && node.file_id != file) {
-            ids.push_back(node.file_id);
-        }
-    }
-    return ids;
-}
+std::vector<uint32_t> CodeGen::package_files(uint32_t file) const { return package_file_ids(graph_, file); }
 
 const Binding *CodeGen::binding_for_decl(const FunctionDecl *decl) const {
     if (decl == nullptr) {
@@ -273,21 +262,14 @@ uint32_t CodeGen::assoc_home(const Expr::Selector &node) const {
 
 uint32_t CodeGen::package_file(uint32_t file, const std::string &package) const {
     const PackageNode *node = find_node(file);
-    if (node == nullptr || graph_ == nullptr) {
+    if (node == nullptr) {
         return 0;
     }
     for (const ImportDecl &import : node->unit.imports) {
         if (import.form == ImportDecl::Form::Selective) {
             continue;
         }
-        const PackageNode *target = nullptr;
-        for (const ImportEdge &edge : graph_->edges) {
-            if (edge.from_file == file && edge.spec == import.path && edge.loc.file == import.loc.file &&
-                edge.loc.offset == import.loc.offset) {
-                target = find_node(edge.to_file);
-                break;
-            }
-        }
+        const PackageNode *target = import_target(graph_, file, import);
         if (target == nullptr) {
             continue;
         }
@@ -301,30 +283,14 @@ uint32_t CodeGen::package_file(uint32_t file, const std::string &package) const 
 
 int CodeGen::selective_tag(uint32_t file, const std::string &name) const {
     const PackageNode *node = find_node(file);
-    if (node == nullptr || graph_ == nullptr) {
+    if (node == nullptr) {
         return -1;
     }
     for (const ImportDecl &import : node->unit.imports) {
-        if (import.form != ImportDecl::Form::Selective) {
+        if (!import_selects(import, name)) {
             continue;
         }
-        bool wanted = false;
-        for (const std::string &item : import.names) {
-            if (item == name) {
-                wanted = true;
-            }
-        }
-        if (!wanted) {
-            continue;
-        }
-        const PackageNode *target = nullptr;
-        for (const ImportEdge &edge : graph_->edges) {
-            if (edge.from_file == file && edge.spec == import.path && edge.loc.file == import.loc.file &&
-                edge.loc.offset == import.loc.offset) {
-                target = find_node(edge.to_file);
-                break;
-            }
-        }
+        const PackageNode *target = import_target(graph_, file, import);
         if (target == nullptr) {
             continue;
         }
@@ -352,30 +318,14 @@ const CodeGen::Alias *CodeGen::find_alias(uint32_t file, const std::string &name
 
 const CodeGen::Alias *CodeGen::selective_alias(uint32_t file, const std::string &name) const {
     const PackageNode *node = find_node(file);
-    if (node == nullptr || graph_ == nullptr) {
+    if (node == nullptr) {
         return nullptr;
     }
     for (const ImportDecl &import : node->unit.imports) {
-        if (import.form != ImportDecl::Form::Selective) {
+        if (!import_selects(import, name)) {
             continue;
         }
-        bool wanted = false;
-        for (const std::string &item : import.names) {
-            if (item == name) {
-                wanted = true;
-            }
-        }
-        if (!wanted) {
-            continue;
-        }
-        const PackageNode *target = nullptr;
-        for (const ImportEdge &edge : graph_->edges) {
-            if (edge.from_file == file && edge.spec == import.path && edge.loc.file == import.loc.file &&
-                edge.loc.offset == import.loc.offset) {
-                target = find_node(edge.to_file);
-                break;
-            }
-        }
+        const PackageNode *target = import_target(graph_, file, import);
         if (target == nullptr) {
             continue;
         }
@@ -425,28 +375,15 @@ bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
     }
     if (item.type_package.empty()) {
         const PackageNode *node = find_node(file);
-        if (node != nullptr && graph_ != nullptr) {
+        if (node != nullptr) {
             for (const ImportDecl &import : node->unit.imports) {
-                if (import.form != ImportDecl::Form::Selective) {
+                if (!import_selects(import, item.type_name)) {
                     continue;
                 }
-                bool wanted = false;
-                for (const std::string &imported : import.names) {
-                    if (imported == item.type_name) {
-                        wanted = true;
-                    }
-                }
-                if (!wanted) {
-                    continue;
-                }
-                for (const ImportEdge &edge : graph_->edges) {
-                    if (edge.from_file != file || edge.spec != import.path || edge.loc.file != import.loc.file ||
-                        edge.loc.offset != import.loc.offset) {
-                        continue;
-                    }
-                    if (has_typedef(edge.to_file, item.type_name) && find_alias(edge.to_file, item.type_name) == nullptr) {
-                        return false;
-                    }
+                const PackageNode *target = import_target(graph_, file, import);
+                if (target != nullptr && has_typedef(target->file_id, item.type_name) &&
+                    find_alias(target->file_id, item.type_name) == nullptr) {
+                    return false;
                 }
             }
         }
@@ -984,6 +921,19 @@ std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, cons
     return low;
 }
 
+void CodeGen::apply_scalar_result(Binding &binding, const Lowered &ret, bool returns_void) const {
+    binding.depth = returns_void ? 0 : ret.depth;
+    binding.elem_char = !returns_void && ret.elem_char;
+    binding.struct_id = returns_void ? -1 : ret.struct_id;
+    binding.elem_void = !returns_void && ret.elem_void;
+    binding.elem_bool = !returns_void && ret.elem_bool;
+    binding.elem_bits = returns_void ? 0 : ret.elem_bits;
+    binding.elem_unsigned = !returns_void && ret.elem_unsigned;
+    binding.elem_float = !returns_void && ret.elem_float;
+    binding.trait_id = returns_void ? -1 : ret.trait_id;
+    binding.enum_id = returns_void ? -1 : ret.enum_id;
+}
+
 void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.depth = low.depth;
     binding.elem_char = low.elem_char;
@@ -1077,30 +1027,6 @@ llvm::Value *CodeGen::adapt(const TypedValue &value, llvm::Type *slot, SourceLoc
         return as_slice_value(value, loc);
     }
     return as_stored(value.value, value.depth, slot, value.elem_unsigned);
-}
-
-void CodeGen::copy_fn_sig(TypedValue &out, const FieldLayout &field) const {
-    out.fn_ty = field.fn_ty;
-    out.fn_ret_depth = field.fn_ret_depth;
-    out.fn_ret_float = field.fn_ret_float;
-    out.fn_ret_bits = field.fn_ret_bits;
-    out.fn_ret_unsigned = field.fn_ret_unsigned;
-    out.fn_ret_char = field.fn_ret_char;
-    out.fn_ret_bool = field.fn_ret_bool;
-    out.fn_ret_struct = field.fn_ret_struct;
-    out.fn_results = field.fn_results;
-}
-
-void CodeGen::copy_fn_sig(TypedValue &out, const TypedValue &src) const {
-    out.fn_ty = src.fn_ty;
-    out.fn_ret_depth = src.fn_ret_depth;
-    out.fn_ret_float = src.fn_ret_float;
-    out.fn_ret_bits = src.fn_ret_bits;
-    out.fn_ret_unsigned = src.fn_ret_unsigned;
-    out.fn_ret_char = src.fn_ret_char;
-    out.fn_ret_bool = src.fn_ret_bool;
-    out.fn_ret_struct = src.fn_ret_struct;
-    out.fn_results = src.fn_results;
 }
 
 const CodeGen::FieldLayout *CodeGen::find_field(int struct_id, const std::string &name, int &index) const {

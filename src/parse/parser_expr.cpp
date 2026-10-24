@@ -43,174 +43,50 @@ std::unique_ptr<Expr> Parser::parse_conditional() {
     return cond;
 }
 
-std::unique_ptr<Expr> Parser::parse_or() {
-    auto lhs = parse_and();
-    while (check(TokenKind::PipePipe)) {
-        const TokenKind op = peek().kind;
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_and();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = op;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        lhs = make_expr(std::move(node));
-    }
-    return lhs;
-}
+std::unique_ptr<Expr> Parser::parse_or() { return parse_binary(0); }
 
-std::unique_ptr<Expr> Parser::parse_and() {
-    auto lhs = parse_bit_or();
-    while (check(TokenKind::AmpAmp)) {
-        const TokenKind op = peek().kind;
+std::unique_ptr<Expr> Parser::parse_binary(int level) {
+    struct Level {
+        TokenKind ops[4];
+        int count;
+    };
+    static constexpr Level levels[] = {
+        {{TokenKind::PipePipe}, 1},
+        {{TokenKind::AmpAmp}, 1},
+        {{TokenKind::Pipe}, 1},
+        {{TokenKind::Caret}, 1},
+        {{TokenKind::Amp}, 1},
+        {{TokenKind::EqEq, TokenKind::BangEq}, 2},
+        {{TokenKind::Lt, TokenKind::Gt, TokenKind::Le, TokenKind::Ge}, 4},
+        {{TokenKind::LtLt, TokenKind::GtGt}, 2},
+        {{TokenKind::Plus, TokenKind::Minus}, 2},
+        {{TokenKind::Star, TokenKind::Slash, TokenKind::Percent}, 3},
+    };
+    constexpr int last = static_cast<int>(sizeof(levels) / sizeof(levels[0])) - 1;
+    auto lhs = level == last ? parse_unary() : parse_binary(level + 1);
+    const Level &row = levels[level];
+    while (true) {
+        const TokenKind kind = peek().kind;
+        bool match = false;
+        for (int i = 0; i < row.count; ++i) {
+            if (row.ops[i] == kind) {
+                match = true;
+                break;
+            }
+        }
+        if (!match) {
+            return lhs;
+        }
         const SourceLoc loc = peek().loc;
         ++pos_;
-        auto rhs = parse_bit_or();
+        auto rhs = level == last ? parse_unary() : parse_binary(level + 1);
         Expr::Binary node;
         node.loc = loc;
-        node.op = op;
+        node.op = kind;
         node.lhs = std::move(lhs);
         node.rhs = std::move(rhs);
         lhs = make_expr(std::move(node));
     }
-    return lhs;
-}
-
-std::unique_ptr<Expr> Parser::parse_bit_or() {
-    auto lhs = parse_bit_xor();
-    while (check(TokenKind::Pipe)) {
-        const TokenKind op = peek().kind;
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_bit_xor();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = op;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        lhs = make_expr(std::move(node));
-    }
-    return lhs;
-}
-
-std::unique_ptr<Expr> Parser::parse_bit_xor() {
-    auto lhs = parse_bit_and();
-    while (check(TokenKind::Caret)) {
-        const TokenKind op = peek().kind;
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_bit_and();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = op;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        lhs = make_expr(std::move(node));
-    }
-    return lhs;
-}
-
-std::unique_ptr<Expr> Parser::parse_bit_and() {
-    auto lhs = parse_equality();
-    while (check(TokenKind::Amp)) {
-        const TokenKind op = peek().kind;
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_equality();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = op;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        lhs = make_expr(std::move(node));
-    }
-    return lhs;
-}
-
-std::unique_ptr<Expr> Parser::parse_equality() {
-    auto lhs = parse_relational();
-    while (check(TokenKind::EqEq) || check(TokenKind::BangEq)) {
-        const TokenKind op = peek().kind;
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_relational();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = op;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        lhs = make_expr(std::move(node));
-    }
-    return lhs;
-}
-
-std::unique_ptr<Expr> Parser::parse_relational() {
-    auto lhs = parse_shift();
-    while (check(TokenKind::Lt) || check(TokenKind::Gt) || check(TokenKind::Le) || check(TokenKind::Ge)) {
-        const TokenKind op = peek().kind;
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_shift();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = op;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        lhs = make_expr(std::move(node));
-    }
-    return lhs;
-}
-
-std::unique_ptr<Expr> Parser::parse_shift() {
-    auto lhs = parse_additive();
-    while (check(TokenKind::LtLt) || check(TokenKind::GtGt)) {
-        const TokenKind op = peek().kind;
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_additive();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = op;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        lhs = make_expr(std::move(node));
-    }
-    return lhs;
-}
-
-std::unique_ptr<Expr> Parser::parse_additive() {
-    auto lhs = parse_multiplicative();
-    while (check(TokenKind::Plus) || check(TokenKind::Minus)) {
-        const TokenKind op = peek().kind;
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_multiplicative();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = op;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        lhs = make_expr(std::move(node));
-    }
-    return lhs;
-}
-
-std::unique_ptr<Expr> Parser::parse_multiplicative() {
-    auto lhs = parse_unary();
-    while (check(TokenKind::Star) || check(TokenKind::Slash) || check(TokenKind::Percent)) {
-        const TokenKind op = peek().kind;
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_unary();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = op;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        lhs = make_expr(std::move(node));
-    }
-    return lhs;
 }
 
 bool Parser::skip_type_base(std::size_t &index, int leading, bool cast) const {

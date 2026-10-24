@@ -245,15 +245,8 @@ class Parser {
     std::unique_ptr<Expr> parse_assignment();
     std::unique_ptr<Expr> parse_conditional();
     std::unique_ptr<Expr> parse_or();
-    std::unique_ptr<Expr> parse_and();
-    std::unique_ptr<Expr> parse_bit_or();
-    std::unique_ptr<Expr> parse_bit_xor();
-    std::unique_ptr<Expr> parse_bit_and();
-    std::unique_ptr<Expr> parse_equality();
-    std::unique_ptr<Expr> parse_relational();
-    std::unique_ptr<Expr> parse_shift();
-    std::unique_ptr<Expr> parse_additive();
-    std::unique_ptr<Expr> parse_multiplicative();
+    // Left-associative operators. Level 0 is `||`. The last level is `*`, `/`, and `%`.
+    std::unique_ptr<Expr> parse_binary(int level);
     std::unique_ptr<Expr> parse_unary();
     std::unique_ptr<Expr> parse_alloc();
     std::unique_ptr<Expr> parse_postfix();

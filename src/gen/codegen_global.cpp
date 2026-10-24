@@ -110,16 +110,7 @@ void CodeGen::declare_functions(const PackageNode &node) {
             // The body is the decl. A prototype may be the declaration that says `extern`.
             binding.is_extern = acc.is_extern;
             binding.decl = acc.fn;
-            binding.depth = returns_void ? 0 : ret.depth;
-            binding.elem_char = !returns_void && ret.elem_char;
-            binding.struct_id = returns_void ? -1 : ret.struct_id;
-            binding.elem_void = !returns_void && ret.elem_void;
-            binding.elem_bool = !returns_void && ret.elem_bool;
-            binding.elem_bits = returns_void ? 0 : ret.elem_bits;
-            binding.elem_unsigned = !returns_void && ret.elem_unsigned;
-            binding.elem_float = !returns_void && ret.elem_float;
-            binding.trait_id = returns_void ? -1 : ret.trait_id;
-            binding.enum_id = returns_void ? -1 : ret.enum_id;
+            apply_scalar_result(binding, ret, returns_void);
             file.functions.emplace(name, binding);
             // Overloads are not stored under the plain name. The chosen list is found from its decl.
             for (const FunctionDecl *decl : acc.decls) {
@@ -166,17 +157,8 @@ void CodeGen::declare_functions(const PackageNode &node) {
         }
         Binding binding;
         binding.value = function;
-        binding.depth = returns_void ? 0 : ret.depth;
         binding.is_function = true;
-        binding.elem_char = !returns_void && ret.elem_char;
-        binding.struct_id = returns_void ? -1 : ret.struct_id;
-        binding.elem_void = !returns_void && ret.elem_void;
-        binding.elem_bool = !returns_void && ret.elem_bool;
-        binding.elem_bits = returns_void ? 0 : ret.elem_bits;
-        binding.elem_unsigned = !returns_void && ret.elem_unsigned;
-        binding.elem_float = !returns_void && ret.elem_float;
-        binding.trait_id = returns_void ? -1 : ret.trait_id;
-        binding.enum_id = returns_void ? -1 : ret.enum_id;
+        apply_scalar_result(binding, ret, returns_void);
         binding.is_static = acc.is_static;
         binding.decl = acc.fn;
         file.functions.emplace(name, binding);
@@ -326,14 +308,7 @@ void CodeGen::bind_imports(const PackageNode &node) {
         return;
     }
     for (const ImportDecl &import : node.unit.imports) {
-        const PackageNode *target = nullptr;
-        for (const ImportEdge &edge : graph_->edges) {
-            if (edge.from_file == node.file_id && edge.spec == import.path && edge.loc.file == import.loc.file &&
-                edge.loc.offset == import.loc.offset) {
-                target = find_node(edge.to_file);
-                break;
-            }
-        }
+        const PackageNode *target = import_target(graph_, node.file_id, import);
         if (target == nullptr) {
             continue;
         }

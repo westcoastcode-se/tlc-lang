@@ -2476,14 +2476,8 @@ void Checker::flush_appends() {
 }
 
 TranslationUnit *Checker::unit_for(uint32_t file_id) {
-    if (graph_ == nullptr) {
-        (void)file_id;
-        return primary_unit_;
-    }
-    for (PackageNode &node : const_cast<PackageGraph *>(graph_)->nodes) {
-        if (node.file_id == file_id) {
-            return &node.unit;
-        }
+    if (const PackageNode *node = find_node(file_id)) {
+        return &const_cast<PackageNode *>(node)->unit;
     }
     return primary_unit_;
 }

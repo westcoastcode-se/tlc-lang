@@ -45,21 +45,6 @@ bool same_spec(const SpecArg &lhs, const SpecArg &rhs) {
            lhs.array_len == rhs.array_len;
 }
 
-ResultSlot slot_from_spec(const SpecArg &arg) {
-    ResultSlot slot;
-    slot.type_name = arg.type_name;
-    slot.type_package = arg.type_package;
-    slot.is_struct = arg.is_struct;
-    slot.is_enum = arg.is_enum;
-    slot.indirections = arg.indirections;
-    slot.optional = arg.optional;
-    slot.const_pointee = arg.const_pointee;
-    slot.is_array = arg.is_array;
-    slot.elem_const = arg.elem_const;
-    slot.array_len = arg.array_len;
-    return slot;
-}
-
 void apply_spec(ResultSlot &slot, const SpecArg &arg) {
     slot.type_name = arg.type_name;
     slot.type_package = arg.type_package;
@@ -73,6 +58,12 @@ void apply_spec(ResultSlot &slot, const SpecArg &arg) {
     slot.array_len = arg.array_len;
 }
 
+ResultSlot slot_from_spec(const SpecArg &arg) {
+    ResultSlot slot;
+    apply_spec(slot, arg);
+    return slot;
+}
+
 SpecArg pack_bound(std::vector<SpecArg> parts) {
     if (parts.size() == 1) {
         return std::move(parts[0]);
@@ -83,19 +74,10 @@ SpecArg pack_bound(std::vector<SpecArg> parts) {
     return packed;
 }
 
-int type_param_index(const std::vector<TypeParam> &params, const std::string &name) {
-    for (std::size_t i = 0; i < params.size(); ++i) {
-        if (params[i].name == name) {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;
-}
-
 void append_shaped_name(std::string &out, const std::string &package, const std::string &name,
                         const std::vector<TypeParam> &params) {
     if (package.empty()) {
-        const int slot = type_param_index(params, name);
+        const int slot = param_index(params, name);
         if (slot >= 0) {
             out.push_back('#');
             out += std::to_string(slot);

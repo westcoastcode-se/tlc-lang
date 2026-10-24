@@ -1175,9 +1175,9 @@ class CodeGen {
     Lowered lower_param_type(uint32_t file, const Param &param) const;
     bool infer_global(uint32_t file, const Expr &expr, Lowered &out) const;
     void apply_low(Binding &binding, const Lowered &low) const;
+    // Scalar fields only. An array or a slice return does not set those flags on a function.
+    void apply_scalar_result(Binding &binding, const Lowered &ret, bool returns_void) const;
     const FieldLayout *find_field(int struct_id, const std::string &name, int &index) const;
-    void copy_fn_sig(TypedValue &out, const FieldLayout &field) const;
-    void copy_fn_sig(TypedValue &out, const TypedValue &src) const;
     TypedValue field_addr(int struct_id, llvm::Value *pointer, const std::string &field, SourceLoc loc);
     void store_union_tag(int struct_id, llvm::Value *pointer, const std::string &field);
     llvm::Type *enum_mem_type(int enum_id) const;

@@ -471,17 +471,8 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
         }
         Binding binding;
         binding.value = function;
-        binding.depth = returns_void ? 0 : ret.depth;
         binding.is_function = true;
-        binding.elem_char = !returns_void && ret.elem_char;
-        binding.struct_id = returns_void ? -1 : ret.struct_id;
-        binding.elem_void = !returns_void && ret.elem_void;
-        binding.elem_bool = !returns_void && ret.elem_bool;
-        binding.elem_bits = returns_void ? 0 : ret.elem_bits;
-        binding.elem_unsigned = !returns_void && ret.elem_unsigned;
-        binding.elem_float = !returns_void && ret.elem_float;
-        binding.trait_id = returns_void ? -1 : ret.trait_id;
-        binding.enum_id = returns_void ? -1 : ret.enum_id;
+        apply_scalar_result(binding, ret, returns_void);
         binding.decl = &fn;
         if (found == scopes_.back().end()) {
             scopes_.back()[fn.name] = binding;

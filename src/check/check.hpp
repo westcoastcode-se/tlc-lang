@@ -712,7 +712,8 @@ class Checker {
 
     int init_leaf_count(const Type &type);
     int init_leaf_count(const Type &type, std::unordered_set<int> &seen);
-    Symbol *symbol_slot(const std::string &name);
+    // The name under indexes, fields, and `unsafe`. `peel_deref` also walks `*`.
+    const Expr::Name *init_root(const Expr &expr, bool peel_deref) const;
     void init_set_span(std::vector<uint8_t> &bits, int offset, int count);
     void init_fill(const Type &type, const Expr *init, std::vector<uint8_t> &bits, int offset);
     void init_fill_brace(const Type &type, const Expr::Init *brace, std::vector<uint8_t> &bits, int offset);

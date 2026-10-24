@@ -484,18 +484,7 @@ bool Checker::shared_has(const std::string &name) const {
 }
 
 std::vector<uint32_t> Checker::files_in_package(uint32_t file_id) const {
-    std::vector<uint32_t> ids;
-    ids.push_back(file_id);
-    const PackageNode *self = find_node(file_id);
-    if (self == nullptr || self->package_key.empty() || graph_ == nullptr) {
-        return ids;
-    }
-    for (const PackageNode &node : graph_->nodes) {
-        if (node.package_key == self->package_key && node.file_id != file_id) {
-            ids.push_back(node.file_id);
-        }
-    }
-    return ids;
+    return package_file_ids(graph_, file_id);
 }
 
 int Checker::find_tag(uint32_t file, const std::string &name) const {
