@@ -584,8 +584,12 @@ class Checker {
     Type elaborate_inferred(FunctionDecl &fn, const Type &want);
     Type check_against(const Expr &expr, const Type &want);
     void check_stmt(const Stmt &stmt);
-    // A statement call of a comptime func is replaced by the statements it emits.
-    void expand_comptime(Stmt::Block &block);
+    // Checks each statement. A comptime call is replaced by the statements it emits.
+    void check_statements(std::vector<std::unique_ptr<Stmt>> &statements);
+    void append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::unique_ptr<Stmt>> &out);
+    void expand_comptime_call(const Expr::Call &call, const FunctionDecl &fn, std::vector<std::unique_ptr<Stmt>> &out);
+    // The constant a `comptime` parameter denotes. Null when the argument is not that constant.
+    std::unique_ptr<Expr> comptime_argument(const Expr &arg, const Param &param);
     const FunctionDecl *comptime_callee(const Expr::Call &call);
     std::optional<int> fold_comptime_call(const Expr::Call &call);
     std::unordered_set<const FunctionDecl *> comptime_expanding_;

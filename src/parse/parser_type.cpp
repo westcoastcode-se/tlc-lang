@@ -949,7 +949,8 @@ Parser::PlacedType Parser::parse_go_type() {
     }
 }
 
-std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const std::string &method_struct) {
+std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const std::string &method_struct,
+                                    bool comptime_params) {
     std::vector<Param> params;
     variadic = false;
     expect(TokenKind::LParen, "expected '('");
@@ -1051,6 +1052,15 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             } else {
                 error_here("expected an identifier");
                 break;
+            }
+            if (check(TokenKind::KwComptime)) {
+                const SourceLoc mark = peek().loc;
+                ++pos_;
+                if (comptime_params) {
+                    param.is_comptime = true;
+                } else {
+                    diags_.error(mark, "not supported yet");
+                }
             }
             const PlacedType type = parse_placed_type(allow_const);
             if (type.struct_definition || type.enum_definition) {
@@ -1165,13 +1175,14 @@ void Parser::parse_results(FunctionDecl &fn) {
 }
 
 FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body,
-                                    std::string link_name) {
+                                    std::string link_name, bool comptime_fn) {
     FunctionDecl fn;
     fn.exported = exported;
     fn.is_static = is_static;
     fn.is_extern = is_extern;
     fn.extern_c = extern_c;
     fn.link_name = std::move(link_name);
+    fn.is_comptime = comptime_fn;
     fn.loc = peek().loc;
     expect(TokenKind::KwFunc, "expected 'func'");
     if (check(TokenKind::Identifier)) {
@@ -1209,7 +1220,7 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         // `func Type::name[T type]` and `func Vec[T]::get[U type]` are method templates.
         fn.type_params = parse_type_params();
     }
-    fn.params = parse_params(extern_c, fn.variadic, fn.method_struct);
+    fn.params = parse_params(extern_c, fn.variadic, fn.method_struct, comptime_fn);
     fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
     parse_results(fn);
     if (check(TokenKind::LBrace)) {

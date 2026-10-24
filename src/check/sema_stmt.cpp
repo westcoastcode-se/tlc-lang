@@ -389,7 +389,7 @@ namespace {
 
 // A comptime body may return and it may emit. Anything else stays out of this round.
 bool comptime_statement_form(const FunctionDecl &fn) {
-    if (!fn.params.empty() || !fn.type_params.empty() || fn.body == nullptr) {
+    if (!fn.type_params.empty() || fn.body == nullptr) {
         return false;
     }
     const auto *body = std::get_if<Stmt::Block>(&fn.body->data);
@@ -413,59 +413,222 @@ bool comptime_statement_form(const FunctionDecl &fn) {
     return true;
 }
 
-} // namespace
-
-void Checker::expand_comptime(Stmt::Block &block) {
-    std::vector<std::unique_ptr<Stmt>> next;
-    for (auto &child : block.statements) {
-        const auto *expr_stmt = child == nullptr ? nullptr : std::get_if<Stmt::Expression>(&child->data);
-        // An emit is copied to the caller. It is not itself a call site.
-        if (expr_stmt != nullptr && expr_stmt->emit) {
-            next.push_back(std::move(child));
-            continue;
-        }
-        const Expr::Call *call =
-            expr_stmt != nullptr && expr_stmt->expr != nullptr ? std::get_if<Expr::Call>(&expr_stmt->expr->data) : nullptr;
-        const FunctionDecl *fn = call == nullptr ? nullptr : comptime_callee(*call);
-        if (fn == nullptr) {
-            next.push_back(std::move(child));
-            continue;
-        }
-        if (comptime_expanding_.contains(fn) || !fn->params.empty() || !fn->type_params.empty() ||
-            !comptime_statement_form(*fn)) {
-            error(call->loc, "not supported yet");
-            continue;
-        }
-        if (call->args.size() != fn->params.size()) {
-            error(call->loc, "argument count");
-            continue;
-        }
-        comptime_expanding_.insert(fn);
-        const auto *body = std::get_if<Stmt::Block>(&fn->body->data);
-        Stmt::Block inner;
-        if (body != nullptr) {
-            for (const auto &stmt : body->statements) {
-                if (stmt == nullptr) {
-                    continue;
-                }
-                const auto *emit = std::get_if<Stmt::Expression>(&stmt->data);
-                if (emit == nullptr || !emit->emit || emit->expr == nullptr) {
-                    continue;
-                }
-                std::unique_ptr<Stmt> copy = clone_stmt(*stmt);
-                if (auto *copied = std::get_if<Stmt::Expression>(&copy->data)) {
-                    copied->emit = false;
-                }
-                inner.statements.push_back(std::move(copy));
+// A parameter name in an emitted expression is replaced by `args[i]`.
+void subst_params(std::unique_ptr<Expr> &slot, const FunctionDecl &fn, const std::vector<const Expr *> &args) {
+    if (slot == nullptr) {
+        return;
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&slot->data)) {
+        for (std::size_t i = 0; i < fn.params.size() && i < args.size(); ++i) {
+            if (!fn.params[i].name.empty() && fn.params[i].name == named->text && args[i] != nullptr) {
+                slot = clone_expr(*args[i]);
+                return;
             }
         }
-        expand_comptime(inner);
-        comptime_expanding_.erase(fn);
-        for (auto &stmt : inner.statements) {
-            next.push_back(std::move(stmt));
+        return;
+    }
+    // A nested function has its own parameters.
+    if (std::holds_alternative<Expr::Func>(slot->data)) {
+        return;
+    }
+    std::visit(
+        [&](auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                          std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
+                subst_params(node.expr, fn, args);
+            } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
+                subst_params(node.lhs, fn, args);
+                subst_params(node.rhs, fn, args);
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                subst_params(node.callee, fn, args);
+                for (auto &arg : node.args) {
+                    subst_params(arg, fn, args);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                subst_params(node.base, fn, args);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                subst_params(node.base, fn, args);
+                subst_params(node.index, fn, args);
+                subst_params(node.end, fn, args);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                for (auto &field : node.fields) {
+                    subst_params(field.value, fn, args);
+                }
+                for (auto &element : node.elements) {
+                    subst_params(element, fn, args);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                subst_params(node.allocator, fn, args);
+                subst_params(node.count, fn, args);
+                subst_params(node.init, fn, args);
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                subst_params(node.allocator, fn, args);
+                subst_params(node.expr, fn, args);
+            }
+        },
+        slot->data);
+}
+
+std::unique_ptr<Expr> int_literal(int value, SourceLoc loc) {
+    if (value < 0) {
+        if (value == -2147483647 - 1) {
+            return nullptr;
+        }
+        auto inner = int_literal(-value, loc);
+        auto expr = std::make_unique<Expr>();
+        Expr::Unary node;
+        node.loc = loc;
+        node.op = TokenKind::Minus;
+        node.expr = std::move(inner);
+        expr->data = std::move(node);
+        return expr;
+    }
+    auto expr = std::make_unique<Expr>();
+    Expr::Int node;
+    node.loc = loc;
+    node.value = static_cast<uint64_t>(value);
+    expr->data = std::move(node);
+    return expr;
+}
+
+std::unique_ptr<Expr> string_literal(std::string text, SourceLoc loc) {
+    auto expr = std::make_unique<Expr>();
+    Expr::String node;
+    node.loc = loc;
+    node.text = std::move(text);
+    expr->data = std::move(node);
+    return expr;
+}
+
+} // namespace
+
+std::unique_ptr<Expr> Checker::comptime_argument(const Expr &arg, const Param &param) {
+    const Type type = type_of_param(param);
+    const SourceLoc loc = expr_loc(arg);
+    if (plain_int_constant(type)) {
+        if (const std::optional<int> value = fold_int(arg)) {
+            return int_literal(*value, loc);
+        }
+        return nullptr;
+    }
+    if (!slice_of_const_u8(type)) {
+        return nullptr;
+    }
+    std::unordered_set<std::string> seen;
+    const Expr *cursor = &arg;
+    while (cursor != nullptr) {
+        if (const auto *lit = std::get_if<Expr::String>(&cursor->data)) {
+            return string_literal(lit->text, loc);
+        }
+        const auto *named = std::get_if<Expr::Name>(&cursor->data);
+        if (named == nullptr || !seen.insert(named->text).second) {
+            return nullptr;
+        }
+        const VarDecl *var = global_var(named->text);
+        if (var == nullptr || !var->is_const_decl || var->init == nullptr) {
+            return nullptr;
+        }
+        cursor = var->init.get();
+    }
+    return nullptr;
+}
+
+void Checker::expand_comptime_call(const Expr::Call &call, const FunctionDecl &fn,
+                                   std::vector<std::unique_ptr<Stmt>> &out) {
+    if (comptime_expanding_.contains(&fn) || fn.variadic || !fn.type_params.empty() || !comptime_statement_form(fn)) {
+        error(call.loc, "not supported yet");
+        return;
+    }
+    if (call.args.size() != fn.params.size()) {
+        error(call.loc, "argument count");
+        return;
+    }
+    const std::size_t before = diags_.size();
+    for (std::size_t i = 0; i < fn.params.size(); ++i) {
+        if (call.args[i] == nullptr) {
+            error(call.loc, "argument count");
+            return;
+        }
+        check_call_arg(*call.args[i], type_of_param(fn.params[i]));
+    }
+    if (diags_.size() != before) {
+        return;
+    }
+    std::vector<std::unique_ptr<Expr>> evaluated(fn.params.size());
+    std::vector<const Expr *> replacement(fn.params.size());
+    for (std::size_t i = 0; i < fn.params.size(); ++i) {
+        if (!fn.params[i].is_comptime) {
+            replacement[i] = call.args[i].get();
+            continue;
+        }
+        evaluated[i] = comptime_argument(*call.args[i], fn.params[i]);
+        if (evaluated[i] == nullptr) {
+            error(expr_loc(*call.args[i]), "not supported yet");
+            continue;
+        }
+        replacement[i] = evaluated[i].get();
+    }
+    if (diags_.size() != before) {
+        return;
+    }
+    comptime_expanding_.insert(&fn);
+    struct Leave {
+        std::unordered_set<const FunctionDecl *> &set;
+        const FunctionDecl *fn;
+        ~Leave() { set.erase(fn); }
+    } leave{comptime_expanding_, &fn};
+    const auto *body = std::get_if<Stmt::Block>(&fn.body->data);
+    if (body == nullptr) {
+        return;
+    }
+    std::vector<std::unique_ptr<Stmt>> emitted;
+    for (const auto &stmt : body->statements) {
+        if (stmt == nullptr) {
+            continue;
+        }
+        const auto *emit = std::get_if<Stmt::Expression>(&stmt->data);
+        if (emit == nullptr || !emit->emit || emit->expr == nullptr) {
+            continue;
+        }
+        std::unique_ptr<Stmt> copy = clone_stmt(*stmt);
+        if (auto *copied = std::get_if<Stmt::Expression>(&copy->data)) {
+            copied->emit = false;
+            subst_params(copied->expr, fn, replacement);
+        }
+        emitted.push_back(std::move(copy));
+    }
+    for (auto &stmt : emitted) {
+        append_statement(std::move(stmt), out);
+    }
+}
+
+void Checker::append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::unique_ptr<Stmt>> &out) {
+    if (stmt == nullptr) {
+        return;
+    }
+    if (comptime_depth_ == 0) {
+        const auto *expr_stmt = std::get_if<Stmt::Expression>(&stmt->data);
+        const Expr::Call *call = expr_stmt != nullptr && !expr_stmt->emit && expr_stmt->expr != nullptr
+                                     ? std::get_if<Expr::Call>(&expr_stmt->expr->data)
+                                     : nullptr;
+        if (call != nullptr) {
+            if (const FunctionDecl *fn = comptime_callee(*call)) {
+                expand_comptime_call(*call, *fn, out);
+                return;
+            }
         }
     }
-    block.statements = std::move(next);
+    check_stmt(*stmt);
+    out.push_back(std::move(stmt));
+}
+
+void Checker::check_statements(std::vector<std::unique_ptr<Stmt>> &statements) {
+    std::vector<std::unique_ptr<Stmt>> next;
+    for (auto &child : statements) {
+        append_statement(std::move(child), next);
+    }
+    statements = std::move(next);
 }
 
 void Checker::check_stmt(const Stmt &stmt) {
@@ -473,15 +636,8 @@ void Checker::check_stmt(const Stmt &stmt) {
         [&](const auto &node) {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Stmt::Block>) {
-                if (comptime_depth_ == 0) {
-                    expand_comptime(const_cast<Stmt::Block &>(node));
-                }
                 push();
-                for (const auto &child : node.statements) {
-                    if (child) {
-                        check_stmt(*child);
-                    }
-                }
+                check_statements(const_cast<Stmt::Block &>(node).statements);
                 pop();
             } else if constexpr (std::is_same_v<T, Stmt::Return>) {
                 // Learning an omitted result. The real check of this body matches the type afterwards.
@@ -1324,9 +1480,6 @@ void Checker::check_function(const FunctionDecl &fn) {
     fresh.captured_here.clear();
     if (fn.body) {
         if (const auto *block = std::get_if<Stmt::Block>(&fn.body->data)) {
-            if (fn.is_comptime && !fn.params.empty()) {
-                error(fn.loc, "not supported yet");
-            }
             if (fn.is_comptime) {
                 for (const auto &child : block->statements) {
                     if (child == nullptr) {
@@ -1352,14 +1505,8 @@ void Checker::check_function(const FunctionDecl &fn) {
                         child->data);
                     error(loc, "not supported yet");
                 }
-            } else {
-                expand_comptime(const_cast<Stmt::Block &>(*block));
             }
-            for (const auto &child : block->statements) {
-                if (child) {
-                    check_stmt(*child);
-                }
-            }
+            check_statements(const_cast<Stmt::Block &>(*block).statements);
         } else {
             check_stmt(*fn.body);
         }

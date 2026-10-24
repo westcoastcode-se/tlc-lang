@@ -57,7 +57,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Reflection
 
-`typeof(T).fields()` reads the fields of a named struct: `fields[i].name` and `fields[i].kind`. Methods are not read yet. A `comptime func` runs while compiling. `return` leaves that function. A call used as a value folds when the result is a constant `i32`. A statement call is replaced only by statements written with `emit`. `comptime { ... }` inside an ordinary function, `emit` outside a `comptime func`, a parameter, a type parameter, a method, a call that does not fold, `const if`, `const for`, `value.{hole}`, and `&{.field = ...}` are `not supported yet`.
+`typeof(T).fields()` reads the fields of a named struct: `fields[i].name` and `fields[i].kind`. Methods are not read yet. A `comptime func` runs while compiling. `return` leaves that function. A call used as a value, with no arguments, folds when the result is a constant `i32`. A statement call is replaced only by statements written with `emit`. A parameter is replaced by the argument expression. `name comptime []const u8` and `n comptime i32` are values known while compiling, and `emit` receives that value. A `var` passed to a `comptime` parameter, `comptime` on a parameter of an ordinary function, `comptime { ... }` inside an ordinary function, `emit` outside a `comptime func`, a type parameter, a method, a value call that passes arguments, a call that does not fold, `const if`, `const for`, `value.{hole}`, and `&{.field = ...}` are `not supported yet`.
 
 ## Types and operators
 

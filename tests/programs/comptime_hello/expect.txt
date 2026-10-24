@@ -1,0 +1,5 @@
+link: -lc
+exit: 0
+stdout:
+Hello Per
+Hello Ada

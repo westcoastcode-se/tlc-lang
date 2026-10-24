@@ -1,0 +1,12 @@
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+comptime func hello(name []const u8) void {
+    emit printf("Hello %s\n", name);
+}
+
+func main() i32 {
+    hello("Per");
+    var name = "Ada";
+    hello(name);
+    return 0;
+}

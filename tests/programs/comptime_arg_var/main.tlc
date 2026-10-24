@@ -1,0 +1,9 @@
+comptime func hello(name comptime []const u8) void {
+    emit name;
+}
+
+func main() i32 {
+    var name = "Ada";
+    hello(name);
+    return 0;
+}

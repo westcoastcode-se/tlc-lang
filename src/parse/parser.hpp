@@ -197,11 +197,12 @@ class Parser {
     PlacedType parse_go_type();
     // `method_struct` is empty for a free function. A method receiver is `name this` or `name *this`.
     // `name **this` is `expected 'this'`.
-    std::vector<Param> parse_params(bool allow_const, bool &variadic, const std::string &method_struct = {});
+    std::vector<Param> parse_params(bool allow_const, bool &variadic, const std::string &method_struct = {},
+                                    bool comptime_params = false);
     void take_result(FunctionDecl &fn, const PlacedType &type);
     void parse_results(FunctionDecl &fn);
     FunctionDecl parse_function(bool exported, bool is_static, bool is_extern, bool extern_c, bool allow_body,
-                                std::string link_name = {});
+                                std::string link_name = {}, bool comptime_fn = false);
     // `type Name struct`, `type Name enum`, `type Name trait`, `type Name union`,
     // or `type Name go-type` for an alias. `link_name` is rejected: a type has no object symbol.
     void parse_type_decl(TranslationUnit &unit, bool exported, bool is_extern, bool extern_c,

@@ -1,0 +1,8 @@
+comptime func hello(name []const u8) void {
+    emit name;
+}
+
+func main() i32 {
+    hello(1);
+    return 0;
+}

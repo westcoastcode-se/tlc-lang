@@ -699,7 +699,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             return;
         }
         ++pos_;
-        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true, link_name);
+        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true, link_name, true);
         fn.is_comptime = true;
         fn.unsafe = unsafe_fn;
         TopDecl top;
