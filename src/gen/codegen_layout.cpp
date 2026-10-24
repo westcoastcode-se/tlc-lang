@@ -367,6 +367,38 @@ void CodeGen::prepare_structs() {
         }
     }
     publish_spec_types();
+    // `builtin.Field` is the slice element `Type.fields()` returns. The struct at index 0
+    // stays, so every other struct id still matches the checker.
+    for (const PackageNode &node : graph_->nodes) {
+        if (!is_compiler_builtin(&node)) {
+            continue;
+        }
+        const int id = tag_id(node.file_id, "Field");
+        if (id < 0 || id >= static_cast<int>(structs_.size())) {
+            continue;
+        }
+        const StructDecl *decl = nullptr;
+        for (const TopDecl &top : node.unit.decls) {
+            const auto *item = std::get_if<StructDecl>(&top.data);
+            if (item != nullptr && item->name == "Field") {
+                decl = item;
+                break;
+            }
+        }
+        if (decl == nullptr || decl->fields.size() != 2 || !decl->fields[0].elem_const) {
+            continue;
+        }
+        const StructLayout &layout = structs_[static_cast<std::size_t>(id)];
+        const FieldLayout *name = layout.fields.size() == 2 ? &layout.fields[0] : nullptr;
+        const FieldLayout *kind = name != nullptr ? &layout.fields[1] : nullptr;
+        const bool name_text = name != nullptr && name->name == "name" && name->is_slice && name->elem_unsigned &&
+                               name->elem_bits == 8;
+        if (!layout.ready || !name_text || kind->name != "kind" || kind->depth != 1) {
+            continue;
+        }
+        field_struct_id_ = id;
+        break;
+    }
 }
 
 void CodeGen::install_field_struct() {
@@ -378,11 +410,11 @@ void CodeGen::install_field_struct() {
     layout.name = ".Field";
     layout.ready = true;
     layout.type = llvm::StructType::create(context_, "tlc.field");
-    layout.type->setBody({ptr_type(), ptr_type()});
+    layout.type->setBody({slice_type(), ptr_type()});
     FieldLayout name;
     name.name = "name";
-    name.type = ptr_type();
-    name.depth = 1;
+    name.type = slice_type();
+    name.is_slice = true;
     name.elem_char = true;
     name.elem_bits = 8;
     name.elem_unsigned = true;
@@ -1394,7 +1426,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     return lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, false, 0,
                                  false);
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
-                    // `typeof(T).name()` is `*u8`. `typeof(T).fields()` is a slice of `{ name, kind }`.
+                    // `typeof(T).name()` is `*u8`. `typeof(T).fields()` is a slice of `{ name []const u8, kind }`.
                     if (item.type_name) {
                         Lowered low;
                         low.depth = 1;

@@ -1135,7 +1135,9 @@ llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
             std::vector<llvm::Constant *> elems;
             elems.reserve(reflected->second.size());
             for (const ReflectedField &field : reflected->second) {
-                llvm::Constant *name = intern_type_name(field.name);
+                llvm::Constant *bytes = intern_type_name(field.name);
+                llvm::Constant *name = llvm::ConstantStruct::get(
+                    slice_type(), {bytes, const_i32(static_cast<int32_t>(field.name.size()))});
                 llvm::Constant *kind = intern_type_desc(field.type);
                 elems.push_back(llvm::ConstantStruct::get(field_ty, {name, kind}));
             }

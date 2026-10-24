@@ -556,6 +556,7 @@ void CodeGen::emit(const PackageGraph &graph) {
     emit_dynamic_inits();
     emit_builtin_trace();
     emit_builtin_panic();
+    emit_builtin_heap();
     if (testing_) {
         emit_tests();
     }

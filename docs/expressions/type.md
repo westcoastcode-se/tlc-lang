@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Conditions](condition.md) · [Next: Casts](cast.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`typeof(i32)` and `typeof n` have type `builtin.Type`. `import "builtin"` names that type. `==` and `!=` compare two `builtin.Type` values and yield `bool`. Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` folds while compiling. `t.name()` returns the diagnostic spelling as `*u8`. `t.fields()` returns the fields of a named struct. `fields[i].name` is the field's name and `fields[i].kind` is its type. Other operators on `builtin.Type` are reported as `type mismatch`.
+`typeof(i32)` and `typeof n` have type `builtin.Type`. `import "builtin"` names that type. `==` and `!=` compare two `builtin.Type` values and yield `bool`. Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` folds while compiling. `t.name()` returns the diagnostic spelling as `*u8`. `t.fields()` returns the fields of a named struct. `fields[i].name` is the field's name, a `[]const u8`, and `fields[i].kind` is its type. Other operators on `builtin.Type` are reported as `type mismatch`.
 
 ```c
 import "builtin";

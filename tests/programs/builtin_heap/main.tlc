@@ -1,0 +1,19 @@
+import "builtin";
+
+func main() i32 {
+    var block ?*u8 = unsafe builtin.allocator.malloc(8, 1);
+    if (block == null) {
+        return 1;
+    }
+    var grown ?*u8 = unsafe builtin.allocator.realloc(block, 16, 1);
+    if (grown == null) {
+        return 2;
+    }
+    builtin.allocator.free(grown);
+    var wide ?*u8 = unsafe builtin.allocator.malloc(8, 32);
+    if (wide == null) {
+        return 3;
+    }
+    builtin.allocator.free(wide);
+    return 0;
+}

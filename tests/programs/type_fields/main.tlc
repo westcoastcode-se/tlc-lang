@@ -34,7 +34,8 @@ type Row struct {
 
 func main() i32 {
     var fields = typeof(Point).fields();
-    if (fields.len != 2) {
+    var listed []builtin.Field = fields;
+    if (fields.len != 2 || listed.len != 2 || listed[0].kind != typeof(i32)) {
         return 1;
     }
     if (fields[0].kind != typeof(i32) || fields[1].kind != typeof(f32)) {
@@ -70,7 +71,7 @@ func main() i32 {
     if (row.len != 2 || row[0].kind != typeof([4]i32) || row[1].kind != typeof([]const u8)) {
         return 10;
     }
-    if (fields[0].name == null || fields[0].kind.name() == null) {
+    if (fields[0].name.len != 1 || fields[1].name.len != 1 || fields[0].kind.name() == null) {
         return 11;
     }
     printf("%s %s\n", fields[0].name, fields[0].kind.name());

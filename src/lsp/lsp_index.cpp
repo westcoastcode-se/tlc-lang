@@ -116,6 +116,50 @@ void note_params(Sym &sym, const FunctionDecl &fn) {
     sym.variadic = fn.variadic;
 }
 
+// `//` lines immediately above the line that contains `offset`. A blank line ends the block.
+std::string leading_docs(const std::string &text, uint32_t offset) {
+    if (offset > text.size()) {
+        return {};
+    }
+    uint32_t line_start = offset;
+    while (line_start > 0 && text[line_start - 1] != '\n') {
+        --line_start;
+    }
+    std::vector<std::string> lines;
+    while (line_start > 0) {
+        const uint32_t prev_end = line_start - 1;
+        uint32_t start = prev_end;
+        while (start > 0 && text[start - 1] != '\n') {
+            --start;
+        }
+        uint32_t i = start;
+        uint32_t end = prev_end;
+        if (end > i && text[end - 1] == '\r') {
+            --end;
+        }
+        while (i < end && (text[i] == ' ' || text[i] == '\t')) {
+            ++i;
+        }
+        if (i >= end || i + 1 >= end || text[i] != '/' || text[i + 1] != '/') {
+            break;
+        }
+        i += 2;
+        if (i < end && text[i] == ' ') {
+            ++i;
+        }
+        lines.emplace_back(text.substr(i, end - i));
+        line_start = start;
+    }
+    std::string out;
+    for (std::size_t n = lines.size(); n > 0; --n) {
+        if (!out.empty()) {
+            out.push_back('\n');
+        }
+        out += lines[n - 1];
+    }
+    return out;
+}
+
 void put_loc(Sym &sym, const std::string &text, SourceLoc loc, const std::string &name) {
     if (!loc.valid()) {
         return;
@@ -132,6 +176,7 @@ void put_loc(Sym &sym, const std::string &text, SourceLoc loc, const std::string
     sym.start = locate(text, begin);
     sym.end = locate(text, end);
     sym.scope_begin = begin;
+    sym.docs = leading_docs(text, begin);
 }
 
 const SourceFile *file_of(const SourceSet &sources, uint32_t id) { return sources.find(id); }
@@ -890,6 +935,101 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
     }
 }
 
+// The body of a `//` line. False when the line is blank or is not that comment.
+bool comment_line(const std::string &text, uint32_t start, uint32_t end, uint32_t &body, uint32_t &body_end) {
+    if (end > start && text[end - 1] == '\r') {
+        --end;
+    }
+    uint32_t i = start;
+    while (i < end && (text[i] == ' ' || text[i] == '\t')) {
+        ++i;
+    }
+    if (i >= end || i + 1 >= end || text[i] != '/' || text[i + 1] != '/') {
+        return false;
+    }
+    i += 2;
+    if (i < end && text[i] == ' ') {
+        ++i;
+    }
+    body = i;
+    body_end = end;
+    return true;
+}
+
+bool ident_continue(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+// `builtin.Type` has no typedef. The comment that starts with `Type` is its documentation.
+void add_builtin_type(const PackageNode &node, const std::string &text, const std::string &uri, bool entry,
+                      std::vector<Sym> &out) {
+    if (!is_compiler_builtin(&node)) {
+        return;
+    }
+    for (const Sym &sym : out) {
+        if (sym.package_key == node.package_key && sym.owner.empty() && sym.name == "Type") {
+            return;
+        }
+    }
+    Sym sym;
+    sym.name = "Type";
+    sym.detail = "type Type";
+    sym.package_key = node.package_key;
+    sym.uri = uri;
+    sym.exported = true;
+    sym.bare = entry;
+    sym.outline = entry;
+    sym.role = Role::Alias;
+    sym.type_name = "Type";
+    uint32_t i = 0;
+    while (i < text.size()) {
+        const uint32_t start = i;
+        while (i < text.size() && text[i] != '\n') {
+            ++i;
+        }
+        const uint32_t line_end = i;
+        if (i < text.size()) {
+            ++i;
+        }
+        uint32_t body = 0;
+        uint32_t body_end = 0;
+        if (!comment_line(text, start, line_end, body, body_end)) {
+            continue;
+        }
+        if (body_end - body < 4 || text.compare(body, 4, "Type") != 0) {
+            continue;
+        }
+        if (body + 4 < body_end && ident_continue(static_cast<unsigned char>(text[body + 4]))) {
+            continue;
+        }
+        std::string docs = text.substr(body, body_end - body);
+        uint32_t cursor = i;
+        while (cursor < text.size()) {
+            const uint32_t next_start = cursor;
+            while (cursor < text.size() && text[cursor] != '\n') {
+                ++cursor;
+            }
+            uint32_t next_body = 0;
+            uint32_t next_end = 0;
+            if (!comment_line(text, next_start, cursor, next_body, next_end)) {
+                break;
+            }
+            docs.push_back('\n');
+            docs.append(text, next_body, next_end - next_body);
+            if (cursor < text.size()) {
+                ++cursor;
+            }
+        }
+        SourceLoc loc;
+        loc.file = node.file_id;
+        loc.offset = body;
+        put_loc(sym, text, loc, "Type");
+        sym.docs = std::move(docs);
+        break;
+    }
+    add_sym(out, std::move(sym));
+}
+
 uint32_t body_end(const FunctionDecl &fn, const std::string &text, uint32_t fallback) {
     if (!fn.body) {
         return fallback;
@@ -1173,6 +1313,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             }
         }
     }
+    add_builtin_type(node, text, uri, entry, out);
 }
 
 void index_imports(const PackageGraph &graph, const PackageNode &entry, const std::string &text, const std::string &uri,

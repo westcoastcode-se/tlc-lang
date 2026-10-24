@@ -163,6 +163,7 @@ class Resolver {
             return;
         }
         graph_.nodes[index].package_key = canonical.string();
+        graph_.nodes[index].compiler_builtin = directory_is_std_builtin(canonical.parent_path());
         if (graph_.nodes[index].qualifier.empty()) {
             graph_.nodes[index].qualifier = canonical.stem().string();
         }
@@ -261,6 +262,21 @@ class Resolver {
         message += " -> ";
         message += qualifier_of(repeated);
         return message;
+    }
+
+    // True when `dir` is the compiler's own `builtin` package, `<std_root>/builtin`.
+    bool directory_is_std_builtin(const fs::path &dir) const {
+        if (std_root_.empty() || dir.empty()) {
+            return false;
+        }
+        std::error_code ec;
+        const fs::path builtin_dir = fs::canonical(std_root_ / "builtin", ec);
+        if (ec) {
+            return false;
+        }
+        std::error_code dir_ec;
+        const fs::path canonical_dir = fs::canonical(dir, dir_ec);
+        return !dir_ec && canonical_dir == builtin_dir;
     }
 
     std::string choose_qualifier(const std::vector<std::size_t> &indexes, const fs::path &dir, SourceLoc loc) {
@@ -417,10 +433,12 @@ class Resolver {
             created.push_back(index);
         }
         const std::string qualifier = choose_qualifier(created, dir, import.loc);
+        const bool compiler_builtin = directory_is_std_builtin(dir);
         for (const std::size_t index : created) {
             PackageNode &node = graph_.nodes[index];
             node.package_key = key;
             node.qualifier = qualifier;
+            node.compiler_builtin = compiler_builtin;
             node.imported_from = from_file;
             node.import_spec = import.path;
             node.import_loc = import.loc;
@@ -707,7 +725,7 @@ class Resolver {
         walk_package(kKey);
     }
 
-    // `trace`, `va`, and `panic` are compiler intrinsics. They are not read from a .tlc file.
+    // Used when `<std_root>/builtin` has no `.tlc` file. The intrinsics match that directory.
     void load_builtin(uint32_t from_file, const ImportDecl &import) {
         constexpr const char *kKey = "<builtin>";
         if (by_package_.contains(kKey)) {
@@ -734,6 +752,7 @@ class Resolver {
         node.path = kKey;
         node.qualifier = "builtin";
         node.package_key = kKey;
+        node.compiler_builtin = true;
         PackageClause clause;
         clause.name = "builtin";
         node.unit.package = clause;

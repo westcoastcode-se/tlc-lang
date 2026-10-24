@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: A program](program.md) · [Next: Packages](../packages/package.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-A `//` comment runs to the end of the line. A `/* ... */` comment may span lines. The language has no preprocessor and no `#include`.
+A `//` comment runs to the end of the line. A `/* ... */` comment may span lines. The language has no preprocessor and no `#include`. An editor shows the `//` lines immediately above a declaration together with that declaration. A blank line ends that text.
 
 ```c
 // The process exits with status 42.

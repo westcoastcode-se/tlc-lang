@@ -1,0 +1,48 @@
+package builtin;
+
+// Compiler intrinsics. The compiler supplies the bodies of trace, va, and panic,
+// and of the methods on Malloc.
+
+// Type is the type of a type. typeof produces it.
+// The compiler adds this export. A typedef with this name would hide it.
+
+// One field returned by Type.fields. name is the field's name. kind is its type.
+export type Field struct {
+    export name []const u8;
+    export kind Type;
+};
+
+// The spelling of this type, the same text a diagnostic prints.
+export func Type::name(self this) *u8;
+
+// The fields of a named struct, in the order they are written.
+// A type that is not a named struct has length 0.
+export func Type::fields(self this) []Field;
+
+// The calls that have not returned, newest first.
+// The pointer addresses one buffer. The next call replaces that text.
+export func trace() *const u8;
+
+// The extra arguments of the variadic function this call is inside.
+// The pointer is the argument pointer vprintf takes. Each call reads those arguments from the start.
+export func va() *u8;
+
+// Prints the message and the call stack, then aborts the process.
+export func panic(message *const u8) void;
+
+// The libc heap. new and delete call malloc, free, and realloc directly.
+export type Malloc struct {};
+
+// The allocator new and delete use when the call names none.
+export var allocator Malloc;
+
+// Reserves size bytes. An alignment above 16 uses aligned_alloc.
+// Returns null when the reservation fails. The caller handles null.
+export unsafe func Malloc::malloc(self *this, size i32, align i32) ?*u8;
+
+// Releases a block from malloc or realloc. A null pointer does nothing.
+export func Malloc::free(self *this, ptr *u8) void;
+
+// Changes the size of a block. A null pointer reserves a new block, as malloc does.
+// Returns null when the reservation fails. The caller handles null.
+export unsafe func Malloc::realloc(self *this, ptr *u8, size i32, align i32) ?*u8;

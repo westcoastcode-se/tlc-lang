@@ -1388,7 +1388,14 @@ Json hover_text(const std::string &value, Pos start, Pos end) {
 }
 
 Json hover_of(const Sym &sym, Pos start, Pos end) {
-    return hover_text(sym.detail.empty() ? sym.name : sym.detail, start, end);
+    std::string value = sym.detail.empty() ? sym.name : sym.detail;
+    if (!sym.docs.empty()) {
+        if (!value.empty()) {
+            value += "\n\n";
+        }
+        value += sym.docs;
+    }
+    return hover_text(value.empty() ? sym.name : value, start, end);
 }
 
 std::vector<Json> outline_children(const Doc &doc, const Sym &parent) {

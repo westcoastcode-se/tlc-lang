@@ -62,7 +62,7 @@ std::string help_text() {
         ".tlc files are linked. A file named link in the package adds further linker arguments.\n"
         "link_unix or link_windows adds arguments for that OS family after link.\n"
         "Standard packages live in lib/tlc. import \"std/testing\" loads the testing package.\n"
-        "import \"builtin\" is the compiler package.\n"
+        "import \"builtin\" is the compiler package in lib/tlc/builtin.\n"
         "import \"builtin/env/consts\" supplies consts.family, unix or windows.\n";
 }
 

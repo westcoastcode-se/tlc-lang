@@ -63,6 +63,8 @@ A new `.cpp` goes in `tlc_lib` or `tlc_tests` in `CMakeLists.txt`. The build is 
 
 `assert`, `const`, and compile-time integers share one evaluator in `check/sema_fold.cpp` and `check/sema_unit.cpp`. `CodeGen::fold` and `CodeGen::fold_number` in `gen/codegen_fold.cpp` repeat it. A constant that one side folds and the other rejects is a bug. Update both.
 
+`import "builtin"` is the compiler package. Its declarations live in `lib/tlc/builtin`. Adding, changing, or removing a builtin name, signature, method, or parameter updates `lib/tlc/builtin/builtin.tlc` in the same change, including the comment above that declaration. That file is what the editor shows. The compiler still supplies the bodies of the intrinsics. Do not describe a builtin in the compiler and leave the directory stale, and do not give the directory a signature the compiler does not implement.
+
 `tlc lsp` publishes diagnostics from `analyze`. Completion, hover, definition, document symbols, and semantic tokens come from `index_unit` and `index_imports` in `lsp/lsp_index.cpp`. That index reads the parse and does not use the checker. A new declaration, field, method, or binding form has to be indexed there, or the editor will not offer it. Semantic tokens color names from that index. Keywords, literals, and built-in types stay in the tree-sitter grammar.
 
 A form you can parse but cannot check and emit is reported as `not supported yet` and written into `TODO.md`. Do not accept it and emit the wrong code.

@@ -358,6 +358,8 @@ enum class Role { Function, Method, Field, Variable, Constant, StructType, EnumT
 struct Sym {
     std::string name;
     std::string detail;
+    // `//` lines immediately above the declaration. A blank line ends them.
+    std::string docs;
     std::string owner;
     std::string type_name;
     std::string package_key;

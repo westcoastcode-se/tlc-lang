@@ -682,7 +682,7 @@ class CodeGen {
     // One descriptor per spelling. The value of `Type` is a pointer to it.
     std::unordered_map<std::string, llvm::GlobalVariable *> type_descs_;
     llvm::StructType *type_desc_ty_ = nullptr;
-    // `fields()` element: `{ name *u8, kind Type }`. Negative until `prepare_structs`.
+    // `fields()` element: `{ name []const u8, kind Type }`. Negative until `prepare_structs`.
     int field_struct_id_ = -1;
     std::unordered_set<std::string> emitting_specs_;
     std::vector<int> active_spec_;
@@ -1257,6 +1257,7 @@ class CodeGen {
     TypedValue emit_builtin_va(SourceLoc loc);
     void emit_builtin_trace();
     void emit_builtin_panic();
+    void emit_builtin_heap();
     llvm::Value *variadic_arg(const TypedValue &value);
     void apply_initializer(const VarDecl &var);
     // Pointer to the first element, the element type a further range steps by, and the length.

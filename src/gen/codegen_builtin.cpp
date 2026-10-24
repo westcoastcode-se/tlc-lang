@@ -19,8 +19,7 @@ bool CodeGen::is_std_builtin_call(const Expr &callee, const std::string &field) 
         if (package == packages_.end()) {
             return false;
         }
-        const PackageNode *node = find_node(package->second);
-        return node != nullptr && is_std_builtin_path(node->path);
+        return is_compiler_builtin(find_node(package->second));
     }
     if (const auto *named = std::get_if<Expr::Name>(&callee.data)) {
         const Binding *binding = lookup(named->text);
@@ -28,7 +27,7 @@ bool CodeGen::is_std_builtin_call(const Expr &callee, const std::string &field) 
             return false;
         }
         for (const PackageNode &file : graph_->nodes) {
-            if (!is_std_builtin_path(file.path)) {
+            if (!is_compiler_builtin(&file)) {
                 continue;
             }
             for (const TopDecl &decl : file.unit.decls) {
@@ -162,7 +161,7 @@ llvm::Function *CodeGen::builtin_function(const std::string &name) const {
         return nullptr;
     }
     for (const PackageNode &node : graph_->nodes) {
-        if (!is_std_builtin_path(node.path)) {
+        if (!is_compiler_builtin(&node)) {
             continue;
         }
         const auto file = files_.find(node.file_id);
@@ -685,6 +684,73 @@ void CodeGen::emit_builtin_panic() {
     builder_.CreateCall(abort_type, abort_fn.getCallee());
     builder_.CreateUnreachable();
     builder_.restoreIP(saved);
+}
+
+void CodeGen::emit_builtin_heap() {
+    auto allocate = [&](llvm::Function *function, llvm::Value *bytes, llvm::Value *align) {
+        llvm::Value *over = builder_.CreateICmpSGT(align, const_i32(16));
+        auto *plain = llvm::BasicBlock::Create(context_, "plain", function);
+        auto *aligned = llvm::BasicBlock::Create(context_, "aligned", function);
+        auto *done = llvm::BasicBlock::Create(context_, "done", function);
+        builder_.CreateCondBr(over, aligned, plain);
+        builder_.SetInsertPoint(plain);
+        auto *malloc_type = llvm::FunctionType::get(ptr_type(), {i64()}, false);
+        llvm::FunctionCallee malloc_fn = module_.getOrInsertFunction("malloc", malloc_type);
+        llvm::Value *simple = builder_.CreateCall(malloc_type, malloc_fn.getCallee(), {bytes});
+        builder_.CreateBr(done);
+        builder_.SetInsertPoint(aligned);
+        llvm::Value *step = builder_.CreateZExt(align, i64());
+        llvm::Value *padded = builder_.CreateAdd(bytes, builder_.CreateSub(step, llvm::ConstantInt::get(i64(), 1)));
+        llvm::Value *rounded = builder_.CreateMul(builder_.CreateUDiv(padded, step), step);
+        auto *aligned_type = llvm::FunctionType::get(ptr_type(), {i64(), i64()}, false);
+        llvm::FunctionCallee aligned_fn = module_.getOrInsertFunction("aligned_alloc", aligned_type);
+        llvm::Value *block = builder_.CreateCall(aligned_type, aligned_fn.getCallee(), {step, rounded});
+        builder_.CreateBr(done);
+        builder_.SetInsertPoint(done);
+        auto *phi = builder_.CreatePHI(ptr_type(), 2);
+        phi->addIncoming(simple, plain);
+        phi->addIncoming(block, aligned);
+        return phi;
+    };
+    if (llvm::Function *function = builtin_function("Malloc.malloc");
+        function != nullptr && function->empty() && function->arg_size() >= 3) {
+        const llvm::IRBuilderBase::InsertPoint saved = builder_.saveIP();
+        auto *entry = llvm::BasicBlock::Create(context_, "entry", function);
+        builder_.SetInsertPoint(entry);
+        llvm::Value *bytes = builder_.CreateZExt(function->getArg(1), i64());
+        builder_.CreateRet(allocate(function, bytes, function->getArg(2)));
+        builder_.restoreIP(saved);
+    }
+    if (llvm::Function *function = builtin_function("Malloc.free");
+        function != nullptr && function->empty() && function->arg_size() >= 2) {
+        const llvm::IRBuilderBase::InsertPoint saved = builder_.saveIP();
+        auto *entry = llvm::BasicBlock::Create(context_, "entry", function);
+        builder_.SetInsertPoint(entry);
+        auto *free_type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), {ptr_type()}, false);
+        llvm::FunctionCallee free_fn = module_.getOrInsertFunction("free", free_type);
+        builder_.CreateCall(free_type, free_fn.getCallee(), {function->getArg(1)});
+        builder_.CreateRetVoid();
+        builder_.restoreIP(saved);
+    }
+    if (llvm::Function *function = builtin_function("Malloc.realloc");
+        function != nullptr && function->empty() && function->arg_size() >= 4) {
+        const llvm::IRBuilderBase::InsertPoint saved = builder_.saveIP();
+        auto *entry = llvm::BasicBlock::Create(context_, "entry", function);
+        auto *fresh = llvm::BasicBlock::Create(context_, "fresh", function);
+        auto *grow = llvm::BasicBlock::Create(context_, "grow", function);
+        builder_.SetInsertPoint(entry);
+        llvm::Value *pointer = function->getArg(1);
+        llvm::Value *bytes = builder_.CreateZExt(function->getArg(2), i64());
+        builder_.CreateCondBr(builder_.CreateICmpEQ(pointer, null_ptr()), fresh, grow);
+        builder_.SetInsertPoint(fresh);
+        llvm::Value *reserved = allocate(function, bytes, function->getArg(3));
+        builder_.CreateRet(reserved);
+        builder_.SetInsertPoint(grow);
+        auto *realloc_type = llvm::FunctionType::get(ptr_type(), {ptr_type(), i64()}, false);
+        llvm::FunctionCallee realloc_fn = module_.getOrInsertFunction("realloc", realloc_type);
+        builder_.CreateRet(builder_.CreateCall(realloc_type, realloc_fn.getCallee(), {pointer, bytes}));
+        builder_.restoreIP(saved);
+    }
 }
 
 } // namespace tlc

@@ -1783,10 +1783,10 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             exports_[file_id].emplace(var->name, std::move(symbol));
         }
     }
-    // `builtin.Type` is the type of a type. The package has no source file for it.
+    // `builtin.Type` is the type of a type. A typedef would hide it, so the compiler adds the export.
     if (graph_ != nullptr) {
         const PackageNode *node = find_node(file_id);
-        if (node != nullptr && is_std_builtin_path(node->path) && !exports_[file_id].contains("Type")) {
+        if (is_compiler_builtin(node) && !exports_[file_id].contains("Type")) {
             Symbol symbol;
             symbol.name = "Type";
             symbol.is_type = true;

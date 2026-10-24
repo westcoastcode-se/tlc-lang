@@ -1220,6 +1220,77 @@ int run_lsp_tests() {
     EXPECT_HAS(check, blank_tokens, "\"id\":113");
     EXPECT_HAS(check, blank_tokens, "\"data\":[]");
 
+    const std::filesystem::path builtin_root = "/tmp/tlc-lsp-builtin";
+    std::filesystem::remove_all(builtin_root);
+    std::filesystem::create_directories(builtin_root);
+    const std::string builtin_source = "import \"builtin\";\n"
+                                       "\n"
+                                       "// Adds one.\n"
+                                       "func inc(n i32) i32 {\n"
+                                       "    return n + 1;\n"
+                                       "}\n"
+                                       "\n"
+                                       "func main() i32 {\n"
+                                       "    var p = builtin.trace;\n"
+                                       "    var t builtin.Type = typeof(i32);\n"
+                                       "    var fs = t.fields();\n"
+                                       "    var heap builtin.Malloc = builtin.allocator;\n"
+                                       "    var block = unsafe heap.malloc(8, 1);\n"
+                                       "    return inc(1);\n"
+                                       "}\n";
+    {
+        std::ofstream builtin_out(builtin_root / "main.tlc");
+        builtin_out << builtin_source;
+    }
+    const std::string builtin_uri = std::string("file://") + (builtin_root / "main.tlc").string();
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  builtin_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(builtin_source) + R"("}}})");
+    const LineCol trace_at = at_needle(builtin_source, "trace", false);
+    EXPECT(check, trace_at.line >= 0);
+    const std::string trace_hover = request_at(to_child[1], from_child[0], 120, "textDocument/hover", builtin_uri, trace_at);
+    EXPECT_HAS(check, trace_hover, "func trace() *const u8");
+    EXPECT_HAS(check, trace_hover, "newest first");
+    const std::string trace_def =
+        request_at(to_child[1], from_child[0], 121, "textDocument/definition", builtin_uri, trace_at);
+    EXPECT_HAS(check, trace_def, "builtin.tlc");
+    const LineCol type_at = at_needle(builtin_source, "Type", false);
+    EXPECT(check, type_at.line >= 0);
+    const std::string type_hover = request_at(to_child[1], from_child[0], 122, "textDocument/hover", builtin_uri, type_at);
+    EXPECT_HAS(check, type_hover, "type Type");
+    EXPECT_HAS(check, type_hover, "typeof produces it");
+    LineCol inc_at = at_needle(builtin_source, "return inc", false);
+    EXPECT(check, inc_at.line >= 0);
+    inc_at.character += static_cast<int>(std::string("return ").size());
+    const std::string inc_hover = request_at(to_child[1], from_child[0], 123, "textDocument/hover", builtin_uri, inc_at);
+    EXPECT_HAS(check, inc_hover, "func inc(n i32) i32");
+    EXPECT_HAS(check, inc_hover, "Adds one.");
+    const LineCol builtin_dot = at_needle(builtin_source, "builtin.", true);
+    EXPECT(check, builtin_dot.line >= 0);
+    const std::string member_items =
+        request_at(to_child[1], from_child[0], 124, "textDocument/completion", builtin_uri, builtin_dot);
+    EXPECT_HAS(check, member_items, "\"trace\"");
+    EXPECT_HAS(check, member_items, "\"va\"");
+    EXPECT_HAS(check, member_items, "\"panic\"");
+    EXPECT_HAS(check, member_items, "\"Type\"");
+    EXPECT_HAS(check, member_items, "\"Malloc\"");
+    EXPECT_HAS(check, member_items, "\"allocator\"");
+    const LineCol fields_at = at_needle(builtin_source, "fields", false);
+    EXPECT(check, fields_at.line >= 0);
+    const std::string fields_hover =
+        request_at(to_child[1], from_child[0], 125, "textDocument/hover", builtin_uri, fields_at);
+    EXPECT_HAS(check, fields_hover, "func Type.fields");
+    EXPECT_HAS(check, fields_hover, "[]Field");
+    EXPECT_HAS(check, fields_hover, "named struct");
+    LineCol malloc_at = at_needle(builtin_source, "heap.malloc", false);
+    malloc_at.character += static_cast<int>(std::string("heap.").size());
+    EXPECT(check, malloc_at.line >= 0);
+    const std::string malloc_hover =
+        request_at(to_child[1], from_child[0], 126, "textDocument/hover", builtin_uri, malloc_at);
+    EXPECT_HAS(check, malloc_hover, "func Malloc.malloc");
+    EXPECT_HAS(check, malloc_hover, "aligned_alloc");
+    std::filesystem::remove_all(builtin_root);
+
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":6,"method":"shutdown","params":null})");
     const std::string stopped = read_until(from_child[0], "\"id\":6", 3000);
     EXPECT_HAS(check, stopped, "\"result\":null");

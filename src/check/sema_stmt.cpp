@@ -33,10 +33,7 @@ void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &m
     }
 }
 
-bool Checker::is_std_builtin_file(uint32_t file_id) const {
-    const PackageNode *node = find_node(file_id);
-    return node != nullptr && is_std_builtin_path(node->path);
-}
+bool Checker::is_std_builtin_file(uint32_t file_id) const { return is_compiler_builtin(find_node(file_id)); }
 
 bool Checker::is_builtin_va_call(const Expr &callee) {
     if (const auto *selector = std::get_if<Expr::Selector>(&callee.data)) {

@@ -225,8 +225,8 @@ class Checker {
     std::vector<Scope> scopes_;
     int function_seq_ = 0;
     std::vector<StructInfo> structs_;
-    // `fields()` yields a slice of this struct: `name *u8` and `kind Type`.
-    // Negative until `ensure_field_info` runs. The name is not a source type.
+    // `fields()` yields a slice of this struct: `name []const u8` and `kind Type`.
+    // Negative until `ensure_field_info` runs. `builtin.Field` replaces it when that struct is declared.
     int field_info_id_ = -1;
     std::vector<TraitInfo> traits_;
     // The built-in `Allocator` trait. Negative until the first unit is registered.
@@ -437,6 +437,8 @@ class Checker {
     // The slice `Type.fields()` returns. Invalid before `ensure_field_info`.
     Type type_field_slice() const;
     void ensure_field_info();
+    // `builtin.Field` when that struct is `name []const u8` and `kind Type`. Otherwise -1.
+    int builtin_field_struct() const;
     // Writes `reflected_fields` on the package graph after every struct is known.
     void publish_reflected_fields();
     void mismatch(SourceLoc loc, const Type &want, const Type &got);

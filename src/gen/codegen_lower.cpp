@@ -518,10 +518,7 @@ bool CodeGen::meta_type(uint32_t file, const std::string &package, const std::st
     if (name != "Type" || graph_ == nullptr) {
         return false;
     }
-    const auto from_builtin = [&](uint32_t id) {
-        const PackageNode *node = find_node(id);
-        return node != nullptr && is_std_builtin_path(node->path);
-    };
+    const auto from_builtin = [&](uint32_t id) { return is_compiler_builtin(find_node(id)); };
     if (!package.empty()) {
         const uint32_t target = package_file(file, package);
         return target != 0 && from_builtin(target);
@@ -538,7 +535,7 @@ bool CodeGen::meta_type(uint32_t file, const std::string &package, const std::st
             continue;
         }
         const PackageNode *target = import_target(graph_, file, import);
-        if (target != nullptr && is_std_builtin_path(target->path)) {
+        if (is_compiler_builtin(target)) {
             return true;
         }
     }

@@ -1828,6 +1828,9 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         } else if (receiver && have_alias) {
             // A pointer alias, a sized-array alias, or a struct alias is not a method owner.
             type = type_invalid();
+        } else if (receiver && name == "Type" && is_std_builtin_file(file_id_)) {
+            // `func Type::name(self this)`. The parser marks the receiver as a struct.
+            type = with_indirections(type_meta(), indirections, loc, optional, const_pointee);
         } else {
             type = with_indirections(lookup_tag(name, loc, indirections > 0 || allow_incomplete), indirections, loc,
                                      optional, const_pointee);
@@ -2085,7 +2088,9 @@ void Checker::ensure_field_info() {
     StructInfo::Field name;
     name.name = "name";
     name.exported = true;
-    name.type = type_pointer(type_rank(1, true));
+    Type bytes = type_rank(1, true);
+    bytes.is_const = true;
+    name.type = type_array(std::move(bytes), -1);
     StructInfo::Field kind;
     kind.name = "kind";
     kind.exported = true;
@@ -2096,7 +2101,31 @@ void Checker::ensure_field_info() {
     field_info_id_ = id;
 }
 
+int Checker::builtin_field_struct() const {
+    for (int id = 0; id < static_cast<int>(structs_.size()); ++id) {
+        const StructInfo &info = structs_[static_cast<std::size_t>(id)];
+        if (info.name != "Field" || info.anonymous || info.is_union || !info.complete ||
+            !is_std_builtin_file(info.file_id) || info.fields.size() != 2) {
+            continue;
+        }
+        const StructInfo::Field &name = info.fields[0];
+        const StructInfo::Field &kind = info.fields[1];
+        const bool name_bytes = name.exported && name.name == "name" && is_slice(name.type) &&
+                                name.type.element != nullptr && name.type.element->is_const &&
+                                name.type.element->kind == TypeKind::Char && name.type.element->is_unsigned;
+        const bool kind_type = kind.exported && kind.name == "kind" && kind.type.kind == TypeKind::Meta;
+        if (name_bytes && kind_type) {
+            return id;
+        }
+    }
+    return -1;
+}
+
 Type Checker::type_field_slice() const {
+    const int named = builtin_field_struct();
+    if (named >= 0) {
+        return type_array(type_struct(named), -1);
+    }
     if (field_info_id_ < 0) {
         return type_invalid();
     }

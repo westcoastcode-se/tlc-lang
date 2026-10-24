@@ -23,6 +23,8 @@ struct PackageNode {
     std::string import_spec;
     // The package's link file names `<prefix>/lib/libseq.a`. Its extern trait is the iteration trait.
     bool iteration_library = false;
+    // `<std_root>/builtin`, or the synthetic `<builtin>` node. Intrinsics apply only here.
+    bool compiler_builtin = false;
 };
 
 struct ImportEdge {
@@ -122,8 +124,13 @@ struct ResolveRequest {
     std::unordered_map<std::string, std::string> overlays;
 };
 
-// `import "builtin"` is this package. The compiler supplies it. It has no source file.
+// `import "builtin"` is the compiler package. The copy in `<std_root>/builtin` is that
+// package. The path `<builtin>` is the same package when the directory is absent.
 inline bool is_std_builtin_path(const std::string &path) { return path == "<builtin>"; }
+
+inline bool is_compiler_builtin(const PackageNode *node) {
+    return node != nullptr && (node->compiler_builtin || is_std_builtin_path(node->path));
+}
 
 // Loads the import graph of `request.entry`. The entry directory is the first
 // package root, followed by each path in `package_paths`, then `vendor_root`
