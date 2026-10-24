@@ -624,7 +624,7 @@ class Checker {
     int comptime_depth_ = 0;
     // Nonzero while checking a `macro`. `emit` is legal only then, and not inside a runtime loop.
     int macro_depth_ = 0;
-    // `while`, `do`, and `for` that are not `inline for`.
+    // `while`, `do`, and a `for` outside a macro. A `for` in a macro is unrolled.
     int plain_loop_depth_ = 0;
     void check_for_each(const Stmt::For &node);
     void check_assert(SourceLoc loc, const Expr *cond, const std::string &message);

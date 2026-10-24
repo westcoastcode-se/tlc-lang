@@ -1130,7 +1130,6 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.each_name = node.each_name;
                 copy.each_name_loc = node.each_name_loc;
                 copy.each_expr = node.each_expr ? clone_expr(*node.each_expr) : nullptr;
-                copy.is_inline = node.is_inline;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
                 Stmt::DoWhile copy;

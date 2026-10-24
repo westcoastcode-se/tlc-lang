@@ -444,7 +444,7 @@ const FunctionDecl *Checker::generic_macro(const Expr::Call &call) {
 
 namespace {
 
-// The name bound by `inline for (var i = ...)` or `for (var item : ...)`.
+// The name bound by `for (var i = ...)` or `for (var item : ...)`.
 std::string loop_index_name(const Stmt::For &loop) {
     if (loop.each) {
         return loop.each_name;
@@ -769,8 +769,34 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         }
         return;
     }
-    if (const auto *loop = std::get_if<Stmt::For>(&stmt->data); loop != nullptr && loop->is_inline) {
+    if (const auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
         unroll_inline_for(*stmt, fn, names, exprs, out);
+        return;
+    }
+    if (auto *branch = std::get_if<Stmt::If>(&stmt->data)) {
+        if (branch->cond == nullptr) {
+            error(branch->loc, "not supported yet");
+            return;
+        }
+        const bool saved_quiet = quiet_;
+        const AssignState saved_assign = assign_;
+        const AssignState saved_true = cond_true_;
+        const AssignState saved_false = cond_false_;
+        quiet_ = true;
+        const Type got = check_expr(*branch->cond, true);
+        quiet_ = saved_quiet;
+        assign_ = saved_assign;
+        cond_true_ = saved_true;
+        cond_false_ = saved_false;
+        const std::optional<int> value = fold_int(*branch->cond);
+        if (!value || (got.kind != TypeKind::Bool && got.kind != TypeKind::Int)) {
+            error(branch->loc, "not supported yet");
+            return;
+        }
+        std::unique_ptr<Stmt> arm = *value != 0 ? std::move(branch->then_arm) : std::move(branch->else_arm);
+        if (arm != nullptr) {
+            expand_macro_stmt(std::move(arm), fn, names, exprs, out, false);
+        }
         return;
     }
     const SourceLoc loc = std::visit(
@@ -789,7 +815,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
 void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
                                 const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out) {
     const auto *loop = std::get_if<Stmt::For>(&stmt.data);
-    if (loop == nullptr || !loop->is_inline || loop->each || loop->body == nullptr) {
+    if (loop == nullptr || loop->each || loop->body == nullptr) {
         error(loop != nullptr ? loop->loc : SourceLoc{}, "not supported yet");
         return;
     }
@@ -956,8 +982,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                     return true;
                 } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
                     return node.emit && node.expr != nullptr;
-                } else if constexpr (std::is_same_v<T, Stmt::For>) {
-                    return node.is_inline;
+                } else if constexpr (std::is_same_v<T, Stmt::For> || std::is_same_v<T, Stmt::If>) {
+                    return true;
                 } else {
                     return false;
                 }
@@ -1126,6 +1152,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_expr(*node.expr, false);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                // In a macro the arm is chosen while expanding. The call site checks the arm that remains.
+                if (macro_depth_ > 0) {
+                    return;
+                }
                 AssignState on_true = assign_;
                 AssignState on_false = assign_;
                 if (node.cond) {
@@ -1322,7 +1352,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_stmt(*node.stmt);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::For>) {
-                if (node.is_inline && (macro_depth_ == 0 || node.each)) {
+                // A macro unrolls `for`. `for (var item : items)` has nothing to unroll.
+                if (macro_depth_ > 0 && node.each) {
                     error(node.loc, "not supported yet");
                 }
                 if (node.each) {
@@ -1334,7 +1365,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 frame.kind = FlowFrame::Kind::Loop;
                 flow_frames_.push_back(std::move(frame));
                 ++loop_depth_;
-                const bool plain = !node.is_inline;
+                const bool plain = macro_depth_ == 0;
                 if (plain) {
                     ++plain_loop_depth_;
                 }

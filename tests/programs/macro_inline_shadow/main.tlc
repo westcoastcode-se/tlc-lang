@@ -1,8 +1,8 @@
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
 macro func show() void {
-    inline for (var i = 0; i < 2; i = i + 1) {
-        inline for (var i = 0; i < 2; i = i + 1) {
+    for (var i = 0; i < 2; i = i + 1) {
+        for (var i = 0; i < 2; i = i + 1) {
             emit printf("%d\n", i);
         }
     }

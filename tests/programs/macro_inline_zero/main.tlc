@@ -1,5 +1,5 @@
 macro func bump(slot *i32) void {
-    inline for (var i = 0; i < 0; i = i + 1) {
+    for (var i = 0; i < 0; i = i + 1) {
         emit *slot = 7;
     }
 }

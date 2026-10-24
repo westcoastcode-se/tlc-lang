@@ -1,0 +1,11 @@
+macro func show(n i32) void {
+    if (n == 1) {
+        emit n;
+    }
+}
+
+func main() i32 {
+    var n = 1;
+    show(n);
+    return 0;
+}

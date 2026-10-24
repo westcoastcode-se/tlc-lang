@@ -393,6 +393,20 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (node.len_value >= 0) {
                     return node.len_value;
                 }
+                // A tuple's length is the element count, including before this selector is typechecked.
+                if (node.field == "len" && node.base != nullptr) {
+                    if (const auto *init = std::get_if<Expr::Init>(&node.base->data)) {
+                        if (init->is_tuple && init->elements.size() >= 2) {
+                            return static_cast<int>(init->elements.size());
+                        }
+                    }
+                    if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                        const Symbol *symbol = lookup(named->text);
+                        if (symbol != nullptr && symbol->type.kind == TypeKind::Tuple && symbol->type.results.size() >= 2) {
+                            return static_cast<int>(symbol->type.results.size());
+                        }
+                    }
+                }
                 const auto folded_assoc = [&](uint32_t file, const std::string &owner) -> std::optional<int> {
                     const AssocVar *var = find_assoc_in(file, owner, node.field);
                     if (var == nullptr || !var->is_const || !var->has_const) {

@@ -1,5 +1,5 @@
 func main() i32 {
-    inline for (var i = 0; i < 3; i = i + 1) {
+    comptime for (var i = 0; i < 3; i = i + 1) {
     }
     return 0;
 }

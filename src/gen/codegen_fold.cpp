@@ -364,6 +364,13 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 if (node.len_value >= 0) {
                     return node.len_value;
                 }
+                if (node.field == "len" && node.base != nullptr) {
+                    if (const auto *init = std::get_if<Expr::Init>(&node.base->data)) {
+                        if (init->is_tuple && init->elements.size() >= 2) {
+                            return static_cast<int32_t>(init->elements.size());
+                        }
+                    }
+                }
                 const auto *base = node.base == nullptr ? nullptr : std::get_if<Expr::Name>(&node.base->data);
                 if (base == nullptr) {
                     return std::nullopt;

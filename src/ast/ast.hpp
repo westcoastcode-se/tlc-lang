@@ -574,8 +574,6 @@ struct Stmt {
         std::string each_name;
         SourceLoc each_name_loc{};
         std::unique_ptr<Expr> each_expr;
-        // `inline for`. The bounds are compile-time and the body is unrolled.
-        bool is_inline = false;
     };
     struct DoWhile {
         SourceLoc loc{};

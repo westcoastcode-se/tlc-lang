@@ -726,16 +726,6 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
     if (check(TokenKind::KwDo)) {
         return parse_do();
     }
-    if (check(TokenKind::KwInline) && peek(1).kind == TokenKind::KwFor) {
-        ++pos_;
-        std::unique_ptr<Stmt> stmt = parse_for();
-        if (stmt != nullptr) {
-            if (auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
-                loop->is_inline = true;
-            }
-        }
-        return stmt;
-    }
     if (check(TokenKind::KwFor)) {
         return parse_for();
     }
@@ -829,10 +819,15 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
     }
     if (check(TokenKind::KwComptime)) {
         // `comptime { ... }` inside a function is reserved. A local `comptime func` is too.
+        // `for` and `if` in a macro are already compile-time, so `comptime for` and `comptime if` are not forms.
         diags_.error(peek().loc, "not supported yet");
         ++pos_;
         if (check(TokenKind::KwFunc)) {
             parse_function(false, false, false, false, true, {});
+        } else if (check(TokenKind::KwFor)) {
+            parse_for();
+        } else if (check(TokenKind::KwIf)) {
+            parse_if();
         } else if (check(TokenKind::LBrace)) {
             parse_block();
         } else {

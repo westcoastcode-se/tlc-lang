@@ -67,9 +67,9 @@ result      = placed-type
 
 A `comptime func` calculates while compiling. Every argument is a comptime value, whether or not the parameter is marked `comptime`. A comptime value is a folded integer or a constant `[]const u8`: a literal, a constant range, or a same-file file-scope `const`. A `var` and a local `const` are not. `return` leaves the function. A call used as a value folds when the body is one `return` of a constant `i32`. That call has no runtime symbol and pushes no trace frame. `return add(41)` when `add` is `comptime func add(n i32) i32 { return n + 1; }` is `movl $42, %eax` and `retq`. `emit` is not valid in a `comptime func`. A `var` passed to a `comptime func`, a type parameter, a method, `extern`, `export`, and a call that does not fold are `not supported yet`.
 
-A `macro func` generates statements. A statement call is replaced by the statements written with `emit`. A parameter without `comptime` is replaced by the argument expression, so `hello(name)` emits `printf("Hello %s\n", name)`. `name comptime []const u8` and `n comptime i32` are values known while compiling, and `emit` receives that value. `const label = "Per"` then `hello(label)` emits `printf("Hello %s\n", "Per")`. `show(40 + 2)` emits the integer `42`. A `var` passed to a `comptime` parameter is `not supported yet`. `emit` is valid only in a `macro`, and not inside `while`, `do`, or a `for` that is not `inline for`. A value call of a `macro` is `not supported yet`. A type parameter, a method, `extern`, and `export` are `not supported yet` on a `macro`.
+A `macro func` generates statements. A statement call is replaced by the statements written with `emit`. A parameter without `comptime` is replaced by the argument expression, so `hello(name)` emits `printf("Hello %s\n", name)`. `name comptime []const u8` and `n comptime i32` are values known while compiling, and `emit` receives that value. `const label = "Per"` then `hello(label)` emits `printf("Hello %s\n", "Per")`. `show(40 + 2)` emits the integer `42`. A `var` passed to a `comptime` parameter is `not supported yet`. `emit` is valid only in a `macro`, and not inside `while` or `do`. In a `macro`, `for` and `if` run while compiling. `for (var i = low; i < high; i = i + step)` unrolls when `low`, `high`, and `step` fold to integers. `if (condition)` keeps one arm when the condition folds, including `typeof(values[i]) == typeof(i32)`. The other arm is discarded. A condition or a bound that does not fold, and `for (var item : items)` in a `macro`, are `not supported yet`. Outside a `macro`, `for` and `if` run as usual. `comptime for` and `comptime if` are `not supported yet`. A value call of a `macro` is `not supported yet`. A method, `extern`, and `export` are `not supported yet` on a `macro`. A type parameter is accepted, so `macro func show[T type](values comptime T)` can read that tuple.
 
-`inline for (var i = low; i < high; i = i + step)` unrolls in a `macro` when `low`, `high`, and `step` fold to integers, `step` is positive, and the trip count is at most 32. The index in the body is that integer. `inline for` outside a `macro`, `inline for (var item : items)`, and `emit` in any other loop are `not supported yet`.
+In a `macro`, `for (var i = low; i < high; i = i + step)` unrolls when `low`, `high`, and `step` fold to integers, `step` is positive, and the trip count is at most 32. The index in the body is that integer. `emit` in `while` or `do` is `not supported yet`.
 
 An ordinary function may mark a parameter `comptime`. That argument has to be a comptime value, or the call is `type mismatch`. When every parameter is `comptime` and the body is one `return` of a constant `i32`, the call folds to that integer. `return add(1)` when `add` is `func add(n comptime i32) i32 { return n; }` is `movl $1, %eax` and `retq`. A mix of `comptime` and runtime parameters keeps the call and passes the comptime argument as that constant. `comptime { ... }` inside an ordinary function is `not supported yet`.
 
@@ -208,7 +208,7 @@ An array uses `go-type` in every position, including a parameter and a result: `
 
 ## Statements
 
-`if (n != 0)` is a compare and a jump. `while` and `for` repeat that compare. `switch` subtracts and branches. `defer` is a flag and a call without a trace frame. `assert` adds no instructions. `emit` is only valid inside a `macro`. `inline for` unrolls there. The counts are on the statement pages.
+`if (n != 0)` is a compare and a jump. `while` and `for` repeat that compare. `switch` subtracts and branches. `defer` is a flag and a call without a trace frame. `assert` adds no instructions. `emit` is only valid inside a `macro`. A `for` there unrolls, and an `if` there keeps one arm and adds no branch. A macro that stores 40 when its `comptime` argument is 1, and 2 otherwise, leaves 3 instructions in `main`: the store of 40, the load, and `retq`. The counts are on the statement pages.
 
 ```ebnf
 block       = "{" { statement } "}" ;
@@ -217,7 +217,6 @@ statement   = block
             | "while" "(" expression ")" block
             | "do" statement "while" "(" expression ")" ";"
             | "for" "(" for-init [ expression ] ";" [ expression ] ")" block
-            | "inline" "for" "(" for-init [ expression ] ";" [ expression ] ")" block
             | "for" "(" ( "var" | "const" ) identifier ":" expression ")" block
             | "switch" "(" expression ")" statement
             | "case" expression ":" statement
@@ -371,10 +370,10 @@ These words are keywords and cannot be identifiers:
 
 ```text
 alignof assert bool break case comptime const continue default defer delete do else emit enum
-export extern false for func if import inline macro new null package
+export extern false for func if import macro new null package
 return sizeof struct switch test trait true type typeof union unsafe var void while
 ```
 
-C keywords that tlc reserves but does not use are also keywords: `alignas`, `auto`, `constexpr`, `goto`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof_unqual`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set). `inline` is used by `inline for`.
+C keywords that tlc reserves but does not use are also keywords: `alignas`, `auto`, `constexpr`, `goto`, `inline`, `register`, `restrict`, `static_assert`, `thread_local`, `typeof_unqual`, `volatile`, and the spellings that start with `_` (`_Alignas`, `_Bool`, `_Complex`, and the rest of that set).
 
 `as`, `from`, `impl`, `static`, and `this` are not keywords. `signed` and `unsigned` are not keywords.
