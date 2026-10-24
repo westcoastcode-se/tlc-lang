@@ -1,0 +1,11 @@
+func touch() {
+    var n i32 = 1;
+}
+
+func give() {
+    return touch();
+}
+
+func main() i32 {
+    return 0;
+}

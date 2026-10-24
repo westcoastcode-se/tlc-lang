@@ -1,0 +1,9 @@
+func bad() i32;
+
+func bad() {
+    var n i32 = 1;
+}
+
+func main() i32 {
+    return 0;
+}

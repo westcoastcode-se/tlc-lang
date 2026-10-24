@@ -1229,6 +1229,22 @@ ResultSlot slot_from_inferred(const SpecArg &arg) {
     return slot;
 }
 
+// A body that never returns is `void`, the same result an anonymous function gets when its
+// result is omitted. A bare `return;` is still not that result.
+void install_void_result(FunctionDecl &fn) {
+    fn.results.clear();
+    fn.return_type = "void";
+    fn.type_package.clear();
+    fn.is_struct = false;
+    fn.is_enum = false;
+    fn.indirections = 0;
+    fn.optional = 0;
+    fn.const_pointee = 0;
+    ResultSlot slot;
+    slot.type_name = "void";
+    fn.results.push_back(std::move(slot));
+}
+
 } // namespace
 
 void Checker::clear_inferred_result(FunctionDecl &fn) {
@@ -1540,7 +1556,13 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
     } else {
         check_stmt(*fn.body);
     }
-    const bool ok = commit_inferred(fn);
+    bool ok = false;
+    if (inferred_returns_.empty()) {
+        install_void_result(fn);
+        ok = true;
+    } else {
+        ok = commit_inferred(fn);
+    }
     switches_ = std::move(saved_switches);
     loop_depth_ = saved_loops;
     variadic_function_ = saved_variadic;
