@@ -384,6 +384,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return rhs;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (const auto folded = fold(expr)) {
+                    return {const_i32(*folded), 0};
+                }
                 if (node.trait_cast && node.args.size() == 1 && node.args.front() != nullptr) {
                     return emit_rvalue(*node.args.front());
                 }

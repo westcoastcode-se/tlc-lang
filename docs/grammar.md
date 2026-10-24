@@ -48,6 +48,7 @@ A function definition adds the instructions of its body. A call pushes a trace f
 
 ```ebnf
 function    = [ "unsafe" ] "func" identifier [ type-params ] "(" [ parameters ] ")" ( result ( block | ";" ) | block ) ;
+comptime-func = "comptime" "func" identifier [ type-params ] "(" [ parameters ] ")" ( result ( block | ";" ) | block ) ;
 type-params = "[" type-param { "," type-param } "]" ;
 type-param  = identifier "type"
             | identifier integer-name
@@ -62,6 +63,8 @@ parameter   = identifier placed-type ;
 result      = placed-type
             | "(" placed-type { "," placed-type } ")" ;
 ```
+
+A `comptime func` is a function that runs while compiling. `return` leaves that function. A call used as a value folds when the body returns a constant `i32` and does not `emit`. That call has no runtime symbol and pushes no trace frame. A call that is a statement is replaced by the statements written with `emit`. `emit printf("Hello\n");` is one of those statements. `emit` outside a `comptime func`, and `comptime { ... }` inside an ordinary function, are `not supported yet`. A parameter, a type parameter, a method, `export`, `extern`, and a call that does not fold are `not supported yet`.
 
 A function with no body is a prototype and ends with `;`. One name may have several parameter lists. A call uses the types of the arguments. The receiver is not one of those parameters. A body replaces that semicolon. `...` is allowed on an `extern(abi="c")` declaration and on a function with a body. Inside that body, `builtin.va()` reads the extra arguments. One parenthesized result is the same type as the bare result. `()` as a result list is an error. A result may be a function pointer: `func pick() func (i32, i32) i32`. `pick()` is that pointer, and `pick()(1, 2)` calls it. A method uses the same result. A body may omit that result. The type is taken from the `return` expressions, and every `return` has to agree. An omitted result may be a function pointer. `func pick() { return add; }`, when `add` is `func (i32, i32) i32`, is that pointer. A method omits it the same way. That pointer may take `[]const u8`. `func pick() { return len_text; }`, when `len_text` is `func ([]const u8) i32`, is that pointer. `func pick() func ([]const u8) i32` writes the same type. One expression uses that expression's type. Several expressions in one `return` are several results when every `return` agrees. A prototype still writes the result: `func add(a i32, b i32);` is `expected a type`. `typeof` is not a result. `func id(x i32) typeof(x)` is `expected a type` on `typeof`, and `(typeof(x))` is the same error. A body with no `return` is `void`, and so is a body that only writes `return;`. The first `return` chooses the type. A later `return` of a different type is `return type: expected i32, found bool`. A `return;` beside `return 1` is `return type: expected void, found i32` when the bare `return;` is first. `func give() { return touch(); }` is `void` when `touch` is `void`, and so is `func give() void { return touch(); }`. An omitted result that is `Shape` or `*Shape` is `trait has no size`, the same as `func id(s Shape) Shape`. A `return` that calls a function whose result is not known yet does not choose the type. `func pick(flag bool) { if (flag) { return 40; } return pick(true); }` is `i32`. `func f(something bool) { if (something) { return 1; } something = true; return f(something); }` is `i32`. `func f() { return f(); }` is `infinite loop`. `func a() { return b(); }` and `func b() { return a(); }` are `infinite loop` too. That pointer's result may be a function pointer. `func outer() { return id; }`, when `id` is `func (i32) func (i32) i32`, is that pointer. `func outer() func (i32) func (i32) i32` writes the same type. An anonymous function that omits the result is `void`. The returned value may be a function name or an anonymous function, `return (a, b) { return a + b; }` or `return func (a i32, b i32) i32 { return a + b; }`. An inner function called directly may return a function pointer taken from an enclosing function.
 
@@ -196,7 +199,7 @@ An array uses `go-type` in every position, including a parameter and a result: `
 
 ## Statements
 
-`if (n != 0)` is a compare and a jump. `while` and `for` repeat that compare. `switch` subtracts and branches. `defer` is a flag and a call without a trace frame. `assert` adds no instructions. The counts are on the statement pages.
+`if (n != 0)` is a compare and a jump. `while` and `for` repeat that compare. `switch` subtracts and branches. `defer` is a flag and a call without a trace frame. `assert` adds no instructions. `emit` is only valid inside a `comptime func`. The counts are on the statement pages.
 
 ```ebnf
 block       = "{" { statement } "}" ;
@@ -213,6 +216,7 @@ statement   = block
             | "break" ";"
             | "continue" ";"
             | "defer" expression ";"
+            | "emit" expression ";"
             | assert-stmt
             | var-decl
             | binding

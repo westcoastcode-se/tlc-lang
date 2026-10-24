@@ -546,6 +546,8 @@ struct Stmt {
     struct Expression {
         SourceLoc loc{};
         std::unique_ptr<Expr> expr;
+        // `emit expr;` inside a comptime func. A statement call copies this statement.
+        bool emit = false;
     };
     struct If {
         SourceLoc loc{};
@@ -712,6 +714,8 @@ struct FunctionDecl {
     std::vector<Param> params;
     std::unique_ptr<Stmt> body;
     bool exported = false;
+    // Evaluated while compiling. The function has no runtime symbol.
+    bool is_comptime = false;
     // The body is an unsafe context. A call must be written `unsafe name(...)`.
     bool unsafe = false;
     bool is_static = false;

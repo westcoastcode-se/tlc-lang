@@ -27,6 +27,7 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"bool", TokenKind::KwBool},
     {"break", TokenKind::KwBreak},
     {"case", TokenKind::KwCase},
+    {"comptime", TokenKind::KwComptime},
     {"const", TokenKind::KwConst},
     {"constexpr", TokenKind::KwConstexpr},
     {"continue", TokenKind::KwContinue},
@@ -35,6 +36,7 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"delete", TokenKind::KwDelete},
     {"do", TokenKind::KwDo},
     {"else", TokenKind::KwElse},
+    {"emit", TokenKind::KwEmit},
     {"enum", TokenKind::KwEnum},
     {"export", TokenKind::KwExport},
     {"extern", TokenKind::KwExtern},
@@ -147,6 +149,8 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::KwInline: return "inline";
     case TokenKind::KwInt: return "int";
     case TokenKind::KwLong: return "long";
+    case TokenKind::KwComptime: return "comptime";
+    case TokenKind::KwEmit: return "emit";
     case TokenKind::KwNew: return "new";
     case TokenKind::KwNull: return "null";
     case TokenKind::KwPackage: return "package";

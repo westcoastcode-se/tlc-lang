@@ -472,6 +472,8 @@ class CodeGen {
     llvm::GlobalVariable *trace_stack_ = nullptr;
     llvm::GlobalVariable *trace_buffer_ = nullptr;
     uint32_t current_file_ = 0;
+    // Comptime funcs on the fold stack. A cycle folds as not a constant.
+    mutable std::unordered_set<const FunctionDecl *> comptime_folding_;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
     std::unordered_map<uint32_t, FileSymbols> files_;
     // Globals whose constant value is being copied into another initializer.
@@ -1306,6 +1308,8 @@ class CodeGen {
     // A field default `{1}` or `{1, 0...}` on `[2]i32`. Missing elements are zero in this constant.
     llvm::Constant *const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
     std::optional<int32_t> fold(const Expr &expr) const;
+    const FunctionDecl *comptime_named(const std::string &name) const;
+    std::optional<int32_t> fold_comptime_body(const FunctionDecl &fn) const;
     // A constant float or integer. `wide` is an f64 operation. Integers leave `is_float` clear.
     struct FoldedNumber {
         double value = 0;

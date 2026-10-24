@@ -1409,6 +1409,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
     std::unordered_set<std::string> tests;
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+            if (fn->is_comptime &&
+                (!fn->method_struct.empty() || !fn->type_params.empty() || fn->exported || fn->is_extern)) {
+                error(fn->loc, "not supported yet");
+                continue;
+            }
             // A trait default is checked after a struct gains it. The receiver is still the trait here.
             if (!fn->type_params.empty() ||
                 (!fn->method_struct.empty() && (generic_struct_name(file_id_, fn->method_struct) ||

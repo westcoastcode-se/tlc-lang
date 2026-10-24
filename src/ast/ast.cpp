@@ -1103,6 +1103,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 Stmt::Expression copy;
                 copy.loc = node.loc;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
+                copy.emit = node.emit;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::If>) {
                 Stmt::If copy;
@@ -1206,6 +1207,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.params = fn.params;
     copy.body = fn.body ? clone_stmt(*fn.body) : nullptr;
     copy.exported = fn.exported;
+    copy.is_comptime = fn.is_comptime;
     copy.unsafe = fn.unsafe;
     copy.is_static = fn.is_static;
     copy.is_extern = fn.is_extern;

@@ -1,0 +1,10 @@
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+comptime func hello() void {
+    emit printf("Hello\n");
+}
+
+func main() i32 {
+    hello();
+    return 0;
+}

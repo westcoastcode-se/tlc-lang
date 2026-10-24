@@ -679,6 +679,35 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         parse_inferred_global(unit, false, false, exported && !is_extern);
         return;
     }
+    if (check(TokenKind::KwComptime)) {
+        const SourceLoc loc = peek().loc;
+        if (peek(1).kind != TokenKind::KwFunc) {
+            diags_.error(loc, "not supported yet");
+            ++pos_;
+            if (check(TokenKind::LBrace)) {
+                parse_block();
+            } else {
+                while (!eof() && !check(TokenKind::Semicolon) && !check(TokenKind::RBrace)) {
+                    if (check(TokenKind::LBrace)) {
+                        break;
+                    }
+                    ++pos_;
+                }
+                eat(TokenKind::Semicolon);
+            }
+            saw_decl_ = true;
+            return;
+        }
+        ++pos_;
+        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true, link_name);
+        fn.is_comptime = true;
+        fn.unsafe = unsafe_fn;
+        TopDecl top;
+        top.data = std::move(fn);
+        unit.decls.push_back(std::move(top));
+        saw_decl_ = true;
+        return;
+    }
     if (check(TokenKind::KwFunc)) {
         FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true, link_name);
         fn.unsafe = unsafe_fn;

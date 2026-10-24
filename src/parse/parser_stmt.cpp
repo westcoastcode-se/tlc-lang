@@ -11,6 +11,21 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         reject_unsupported_unsafe();
         return make_stmt(Stmt::Expression{});
     }
+    if (check(TokenKind::KwComptime)) {
+        diags_.error(peek().loc, "not supported yet");
+        ++pos_;
+        if (check(TokenKind::KwFunc)) {
+            parse_function(false, false, false, false, true, {});
+        } else if (check(TokenKind::LBrace)) {
+            parse_block();
+        } else {
+            while (!eof() && !check(TokenKind::Semicolon) && !check(TokenKind::RParen) && !check(TokenKind::RBrace)) {
+                ++pos_;
+            }
+            eat(TokenKind::Semicolon);
+        }
+        return make_stmt(Stmt::Expression{});
+    }
     const std::size_t marker = pos_;
     while (check(TokenKind::KwExport) || check(TokenKind::KwExtern)) {
         if (eat(TokenKind::KwExtern)) {
@@ -792,6 +807,41 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         ++pos_;
         stmt.call = parse_expr();
         expect(TokenKind::Semicolon, "expected ';'");
+        return make_stmt(std::move(stmt));
+    }
+    if (check(TokenKind::KwComptime)) {
+        // `comptime { ... }` inside a function is reserved. A local `comptime func` is too.
+        diags_.error(peek().loc, "not supported yet");
+        ++pos_;
+        if (check(TokenKind::KwFunc)) {
+            parse_function(false, false, false, false, true, {});
+        } else if (check(TokenKind::LBrace)) {
+            parse_block();
+        } else {
+            while (!eof() && !check(TokenKind::Semicolon) && !check(TokenKind::RBrace)) {
+                if (check(TokenKind::LBrace)) {
+                    break;
+                }
+                ++pos_;
+            }
+            eat(TokenKind::Semicolon);
+        }
+        return make_stmt(Stmt::Expression{});
+    }
+    if (check(TokenKind::KwEmit)) {
+        Stmt::Expression stmt;
+        stmt.loc = peek().loc;
+        stmt.emit = true;
+        ++pos_;
+        std::unique_ptr<Stmt> inner = parse_statement();
+        if (inner != nullptr) {
+            if (auto *expr = std::get_if<Stmt::Expression>(&inner->data);
+                expr != nullptr && expr->expr != nullptr && !expr->emit) {
+                stmt.expr = std::move(expr->expr);
+                return make_stmt(std::move(stmt));
+            }
+        }
+        diags_.error(stmt.loc, "not supported yet");
         return make_stmt(std::move(stmt));
     }
     if (const_on_type()) {

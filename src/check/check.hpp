@@ -584,6 +584,13 @@ class Checker {
     Type elaborate_inferred(FunctionDecl &fn, const Type &want);
     Type check_against(const Expr &expr, const Type &want);
     void check_stmt(const Stmt &stmt);
+    // A statement call of a comptime func is replaced by the statements it emits.
+    void expand_comptime(Stmt::Block &block);
+    const FunctionDecl *comptime_callee(const Expr::Call &call);
+    std::optional<int> fold_comptime_call(const Expr::Call &call);
+    std::unordered_set<const FunctionDecl *> comptime_expanding_;
+    std::unordered_set<const FunctionDecl *> comptime_folding_;
+    int comptime_depth_ = 0;
     void check_for_each(const Stmt::For &node);
     void check_assert(SourceLoc loc, const Expr *cond, const std::string &message);
     void check_test(const TestDecl &test);

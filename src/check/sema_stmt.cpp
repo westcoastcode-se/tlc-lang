@@ -366,11 +366,116 @@ void Checker::check_for_each(const Stmt::For &node) {
     pop();
 }
 
+const FunctionDecl *Checker::comptime_callee(const Expr::Call &call) {
+    if (call.callee == nullptr || !call.type_args.empty()) {
+        return nullptr;
+    }
+    const auto *named = std::get_if<Expr::Name>(&call.callee->data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || !symbol->is_function || symbol->lists.size() != 1) {
+        return nullptr;
+    }
+    const FunctionDecl *decl = symbol->lists.front().decl;
+    if (decl == nullptr || !decl->is_comptime) {
+        return nullptr;
+    }
+    return decl;
+}
+
+namespace {
+
+// A comptime body may return and it may emit. Anything else stays out of this round.
+bool comptime_statement_form(const FunctionDecl &fn) {
+    if (!fn.params.empty() || !fn.type_params.empty() || fn.body == nullptr) {
+        return false;
+    }
+    const auto *body = std::get_if<Stmt::Block>(&fn.body->data);
+    if (body == nullptr) {
+        return false;
+    }
+    for (const auto &stmt : body->statements) {
+        if (stmt == nullptr) {
+            continue;
+        }
+        if (std::holds_alternative<Stmt::Return>(stmt->data)) {
+            continue;
+        }
+        if (const auto *expr = std::get_if<Stmt::Expression>(&stmt->data)) {
+            if (expr->emit && expr->expr != nullptr) {
+                continue;
+            }
+        }
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
+void Checker::expand_comptime(Stmt::Block &block) {
+    std::vector<std::unique_ptr<Stmt>> next;
+    for (auto &child : block.statements) {
+        const auto *expr_stmt = child == nullptr ? nullptr : std::get_if<Stmt::Expression>(&child->data);
+        // An emit is copied to the caller. It is not itself a call site.
+        if (expr_stmt != nullptr && expr_stmt->emit) {
+            next.push_back(std::move(child));
+            continue;
+        }
+        const Expr::Call *call =
+            expr_stmt != nullptr && expr_stmt->expr != nullptr ? std::get_if<Expr::Call>(&expr_stmt->expr->data) : nullptr;
+        const FunctionDecl *fn = call == nullptr ? nullptr : comptime_callee(*call);
+        if (fn == nullptr) {
+            next.push_back(std::move(child));
+            continue;
+        }
+        if (comptime_expanding_.contains(fn) || !fn->params.empty() || !fn->type_params.empty() ||
+            !comptime_statement_form(*fn)) {
+            error(call->loc, "not supported yet");
+            continue;
+        }
+        if (call->args.size() != fn->params.size()) {
+            error(call->loc, "argument count");
+            continue;
+        }
+        comptime_expanding_.insert(fn);
+        const auto *body = std::get_if<Stmt::Block>(&fn->body->data);
+        Stmt::Block inner;
+        if (body != nullptr) {
+            for (const auto &stmt : body->statements) {
+                if (stmt == nullptr) {
+                    continue;
+                }
+                const auto *emit = std::get_if<Stmt::Expression>(&stmt->data);
+                if (emit == nullptr || !emit->emit || emit->expr == nullptr) {
+                    continue;
+                }
+                std::unique_ptr<Stmt> copy = clone_stmt(*stmt);
+                if (auto *copied = std::get_if<Stmt::Expression>(&copy->data)) {
+                    copied->emit = false;
+                }
+                inner.statements.push_back(std::move(copy));
+            }
+        }
+        expand_comptime(inner);
+        comptime_expanding_.erase(fn);
+        for (auto &stmt : inner.statements) {
+            next.push_back(std::move(stmt));
+        }
+    }
+    block.statements = std::move(next);
+}
+
 void Checker::check_stmt(const Stmt &stmt) {
     std::visit(
         [&](const auto &node) {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Stmt::Block>) {
+                if (comptime_depth_ == 0) {
+                    expand_comptime(const_cast<Stmt::Block &>(node));
+                }
                 push();
                 for (const auto &child : node.statements) {
                     if (child) {
@@ -509,7 +614,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                     reached_returns_.push_back(std::move(item));
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
-                if (node.expr) {
+                if (node.emit) {
+                    // The copy at the call site is typechecked. This statement is the generator.
+                    if (comptime_depth_ == 0) {
+                        error(node.loc, "not supported yet");
+                    }
+                } else if (node.expr) {
                     check_expr(*node.expr, false);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::If>) {
@@ -1143,6 +1253,12 @@ void Checker::check_stmt(const Stmt &stmt) {
 
 void Checker::check_function(const FunctionDecl &fn) {
     InitSuspend suspend(*this);
+    struct ComptimeDepth {
+        int &slot;
+        int saved;
+        ~ComptimeDepth() { slot = saved; }
+    } depth{comptime_depth_, comptime_depth_};
+    comptime_depth_ = fn.is_comptime ? 1 : 0;
     auto saved_reached = std::move(reached_returns_);
     reached_returns_.clear();
     // A quiet walk may be learning the caller's result. This body is not part of that list.
@@ -1208,6 +1324,37 @@ void Checker::check_function(const FunctionDecl &fn) {
     fresh.captured_here.clear();
     if (fn.body) {
         if (const auto *block = std::get_if<Stmt::Block>(&fn.body->data)) {
+            if (fn.is_comptime && !fn.params.empty()) {
+                error(fn.loc, "not supported yet");
+            }
+            if (fn.is_comptime) {
+                for (const auto &child : block->statements) {
+                    if (child == nullptr) {
+                        continue;
+                    }
+                    if (std::holds_alternative<Stmt::Return>(child->data)) {
+                        continue;
+                    }
+                    if (const auto *expr = std::get_if<Stmt::Expression>(&child->data)) {
+                        if (expr->emit && expr->expr != nullptr) {
+                            continue;
+                        }
+                    }
+                    const SourceLoc loc = std::visit(
+                        [](const auto &node) -> SourceLoc {
+                            using Node = std::decay_t<decltype(node)>;
+                            if constexpr (std::is_same_v<Node, Stmt::Func>) {
+                                return node.decl != nullptr ? node.decl->loc : SourceLoc{};
+                            } else {
+                                return node.loc;
+                            }
+                        },
+                        child->data);
+                    error(loc, "not supported yet");
+                }
+            } else {
+                expand_comptime(const_cast<Stmt::Block &>(*block));
+            }
             for (const auto &child : block->statements) {
                 if (child) {
                     check_stmt(*child);

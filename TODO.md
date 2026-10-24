@@ -18,7 +18,7 @@ A function on a struct or enum with no `this` parameter is called as `Type.name(
 
 ## `const if`
 
-Compile-time branching was left out on purpose. `const if` is not a form yet. It stays that way until the syntax of a `macro` function is chosen. `const if (1 == 1)` is `not supported yet`.
+Compile-time branching was left out on purpose. `const if` is not a form yet. `const if (1 == 1)` is `not supported yet`.
 
 ## Generics and compile-time
 
@@ -53,11 +53,11 @@ Compile-time branching was left out on purpose. `const if` is not a form yet. It
 
 `assert`, `const`, and a compile-time integer share one evaluator. It folds integers, including a suffix whose value fits in `i32` such as `1u32`, names of those constants, `sizeof`, `alignof`, float arithmetic (`1.5f + 0.5f`), and `==` / `!=` of two `typeof` values. `var x = 1.5f + 0.5f`, `const x = 1.5f + 0.5f`, and `var x f32 = 1u32` are constant initializers.
 
-An `assert` whose condition is not one of those constants is `not supported yet`. A call is not a constant. `const x f32 = n` when `n` is a `var` is `global initializer is not a constant`. A suffix whose value does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
+An `assert` whose condition is not one of those constants is `not supported yet`. A call is not a constant, except a call of a `comptime func` that returns a folded `i32`. `const x f32 = n` when `n` is a `var` is `global initializer is not a constant`. A suffix whose value does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
 
 ## Reflection
 
-`typeof(T).fields()` reads the fields of a named struct: `fields[i].name` and `fields[i].kind`. Methods are not read yet. The goal is a `macro` keyword whose body can use `typeof` to read methods and these fields. The syntax of a macro function is not chosen, and it has to be chosen before [`const if`](#const-if) is specified. The compiler has no `macro` form.
+`typeof(T).fields()` reads the fields of a named struct: `fields[i].name` and `fields[i].kind`. Methods are not read yet. A `comptime func` runs while compiling. `return` leaves that function. A call used as a value folds when the result is a constant `i32`. A statement call is replaced only by statements written with `emit`. `comptime { ... }` inside an ordinary function, `emit` outside a `comptime func`, a parameter, a type parameter, a method, a call that does not fold, `const if`, `const for`, `value.{hole}`, and `&{.field = ...}` are `not supported yet`.
 
 ## Types and operators
 

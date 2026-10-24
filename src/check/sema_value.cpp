@@ -43,6 +43,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
                 }
+                if (symbol->is_function && !direct_callee_) {
+                    for (const FnList &list : symbol->lists) {
+                        if (list.decl != nullptr && list.decl->is_comptime) {
+                            error(node.loc, "not supported yet");
+                            return type_invalid();
+                        }
+                    }
+                }
                 if (symbol->is_function && symbol->lists.size() > 1) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
@@ -689,6 +697,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 init_store_if(*node.lhs, before);
                 return symbol->type;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (const FunctionDecl *fn = node.callee != nullptr ? comptime_callee(node) : nullptr) {
+                    if (!fn->params.empty() || !fn->type_params.empty() || !node.args.empty() || !node.type_args.empty() ||
+                        !fold_int(expr)) {
+                        error(node.loc, "not supported yet");
+                        for (const auto &arg : node.args) {
+                            if (arg != nullptr) {
+                                check_expr(*arg, true);
+                            }
+                        }
+                        return type_invalid();
+                    }
+                }
                 const bool deferring = checking_defer_;
                 if (deferring) {
                     checking_defer_ = false;

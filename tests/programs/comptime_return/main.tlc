@@ -1,0 +1,7 @@
+comptime func answer() i32 {
+    return 40 + 2;
+}
+
+func main() i32 {
+    return answer();
+}

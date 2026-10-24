@@ -348,11 +348,89 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                     return std::nullopt;
                 }
                 return fold(*node.expr);
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (!node.type_args.empty() || !node.args.empty() || node.callee == nullptr) {
+                    return std::nullopt;
+                }
+                const auto *named = std::get_if<Expr::Name>(&node.callee->data);
+                if (named == nullptr) {
+                    return std::nullopt;
+                }
+                const FunctionDecl *fn = comptime_named(named->text);
+                if (fn == nullptr || !fn->params.empty() || !fn->type_params.empty() || !fn->method_struct.empty()) {
+                    return std::nullopt;
+                }
+                if (!comptime_folding_.insert(fn).second) {
+                    return std::nullopt;
+                }
+                struct Leave {
+                    std::unordered_set<const FunctionDecl *> &set;
+                    const FunctionDecl *fn;
+                    ~Leave() { set.erase(fn); }
+                } leave{comptime_folding_, fn};
+                return fold_comptime_body(*fn);
             } else {
                 return std::nullopt;
             }
         },
         expr.data);
+}
+
+const FunctionDecl *CodeGen::comptime_named(const std::string &name) const {
+    if (graph_ == nullptr || name.empty()) {
+        return nullptr;
+    }
+    const FunctionDecl *found = nullptr;
+    for (const uint32_t file : package_files(current_file_)) {
+        const PackageNode *node = find_node(file);
+        if (node == nullptr) {
+            continue;
+        }
+        for (const TopDecl &decl : node->unit.decls) {
+            const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+            if (fn == nullptr || !fn->is_comptime || fn->name != name || !fn->method_struct.empty()) {
+                continue;
+            }
+            if (found != nullptr) {
+                return nullptr;
+            }
+            found = fn;
+        }
+    }
+    return found;
+}
+
+std::optional<int32_t> CodeGen::fold_comptime_body(const FunctionDecl &fn) const {
+    if (fn.results.size() != 1 || fn.return_type != "i32" || fn.body == nullptr) {
+        return std::nullopt;
+    }
+    const ResultSlot &slot = fn.results.front();
+    if (slot.type_name != "i32" || !slot.type_package.empty() || slot.is_struct || slot.is_enum || slot.indirections != 0 ||
+        slot.optional != 0 || slot.is_array || slot.is_fn_ptr || slot.const_pointee != 0) {
+        return std::nullopt;
+    }
+    const auto *body = std::get_if<Stmt::Block>(&fn.body->data);
+    if (body == nullptr) {
+        return std::nullopt;
+    }
+    const Expr *value = nullptr;
+    for (const auto &stmt : body->statements) {
+        if (stmt == nullptr) {
+            continue;
+        }
+        if (const auto *ret = std::get_if<Stmt::Return>(&stmt->data)) {
+            if (value != nullptr || ret->value == nullptr || !ret->extra.empty()) {
+                return std::nullopt;
+            }
+            value = ret->value.get();
+            continue;
+        }
+        return std::nullopt;
+    }
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+    return fold(*value);
 }
 
 } // namespace tlc

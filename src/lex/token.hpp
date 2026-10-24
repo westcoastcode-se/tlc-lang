@@ -45,6 +45,8 @@ enum class TokenKind {
     KwInline,
     KwInt,
     KwLong,
+    KwComptime,
+    KwEmit,
     KwNew,
     KwNull,
     KwPackage,

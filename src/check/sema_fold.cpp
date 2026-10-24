@@ -410,11 +410,54 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 case TokenKind::PipePipe: return (a != 0.0 || b != 0.0) ? 1 : 0;
                 default: return std::nullopt;
                 }
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                return fold_comptime_call(node);
             } else {
                 return std::nullopt;
             }
         },
         expr.data);
+}
+
+std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
+    const FunctionDecl *fn = comptime_callee(call);
+    if (fn == nullptr || !fn->params.empty() || !fn->type_params.empty() || !call.args.empty() || !call.type_args.empty() ||
+        fn->results.size() != 1 || fn->return_type != "i32" || fn->body == nullptr) {
+        return std::nullopt;
+    }
+    const ResultSlot &slot = fn->results.front();
+    if (slot.type_name != "i32" || !slot.type_package.empty() || slot.is_struct || slot.is_enum || slot.indirections != 0 ||
+        slot.optional != 0 || slot.is_array || slot.is_fn_ptr || slot.const_pointee != 0) {
+        return std::nullopt;
+    }
+    const auto *body = std::get_if<Stmt::Block>(&fn->body->data);
+    if (body == nullptr) {
+        return std::nullopt;
+    }
+    if (!comptime_folding_.insert(fn).second) {
+        return std::nullopt;
+    }
+    const Expr *value = nullptr;
+    bool rejected = false;
+    for (const auto &stmt : body->statements) {
+        if (stmt == nullptr) {
+            continue;
+        }
+        if (const auto *ret = std::get_if<Stmt::Return>(&stmt->data)) {
+            if (value != nullptr || ret->value == nullptr || !ret->extra.empty()) {
+                rejected = true;
+                break;
+            }
+            value = ret->value.get();
+            continue;
+        }
+        // `emit` produces statements. A value call does not run those statements.
+        rejected = true;
+        break;
+    }
+    const std::optional<int> folded = !rejected && value != nullptr ? fold_int(*value) : std::nullopt;
+    comptime_folding_.erase(fn);
+    return folded;
 }
 
 } // namespace tlc
