@@ -1648,10 +1648,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
-                if (type.kind == TypeKind::Void || type.kind == TypeKind::Function || type.kind == TypeKind::Tuple ||
-                    mentions_trait(type)) {
+                if (type.kind == TypeKind::Void || type.kind == TypeKind::Function || mentions_trait(type)) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
+                }
+                if (type.kind == TypeKind::Tuple) {
+                    const std::optional<int> measured = node.align ? std::optional<int>(min_align_of(type)) : type_size(type);
+                    if (!measured) {
+                        error(node.loc, "not supported yet");
+                        return type_invalid();
+                    }
                 }
                 return type_int();
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {

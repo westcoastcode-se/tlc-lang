@@ -769,8 +769,12 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             Sym sym;
             sym.name = var.name;
             mark_direct(sym, var.type_name, var.indirections, var.is_array, var.array_len, var.optional);
+            if (var.is_tuple) {
+                sym.is_tuple = true;
+                sym.array_len = static_cast<int>(var.tuple_parts.size());
+            }
             sym.detail = var.is_const_decl ? "const " + var.name : var.name;
-            if (!var.type_name.empty()) {
+            if (!var.type_name.empty() || var.is_tuple) {
                 sym.detail += " ";
                 sym.detail += spell_var(var);
             }
@@ -1138,20 +1142,24 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 }
                 detail += "::";
                 detail += var->name;
-                if (!var->type_name.empty() || var->is_fn_ptr) {
+                if (!var->type_name.empty() || var->is_fn_ptr || var->is_tuple) {
                     detail += " ";
                     detail += spell_var(*var);
                 }
                 sym.detail = std::move(detail);
             } else if (var->is_const_decl) {
-                sym.detail = var->type_name.empty() && !var->is_fn_ptr ? "const " + var->name
-                                                                       : "const " + var->name + " " + spell_var(*var);
-            } else if (!var->type_name.empty()) {
+                sym.detail = var->type_name.empty() && !var->is_fn_ptr && !var->is_tuple
+                                 ? "const " + var->name
+                                 : "const " + var->name + " " + spell_var(*var);
+            } else if (!var->type_name.empty() || var->is_tuple) {
                 sym.detail = var->name + " " + spell_var(*var);
             } else {
                 sym.detail = var->name;
             }
-            if (var->type_name.empty() && var->init != nullptr) {
+            if (var->is_tuple) {
+                sym.is_tuple = true;
+                sym.array_len = static_cast<int>(var->tuple_parts.size());
+            } else if (var->type_name.empty() && var->init != nullptr) {
                 const uint32_t at = var->loc.valid() ? var->loc.offset : 0;
                 const std::vector<Shape> shapes = shapes_of(*var->init, index, out, uri, at);
                 if (shapes.size() == 1) {
@@ -1191,6 +1199,10 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 member.name = field.name;
                 member.owner = item->name;
                 mark_direct(member, field.type_name, field.indirections, field.is_array, field.array_len, field.optional);
+                if (field.is_tuple) {
+                    member.is_tuple = true;
+                    member.array_len = static_cast<int>(field.tuple_parts.size());
+                }
                 member.package_key = node.package_key;
                 member.uri = uri;
                 member.exported = field.exported || item->is_extern || item->extern_c || item->is_union;
@@ -1291,6 +1303,10 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 member.name = field.name;
                 member.owner = item->name;
                 mark_direct(member, field.type_name, field.indirections, field.is_array, field.array_len, field.optional);
+                if (field.is_tuple) {
+                    member.is_tuple = true;
+                    member.array_len = static_cast<int>(field.tuple_parts.size());
+                }
                 member.package_key = node.package_key;
                 member.uri = uri;
                 member.role = Role::Field;

@@ -292,6 +292,8 @@ void CodeGen::declare_globals(const PackageNode &node) {
         binding.inner_array_len = low.inner_array_len;
         binding.is_slice = low.is_slice;
         binding.elem_slice = low.elem_slice;
+        binding.is_tuple = low.is_tuple;
+        binding.tuple_parts = low.tuple_parts;
         binding.alias_owner = low.alias_owner;
         binding.alias_file = low.alias_file;
         binding.is_static = var->is_static;

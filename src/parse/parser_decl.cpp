@@ -62,7 +62,6 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bo
             if (type.struct_definition || type.enum_definition) {
                 diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
             }
-            drop_bare_tuple(type);
             field.type_name = type.type_name;
             field.type_package = type.type_package;
             field.is_struct = type.is_struct;
@@ -85,6 +84,8 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bo
             field.fn_params = type.fn_params;
             field.fn_variadic = type.fn_variadic;
             field.fn_results = type.fn_results;
+            field.is_tuple = type.is_tuple;
+            field.tuple_parts = std::move(type.tuple_parts);
             // `n i32 = 4` is the same field form as in a struct. A union field rejects the value in sema.
             if (eat(TokenKind::Eq)) {
                 field.init = parse_expr();
@@ -131,6 +132,8 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
         field.fn_params = type.fn_params;
         field.fn_variadic = type.fn_variadic;
         field.fn_results = type.fn_results;
+        field.is_tuple = type.is_tuple;
+        field.tuple_parts = type.tuple_parts;
     };
     while (!check(TokenKind::RBrace) && !eof()) {
         const std::size_t before = pos_;
@@ -248,7 +251,6 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
                     if (type.struct_definition || type.enum_definition) {
                         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
                     }
-                    drop_bare_tuple(type);
                     fill(field, type);
                     // `x i32 = 1` is the value of a field that an initializer does not name.
                     if (eat(TokenKind::Eq)) {

@@ -642,6 +642,9 @@ std::string spell_param(const Param &param) {
 }
 
 std::string spell_var(const VarDecl &var) {
+    if (var.is_tuple) {
+        return spell_results(var.tuple_parts);
+    }
     if (var.is_fn_ptr) {
         return spell_fn_value(var.type_name, var.ret_indirections, var.ret_optional, var.ret_const_pointee, var.fn_params,
                               var.fn_variadic, var.fn_results);
@@ -650,6 +653,9 @@ std::string spell_var(const VarDecl &var) {
 }
 
 std::string spell_field(const FieldDecl &field) {
+    if (field.is_tuple) {
+        return spell_results(field.tuple_parts);
+    }
     if (field.is_fn_ptr) {
         return spell_fn_value(field.type_name, field.ret_indirections, field.ret_optional, field.ret_const_pointee,
                               field.fn_params, field.fn_variadic, field.fn_results);

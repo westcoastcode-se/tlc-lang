@@ -1333,6 +1333,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         binding.elem_slice = low.elem_slice;
                         binding.inner_array_len = low.inner_array_len;
                         binding.shells = low.shells;
+                        binding.tuple_parts = low.tuple_parts;
                         if (!hides) {
                             publish(binding);
                         }

@@ -528,7 +528,7 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 const Type type = sizeof_operand(node);
                 quiet_ = saved;
                 if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Void || type.kind == TypeKind::Function ||
-                    type.kind == TypeKind::Tuple || mentions_trait(type)) {
+                    mentions_trait(type)) {
                     return std::nullopt;
                 }
                 if (node.align) {

@@ -1036,6 +1036,9 @@ class CodeGen {
             if (!binding.shells.empty() && binding.shells.front().kind == TypeShell::Kind::Array) {
                 value.shells.assign(binding.shells.begin() + 1, binding.shells.end());
             }
+            if (value.shells.empty()) {
+                value.tuple_parts = binding.tuple_parts;
+            }
             value.fn_ty = binding.fn_ty;
             value.fn_ret_depth = binding.fn_ret_depth;
             value.fn_ret_float = binding.fn_ret_float;
@@ -1092,6 +1095,7 @@ class CodeGen {
         // A `[N]T` parameter keeps `N` in `array_len` so a range can build the slice.
         loaded.elem_slice = binding.elem_slice;
         loaded.shells = binding.shells;
+        loaded.tuple_parts = binding.tuple_parts;
         loaded.inner_array_len = binding.inner_array_len;
         loaded.array_len = binding.array_len;
         loaded.fn_ty = binding.fn_ty;
@@ -1187,6 +1191,10 @@ class CodeGen {
     llvm::Type *shell_type(const std::vector<TypeShell> &shells, int depth, bool elem_char, int struct_id, bool elem_bool,
                            int elem_bits, bool elem_float) const;
     Lowered compose_shells(Lowered leaf, std::vector<TypeShell> shells, bool parameter) const;
+    // Anonymous struct for a written tuple. Fewer than two parts is not a tuple.
+    Lowered lower_tuple_parts(uint32_t file, const std::vector<ResultSlot> &parts) const;
+    // `shells` wrapped around that struct. A slice returns null.
+    llvm::Type *tuple_shell_type(const std::vector<ResultSlot> &parts, const std::vector<TypeShell> &shells) const;
     // Index one shell. The base is an rvalue: a slice header, or a pointer whose shells start with `Pointer`.
     TypedValue index_shells(const TypedValue &base, llvm::Value *subscript);
     Lowered lower_declared(uint32_t file, const VarDecl &var) const;

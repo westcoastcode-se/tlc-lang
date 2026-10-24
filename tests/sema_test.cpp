@@ -5435,7 +5435,7 @@ int run_sema_tests() {
             "  var n i32 = sizeof(add(1, 2));\n"
             "  return n;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {

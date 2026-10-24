@@ -370,6 +370,32 @@ struct Expr {
     Expr &operator=(Expr &&) noexcept;
 };
 
+struct ResultSlot {
+    std::string type_name;
+    std::string type_package;
+    bool is_struct = false;
+    bool is_enum = false;
+    int indirections = 0;
+    uint32_t optional = 0;
+    uint32_t const_pointee = 0;
+    bool is_array = false;
+    // `[]const u8`. The element type is const.
+    bool elem_const = false;
+    // `[][]T` and `[N][]T`. The element is one slice.
+    bool elem_slice = false;
+    std::vector<TypeShell> shells;
+    int array_len = 0;
+    std::string array_len_name;
+    std::vector<TypeArg> type_args;
+    bool is_fn_ptr = false;
+    int ret_indirections = 0;
+    uint32_t ret_optional = 0;
+    uint32_t ret_const_pointee = 0;
+    std::vector<FnParam> fn_params;
+    bool fn_variadic = false;
+    std::vector<FnParam> fn_results;
+};
+
 struct FieldDecl {
     SourceLoc loc{};
     std::string name;
@@ -399,6 +425,9 @@ struct FieldDecl {
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
+    // `value (i32, i32)`. The field is that tuple, not a named alias.
+    bool is_tuple = false;
+    std::vector<ResultSlot> tuple_parts;
     // `export name` on a struct member. Another package can read and assign it.
     bool exported = false;
     // `name type = expr`. The value of a field that a struct value or `new` does not name.
@@ -453,32 +482,6 @@ struct EnumDecl {
     bool is_extern = false;
     // `extern(abi="c")` is a C enum. Plain `extern` keeps the tlc enum rules.
     bool extern_c = false;
-};
-
-struct ResultSlot {
-    std::string type_name;
-    std::string type_package;
-    bool is_struct = false;
-    bool is_enum = false;
-    int indirections = 0;
-    uint32_t optional = 0;
-    uint32_t const_pointee = 0;
-    bool is_array = false;
-    // `[]const u8`. The element type is const.
-    bool elem_const = false;
-    // `[][]T` and `[N][]T`. The element is one slice.
-    bool elem_slice = false;
-    std::vector<TypeShell> shells;
-    int array_len = 0;
-    std::string array_len_name;
-    std::vector<TypeArg> type_args;
-    bool is_fn_ptr = false;
-    int ret_indirections = 0;
-    uint32_t ret_optional = 0;
-    uint32_t ret_const_pointee = 0;
-    std::vector<FnParam> fn_params;
-    bool fn_variadic = false;
-    std::vector<FnParam> fn_results;
 };
 
 struct TypedefDecl {
@@ -541,6 +544,9 @@ struct VarDecl {
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
+    // `var value (i32, i32)`. The variable is that tuple, not a named alias.
+    bool is_tuple = false;
+    std::vector<ResultSlot> tuple_parts;
     std::unique_ptr<Expr> init;
     bool exported = false;
     bool is_static = false;

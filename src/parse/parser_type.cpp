@@ -465,7 +465,6 @@ bool Parser::parse_field(FieldDecl &field, bool extern_c, bool allow_init) {
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
     }
-    drop_bare_tuple(type);
     field.type_name = type.type_name;
     field.type_package = type.type_package;
     field.is_struct = type.is_struct;
@@ -488,6 +487,8 @@ bool Parser::parse_field(FieldDecl &field, bool extern_c, bool allow_init) {
     field.fn_params = type.fn_params;
     field.fn_variadic = type.fn_variadic;
     field.fn_results = type.fn_results;
+    field.is_tuple = type.is_tuple;
+    field.tuple_parts = std::move(type.tuple_parts);
     // `x i32 = 1` is the value of a field that an initializer does not name.
     // A trait field is `name type;`. A value there is not that syntax.
     if (check(TokenKind::Eq)) {

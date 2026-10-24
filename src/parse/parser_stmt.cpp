@@ -537,7 +537,6 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc, "not supported yet");
     }
-    drop_bare_tuple(type);
     var.type_name = type.type_name;
     var.type_package = type.type_package;
     var.is_struct = type.is_struct;
@@ -560,6 +559,8 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     var.fn_params = type.fn_params;
     var.fn_variadic = type.fn_variadic;
     var.fn_results = type.fn_results;
+    var.is_tuple = type.is_tuple;
+    var.tuple_parts = std::move(type.tuple_parts);
     if (eat(TokenKind::Eq)) {
         var.init = parse_assignment();
     }

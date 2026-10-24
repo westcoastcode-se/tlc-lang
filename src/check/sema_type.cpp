@@ -638,14 +638,16 @@ void Checker::define_trait_fields() {
                             field.loc);
             fold_shells(field.shells, field.loc);
             Type field_type =
-                field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
-                                                 field.ret_indirections, field.indirections, field.fn_params,
-                                                 field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
-                                                 field.ret_const_pointee)
-                                : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
-                                              false, field.type_package, field.is_struct, field.is_enum, false,
-                                              field.optional, field.const_pointee, false, field.elem_const,
-                                              field.elem_slice, field.shells, true);
+                field.is_tuple
+                    ? type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, field.shells, field.loc)
+                    : field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                                                       field.ret_indirections, field.indirections, field.fn_params,
+                                                       field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
+                                                       field.ret_const_pointee)
+                                      : object_type(field.type_name, field.indirections, field.is_array, field.array_len,
+                                                    field.loc, false, field.type_package, field.is_struct, field.is_enum,
+                                                    false, field.optional, field.const_pointee, false, field.elem_const,
+                                                    field.elem_slice, field.shells, true);
             if (field.is_const) {
                 field_type.is_const = true;
             }
@@ -943,6 +945,13 @@ int Checker::min_align_of(const Type &type) const {
         }
         return min_align_of(enum_types_[static_cast<std::size_t>(type.enum_id)].underlying);
     }
+    if (type.kind == TypeKind::Tuple) {
+        int align = 1;
+        for (const Type &part : type.results) {
+            align = std::max(align, min_align_of(part));
+        }
+        return align;
+    }
     if (type.kind == TypeKind::Struct) {
         if (type.struct_id < 0 || type.struct_id >= static_cast<int>(structs_.size())) {
             return 1;
@@ -1003,6 +1012,7 @@ std::optional<int> Checker::type_size(const Type &type) const {
         return 8;
     };
     std::unordered_set<int> seen;
+    std::unordered_set<int> seen_alias;
     const auto walk = [&](const auto &self, const Type &current) -> std::optional<int> {
         if (current.kind == TypeKind::Pointer || current.kind == TypeKind::Meta) {
             return 8;
@@ -1029,6 +1039,27 @@ std::optional<int> Checker::type_size(const Type &type) const {
                 return std::nullopt;
             }
             return self(self, enum_types_[static_cast<std::size_t>(current.enum_id)].underlying);
+        }
+        if (current.kind == TypeKind::Tuple) {
+            // A pointer stops the walk, so `type Node (i32, *Node)` is finite.
+            if (current.alias_id != 0 && !seen_alias.insert(current.alias_id).second) {
+                return std::nullopt;
+            }
+            if (current.results.size() < 2) {
+                return std::nullopt;
+            }
+            int size = 0;
+            int align = 1;
+            for (const Type &part : current.results) {
+                const std::optional<int> part_size = self(self, part);
+                if (!part_size) {
+                    return std::nullopt;
+                }
+                const int part_align = std::max(min_align_of(part), 1);
+                size = align_up(size, part_align) + *part_size;
+                align = std::max(align, part_align);
+            }
+            return align_up(size, align);
         }
         if (current.kind != TypeKind::Struct) {
             return scalar(current);
@@ -1306,15 +1337,18 @@ void Checker::define_struct_fields() {
                 continue;
             }
             Type field_type =
-                field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
-                                                 field.ret_indirections, field.indirections, field.fn_params,
-                                                 field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
-                                                 field.ret_const_pointee)
-                                : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
-                                              false, field.type_package, field.is_struct, field.is_enum, false,
-                                              field.optional, field.const_pointee,
-                                              slice_hides_leaf(written) || pointer_hides_leaf(written),
-                                              field.elem_const, field.elem_slice, written.shells, true);
+                field.is_tuple
+                    ? type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, written.shells,
+                                            field.loc)
+                    : field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                                                       field.ret_indirections, field.indirections, field.fn_params,
+                                                       field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
+                                                       field.ret_const_pointee)
+                                      : object_type(field.type_name, field.indirections, field.is_array, field.array_len,
+                                                    field.loc, false, field.type_package, field.is_struct, field.is_enum,
+                                                    false, field.optional, field.const_pointee,
+                                                    slice_hides_leaf(written) || pointer_hides_leaf(written),
+                                                    field.elem_const, field.elem_slice, written.shells, true);
             if (field.is_const) {
                 field_type.is_const = true;
             }
@@ -2039,7 +2073,9 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     if (type.kind == TypeKind::Invalid) {
         return type;
     }
-    if (type.kind == TypeKind::Void || type.kind == TypeKind::Function || type.kind == TypeKind::Tuple) {
+    // `[]Duo` has no element header. `[2]Duo` stores the tuple.
+    if (type.kind == TypeKind::Void || type.kind == TypeKind::Function ||
+        (type.kind == TypeKind::Tuple && array_len <= 0)) {
         error(loc, "not supported yet");
         return type_invalid();
     }

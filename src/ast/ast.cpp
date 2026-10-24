@@ -22,7 +22,8 @@ FieldDecl::FieldDecl(const FieldDecl &other)
       array_len_name(other.array_len_name), type_args(other.type_args), is_fn_ptr(other.is_fn_ptr),
       ret_indirections(other.ret_indirections), ret_optional(other.ret_optional),
       ret_const_pointee(other.ret_const_pointee), fn_params(other.fn_params), fn_variadic(other.fn_variadic),
-      fn_results(other.fn_results), exported(other.exported), init(other.init ? clone_expr(*other.init) : nullptr),
+      fn_results(other.fn_results), is_tuple(other.is_tuple), tuple_parts(other.tuple_parts),
+      exported(other.exported), init(other.init ? clone_expr(*other.init) : nullptr),
       inline_fields(other.inline_fields) {}
 
 FieldDecl &FieldDecl::operator=(const FieldDecl &other) {

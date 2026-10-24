@@ -198,8 +198,15 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
             type.optional = shell.optional;
             continue;
         }
-        if (type.kind == TypeKind::Void || type.kind == TypeKind::Function || type.kind == TypeKind::Tuple ||
-            type.kind == TypeKind::Meta) {
+        // A tuple is an array element. A slice or any other shell around it stays rejected.
+        const bool aggregate = type.kind == TypeKind::Void || type.kind == TypeKind::Function ||
+                               type.kind == TypeKind::Meta ||
+                               (type.kind == TypeKind::Tuple && shell.kind != TypeShell::Kind::Array);
+        if (aggregate) {
+            rejected = true;
+            return type_invalid();
+        }
+        if (type.kind == TypeKind::Tuple && shell.length <= 0) {
             rejected = true;
             return type_invalid();
         }

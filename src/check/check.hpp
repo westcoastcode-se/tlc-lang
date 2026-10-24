@@ -431,6 +431,9 @@ class Checker {
                         uint32_t ret_const = 0);
     Type type_of_param(const Param &param);
     Type type_of_var(const VarDecl &var);
+    // `(i32, i32)` written on a variable or a field. A shell around that spelling stays rejected.
+    Type type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
+                               const std::vector<TypeShell> &shells, SourceLoc loc);
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
     // `allow_incomplete` is a tuple alias registered before struct bodies exist.
     Type type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete = false);

@@ -1,0 +1,5 @@
+type Duo (i32, i32);
+
+func main() i32 {
+    return sizeof(Duo);
+}

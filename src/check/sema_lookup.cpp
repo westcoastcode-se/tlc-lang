@@ -177,7 +177,25 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
     return pointer;
 }
 
+Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
+                                    const std::vector<TypeShell> &shells, SourceLoc loc) {
+    // A shell or a star around `(i32, i32)` is not this form. `[2]Duo` wraps the name.
+    if (indirections != 0 || is_array || !shells.empty()) {
+        error(loc, "not supported yet");
+        return type_invalid();
+    }
+    std::vector<Type> typed;
+    typed.reserve(parts.size());
+    for (const ResultSlot &slot : parts) {
+        typed.push_back(type_of_result(slot, loc));
+    }
+    return type_tuple(std::move(typed));
+}
+
 Type Checker::type_of_var(const VarDecl &var) {
+    if (var.is_tuple) {
+        return type_of_written_tuple(var.tuple_parts, var.indirections, var.is_array, var.shells, var.loc);
+    }
     VarDecl &written = const_cast<VarDecl &>(var);
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,

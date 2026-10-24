@@ -239,11 +239,14 @@ void CodeGen::prepare_structs() {
             body.reserve(item->fields.size());
             for (const FieldDecl &field : item->fields) {
                 const Lowered low =
-                    field.is_fn_ptr ? lower_fnptr(file, field.type_name, field.type_package, field.is_struct, field.is_enum,
-                                                  field.ret_indirections, field.indirections, field.fn_params,
-                                                  field.fn_variadic, field.fn_results)
-                                   : lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
-                                           field.is_array, field.array_len, false, field.elem_slice, field.shells);
+                    field.is_tuple
+                        ? lower_tuple_parts(file, field.tuple_parts)
+                        : field.is_fn_ptr ? lower_fnptr(file, field.type_name, field.type_package, field.is_struct,
+                                                        field.is_enum, field.ret_indirections, field.indirections,
+                                                        field.fn_params, field.fn_variadic, field.fn_results)
+                                         : lower(file, field.type_name, field.type_package, field.is_struct,
+                                                 field.indirections, field.is_array, field.array_len, false,
+                                                 field.elem_slice, field.shells);
                 FieldLayout slot;
                 slot.name = field.name;
                 slot.type = stored_type(low);

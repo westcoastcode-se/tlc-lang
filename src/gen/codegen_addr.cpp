@@ -266,6 +266,21 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
         out.enum_id = base.enum_id;
         return out;
     }
+    // A decayed `[N]Duo` is a pointer to the tuple. The shells were the array and are gone.
+    if (base.shells.empty() && !base.tuple_parts.empty() && base.value != nullptr && subscript != nullptr) {
+        const Lowered elem = lower_tuple_parts(current_file_, base.tuple_parts);
+        if (!elem.is_tuple || elem.type == nullptr) {
+            error(loc, "not an lvalue");
+            return {};
+        }
+        llvm::Value *slot =
+            builder_.CreateInBoundsGEP(elem.type, base.value, llvm::ArrayRef<llvm::Value *>{subscript});
+        TypedValue out;
+        out.value = slot;
+        out.is_tuple = true;
+        out.tuple_parts = base.tuple_parts;
+        return out;
+    }
     if (base.depth <= 0 || base.value == nullptr || subscript == nullptr) {
         error(loc, "not an lvalue");
         return {};
@@ -370,6 +385,11 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
     const TypeShell &outer = base.shells.front();
     std::vector<TypeShell> rest(base.shells.begin() + 1, base.shells.end());
     auto element_of = [&](const std::vector<TypeShell> &shells) {
+        if (!base.tuple_parts.empty()) {
+            if (llvm::Type *wrapped = tuple_shell_type(base.tuple_parts, shells)) {
+                return wrapped;
+            }
+        }
         return shell_type(shells, base.depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
     };
     if (outer.kind == TypeShell::Kind::Slice && base.value->getType() == slice_type()) {
@@ -392,15 +412,23 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
     if (outer.kind == TypeShell::Kind::Slice || outer.kind == TypeShell::Kind::Array) {
         // A decayed array is a pointer that steps by one element. The result is that element.
         const int leaf_depth = base.depth > 0 ? base.depth - 1 : 0;
+        llvm::Type *tuple_step = outer.kind == TypeShell::Kind::Array && !base.tuple_parts.empty()
+                                     ? tuple_shell_type(base.tuple_parts, base.shells)
+                                     : nullptr;
         llvm::Type *step = outer.kind == TypeShell::Kind::Slice
                                ? static_cast<llvm::Type *>(slice_type())
-                               : shell_type(base.shells, leaf_depth, base.elem_char, base.struct_id, base.elem_bool,
-                                            base.elem_bits, base.elem_float);
+                               : tuple_step != nullptr
+                                     ? tuple_step
+                                     : shell_type(base.shells, leaf_depth, base.elem_char, base.struct_id, base.elem_bool,
+                                                  base.elem_bits, base.elem_float);
         llvm::Value *slot = builder_.CreateInBoundsGEP(step, base.value, llvm::ArrayRef<llvm::Value *>{subscript});
         TypedValue out;
         out.value = slot;
         carry(out);
         mark(out, rest);
+        if (rest.empty() && !base.tuple_parts.empty()) {
+            out.tuple_parts = base.tuple_parts;
+        }
         if (outer.kind == TypeShell::Kind::Array) {
             out.row_decay = true;
             out.array_len = outer.length;
@@ -538,6 +566,16 @@ CodeGen::Shape CodeGen::shape_from_binding(const Binding &binding) const {
     shape.shells = binding.shells;
     shape.elem_float = binding.elem_float;
     shape.type = shape_type(shape);
+    // A tuple value, or `[N]Duo`, is that aggregate. A decayed parameter stays a pointer.
+    if (!binding.tuple_parts.empty() && binding.depth == 0 && !binding.is_slice) {
+        if (llvm::Type *wrapped = tuple_shell_type(binding.tuple_parts, binding.shells)) {
+            if (binding.shells.empty() && binding.is_array && binding.array_len > 0) {
+                shape.type = llvm::ArrayType::get(wrapped, static_cast<uint64_t>(binding.array_len));
+            } else if (!binding.shells.empty() || binding.is_tuple) {
+                shape.type = wrapped;
+            }
+        }
+    }
     return shape;
 }
 
@@ -561,6 +599,12 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     alias = selective_alias(current_file_, node.text);
                 }
                 if (alias != nullptr) {
+                    // `sizeof(Duo)` names the alias. The aggregate is `tuple_ty`, not a scalar leaf.
+                    if (alias->is_tuple && alias->tuple_ty != nullptr) {
+                        Shape shape;
+                        shape.type = alias->tuple_ty;
+                        return shape;
+                    }
                     Shape shape;
                     shape.depth = alias->depth;
                     shape.elem_char = alias->elem_char;
@@ -799,6 +843,22 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 if (binding == nullptr || !binding->is_function) {
                     return {};
                 }
+                // Several results are one aggregate. `sizeof` of the call is that aggregate.
+                if (binding->decl != nullptr && binding->decl->results.size() > 1) {
+                    llvm::Type *ret = nullptr;
+                    if (const auto *function = llvm::dyn_cast_or_null<llvm::Function>(binding->value)) {
+                        ret = function->getReturnType();
+                    }
+                    if (ret == nullptr || !ret->isSized() || ret->isVoidTy()) {
+                        const Lowered low = lower_tuple_parts(current_file_, binding->decl->results);
+                        ret = low.is_tuple ? low.type : nullptr;
+                    }
+                    if (ret != nullptr && ret->isSized() && !ret->isVoidTy()) {
+                        Shape shape;
+                        shape.type = ret;
+                        return shape;
+                    }
+                }
                 Shape shape;
                 shape.depth = binding->depth;
                 shape.elem_char = binding->elem_char;
@@ -941,6 +1001,9 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
                 value.array_type = shell_type(addr.shells, addr.depth, addr.elem_char, addr.struct_id, addr.elem_bool,
                                               addr.elem_bits, addr.elem_float);
             }
+        }
+        if (value.shells.empty()) {
+            value.tuple_parts = addr.tuple_parts;
         }
         return value;
     }

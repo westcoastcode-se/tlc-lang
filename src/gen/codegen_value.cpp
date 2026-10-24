@@ -867,7 +867,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     row.row_decay = false;
                     return row;
                 }
-                if (addr.is_slice) {
+                if (addr.is_slice || addr.is_tuple) {
                     return load_field(addr);
                 }
                 TypedValue loaded = load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,

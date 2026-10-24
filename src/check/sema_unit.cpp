@@ -1512,7 +1512,8 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     const std::size_t before = diags_.size();
                     check_against(*var->init, assoc->type);
                     if (diags_.size() == before) {
-                        if (!var->is_extern && runs_at_startup(*var->init)) {
+                        if (!var->is_extern &&
+                            (runs_at_startup(*var->init) || assoc->type.kind == TypeKind::Tuple)) {
                             const_cast<VarDecl *>(var)->runtime_init = true;
                         } else if (is_slice(assoc->type)) {
                             require_slice_name(*var->init, assoc->type, var->loc, before);
@@ -1563,7 +1564,8 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 const std::size_t before = diags_.size();
                 check_against(*var->init, want);
                 if (diags_.size() == before) {
-                    if (!var->is_const_decl && !var->is_extern && runs_at_startup(*var->init)) {
+                    if (!var->is_const_decl && !var->is_extern &&
+                        (runs_at_startup(*var->init) || want.kind == TypeKind::Tuple)) {
                         const_cast<VarDecl *>(var)->runtime_init = true;
                     } else if (is_slice(want)) {
                         require_slice_name(*var->init, want, var->loc, before);

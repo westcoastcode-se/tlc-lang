@@ -1,0 +1,6 @@
+type Duo (i32, i32);
+
+func main() i32 {
+    var row []Duo;
+    return 0;
+}
