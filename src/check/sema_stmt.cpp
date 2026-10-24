@@ -385,6 +385,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 // Learning an omitted result. The real check of this body matches the type afterwards.
                 if (collect_returns_) {
                     InferredReturn item;
+                    item.loc = node.loc;
                     if (node.value == nullptr && node.extra.empty()) {
                         item.bare = true;
                     } else {
@@ -1437,6 +1438,49 @@ bool Checker::install_inferred_type(const Type &type, ResultSlot &slot) {
     return true;
 }
 
+bool Checker::report_inferred_mismatch() {
+    if (inferred_returns_.size() < 2) {
+        return false;
+    }
+    // A written `i32` result accepts `return flag` when `flag` is `bool`. An omitted result
+    // has no written type, so the returns have to be the same type. The first one is that type.
+    std::vector<Type> spelled;
+    spelled.reserve(inferred_returns_.size());
+    for (const InferredReturn &item : inferred_returns_) {
+        if (item.bare) {
+            spelled.push_back(type_void());
+            continue;
+        }
+        if (item.parts.empty()) {
+            return false;
+        }
+        for (const Type &part : item.parts) {
+            if (part.kind == TypeKind::Invalid) {
+                return false;
+            }
+        }
+        if (item.parts.size() == 1) {
+            spelled.push_back(item.parts.front());
+        } else {
+            spelled.push_back(type_tuple(std::vector<Type>(item.parts)));
+        }
+    }
+    const Type &want = spelled.front();
+    bool mismatch = false;
+    for (std::size_t i = 1; i < spelled.size(); ++i) {
+        if (same_type(want, spelled[i])) {
+            continue;
+        }
+        mismatch = true;
+        const bool saved_quiet = quiet_;
+        quiet_ = false;
+        error(inferred_returns_[i].loc,
+              "return type: expected " + type_desc(want) + ", found " + type_desc(spelled[i]));
+        quiet_ = saved_quiet;
+    }
+    return mismatch;
+}
+
 bool Checker::commit_inferred(FunctionDecl &fn) {
     if (inferred_returns_.empty()) {
         return false;
@@ -1516,6 +1560,9 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
     if (!fn.results.empty()) {
         return true;
     }
+    if (infer_mismatch_.contains(&fn)) {
+        return false;
+    }
     if (!infer_running_.insert(&fn).second) {
         return false;
     }
@@ -1568,6 +1615,8 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
     if (inferred_returns_.empty() || only_bare) {
         install_void_result(fn);
         ok = true;
+    } else if (report_inferred_mismatch()) {
+        infer_mismatch_.insert(&fn);
     } else {
         ok = commit_inferred(fn);
     }
@@ -1707,7 +1756,7 @@ void Checker::infer_file_results(const TranslationUnit &unit) {
         }
     }
     for (FunctionDecl *fn : pending) {
-        if (fn != nullptr && fn->results.empty()) {
+        if (fn != nullptr && fn->results.empty() && !infer_mismatch_.contains(fn)) {
             error(fn->loc, "not supported yet");
         }
     }

@@ -81,7 +81,7 @@ Type information for generating code while compiling. The goal is a `macro` keyw
 
 ## Functions
 
-- `return` expressions whose types differ, including a `return;` beside a valued `return`, and `return` of a `void` value are `not supported yet`. An omitted result that is a trait is `not supported yet`. A `return` that calls a function whose result is not known yet, including a call of the function being inferred, is `not supported yet`.
+- `return` of a `void` value is `not supported yet`. An omitted result that is a trait is `not supported yet`. A `return` that calls a function whose result is not known yet, including a call of the function being inferred, is `not supported yet`.
 - An overloaded name used as a value, `var f = show` when `show` has several parameter lists, is `not supported yet`. A call selects the list.
 - A `test` inside a function. `test` is file scope.
 - A struct argument to `testing.error`.

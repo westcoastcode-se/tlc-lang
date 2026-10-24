@@ -285,10 +285,13 @@ class Checker {
     bool collect_returns_ = false;
     struct InferredReturn {
         bool bare = false;
+        SourceLoc loc{};
         std::vector<Type> parts;
     };
     std::vector<InferredReturn> inferred_returns_;
     std::unordered_set<FunctionDecl *> infer_running_;
+    // The returns already disagreed, so a later pass must not report them again.
+    std::unordered_set<FunctionDecl *> infer_mismatch_;
     // Set while checking a variadic function body. `builtin.va` is valid only then.
     bool variadic_function_ = false;
     // The callee of a call is being checked. That callee is a name, a function expression, or a selector.
@@ -316,11 +319,14 @@ class Checker {
     Type function_result(const FunctionDecl &fn);
     Type function_signature(const FunctionDecl &fn);
     // Fill `fn.results` from the body's `return` expressions. No `return`, and a bare
-    // `return;`, is `void`. The body is checked again later.
+    // `return;`, is `void`. Returns that name different types are an error. The body is
+    // checked again later.
     bool infer_omitted_result(FunctionDecl &fn);
     void infer_file_results(const TranslationUnit &unit);
     void publish_inferred(FunctionDecl &fn);
     bool commit_inferred(FunctionDecl &fn);
+    // The first `return` is the type. Each later `return` that differs is reported.
+    bool report_inferred_mismatch();
     bool install_inferred_type(const Type &type, ResultSlot &slot);
     bool spell_inferred_component(const Type &type, FnParam &out, bool allow_void);
     bool spell_inferred_fn_param(const Type &type, FnParam &out);

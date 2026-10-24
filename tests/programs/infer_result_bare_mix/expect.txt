@@ -1,1 +1,1 @@
-compile-error: not supported yet
+compile-error: return type: expected void, found i32
