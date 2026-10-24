@@ -287,6 +287,8 @@ class Checker {
         bool bare = false;
         // `return f()` while checking `f`. It does not choose the result type.
         bool self = false;
+        // `return g()` names this function. Null when the return is not that call.
+        const FunctionDecl *callee = nullptr;
         SourceLoc loc{};
         std::vector<Type> parts;
     };
@@ -299,8 +301,18 @@ class Checker {
     struct ReachedReturn {
         SourceLoc loc{};
         bool self = false;
+        const FunctionDecl *callee = nullptr;
     };
     std::vector<ReachedReturn> reached_returns_;
+    // Reached returns of each function, so a cycle of calls can be reported after the file.
+    struct LoopInfo {
+        bool falls_through = false;
+        bool value = false;
+        bool reported = false;
+        SourceLoc loc{};
+        std::vector<const FunctionDecl *> callees;
+    };
+    std::unordered_map<const FunctionDecl *, LoopInfo> loop_info_;
     // Set while checking a variadic function body. `builtin.va` is valid only then.
     bool variadic_function_ = false;
     // The callee of a call is being checked. That callee is a name, a function expression, or a selector.
@@ -339,10 +351,15 @@ class Checker {
     bool report_inferred_mismatch();
     // A trait has no size, so it is not an omitted result.
     bool report_inferred_trait(const FunctionDecl &fn);
+    // The function a direct call names. Null when the expression is not that call.
+    const FunctionDecl *call_target(const Expr &expr);
     // The return expression is a call of `fn`.
     bool returns_self(const FunctionDecl &fn, const Expr &expr);
     // Every reached `return` calls this function, and the body does not fall through.
     void report_self_loop();
+    void remember_loop(const FunctionDecl &fn);
+    // A cycle of calls with no reached value never finishes.
+    void report_call_cycles(const TranslationUnit &unit);
     bool install_inferred_type(const Type &type, ResultSlot &slot);
     bool spell_inferred_component(const Type &type, FnParam &out, bool allow_void);
     bool spell_inferred_fn_param(const Type &type, FnParam &out);

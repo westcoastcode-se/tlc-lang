@@ -1398,6 +1398,7 @@ bool Checker::constant_operand(const Expr &expr) {
 }
 
 void Checker::check_globals(const TranslationUnit &unit) {
+    loop_info_.clear();
     // A file-scope slice is an array, another slice, a string, or a constant range.
     auto require_slice_name = [&](const Expr &expr, const Type &want, SourceLoc loc, std::size_t before) {
         std::unordered_set<std::string> seen;
@@ -1551,6 +1552,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
             }
         }
     }
+    report_call_cycles(unit);
 }
 
 void Checker::analyze(const TranslationUnit &unit) {

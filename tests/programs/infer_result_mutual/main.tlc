@@ -6,6 +6,26 @@ func b() {
     return a();
 }
 
+func c() i32 {
+    return d();
+}
+
+func d() i32 {
+    return c();
+}
+
+func e() {
+    return f();
+}
+
+func f() {
+    return g();
+}
+
+func g() {
+    return e();
+}
+
 func main() i32 {
     return 0;
 }

@@ -401,7 +401,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                             }
                         }
                         if (!checking_.empty() && node.extra.empty() && node.value != nullptr) {
-                            item.self = returns_self(*checking_.back(), *node.value);
+                            item.callee = call_target(*node.value);
+                            item.self = item.callee == checking_.back();
                         }
                         inferred_returns_.push_back(std::move(item));
                     }
@@ -504,8 +505,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (reached && !checking_.empty()) {
                     ReachedReturn item;
                     item.loc = node.loc;
-                    item.self = node.extra.empty() && node.value != nullptr &&
-                                returns_self(*checking_.back(), *node.value);
+                    if (node.extra.empty() && node.value != nullptr) {
+                        item.callee = call_target(*node.value);
+                    }
+                    item.self = item.callee == checking_.back();
                     reached_returns_.push_back(std::move(item));
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
@@ -1220,6 +1223,7 @@ void Checker::check_function(const FunctionDecl &fn) {
     adopt_captures(fn);
     // `return f()` on every reached path never finishes. A reached `return 1` is not that loop.
     report_self_loop();
+    remember_loop(fn);
     reached_returns_ = std::move(saved_reached);
     variadic_function_ = saved_variadic;
     switches_ = std::move(saved_switches);
@@ -1502,25 +1506,27 @@ bool Checker::report_inferred_mismatch() {
     return mismatch;
 }
 
-bool Checker::returns_self(const FunctionDecl &fn, const Expr &expr) {
+const FunctionDecl *Checker::call_target(const Expr &expr) {
     const auto *call = std::get_if<Expr::Call>(&expr.data);
     if (call == nullptr || call->callee == nullptr) {
-        return false;
+        return nullptr;
     }
     const auto *named = std::get_if<Expr::Name>(&call->callee->data);
-    if (named == nullptr || named->text != fn.name) {
-        return false;
+    if (named == nullptr) {
+        return nullptr;
     }
     // One parameter list leaves `selected` empty. Several lists record the chosen body.
     if (call->selected != nullptr) {
-        return call->selected == &fn;
+        return call->selected;
     }
     const Symbol *symbol = lookup(named->text);
     if (symbol == nullptr || !symbol->is_function || symbol->lists.size() != 1) {
-        return false;
+        return nullptr;
     }
-    return symbol->lists.front().decl == &fn;
+    return symbol->lists.front().decl;
 }
+
+bool Checker::returns_self(const FunctionDecl &fn, const Expr &expr) { return call_target(expr) == &fn; }
 
 void Checker::report_self_loop() {
     if (reached_returns_.empty() || !assign_.unreachable) {
@@ -1532,6 +1538,79 @@ void Checker::report_self_loop() {
         }
     }
     error(reached_returns_.front().loc, "infinite loop");
+}
+
+void Checker::remember_loop(const FunctionDecl &fn) {
+    if (reached_returns_.empty()) {
+        return;
+    }
+    LoopInfo info;
+    info.falls_through = !assign_.unreachable;
+    info.loc = reached_returns_.front().loc;
+    bool only_self = !info.falls_through;
+    for (const ReachedReturn &item : reached_returns_) {
+        if (item.callee == nullptr) {
+            info.value = true;
+            only_self = false;
+        } else {
+            if (item.callee != &fn) {
+                only_self = false;
+            }
+            info.callees.push_back(item.callee);
+        }
+    }
+    // `report_self_loop` already reported a body that only calls itself.
+    info.reported = only_self;
+    loop_info_[&fn] = std::move(info);
+}
+
+void Checker::report_call_cycles(const TranslationUnit &unit) {
+    std::unordered_map<const FunctionDecl *, bool> terminates;
+    for (const auto &[fn, info] : loop_info_) {
+        terminates[fn] = info.falls_through || info.value;
+    }
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (const auto &[fn, info] : loop_info_) {
+            if (terminates[fn]) {
+                continue;
+            }
+            for (const FunctionDecl *callee : info.callees) {
+                const auto found = terminates.find(callee);
+                // A call of a function this file did not walk can return.
+                if (found == terminates.end() || found->second) {
+                    terminates[fn] = true;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+    std::unordered_set<const FunctionDecl *> cyclic;
+    for (const auto &[fn, info] : loop_info_) {
+        if (info.reported || terminates[fn] || info.callees.empty()) {
+            continue;
+        }
+        error(info.loc, "infinite loop");
+        cyclic.insert(fn);
+    }
+    for (const TopDecl &decl : unit.decls) {
+        const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+        if (fn == nullptr || !fn->infer_result || fn->body == nullptr || !fn->results.empty() ||
+            !fn->type_params.empty()) {
+            continue;
+        }
+        if (!fn->method_struct.empty() &&
+            (generic_struct_name(file_id_, fn->method_struct) || package_trait(file_id_, fn->method_struct) >= 0)) {
+            continue;
+        }
+        if (self_loop_.contains(const_cast<FunctionDecl *>(fn)) || infer_mismatch_.contains(const_cast<FunctionDecl *>(fn)) ||
+            cyclic.contains(fn)) {
+            continue;
+        }
+        error(fn->loc, "not supported yet");
+    }
 }
 
 bool Checker::report_inferred_trait(const FunctionDecl &fn) {
@@ -1697,6 +1776,22 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
     }
     if (only_self) {
         self_loop_.insert(&fn);
+    }
+    // `return b()` while `b` is still on this walk is a cycle. That cycle is `infinite loop`.
+    for (const InferredReturn &item : inferred_returns_) {
+        if (item.callee == nullptr ||
+            !infer_running_.contains(const_cast<FunctionDecl *>(item.callee))) {
+            continue;
+        }
+        bool mark = false;
+        for (FunctionDecl *frame : checking_) {
+            if (frame == item.callee) {
+                mark = true;
+            }
+            if (mark) {
+                self_loop_.insert(frame);
+            }
+        }
     }
     // A call whose result is not known yet does not choose the type. The known returns still
     // have to agree. That call is checked again once the type is known.
@@ -1886,11 +1981,6 @@ void Checker::infer_file_results(const TranslationUnit &unit) {
         }
         if (!progress) {
             break;
-        }
-    }
-    for (FunctionDecl *fn : pending) {
-        if (fn != nullptr && fn->results.empty() && !infer_mismatch_.contains(fn) && !self_loop_.contains(fn)) {
-            error(fn->loc, "not supported yet");
         }
     }
 }
