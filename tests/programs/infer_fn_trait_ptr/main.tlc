@@ -1,0 +1,11 @@
+type Shape trait {
+    func area() i32;
+};
+
+func id(p *Shape) {
+    return p;
+}
+
+func main() i32 {
+    return 0;
+}

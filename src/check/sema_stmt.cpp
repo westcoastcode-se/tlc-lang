@@ -1482,6 +1482,38 @@ bool Checker::report_inferred_mismatch() {
     return mismatch;
 }
 
+bool Checker::report_inferred_trait(const FunctionDecl &fn) {
+    if (inferred_returns_.empty()) {
+        return false;
+    }
+    // A part that is not known yet stays `not supported yet`. A trait that is known has no size.
+    bool trait = false;
+    for (const InferredReturn &item : inferred_returns_) {
+        if (item.bare) {
+            continue;
+        }
+        if (item.parts.empty()) {
+            return false;
+        }
+        for (const Type &part : item.parts) {
+            if (part.kind == TypeKind::Invalid) {
+                return false;
+            }
+            if (mentions_trait(part)) {
+                trait = true;
+            }
+        }
+    }
+    if (!trait) {
+        return false;
+    }
+    const bool saved_quiet = quiet_;
+    quiet_ = false;
+    error(fn.loc, "trait has no size");
+    quiet_ = saved_quiet;
+    return true;
+}
+
 bool Checker::commit_inferred(FunctionDecl &fn) {
     if (inferred_returns_.empty()) {
         return false;
@@ -1618,6 +1650,8 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
         install_void_result(fn);
         ok = true;
     } else if (report_inferred_mismatch()) {
+        infer_mismatch_.insert(&fn);
+    } else if (report_inferred_trait(fn)) {
         infer_mismatch_.insert(&fn);
     } else {
         ok = commit_inferred(fn);
