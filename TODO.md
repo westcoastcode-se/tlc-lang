@@ -2,7 +2,7 @@
 
 What the language pages leave out. The compiler reports most of these as `not supported yet`. Diagnostics stay the short English phrases already used (`not supported yet`, `type mismatch`).
 
-[Bugs](#bugs) are wrong behavior. They are fixed before every section below. A new bug is added at the top of that list. [Inconsistencies](#inconsistencies) are accepted forms whose rules do not match. Each bullet there is one change. [Documentation](#documentation) is pages that already disagree with the compiler. Those do not change the language.
+[Bugs](#bugs) are wrong behavior. They are fixed before every section below. A new bug is added at the top of that list. [Inconsistencies](#inconsistencies) are accepted forms whose rules do not match. Each bullet there is one change. [Optimization](#optimization) goes through the features, including tuples, so a form does not keep more stack or more registers than the values it moves. That pass does not change the language.
 
 ## Bugs
 
@@ -100,10 +100,12 @@ Accepted forms whose rules do not match. Each bullet is one change. The first se
 
 - `[` is type parameters, type arguments, an array length, an index, a range, a `new` count, and `_`. `name[i32](` is a generic call, already listed under Parsing. A call of an indexed value is `(ops[i])()`. `Vec[i32]{}` is a struct value. `Buf[4, i32].count` is the constant because of the comma. `arr[i].field` is an index. Pages: `docs/grammar.md`.
 
-### Documentation
+## Optimization
 
-Pages that disagree with the compiler. Fixing one does not change the language.
+Go through the features, including tuples, so a form does not keep more stack or more registers than the values it moves. The measure is the x86-64 instructions that run, from `tlc --emit-obj` with no `-O` flag, as `docs/cost.md` describes. A feature page states the count after the extra moves are gone.
 
-- `docs/types/literal.md` lists `"hi"` and a raw string as `*const u8`. Both are `[]const u8`. `docs/types/string.md` and `docs/grammar.md` already say that.
-- `docs/types/pointer.md` says `opt![i]` is `(opt[i])!` and `type mismatch`. Postfix operators bind left to right, so `opt![2]` is `(opt!)[2]` and typechecks. `(opt!)[2]` is the same expression.
-- `docs/grammar.md` prose accepts forms the EBNF does not generate. `new i32` and `new [n]u8` use an `integer-name`, and `new-expr` only names an identifier. `[N][M]T`, `[][N]T`, and `[][][]T` are another array or slice around the inner type, and the `go-type` alternatives do not generate them. `?*i32(p)` and a cast that writes `const` are casts, and the `cast` rule is `{ "*" }` plus a scalar or an identifier. `Vec[*const u8]` is a type argument, and the `type-arg` pointer alternative has no `const`.
+A tuple parameter is one LLVM struct. Sending two to six `i32` values uses the same argument registers as those parameters. The same holds for two to four `i64`, two or three `f64`, a `u8`, a slice, a struct beside an `i32`, and a function pointer of two `i32`. The callee stores the whole struct and loads it again for each `t[i]`. Two `i32` is 6 instructions in the callee. Two parameters are 5. Eight `i32` is 35 in the callee. Eight parameters are 17: the registers are moved again before the fields are read. An element the body does not read is still stored. `func sum(t (i32, f64)) i32 { return t[0]; }` is 5 instructions and keeps the `movsd` of the `f64`. Two parameters that return the `i32` are 3. A pointer element is written into the struct and loaded back into the argument register, 2 instructions more in `main` than `sum(&n, b)`. Seven or eight `i32` add one `movq` of `%rsp` before the stack argument. `var t = (a, b); sum(t)` is 4 instructions more in `main` than `sum(a, b)`, from the stores of that local.
+
+An array element of a tuple is passed by value. `func sum(a [4]i32, b i32)` passes a pointer. `func sum(t ([4]i32, i32))` copies the four elements into registers. `main` is 11 instructions more, and the callee is 5 more.
+
+A tuple result uses the same registers as several results. `return (40, 2)` from `func pair() ((i32, i32))` is 3 instructions, the same as `return 40, 2`. The caller that reads `value[0]` reloads the stored tuple: 1 instruction more in `main` for two `i32`, and 7 more for eight `i32`. `(i32, f64)` reloads the `f64` when the caller reads only the `i32`, 4 instructions more in `main`.

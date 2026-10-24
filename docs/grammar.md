@@ -172,15 +172,18 @@ A type spelling adds no instructions. `sizeof` and `alignof` fold to an immediat
 A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Point`, `*const u8`, `type Name *i32`, `sizeof(*i32)`, and `*i32(expr)`. `?` is written immediately before `*`. `*T` has a value. `?*T` may be `null`. `i32 *`, `Point *`, `sizeof(i32 *)`, and `i32*(expr)` are reported as `type mismatch`. An array is written in front of its element type in every position: `[4]i32`, `[N]i32`, `type Pair [2]i32`, and `func head(a [4]i32)`. An empty length is a slice: `[]i32` and `func head(a []i32) []i32`. One more empty pair is a slice of those headers: `[][]i32`, `[N][]i32`, and `func sum(rows [][]i32) [][]i32`. `const` before the element makes that element constant: `[]const u8`, `[4]const u8`, and `[][]const u8`. A string literal is `[]const u8`. `i32[4]`, `i32[N]`, and `i32[]` are reported as `type mismatch`. Another pair is the same constructor again: `[N][M]T`, `[][N]T`, and `[][][]T`. Each empty pair is one slice header. Each length is one array of the inner type.
 
 ```ebnf
+pointer     = [ "?" ] "*" [ "const" ] ;
 go-type     = func-type
             | tuple-type
-            | { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
-            | "[" array-length "]" [ "[]" ] { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
-            | [ "?" ] "*" [ "const" ] "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ] ;
+            | { pointer } base-type [ type-args ]
+            | array-type ;
+array-type  = { pointer } "[" array-length "]" array-rest [ "const" ] base-type [ type-args ]
+            | { pointer } "[" array-length "]" array-rest pointer { pointer } base-type [ type-args ] ;
+array-rest  = { "[" array-length "]" | pointer "[" array-length "]" } ;
 
 placed-type = func-type
             | tuple-type
-            | { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
+            | { pointer } base-type [ type-args ]
             | go-type ;
 
 tuple-type  = "(" placed-type "," placed-type { "," placed-type } [ "," ] ")" ;
@@ -188,8 +191,8 @@ tuple-type  = "(" placed-type "," placed-type { "," placed-type } [ "," ] ")" ;
 array-length = [ integer-literal | identifier ] ;
 type-args   = "[" type-arg { "," type-arg } "]" ;
 type-arg    = integer-literal
-            | "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
-            | { [ "?" ] "*" } base-type [ type-args ]
+            | array-type
+            | { pointer } base-type [ type-args ]
             | array-length ;
 
 func-type   = "func" "(" [ func-args ] ")" result ;
@@ -283,7 +286,7 @@ postfix-op  = "(" [ argument-list ] ")"
             | "!"
             | struct-init ;
 argument-list = expression { "," expression } ;
-new-expr    = "new" [ "(" expression ")" ] [ new-count ] { [ "?" ] "*" [ "const" ] } [ identifier "." ] identifier [ type-args ] [ new-init ] ;
+new-expr    = "new" [ "(" expression ")" ] [ new-count ] { pointer } [ identifier "." ] ( integer-name | float-name | identifier ) [ type-args ] [ new-init ] ;
 new-count   = "[" expression "]" | "[" "_" "]" ;
 new-init    = struct-init | element-list ;
 element-list = "{" [ element { "," element } [ "," ] ] "}" ;
@@ -320,8 +323,8 @@ designator  = "." identifier "=" expression ;
 
 anonymous   = "func" "(" [ parameters ] ")" [ result ] block ;
 short-function = "(" [ name-list ] ")" block ;
-cast        = { "*" } scalar-type "(" expression ")"
-            | { "*" } identifier "(" expression ")"
+cast        = { pointer } scalar-type "(" expression ")"
+            | { pointer } identifier "(" expression ")"
             | func-type "(" expression ")" ;
 scalar-type = "void" | "bool" | integer-name | float-name ;
 ```

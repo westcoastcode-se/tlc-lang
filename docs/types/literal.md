@@ -10,8 +10,8 @@
 | `42i32`, `42u32` | `i32` and `u32`, when the value fits |
 | `42i64`, `42u64` | `i64` and `u64`, when the value fits |
 | `'A'` | `u8` |
-| `"hi"` | `*const u8`, including the terminating null |
-| `` `hi` `` | `*const u8`; the text may span lines |
+| `"hi"` | `[]const u8` |
+| `` `hi` `` | `[]const u8`; the text may span lines |
 | `true`, `false` | `bool` |
 | `null` | null pointer, stored only in `?*T` |
 
