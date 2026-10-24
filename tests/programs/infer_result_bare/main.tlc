@@ -1,7 +1,66 @@
-func f() {
+type Point struct {
+    x i32;
+};
+
+type Box[T type] struct {
+    n T;
+};
+
+func done() {
     return;
 }
 
+func ready() void;
+
+func ready() {
+    return;
+}
+
+func twice() {
+    return;
+    return;
+}
+
+func Point::clear(self *this) {
+    self.x = 0;
+    return;
+}
+
+func hold[T type](value T) {
+    var kept = value;
+    return;
+}
+
+func Box[T]::wipe(self *this) {
+    var kept = self.n;
+    return;
+}
+
+func nest() {
+    func inner() {
+        return;
+    }
+    inner();
+}
+
+func take(op func () void) i32 {
+    op();
+    return 40;
+}
+
 func main() i32 {
-    return 0;
+    done();
+    ready();
+    twice();
+    var p Point;
+    p.x = 7;
+    p.clear();
+    hold(1);
+    var box Box[i32];
+    box.n = 4;
+    box.wipe();
+    nest();
+    var op = done;
+    op();
+    return take(done) + 2;
 }

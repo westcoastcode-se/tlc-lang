@@ -315,8 +315,8 @@ class Checker {
     void adopt_captures(const FunctionDecl &fn);
     Type function_result(const FunctionDecl &fn);
     Type function_signature(const FunctionDecl &fn);
-    // Fill `fn.results` from the body's `return` expressions. No `return` is `void`.
-    // The body is checked again later.
+    // Fill `fn.results` from the body's `return` expressions. No `return`, and a bare
+    // `return;`, is `void`. The body is checked again later.
     bool infer_omitted_result(FunctionDecl &fn);
     void infer_file_results(const TranslationUnit &unit);
     void publish_inferred(FunctionDecl &fn);

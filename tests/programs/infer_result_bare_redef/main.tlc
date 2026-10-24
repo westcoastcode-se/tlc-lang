@@ -1,0 +1,9 @@
+func bad() i32;
+
+func bad() {
+    return;
+}
+
+func main() i32 {
+    return 0;
+}

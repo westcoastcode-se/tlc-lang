@@ -1229,8 +1229,8 @@ ResultSlot slot_from_inferred(const SpecArg &arg) {
     return slot;
 }
 
-// A body that never returns is `void`, the same result an anonymous function gets when its
-// result is omitted. A bare `return;` is still not that result.
+// A body that never returns, and a body whose returns are only `return;`, is `void`.
+// That is the same result an anonymous function gets when its result is omitted.
 void install_void_result(FunctionDecl &fn) {
     fn.results.clear();
     fn.return_type = "void";
@@ -1556,8 +1556,16 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
     } else {
         check_stmt(*fn.body);
     }
+    // A valued `return` beside `return;` still disagrees. Only an all-bare list is `void`.
+    bool only_bare = !inferred_returns_.empty();
+    for (const InferredReturn &item : inferred_returns_) {
+        if (!item.bare) {
+            only_bare = false;
+            break;
+        }
+    }
     bool ok = false;
-    if (inferred_returns_.empty()) {
+    if (inferred_returns_.empty() || only_bare) {
         install_void_result(fn);
         ok = true;
     } else {

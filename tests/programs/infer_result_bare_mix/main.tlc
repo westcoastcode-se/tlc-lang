@@ -1,0 +1,10 @@
+func pick(flag bool) {
+    if (flag) {
+        return;
+    }
+    return 1;
+}
+
+func main() i32 {
+    return 0;
+}
