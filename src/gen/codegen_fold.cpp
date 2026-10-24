@@ -197,6 +197,24 @@ std::optional<CodeGen::FoldedNumber> CodeGen::fold_number(const Expr &expr, std:
     return std::nullopt;
 }
 
+std::optional<std::string> CodeGen::constant_string(const Expr &expr, std::unordered_set<std::string> &seen) const {
+    if (const auto *text = std::get_if<Expr::String>(&expr.data)) {
+        return text->text;
+    }
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr || !seen.insert(named->text).second) {
+        return std::nullopt;
+    }
+    const VarDecl *var = global_decl(named->text);
+    std::optional<std::string> bytes;
+    // `const label = "hi"` is that slice. `const p *const u8 = "hi"` is a pointer, and a `var` can be reseated.
+    if (var != nullptr && var->is_const_decl && var->indirections == 0 && var->init != nullptr) {
+        bytes = constant_string(*var->init, seen);
+    }
+    seen.erase(named->text);
+    return bytes;
+}
+
 std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
     auto wrap = [](int64_t value) { return static_cast<int32_t>(static_cast<uint32_t>(value)); };
     return std::visit(
@@ -348,6 +366,21 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                     return std::nullopt;
                 }
                 return fold(*node.expr);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                // `"hi"[1]` is the byte. The length does not include the terminating null.
+                if (node.is_range || node.base == nullptr || node.index == nullptr) {
+                    return std::nullopt;
+                }
+                const std::optional<int32_t> at = fold(*node.index);
+                if (!at || *at < 0) {
+                    return std::nullopt;
+                }
+                std::unordered_set<std::string> seen;
+                const std::optional<std::string> bytes = constant_string(*node.base, seen);
+                if (!bytes || static_cast<std::size_t>(*at) >= bytes->size()) {
+                    return std::nullopt;
+                }
+                return static_cast<int32_t>(static_cast<unsigned char>((*bytes)[static_cast<std::size_t>(*at)]));
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
                 if (!node.type_args.empty() || !node.args.empty() || node.callee == nullptr) {
                     return std::nullopt;

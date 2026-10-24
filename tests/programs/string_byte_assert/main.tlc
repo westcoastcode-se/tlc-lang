@@ -1,0 +1,4 @@
+func main() i32 {
+    assert("hi"[2] == 0, "past");
+    return 0;
+}

@@ -100,7 +100,7 @@ The program returns 42. `row[0]` stays `1` after `n = 9`. `*q` reads the new val
 
 ### `const`
 
-`const name = expr` at file scope takes the type of the expression. `const name Type = expr` writes the type, and the expression has to be that type. A plain integer, such as `const N = 4`, is a compile-time integer. It has no address. The expression is folded the same way as `assert`, including `sizeof`, float arithmetic, and `==` or `!=` of two `typeof` values. A suffix whose value fits in `i32`, such as `1u32`, folds too. `const N = 4` can be an array length, `[N]i32`.
+`const name = expr` at file scope takes the type of the expression. `const name Type = expr` writes the type, and the expression has to be that type. A plain integer, such as `const N = 4`, is a compile-time integer. It has no address. The expression is folded the same way as `assert`, including `sizeof`, float arithmetic, `==` or `!=` of two `typeof` values, and an index of a constant `[]const u8`. `"hi"[1]` is the byte 105. A suffix whose value fits in `i32`, such as `1u32`, folds too. `const N = 4` can be an array length, `[N]i32`.
 
 `f32` and `f64` can be that constant too. `const bias = 0.5f` is `f32`. `const lifted f64 = bias` converts the width. `const from_lit f32 = 1` converts a folded integer. The name is not an array length. Assigning it, or taking its address, is reported as `not an lvalue`. Copying a `var` into a const float is reported as `global initializer is not a constant`.
 

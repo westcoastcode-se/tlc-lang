@@ -251,6 +251,25 @@ std::optional<int> Checker::fold_switch_case(const Expr &expr) {
     return static_cast<int>(member->value);
 }
 
+std::optional<std::string> Checker::constant_string(const Expr &expr, std::unordered_set<std::string> &seen) {
+    if (const auto *text = std::get_if<Expr::String>(&expr.data)) {
+        return text->text;
+    }
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr || !seen.insert(named->text).second) {
+        return std::nullopt;
+    }
+    const Symbol *symbol = lookup(named->text);
+    const VarDecl *var = symbol != nullptr && symbol->is_constant ? global_var(named->text) : nullptr;
+    std::optional<std::string> bytes;
+    // `const label = "hi"` is that slice. `const p *const u8 = "hi"` is a pointer, and a `var` can be reseated.
+    if (var != nullptr && var->is_const_decl && var->indirections == 0 && var->init != nullptr) {
+        bytes = constant_string(*var->init, seen);
+    }
+    seen.erase(named->text);
+    return bytes;
+}
+
 std::optional<int> Checker::fold_int(const Expr &expr) {
     auto wrap = [](int64_t value) { return static_cast<int>(static_cast<uint32_t>(value)); };
     return std::visit(
@@ -412,6 +431,21 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 }
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
                 return fold_comptime_call(node);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                // `"hi"[1]` is the byte. The length does not include the terminating null.
+                if (node.is_range || node.base == nullptr || node.index == nullptr) {
+                    return std::nullopt;
+                }
+                const std::optional<int> at = fold_int(*node.index);
+                if (!at || *at < 0) {
+                    return std::nullopt;
+                }
+                std::unordered_set<std::string> seen;
+                const std::optional<std::string> bytes = constant_string(*node.base, seen);
+                if (!bytes || static_cast<std::size_t>(*at) >= bytes->size()) {
+                    return std::nullopt;
+                }
+                return static_cast<int>(static_cast<unsigned char>((*bytes)[static_cast<std::size_t>(*at)]));
             } else {
                 return std::nullopt;
             }

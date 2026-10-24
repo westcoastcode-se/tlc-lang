@@ -684,6 +684,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 out.array_len = static_cast<int>(node.text.size());
                 return out;
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                if (const auto folded = fold(expr)) {
+                    return {const_i32(*folded), 0};
+                }
                 if (node.is_range) {
                     return emit_range(node);
                 }

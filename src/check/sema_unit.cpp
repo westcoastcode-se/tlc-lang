@@ -1352,11 +1352,15 @@ bool Checker::constant_operand(const Expr &expr) {
                 }
                 return false;
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
-                if (!node.is_range || node.base == nullptr) {
-                    return false;
+                if (node.is_range) {
+                    if (node.base == nullptr) {
+                        return false;
+                    }
+                    std::unordered_set<std::string> range_seen;
+                    return constant_slice_expr(expr, range_seen);
                 }
-                std::unordered_set<std::string> range_seen;
-                return constant_slice_expr(expr, range_seen);
+                // `"hi"[1]` is a compile-time byte. An index outside the length is not.
+                return fold_int(expr).has_value();
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 if (node.indirections != 0 || node.is_fn_ptr || node.expr == nullptr) {
                     return false;

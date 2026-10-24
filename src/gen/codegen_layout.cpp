@@ -1478,7 +1478,14 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     return promote(low);
                 } else if constexpr (std::is_same_v<T, Expr::Index>) {
                     // `var view = numbers[0:2]` is a slice. The header is filled later.
-                    if (!item.is_range || item.base == nullptr) {
+                    // `"hi"[1]` is a byte. The binding is `i32`, the same promotion as `'a'`.
+                    if (!item.is_range) {
+                        if (fold(node)) {
+                            return as_int(32, false);
+                        }
+                        return std::nullopt;
+                    }
+                    if (item.base == nullptr) {
                         return std::nullopt;
                     }
                     if (std::holds_alternative<Expr::String>(item.base->data)) {

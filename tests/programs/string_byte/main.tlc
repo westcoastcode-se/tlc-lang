@@ -1,0 +1,31 @@
+const label = "hi";
+const again = label;
+const i = 1;
+const n = "hi"[i];
+const named = again[1];
+const nl = "\n"[0];
+const raw = `i`[0];
+const hex = "\xFF"[0];
+const N = "\x01"[0];
+const row = [_]i32{"hi"[0], 1};
+var live = "hi"[1];
+
+assert(n == 105, "byte");
+assert(named == 105, "name");
+assert(nl == 10, "nl");
+assert(raw == 105, "raw");
+assert(hex == 255, "hex");
+assert(sizeof([N]i32) == 4, "len");
+
+comptime func byte() i32 {
+    return "hi"[1];
+}
+
+func main() i32 {
+    const text = "hi";
+    var k = 1;
+    if (text[1] != n || "hi"[k] != byte() || live != n || row[0] != 104) {
+        return 0;
+    }
+    return n - 63;
+}

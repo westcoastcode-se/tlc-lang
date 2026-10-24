@@ -51,7 +51,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet. `c
 
 ### Constant evaluation
 
-`assert`, `const`, and a compile-time integer share one evaluator. It folds integers, including a suffix whose value fits in `i32` such as `1u32`, names of those constants, `sizeof`, `alignof`, float arithmetic (`1.5f + 0.5f`), and `==` / `!=` of two `typeof` values. `var x = 1.5f + 0.5f`, `const x = 1.5f + 0.5f`, and `var x f32 = 1u32` are constant initializers.
+`assert`, `const`, and a compile-time integer share one evaluator. It folds integers, including a suffix whose value fits in `i32` such as `1u32`, names of those constants, `sizeof`, `alignof`, float arithmetic (`1.5f + 0.5f`), `==` / `!=` of two `typeof` values, and an index of a constant `[]const u8`. `"hi"[1]` is that byte. An index outside the length does not fold. `var x = 1.5f + 0.5f`, `const x = 1.5f + 0.5f`, and `var x f32 = 1u32` are constant initializers.
 
 An `assert` whose condition is not one of those constants is `not supported yet`. A call is not a constant, except a call of a `comptime func` that returns a folded `i32`. `const x f32 = n` when `n` is a `var` is `global initializer is not a constant`. A suffix whose value does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
 
