@@ -19,6 +19,6 @@ func main() i32 {
 
 ## Cost
 
-Materializing `typeof` is one `leaq` of a descriptor. Comparing two `Type` values is a pointer compare, 5 instructions once both addresses are loaded. `assert` and a file-scope `const` fold the compare and add no instructions. `t.name()` loads the spelling from the descriptor. A function that stores `typeof(n)` and returns `t.name()` is 5 instructions including `retq`. `return typeof(Point).fields().len` is 3 instructions including `retq`. `return typeof(row).fields().len` on `var row = ("hi", 26)` is those same 3 instructions. `*typeof(row).fields()[1].kind == typeof(i32)` is 8 instructions including `retq` on the path where that element is `i32`.
+Materializing `typeof` is one `leaq` of a descriptor. Comparing two `Type` values is a pointer compare, 5 instructions once both addresses are loaded. `assert` and a file-scope `const` fold the compare and add no instructions. `t.name()` loads the spelling from the descriptor. A function that stores `typeof(n)` and returns `t.name()` is 5 instructions including `retq`. `return typeof(Point).fields().len` is 2 instructions: `movl $2, %eax` and `retq`. `return typeof(row).fields().len` on `var row = ("hi", 26)` is those same 2. The tuple is not stored. `*typeof(row).fields()[1].kind == typeof(i32)` is 8 instructions including `retq` on the path where that element is `i32`.
 
 [Index](../README.md) · [Previous: Conditions](condition.md) · [Next: Casts](cast.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

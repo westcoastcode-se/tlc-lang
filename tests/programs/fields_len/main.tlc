@@ -1,0 +1,18 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func main() i32 {
+    var row = ("hi", 26);
+    if (typeof(Point).fields().len != 2) {
+        return 1;
+    }
+    if (typeof(row).fields().len != 2) {
+        return 2;
+    }
+    if (typeof(i32).fields().len != 0) {
+        return 3;
+    }
+    return typeof(Point).fields().len;
+}

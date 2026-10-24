@@ -645,6 +645,9 @@ class Checker {
         bool wide = false;
     };
     std::optional<int> fold_int(const Expr &expr);
+    // `.len` when the number of elements is known before this selector is typechecked.
+    std::optional<int> known_len(const Expr &base);
+    bool folding_fields_len_ = false;
     // A string literal, a constant range of one, or a file-scope const in this file
     // whose initializer is one. A pointer const is not that slice. A `var` is not a constant.
     std::optional<std::string> constant_string(const Expr &expr, std::unordered_set<std::string> &seen);

@@ -1314,6 +1314,7 @@ class CodeGen {
     // A string literal, a constant range of one, or a file-scope const in this file
     // whose initializer is one. A pointer const is not that slice. A `var` is not a constant.
     std::optional<std::string> constant_string(const Expr &expr, std::unordered_set<std::string> &seen) const;
+    std::optional<int32_t> known_len(const Expr &base) const;
     bool is_builtin_fmt(const Expr::Call &call) const;
     const FunctionDecl *fold_call_target(const std::string &name, const Expr::Call &call) const;
     std::optional<int32_t> fold_substituted_call(const FunctionDecl &fn, const Expr::Call &call) const;

@@ -1,0 +1,26 @@
+import "builtin";
+
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+macro func names() void {
+    for (var i = 0; i < typeof(Point).fields().len; i = i + 1) {
+        emit printf("%s\n", typeof(Point).fields()[i].name);
+    }
+}
+
+macro func bytes() void {
+    for (var i = 0; i < "hi".len; i = i + 1) {
+        emit printf("%d\n", "hi"[i]);
+    }
+}
+
+func main() i32 {
+    names();
+    bytes();
+    return 0;
+}

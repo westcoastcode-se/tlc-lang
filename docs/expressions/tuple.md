@@ -28,7 +28,7 @@ func main() i32 {
 
 ## Cost
 
-`(40, 2)` stored in a local is 2 `movl` instructions, one per element. `value[0]` is 1 load. The index is constant, so there is no multiply. `return typeof(row).fields().len` on `var row = ("hi", 26)` is 3 instructions including `retq`. `builtin.fmt` of two constant elements adds no instructions of its own: `emit printf` of that text is one traced `printf` of the finished string.
+`(40, 2)` stored in a local is 2 `movl` instructions, one per element. `value[0]` is 1 load. The index is constant, so there is no multiply. `return typeof(row).fields().len` on `var row = ("hi", 26)` is 2 instructions: `movl $2, %eax` and `retq`. `builtin.fmt` of two constant elements adds no instructions of its own: `emit printf` of that text is one traced `printf` of the finished string.
 
 Unpacking two `i32` results from a call stores both return registers. After `pair` returns, that is 1 `movl` of `%eax` and 1 `movl` of `%edx` into the two locals, on top of the traced call. The callee that returns `x + y, x` is 7 instructions including its parameter stores and `retq`.
 

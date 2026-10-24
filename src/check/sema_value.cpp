@@ -1442,6 +1442,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     node.slice_len = true;
                     if (raw.length >= 0) {
                         node.len_value = raw.length;
+                    } else if (node.base != nullptr) {
+                        if (const std::optional<int> known = known_len(*node.base)) {
+                            node.len_value = *known;
+                        }
                     }
                     return type_int();
                 }

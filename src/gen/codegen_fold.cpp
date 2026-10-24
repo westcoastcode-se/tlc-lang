@@ -324,6 +324,33 @@ std::optional<std::string> CodeGen::constant_string(const Expr &expr, std::unord
     return bytes;
 }
 
+std::optional<int32_t> CodeGen::known_len(const Expr &base) const {
+    std::unordered_set<std::string> seen;
+    if (const std::optional<std::string> text = constant_string(base, seen)) {
+        if (text->size() > 2147483647) {
+            return std::nullopt;
+        }
+        return static_cast<int32_t>(text->size());
+    }
+    const auto *call = std::get_if<Expr::Call>(&base.data);
+    if (call == nullptr || call->callee == nullptr || !call->args.empty() || graph_ == nullptr) {
+        return std::nullopt;
+    }
+    const auto *method = std::get_if<Expr::Selector>(&call->callee->data);
+    if (method == nullptr || method->field != "fields" || method->base == nullptr) {
+        return std::nullopt;
+    }
+    const auto *info = std::get_if<Expr::Typeof>(&method->base->data);
+    if (info == nullptr || info->canonical.empty()) {
+        return std::nullopt;
+    }
+    const auto found = graph_->reflected_fields.find(info->canonical);
+    if (found == graph_->reflected_fields.end()) {
+        return 0;
+    }
+    return static_cast<int32_t>(found->second.size());
+}
+
 std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
     auto wrap = [](int64_t value) { return static_cast<int32_t>(static_cast<uint32_t>(value)); };
     return std::visit(
@@ -365,6 +392,9 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                     return node.len_value;
                 }
                 if (node.field == "len" && node.base != nullptr) {
+                    if (const std::optional<int32_t> known = known_len(*node.base)) {
+                        return known;
+                    }
                     if (const auto *init = std::get_if<Expr::Init>(&node.base->data)) {
                         if (init->is_tuple && init->elements.size() >= 2) {
                             return static_cast<int32_t>(init->elements.size());

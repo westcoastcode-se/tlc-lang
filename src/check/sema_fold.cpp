@@ -367,6 +367,57 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
     return bytes;
 }
 
+std::optional<int> Checker::known_len(const Expr &base) {
+    std::unordered_set<std::string> seen;
+    if (const std::optional<std::string> text = constant_string(base, seen)) {
+        if (text->size() > 2147483647) {
+            return std::nullopt;
+        }
+        return static_cast<int>(text->size());
+    }
+    const auto *call = std::get_if<Expr::Call>(&base.data);
+    if (call == nullptr || call->callee == nullptr || !call->args.empty()) {
+        return std::nullopt;
+    }
+    const auto *method = std::get_if<Expr::Selector>(&call->callee->data);
+    if (method == nullptr || method->field != "fields" || method->base == nullptr) {
+        return std::nullopt;
+    }
+    const auto *info = std::get_if<Expr::Typeof>(&method->base->data);
+    if (info == nullptr || folding_fields_len_) {
+        return std::nullopt;
+    }
+    folding_fields_len_ = true;
+    const bool saved_quiet = quiet_;
+    quiet_ = true;
+    const Type type = operand_type(info->on_type, info->type_name, info->type_package, info->is_struct, info->is_enum,
+                                   info->indirections, info->optional, info->expr.get(), info->loc, info->const_pointee,
+                                   info->is_array, info->array_len, info->elem_const, info->elem_slice, info->shells);
+    quiet_ = saved_quiet;
+    folding_fields_len_ = false;
+    if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Function || mentions_trait(type)) {
+        return std::nullopt;
+    }
+    if (type.kind == TypeKind::Tuple) {
+        return static_cast<int>(type.results.size());
+    }
+    if (type.kind == TypeKind::Struct && type.struct_id >= 0 &&
+        type.struct_id < static_cast<int>(structs_.size())) {
+        const StructInfo &info_struct = structs_[static_cast<std::size_t>(type.struct_id)];
+        if (info_struct.is_union || info_struct.anonymous) {
+            return 0;
+        }
+        int count = 0;
+        for (const StructInfo::Field &field : info_struct.fields) {
+            if (!field.name.empty()) {
+                ++count;
+            }
+        }
+        return count;
+    }
+    return 0;
+}
+
 std::optional<int> Checker::fold_int(const Expr &expr) {
     auto wrap = [](int64_t value) { return static_cast<int>(static_cast<uint32_t>(value)); };
     return std::visit(
@@ -395,6 +446,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 }
                 // A tuple's length is the element count, including before this selector is typechecked.
                 if (node.field == "len" && node.base != nullptr) {
+                    if (const std::optional<int> known = known_len(*node.base)) {
+                        return known;
+                    }
                     if (const auto *init = std::get_if<Expr::Init>(&node.base->data)) {
                         if (init->is_tuple && init->elements.size() >= 2) {
                             return static_cast<int>(init->elements.size());

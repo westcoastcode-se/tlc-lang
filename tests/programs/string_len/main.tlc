@@ -1,14 +1,10 @@
-func len(s *const u8) i32 {
-    var n i32 = 0;
-    while (s[n] != 0) {
-        n = n + 1;
-        if (n > 3) {
-            return 99;
-        }
-    }
-    return n;
-}
+const n = "hi".len;
+const cut = "hello"[1:4].len;
 
 func main() i32 {
-    return len("hi");
+    if (n != 2 || cut != 3) {
+        return 1;
+    }
+    var text = "hi";
+    return text.len;
 }
