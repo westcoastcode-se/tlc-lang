@@ -30,7 +30,6 @@ In a `macro`, `if` keeps the arm whose condition folds, and `for` unrolls. A con
 - Type parameters on an alias, an enum, or a union. Only `type Name[T type] struct` takes the list. A type parameter on a trait is specified under [for each](#for-each).
 - A generic alias of a tuple: `type Something[K,V] (K,V);` and `type Something[K type, V type] (K, V);`. Both are `expected ']'` on the comma. A bracket list on `type` is read as type parameters only when `struct`, `enum`, `trait`, or `union` follows, so `[K,V]` is parsed as an array length. `type Duo (i32, i32);` is an alias.
 - A tuple result beside another result, and a function type with one tuple result. `func f() ((i32, i32), i32)` and `func () ((i32, i32))` are `not supported yet`. `func f() ((i32, i32))` is one tuple result. `return (40, 2)` matches it. `return 40, 2` does not.
-- A tuple parameter of a generic function or method: `func SomeFunc[P1 type, P2 type](value i32, other (P1, P2))` is `not supported yet`. The same parameter on `func Point::take[P1 type, P2 type]` and `func Vec[T]::take[P1 type, P2 type]` is that error. `[P1, P2]` is `expected a type` on the comma, because a type parameter is written `P1 type`. `func take(other (i32, f32))` is a tuple parameter. Passing a tuple as one `T`, `id((40, 2))`, already typechecks.
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.
 - `sizeof(T)` when `T` is an array.

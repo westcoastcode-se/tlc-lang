@@ -1335,36 +1335,8 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     }
     // `comptime` on a parameter is a value known while compiling. A `comptime func` requires
     // every argument to be that kind of value. A `macro` may mix it with a runtime parameter.
+    // `(P1, P2)` keeps each type parameter. Substitution fills them in at the call.
     fn.params = parse_params(extern_c, fn.variadic, fn.method_struct, true);
-    // `(P1, P2)` names type parameters. That tuple is not substituted yet.
-    for (Param &param : fn.params) {
-        if (!param.is_tuple) {
-            continue;
-        }
-        bool generic = false;
-        for (const ResultSlot &slot : param.tuple_parts) {
-            if (!slot.type_package.empty() || slot.type_name.empty()) {
-                continue;
-            }
-            for (const TypeParam &item : fn.type_params) {
-                if (item.name == slot.type_name) {
-                    generic = true;
-                }
-            }
-            for (const std::string &item : fn.method_params) {
-                if (item == slot.type_name) {
-                    generic = true;
-                }
-            }
-        }
-        if (!generic) {
-            continue;
-        }
-        diags_.error(param.loc, "not supported yet");
-        param.is_tuple = false;
-        param.tuple_parts.clear();
-        param.type_name = "invalid";
-    }
     fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
     parse_results(fn);
     if (check(TokenKind::LBrace)) {

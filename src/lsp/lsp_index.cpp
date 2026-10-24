@@ -668,7 +668,12 @@ void add_function_locals(const FunctionDecl &fn, const std::string &text, const 
         Sym sym;
         sym.name = param.name;
         sym.detail = param.name + " " + spell_param(param);
-        mark_direct(sym, param.type_name, param.indirections, param.is_array, param.array_len, param.optional);
+        if (param.is_tuple) {
+            sym.is_tuple = true;
+            sym.array_len = static_cast<int>(param.tuple_parts.size());
+        } else {
+            mark_direct(sym, param.type_name, param.indirections, param.is_array, param.array_len, param.optional);
+        }
         sym.uri = uri;
         sym.bare = true;
         sym.local = true;

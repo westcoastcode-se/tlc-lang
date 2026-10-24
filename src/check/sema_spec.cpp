@@ -895,6 +895,69 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         if (got.kind == TypeKind::Invalid) {
             continue;
         }
+        // `(P1, P2)` binds each element. A concrete element is checked after substitution.
+        if (param.is_tuple) {
+            if (got.kind != TypeKind::Tuple || got.alias_id != 0 || got.results.size() != param.tuple_parts.size()) {
+                error(call.loc, "type mismatch");
+                return std::nullopt;
+            }
+            for (std::size_t part_i = 0; part_i < param.tuple_parts.size(); ++part_i) {
+                const ResultSlot &slot = param.tuple_parts[part_i];
+                if (slot.is_tuple || slot.is_fn_ptr || !slot.type_args.empty()) {
+                    continue;
+                }
+                const int part_index = slot.type_package.empty() ? param_index(templ.type_params, slot.type_name) : -1;
+                if (part_index < 0 || templ.type_params[static_cast<std::size_t>(part_index)].is_value ||
+                    templ.type_params[static_cast<std::size_t>(part_index)].is_pack) {
+                    continue;
+                }
+                const Type *cursor = &got.results[part_i];
+                bool peel_ok = true;
+                for (int star = 0; star < slot.indirections; ++star) {
+                    if (cursor->kind != TypeKind::Pointer || cursor->pointee == nullptr) {
+                        peel_ok = false;
+                        break;
+                    }
+                    const bool want_optional = (slot.optional & (1u << star)) != 0;
+                    if (!want_optional && cursor->optional) {
+                        peel_ok = false;
+                        break;
+                    }
+                    cursor = cursor->pointee.get();
+                }
+                if (!peel_ok) {
+                    continue;
+                }
+                if (slot.is_array) {
+                    if (cursor->kind != TypeKind::Array || cursor->element == nullptr) {
+                        continue;
+                    }
+                    if (!slot.array_len_name.empty()) {
+                        const int len_index = param_index(templ.type_params, slot.array_len_name);
+                        if (len_index >= 0 && templ.type_params[static_cast<std::size_t>(len_index)].is_value) {
+                            if (set[static_cast<std::size_t>(len_index)] &&
+                                bounds[static_cast<std::size_t>(len_index)].value != cursor->length) {
+                                error(call.loc, "type mismatch");
+                                return std::nullopt;
+                            }
+                            bounds[static_cast<std::size_t>(len_index)].is_value = true;
+                            bounds[static_cast<std::size_t>(len_index)].value = cursor->length;
+                            set[static_cast<std::size_t>(len_index)] = 1;
+                        }
+                    }
+                    if (!constrain(part_index, *cursor->element)) {
+                        error(call.loc, "type mismatch");
+                        return std::nullopt;
+                    }
+                    continue;
+                }
+                if (!constrain(part_index, *cursor)) {
+                    error(call.loc, "type mismatch");
+                    return std::nullopt;
+                }
+            }
+            continue;
+        }
         const int index = param.type_package.empty() ? param_index(templ.type_params, param.type_name) : -1;
         const bool plain = index >= 0 && param.type_args.empty();
         if (!plain) {
@@ -1107,7 +1170,31 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
         return false;
     }
     const auto matches = [&](const Param &param, const Type &got) {
-        if (param.is_fn_ptr || param.is_tuple || got.kind == TypeKind::Invalid) {
+        if (param.is_tuple) {
+            if (got.kind != TypeKind::Tuple || got.alias_id != 0 || got.results.size() != param.tuple_parts.size()) {
+                return false;
+            }
+            for (std::size_t part_i = 0; part_i < param.tuple_parts.size(); ++part_i) {
+                const ResultSlot &slot = param.tuple_parts[part_i];
+                if (slot.is_tuple || slot.is_fn_ptr) {
+                    return false;
+                }
+                SpecArg spelled;
+                if (!spell_type(got.results[part_i], spelled)) {
+                    return false;
+                }
+                const bool added_elem_const = slot.elem_const && !spelled.elem_const;
+                if (spelled.indirections != slot.indirections || spelled.optional != slot.optional ||
+                    spelled.const_pointee != slot.const_pointee || spelled.is_array != slot.is_array ||
+                    (spelled.elem_const != slot.elem_const && !added_elem_const) ||
+                    (slot.is_array && spelled.array_len != slot.array_len) || spelled.type_name != slot.type_name ||
+                    spelled.type_package != slot.type_package) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (param.is_fn_ptr || got.kind == TypeKind::Invalid) {
             return false;
         }
         SpecArg spelled;
@@ -1467,6 +1554,21 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
 namespace {
 
 bool same_param_spelling(const Param &lhs, const Param &rhs) {
+    if (lhs.is_tuple != rhs.is_tuple || lhs.tuple_parts.size() != rhs.tuple_parts.size()) {
+        return false;
+    }
+    if (lhs.is_tuple) {
+        for (std::size_t part = 0; part < lhs.tuple_parts.size(); ++part) {
+            const ResultSlot &one = lhs.tuple_parts[part];
+            const ResultSlot &other = rhs.tuple_parts[part];
+            if (one.type_name != other.type_name || one.type_package != other.type_package ||
+                one.indirections != other.indirections || one.is_array != other.is_array ||
+                one.array_len != other.array_len || one.is_struct != other.is_struct || one.is_enum != other.is_enum) {
+                return false;
+            }
+        }
+        return true;
+    }
     return lhs.type_name == rhs.type_name && lhs.type_package == rhs.type_package && lhs.indirections == rhs.indirections &&
            lhs.optional == rhs.optional && lhs.const_pointee == rhs.const_pointee && lhs.is_array == rhs.is_array &&
            lhs.array_len == rhs.array_len && lhs.is_struct == rhs.is_struct && lhs.is_enum == rhs.is_enum &&

@@ -1716,6 +1716,24 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         param.indirections, param.optional, param.is_array, param.array_len, array_len_name,
                         param.type_args, loc);
     };
+    // `(P1, P2)` is one parameter. Each element is substituted the same way as a result.
+    auto subst_slot = [&](auto &&self, ResultSlot &slot, SourceLoc loc) -> void {
+        if (slot.is_tuple) {
+            for (ResultSlot &part : slot.tuple_parts) {
+                self(self, part, loc);
+            }
+            return;
+        }
+        substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
+                        slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, loc,
+                        &slot.shells, &slot.elem_const, &slot.const_pointee);
+        for (FnParam &inner : slot.fn_params) {
+            subst_fn_param(subst_fn_param, inner, loc);
+        }
+        for (FnParam &inner : slot.fn_results) {
+            subst_fn_param(subst_fn_param, inner, loc);
+        }
+    };
     std::vector<Param> kept;
     std::vector<std::string> erased;
     kept.reserve(fn.params.size());
@@ -1741,6 +1759,9 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
                         param.indirections, param.optional, param.is_array, param.array_len, param.array_len_name,
                         param.type_args, param.loc, &param.shells, &param.elem_const, &param.const_pointee);
+        for (ResultSlot &part : param.tuple_parts) {
+            subst_slot(subst_slot, part, param.loc);
+        }
         for (FnParam &inner : param.fn_params) {
             subst_fn_param(subst_fn_param, inner, param.loc);
         }
@@ -1779,15 +1800,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         }
     }
     for (ResultSlot &slot : fn.results) {
-        substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
-                        slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, fn.loc,
-                        &slot.shells, &slot.elem_const, &slot.const_pointee);
-        for (FnParam &inner : slot.fn_params) {
-            subst_fn_param(subst_fn_param, inner, fn.loc);
-        }
-        for (FnParam &inner : slot.fn_results) {
-            subst_fn_param(subst_fn_param, inner, fn.loc);
-        }
+        subst_slot(subst_slot, slot, fn.loc);
     }
     if (!fn.results.empty()) {
         const ResultSlot &first = fn.results.front();

@@ -634,6 +634,9 @@ std::string spell_slot(const ResultSlot &slot) {
 }
 
 std::string spell_param(const Param &param) {
+    if (param.is_tuple) {
+        return spell_results(param.tuple_parts);
+    }
     if (param.is_fn_ptr) {
         return spell_fn_value(param.type_name, param.ret_indirections, param.ret_optional, param.ret_const_pointee,
                               param.fn_params, param.fn_variadic, param.fn_results);

@@ -1,0 +1,27 @@
+type Point struct {
+    x i32;
+    y i32;
+}
+
+func Point::take[P1 type, P2 type](self *this, other (P1, P2)) i32 {
+    return other[0] + other[1];
+}
+
+type Vec[T type] struct {
+    n T;
+}
+
+func Vec[T]::take[P1 type, P2 type](self *this, other (P1, P2)) i32 {
+    return other[0] + other[1];
+}
+
+func Vec[T]::pair(self *this, other (T, i32)) i32 {
+    return self.n + other[0] + other[1];
+}
+
+func main() i32 {
+    var p Point;
+    var v Vec[i32];
+    v.n = 0;
+    return p.take[i32, i32]((20, 1)) + v.take[i32, i32]((10, 1)) + v.pair((8, 2));
+}

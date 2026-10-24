@@ -1,0 +1,7 @@
+func SomeFunc[P1 type, P2 type](value i32, other (P1, P2)) i32 {
+    return value + other[0] + other[1];
+}
+
+func main() i32 {
+    return SomeFunc[i32, i32](0, (40, 2));
+}
