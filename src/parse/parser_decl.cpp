@@ -58,10 +58,11 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bo
             }
             body.fields.push_back(std::move(field));
         } else {
-            const PlacedType type = parse_go_type(true);
+            PlacedType type = parse_go_type(true);
             if (type.struct_definition || type.enum_definition) {
                 diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
             }
+            drop_bare_tuple(type);
             field.type_name = type.type_name;
             field.type_package = type.type_package;
             field.is_struct = type.is_struct;
@@ -243,10 +244,11 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
                         body.fields.push_back(std::move(field));
                     }
                 } else {
-                    const PlacedType type = parse_go_type(true);
+                    PlacedType type = parse_go_type(true);
                     if (type.struct_definition || type.enum_definition) {
                         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
                     }
+                    drop_bare_tuple(type);
                     fill(field, type);
                     // `x i32 = 1` is the value of a field that an initializer does not name.
                     if (eat(TokenKind::Eq)) {
@@ -561,7 +563,7 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     TypedefDecl item;
     item.loc = name_loc;
     item.name = std::move(name);
-    const PlacedType type = parse_go_type();
+    PlacedType type = parse_go_type();
     if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
         diags_.error(type.loc.valid() ? type.loc : item.loc, "not supported yet");
     }
@@ -586,6 +588,8 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.fn_params = type.fn_params;
     item.fn_variadic = type.fn_variadic;
     item.fn_results = type.fn_results;
+    item.is_tuple = type.is_tuple;
+    item.tuple_parts = std::move(type.tuple_parts);
     item.exported = exported;
     if (!item.name.empty()) {
         type_names_.insert(item.name);

@@ -560,6 +560,9 @@ class CodeGen {
         std::vector<FnParam> fn_results{};
         // `name type = expr`. Null when the field has no value, or when that value is rejected.
         const Expr *init = nullptr;
+        // A field whose type is a tuple alias. `type` is that aggregate.
+        bool is_tuple = false;
+        std::vector<ResultSlot> tuple_parts;
     };
     struct StructLayout {
         std::string name;
@@ -643,6 +646,10 @@ class CodeGen {
         // `type Rows [][]i32`. A use of the name keeps this on the header.
         bool elem_slice = false;
         std::vector<TypeShell> shells;
+        // `type Pair (i32, i32)`. `tuple_ty` is the aggregate. The name stays a distinct type in sema.
+        bool is_tuple = false;
+        std::vector<ResultSlot> tuple_parts;
+        llvm::Type *tuple_ty = nullptr;
     };
     struct Shape {
         llvm::Type *type = nullptr;
@@ -1217,6 +1224,8 @@ class CodeGen {
     void call_trait_fn(llvm::Value *fnptr, const TypedValue &meta, const Expr::Call &node, PreparedCall &prepared);
     TypedValue emit_generic_call(const Binding &binding, const Expr::Call &node);
     void prepare_aliases();
+    bool make_tuple_alias(uint32_t file, const TypedefDecl &item, Alias &out) const;
+    void finish_tuple_aliases();
     void prepare_enums();
     int enum_named(uint32_t file, const std::string &name) const;
     // An enum in `file`'s package, or a typedef of one.

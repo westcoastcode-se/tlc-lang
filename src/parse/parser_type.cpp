@@ -461,10 +461,11 @@ bool Parser::parse_field(FieldDecl &field, bool extern_c, bool allow_init) {
         eat(TokenKind::Semicolon);
         return false;
     }
-    const PlacedType type = parse_go_type(true);
+    PlacedType type = parse_go_type(true);
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
     }
+    drop_bare_tuple(type);
     field.type_name = type.type_name;
     field.type_package = type.type_package;
     field.is_struct = type.is_struct;
@@ -536,7 +537,9 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
             break;
         }
         const std::size_t before = pos_;
-        type.fn_params.push_back(fn_param_from(parse_placed_type(false)));
+        PlacedType param = parse_placed_type(false);
+        drop_bare_tuple(param);
+        type.fn_params.push_back(fn_param_from(param));
         if (pos_ == before) {
             ++pos_;
         }
@@ -573,6 +576,11 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     }
     bool reject = false;
     SourceLoc reject_loc = type.loc;
+    for (PlacedType &result : results) {
+        if (result.is_tuple) {
+            drop_bare_tuple(result);
+        }
+    }
     for (const PlacedType &result : results) {
         // One result may be a function pointer. Several results may not include one.
         if (result.struct_definition || result.enum_definition || (result.is_fn_ptr && results.size() != 1)) {
@@ -703,7 +711,91 @@ Parser::PointerPrefix Parser::parse_pointer_prefix() {
     return prefix;
 }
 
+Parser::PlacedType Parser::parse_tuple_type() {
+    const SourceLoc loc = peek().loc;
+    expect(TokenKind::LParen, "expected '('");
+    std::vector<PlacedType> parts;
+    bool saw_comma = false;
+    if (!check(TokenKind::RParen)) {
+        while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !check(TokenKind::Semicolon) && !eof()) {
+            const std::size_t before = pos_;
+            parts.push_back(parse_placed_type(false));
+            if (pos_ == before) {
+                ++pos_;
+            }
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+            saw_comma = true;
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    // `(i32)` is the type `i32`. A tuple needs two elements. `(i32,)` is not one.
+    if (parts.size() == 1 && !saw_comma) {
+        return std::move(parts.front());
+    }
+    if (parts.size() < 2) {
+        diags_.error(loc, "type mismatch");
+        PlacedType bad;
+        bad.loc = loc;
+        bad.type_name = "invalid";
+        return bad;
+    }
+    PlacedType type;
+    type.loc = loc;
+    type.is_tuple = true;
+    type.tuple_parts.reserve(parts.size());
+    for (PlacedType &part : parts) {
+        if (part.is_tuple || part.is_fn_ptr) {
+            diags_.error(part.loc.valid() ? part.loc : loc, "not supported yet");
+            part.is_tuple = false;
+            part.is_fn_ptr = false;
+            part.tuple_parts.clear();
+            part.type_name = "invalid";
+        }
+        type.tuple_parts.push_back(slot_from_type(part));
+    }
+    return type;
+}
+
+ResultSlot Parser::slot_from_type(const PlacedType &type) const {
+    ResultSlot slot;
+    slot.type_name = type.type_name;
+    slot.type_package = type.type_package;
+    slot.is_struct = type.is_struct;
+    slot.is_enum = type.is_enum;
+    slot.indirections = type.indirections;
+    slot.optional = type.optional;
+    slot.const_pointee = type.const_pointee;
+    slot.is_fn_ptr = type.is_fn_ptr;
+    slot.ret_indirections = type.ret_indirections;
+    slot.fn_params = type.fn_params;
+    slot.fn_variadic = type.fn_variadic;
+    slot.fn_results = type.fn_results;
+    slot.is_array = type.is_array;
+    slot.elem_const = type.elem_const;
+    slot.elem_slice = type.elem_slice;
+    slot.shells = type.shells;
+    slot.array_len = type.array_len;
+    slot.array_len_name = type.array_len_name;
+    slot.type_args = type.type_args;
+    return slot;
+}
+
+void Parser::drop_bare_tuple(PlacedType &type) {
+    if (!type.is_tuple) {
+        return;
+    }
+    diags_.error(type.loc.valid() ? type.loc : peek().loc, "not supported yet");
+    type.is_tuple = false;
+    type.tuple_parts.clear();
+    type.type_name = "invalid";
+}
+
 Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_fn_declarator) {
+    if (check(TokenKind::LParen)) {
+        return parse_tuple_type();
+    }
     if (check(TokenKind::LBracket)) {
         return parse_go_type();
     }
@@ -896,6 +988,9 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
     };
     if (at_func_type()) {
         return parse_func_type();
+    }
+    if (check(TokenKind::LParen)) {
+        return parse_tuple_type();
     }
     PlacedType type;
     type.loc = peek().loc;
@@ -1095,6 +1190,8 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
             param.fn_results = type.fn_results;
             param.array_len_name = type.array_len_name;
             param.type_args = type.type_args;
+            param.is_tuple = type.is_tuple;
+            param.tuple_parts = type.tuple_parts;
             params.push_back(std::move(param));
             if (!eat(TokenKind::Comma)) {
                 break;
@@ -1106,30 +1203,14 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
 }
 
 void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
-    if (type.struct_definition || type.enum_definition) {
-        diags_.error(type.loc, "not supported yet");
+    PlacedType written = type;
+    if (written.struct_definition || written.enum_definition) {
+        diags_.error(written.loc, "not supported yet");
     }
-    ResultSlot slot;
-    slot.type_name = type.type_name;
-    slot.type_package = type.type_package;
-    slot.is_struct = type.is_struct;
-    slot.is_enum = type.is_enum;
-    slot.indirections = type.indirections;
-    slot.optional = type.optional;
-    slot.const_pointee = type.const_pointee;
-    slot.is_fn_ptr = type.is_fn_ptr;
-    slot.ret_indirections = type.ret_indirections;
-    slot.fn_params = type.fn_params;
-    slot.fn_variadic = type.fn_variadic;
-    slot.fn_results = type.fn_results;
-    slot.is_array = type.is_array;
-    slot.elem_const = type.elem_const;
-    slot.elem_slice = type.elem_slice;
-    slot.shells = type.shells;
-    slot.array_len = type.array_len;
-    slot.array_len_name = type.array_len_name;
-    slot.type_args = type.type_args;
-    fn.results.push_back(std::move(slot));
+    // `func f() (i32, i32)` is two results. The `(` was already consumed.
+    // `((i32, i32))` would be one tuple result, which is not that form.
+    drop_bare_tuple(written);
+    fn.results.push_back(slot_from_type(written));
 }
 
 void Parser::parse_results(FunctionDecl &fn) {
@@ -1230,6 +1311,35 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     // `comptime` on a parameter is a value known while compiling. A `comptime func` requires
     // every argument to be that kind of value. A `macro` may mix it with a runtime parameter.
     fn.params = parse_params(extern_c, fn.variadic, fn.method_struct, true);
+    // `(P1, P2)` names type parameters. That tuple is not substituted yet.
+    for (Param &param : fn.params) {
+        if (!param.is_tuple) {
+            continue;
+        }
+        bool generic = false;
+        for (const ResultSlot &slot : param.tuple_parts) {
+            if (!slot.type_package.empty() || slot.type_name.empty()) {
+                continue;
+            }
+            for (const TypeParam &item : fn.type_params) {
+                if (item.name == slot.type_name) {
+                    generic = true;
+                }
+            }
+            for (const std::string &item : fn.method_params) {
+                if (item == slot.type_name) {
+                    generic = true;
+                }
+            }
+        }
+        if (!generic) {
+            continue;
+        }
+        diags_.error(param.loc, "not supported yet");
+        param.is_tuple = false;
+        param.tuple_parts.clear();
+        param.type_name = "invalid";
+    }
     fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
     parse_results(fn);
     if (check(TokenKind::LBrace)) {
@@ -1307,7 +1417,9 @@ void Parser::parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, 
                 ++pos_;
                 break;
             }
-            params.push_back(fn_param_from(parse_placed_type(false)));
+            PlacedType param = parse_placed_type(false);
+            drop_bare_tuple(param);
+            params.push_back(fn_param_from(param));
             if (check(TokenKind::Identifier)) {
                 ++pos_;
             }
@@ -1746,7 +1858,8 @@ TypeArg Parser::parse_one_type_arg() {
              }
              return peek(ahead).kind == TokenKind::LBracket;
          }())) {
-        const PlacedType type = parse_go_type();
+        PlacedType type = parse_go_type();
+        drop_bare_tuple(type);
         arg.type_name = type.type_name;
         arg.type_package = type.type_package;
         arg.is_struct = type.is_struct;

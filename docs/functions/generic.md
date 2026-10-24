@@ -81,7 +81,7 @@ func main() i32 {
 
 ### One type parameter
 
-`T` is the type of the value. That value may be an integer, a struct with several fields, or a tuple of several types. A parameter written as a tuple, `other (P1, P2)` in `func SomeFunc[P1, P2](value i32, other (P1, P2))`, is not a type. `[P1, P2]` is `expected a type` on the comma. With `[P1 type, P2 type]`, `(P1, P2)` is `expected a type` on `(`. `func take(other (i32, f32))` is that same error. `[...U]` is not a type parameter. `...` in that list is `expected an identifier`. `...` is the C argument list on `extern(abi="c")`. `(40)` is one value, the same call as `id(40)`. `(40, 2)` is a tuple. The element types are the types of the values before promotion, so `'a'` stays `u8`.
+`T` is the type of the value. That value may be an integer, a struct with several fields, or a tuple of several types. `func take(other (i32, f32))` is a tuple parameter. `[P1, P2]` is `expected a type` on the comma. With `[P1 type, P2 type]`, `(P1, P2)` is `not supported yet`. `[...U]` is not a type parameter. `...` in that list is `expected an identifier`. `...` is the C argument list on `extern(abi="c")`. `(40)` is one value, the same call as `id(40)`. `(40, 2)` is a tuple. The element types are the types of the values before promotion, so `'a'` stays `u8`.
 
 ```c
 type Point struct { x i32; y i32; };

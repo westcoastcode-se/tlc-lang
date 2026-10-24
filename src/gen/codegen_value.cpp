@@ -645,6 +645,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                        field->elem_bool, field->elem_bits, field->elem_unsigned, field->elem_float);
                 }
                 llvm::Value *extracted = builder_.CreateExtractValue(base.value, static_cast<unsigned>(field_index));
+                if (field->is_tuple) {
+                    TypedValue loaded;
+                    loaded.value = extracted;
+                    loaded.is_tuple = true;
+                    loaded.tuple_parts = field->tuple_parts;
+                    return loaded;
+                }
                 if (field->is_slice) {
                     TypedValue loaded;
                     loaded.value = extracted;
@@ -1022,6 +1029,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     }
                     return {converted, 0, target.elem_char, -1, false, false, target.elem_bool, target.elem_bits,
                             target.elem_unsigned};
+                }
+                if (target.is_tuple && source.value->getType()->isStructTy()) {
+                    TypedValue value;
+                    value.value = as_stored(source.value, 0, target.type, source.elem_unsigned);
+                    value.is_tuple = true;
+                    value.tuple_parts = target.tuple_parts;
+                    return value;
                 }
                 if (target.depth == 0 && source.depth == 0 && target.struct_id < 0 && !target.elem_void) {
                     int bits = target.elem_bits;

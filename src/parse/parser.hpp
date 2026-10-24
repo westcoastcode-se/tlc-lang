@@ -115,6 +115,9 @@ class Parser {
         std::vector<FnParam> fn_params;
         bool fn_variadic = false;
         std::vector<FnParam> fn_results;
+        // `(i32, f32)`. A single `(i32)` is that type, not a one-element tuple.
+        bool is_tuple = false;
+        std::vector<ResultSlot> tuple_parts;
     };
 
     bool starts_declaration() const;
@@ -192,6 +195,11 @@ class Parser {
     // `allow_fn_declarator` is the C form `i32 (*name)(`. A cast turns it off
     // so `func (i32) i32(*void(p))` keeps `*void(p)` as the operand.
     PlacedType parse_placed_type(bool allow_const, bool allow_fn_declarator = true);
+    // `(T, U)`. One type in parentheses is that type. `()` is `type mismatch`.
+    PlacedType parse_tuple_type();
+    ResultSlot slot_from_type(const PlacedType &type) const;
+    // A tuple spelling is a parameter or an alias. Other positions stay `not supported yet`.
+    void drop_bare_tuple(PlacedType &type);
     // `var` and field types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
     // A pointer is prefix in every other position too: `*int`, `*const char`.
     // `allow_value_const` accepts `kind const Type` on a field. Elsewhere that form is rejected.

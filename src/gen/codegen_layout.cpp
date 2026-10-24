@@ -242,6 +242,8 @@ void CodeGen::prepare_structs() {
                 slot.fn_ret_bool = low.fn_ret_bool;
                 slot.fn_ret_struct = low.fn_ret_struct;
                 slot.fn_results = low.fn_results;
+                slot.is_tuple = low.is_tuple;
+                slot.tuple_parts = low.tuple_parts;
                 // A union arm is not a field value. The inline payload keeps the values on its fields.
                 if (field.init != nullptr && !item->is_union) {
                     slot.init = field.init.get();
@@ -366,6 +368,7 @@ void CodeGen::prepare_structs() {
             layout.ready = true;
         }
     }
+    finish_tuple_aliases();
     publish_spec_types();
     // `builtin.Field` is the slice element `Type.fields()` returns. The struct at index 0
     // stays, so every other struct id still matches the checker.
@@ -479,6 +482,41 @@ void CodeGen::publish_spec_types() {
     }
 }
 
+void CodeGen::finish_tuple_aliases() {
+    if (graph_ == nullptr) {
+        return;
+    }
+    bool progress = true;
+    while (progress) {
+        progress = false;
+        for (const PackageNode &node : graph_->nodes) {
+            for (const TopDecl &decl : node.unit.decls) {
+                const auto *item = std::get_if<TypedefDecl>(&decl.data);
+                if (item == nullptr || !item->is_tuple || item->name.empty() ||
+                    aliases_[node.file_id].contains(item->name)) {
+                    continue;
+                }
+                Alias alias;
+                if (!make_tuple_alias(node.file_id, *item, alias)) {
+                    continue;
+                }
+                aliases_[node.file_id].emplace(item->name, std::move(alias));
+                progress = true;
+            }
+        }
+    }
+    for (const PackageNode &node : graph_->nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            const auto *item = std::get_if<TypedefDecl>(&decl.data);
+            if (item == nullptr || !item->is_tuple || item->name.empty() ||
+                aliases_[node.file_id].contains(item->name)) {
+                continue;
+            }
+            error(item->loc, "not supported yet");
+        }
+    }
+}
+
 void CodeGen::prepare_aliases() {
     if (graph_ == nullptr) {
         return;
@@ -507,6 +545,16 @@ void CodeGen::prepare_aliases() {
             }
             if (!alias_base_ready(item.file, *item.item)) {
                 later.push_back(item);
+                continue;
+            }
+            if (item.item->is_tuple) {
+                Alias alias;
+                // A struct element is not sized until that struct's body is set.
+                if (!make_tuple_alias(item.file, *item.item, alias)) {
+                    continue;
+                }
+                aliases_[item.file].emplace(item.item->name, std::move(alias));
+                progress = true;
                 continue;
             }
             const Lowered low =

@@ -87,7 +87,7 @@ An inner function uses the same `function` form inside a block, and it has a bod
 
 ### Generics
 
-`func name[T type, N i32](value T) [N]T` is a generic function. `T type` is a type. `N i32`, or another integer type, is a compile-time integer. `T Shape` requires a type that has `Shape`'s methods. A parameter `*T` accepts a value receiver and a pointer receiver. A parameter `T` requires a value receiver. `[...U]` is not a type parameter. `...` in that list is `expected an identifier`. `...` is the C argument list on `extern(abi="c")`. `T` is the type of the value, including a tuple and a struct. `id((40, 2))` infers that tuple. A parameter written as a tuple, `other (P1, P2)` in `func SomeFunc[P1, P2](value i32, other (P1, P2))`, is `expected a type`. `[P1, P2]` is `expected a type` on the comma. With `[P1 type, P2 type]`, the `(` of `(P1, P2)` is `expected a type`. The same parameter on `func Point::take` and `func Vec[T]::take` is that error. `func take(other (i32, f32))` is that error too. `id(Point{.x = 40, .y = 2})` infers that struct. The call `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[i32](1)` and `zero[i32]()` write a type. `extern(abi="c")` on a generic function, on a function whose parameter is a trait, or on `type Name[T] struct` is reported as `extern(abi="c") on a trait or a generic`. `extern` and `extern(abi="tlc")` on a generic function name that function in a tlc library. The call stays `id(value)` or `id[i32](value)`. Each specialization is its own symbol. A body defines that symbol. A call of a generic that has no body is reported as `not supported yet`. `...` on a generic function stays rejected and is reported as `not supported yet`. `...` is only legal on `extern(abi="c")`. A method on a generic struct names that struct's parameters, `func Vec[T]::get(self *this) T`. A static function there is `func Vec[T]::make(value T) Vec[T]`, called as `Vec[i32].make(value)`. After the call is specialized, `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` use the concrete type and the integer. A generic body may omit the result. The type comes from its `return` expressions.
+`func name[T type, N i32](value T) [N]T` is a generic function. `T type` is a type. `N i32`, or another integer type, is a compile-time integer. `T Shape` requires a type that has `Shape`'s methods. A parameter `*T` accepts a value receiver and a pointer receiver. A parameter `T` requires a value receiver. `[...U]` is not a type parameter. `...` in that list is `expected an identifier`. `...` is the C argument list on `extern(abi="c")`. `T` is the type of the value, including a tuple and a struct. `id((40, 2))` infers that tuple. `func take(other (i32, f32))` is a tuple parameter. `[P1, P2]` is `expected a type` on the comma. With `[P1 type, P2 type]`, `other (P1, P2)` is `not supported yet`. The same parameter on `func Point::take` and `func Vec[T]::take` is that error. `id(Point{.x = 40, .y = 2})` infers that struct. The call `id(1)` infers `T`. `repeat[4](7)` writes `N` and infers `T`. `id[i32](1)` and `zero[i32]()` write a type. `extern(abi="c")` on a generic function, on a function whose parameter is a trait, or on `type Name[T] struct` is reported as `extern(abi="c") on a trait or a generic`. `extern` and `extern(abi="tlc")` on a generic function name that function in a tlc library. The call stays `id(value)` or `id[i32](value)`. Each specialization is its own symbol. A body defines that symbol. A call of a generic that has no body is reported as `not supported yet`. `...` on a generic function stays rejected and is reported as `not supported yet`. `...` is only legal on `extern(abi="c")`. A method on a generic struct names that struct's parameters, `func Vec[T]::get(self *this) T`. A static function there is `func Vec[T]::make(value T) Vec[T]`, called as `Vec[i32].make(value)`. After the call is specialized, `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` use the concrete type and the integer. A generic body may omit the result. The type comes from its `return` expressions.
 
 ## Variables
 
@@ -173,13 +173,17 @@ A pointer is a leading star in every type position: `*i32`, `?*Point`, `*pkg.Poi
 
 ```ebnf
 go-type     = func-type
+            | tuple-type
             | { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
             | "[" array-length "]" [ "[]" ] { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
             | [ "?" ] "*" [ "const" ] "[" array-length "]" { [ "?" ] "*" [ "const" ] } base-type [ type-args ] ;
 
 placed-type = func-type
+            | tuple-type
             | { [ "?" ] "*" [ "const" ] } base-type [ type-args ]
             | go-type ;
+
+tuple-type  = "(" placed-type "," placed-type { "," placed-type } [ "," ] ")" ;
 
 array-length = [ integer-literal | identifier ] ;
 type-args   = "[" type-arg { "," type-arg } "]" ;
@@ -204,7 +208,7 @@ A `*` before `[` is a pointer to that array or slice, as in `*[4]i32`, `**[4]i32
 
 `int`, `uint`, `short`, `long`, `ulong`, `char`, `float`, and `double` are ordinary identifiers. Using one where a type is required is reported as `not supported yet`. `signed` and `unsigned` are reported as `type mismatch`.
 
-An array uses `go-type` in every position, including a parameter and a result: `[4]i32` and `[N]i32`. `i32[4]` and `i32[]` are reported as `type mismatch`. A type alias uses the same order as `var`: `type Integer i32`, `type Ptr *Point`, `type Pair [2]i32`, `type BinOp func (i32, i32) i32`. `type Something (i32, f32)` is `expected a type` on `(`. `type Something[K,V] (K,V)` is `expected ']'` on the comma. The alias is a distinct type. A cast such as `Integer(n)` or `i32(value)` confirms the type. A file-scope constant can name a struct, a function pointer, or a typedef: `const value Integer = Integer(10)` and `const value = Integer(10)`. The function-pointer declarator `i32 (*name)(` parameters `)` still parses. A new variable is not written as a C declarator. `i32 value = 1` is reported as `expected var`.
+An array uses `go-type` in every position, including a parameter and a result: `[4]i32` and `[N]i32`. `i32[4]` and `i32[]` are reported as `type mismatch`. A type alias uses the same order as `var`: `type Integer i32`, `type Ptr *Point`, `type Pair [2]i32`, `type Duo (i32, i32)`, `type BinOp func (i32, i32) i32`. `Duo` is a different type from `(i32, i32)`. `(i32)` is `i32`. `()` is `type mismatch`. `type Something[K,V] (K,V)` is `expected ']'` on the comma. The alias is a distinct type. A cast such as `Integer(n)` or `i32(value)` confirms the type. A file-scope constant can name a struct, a function pointer, or a typedef: `const value Integer = Integer(10)` and `const value = Integer(10)`. The function-pointer declarator `i32 (*name)(` parameters `)` still parses. A new variable is not written as a C declarator. `i32 value = 1` is reported as `expected var`.
 
 ## Statements
 

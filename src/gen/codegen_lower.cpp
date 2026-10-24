@@ -353,42 +353,82 @@ bool CodeGen::has_typedef(uint32_t file, const std::string &name) const {
 }
 
 bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
-    if (item.is_struct || item.is_enum || item.type_name.empty() || item.type_name == "void" ||
-        item.type_name == "bool" || item.type_name == "invalid" || item.type_name == "i8" || item.type_name == "i16" ||
-        item.type_name == "i32" || item.type_name == "i64" || item.type_name == "u8" || item.type_name == "u16" ||
-        item.type_name == "u32" || item.type_name == "u64" || item.type_name == "f32" || item.type_name == "f64") {
-        return true;
-    }
-    uint32_t target = file;
-    if (!item.type_package.empty()) {
-        target = package_file(file, item.type_package);
-        if (target == 0) {
+    auto name_ready = [&](const std::string &type_name, const std::string &type_package, bool is_struct, bool is_enum,
+                          bool self) {
+        if (is_struct || is_enum || type_name.empty() || type_name == "void" || type_name == "bool" ||
+            type_name == "invalid" || type_name == "i8" || type_name == "i16" || type_name == "i32" ||
+            type_name == "i64" || type_name == "u8" || type_name == "u16" || type_name == "u32" || type_name == "u64" ||
+            type_name == "f32" || type_name == "f64") {
             return true;
         }
-    }
-    if (find_alias(target, item.type_name) != nullptr) {
-        return true;
-    }
-    // `type Point Point` names the struct tag. The alias is not waiting on itself.
-    if (has_typedef(target, item.type_name) && !(item.type_package.empty() && item.name == item.type_name)) {
-        return false;
-    }
-    if (item.type_package.empty()) {
-        const PackageNode *node = find_node(file);
-        if (node != nullptr) {
-            for (const ImportDecl &import : node->unit.imports) {
-                if (!import_selects(import, item.type_name)) {
-                    continue;
-                }
-                const PackageNode *target = import_target(graph_, file, import);
-                if (target != nullptr && has_typedef(target->file_id, item.type_name) &&
-                    find_alias(target->file_id, item.type_name) == nullptr) {
-                    return false;
+        uint32_t target = file;
+        if (!type_package.empty()) {
+            target = package_file(file, type_package);
+            if (target == 0) {
+                return true;
+            }
+        }
+        if (find_alias(target, type_name) != nullptr) {
+            return true;
+        }
+        // `type Point Point` names the struct tag. The alias is not waiting on itself.
+        if (has_typedef(target, type_name) && !(self && type_package.empty())) {
+            return false;
+        }
+        if (type_package.empty()) {
+            const PackageNode *node = find_node(file);
+            if (node != nullptr) {
+                for (const ImportDecl &import : node->unit.imports) {
+                    if (!import_selects(import, type_name)) {
+                        continue;
+                    }
+                    const PackageNode *imported = import_target(graph_, file, import);
+                    if (imported != nullptr && has_typedef(imported->file_id, type_name) &&
+                        find_alias(imported->file_id, type_name) == nullptr) {
+                        return false;
+                    }
                 }
             }
         }
+        return true;
+    };
+    if (item.is_tuple) {
+        for (const ResultSlot &slot : item.tuple_parts) {
+            const bool self = slot.type_package.empty() && slot.type_name == item.name;
+            if (!name_ready(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, self)) {
+                return false;
+            }
+        }
+        return true;
     }
-    return true;
+    return name_ready(item.type_name, item.type_package, item.is_struct, item.is_enum,
+                      item.type_package.empty() && item.name == item.type_name);
+}
+
+bool CodeGen::make_tuple_alias(uint32_t file, const TypedefDecl &item, Alias &out) const {
+    if (!item.is_tuple || item.tuple_parts.size() < 2) {
+        return false;
+    }
+    std::vector<llvm::Type *> fields;
+    fields.reserve(item.tuple_parts.size());
+    for (const ResultSlot &slot : item.tuple_parts) {
+        const Lowered part =
+            slot.is_fn_ptr ? lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
+                                         slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,
+                                         slot.fn_results)
+                           : lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
+                                   slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
+        llvm::Type *type = stored_type(part);
+        if (type == nullptr || !type->isSized()) {
+            return false;
+        }
+        fields.push_back(type);
+    }
+    out = Alias{};
+    out.is_tuple = true;
+    out.tuple_parts = item.tuple_parts;
+    out.tuple_ty = llvm::StructType::get(context_, fields);
+    return out.tuple_ty != nullptr;
 }
 
 llvm::Type *CodeGen::shell_type(const std::vector<TypeShell> &shells, int depth, bool elem_char, int struct_id,
@@ -595,7 +635,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
             // alias has `is_array` set and stays out.
             const auto scalar = [](const Alias &alias) {
                 return alias.depth == 0 && !alias.is_array && alias.struct_id < 0 && alias.fn_ty == nullptr &&
-                       !alias.elem_void;
+                       !alias.elem_void && !alias.is_tuple;
             };
             if (const Alias *local = find_alias(file, name); local != nullptr && scalar(*local)) {
                 take(*local);
@@ -669,6 +709,18 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     const bool base_array = have && base.is_array;
     const bool base_slice = have && base.is_slice;
     const bool base_headers = have && base.elem_slice;
+    // `type Pair (i32, i32)` is that aggregate. A pointer to the name is still a pointer.
+    if (have && base.is_tuple && base.tuple_ty != nullptr && !is_array) {
+        if (indirections == 0) {
+            out.is_tuple = true;
+            out.tuple_parts = base.tuple_parts;
+            out.type = base.tuple_ty;
+            return out;
+        }
+        out.depth = indirections;
+        out.type = ptr_type();
+        return out;
+    }
     // `[]Row` when `Row` is `[]i32`. The written flag is the second empty `[]`.
     const bool nest_slice = elem_slice || (base_slice && is_array && !base_headers);
     auto fill = [&](Lowered &dest, int depth) {
@@ -1089,6 +1141,8 @@ TypedValue CodeGen::field_addr(int struct_id, llvm::Value *pointer, const std::s
         out.is_slice = slot->is_slice;
         out.elem_slice = slot->elem_slice;
         out.shells = slot->shells;
+        out.is_tuple = slot->is_tuple;
+        out.tuple_parts = slot->tuple_parts;
         copy_fn_sig(out, *slot);
         // `h.raw = row` stores this array. The address is the field, not a decayed pointer.
         if (slot->type != nullptr && slot->type->isArrayTy()) {

@@ -1,0 +1,6 @@
+type Pair (i32, i32);
+
+func main() i32 {
+    var value Pair = (40, 2);
+    return 0;
+}

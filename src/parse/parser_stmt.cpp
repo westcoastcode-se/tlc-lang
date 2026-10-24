@@ -472,10 +472,11 @@ VarDecl Parser::parse_const_decl(bool exported) {
         expect(TokenKind::Semicolon, "expected ';'");
         return var;
     }
-    const PlacedType type = parse_go_type();
+    PlacedType type = parse_go_type();
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc, "not supported yet");
     }
+    drop_bare_tuple(type);
     var.type_name = type.type_name;
     var.type_package = type.type_package;
     var.is_struct = type.is_struct;
@@ -532,10 +533,11 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     if (check(TokenKind::Eq) || check(TokenKind::ColonEq) || check(TokenKind::Comma)) {
         error_here("expected a type");
     }
-    const PlacedType type = parse_go_type();
+    PlacedType type = parse_go_type();
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc, "not supported yet");
     }
+    drop_bare_tuple(type);
     var.type_name = type.type_name;
     var.type_package = type.type_package;
     var.is_struct = type.is_struct;
@@ -634,10 +636,11 @@ std::unique_ptr<Stmt> Parser::parse_const_local() {
         eat(TokenKind::Semicolon);
         return make_stmt(Stmt::Expression{});
     }
-    const PlacedType type = parse_go_type();
+    PlacedType type = parse_go_type();
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc, "not supported yet");
     }
+    drop_bare_tuple(type);
     if (!eat(TokenKind::Eq)) {
         error_here("expected '='");
         eat(TokenKind::Semicolon);

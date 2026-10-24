@@ -694,6 +694,12 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
                 check_elements();
                 return type_invalid();
             }
+            // `type Pair (i32, i32)` is a different type from `(i32, i32)`. A cast names it.
+            if (dest.alias_id != 0) {
+                error(init.loc, "type mismatch");
+                check_elements();
+                return type_invalid();
+            }
             if (init.elements.size() != dest.results.size()) {
                 error(init.loc, "type mismatch");
                 check_elements();

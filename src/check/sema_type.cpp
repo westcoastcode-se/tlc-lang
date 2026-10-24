@@ -1628,23 +1628,33 @@ void Checker::check_unions() {
 }
 
 bool Checker::typedef_target_ready(const TypedefDecl &item) const {
-    if (!item.type_package.empty() || item.is_struct || item.is_enum) {
+    auto ready = [&](const std::string &name, const std::string &package, bool is_struct, bool is_enum) {
+        if (!package.empty() || is_struct || is_enum) {
+            return true;
+        }
+        if (name.empty() || name == "invalid") {
+            return true;
+        }
+        Type builtin;
+        if (fill_builtin(name, builtin)) {
+            return true;
+        }
+        Type alias;
+        if (package_typedef(file_id_, name, alias) || find_tag(file_id_, name) >= 0 || package_has_enum(file_id_, name) ||
+            package_trait(file_id_, name) >= 0) {
+            return true;
+        }
+        return false;
+    };
+    if (item.is_tuple) {
+        for (const ResultSlot &slot : item.tuple_parts) {
+            if (!ready(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum)) {
+                return false;
+            }
+        }
         return true;
     }
-    const std::string &name = item.type_name;
-    if (name.empty() || name == "invalid") {
-        return true;
-    }
-    Type builtin;
-    if (fill_builtin(name, builtin)) {
-        return true;
-    }
-    Type alias;
-    if (package_typedef(file_id_, name, alias) || find_tag(file_id_, name) >= 0 || package_has_enum(file_id_, name) ||
-        package_trait(file_id_, name) >= 0) {
-        return true;
-    }
-    return false;
+    return ready(item.type_name, item.type_package, item.is_struct, item.is_enum);
 }
 
 void Checker::register_one_typedef(const TypedefDecl &item) {
@@ -1666,13 +1676,41 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         error(item.loc, "redefinition");
         return;
     }
-    const Type type = item.is_fn_ptr
-                          ? type_of_fn_ptr(item.type_name, item.type_package, item.is_struct, item.is_enum,
-                                           item.ret_indirections, item.indirections, item.fn_params, item.fn_variadic,
-                                           item.fn_results, item.loc, item.ret_optional)
-                          : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
-                                        item.type_package, item.is_struct, item.is_enum, false, item.optional,
-                                        item.const_pointee, true, item.elem_const, item.elem_slice);
+    Type type;
+    if (item.is_tuple) {
+        if (item.tuple_parts.size() < 2) {
+            error(item.loc, "type mismatch");
+            return;
+        }
+        std::vector<Type> parts;
+        parts.reserve(item.tuple_parts.size());
+        bool bad = false;
+        for (const ResultSlot &slot : item.tuple_parts) {
+            Type part = type_of_result(slot, item.loc);
+            if (part.kind == TypeKind::Void) {
+                error(item.loc, "type mismatch");
+                bad = true;
+            } else if (part.kind == TypeKind::Function || part.kind == TypeKind::Invalid) {
+                if (part.kind == TypeKind::Function) {
+                    error(item.loc, "not supported yet");
+                }
+                bad = true;
+            }
+            parts.push_back(std::move(part));
+        }
+        if (bad) {
+            return;
+        }
+        type = type_tuple(std::move(parts));
+    } else {
+        type = item.is_fn_ptr
+                   ? type_of_fn_ptr(item.type_name, item.type_package, item.is_struct, item.is_enum,
+                                    item.ret_indirections, item.indirections, item.fn_params, item.fn_variadic,
+                                    item.fn_results, item.loc, item.ret_optional)
+                   : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
+                                 item.type_package, item.is_struct, item.is_enum, false, item.optional,
+                                 item.const_pointee, true, item.elem_const, item.elem_slice);
+    }
     if (type.kind == TypeKind::Invalid) {
         return;
     }
@@ -1932,7 +1970,7 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     if (type.kind == TypeKind::Invalid) {
         return type;
     }
-    if (type.kind == TypeKind::Void || type.kind == TypeKind::Function) {
+    if (type.kind == TypeKind::Void || type.kind == TypeKind::Function || type.kind == TypeKind::Tuple) {
         error(loc, "not supported yet");
         return type_invalid();
     }

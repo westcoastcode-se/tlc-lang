@@ -1,0 +1,10 @@
+type Pair (i32, i32);
+
+func read(value Pair) i32 {
+    var i = 0;
+    return value[i];
+}
+
+func main() i32 {
+    return read(Pair((1, 2)));
+}

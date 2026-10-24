@@ -949,7 +949,8 @@ std::unique_ptr<Expr> Parser::parse_array_literal() {
         error_here("expected '_'");
     }
     expect(TokenKind::RBracket, "expected ']'");
-    const PlacedType elem = parse_go_type();
+    PlacedType elem = parse_go_type();
+    drop_bare_tuple(elem);
     if (!check(TokenKind::LBrace)) {
         error_here("expected '{'");
         return unsupported_expr(loc);

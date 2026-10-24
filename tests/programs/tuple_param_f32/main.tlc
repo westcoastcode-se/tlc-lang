@@ -1,0 +1,7 @@
+func first(value (i32, f32)) i32 {
+    return value[0];
+}
+
+func main() i32 {
+    return first((40, 2.0f));
+}

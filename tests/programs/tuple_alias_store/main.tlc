@@ -1,0 +1,10 @@
+type Pair (i32, i32);
+
+func bump(value Pair) i32 {
+    value[0] = 40;
+    return value[0] + value[1];
+}
+
+func main() i32 {
+    return bump(Pair((1, 2)));
+}

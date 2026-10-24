@@ -864,6 +864,21 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         loaded.inner_array_len = addr.inner_array_len;
         return loaded;
     }
+    if (addr.is_tuple && !addr.tuple_parts.empty()) {
+        std::vector<llvm::Type *> fields;
+        fields.reserve(addr.tuple_parts.size());
+        for (const ResultSlot &slot : addr.tuple_parts) {
+            const Lowered part = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
+                                       slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
+            fields.push_back(stored_type(part));
+        }
+        llvm::StructType *type = llvm::StructType::get(context_, fields);
+        TypedValue loaded;
+        loaded.value = builder_.CreateLoad(type, addr.value);
+        loaded.is_tuple = true;
+        loaded.tuple_parts = addr.tuple_parts;
+        return loaded;
+    }
     // A slice field is the `{ ptr, i32 }` header, not the first element.
     if (addr.is_slice) {
         TypedValue loaded;
