@@ -2084,6 +2084,10 @@ void Checker::analyze_graph(const PackageGraph &graph) {
             if (item == nullptr || item->name.empty()) {
                 continue;
             }
+            if (!item->type_params.empty()) {
+                register_tuple_alias_template(*item);
+                continue;
+            }
             if (typedef_target_ready(*item)) {
                 register_one_typedef(*item);
             } else {

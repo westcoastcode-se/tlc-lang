@@ -1180,6 +1180,8 @@ class CodeGen {
     int selective_tag(uint32_t file, const std::string &name) const;
     const Alias *find_alias(uint32_t file, const std::string &name) const;
     const Alias *selective_alias(uint32_t file, const std::string &name) const;
+    // A specialized tuple alias is stored on the package that defines the template.
+    const Alias *spec_alias(const std::string &name) const;
     bool has_typedef(uint32_t file, const std::string &name) const;
     bool alias_base_ready(uint32_t file, const TypedefDecl &item) const;
     // `builtin.Type`, or `Type` brought in by `import { Type } from "builtin"`.

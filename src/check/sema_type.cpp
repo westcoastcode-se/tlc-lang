@@ -1852,11 +1852,43 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
     error(item.loc, "redefinition");
 }
 
+void Checker::register_tuple_alias_template(const TypedefDecl &item) {
+    if (item.name.empty()) {
+        return;
+    }
+    // A value parameter or a trait constraint is not this alias. The parser already rejects it.
+    if (!item.is_tuple || item.tuple_parts.size() < 2) {
+        error(item.loc, "not supported yet");
+        return;
+    }
+    for (const TypeParam &param : item.type_params) {
+        if (!param.is_type || param.is_value || param.is_trait || param.is_pack) {
+            error(item.loc, "not supported yet");
+            return;
+        }
+    }
+    Type existing;
+    uint32_t other = file_id_;
+    if (package_has_enum(file_id_, item.name) || package_typedef(file_id_, item.name, existing) ||
+        find_tag(file_id_, item.name) >= 0 || package_trait(file_id_, item.name) >= 0 ||
+        find_struct_template(item.name, other) != nullptr || find_trait_template(item.name, other) != nullptr ||
+        find_tuple_alias_template(item.name, other) != nullptr) {
+        error(item.loc, "redefinition");
+        return;
+    }
+    owned_typedefs_.push_back(item);
+    typedef_templates_[file_id_][item.name] = &owned_typedefs_.back();
+}
+
 void Checker::register_typedefs(const TranslationUnit &unit, uint32_t file_id) {
     file_id_ = file_id;
     for (const TopDecl &decl : unit.decls) {
         const auto *item = std::get_if<TypedefDecl>(&decl.data);
         if (item == nullptr) {
+            continue;
+        }
+        if (!item->type_params.empty()) {
+            register_tuple_alias_template(*item);
             continue;
         }
         register_one_typedef(*item);

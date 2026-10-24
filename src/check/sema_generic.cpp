@@ -730,6 +730,25 @@ const TraitDecl *Checker::find_trait_template(const std::string &name, uint32_t 
     return nullptr;
 }
 
+const TypedefDecl *Checker::find_tuple_alias_template(const std::string &name, uint32_t &owner) const {
+    if (name.empty()) {
+        return nullptr;
+    }
+    for (const uint32_t id : files_in_package(file_id_)) {
+        const auto file = typedef_templates_.find(id);
+        if (file == typedef_templates_.end()) {
+            continue;
+        }
+        const auto found = file->second.find(name);
+        if (found == file->second.end()) {
+            continue;
+        }
+        owner = id;
+        return found->second;
+    }
+    return nullptr;
+}
+
 const StructDecl *Checker::find_struct_template(const std::string &name, uint32_t &owner) const {
     for (const uint32_t id : files_in_package(file_id_)) {
         const auto file = struct_templates_.find(id);
@@ -1497,11 +1516,10 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     bool is_array = false;
                     int array_len = 0;
                     std::string array_len_name;
-                    std::vector<TypeArg> type_args;
                     uint32_t const_pointee = node.const_pointee;
                     substitute_type(params, bounds, node.type_name, node.type_package, node.is_struct, node.is_enum,
-                                    node.indirections, node.optional, is_array, array_len, array_len_name, type_args,
-                                    node.loc, nullptr, nullptr, &const_pointee);
+                                    node.indirections, node.optional, is_array, array_len, array_len_name,
+                                    node.type_args, node.loc, nullptr, nullptr, &const_pointee);
                     node.const_pointee = const_pointee;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Init>) {

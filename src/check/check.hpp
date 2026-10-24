@@ -568,6 +568,8 @@ class Checker {
     // True when `got` is `want`, or `got`'s parent chain reaches `want`.
     bool trait_is(int got, int want) const;
     void register_typedefs(const TranslationUnit &unit, uint32_t file_id);
+    // `type Something[K type, V type] (K, V)`. The decl is a template, not a concrete alias.
+    void register_tuple_alias_template(const TypedefDecl &item);
     bool name_taken(const std::string &name) const;
     Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum,
@@ -857,8 +859,11 @@ class Checker {
     std::deque<OwnedFn> owned_fns_;
     std::deque<OwnedVar> owned_assoc_;
     std::deque<StructDecl> owned_structs_;
+    std::deque<TypedefDecl> owned_typedefs_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::vector<FunctionDecl *>>> fn_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, StructDecl *>> struct_templates_;
+    // `type Something[K type, V type] (K, V)`. A use `Something[i32, i32]` builds one alias.
+    std::unordered_map<uint32_t, std::unordered_map<std::string, const TypedefDecl *>> typedef_templates_;
     // `type Seq[T type] trait`. The decl stays in the unit. A use `Seq[i32]` builds one trait.
     std::unordered_map<uint32_t, std::unordered_map<std::string, const TraitDecl *>> trait_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, ConstBinding>> const_values_;
@@ -928,6 +933,7 @@ class Checker {
                          std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);
     const StructDecl *find_struct_template(const std::string &name, uint32_t &owner) const;
     const TraitDecl *find_trait_template(const std::string &name, uint32_t &owner) const;
+    const TypedefDecl *find_tuple_alias_template(const std::string &name, uint32_t &owner) const;
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
     void register_trait_default(const FunctionDecl &fn);
     void register_method_template(const FunctionDecl &fn);
@@ -953,6 +959,9 @@ class Checker {
     // `Seq[i32]`. The result is the specialized trait's name. Empty when the arguments do not bind.
     std::string specialize_trait(const TraitDecl &templ, uint32_t owner, const std::vector<TypeArg> &args,
                                  SourceLoc loc);
+    // `Something[i32, i32]`. The result is the specialized alias's name. Empty when the arguments do not bind.
+    std::string specialize_tuple_alias(const TypedefDecl &templ, uint32_t owner, const std::vector<TypeArg> &args,
+                                       SourceLoc loc);
     bool bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg &out, SourceLoc loc);
     void expose_bounds(uint32_t owner, const std::vector<SpecArg> &bounds);
     // A struct name that already means a different struct in `owner`, or that exists in two packages,

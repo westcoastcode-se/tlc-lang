@@ -1557,8 +1557,10 @@ bool Parser::looks_like_type_params() const {
             --depth;
             if (depth == 0) {
                 const TokenKind next = peek(ahead + 1).kind;
+                // `type Something[K type, V type] (K, V)`. A tuple alias takes the list.
+                // `type Name[T type] i32` stays an array length.
                 return named && (next == TokenKind::KwStruct || next == TokenKind::KwEnum || next == TokenKind::KwTrait ||
-                                 next == TokenKind::KwUnion);
+                                 next == TokenKind::KwUnion || next == TokenKind::LParen);
             }
             continue;
         }

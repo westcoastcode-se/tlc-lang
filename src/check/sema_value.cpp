@@ -1705,6 +1705,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return picked;
                     }
                 }
+                // `Something[i32, i32]((40, 2))`. The name becomes that specialization.
+                if (!node.is_fn_ptr && !node.type_args.empty()) {
+                    Expr::Cast &written = const_cast<Expr::Cast &>(node);
+                    bool is_array = false;
+                    int array_len = 0;
+                    std::string array_len_name;
+                    prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
+                                    written.indirections, written.optional, is_array, array_len, array_len_name,
+                                    written.type_args, written.loc);
+                }
                 if (node.is_fn_ptr && node.type_name == "invalid") {
                     if (node.expr) {
                         check_expr(*node.expr, true);

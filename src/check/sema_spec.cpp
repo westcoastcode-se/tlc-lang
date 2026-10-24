@@ -240,6 +240,88 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
     return spec_name;
 }
 
+std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t owner, const std::vector<TypeArg> &args,
+                                            SourceLoc loc) {
+    if (args.size() != templ.type_params.size()) {
+        error(loc, "argument count");
+        return {};
+    }
+    std::vector<SpecArg> bounds;
+    bounds.reserve(args.size());
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        SpecArg bound;
+        if (!bind_type_arg(templ.type_params[i], args[i], bound, args[i].loc)) {
+            return {};
+        }
+        bounds.push_back(std::move(bound));
+    }
+    disambiguate_bounds(owner, bounds);
+    const std::string spec_name = mangle_spec(templ.name, bounds);
+    const std::string key = std::to_string(owner) + "\n" + spec_name;
+    const uint32_t caller = file_id_;
+    auto visible = [&]() {
+        if (caller == owner) {
+            return;
+        }
+        Type alias;
+        if (!package_typedef(owner, spec_name, alias)) {
+            return;
+        }
+        Type have;
+        if (package_typedef(caller, spec_name, have)) {
+            return;
+        }
+        typedefs_[caller].emplace(spec_name, std::move(alias));
+    };
+    if (spec_ready_.contains(key)) {
+        visible();
+        return spec_name;
+    }
+    if (spec_checking_.contains(key)) {
+        // A part that names this specialization is typed against the alias being built.
+        return spec_name;
+    }
+    spec_checking_.insert(key);
+    const uint32_t saved_file = file_id_;
+    file_id_ = owner;
+    expose_bounds(owner, bounds);
+    TypedefDecl spec = templ;
+    spec.name = spec_name;
+    spec.type_params.clear();
+    auto subst_slot = [&](auto &&self, ResultSlot &slot) -> void {
+        if (slot.is_tuple) {
+            for (ResultSlot &part : slot.tuple_parts) {
+                self(self, part);
+            }
+            return;
+        }
+        substitute_type(templ.type_params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
+                        slot.indirections, slot.optional, slot.is_array, slot.array_len, slot.array_len_name,
+                        slot.type_args, loc, &slot.shells, &slot.elem_const, &slot.const_pointee);
+    };
+    for (ResultSlot &part : spec.tuple_parts) {
+        subst_slot(subst_slot, part);
+    }
+    register_one_typedef(spec);
+    Type made;
+    const bool ok = package_typedef(owner, spec_name, made);
+    if (ok) {
+        // Codegen lays this out as a concrete tuple alias. The template itself is not one.
+        PendingAppend appended;
+        appended.file_id = owner;
+        appended.decl.data = std::move(spec);
+        pending_appends_.push_back(std::move(appended));
+    }
+    file_id_ = saved_file;
+    spec_checking_.erase(key);
+    if (!ok) {
+        return {};
+    }
+    spec_ready_.insert(key);
+    visible();
+    return spec_name;
+}
+
 std::string Checker::specialize_type_app(const std::string &package, const std::string &name, const std::vector<TypeArg> &args,
                                          SourceLoc loc) {
     // `pkg.Vec[i32]` is written in the importing file. The spec is stored on the defining package,
@@ -291,6 +373,28 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                 }
                 return specialize_trait(*trait, trait_owner, args, loc);
             }
+            const TypedefDecl *alias = nullptr;
+            uint32_t alias_owner = owner;
+            for (const uint32_t id : files_in_package(symbol->package_file)) {
+                const auto file = typedef_templates_.find(id);
+                if (file == typedef_templates_.end()) {
+                    continue;
+                }
+                const auto found = file->second.find(name);
+                if (found == file->second.end()) {
+                    continue;
+                }
+                alias_owner = id;
+                alias = found->second;
+                break;
+            }
+            if (alias != nullptr) {
+                if (!alias->exported) {
+                    error(loc, name + " is not exported");
+                    return {};
+                }
+                return specialize_tuple_alias(*alias, alias_owner, args, loc);
+            }
         }
         if (templ == nullptr || !templ->exported) {
             if (templ == nullptr) {
@@ -310,6 +414,11 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             const TraitDecl *trait = find_trait_template(name, trait_owner);
             if (trait != nullptr) {
                 return specialize_trait(*trait, trait_owner, args, loc);
+            }
+            uint32_t alias_owner = file_id_;
+            const TypedefDecl *alias = find_tuple_alias_template(name, alias_owner);
+            if (alias != nullptr) {
+                return specialize_tuple_alias(*alias, alias_owner, args, loc);
             }
             error(loc, "type mismatch");
             return {};

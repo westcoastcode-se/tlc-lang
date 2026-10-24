@@ -308,6 +308,24 @@ int CodeGen::selective_tag(uint32_t file, const std::string &name) const {
     return -1;
 }
 
+const CodeGen::Alias *CodeGen::spec_alias(const std::string &name) const {
+    if (name.find(".spec") == std::string::npos) {
+        return nullptr;
+    }
+    const Alias *found = nullptr;
+    for (const auto &file : aliases_) {
+        const auto alias = file.second.find(name);
+        if (alias == file.second.end()) {
+            continue;
+        }
+        if (found != nullptr) {
+            return nullptr;
+        }
+        found = &alias->second;
+    }
+    return found;
+}
+
 const CodeGen::Alias *CodeGen::find_alias(uint32_t file, const std::string &name) const {
     for (const uint32_t id : package_files(file)) {
         const auto found = aliases_.find(id);
@@ -738,6 +756,8 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
             take(*local);
         } else if (const Alias *imported = selective_alias(file, name)) {
             take(*imported);
+        } else if (const Alias *spec = spec_alias(name)) {
+            take(*spec);
         } else {
             int sid = tag_id(file, name);
             if (sid < 0) {

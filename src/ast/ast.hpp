@@ -517,6 +517,8 @@ struct TypedefDecl {
     // `type Pair (i32, i32)`. The name is a distinct alias of that tuple.
     bool is_tuple = false;
     std::vector<ResultSlot> tuple_parts;
+    // `type Something[K type, V type] (K, V)`. Empty on a concrete alias.
+    std::vector<TypeParam> type_params;
 };
 
 struct VarDecl {

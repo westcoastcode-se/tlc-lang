@@ -1,0 +1,6 @@
+type Something[K type, V type] (K, V);
+
+func main() i32 {
+    var value Something[i32, i32] = (40, 2);
+    return value[0] + value[1];
+}

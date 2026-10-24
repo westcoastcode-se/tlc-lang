@@ -551,16 +551,13 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     }
     if (check(TokenKind::KwStruct) || check(TokenKind::KwEnum) || check(TokenKind::KwTrait) ||
         check(TokenKind::KwUnion)) {
-        // A trait takes one `T type`. An enum, a union, and an alias do not.
+        // A trait takes one `T type`. An enum and a union do not. A tuple alias is handled below.
         if (!type_params.empty() && peek().kind != TokenKind::KwStruct && peek().kind != TokenKind::KwTrait) {
             diags_.error(peek().loc, "not supported yet");
             type_params.clear();
         }
         parse_type_def(unit, exported, is_extern, extern_c, std::move(name), name_loc, std::move(type_params));
         return;
-    }
-    if (!type_params.empty()) {
-        diags_.error(name_loc, "not supported yet");
     }
     TypedefDecl item;
     item.loc = name_loc;
@@ -592,6 +589,28 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.fn_results = type.fn_results;
     item.is_tuple = type.is_tuple;
     item.tuple_parts = std::move(type.tuple_parts);
+    // `type Something[K type, V type] (K, V)`. A value parameter, a trait, or a non-tuple stays rejected.
+    if (!type_params.empty()) {
+        bool plain = item.is_tuple && item.tuple_parts.size() >= 2;
+        bool pack = false;
+        for (const TypeParam &param : type_params) {
+            if (param.is_pack) {
+                pack = true;
+            }
+            if (!param.is_type || param.is_value || param.is_trait || param.is_pack) {
+                plain = false;
+            }
+        }
+        if (!plain) {
+            // `...` is already `expected an identifier`.
+            if (!pack) {
+                diags_.error(name_loc, "not supported yet");
+            }
+            type_params.clear();
+            item.name.clear();
+        }
+    }
+    item.type_params = std::move(type_params);
     item.exported = exported;
     if (!item.name.empty()) {
         type_names_.insert(item.name);

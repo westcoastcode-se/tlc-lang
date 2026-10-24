@@ -1269,7 +1269,25 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.bare = entry;
             sym.outline = entry;
             sym.role = Role::Alias;
-            if (item->is_array) {
+            if (item->is_tuple) {
+                std::string detail = "type " + item->name;
+                if (!item->type_params.empty()) {
+                    detail += '[';
+                    for (std::size_t i = 0; i < item->type_params.size(); ++i) {
+                        if (i != 0) {
+                            detail += ", ";
+                        }
+                        detail += item->type_params[i].name;
+                        if (item->type_params[i].is_type) {
+                            detail += " type";
+                        }
+                    }
+                    detail += ']';
+                }
+                detail += ' ';
+                detail += spell_results(item->tuple_parts);
+                sym.detail = std::move(detail);
+            } else if (item->is_array) {
                 const Place place{item->type_name, item->indirections, item->optional, item->const_pointee, true,
                                   item->array_len, item->elem_slice};
                 sym.detail = "type " + item->name + " " + spell_type(place);
@@ -1282,6 +1300,22 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 sym.outline = false;
             }
             add_sym(out, std::move(sym));
+            if (!item->type_params.empty()) {
+                const uint32_t alias_end = next_mark(item->loc.offset);
+                for (const TypeParam &param : item->type_params) {
+                    Sym type_param;
+                    type_param.name = param.name;
+                    type_param.detail = param.is_type ? param.name + " type" : param.name;
+                    type_param.uri = uri;
+                    type_param.bare = true;
+                    type_param.local = true;
+                    type_param.role = Role::TypeParam;
+                    type_param.scope_end = alias_end;
+                    put_loc(type_param, text, param.loc, param.name);
+                    type_param.scope_begin = param.loc.valid() ? param.loc.offset : 0;
+                    add_sym(out, std::move(type_param));
+                }
+            }
             continue;
         }
         if (const auto *item = std::get_if<TraitDecl>(&decl.data)) {

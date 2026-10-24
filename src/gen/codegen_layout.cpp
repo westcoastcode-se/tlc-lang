@@ -526,7 +526,7 @@ bool CodeGen::register_tuple_aliases() {
         for (const PackageNode &node : graph_->nodes) {
             for (const TopDecl &decl : node.unit.decls) {
                 const auto *item = std::get_if<TypedefDecl>(&decl.data);
-                if (item == nullptr || !item->is_tuple || item->name.empty() ||
+                if (item == nullptr || !item->is_tuple || item->name.empty() || !item->type_params.empty() ||
                     aliases_[node.file_id].contains(item->name)) {
                     continue;
                 }
@@ -551,7 +551,7 @@ void CodeGen::finish_tuple_aliases() {
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
             const auto *item = std::get_if<TypedefDecl>(&decl.data);
-            if (item == nullptr || !item->is_tuple || item->name.empty() ||
+            if (item == nullptr || !item->is_tuple || item->name.empty() || !item->type_params.empty() ||
                 aliases_[node.file_id].contains(item->name)) {
                 continue;
             }
@@ -572,7 +572,8 @@ void CodeGen::prepare_aliases() {
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
             const auto *item = std::get_if<TypedefDecl>(&decl.data);
-            if (item == nullptr || item->name.empty() || aliases_[node.file_id].contains(item->name)) {
+            if (item == nullptr || item->name.empty() || !item->type_params.empty() ||
+                aliases_[node.file_id].contains(item->name)) {
                 continue;
             }
             pending.push_back(Pending{node.file_id, item});

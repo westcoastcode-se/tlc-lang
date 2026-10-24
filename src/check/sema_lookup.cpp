@@ -766,7 +766,8 @@ Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_in
         return type_meta();
     }
     uint32_t owner = file_id_;
-    if (find_struct_template(name, owner) != nullptr || find_trait_template(name, owner) != nullptr) {
+    if (find_struct_template(name, owner) != nullptr || find_trait_template(name, owner) != nullptr ||
+        find_tuple_alias_template(name, owner) != nullptr) {
         error(loc, "type mismatch");
         return type_invalid();
     }
