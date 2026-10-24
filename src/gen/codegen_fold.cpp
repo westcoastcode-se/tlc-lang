@@ -1,6 +1,8 @@
 // Compile-time folding of constants.
 #include "gen/gen.hpp"
 
+#include "ast/format.hpp"
+
 namespace tlc {
 
 namespace {
@@ -261,6 +263,21 @@ std::optional<CodeGen::FoldedNumber> CodeGen::fold_number(const Expr &expr, std:
 std::optional<std::string> CodeGen::constant_string(const Expr &expr, std::unordered_set<std::string> &seen) const {
     if (const auto *text = std::get_if<Expr::String>(&expr.data)) {
         return text->text;
+    }
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        if (!is_builtin_fmt(*call) || call->args.size() != 2 || call->args[0] == nullptr || call->args[1] == nullptr) {
+            return std::nullopt;
+        }
+        const std::optional<std::string> fmt = constant_string(*call->args[0], seen);
+        if (!fmt) {
+            return std::nullopt;
+        }
+        return format_placeholders(
+            *fmt, *call->args[1], [&](const Expr &element) { return fold(element); },
+            [&](const Expr &element) {
+                std::unordered_set<std::string> inner;
+                return constant_string(element, inner);
+            });
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `"hello"[1:4]` is those bytes. The length does not include the terminating null.
@@ -606,6 +623,72 @@ const FunctionDecl *CodeGen::mem_compare_decl(const Expr::Call &call) const {
         return nullptr;
     }
     return exported(target, selector->field);
+}
+
+bool CodeGen::is_builtin_fmt(const Expr::Call &call) const {
+    if (graph_ == nullptr || call.callee == nullptr || call.args.size() != 2) {
+        return false;
+    }
+    uint32_t file = 0;
+    std::string field;
+    if (const auto *selector = std::get_if<Expr::Selector>(&call.callee->data)) {
+        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+        if (base == nullptr) {
+            return false;
+        }
+        file = package_file(current_file_, base->text);
+        field = selector->field;
+    } else if (const auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
+        if (named->text != "fmt") {
+            return false;
+        }
+        const PackageNode *node = find_node(current_file_);
+        if (node == nullptr) {
+            return false;
+        }
+        for (const ImportDecl &import : node->unit.imports) {
+            if (import.form != ImportDecl::Form::Selective) {
+                continue;
+            }
+            bool listed = false;
+            for (const std::string &item : import.names) {
+                if (item == "fmt") {
+                    listed = true;
+                }
+            }
+            if (!listed) {
+                continue;
+            }
+            const PackageNode *target = import_target(graph_, current_file_, import);
+            if (target == nullptr) {
+                continue;
+            }
+            file = target->file_id;
+            field = "fmt";
+            break;
+        }
+    }
+    if (file == 0 || field != "fmt") {
+        return false;
+    }
+    const PackageNode *start = find_node(file);
+    if (start == nullptr || !is_compiler_builtin(start)) {
+        return false;
+    }
+    for (const uint32_t id : package_files(file)) {
+        const PackageNode *node = find_node(id);
+        if (node == nullptr) {
+            continue;
+        }
+        for (const TopDecl &decl : node->unit.decls) {
+            const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+            if (fn != nullptr && fn->exported && fn->name == "fmt" && fn->type_params.size() == 1 && fn->params.size() == 2 &&
+                fn->params[0].is_comptime && fn->params[1].is_comptime) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 const FunctionDecl *CodeGen::fold_call_target(const std::string &name, const Expr::Call &call) const {

@@ -19,8 +19,13 @@ export type Field struct {
 export func Type::name(self this) *u8;
 
 // The fields of a named struct, in the order they are written.
-// The element is constant. A type that is not a named struct has length 0.
+// A tuple lists one field per element. The name is the index, "0", "1", and so on.
+// The element is constant. A type that is neither a named struct nor a tuple has length 0.
 export func Type::fields(self this) []const Field;
+
+// `{0}` and `{1}` read elements of a compile-time tuple. `{{` and `}}` are braces.
+// A string element is copied as text. An integer element is decimal. The call is that text.
+export func fmt[T type](text comptime []const u8, value comptime T) []const u8;
 
 // The calls that have not returned, newest first.
 // The pointer addresses one buffer. The next call replaces that text.

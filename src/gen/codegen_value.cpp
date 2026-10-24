@@ -387,6 +387,23 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (const auto folded = fold(expr)) {
                     return {const_i32(*folded), 0};
                 }
+                {
+                    std::unordered_set<std::string> seen;
+                    if (const std::optional<std::string> text = constant_string(expr, seen)) {
+                        llvm::Constant *data = llvm::ConstantDataArray::getString(context_, *text, true);
+                        auto *global = new llvm::GlobalVariable(module_, data->getType(), true,
+                                                                llvm::GlobalValue::PrivateLinkage, data, ".str");
+                        TypedValue out;
+                        out.value = global;
+                        out.depth = 1;
+                        out.elem_bits = 8;
+                        out.elem_unsigned = true;
+                        out.elem_char = true;
+                        out.is_slice = true;
+                        out.array_len = static_cast<int>(text->size());
+                        return out;
+                    }
+                }
                 if (node.trait_cast && node.args.size() == 1 && node.args.front() != nullptr) {
                     return emit_rvalue(*node.args.front());
                 }

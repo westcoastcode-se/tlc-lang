@@ -1421,8 +1421,13 @@ void Checker::check_globals(const TranslationUnit &unit) {
     };
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
-            if ((fn->is_comptime || fn->is_macro) &&
+            if (fn->is_comptime &&
                 (!fn->method_struct.empty() || fn->is_extern || !fn->type_params.empty() || fn->exported)) {
+                error(fn->loc, "not supported yet");
+                continue;
+            }
+            // A macro may take a type parameter so a tuple argument can be `T`.
+            if (fn->is_macro && (!fn->method_struct.empty() || fn->is_extern || fn->exported)) {
                 error(fn->loc, "not supported yet");
                 continue;
             }

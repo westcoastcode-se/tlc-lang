@@ -1,0 +1,12 @@
+import "builtin";
+
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+macro func print_with_tuples[T type](fmt comptime []const u8, values comptime T) void {
+    emit printf(builtin.fmt(fmt, values));
+}
+
+func main() i32 {
+    print_with_tuples("Hello {0}! {0} is {1} years old\n", ("John Doe", 26));
+    return 0;
+}

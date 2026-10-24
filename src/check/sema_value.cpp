@@ -730,6 +730,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     return type_int();
                 }
+                if (is_builtin_fmt(node)) {
+                    if (!format_call(node)) {
+                        error(node.loc, "not supported yet");
+                        for (const auto &arg : node.args) {
+                            if (arg != nullptr) {
+                                check_expr(*arg, true);
+                            }
+                        }
+                        return type_invalid();
+                    }
+                    return string_slice();
+                }
                 if (const FunctionDecl *fn = node.callee != nullptr ? macro_callee(node) : nullptr) {
                     error(node.loc, "not supported yet");
                     for (const auto &arg : node.args) {
@@ -1648,9 +1660,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
-                if (type.kind == TypeKind::Function || type.kind == TypeKind::Tuple || mentions_trait(type)) {
+                if (type.kind == TypeKind::Function || mentions_trait(type)) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
+                }
+                if (type.kind == TypeKind::Tuple) {
+                    note_tuple_fields(type);
                 }
                 node.canonical = type_desc(type);
                 return type_meta();

@@ -34,7 +34,7 @@ Compile-time branching was left out on purpose. `const if` is not a form yet. `c
 - A type argument that is `sizeof(...)`.
 - `sizeof(T)` when `T` is an array.
 - `typeof(T)` when `T` is an array.
-- `typeof` of a function, a tuple, or a trait.
+- `typeof` of a function or a trait. A tuple is `typeof(value)`, and `fields()[i].kind` is element `i`.
 - The C qualifier spelling `const i32 x` and `var x const i32`. Inside a function, `const name = expr` is an immutable binding, and `*const T` is a pointer to constant `T`.
 - A file-scope `const` of a pointer, other than a string passed to C. `const label = "hi"` is `[]const u8`. `const c_text *const u8 = "unix"` is the C pointer. `const p *i32 = &n` is `type mismatch`. A string kept as an array is the same gap. A float, a struct, a function pointer, a typedef, and an array of a constant element are constants. `const bias = 0.5f` is not an array length. `const N = 4` remains the compile-time integer used as an array length. An alias is not an array length. An array constant is not an array length. `const row = [_]i32{n}` when `n` is a `var` is not a constant.
 - A non-positive compile-time length, including `const N = 0` used as `[N]i32`.

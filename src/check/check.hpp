@@ -441,6 +441,13 @@ class Checker {
     int builtin_field_struct() const;
     // Writes `reflected_fields` on the package graph after every struct is known.
     void publish_reflected_fields();
+    // `typeof` of a tuple. Element `i` is a field named `"i"` whose kind is that element's type.
+    void note_tuple_fields(const Type &type);
+    bool is_builtin_fmt(const Expr::Call &call);
+    std::optional<std::string> format_call(const Expr::Call &call);
+    void fold_format_expr(std::unique_ptr<Expr> &slot);
+    void expand_generic_macro(const Expr::Call &call, const FunctionDecl &fn, std::vector<std::unique_ptr<Stmt>> &out);
+    std::unordered_map<std::string, std::vector<ReflectedField>> tuple_fields_;
     void mismatch(SourceLoc loc, const Type &want, const Type &got);
     Type lookup_tag(const std::string &name, SourceLoc loc, bool allow_incomplete);
     Type lookup_qualified_type(const std::string &package, const std::string &name, SourceLoc loc);
@@ -596,6 +603,7 @@ class Checker {
     std::unique_ptr<Expr> comptime_argument(const Expr &arg, const Param &param);
     const FunctionDecl *comptime_callee(const Expr::Call &call);
     const FunctionDecl *macro_callee(const Expr::Call &call);
+    const FunctionDecl *generic_macro(const Expr::Call &call);
     // An ordinary function whose every parameter is `comptime`. A `comptime func` is not this.
     const FunctionDecl *baked_callee(const Expr::Call &call);
     // A `comptime` parameter of an ordinary function requires a comptime argument.

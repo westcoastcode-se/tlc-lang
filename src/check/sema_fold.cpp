@@ -2,6 +2,8 @@
 #include "check/check.hpp"
 #include "check/check_util.hpp"
 
+#include "ast/format.hpp"
+
 namespace tlc {
 
 namespace {
@@ -316,6 +318,9 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
     if (const auto *text = std::get_if<Expr::String>(&expr.data)) {
         return text->text;
     }
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        return format_call(*call);
+    }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `"hello"[1:4]` is those bytes. The length does not include the terminating null.
         // A high bound below the low bound, or a bound past that length, is not this slice.
@@ -553,7 +558,62 @@ bool Checker::argument_is_comptime(const Expr &arg) {
     if (constant_string(arg, seen)) {
         return true;
     }
-    return fold_int(arg).has_value();
+    if (fold_int(arg)) {
+        return true;
+    }
+    const auto *tuple = std::get_if<Expr::Init>(&arg.data);
+    if (tuple == nullptr || !tuple->is_tuple || tuple->elements.size() < 2) {
+        return false;
+    }
+    for (const auto &element : tuple->elements) {
+        if (element == nullptr || !argument_is_comptime(*element)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Checker::is_builtin_fmt(const Expr::Call &call) {
+    if (call.callee == nullptr || call.args.size() != 2) {
+        return false;
+    }
+    const Symbol *symbol = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
+        symbol = lookup(named->text);
+    } else if (const auto *selector = std::get_if<Expr::Selector>(&call.callee->data)) {
+        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+        if (package == nullptr || !package->is_package || selector->field != "fmt") {
+            return false;
+        }
+        symbol = find_export(package->package_file, selector->field);
+    }
+    if (symbol == nullptr || !symbol->is_template || !is_std_builtin_file(symbol->package_file)) {
+        return false;
+    }
+    const FunctionDecl *decl = symbol->fn_template;
+    if (decl == nullptr && !symbol->fn_templates.empty()) {
+        decl = symbol->fn_templates.front();
+    }
+    return decl != nullptr && decl->name == "fmt" && decl->type_params.size() == 1 && decl->params.size() == 2 &&
+           decl->params[0].is_comptime && decl->params[1].is_comptime;
+}
+
+std::optional<std::string> Checker::format_call(const Expr::Call &call) {
+    if (!is_builtin_fmt(call) || call.args[0] == nullptr || call.args[1] == nullptr) {
+        return std::nullopt;
+    }
+    std::unordered_set<std::string> seen;
+    const std::optional<std::string> fmt = constant_string(*call.args[0], seen);
+    if (!fmt) {
+        return std::nullopt;
+    }
+    return format_placeholders(
+        *fmt, *call.args[1], [&](const Expr &element) { return fold_int(element); },
+        [&](const Expr &element) {
+            std::unordered_set<std::string> inner;
+            return constant_string(element, inner);
+        });
 }
 
 bool Checker::comptime_arguments(const FunctionDecl &fn, const Expr::Call &call) {

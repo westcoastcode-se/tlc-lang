@@ -2145,6 +2145,25 @@ Type Checker::type_field_slice() const {
     return type_array(std::move(element), -1);
 }
 
+void Checker::note_tuple_fields(const Type &type) {
+    if (type.kind != TypeKind::Tuple) {
+        return;
+    }
+    const std::string spelling = type_desc(type);
+    if (spelling.empty() || tuple_fields_.contains(spelling)) {
+        return;
+    }
+    // Record the key first so a nested tuple of the same spelling cannot recurse.
+    tuple_fields_.emplace(spelling, std::vector<ReflectedField>{});
+    std::vector<ReflectedField> fields;
+    fields.reserve(type.results.size());
+    for (std::size_t i = 0; i < type.results.size(); ++i) {
+        note_tuple_fields(type.results[i]);
+        fields.push_back(ReflectedField{std::to_string(i), type_desc(type.results[i])});
+    }
+    tuple_fields_[spelling] = std::move(fields);
+}
+
 void Checker::publish_reflected_fields() {
     if (graph_ == nullptr) {
         return;
@@ -2204,6 +2223,12 @@ void Checker::publish_reflected_fields() {
     };
     for (int id = 0; id < static_cast<int>(structs_.size()); ++id) {
         add(type_desc(type_struct(id)), id);
+    }
+    for (auto &item : tuple_fields_) {
+        if (item.first.empty() || ambiguous.contains(item.first) || table.contains(item.first)) {
+            continue;
+        }
+        table.emplace(item.first, std::move(item.second));
     }
     for (const auto &file : typedefs_) {
         for (const auto &item : file.second) {

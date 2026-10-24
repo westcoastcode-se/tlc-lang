@@ -1,0 +1,21 @@
+import "builtin";
+
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+func main() i32 {
+    var row = ("hi", 26);
+    if (typeof(row).fields().len != 2) {
+        return 1;
+    }
+    if (*typeof(row).fields()[0].kind != typeof([]const u8)) {
+        return 2;
+    }
+    if (*typeof(row).fields()[1].kind != typeof(i32)) {
+        return 3;
+    }
+    if (typeof(row) != typeof(("hi", 26))) {
+        return 4;
+    }
+    printf("%s\n", typeof(row).name());
+    return 0;
+}

@@ -1,0 +1,4 @@
+link: -lc
+exit: 0
+stdout:
+([]const u8, i32)

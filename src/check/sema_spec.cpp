@@ -1327,6 +1327,11 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     if (templ == nullptr || templ->type_params.empty()) {
         return std::nullopt;
     }
+    // A macro pastes statements. It has no runtime specialization.
+    if (templ->is_macro) {
+        error(call.loc, "not supported yet");
+        return type_invalid();
+    }
     // The comptime slice overload of memeql or memcmp is the value. It has no runtime specialization.
     if (is_std_builtin_file(owner) && mem_compare_comptime(mem_compare_kind(*templ)) && fold_mem_compare(call)) {
         return mem_compare_bool(mem_compare_kind(*templ)) ? type_bool() : type_int();

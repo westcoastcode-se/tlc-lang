@@ -406,6 +406,42 @@ const FunctionDecl *Checker::macro_callee(const Expr::Call &call) {
     return decl;
 }
 
+const FunctionDecl *Checker::generic_macro(const Expr::Call &call) {
+    if (call.callee == nullptr || !call.type_args.empty()) {
+        return nullptr;
+    }
+    const auto *named = std::get_if<Expr::Name>(&call.callee->data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || !symbol->is_template) {
+        return nullptr;
+    }
+    const FunctionDecl *found = nullptr;
+    bool clash = false;
+    const auto consider = [&](const FunctionDecl *fn) {
+        if (fn == nullptr || !fn->is_macro || fn->type_params.empty() || fn->params.size() != call.args.size()) {
+            return;
+        }
+        if (found != nullptr) {
+            clash = true;
+        }
+        found = fn;
+    };
+    if (symbol->fn_templates.empty()) {
+        consider(symbol->fn_template);
+    } else {
+        for (const FunctionDecl *fn : symbol->fn_templates) {
+            consider(fn);
+        }
+    }
+    if (clash) {
+        return nullptr;
+    }
+    return found;
+}
+
 namespace {
 
 // The name bound by `inline for (var i = ...)` or `for (var item : ...)`.
@@ -588,6 +624,12 @@ std::unique_ptr<Expr> string_literal(std::string text, SourceLoc loc) {
 } // namespace
 
 std::unique_ptr<Expr> Checker::comptime_argument(const Expr &arg, const Param &param) {
+    if (param.is_tuple) {
+        if (!argument_is_comptime(arg)) {
+            return nullptr;
+        }
+        return clone_expr(arg);
+    }
     const Type type = type_of_param(param);
     const SourceLoc loc = expr_loc(arg);
     if (plain_int_constant(type)) {
@@ -607,6 +649,94 @@ std::unique_ptr<Expr> Checker::comptime_argument(const Expr &arg, const Param &p
     return string_literal(*text, loc);
 }
 
+void Checker::fold_format_expr(std::unique_ptr<Expr> &slot) {
+    if (slot == nullptr) {
+        return;
+    }
+    if (const auto *call = std::get_if<Expr::Call>(&slot->data)) {
+        if (is_builtin_fmt(*call)) {
+            const std::optional<std::string> text = format_call(*call);
+            if (!text) {
+                error(call->loc, "not supported yet");
+                return;
+            }
+            slot = string_literal(*text, call->loc);
+            return;
+        }
+    }
+    std::visit(
+        [&](auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                          std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
+                fold_format_expr(node.expr);
+            } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
+                fold_format_expr(node.lhs);
+                fold_format_expr(node.rhs);
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                fold_format_expr(node.callee);
+                for (auto &arg : node.args) {
+                    fold_format_expr(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                fold_format_expr(node.base);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                fold_format_expr(node.base);
+                fold_format_expr(node.index);
+                fold_format_expr(node.end);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                for (auto &field : node.fields) {
+                    fold_format_expr(field.value);
+                }
+                for (auto &element : node.elements) {
+                    fold_format_expr(element);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                fold_format_expr(node.allocator);
+                fold_format_expr(node.count);
+                fold_format_expr(node.init);
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                fold_format_expr(node.allocator);
+                fold_format_expr(node.expr);
+            }
+        },
+        slot->data);
+}
+
+void Checker::expand_generic_macro(const Expr::Call &call, const FunctionDecl &fn,
+                                   std::vector<std::unique_ptr<Stmt>> &out) {
+    if (fn.type_params.empty() || fn.body == nullptr || call.args.size() != fn.params.size()) {
+        error(call.loc, "not supported yet");
+        return;
+    }
+    std::vector<Type> arg_types;
+    arg_types.reserve(call.args.size());
+    for (const auto &arg : call.args) {
+        if (arg == nullptr) {
+            error(call.loc, "argument count");
+            return;
+        }
+        const Type got = check_expr(*arg, true);
+        if (got.kind == TypeKind::Invalid) {
+            return;
+        }
+        arg_types.push_back(got);
+    }
+    if (!comptime_arguments(fn, call)) {
+        error(call.loc, "not supported yet");
+        return;
+    }
+    const std::optional<std::vector<SpecArg>> inferred = infer_generic_bounds(fn, call, arg_types);
+    if (!inferred) {
+        return;
+    }
+    FunctionDecl spec = clone_function(fn);
+    spec.type_params.clear();
+    spec.is_macro = true;
+    substitute_function(spec, fn.type_params, *inferred);
+    expand_macro_call(call, spec, out);
+}
+
 void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &fn,
                                 const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
                                 std::vector<std::unique_ptr<Stmt>> &out, bool substitute) {
@@ -622,6 +752,11 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     }
     if (auto *expr = std::get_if<Stmt::Expression>(&stmt->data)) {
         if (expr->emit && expr->expr != nullptr) {
+            const std::size_t before = diags_.size();
+            fold_format_expr(expr->expr);
+            if (diags_.size() != before) {
+                return;
+            }
             expr->emit = false;
             append_statement(std::move(stmt), out);
             return;
@@ -792,6 +927,10 @@ void Checker::append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::uniq
         if (call != nullptr) {
             if (const FunctionDecl *fn = macro_callee(*call)) {
                 expand_macro_call(*call, *fn, out);
+                return;
+            }
+            if (const FunctionDecl *fn = generic_macro(*call)) {
+                expand_generic_macro(*call, *fn, out);
                 return;
             }
         }

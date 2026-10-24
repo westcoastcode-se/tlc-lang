@@ -1,0 +1,11 @@
+import "builtin";
+
+macro func print_with_tuples[T type](fmt comptime []const u8, values comptime T) void {
+    emit builtin.fmt(fmt, values);
+}
+
+func main() i32 {
+    var age = 26;
+    print_with_tuples("age {1}", ("John Doe", age));
+    return 0;
+}
