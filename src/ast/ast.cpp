@@ -1111,6 +1111,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
                 copy.then_arm = node.then_arm ? clone_stmt(*node.then_arm) : nullptr;
                 copy.else_arm = node.else_arm ? clone_stmt(*node.else_arm) : nullptr;
+                copy.emit = node.emit;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::While>) {
                 Stmt::While copy;
@@ -1130,6 +1131,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.each_name = node.each_name;
                 copy.each_name_loc = node.each_name_loc;
                 copy.each_expr = node.each_expr ? clone_expr(*node.each_expr) : nullptr;
+                copy.emit = node.emit;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
                 Stmt::DoWhile copy;

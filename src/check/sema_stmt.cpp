@@ -769,11 +769,21 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         }
         return;
     }
-    if (const auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
+    if (auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
+        if (loop->emit) {
+            loop->emit = false;
+            append_statement(std::move(stmt), out);
+            return;
+        }
         unroll_inline_for(*stmt, fn, names, exprs, out);
         return;
     }
     if (auto *branch = std::get_if<Stmt::If>(&stmt->data)) {
+        if (branch->emit) {
+            branch->emit = false;
+            append_statement(std::move(stmt), out);
+            return;
+        }
         if (branch->cond == nullptr) {
             error(branch->loc, "not supported yet");
             return;
@@ -1152,10 +1162,23 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_expr(*node.expr, false);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::If>) {
-                // In a macro the arm is chosen while expanding. The call site checks the arm that remains.
-                if (macro_depth_ > 0) {
+                const int saved_macro = macro_depth_;
+                if (node.emit) {
+                    if (saved_macro == 0) {
+                        error(node.loc, "not supported yet");
+                        return;
+                    }
+                    // The body is pasted. Nested `for` and `if` run later.
+                    macro_depth_ = 0;
+                } else if (macro_depth_ > 0) {
+                    // The arm is chosen while expanding. The call site checks the arm that remains.
                     return;
                 }
+                struct RestoreMacro {
+                    int &slot;
+                    int saved;
+                    ~RestoreMacro() { slot = saved; }
+                } restore{macro_depth_, saved_macro};
                 AssignState on_true = assign_;
                 AssignState on_false = assign_;
                 if (node.cond) {
@@ -1352,6 +1375,20 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_stmt(*node.stmt);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                const int saved_macro = macro_depth_;
+                if (node.emit) {
+                    if (saved_macro == 0) {
+                        error(node.loc, "not supported yet");
+                        return;
+                    }
+                    // The loop is pasted. Its body is ordinary code.
+                    macro_depth_ = 0;
+                }
+                struct RestoreMacro {
+                    int &slot;
+                    int saved;
+                    ~RestoreMacro() { slot = saved; }
+                } restore{macro_depth_, saved_macro};
                 // A macro unrolls `for`. `for (var item : items)` has nothing to unroll.
                 if (macro_depth_ > 0 && node.each) {
                     error(node.loc, "not supported yet");

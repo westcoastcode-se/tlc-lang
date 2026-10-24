@@ -1,0 +1,19 @@
+macro func when(cond bool, slot *i32) void {
+    emit if (cond) {
+        *slot = 7;
+    } else {
+        *slot = 1;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    var flag = true;
+    when(flag, &n);
+    if (n != 7) {
+        return 1;
+    }
+    flag = false;
+    when(flag, &n);
+    return n;
+}

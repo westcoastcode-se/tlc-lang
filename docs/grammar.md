@@ -69,7 +69,7 @@ A `comptime func` calculates while compiling. Every argument is a comptime value
 
 A `macro func` generates statements. A statement call is replaced by the statements written with `emit`. A parameter without `comptime` is replaced by the argument expression, so `hello(name)` emits `printf("Hello %s\n", name)`. `name comptime []const u8` and `n comptime i32` are values known while compiling, and `emit` receives that value. `const label = "Per"` then `hello(label)` emits `printf("Hello %s\n", "Per")`. `show(40 + 2)` emits the integer `42`. A `var` passed to a `comptime` parameter is `not supported yet`. `emit` is valid only in a `macro`, and not inside `while` or `do`. In a `macro`, `for` and `if` run while compiling. `for (var i = low; i < high; i = i + step)` unrolls when `low`, `high`, and `step` fold to integers. `if (condition)` keeps one arm when the condition folds, including `typeof(values[i]) == typeof(i32)`. The other arm is discarded. A condition or a bound that does not fold, and `for (var item : items)` in a `macro`, are `not supported yet`. Outside a `macro`, `for` and `if` run as usual. `comptime for` and `comptime if` are `not supported yet`. A value call of a `macro` is `not supported yet`. A method, `extern`, and `export` are `not supported yet` on a `macro`. A type parameter is accepted, so `macro func show[T type](values comptime T)` can read that tuple.
 
-In a `macro`, `for (var i = low; i < high; i = i + step)` unrolls when `low`, `high`, and `step` fold to integers, `step` is positive, and the trip count is at most 32. The index in the body is that integer. `emit` in `while` or `do` is `not supported yet`.
+In a `macro`, `for (var i = low; i < high; i = i + step)` unrolls when `low`, `high`, and `step` fold to integers, `step` is positive, and the trip count is at most 32. The index in the body is that integer. `emit for` and `emit if` paste that statement into the caller, and the body is ordinary code. `emit` in `while` or `do` is `not supported yet`. `emit for` and `emit if` outside a `macro` are `not supported yet`.
 
 An ordinary function may mark a parameter `comptime`. That argument has to be a comptime value, or the call is `type mismatch`. When every parameter is `comptime` and the body is one `return` of a constant `i32`, the call folds to that integer. `return add(1)` when `add` is `func add(n comptime i32) i32 { return n; }` is `movl $1, %eax` and `retq`. A mix of `comptime` and runtime parameters keeps the call and passes the comptime argument as that constant. `comptime { ... }` inside an ordinary function is `not supported yet`.
 
@@ -226,6 +226,9 @@ statement   = block
             | "continue" ";"
             | "defer" expression ";"
             | "emit" expression ";"
+            | "emit" "for" "(" for-init [ expression ] ";" [ expression ] ")" block
+            | "emit" "for" "(" ( "var" | "const" ) identifier ":" expression ")" block
+            | "emit" "if" "(" expression ")" block [ "else" ( if-statement | block ) ]
             | assert-stmt
             | var-decl
             | binding

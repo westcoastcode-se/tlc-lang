@@ -1,0 +1,6 @@
+func main() i32 {
+    emit if (true) {
+        return 1;
+    }
+    return 0;
+}

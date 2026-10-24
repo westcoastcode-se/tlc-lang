@@ -556,6 +556,8 @@ struct Stmt {
         std::unique_ptr<Expr> cond;
         std::unique_ptr<Stmt> then_arm;
         std::unique_ptr<Stmt> else_arm;
+        // `emit if`. The statement is pasted into the caller.
+        bool emit = false;
     };
     struct While {
         SourceLoc loc{};
@@ -574,6 +576,8 @@ struct Stmt {
         std::string each_name;
         SourceLoc each_name_loc{};
         std::unique_ptr<Expr> each_expr;
+        // `emit for`. The statement is pasted into the caller.
+        bool emit = false;
     };
     struct DoWhile {
         SourceLoc loc{};

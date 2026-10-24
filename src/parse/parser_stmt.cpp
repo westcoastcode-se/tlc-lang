@@ -842,10 +842,31 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         return make_stmt(Stmt::Expression{});
     }
     if (check(TokenKind::KwEmit)) {
-        Stmt::Expression stmt;
-        stmt.loc = peek().loc;
-        stmt.emit = true;
+        const SourceLoc loc = peek().loc;
         ++pos_;
+        if (check(TokenKind::KwFor)) {
+            std::unique_ptr<Stmt> stmt = parse_for();
+            if (stmt != nullptr) {
+                if (auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
+                    loop->emit = true;
+                    loop->loc = loc;
+                }
+            }
+            return stmt;
+        }
+        if (check(TokenKind::KwIf)) {
+            std::unique_ptr<Stmt> stmt = parse_if();
+            if (stmt != nullptr) {
+                if (auto *branch = std::get_if<Stmt::If>(&stmt->data)) {
+                    branch->emit = true;
+                    branch->loc = loc;
+                }
+            }
+            return stmt;
+        }
+        Stmt::Expression stmt;
+        stmt.loc = loc;
+        stmt.emit = true;
         std::unique_ptr<Stmt> inner = parse_statement();
         if (inner != nullptr) {
             if (auto *expr = std::get_if<Stmt::Expression>(&inner->data);

@@ -1,0 +1,14 @@
+macro func twice(slot *i32, n i32) void {
+    for (var i = 0; i < 2; i = i + 1) {
+        emit for (var j = 0; j < n; j = j + 1) {
+            *slot = *slot + 1;
+        }
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    var count = 3;
+    twice(&n, count);
+    return n;
+}
