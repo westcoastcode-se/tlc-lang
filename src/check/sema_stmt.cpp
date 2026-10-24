@@ -1230,8 +1230,9 @@ ResultSlot slot_from_inferred(const SpecArg &arg) {
     return slot;
 }
 
-// A body that never returns, and a body whose returns are only `return;`, is `void`.
-// That is the same result an anonymous function gets when its result is omitted.
+// A body that never returns, a body whose returns are only `return;`, and a body whose
+// returns are void values is `void`. That is the same result an anonymous function gets
+// when its result is omitted.
 void install_void_result(FunctionDecl &fn) {
     fn.results.clear();
     fn.return_type = "void";
@@ -1603,16 +1604,17 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
     } else {
         check_stmt(*fn.body);
     }
-    // A valued `return` beside `return;` still disagrees. Only an all-bare list is `void`.
-    bool only_bare = !inferred_returns_.empty();
+    // `return touch()` when `touch` is `void` is that same result. Another type still disagrees.
+    bool only_void = !inferred_returns_.empty();
     for (const InferredReturn &item : inferred_returns_) {
-        if (!item.bare) {
-            only_bare = false;
+        const bool void_value = !item.bare && item.parts.size() == 1 && item.parts.front().kind == TypeKind::Void;
+        if (!item.bare && !void_value) {
+            only_void = false;
             break;
         }
     }
     bool ok = false;
-    if (inferred_returns_.empty() || only_bare) {
+    if (inferred_returns_.empty() || only_void) {
         install_void_result(fn);
         ok = true;
     } else if (report_inferred_mismatch()) {

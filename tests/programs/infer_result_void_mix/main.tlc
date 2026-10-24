@@ -1,0 +1,12 @@
+func touch() {
+    var n i32 = 1;
+}
+
+func pick() {
+    return touch();
+    return 1;
+}
+
+func main() i32 {
+    return 0;
+}

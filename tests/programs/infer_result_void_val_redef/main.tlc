@@ -1,0 +1,13 @@
+func touch() {
+    var n i32 = 1;
+}
+
+func bad() i32;
+
+func bad() {
+    return touch();
+}
+
+func main() i32 {
+    return 0;
+}

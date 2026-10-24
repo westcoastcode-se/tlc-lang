@@ -1,3 +1,11 @@
+type Point struct {
+    x i32;
+};
+
+type Box[T type] struct {
+    n T;
+};
+
 func touch() {
     var n i32 = 1;
 }
@@ -6,6 +14,57 @@ func give() {
     return touch();
 }
 
+func ready() void;
+
+func ready() {
+    return touch();
+}
+
+func both() {
+    return;
+    return touch();
+}
+
+func Point::clear(self *this) {
+    self.x = 0;
+    return touch();
+}
+
+func hold[T type](value T) {
+    var kept = value;
+    return touch();
+}
+
+func Box[T]::wipe(self *this) {
+    var kept = self.n;
+    return touch();
+}
+
+func nest() {
+    func inner() {
+        return touch();
+    }
+    inner();
+}
+
+func take(op func () void) i32 {
+    op();
+    return 40;
+}
+
 func main() i32 {
-    return 0;
+    give();
+    ready();
+    both();
+    var p Point;
+    p.x = 7;
+    p.clear();
+    hold(1);
+    var box Box[i32];
+    box.n = 4;
+    box.wipe();
+    nest();
+    var op = give;
+    op();
+    return take(give) + 2;
 }
