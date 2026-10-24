@@ -1,0 +1,11 @@
+type Box[T type] struct {
+    n T;
+    pair (T, i32);
+}
+
+func main() i32 {
+    var box Box[i32];
+    box.n = 1;
+    box.pair = (40, 2);
+    return box.n + box.pair[0] + box.pair[1];
+}

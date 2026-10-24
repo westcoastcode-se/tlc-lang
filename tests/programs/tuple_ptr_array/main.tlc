@@ -1,0 +1,9 @@
+type Duo (i32, i32);
+
+func main() i32 {
+    var row [2]Duo;
+    row[0] = Duo((40, 1));
+    row[1] = Duo((1, 2));
+    var p *[2]Duo = &row;
+    return p[0][0] + p[1][1];
+}

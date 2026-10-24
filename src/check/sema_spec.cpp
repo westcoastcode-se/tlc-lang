@@ -197,6 +197,9 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
         substitute_type(templ.type_params, bounds, field.type_name, field.type_package, field.is_struct, field.is_enum,
                         field.indirections, field.optional, field.is_array, field.array_len, field.array_len_name,
                         field.type_args, field.loc, &field.shells, &field.elem_const, &field.const_pointee);
+        for (ResultSlot &part : field.tuple_parts) {
+            substitute_slot(templ.type_params, bounds, part, field.loc);
+        }
         prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                         field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args, field.loc);
         fold_shells(field.shells, field.loc);
@@ -493,6 +496,9 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         substitute_type(templ->type_params, bounds, field.type_name, field.type_package, field.is_struct, field.is_enum,
                         field.indirections, field.optional, field.is_array, field.array_len, field.array_len_name,
                         field.type_args, field.loc, &field.shells, &field.elem_const, &field.const_pointee);
+        for (ResultSlot &part : field.tuple_parts) {
+            substitute_slot(templ->type_params, bounds, part, field.loc);
+        }
         if (field.init != nullptr) {
             substitute_expr(templ->type_params, bounds, *field.init);
         }

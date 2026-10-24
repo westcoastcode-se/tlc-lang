@@ -840,6 +840,9 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
                 slot.is_array = part.is_array && part.array_len != 0;
                 slot.array_len = slot.is_array ? part.array_len : 0;
                 slot.elem_slice = part.elem_slice;
+                slot.elem_const = part.elem_const;
+                slot.shells = part.shells;
+                slot.type_args = part.type_args;
                 result.tuple_parts.push_back(std::move(slot));
             }
         }

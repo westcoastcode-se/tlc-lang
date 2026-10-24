@@ -1,0 +1,12 @@
+func give() (([2]i32, i32)) {
+    var row [2]i32;
+    row[0] = 10;
+    row[1] = 30;
+    return (row, 2);
+}
+
+func main() i32 {
+    var op func () (([2]i32, i32)) = give;
+    var value = op();
+    return value[0][1] + value[1];
+}

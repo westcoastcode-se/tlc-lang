@@ -101,12 +101,13 @@ void Checker::adopt_captures(const FunctionDecl &fn) {
     }
 }
 
-Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
+Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc, bool parameter) {
     if (param.is_tuple) {
         std::vector<Type> parts;
         parts.reserve(param.results.size());
         for (const FnParam &part : param.results) {
-            Type one = type_of_fn_param(part, loc);
+            // `[2]i32` inside `(...)` is one field of that value. It does not decay.
+            Type one = type_of_fn_param(part, loc, false);
             if (one.kind == TypeKind::Void) {
                 error(loc, "type mismatch");
             }
@@ -130,9 +131,9 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, array_len_name, written.type_args, loc);
     fold_shells(written.shells, loc);
-    return object_type(param.type_name, param.indirections, param.is_array, param.array_len, loc, true, param.type_package,
-                       param.is_struct, param.is_enum, false, param.optional, param.const_pointee, false,
-                       param.elem_const, param.elem_slice, written.shells);
+    return object_type(param.type_name, param.indirections, param.is_array, param.array_len, loc, parameter,
+                       param.type_package, param.is_struct, param.is_enum, false, param.optional, param.const_pointee,
+                       false, param.elem_const, param.elem_slice, written.shells);
 }
 
 Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,

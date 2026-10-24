@@ -1127,6 +1127,19 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
     return true;
 }
 
+void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, ResultSlot &slot,
+                              SourceLoc loc) {
+    if (slot.is_tuple) {
+        for (ResultSlot &part : slot.tuple_parts) {
+            substitute_slot(params, bounds, part, loc);
+        }
+        return;
+    }
+    substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
+                    slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, loc, &slot.shells,
+                    &slot.elem_const, &slot.const_pointee);
+}
+
 void Checker::substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds,
                               std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                               int &indirections, uint32_t &optional, bool &is_array, int &array_len,

@@ -576,8 +576,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                 continue;
             }
             const bool array = part.is_array && !part.is_fn_ptr && part.array_len != 0;
+            // A sized array lives in `shells`. `is_array` is only the slice spelling.
             parts.push_back(lower(current_file_, part.type_name, part.type_package, part.is_struct, part.indirections,
-                                  array, array ? part.array_len : 0, false, part.elem_slice));
+                                  array, array ? part.array_len : 0, false, part.elem_slice, part.shells));
         }
     } else if (value.is_tuple && value.value != nullptr && value.value->getType()->isStructTy() &&
                value.tuple_parts.size() == node.names.size()) {

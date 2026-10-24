@@ -392,6 +392,16 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         }
         return shell_type(shells, base.depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
     };
+    // `tuple_parts` is the leaf. A row `[N]Duo` stays an array, so it is not `is_tuple`.
+    auto note_tuple = [&](TypedValue &out) {
+        if (base.tuple_parts.empty()) {
+            return;
+        }
+        out.tuple_parts = base.tuple_parts;
+        if (out.shells.empty() && !out.row_decay && !out.is_slice && !out.is_array) {
+            out.is_tuple = true;
+        }
+    };
     if (outer.kind == TypeShell::Kind::Slice && base.value->getType() == slice_type()) {
         llvm::Value *data = builder_.CreateExtractValue(base.value, 0);
         llvm::Value *slot = builder_.CreateInBoundsGEP(element_of(rest), data, llvm::ArrayRef<llvm::Value *>{subscript});
@@ -404,9 +414,11 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
             out.array_len = rest.front().length;
             out.depth = base.depth + 1;
             out.array_type = element_of(rest);
+            note_tuple(out);
             return out;
         }
         mark(out, std::move(rest));
+        note_tuple(out);
         return out;
     }
     if (outer.kind == TypeShell::Kind::Slice || outer.kind == TypeShell::Kind::Array) {
@@ -426,9 +438,6 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         out.value = slot;
         carry(out);
         mark(out, rest);
-        if (rest.empty() && !base.tuple_parts.empty()) {
-            out.tuple_parts = base.tuple_parts;
-        }
         if (outer.kind == TypeShell::Kind::Array) {
             out.row_decay = true;
             out.array_len = outer.length;
@@ -445,6 +454,7 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
                 out.depth -= 1;
             }
         }
+        note_tuple(out);
         return out;
     }
     if (outer.kind == TypeShell::Kind::Pointer && !rest.empty() && rest.front().kind == TypeShell::Kind::Array &&
@@ -462,6 +472,7 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         out.array_type = element_of(rest);
         mark(out, std::vector<TypeShell>(rest.begin() + 1, rest.end()));
         out.is_slice = false;
+        note_tuple(out);
         return out;
     }
     if (outer.kind == TypeShell::Kind::Pointer && !rest.empty() && rest.front().kind == TypeShell::Kind::Array &&
@@ -483,6 +494,7 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         out.value = slot;
         carry(out);
         mark(out, std::move(inner));
+        note_tuple(out);
         return out;
     }
     if (outer.kind == TypeShell::Kind::Pointer && !rest.empty() && rest.front().kind == TypeShell::Kind::Slice) {
@@ -492,6 +504,7 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         out.value = slot;
         carry(out);
         mark(out, std::move(rest));
+        note_tuple(out);
         return out;
     }
     if (outer.kind == TypeShell::Kind::Pointer || outer.kind == TypeShell::Kind::Array) {
@@ -501,6 +514,7 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         out.value = slot;
         carry(out);
         mark(out, std::move(rest));
+        note_tuple(out);
         return out;
     }
     return {};

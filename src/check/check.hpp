@@ -424,7 +424,8 @@ class Checker {
     // A `?*T` name in this function becomes `*T`. A package global is left alone.
     bool narrow_optional(const std::string &name);
     void restore_optional(const std::string &name);
-    Type type_of_fn_param(const FnParam &param, SourceLoc loc);
+    // `parameter` decays a top-level `[N]T`. An element of a tuple stays that array.
+    Type type_of_fn_param(const FnParam &param, SourceLoc loc, bool parameter = true);
     Type type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
                         int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
                         const std::vector<FnParam> &results, SourceLoc loc, uint32_t ret_optional = 0,
@@ -967,6 +968,9 @@ class Checker {
     // A struct name that already means a different struct in `owner`, or that exists in two packages,
     // is spelled `Name.file.N` so both checker and codegen resolve that struct.
     void disambiguate_bounds(uint32_t owner, std::vector<SpecArg> &bounds);
+    // `(T, i32)` on a generic field. Each element is substituted, including a nested tuple.
+    void substitute_slot(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, ResultSlot &slot,
+                         SourceLoc loc);
     void substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, std::string &type_name,
                          std::string &type_package, bool &is_struct, bool &is_enum, int &indirections, uint32_t &optional,
                          bool &is_array, int &array_len, std::string &array_len_name, std::vector<TypeArg> &type_args,

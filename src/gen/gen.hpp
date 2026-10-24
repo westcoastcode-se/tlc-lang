@@ -1054,12 +1054,11 @@ class CodeGen {
             value.inner_array_len = binding.inner_array_len;
             value.elem_slice = binding.elem_slice;
             // The array decays to a pointer to its element. Indexing steps by that element.
+            // `[2][2]Duo` keeps the inner array shell. `tuple_parts` is still that one Duo.
             if (!binding.shells.empty() && binding.shells.front().kind == TypeShell::Kind::Array) {
                 value.shells.assign(binding.shells.begin() + 1, binding.shells.end());
             }
-            if (value.shells.empty()) {
-                value.tuple_parts = binding.tuple_parts;
-            }
+            value.tuple_parts = binding.tuple_parts;
             value.fn_ty = binding.fn_ty;
             value.fn_ret_depth = binding.fn_ret_depth;
             value.fn_ret_float = binding.fn_ret_float;
@@ -1104,6 +1103,8 @@ class CodeGen {
             loaded.ptr_array_len = binding.ptr_array_len;
             loaded.elem_slice = binding.elem_slice;
             loaded.inner_array_len = binding.inner_array_len;
+            // `*[2]Duo`. Indexing `p[0]` needs the tuple that one element stores.
+            loaded.tuple_parts = binding.tuple_parts;
             // A parameter `[N][M]T` or `[N][]T` keeps `N` after the outer array decays.
             loaded.array_len = binding.array_len;
             return loaded;

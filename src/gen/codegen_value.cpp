@@ -141,7 +141,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             peeled.ptr_array_len = 0;
                             peeled.inner_array_len = 0;
                             peeled.depth = inner.depth + 1;
-                            if (length > 0) {
+                            if (length > 0 && !peeled.tuple_parts.empty()) {
+                                // `(*p)[i]` on `*[2]Duo` steps by that tuple, not by a scalar leaf.
+                                if (llvm::Type *element = tuple_shell_type(peeled.tuple_parts, {})) {
+                                    peeled.array_type = llvm::ArrayType::get(element, static_cast<uint64_t>(length));
+                                }
+                            } else if (length > 0) {
                                 const int elem_depth = inner.depth > 0 ? inner.depth - 1 : 0;
                                 llvm::Type *elem =
                                     leaf_type(elem_depth, inner.elem_char, inner.struct_id, inner.elem_bool,

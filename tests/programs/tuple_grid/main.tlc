@@ -1,0 +1,10 @@
+type Duo (i32, i32);
+
+func main() i32 {
+    var grid [2][2]Duo;
+    grid[0][0] = Duo((10, 1));
+    grid[0][1] = Duo((20, 2));
+    grid[1][0] = Duo((30, 3));
+    grid[1][1] = Duo((40, 4));
+    return grid[0][0][0] + grid[0][1][0] + grid[1][0][0] + grid[1][1][0];
+}
