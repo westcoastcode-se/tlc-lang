@@ -1,6 +1,6 @@
 # TLC
 
-`tlc` is a compiled C-family language. This repository is the compiler, the language reference, the standard library, and the tests. Highlighting lives in `../tlc-tree-sitter`. Zed tasks, binary lookup, and the debug locator live in `../tlc-plugins-zed`.
+`tlc` is a compiled C-family language. This repository is the compiler, the language reference, the standard library, and the tests. Highlighting lives in `../tlc-plugins-zed-grammars`. Zed tasks, binary lookup, and the debug locator live in `../tlc-plugins-zed`.
 
 The language is the reference in `docs`. `docs/grammar.md` is the syntax. A feature page is the meaning. `TODO.md` is the list of forms the compiler rejects on purpose. A spelling the grammar does not list is not part of the language, even when the parser recognizes a similar C form and then rejects it.
 
@@ -110,6 +110,6 @@ A file named `*_unix.tlc` is loaded only when the compiler's family is `unix`. `
 
 A language change that does not add a token or a highlight query stays in this repository. Rebuilding `build/tlc` updates the language server.
 
-Change `../tlc-tree-sitter` when tokens or highlighting change. Match `src/lex/lexer.cpp` and the token section of `docs/grammar.md`. The grammar tokenizes. It does not parse statements. From that repo, regenerate with `npx tree-sitter-cli@0.25.8 generate` and run `npm test`. Do not copy the grammar or a `.wasm` into this repository.
+Change `../tlc-plugins-zed-grammars` when tokens or highlighting change. Match `src/lex/lexer.cpp` and the token section of `docs/grammar.md`. The grammar tokenizes. It does not parse statements. From that repo, regenerate with `npx tree-sitter-cli@0.25.8 generate` and run `npm test`. Do not copy the grammar or a `.wasm` into this repository.
 
 Change `../tlc-plugins-zed` when tasks, compiler lookup, or the debug locator change. Highlighting and diagnostics do not belong there. Zed starts `lsp.tlc.binary.path` itself, and `lsp.tlc.binary.arguments` must include `lsp`. Reinstall the dev extension only after an extension change.
