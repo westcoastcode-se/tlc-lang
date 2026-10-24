@@ -82,7 +82,6 @@ Type information for generating code while compiling. The goal is a `macro` keyw
 ## Functions
 
 - An overloaded name used as a value, `var f = show` when `show` has several parameter lists, is `not supported yet`. A call selects the list.
-- A `test` inside a function. `test` is file scope.
 - A struct argument to `testing.error`.
 - `builtin.va` outside a variadic function.
 - Calling `builtin.panic` on a fatal failure other than an allocation that returned `null`. `new` calls `builtin.panic("out of memory")` in that case. A non-positive element count and a size that does not fit abort without that call.

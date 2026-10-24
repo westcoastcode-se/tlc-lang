@@ -6145,7 +6145,7 @@ int run_sema_tests() {
             "  test \"inside\" {}\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "test is only valid at file scope");
     }
 
     {

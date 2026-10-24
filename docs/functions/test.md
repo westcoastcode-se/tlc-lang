@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Structs and arrays](aggregate.md) · [Next: Function pointers](pointer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`test "name" { ... }` is a file-scope test. The body is a function that returns `i32`. Reaching the end passes, and so does `return 0`. Any other `return` fails that test. `return;` is reported as `type mismatch`. The same test name twice in one file is reported as `redefinition`.
+`test "name" { ... }` is a file-scope test. A `test` inside a function is `test is only valid at file scope`. The body is a function that returns `i32`. Reaching the end passes, and so does `return 0`. Any other `return` fails that test. `return;` is reported as `type mismatch`. The same test name twice in one file is reported as `redefinition`.
 
 `import "std/testing"` provides `testing.error`. It returns `1`. The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `f64`.
 

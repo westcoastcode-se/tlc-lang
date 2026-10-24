@@ -774,7 +774,7 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         return make_stmt(Stmt::Expression{});
     }
     if (check(TokenKind::KwTest)) {
-        error_here("not supported yet");
+        error_here("test is only valid at file scope");
         parse_test();
         return make_stmt(Stmt::Expression{});
     }

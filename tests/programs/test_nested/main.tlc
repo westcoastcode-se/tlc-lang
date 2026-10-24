@@ -1,0 +1,16 @@
+func work() i32 {
+    test "inside" {
+        return 0;
+    }
+    return 1;
+}
+
+test "outer" {
+    test "nested" {
+        return 0;
+    }
+}
+
+func main() i32 {
+    return 0;
+}
