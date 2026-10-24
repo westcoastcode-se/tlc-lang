@@ -1,0 +1,4 @@
+func main() i32 {
+    var op func ((i32, i32), i32) i32;
+    return 0;
+}

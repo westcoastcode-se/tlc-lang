@@ -531,6 +531,9 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     type.indirections = 1;
     expect(TokenKind::KwFunc, "expected 'func'");
     expect(TokenKind::LParen, "expected '('");
+    // `func ((i32, i32)) i32` is one parameter. A tuple beside another parameter
+    // stays `not supported yet`. `func (i32, i32) i32` is two parameters.
+    std::vector<PlacedType> params;
     while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !check(TokenKind::Semicolon) && !eof()) {
         if (check(TokenKind::Ellipsis)) {
             diags_.error(peek().loc, "not supported yet");
@@ -538,15 +541,20 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
             break;
         }
         const std::size_t before = pos_;
-        PlacedType param = parse_placed_type(false);
-        drop_bare_tuple(param);
-        type.fn_params.push_back(fn_param_from(param));
+        params.push_back(parse_placed_type(false));
         if (pos_ == before) {
             ++pos_;
         }
         if (!eat(TokenKind::Comma)) {
             break;
         }
+    }
+    const bool one_tuple = params.size() == 1 && params.front().is_tuple;
+    for (PlacedType &param : params) {
+        if (!one_tuple) {
+            drop_bare_tuple(param);
+        }
+        type.fn_params.push_back(fn_param_from(param));
     }
     expect(TokenKind::RParen, "expected ')'");
 
