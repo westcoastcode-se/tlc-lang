@@ -1,0 +1,14 @@
+type Node (i32, *Node);
+
+func read(p *Node) i32 {
+    var value Node = *p;
+    return value[0];
+}
+
+func main() i32 {
+    var next Node;
+    var n Node;
+    next = Node((2, &n));
+    n = Node((40, &next));
+    return n[0] + read(n[1]);
+}

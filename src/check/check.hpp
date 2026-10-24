@@ -432,7 +432,8 @@ class Checker {
     Type type_of_param(const Param &param);
     Type type_of_var(const VarDecl &var);
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
-    Type type_of_result(const ResultSlot &slot, SourceLoc loc);
+    // `allow_incomplete` is a tuple alias registered before struct bodies exist.
+    Type type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete = false);
     std::string type_desc(const Type &type) const;
     // The slice `Type.fields()` returns. Invalid before `ensure_field_info`.
     Type type_field_slice() const;

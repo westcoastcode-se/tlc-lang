@@ -124,6 +124,29 @@ void CodeGen::prepare_structs() {
         }
     }
     prepare_aliases();
+    // `value Pair` cannot be lowered until that tuple alias exists. The alias may name a struct
+    // whose body is set in this loop, so the two passes alternate.
+    auto tuple_alias_pending = [&](uint32_t file, const FieldDecl &field) {
+        if (field.indirections > 0 || !field.type_package.empty() || field.type_name.empty()) {
+            return false;
+        }
+        if (find_alias(file, field.type_name) != nullptr) {
+            return false;
+        }
+        for (const uint32_t id : package_files(file)) {
+            const PackageNode *node = find_node(id);
+            if (node == nullptr) {
+                continue;
+            }
+            for (const TopDecl &decl : node->unit.decls) {
+                const auto *alias = std::get_if<TypedefDecl>(&decl.data);
+                if (alias != nullptr && alias->is_tuple && alias->name == field.type_name) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
     bool progress = true;
     while (progress) {
         progress = false;
@@ -152,6 +175,10 @@ void CodeGen::prepare_structs() {
             for (const FieldDecl &field : item->fields) {
                 if (field.indirections > 0) {
                     continue;
+                }
+                if (tuple_alias_pending(file, field)) {
+                    waiting = true;
+                    break;
                 }
                 const Lowered low = lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
                                           field.is_array, field.array_len, false, field.elem_slice, field.shells);
@@ -361,6 +388,9 @@ void CodeGen::prepare_structs() {
             structs_[static_cast<std::size_t>(id)].ready = true;
             progress = true;
         }
+        if (register_tuple_aliases()) {
+            progress = true;
+        }
     }
     for (StructLayout &layout : structs_) {
         if (!layout.ready && layout.type != nullptr && layout.type->isOpaque()) {
@@ -482,10 +512,11 @@ void CodeGen::publish_spec_types() {
     }
 }
 
-void CodeGen::finish_tuple_aliases() {
+bool CodeGen::register_tuple_aliases() {
     if (graph_ == nullptr) {
-        return;
+        return false;
     }
+    bool any = false;
     bool progress = true;
     while (progress) {
         progress = false;
@@ -502,9 +533,18 @@ void CodeGen::finish_tuple_aliases() {
                 }
                 aliases_[node.file_id].emplace(item->name, std::move(alias));
                 progress = true;
+                any = true;
             }
         }
     }
+    return any;
+}
+
+void CodeGen::finish_tuple_aliases() {
+    if (graph_ == nullptr) {
+        return;
+    }
+    register_tuple_aliases();
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
             const auto *item = std::get_if<TypedefDecl>(&decl.data);

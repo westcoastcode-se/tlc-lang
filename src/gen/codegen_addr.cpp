@@ -71,28 +71,55 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             return {};
         }
         if (index->tuple_index >= 0) {
-            // `t[0] = 1` stores into the tuple alloca. The field was chosen while compiling.
+            // `t[0] = 1` stores into the tuple. The field was chosen while compiling.
+            // `box.value[0]` is the same field inside a struct, not only a bare name.
             const auto *named = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
             const Binding *binding = named == nullptr ? nullptr : lookup(named->text);
-            llvm::Type *object = binding == nullptr ? nullptr : object_type(binding->value);
-            auto *aggregate = llvm::dyn_cast_or_null<llvm::StructType>(object);
+            llvm::Value *aggregate_ptr = nullptr;
+            llvm::StructType *aggregate = nullptr;
+            std::vector<ResultSlot> parts;
+            if (binding != nullptr && binding->is_tuple && binding->value != nullptr) {
+                aggregate_ptr = binding->value;
+                aggregate = llvm::dyn_cast_or_null<llvm::StructType>(object_type(binding->value));
+                parts = binding->tuple_parts;
+            } else if (index->base != nullptr) {
+                const TypedValue base = emit_addr(*index->base);
+                if (base.value != nullptr && base.is_tuple && !base.tuple_parts.empty()) {
+                    aggregate_ptr = base.value;
+                    parts = base.tuple_parts;
+                    std::vector<llvm::Type *> fields;
+                    fields.reserve(parts.size());
+                    for (const ResultSlot &slot : parts) {
+                        const Lowered low =
+                            lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
+                                  slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
+                        fields.push_back(stored_type(low));
+                    }
+                    aggregate = llvm::StructType::get(context_, fields);
+                }
+            }
             const int part = index->tuple_index;
-            if (binding == nullptr || !binding->is_tuple || aggregate == nullptr || part < 0 ||
-                static_cast<std::size_t>(part) >= binding->tuple_parts.size()) {
+            if (aggregate_ptr == nullptr || aggregate == nullptr || parts.empty() || part < 0 ||
+                static_cast<std::size_t>(part) >= parts.size()) {
                 error(index->loc, "not an lvalue");
                 return {};
             }
             llvm::Value *field = builder_.CreateInBoundsGEP(
-                aggregate, binding->value, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(part)});
-            const ResultSlot &slot = binding->tuple_parts[static_cast<std::size_t>(part)];
+                aggregate, aggregate_ptr, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(part)});
+            const ResultSlot &slot = parts[static_cast<std::size_t>(part)];
             const Lowered low = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
                                       slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
-            TypedValue out{field,        low.depth,     low.elem_char, low.struct_id, false,           low.elem_void,
-                           low.elem_bool, low.elem_bits, low.elem_unsigned, -1,        low.elem_float};
+            TypedValue out{field,        low.depth,     low.elem_char, low.struct_id, low.is_array && !low.is_slice,
+                           low.elem_void, low.elem_bool, low.elem_bits, low.elem_unsigned, -1, low.elem_float};
             out.enum_id = low.enum_id;
             out.is_slice = low.is_slice;
             out.array_len = low.array_len;
+            out.inner_array_len = low.inner_array_len;
             out.elem_slice = low.elem_slice;
+            out.shells = low.shells;
+            if (low.type != nullptr && low.type->isArrayTy()) {
+                out.array_type = low.type;
+            }
             return out;
         }
         const TypedValue base = emit_rvalue(*index->base);

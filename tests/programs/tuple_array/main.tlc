@@ -1,0 +1,11 @@
+type Row ([3]i32, i32);
+
+func main() i32 {
+    var nums [3]i32;
+    nums[0] = 10;
+    nums[1] = 20;
+    nums[2] = 30;
+    var value Row = Row((nums, 4));
+    value[0][1] = 5;
+    return value[0][0] + value[0][1] + value[0][2] + value[1];
+}

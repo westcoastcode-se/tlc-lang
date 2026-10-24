@@ -1,0 +1,19 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Pair (Point, i32);
+
+type Box struct {
+    value Pair;
+};
+
+func main() i32 {
+    var p Point;
+    p.x = 40;
+    p.y = 2;
+    var box Box;
+    box.value = Pair((p, 1));
+    return box.value[0].x + box.value[0].y + box.value[1];
+}

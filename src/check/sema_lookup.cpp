@@ -263,7 +263,7 @@ Type Checker::type_of_param(const Param &param) {
                        param.const_pointee, false, param.elem_const, param.elem_slice, written.shells);
 }
 
-Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
+Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete) {
     ResultSlot &written = const_cast<ResultSlot &>(slot);
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args, loc);
@@ -275,14 +275,14 @@ Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc) {
     }
     if (slot.is_array || !written.shells.empty()) {
         return object_type(slot.type_name, slot.indirections, true, slot.array_len, loc, false, slot.type_package,
-                           slot.is_struct, slot.is_enum, false, slot.optional, slot.const_pointee, false,
+                           slot.is_struct, slot.is_enum, false, slot.optional, slot.const_pointee, allow_incomplete,
                            slot.elem_const, slot.elem_slice, written.shells);
     }
     return slot.is_struct || slot.is_enum || !slot.type_package.empty()
                ? object_type(slot.type_name, slot.indirections, false, 0, loc, false, slot.type_package, slot.is_struct,
-                             slot.is_enum, false, slot.optional, slot.const_pointee)
-               : with_indirections(type_of_name(slot.type_name, loc, slot.indirections > 0), slot.indirections, loc,
-                                   slot.optional, slot.const_pointee);
+                             slot.is_enum, false, slot.optional, slot.const_pointee, allow_incomplete)
+               : with_indirections(type_of_name(slot.type_name, loc, slot.indirections > 0 || allow_incomplete),
+                                   slot.indirections, loc, slot.optional, slot.const_pointee);
 }
 
 Type Checker::function_result(const FunctionDecl &fn) {
@@ -767,7 +767,7 @@ Type Checker::with_indirections(Type type, int count, SourceLoc loc, uint32_t op
         if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool &&
             type.kind != TypeKind::Float && type.kind != TypeKind::Pointer && type.kind != TypeKind::Struct &&
             type.kind != TypeKind::Enum && type.kind != TypeKind::Void && type.kind != TypeKind::Meta &&
-            type.kind != TypeKind::Array) {
+            type.kind != TypeKind::Array && type.kind != TypeKind::Tuple) {
             error(loc, "not supported yet");
             return type_invalid();
         }

@@ -862,6 +862,9 @@ class CodeGen {
                             field = field->getType()->getPrimitiveSizeInBits() < want->getPrimitiveSizeInBits()
                                         ? builder_.CreateFPExt(field, want)
                                         : builder_.CreateFPTrunc(field, want);
+                        } else if (field->getType()->isPointerTy() && want->isArrayTy()) {
+                            // `(nums, 4)` holds the address of `[N]T`. The tuple slot stores the array.
+                            field = builder_.CreateLoad(want, field);
                         } else {
                             field = llvm::Constant::getNullValue(want);
                         }
@@ -1225,6 +1228,8 @@ class CodeGen {
     TypedValue emit_generic_call(const Binding &binding, const Expr::Call &node);
     void prepare_aliases();
     bool make_tuple_alias(uint32_t file, const TypedefDecl &item, Alias &out) const;
+    // Tuple aliases whose elements are sized now. A struct element waits for that body.
+    bool register_tuple_aliases();
     void finish_tuple_aliases();
     void prepare_enums();
     int enum_named(uint32_t file, const std::string &name) const;

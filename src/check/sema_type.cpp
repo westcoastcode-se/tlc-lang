@@ -748,6 +748,9 @@ bool Checker::field_waits(const FieldDecl &field) const {
 
 void Checker::require_extern_struct(const Type &type, SourceLoc loc) {
     if (type.kind == TypeKind::Pointer && type.pointee) {
+        if (type.pointee->kind == TypeKind::Tuple && type.pointee->alias_id != 0) {
+            return;
+        }
         require_extern_struct(*type.pointee, loc);
         return;
     }
@@ -781,6 +784,9 @@ void Checker::require_extern_struct(const Type &type, SourceLoc loc) {
 
 bool Checker::mentions_tagged_union(const Type &type) const {
     if (type.kind == TypeKind::Pointer && type.pointee) {
+        if (type.pointee->kind == TypeKind::Tuple && type.pointee->alias_id != 0) {
+            return false;
+        }
         return mentions_tagged_union(*type.pointee);
     }
     if (type.kind == TypeKind::Array && type.element) {
@@ -1677,16 +1683,40 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         return;
     }
     Type type;
+    int reserved_id = 0;
     if (item.is_tuple) {
         if (item.tuple_parts.size() < 2) {
             error(item.loc, "type mismatch");
             return;
         }
+        // The name is visible while its elements are typed, so `*Node` inside `type Node` can name it.
+        reserved_id = next_alias_id_++;
+        alias_names_.push_back(item.name);
+        alias_file_.push_back(file_id_);
+        Type provisional = type_tuple({});
+        provisional.alias_id = reserved_id;
+        typedefs_[file_id_].emplace(item.name, provisional);
+        auto stores_self = [&](const auto &self, const Type &part) -> bool {
+            if (part.alias_id == reserved_id && part.kind == TypeKind::Tuple) {
+                return true;
+            }
+            if (part.kind == TypeKind::Array && part.length >= 0 && part.element != nullptr) {
+                return self(self, *part.element);
+            }
+            if (part.kind == TypeKind::Tuple && part.alias_id == 0) {
+                for (const Type &inner : part.results) {
+                    if (self(self, inner)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
         std::vector<Type> parts;
         parts.reserve(item.tuple_parts.size());
         bool bad = false;
         for (const ResultSlot &slot : item.tuple_parts) {
-            Type part = type_of_result(slot, item.loc);
+            Type part = type_of_result(slot, item.loc, true);
             if (part.kind == TypeKind::Void) {
                 error(item.loc, "type mismatch");
                 bad = true;
@@ -1695,13 +1725,41 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
                     error(item.loc, "not supported yet");
                 }
                 bad = true;
+            } else if (stores_self(stores_self, part)) {
+                // `type Pair (Pair, i32)` has no finite size. `*Pair` does.
+                error(item.loc, "not supported yet");
+                bad = true;
             }
             parts.push_back(std::move(part));
         }
         if (bad) {
+            typedefs_[file_id_].erase(item.name);
             return;
         }
         type = type_tuple(std::move(parts));
+        type.alias_id = reserved_id;
+        auto retarget = [&](const auto &self, Type &node) -> void {
+            if (node.kind == TypeKind::Pointer && node.pointee != nullptr) {
+                if (node.pointee->alias_id == reserved_id && node.pointee->kind == TypeKind::Tuple &&
+                    node.pointee->results.empty()) {
+                    *node.pointee = type;
+                    return;
+                }
+                self(self, *node.pointee);
+                return;
+            }
+            if (node.kind == TypeKind::Array && node.element != nullptr) {
+                self(self, *node.element);
+                return;
+            }
+            if (node.kind == TypeKind::Tuple) {
+                for (Type &inner : node.results) {
+                    self(self, inner);
+                }
+            }
+        };
+        retarget(retarget, type);
+        typedefs_[file_id_][item.name] = type;
     } else {
         type = item.is_fn_ptr
                    ? type_of_fn_ptr(item.type_name, item.type_package, item.is_struct, item.is_enum,
@@ -1712,18 +1770,29 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
                                  item.const_pointee, true, item.elem_const, item.elem_slice);
     }
     if (type.kind == TypeKind::Invalid) {
+        if (reserved_id != 0) {
+            typedefs_[file_id_].erase(item.name);
+        }
         return;
     }
     if (type.kind == TypeKind::Trait) {
         error(item.loc, "not supported yet");
+        if (reserved_id != 0) {
+            typedefs_[file_id_].erase(item.name);
+        }
         return;
     }
     // The name is a different type from its representation. A cast confirms either side.
     Type distinct = type;
-    distinct.alias_id = next_alias_id_++;
-    alias_names_.push_back(item.name);
-    alias_file_.push_back(file_id_);
-    typedefs_[file_id_].emplace(item.name, distinct);
+    if (reserved_id == 0) {
+        distinct.alias_id = next_alias_id_++;
+        alias_names_.push_back(item.name);
+        alias_file_.push_back(file_id_);
+        typedefs_[file_id_].emplace(item.name, distinct);
+    } else {
+        distinct.alias_id = reserved_id;
+        typedefs_[file_id_][item.name] = distinct;
+    }
     if (!item.exported) {
         return;
     }

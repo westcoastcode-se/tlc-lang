@@ -743,7 +743,59 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (slot != nullptr) {
                         const Lowered part = lower(current_file_, slot->type_name, slot->type_package, slot->is_struct,
                                                    slot->indirections, slot->is_array, slot->array_len, false,
-                                                   slot->elem_slice);
+                                                   slot->elem_slice, slot->shells);
+                        // An array name is the address of the array. A tuple element keeps that address,
+                        // so `value[0][1]` indexes it and a copy loads the elements.
+                        if (part.is_array && !part.is_slice && part.array_len > 0) {
+                            const bool named =
+                                node.base != nullptr && std::holds_alternative<Expr::Name>(node.base->data);
+                            llvm::Value *address = nullptr;
+                            TypedValue addr;
+                            if (named) {
+                                addr = emit_addr(expr);
+                                if (addr.value == nullptr) {
+                                    return {zero(), 0};
+                                }
+                                address = addr.value;
+                            } else {
+                                llvm::Type *array_ty =
+                                    extracted->getType()->isArrayTy() ? extracted->getType() : part.type;
+                                if (array_ty == nullptr || !array_ty->isArrayTy()) {
+                                    return {extracted, 0};
+                                }
+                                llvm::AllocaInst *slot_value = alloca_typed(array_ty, "tuple.arr");
+                                if (!terminated()) {
+                                    builder_.CreateStore(extracted, slot_value);
+                                }
+                                address = slot_value;
+                                addr.depth = 0;
+                                addr.elem_char = part.elem_char;
+                                addr.struct_id = part.struct_id;
+                                addr.elem_void = part.elem_void;
+                                addr.elem_bool = part.elem_bool;
+                                addr.elem_bits = part.elem_bits;
+                                addr.elem_unsigned = part.elem_unsigned;
+                                addr.elem_float = part.elem_float;
+                                addr.array_len = part.array_len;
+                                addr.inner_array_len = part.inner_array_len;
+                                addr.elem_slice = part.elem_slice;
+                                addr.enum_id = part.enum_id;
+                                addr.array_type = array_ty;
+                                addr.shells = part.shells;
+                            }
+                            TypedValue value{address, addr.depth + 1, addr.elem_char, addr.struct_id, false,
+                                             addr.elem_void, addr.elem_bool, addr.elem_bits, addr.elem_unsigned, -1,
+                                             addr.elem_float};
+                            value.array_len = addr.array_len > 0 ? addr.array_len : part.array_len;
+                            value.inner_array_len = addr.inner_array_len;
+                            value.elem_slice = addr.elem_slice;
+                            value.enum_id = addr.enum_id;
+                            value.array_type = addr.array_type != nullptr ? addr.array_type : part.type;
+                            if (!addr.shells.empty() && addr.shells.front().kind == TypeShell::Kind::Array) {
+                                value.shells.assign(addr.shells.begin() + 1, addr.shells.end());
+                            }
+                            return value;
+                        }
                         if (part.is_slice) {
                             TypedValue loaded;
                             loaded.value = extracted;

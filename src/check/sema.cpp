@@ -106,6 +106,10 @@ Type type_trait(int id) {
 
 bool uses_many_results(const Type &type) {
     if (type.kind == TypeKind::Pointer && type.pointee != nullptr) {
+        // `*Node` inside `type Node` points back at that alias. It is one value.
+        if (type.pointee->kind == TypeKind::Tuple && type.pointee->alias_id != 0) {
+            return false;
+        }
         return uses_many_results(*type.pointee);
     }
     if (type.kind == TypeKind::Function) {
@@ -191,6 +195,10 @@ bool same_type(const Type &lhs, const Type &rhs) {
         return lhs.rank == rhs.rank;
     }
     if (lhs.kind == TypeKind::Tuple) {
+        // One alias id is one type. Walking elements would recurse through `*Node`.
+        if (lhs.alias_id != 0) {
+            return true;
+        }
         if (lhs.results.size() != rhs.results.size()) {
             return false;
         }
