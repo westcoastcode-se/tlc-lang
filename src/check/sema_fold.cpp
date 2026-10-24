@@ -255,6 +255,37 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
     if (const auto *text = std::get_if<Expr::String>(&expr.data)) {
         return text->text;
     }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        // `"hello"[1:4]` is those bytes. The length does not include the terminating null.
+        // A high bound below the low bound, or a bound past that length, is not this slice.
+        if (!index->is_range || index->base == nullptr) {
+            return std::nullopt;
+        }
+        const std::optional<std::string> bytes = constant_string(*index->base, seen);
+        if (!bytes) {
+            return std::nullopt;
+        }
+        std::size_t low = 0;
+        if (index->index != nullptr) {
+            const std::optional<int> at = fold_int(*index->index);
+            if (!at || *at < 0 || static_cast<std::size_t>(*at) > bytes->size()) {
+                return std::nullopt;
+            }
+            low = static_cast<std::size_t>(*at);
+        }
+        std::size_t high = bytes->size();
+        if (index->end != nullptr) {
+            const std::optional<int> at = fold_int(*index->end);
+            if (!at || *at < 0 || static_cast<std::size_t>(*at) > bytes->size()) {
+                return std::nullopt;
+            }
+            high = static_cast<std::size_t>(*at);
+        }
+        if (low > high) {
+            return std::nullopt;
+        }
+        return bytes->substr(low, high - low);
+    }
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr || !seen.insert(named->text).second) {
         return std::nullopt;

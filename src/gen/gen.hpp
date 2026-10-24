@@ -1308,7 +1308,8 @@ class CodeGen {
     // A field default `{1}` or `{1, 0...}` on `[2]i32`. Missing elements are zero in this constant.
     llvm::Constant *const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
     std::optional<int32_t> fold(const Expr &expr) const;
-    // A string literal, or a file-scope const in this file whose initializer is one.
+    // A string literal, a constant range of one, or a file-scope const in this file
+    // whose initializer is one. A pointer const is not that slice. A `var` is not a constant.
     std::optional<std::string> constant_string(const Expr &expr, std::unordered_set<std::string> &seen) const;
     const FunctionDecl *comptime_named(const std::string &name) const;
     std::optional<int32_t> fold_comptime_body(const FunctionDecl &fn) const;

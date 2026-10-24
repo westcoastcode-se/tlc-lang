@@ -614,8 +614,8 @@ class Checker {
         bool wide = false;
     };
     std::optional<int> fold_int(const Expr &expr);
-    // A string literal, or a file-scope const in this file whose initializer is one.
-    // A pointer const is not that slice. A `var` is not a constant.
+    // A string literal, a constant range of one, or a file-scope const in this file
+    // whose initializer is one. A pointer const is not that slice. A `var` is not a constant.
     std::optional<std::string> constant_string(const Expr &expr, std::unordered_set<std::string> &seen);
     // An `i32` case, or an enumerator such as `Color.Blue`. Other expressions are not case constants.
     std::optional<int> fold_switch_case(const Expr &expr);

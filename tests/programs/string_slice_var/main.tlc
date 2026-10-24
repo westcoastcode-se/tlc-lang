@@ -1,0 +1,6 @@
+var i = 1;
+const n = "hello"[i:4][0];
+
+func main() i32 {
+    return n;
+}

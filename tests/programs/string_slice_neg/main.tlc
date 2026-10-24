@@ -1,0 +1,5 @@
+const n = "hello"[-1:2][0];
+
+func main() i32 {
+    return n;
+}
