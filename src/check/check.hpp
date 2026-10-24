@@ -285,6 +285,8 @@ class Checker {
     bool collect_returns_ = false;
     struct InferredReturn {
         bool bare = false;
+        // `return f()` while checking `f`. It does not choose the result type.
+        bool self = false;
         SourceLoc loc{};
         std::vector<Type> parts;
     };
@@ -292,6 +294,13 @@ class Checker {
     std::unordered_set<FunctionDecl *> infer_running_;
     // The omitted result was already diagnosed, so a later pass must not report it again.
     std::unordered_set<FunctionDecl *> infer_mismatch_;
+    // Every reached `return` calls this function. The real check reports `infinite loop`.
+    std::unordered_set<FunctionDecl *> self_loop_;
+    struct ReachedReturn {
+        SourceLoc loc{};
+        bool self = false;
+    };
+    std::vector<ReachedReturn> reached_returns_;
     // Set while checking a variadic function body. `builtin.va` is valid only then.
     bool variadic_function_ = false;
     // The callee of a call is being checked. That callee is a name, a function expression, or a selector.
@@ -330,6 +339,10 @@ class Checker {
     bool report_inferred_mismatch();
     // A trait has no size, so it is not an omitted result.
     bool report_inferred_trait(const FunctionDecl &fn);
+    // The return expression is a call of `fn`.
+    bool returns_self(const FunctionDecl &fn, const Expr &expr);
+    // Every reached `return` calls this function, and the body does not fall through.
+    void report_self_loop();
     bool install_inferred_type(const Type &type, ResultSlot &slot);
     bool spell_inferred_component(const Type &type, FnParam &out, bool allow_void);
     bool spell_inferred_fn_param(const Type &type, FnParam &out);

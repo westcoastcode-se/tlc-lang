@@ -384,23 +384,31 @@ void Checker::check_stmt(const Stmt &stmt) {
             } else if constexpr (std::is_same_v<T, Stmt::Return>) {
                 // Learning an omitted result. The real check of this body matches the type afterwards.
                 if (collect_returns_) {
-                    InferredReturn item;
-                    item.loc = node.loc;
-                    if (node.value == nullptr && node.extra.empty()) {
-                        item.bare = true;
-                    } else {
-                        if (node.value != nullptr) {
-                            item.parts.push_back(check_expr(*node.value, true));
-                        }
-                        for (const auto &extra : node.extra) {
-                            if (extra != nullptr) {
-                                item.parts.push_back(check_expr(*extra, true));
+                    // A `return` that is not reached does not choose the type.
+                    if (!assign_.unreachable) {
+                        InferredReturn item;
+                        item.loc = node.loc;
+                        if (node.value == nullptr && node.extra.empty()) {
+                            item.bare = true;
+                        } else {
+                            if (node.value != nullptr) {
+                                item.parts.push_back(check_expr(*node.value, true));
+                            }
+                            for (const auto &extra : node.extra) {
+                                if (extra != nullptr) {
+                                    item.parts.push_back(check_expr(*extra, true));
+                                }
                             }
                         }
+                        if (!checking_.empty() && node.extra.empty() && node.value != nullptr) {
+                            item.self = returns_self(*checking_.back(), *node.value);
+                        }
+                        inferred_returns_.push_back(std::move(item));
                     }
-                    inferred_returns_.push_back(std::move(item));
+                    assign_.unreachable = true;
                     return;
                 }
+                const bool reached = !assign_.unreachable;
                 UnreachableAfter exit(*this);
                 auto match_return = [&](const Type &got, const Type &want) {
                     const bool null_pointer =
@@ -492,6 +500,13 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                 } else {
                     match_return(supplied(*node.value, return_type_), return_type_);
+                }
+                if (reached && !checking_.empty()) {
+                    ReachedReturn item;
+                    item.loc = node.loc;
+                    item.self = node.extra.empty() && node.value != nullptr &&
+                                returns_self(*checking_.back(), *node.value);
+                    reached_returns_.push_back(std::move(item));
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
                 if (node.expr) {
@@ -1128,6 +1143,8 @@ void Checker::check_stmt(const Stmt &stmt) {
 
 void Checker::check_function(const FunctionDecl &fn) {
     InitSuspend suspend(*this);
+    auto saved_reached = std::move(reached_returns_);
+    reached_returns_.clear();
     // A quiet walk may be learning the caller's result. This body is not part of that list.
     const bool saved_collect = collect_returns_;
     collect_returns_ = false;
@@ -1201,6 +1218,9 @@ void Checker::check_function(const FunctionDecl &fn) {
         }
     }
     adopt_captures(fn);
+    // `return f()` on every reached path never finishes. A reached `return 1` is not that loop.
+    report_self_loop();
+    reached_returns_ = std::move(saved_reached);
     variadic_function_ = saved_variadic;
     switches_ = std::move(saved_switches);
     loop_depth_ = saved_loops;
@@ -1482,6 +1502,38 @@ bool Checker::report_inferred_mismatch() {
     return mismatch;
 }
 
+bool Checker::returns_self(const FunctionDecl &fn, const Expr &expr) {
+    const auto *call = std::get_if<Expr::Call>(&expr.data);
+    if (call == nullptr || call->callee == nullptr) {
+        return false;
+    }
+    const auto *named = std::get_if<Expr::Name>(&call->callee->data);
+    if (named == nullptr || named->text != fn.name) {
+        return false;
+    }
+    // One parameter list leaves `selected` empty. Several lists record the chosen body.
+    if (call->selected != nullptr) {
+        return call->selected == &fn;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || !symbol->is_function || symbol->lists.size() != 1) {
+        return false;
+    }
+    return symbol->lists.front().decl == &fn;
+}
+
+void Checker::report_self_loop() {
+    if (reached_returns_.empty() || !assign_.unreachable) {
+        return;
+    }
+    for (const ReachedReturn &item : reached_returns_) {
+        if (!item.self) {
+            return;
+        }
+    }
+    error(reached_returns_.front().loc, "infinite loop");
+}
+
 bool Checker::report_inferred_trait(const FunctionDecl &fn) {
     if (inferred_returns_.empty()) {
         return false;
@@ -1635,6 +1687,16 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
         }
     } else {
         check_stmt(*fn.body);
+    }
+    bool only_self = !inferred_returns_.empty();
+    for (const InferredReturn &item : inferred_returns_) {
+        if (!item.self) {
+            only_self = false;
+            break;
+        }
+    }
+    if (only_self) {
+        self_loop_.insert(&fn);
     }
     // A call whose result is not known yet does not choose the type. The known returns still
     // have to agree. That call is checked again once the type is known.
@@ -1827,7 +1889,7 @@ void Checker::infer_file_results(const TranslationUnit &unit) {
         }
     }
     for (FunctionDecl *fn : pending) {
-        if (fn != nullptr && fn->results.empty() && !infer_mismatch_.contains(fn)) {
+        if (fn != nullptr && fn->results.empty() && !infer_mismatch_.contains(fn) && !self_loop_.contains(fn)) {
             error(fn->loc, "not supported yet");
         }
     }

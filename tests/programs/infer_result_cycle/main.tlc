@@ -2,6 +2,22 @@ func f() {
     return f();
 }
 
+func g() i32 {
+    return g();
+}
+
+func dead() {
+    return dead();
+    return 1;
+}
+
+func both(flag bool) {
+    if (flag) {
+        return both(false);
+    }
+    return both(true);
+}
+
 func main() i32 {
     return 0;
 }

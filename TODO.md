@@ -81,7 +81,7 @@ Type information for generating code while compiling. The goal is a `macro` keyw
 
 ## Functions
 
-- A body whose returns are only calls of functions whose results are not known yet is `not supported yet`. That includes `func f() { return f(); }` and two functions that only call each other.
+- Two functions that only call each other, and neither returns a value, are `not supported yet`.
 - An overloaded name used as a value, `var f = show` when `show` has several parameter lists, is `not supported yet`. A call selects the list.
 - A `test` inside a function. `test` is file scope.
 - A struct argument to `testing.error`.
