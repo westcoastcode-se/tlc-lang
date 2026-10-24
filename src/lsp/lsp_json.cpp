@@ -626,6 +626,9 @@ std::string spell_array_element(const Expr::Init &init) {
 }
 
 std::string spell_slot(const ResultSlot &slot) {
+    if (slot.is_tuple) {
+        return spell_results(slot.tuple_parts);
+    }
     if (slot.is_fn_ptr) {
         return spell_fn_value(slot.type_name, slot.ret_indirections, slot.ret_optional, slot.ret_const_pointee, slot.fn_params,
                               slot.fn_variadic, slot.fn_results);

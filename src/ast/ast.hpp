@@ -394,7 +394,7 @@ struct ResultSlot {
     std::vector<FnParam> fn_params;
     bool fn_variadic = false;
     std::vector<FnParam> fn_results;
-    // `func pair() ((i32, i32))`. One result, that tuple, not two results.
+    // `func pair() ((i32, i32))` is one result, that tuple. `((i32, i32), i32)` is that tuple beside another result.
     bool is_tuple = false;
     std::vector<ResultSlot> tuple_parts;
 };

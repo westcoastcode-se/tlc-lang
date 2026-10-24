@@ -935,12 +935,15 @@ CodeGen::Lowered CodeGen::lower_tuple_parts(uint32_t file, const std::vector<Res
     std::vector<llvm::Type *> fields;
     fields.reserve(parts.size());
     for (const ResultSlot &slot : parts) {
+        // One result of several may itself be a tuple. `lower` has no parts for that slot.
         const Lowered part =
-            slot.is_fn_ptr ? lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
-                                         slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,
-                                         slot.fn_results)
-                           : lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                   slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
+            slot.is_tuple ? lower_tuple_parts(file, slot.tuple_parts)
+            : slot.is_fn_ptr
+                ? lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
+                              slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,
+                              slot.fn_results)
+                : lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
+                        slot.array_len, false, slot.elem_slice, slot.shells);
         llvm::Type *type = stored_type(part);
         fields.push_back(type == nullptr ? i32() : type);
     }

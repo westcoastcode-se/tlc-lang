@@ -740,6 +740,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             slot = &binding->tuple_parts[index];
                         }
                     }
+                    if (slot != nullptr && slot->is_tuple) {
+                        TypedValue loaded;
+                        loaded.value = extracted;
+                        loaded.is_tuple = true;
+                        loaded.tuple_parts = slot->tuple_parts;
+                        return loaded;
+                    }
                     if (slot != nullptr) {
                         const Lowered part = lower(current_file_, slot->type_name, slot->type_package, slot->is_struct,
                                                    slot->indirections, slot->is_array, slot->array_len, false,

@@ -558,8 +558,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                value.tuple_parts.size() == node.names.size()) {
         parts.reserve(value.tuple_parts.size());
         for (const ResultSlot &slot : value.tuple_parts) {
-            parts.push_back(lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                  slot.is_array, slot.array_len, false, slot.elem_slice));
+            parts.push_back(lower_result(current_file_, slot));
         }
     } else if (value.value != nullptr && value.value->getType()->isStructTy() && value.tuple_parts.empty()) {
         auto *aggregate = llvm::cast<llvm::StructType>(value.value->getType());

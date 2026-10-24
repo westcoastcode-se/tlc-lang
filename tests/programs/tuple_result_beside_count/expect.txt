@@ -1,0 +1,1 @@
+compile-error: return type: expected 2 results, found 3
