@@ -225,7 +225,7 @@ class Checker {
     std::vector<Scope> scopes_;
     int function_seq_ = 0;
     std::vector<StructInfo> structs_;
-    // `fields()` yields a slice of this struct: `name []const u8` and `kind Type`.
+    // `fields()` yields `[]const Field`: `name []const u8` and `kind *const Type`.
     // Negative until `ensure_field_info` runs. `builtin.Field` replaces it when that struct is declared.
     int field_info_id_ = -1;
     std::vector<TraitInfo> traits_;
@@ -437,7 +437,7 @@ class Checker {
     // The slice `Type.fields()` returns. Invalid before `ensure_field_info`.
     Type type_field_slice() const;
     void ensure_field_info();
-    // `builtin.Field` when that struct is `name []const u8` and `kind Type`. Otherwise -1.
+    // `builtin.Field` when that struct is `name []const u8` and `kind *const Type`. Otherwise -1.
     int builtin_field_struct() const;
     // Writes `reflected_fields` on the package graph after every struct is known.
     void publish_reflected_fields();
@@ -584,13 +584,22 @@ class Checker {
     Type elaborate_inferred(FunctionDecl &fn, const Type &want);
     Type check_against(const Expr &expr, const Type &want);
     void check_stmt(const Stmt &stmt);
-    // Checks each statement. A comptime call is replaced by the statements it emits.
+    // Checks each statement. A macro call is replaced by the statements it emits.
     void check_statements(std::vector<std::unique_ptr<Stmt>> &statements);
     void append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::unique_ptr<Stmt>> &out);
-    void expand_comptime_call(const Expr::Call &call, const FunctionDecl &fn, std::vector<std::unique_ptr<Stmt>> &out);
+    void expand_macro_call(const Expr::Call &call, const FunctionDecl &fn, std::vector<std::unique_ptr<Stmt>> &out);
+    void expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
+                           const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out, bool substitute);
+    void unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
+                           const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out);
     // The constant a `comptime` parameter denotes. Null when the argument is not that constant.
     std::unique_ptr<Expr> comptime_argument(const Expr &arg, const Param &param);
     const FunctionDecl *comptime_callee(const Expr::Call &call);
+    const FunctionDecl *macro_callee(const Expr::Call &call);
+    // An ordinary function whose every parameter is `comptime`. A `comptime func` is not this.
+    const FunctionDecl *baked_callee(const Expr::Call &call);
+    // A `comptime` parameter of an ordinary function requires a comptime argument.
+    void require_comptime_params(const FunctionDecl &fn, const Expr::Call &call);
     std::optional<int> fold_comptime_call(const Expr::Call &call);
     // The comptime slice overload of `builtin.memeql` or `builtin.memcmp` when both arguments are
     // constant `[]const u8`. Null when that overload is not the one to fold.
@@ -603,7 +612,12 @@ class Checker {
     bool comptime_arguments(const FunctionDecl &fn, const Expr::Call &call);
     std::unordered_set<const FunctionDecl *> comptime_expanding_;
     std::unordered_set<const FunctionDecl *> comptime_folding_;
+    // Nonzero while checking a `comptime func` or a `macro`. Nested calls are not expanded there.
     int comptime_depth_ = 0;
+    // Nonzero while checking a `macro`. `emit` is legal only then, and not inside a runtime loop.
+    int macro_depth_ = 0;
+    // `while`, `do`, and `for` that are not `inline for`.
+    int plain_loop_depth_ = 0;
     void check_for_each(const Stmt::For &node);
     void check_assert(SourceLoc loc, const Expr *cond, const std::string &message);
     void check_test(const TestDecl &test);

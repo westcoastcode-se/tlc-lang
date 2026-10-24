@@ -1,0 +1,7 @@
+comptime func byte(text []const u8) i32 {
+    return text[1];
+}
+
+func main() i32 {
+    return byte("hi");
+}

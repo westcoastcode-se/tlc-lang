@@ -20,7 +20,7 @@ void CodeGen::declare_functions(const PackageNode &node) {
     std::unordered_map<std::string, std::unordered_set<std::string>> kinds;
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
-        if (fn == nullptr || fn->name.empty() || fn->is_comptime || !fn->type_params.empty()) {
+        if (fn == nullptr || fn->name.empty() || fn->is_comptime || fn->is_macro || !fn->type_params.empty()) {
             continue;
         }
         kinds[function_key(*fn)].insert(param_list_key(*fn));
@@ -28,7 +28,7 @@ void CodeGen::declare_functions(const PackageNode &node) {
     std::unordered_map<std::string, Acc> functions;
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
-        if (fn == nullptr || fn->name.empty() || fn->is_comptime) {
+        if (fn == nullptr || fn->name.empty() || fn->is_comptime || fn->is_macro) {
             continue;
         }
         const std::string plain = function_key(*fn);
@@ -338,7 +338,8 @@ void CodeGen::emit_bodies(const PackageNode &node) {
     std::unordered_set<std::string> emitted;
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
-        if (fn == nullptr || fn->body == nullptr || fn->is_comptime || function_is_generic(node.file_id, *fn)) {
+        if (fn == nullptr || fn->body == nullptr || fn->is_comptime || fn->is_macro ||
+            function_is_generic(node.file_id, *fn)) {
             continue;
         }
         std::string key = function_key(*fn);

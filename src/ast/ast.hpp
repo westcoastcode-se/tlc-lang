@@ -383,6 +383,8 @@ struct FieldDecl {
     bool is_array = false;
     // `[]const u8`. The element type is const.
     bool elem_const = false;
+    // `kind const Type`. The stored value is constant. Assignment is rejected.
+    bool is_const = false;
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
     std::vector<TypeShell> shells;
@@ -546,7 +548,7 @@ struct Stmt {
     struct Expression {
         SourceLoc loc{};
         std::unique_ptr<Expr> expr;
-        // `emit expr;` inside a comptime func. A statement call copies this statement.
+        // `emit expr;` inside a macro. A statement call copies this statement.
         bool emit = false;
     };
     struct If {
@@ -572,6 +574,8 @@ struct Stmt {
         std::string each_name;
         SourceLoc each_name_loc{};
         std::unique_ptr<Expr> each_expr;
+        // `inline for`. The bounds are compile-time and the body is unrolled.
+        bool is_inline = false;
     };
     struct DoWhile {
         SourceLoc loc{};
@@ -718,6 +722,8 @@ struct FunctionDecl {
     bool exported = false;
     // Evaluated while compiling. The function has no runtime symbol.
     bool is_comptime = false;
+    // Generates statements with `emit`. A statement call pastes that code.
+    bool is_macro = false;
     // The body is an unsafe context. A call must be written `unsafe name(...)`.
     bool unsafe = false;
     bool is_static = false;
@@ -819,7 +825,7 @@ inline bool mem_plain_result(const FunctionDecl &fn, const std::string &name) {
 }
 
 inline bool mem_compare_header(const FunctionDecl &fn) {
-    if (fn.is_comptime || fn.body == nullptr || !fn.method_struct.empty() || !fn.method_params.empty() || fn.is_extern ||
+    if (fn.is_comptime || fn.is_macro || fn.body == nullptr || !fn.method_struct.empty() || !fn.method_params.empty() || fn.is_extern ||
         fn.extern_c || fn.variadic || fn.static_method || fn.is_static || fn.unsafe || fn.iteration_kind != 0 ||
         !fn.captures.empty() || fn.type_params.size() != 1) {
         return false;
@@ -980,6 +986,9 @@ struct TranslationUnit {
 };
 
 std::unique_ptr<Expr> clone_expr(const Expr &expr);
+// A name listed in `names` becomes a clone of the matching expression. A nested function is left alone.
+void replace_names(std::unique_ptr<Expr> &slot, const std::vector<std::string> &names,
+                   const std::vector<const Expr *> &exprs);
 std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt);
 VarDecl clone_var(const VarDecl &var);
 FunctionDecl clone_function(const FunctionDecl &fn);

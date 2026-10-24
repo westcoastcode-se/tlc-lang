@@ -183,7 +183,8 @@ bool Parser::starts_declaration() const {
     const bool typedef_name = kind == TokenKind::Identifier && peek(1).kind != TokenKind::Dot &&
                               (peek(1).kind == TokenKind::Star || peek(1).kind == TokenKind::Identifier);
     return kind == TokenKind::KwExport || kind == TokenKind::KwExtern ||
-           kind == TokenKind::KwFunc || kind == TokenKind::KwComptime || kind == TokenKind::KwType || is_type_keyword(kind) ||
+           kind == TokenKind::KwFunc || kind == TokenKind::KwComptime || kind == TokenKind::KwMacro ||
+           kind == TokenKind::KwType || is_type_keyword(kind) ||
            starts_qualified_type() || typedef_name;
 }
 

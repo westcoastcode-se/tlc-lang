@@ -1,0 +1,8 @@
+func add(n comptime i32) i32 {
+    return n;
+}
+
+func main() i32 {
+    var n = 1;
+    return add(n);
+}

@@ -461,7 +461,7 @@ bool Parser::parse_field(FieldDecl &field, bool extern_c, bool allow_init) {
         eat(TokenKind::Semicolon);
         return false;
     }
-    const PlacedType type = parse_go_type();
+    const PlacedType type = parse_go_type(true);
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
     }
@@ -474,6 +474,7 @@ bool Parser::parse_field(FieldDecl &field, bool extern_c, bool allow_init) {
     field.const_pointee = type.const_pointee;
     field.is_array = type.is_array;
     field.elem_const = type.elem_const;
+    field.is_const = type.is_const;
     field.elem_slice = type.elem_slice;
     field.shells = type.shells;
     field.array_len = type.array_len;
@@ -817,7 +818,7 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_fn_dec
     return type;
 }
 
-Parser::PlacedType Parser::parse_go_type() {
+Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
     auto take_base = [](PlacedType &type, const Specifiers &specs) {
         if (!type.loc.valid()) {
             type.loc = specs.loc;
@@ -826,7 +827,8 @@ Parser::PlacedType Parser::parse_go_type() {
         type.type_package = specs.type_package;
         type.is_struct = specs.is_struct;
         type.is_enum = specs.is_enum;
-        type.is_const = specs.is_const;
+        // `kind const Type` set this before the leaf was parsed. Specifiers do not clear it.
+        type.is_const = specs.is_const || type.is_const;
         type.struct_definition = specs.struct_definition;
         type.enum_definition = specs.enum_definition;
     };
@@ -918,10 +920,15 @@ Parser::PlacedType Parser::parse_go_type() {
             }
             return parse_func_type();
         }
-        // `const` before the leaf, as in `[]const u8`. `const i32` and `[]const [4]T` are not forms.
+        // `[]const u8` marks the element. `kind const Type` marks the field value.
+        // `const i32` on a variable, and `[]const [4]T`, are not forms.
         if (check(TokenKind::KwConst)) {
             if (type.shells.empty()) {
-                diags_.error(peek().loc, "not supported yet");
+                if (!allow_value_const) {
+                    diags_.error(peek().loc, "not supported yet");
+                } else {
+                    type.is_const = true;
+                }
                 ++pos_;
             } else {
                 type.elem_const = true;
@@ -1220,8 +1227,9 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         // `func Type::name[T type]` and `func Vec[T]::get[U type]` are method templates.
         fn.type_params = parse_type_params();
     }
-    // A generic function may mark a parameter `comptime`. A function with no type parameter may not.
-    fn.params = parse_params(extern_c, fn.variadic, fn.method_struct, comptime_fn || !fn.type_params.empty());
+    // `comptime` on a parameter is a value known while compiling. A `comptime func` requires
+    // every argument to be that kind of value. A `macro` may mix it with a runtime parameter.
+    fn.params = parse_params(extern_c, fn.variadic, fn.method_struct, true);
     fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
     parse_results(fn);
     if (check(TokenKind::LBrace)) {

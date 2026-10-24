@@ -58,7 +58,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bo
             }
             body.fields.push_back(std::move(field));
         } else {
-            const PlacedType type = parse_go_type();
+            const PlacedType type = parse_go_type(true);
             if (type.struct_definition || type.enum_definition) {
                 diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
             }
@@ -71,6 +71,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bo
             field.const_pointee = type.const_pointee;
             field.is_array = type.is_array;
             field.elem_const = type.elem_const;
+            field.is_const = type.is_const;
             field.elem_slice = type.elem_slice;
             field.shells = type.shells;
             field.array_len = type.array_len;
@@ -116,6 +117,7 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
         field.const_pointee = type.const_pointee;
         field.is_array = type.is_array;
         field.elem_const = type.elem_const;
+        field.is_const = type.is_const;
         field.elem_slice = type.elem_slice;
         field.shells = type.shells;
         field.array_len = type.array_len;
@@ -241,7 +243,7 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
                         body.fields.push_back(std::move(field));
                     }
                 } else {
-                    const PlacedType type = parse_go_type();
+                    const PlacedType type = parse_go_type(true);
                     if (type.struct_definition || type.enum_definition) {
                         diags_.error(type.loc.valid() ? type.loc : field.loc, "not supported yet");
                     }
@@ -701,6 +703,24 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         ++pos_;
         FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true, link_name, true);
         fn.is_comptime = true;
+        fn.unsafe = unsafe_fn;
+        TopDecl top;
+        top.data = std::move(fn);
+        unit.decls.push_back(std::move(top));
+        saw_decl_ = true;
+        return;
+    }
+    if (check(TokenKind::KwMacro)) {
+        const SourceLoc loc = peek().loc;
+        if (peek(1).kind != TokenKind::KwFunc) {
+            diags_.error(loc, "not supported yet");
+            ++pos_;
+            saw_decl_ = true;
+            return;
+        }
+        ++pos_;
+        FunctionDecl fn = parse_function(exported, false, is_extern, extern_c, true, link_name, false);
+        fn.is_macro = true;
         fn.unsafe = unsafe_fn;
         TopDecl top;
         top.data = std::move(fn);

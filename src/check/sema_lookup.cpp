@@ -731,7 +731,7 @@ Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_in
     if (const int trait = package_trait(file_id_, name); trait >= 0) {
         return type_trait(trait);
     }
-    // `kind Type` on `builtin.Field`. The export is added after the field is typed.
+    // `kind *const Type` on `builtin.Field`. The export is added after the field is typed.
     if (name == "Type" && is_std_builtin_file(file_id_)) {
         return type_meta();
     }

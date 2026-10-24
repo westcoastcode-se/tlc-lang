@@ -18,7 +18,7 @@ FieldDecl::FieldDecl(const FieldDecl &other)
     : loc(other.loc), name(other.name), type_name(other.type_name), type_package(other.type_package),
       is_struct(other.is_struct), is_enum(other.is_enum), indirections(other.indirections), optional(other.optional),
       const_pointee(other.const_pointee), is_array(other.is_array), elem_const(other.elem_const),
-      elem_slice(other.elem_slice), shells(other.shells), array_len(other.array_len),
+      is_const(other.is_const), elem_slice(other.elem_slice), shells(other.shells), array_len(other.array_len),
       array_len_name(other.array_len_name), type_args(other.type_args), is_fn_ptr(other.is_fn_ptr),
       ret_indirections(other.ret_indirections), ret_optional(other.ret_optional),
       ret_const_pointee(other.ret_const_pointee), fn_params(other.fn_params), fn_variadic(other.fn_variadic),
@@ -1130,6 +1130,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.each_name = node.each_name;
                 copy.each_name_loc = node.each_name_loc;
                 copy.each_expr = node.each_expr ? clone_expr(*node.each_expr) : nullptr;
+                copy.is_inline = node.is_inline;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
                 Stmt::DoWhile copy;
@@ -1208,6 +1209,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.body = fn.body ? clone_stmt(*fn.body) : nullptr;
     copy.exported = fn.exported;
     copy.is_comptime = fn.is_comptime;
+    copy.is_macro = fn.is_macro;
     copy.unsafe = fn.unsafe;
     copy.is_static = fn.is_static;
     copy.is_extern = fn.is_extern;
@@ -1232,5 +1234,62 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
 }
 
 StructDecl clone_struct(const StructDecl &item) { return item; }
+
+void replace_names(std::unique_ptr<Expr> &slot, const std::vector<std::string> &names,
+                   const std::vector<const Expr *> &exprs) {
+    if (slot == nullptr || names.empty()) {
+        return;
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&slot->data)) {
+        for (std::size_t i = 0; i < names.size() && i < exprs.size(); ++i) {
+            if (!names[i].empty() && names[i] == named->text && exprs[i] != nullptr) {
+                slot = clone_expr(*exprs[i]);
+                return;
+            }
+        }
+        return;
+    }
+    // A nested function has its own parameters.
+    if (std::holds_alternative<Expr::Func>(slot->data)) {
+        return;
+    }
+    std::visit(
+        [&](auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                          std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
+                replace_names(node.expr, names, exprs);
+            } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
+                replace_names(node.lhs, names, exprs);
+                replace_names(node.rhs, names, exprs);
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                replace_names(node.callee, names, exprs);
+                for (auto &arg : node.args) {
+                    replace_names(arg, names, exprs);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                replace_names(node.base, names, exprs);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                replace_names(node.base, names, exprs);
+                replace_names(node.index, names, exprs);
+                replace_names(node.end, names, exprs);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                for (auto &field : node.fields) {
+                    replace_names(field.value, names, exprs);
+                }
+                for (auto &element : node.elements) {
+                    replace_names(element, names, exprs);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                replace_names(node.allocator, names, exprs);
+                replace_names(node.count, names, exprs);
+                replace_names(node.init, names, exprs);
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                replace_names(node.allocator, names, exprs);
+                replace_names(node.expr, names, exprs);
+            }
+        },
+        slot->data);
+}
 
 } // namespace tlc

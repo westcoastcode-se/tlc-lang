@@ -519,6 +519,9 @@ std::string spell_type(const Place &place) {
     if (place.is_array) {
         core = place.array_len < 0 ? "[]" + core : "[" + std::to_string(place.array_len) + "]" + core;
     }
+    if (place.value_const) {
+        core = "const " + core;
+    }
     return stars + core;
 }
 
@@ -539,7 +542,7 @@ Place place_of_var(const VarDecl &var) {
 
 Place place_of_field(const FieldDecl &field) {
     return Place{field.type_name, field.indirections, field.optional, field.const_pointee, field.is_array,
-                 field.array_len, field.elem_slice, field.elem_const};
+                 field.array_len, field.elem_slice, field.elem_const, field.is_const};
 }
 
 std::string spell_fn_params(const std::vector<FnParam> &params, bool variadic) {

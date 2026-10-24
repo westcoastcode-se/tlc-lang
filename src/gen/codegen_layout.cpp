@@ -393,7 +393,7 @@ void CodeGen::prepare_structs() {
         const FieldLayout *kind = name != nullptr ? &layout.fields[1] : nullptr;
         const bool name_text = name != nullptr && name->name == "name" && name->is_slice && name->elem_unsigned &&
                                name->elem_bits == 8;
-        if (!layout.ready || !name_text || kind->name != "kind" || kind->depth != 1) {
+        if (!layout.ready || !name_text || kind->name != "kind" || kind->depth != 2) {
             continue;
         }
         field_struct_id_ = id;
@@ -421,7 +421,7 @@ void CodeGen::install_field_struct() {
     FieldLayout kind;
     kind.name = "kind";
     kind.type = ptr_type();
-    kind.depth = 1;
+    kind.depth = 2;
     layout.fields.push_back(std::move(name));
     layout.fields.push_back(std::move(kind));
     structs_.push_back(std::move(layout));

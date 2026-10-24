@@ -45,7 +45,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 if (symbol->is_function && !direct_callee_) {
                     for (const FnList &list : symbol->lists) {
-                        if (list.decl != nullptr && list.decl->is_comptime) {
+                        if (list.decl != nullptr && (list.decl->is_comptime || list.decl->is_macro)) {
                             error(node.loc, "not supported yet");
                             return type_invalid();
                         }
@@ -609,7 +609,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             check_expr(*node.rhs, true);
                             return type_invalid();
                         }
-                        if ((through_pointer && base.pointee != nullptr && base.pointee->is_const) ||
+                        if (trait_field.is_const ||
+                            (through_pointer && base.pointee != nullptr && base.pointee->is_const) ||
                             const_path(*node.lhs)) {
                             error(node.loc, "type mismatch");
                             check_expr(*node.rhs, true);
@@ -649,7 +650,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         check_expr(*node.rhs, true);
                         return type_invalid();
                     }
-                    if (from_slice_element(selector->base.get()) ||
+                    if (field.is_const || from_slice_element(selector->base.get()) ||
                         (base.kind == TypeKind::Pointer && base.pointee != nullptr && base.pointee->is_const) ||
                         const_path(*node.lhs)) {
                         error(node.loc, "type mismatch");
@@ -703,16 +704,41 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                 }
                 if (const FunctionDecl *fn = node.callee != nullptr ? comptime_callee(node) : nullptr) {
-                    if (!fn->params.empty() || !fn->type_params.empty() || !node.args.empty() || !node.type_args.empty() ||
-                        !fold_int(expr)) {
+                    const std::size_t before = diags_.size();
+                    if (!node.type_args.empty() || !fn->type_params.empty()) {
                         error(node.loc, "not supported yet");
-                        for (const auto &arg : node.args) {
-                            if (arg != nullptr) {
-                                check_expr(*arg, true);
+                    } else if (node.args.size() != fn->params.size()) {
+                        error(node.loc, "argument count");
+                    } else {
+                        for (std::size_t i = 0; i < fn->params.size(); ++i) {
+                            if (node.args[i] == nullptr) {
+                                error(node.loc, "argument count");
+                                continue;
+                            }
+                            check_call_arg(*node.args[i], type_of_param(fn->params[i]));
+                            if (diags_.size() == before && !argument_is_comptime(*node.args[i])) {
+                                error(expr_loc(*node.args[i]), "not supported yet");
                             }
                         }
+                    }
+                    if (diags_.size() != before) {
                         return type_invalid();
                     }
+                    if (!fold_int(expr)) {
+                        error(node.loc, "not supported yet");
+                        return type_invalid();
+                    }
+                    return type_int();
+                }
+                if (const FunctionDecl *fn = node.callee != nullptr ? macro_callee(node) : nullptr) {
+                    error(node.loc, "not supported yet");
+                    for (const auto &arg : node.args) {
+                        if (arg != nullptr) {
+                            check_expr(*arg, true);
+                        }
+                    }
+                    (void)fn;
+                    return type_invalid();
                 }
                 const bool deferring = checking_defer_;
                 if (deferring) {
@@ -1303,6 +1329,27 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                    arg.kind != TypeKind::Enum && arg.kind != TypeKind::Nullptr) {
                             error(expr_loc(*node.args[i]), "not supported yet");
                         }
+                    }
+                }
+                if (node.callee != nullptr) {
+                    const FunctionDecl *ordinary = nullptr;
+                    if (const auto *named = std::get_if<Expr::Name>(&node.callee->data)) {
+                        if (const Symbol *symbol = lookup(named->text);
+                            symbol != nullptr && symbol->is_function && !symbol->is_template && symbol->lists.size() == 1) {
+                            ordinary = symbol->lists.front().decl;
+                        }
+                    } else if (const auto *called = std::get_if<Expr::Selector>(&node.callee->data)) {
+                        const auto *base = called->base == nullptr ? nullptr : std::get_if<Expr::Name>(&called->base->data);
+                        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+                        if (package != nullptr && package->is_package) {
+                            const Symbol *member = find_export(package->package_file, called->field);
+                            if (member != nullptr && member->is_function && !member->is_template && member->lists.size() == 1) {
+                                ordinary = member->lists.front().decl;
+                            }
+                        }
+                    }
+                    if (ordinary != nullptr) {
+                        require_comptime_params(*ordinary, node);
                     }
                 }
                 return *signature->result;

@@ -646,6 +646,9 @@ void Checker::define_trait_fields() {
                                               false, field.type_package, field.is_struct, field.is_enum, false,
                                               field.optional, field.const_pointee, false, field.elem_const,
                                               field.elem_slice, field.shells, true);
+            if (field.is_const) {
+                field_type.is_const = true;
+            }
             if (field_type.kind == TypeKind::Invalid) {
                 continue;
             }
@@ -1306,6 +1309,9 @@ void Checker::define_struct_fields() {
                                               field.optional, field.const_pointee,
                                               slice_hides_leaf(written) || pointer_hides_leaf(written),
                                               field.elem_const, field.elem_slice, written.shells, true);
+            if (field.is_const) {
+                field_type.is_const = true;
+            }
             // A slice is a tlc value, `{ptr, i32}`. An `extern(abi="c")` struct keeps the C layout.
             if (is_slice(field_type) && info.extern_c) {
                 error(field.loc, "not supported yet");
@@ -2094,7 +2100,9 @@ void Checker::ensure_field_info() {
     StructInfo::Field kind;
     kind.name = "kind";
     kind.exported = true;
-    kind.type = type_meta();
+    Type meta = type_meta();
+    meta.is_const = true;
+    kind.type = type_pointer(std::move(meta));
     info.fields.push_back(std::move(name));
     info.fields.push_back(std::move(kind));
     structs_.push_back(std::move(info));
@@ -2113,7 +2121,9 @@ int Checker::builtin_field_struct() const {
         const bool name_bytes = name.exported && name.name == "name" && is_slice(name.type) &&
                                 name.type.element != nullptr && name.type.element->is_const &&
                                 name.type.element->kind == TypeKind::Char && name.type.element->is_unsigned;
-        const bool kind_type = kind.exported && kind.name == "kind" && kind.type.kind == TypeKind::Meta;
+        const bool kind_type = kind.exported && kind.name == "kind" && kind.type.kind == TypeKind::Pointer &&
+                               !kind.type.optional && kind.type.pointee != nullptr &&
+                               kind.type.pointee->kind == TypeKind::Meta && kind.type.pointee->is_const;
         if (name_bytes && kind_type) {
             return id;
         }
@@ -2122,14 +2132,17 @@ int Checker::builtin_field_struct() const {
 }
 
 Type Checker::type_field_slice() const {
-    const int named = builtin_field_struct();
-    if (named >= 0) {
-        return type_array(type_struct(named), -1);
+    int id = builtin_field_struct();
+    if (id < 0) {
+        id = field_info_id_;
     }
-    if (field_info_id_ < 0) {
+    if (id < 0) {
         return type_invalid();
     }
-    return type_array(type_struct(field_info_id_), -1);
+    // The records in a type descriptor are not stores. `[]const Field` rejects them.
+    Type element = type_struct(id);
+    element.is_const = true;
+    return type_array(std::move(element), -1);
 }
 
 void Checker::publish_reflected_fields() {
@@ -2168,7 +2181,13 @@ void Checker::publish_reflected_fields() {
             if (field.name.empty()) {
                 continue;
             }
-            fields.push_back(ReflectedField{field.name, type_desc(field.type)});
+            std::string spelling = type_desc(field.type);
+            // `kind const Type`. A pointer and an array already spell const on the child.
+            if (field.type.is_const && field.type.kind != TypeKind::Pointer && field.type.kind != TypeKind::Array &&
+                field.type.kind != TypeKind::Invalid && spelling != "invalid") {
+                spelling = "const " + spelling;
+            }
+            fields.push_back(ReflectedField{field.name, std::move(spelling)});
         }
         if (fields.empty()) {
             return;

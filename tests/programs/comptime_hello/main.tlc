@@ -1,6 +1,6 @@
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-comptime func hello(name []const u8) void {
+macro func hello(name []const u8) void {
     emit printf("Hello %s\n", name);
 }
 

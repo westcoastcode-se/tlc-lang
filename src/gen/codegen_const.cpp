@@ -1112,7 +1112,7 @@ llvm::StructType *CodeGen::type_desc_type() {
     if (type_desc_ty_ != nullptr) {
         return type_desc_ty_;
     }
-    // `{ *u8 name, []Field fields }`. `name()` loads the first field. `fields()` loads the second.
+    // `{ *u8 name, []const Field fields }`. `name()` loads the first field. `fields()` loads the second.
     auto *type = llvm::StructType::create(context_, "tlc.type");
     type->setBody({ptr_type(), slice_type()});
     type_desc_ty_ = type;
@@ -1138,7 +1138,7 @@ llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
                 llvm::Constant *bytes = intern_type_name(field.name);
                 llvm::Constant *name = llvm::ConstantStruct::get(
                     slice_type(), {bytes, const_i32(static_cast<int32_t>(field.name.size()))});
-                llvm::Constant *kind = intern_type_desc(field.type);
+                llvm::Constant *kind = type_kind_ptr(field.type);
                 elems.push_back(llvm::ConstantStruct::get(field_ty, {name, kind}));
             }
             auto *array_ty = llvm::ArrayType::get(field_ty, elems.size());
@@ -1149,6 +1149,18 @@ llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
     }
     global->setInitializer(llvm::ConstantStruct::get(type_desc_type(), {intern_type_name(text), fields}));
     return global;
+}
+
+llvm::Constant *CodeGen::type_kind_ptr(const std::string &text) {
+    const auto found = type_kind_ptrs_.find(text);
+    if (found != type_kind_ptrs_.end()) {
+        return found->second;
+    }
+    // `*const Type` points at the descriptor address. One cell is shared by every field of that type.
+    auto *cell = new llvm::GlobalVariable(module_, ptr_type(), true, llvm::GlobalValue::PrivateLinkage,
+                                          intern_type_desc(text), ".tkind");
+    type_kind_ptrs_.emplace(text, cell);
+    return cell;
 }
 
 llvm::Constant *CodeGen::sized_int(const Binding &dest, int32_t value) const {

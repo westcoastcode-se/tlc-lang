@@ -1,0 +1,12 @@
+import "builtin";
+
+type Point struct {
+    x i32;
+};
+
+func main() i32 {
+    var listed []const builtin.Field = typeof(Point).fields();
+    var row builtin.Field = listed[0];
+    *row.kind = typeof(i32);
+    return 0;
+}

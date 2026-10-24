@@ -208,6 +208,9 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
                                             false, field.type_package, field.is_struct, field.is_enum, false, field.optional,
                                             field.const_pointee, false, field.elem_const, field.elem_slice, field.shells,
                                             true);
+        if (field.is_const) {
+            field_type.is_const = true;
+        }
         if (field_type.kind == TypeKind::Invalid) {
             continue;
         }
@@ -409,6 +412,9 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                                             false, field.type_package, field.is_struct, field.is_enum, false,
                                             field.optional, field.const_pointee, false, field.elem_const,
                                             field.elem_slice, field.shells);
+        if (field.is_const) {
+            field_type.is_const = true;
+        }
         StructInfo::Field stored{field.name, std::move(field_type), field.loc, field.exported};
         if (field.init != nullptr) {
             stored.has_init = true;

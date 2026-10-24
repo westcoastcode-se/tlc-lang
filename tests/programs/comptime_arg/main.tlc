@@ -2,7 +2,7 @@ extern(abi="c") func printf(fmt *const u8, ...) i32;
 
 const label = "Per";
 
-comptime func hello(name comptime []const u8, tail []const u8, n comptime i32) void {
+macro func hello(name comptime []const u8, tail []const u8, n comptime i32) void {
     emit printf("Hello %s %s %d\n", name, tail, n);
 }
 

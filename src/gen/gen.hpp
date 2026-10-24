@@ -683,8 +683,10 @@ class CodeGen {
     std::unordered_map<std::string, llvm::GlobalVariable *> type_names_;
     // One descriptor per spelling. The value of `Type` is a pointer to it.
     std::unordered_map<std::string, llvm::GlobalVariable *> type_descs_;
+    // One `*const Type` cell per spelling. `Field.kind` points at it.
+    std::unordered_map<std::string, llvm::GlobalVariable *> type_kind_ptrs_;
     llvm::StructType *type_desc_ty_ = nullptr;
-    // `fields()` element: `{ name []const u8, kind Type }`. Negative until `prepare_structs`.
+    // `fields()` element: `{ name []const u8, kind *const Type }`. Negative until `prepare_structs`.
     int field_struct_id_ = -1;
     std::unordered_set<std::string> emitting_specs_;
     std::vector<int> active_spec_;
@@ -1275,6 +1277,7 @@ class CodeGen {
     llvm::Constant *intern_type_name(const std::string &text);
     llvm::StructType *type_desc_type();
     llvm::Constant *intern_type_desc(const std::string &text);
+    llvm::Constant *type_kind_ptr(const std::string &text);
     // The descriptor pointer a `Type` or `*Type` receiver holds. Null on a bad receiver.
     llvm::Value *type_descriptor(const Expr &expr);
     void install_field_struct();
@@ -1311,8 +1314,8 @@ class CodeGen {
     // A string literal, a constant range of one, or a file-scope const in this file
     // whose initializer is one. A pointer const is not that slice. A `var` is not a constant.
     std::optional<std::string> constant_string(const Expr &expr, std::unordered_set<std::string> &seen) const;
-    const FunctionDecl *comptime_named(const std::string &name) const;
-    std::optional<int32_t> fold_comptime_body(const FunctionDecl &fn) const;
+    const FunctionDecl *fold_call_target(const std::string &name, const Expr::Call &call) const;
+    std::optional<int32_t> fold_substituted_call(const FunctionDecl &fn, const Expr::Call &call) const;
     // The `builtin.memeql` or `builtin.memcmp` declaration this call names.
     const FunctionDecl *mem_compare_decl(const Expr::Call &call) const;
     // A constant float or integer. `wide` is an f64 operation. Integers leave `is_float` clear.

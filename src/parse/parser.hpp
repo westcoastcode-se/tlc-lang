@@ -194,7 +194,8 @@ class Parser {
     PlacedType parse_placed_type(bool allow_const, bool allow_fn_declarator = true);
     // `var` and field types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
     // A pointer is prefix in every other position too: `*int`, `*const char`.
-    PlacedType parse_go_type();
+    // `allow_value_const` accepts `kind const Type` on a field. Elsewhere that form is rejected.
+    PlacedType parse_go_type(bool allow_value_const = false);
     // `method_struct` is empty for a free function. A method receiver is `name this` or `name *this`.
     // `name **this` is `expected 'this'`.
     std::vector<Param> parse_params(bool allow_const, bool &variadic, const std::string &method_struct = {},

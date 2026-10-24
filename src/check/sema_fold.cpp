@@ -84,6 +84,67 @@ bool is_float_logic(TokenKind op) {
     }
 }
 
+std::unique_ptr<Expr> folded_int(int value, SourceLoc loc) {
+    if (value < 0) {
+        if (value == -2147483647 - 1) {
+            return nullptr;
+        }
+        auto inner = folded_int(-value, loc);
+        if (inner == nullptr) {
+            return nullptr;
+        }
+        auto expr = std::make_unique<Expr>();
+        Expr::Unary node;
+        node.loc = loc;
+        node.op = TokenKind::Minus;
+        node.expr = std::move(inner);
+        expr->data = std::move(node);
+        return expr;
+    }
+    auto expr = std::make_unique<Expr>();
+    Expr::Int node;
+    node.loc = loc;
+    node.value = static_cast<uint64_t>(value);
+    expr->data = std::move(node);
+    return expr;
+}
+
+std::unique_ptr<Expr> folded_string(std::string text, SourceLoc loc) {
+    auto expr = std::make_unique<Expr>();
+    Expr::String node;
+    node.loc = loc;
+    node.text = std::move(text);
+    expr->data = std::move(node);
+    return expr;
+}
+
+const Expr *single_i32_return(const FunctionDecl &fn) {
+    if (fn.results.size() != 1 || fn.return_type != "i32" || fn.body == nullptr) {
+        return nullptr;
+    }
+    const ResultSlot &slot = fn.results.front();
+    if (slot.type_name != "i32" || !slot.type_package.empty() || slot.is_struct || slot.is_enum || slot.indirections != 0 ||
+        slot.optional != 0 || slot.is_array || slot.is_fn_ptr || slot.const_pointee != 0) {
+        return nullptr;
+    }
+    const auto *body = std::get_if<Stmt::Block>(&fn.body->data);
+    if (body == nullptr) {
+        return nullptr;
+    }
+    const Expr *value = nullptr;
+    for (const auto &stmt : body->statements) {
+        if (stmt == nullptr) {
+            continue;
+        }
+        const auto *ret = std::get_if<Stmt::Return>(&stmt->data);
+        if (ret == nullptr || value != nullptr || ret->value == nullptr || !ret->extra.empty()) {
+            return nullptr;
+        }
+        value = ret->value.get();
+    }
+    return value;
+}
+
 } // namespace
 
 std::optional<std::string> Checker::type_constant(const Expr &expr) const {
@@ -590,45 +651,107 @@ std::optional<int> Checker::fold_mem_compare(const Expr::Call &call) {
     return mem_compare_bytes(*left, *right, mem_compare_kind(*fn));
 }
 
+const FunctionDecl *Checker::baked_callee(const Expr::Call &call) {
+    if (call.callee == nullptr || !call.type_args.empty() || call.args.empty()) {
+        return nullptr;
+    }
+    const auto *named = std::get_if<Expr::Name>(&call.callee->data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || !symbol->is_function || symbol->is_template) {
+        return nullptr;
+    }
+    const FunctionDecl *found = nullptr;
+    for (const FnList &list : symbol->lists) {
+        const FunctionDecl *decl = list.decl;
+        if (decl == nullptr || decl->is_comptime || decl->is_macro || !decl->type_params.empty() ||
+            !decl->method_struct.empty() || decl->params.size() != call.args.size() || decl->params.empty()) {
+            continue;
+        }
+        bool all = true;
+        for (const Param &param : decl->params) {
+            if (!param.is_comptime) {
+                all = false;
+            }
+        }
+        if (!all) {
+            continue;
+        }
+        if (found != nullptr) {
+            return nullptr;
+        }
+        found = decl;
+    }
+    return found;
+}
+
+void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &call) {
+    if (fn.is_comptime || fn.is_macro || !fn.type_params.empty()) {
+        return;
+    }
+    const std::size_t count = fn.params.size() < call.args.size() ? fn.params.size() : call.args.size();
+    for (std::size_t i = 0; i < count; ++i) {
+        if (!fn.params[i].is_comptime || call.args[i] == nullptr) {
+            continue;
+        }
+        if (!argument_is_comptime(*call.args[i])) {
+            error(expr_loc(*call.args[i]), "type mismatch");
+        }
+    }
+}
+
 std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     const FunctionDecl *fn = comptime_callee(call);
-    if (fn == nullptr || !fn->params.empty() || !fn->type_params.empty() || !call.args.empty() || !call.type_args.empty() ||
-        fn->results.size() != 1 || fn->return_type != "i32" || fn->body == nullptr) {
+    if (fn == nullptr) {
+        fn = baked_callee(call);
+    }
+    if (fn == nullptr || fn->is_macro || fn->variadic || !fn->type_params.empty() || !fn->method_struct.empty() ||
+        !call.type_args.empty() || call.args.size() != fn->params.size() || comptime_folding_.contains(fn)) {
         return std::nullopt;
     }
-    const ResultSlot &slot = fn->results.front();
-    if (slot.type_name != "i32" || !slot.type_package.empty() || slot.is_struct || slot.is_enum || slot.indirections != 0 ||
-        slot.optional != 0 || slot.is_array || slot.is_fn_ptr || slot.const_pointee != 0) {
-        return std::nullopt;
-    }
-    const auto *body = std::get_if<Stmt::Block>(&fn->body->data);
-    if (body == nullptr) {
-        return std::nullopt;
-    }
-    if (!comptime_folding_.insert(fn).second) {
-        return std::nullopt;
-    }
-    const Expr *value = nullptr;
-    bool rejected = false;
-    for (const auto &stmt : body->statements) {
-        if (stmt == nullptr) {
-            continue;
+    std::vector<std::unique_ptr<Expr>> owned;
+    std::vector<std::string> names;
+    owned.reserve(fn->params.size());
+    names.reserve(fn->params.size());
+    for (std::size_t i = 0; i < fn->params.size(); ++i) {
+        if (call.args[i] == nullptr || (!fn->is_comptime && !fn->params[i].is_comptime)) {
+            return std::nullopt;
         }
-        if (const auto *ret = std::get_if<Stmt::Return>(&stmt->data)) {
-            if (value != nullptr || ret->value == nullptr || !ret->extra.empty()) {
-                rejected = true;
-                break;
+        const SourceLoc loc = expr_loc(*call.args[i]);
+        std::unique_ptr<Expr> literal;
+        if (const std::optional<int> number = fold_int(*call.args[i])) {
+            literal = folded_int(*number, loc);
+        } else {
+            std::unordered_set<std::string> seen;
+            if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
+                literal = folded_string(*text, loc);
             }
-            value = ret->value.get();
-            continue;
         }
-        // `emit` produces statements. A value call does not run those statements.
-        rejected = true;
-        break;
+        if (literal == nullptr) {
+            return std::nullopt;
+        }
+        names.push_back(fn->params[i].name);
+        owned.push_back(std::move(literal));
     }
-    const std::optional<int> folded = !rejected && value != nullptr ? fold_int(*value) : std::nullopt;
-    comptime_folding_.erase(fn);
-    return folded;
+    const Expr *value = single_i32_return(*fn);
+    if (value == nullptr || !comptime_folding_.insert(fn).second) {
+        return std::nullopt;
+    }
+    struct Leave {
+        std::unordered_set<const FunctionDecl *> &set;
+        const FunctionDecl *fn;
+        ~Leave() { set.erase(fn); }
+    } leave{comptime_folding_, fn};
+    std::vector<const Expr *> exprs;
+    exprs.reserve(owned.size());
+    for (const auto &item : owned) {
+        exprs.push_back(item.get());
+    }
+    std::unique_ptr<Expr> rewritten = clone_expr(*value);
+    replace_names(rewritten, names, exprs);
+    return fold_int(*rewritten);
 }
 
 } // namespace tlc

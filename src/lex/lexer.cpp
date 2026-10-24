@@ -47,6 +47,7 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"if", TokenKind::KwIf},
     {"import", TokenKind::KwImport},
     {"inline", TokenKind::KwInline},
+    {"macro", TokenKind::KwMacro},
     {"new", TokenKind::KwNew},
     {"null", TokenKind::KwNull},
     {"package", TokenKind::KwPackage},
@@ -147,6 +148,7 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::KwIf: return "if";
     case TokenKind::KwImport: return "import";
     case TokenKind::KwInline: return "inline";
+    case TokenKind::KwMacro: return "macro";
     case TokenKind::KwInt: return "int";
     case TokenKind::KwLong: return "long";
     case TokenKind::KwComptime: return "comptime";

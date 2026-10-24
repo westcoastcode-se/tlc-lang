@@ -43,6 +43,7 @@ enum class TokenKind {
     KwIf,
     KwImport,
     KwInline,
+    KwMacro,
     KwInt,
     KwLong,
     KwComptime,

@@ -33,6 +33,67 @@ double float_op(TokenKind op, double lhs, double rhs, bool wide) {
     return left.convertToDouble();
 }
 
+std::unique_ptr<Expr> folded_int(int32_t value, SourceLoc loc) {
+    if (value < 0) {
+        if (value == -2147483647 - 1) {
+            return nullptr;
+        }
+        auto inner = folded_int(-value, loc);
+        if (inner == nullptr) {
+            return nullptr;
+        }
+        auto expr = std::make_unique<Expr>();
+        Expr::Unary node;
+        node.loc = loc;
+        node.op = TokenKind::Minus;
+        node.expr = std::move(inner);
+        expr->data = std::move(node);
+        return expr;
+    }
+    auto expr = std::make_unique<Expr>();
+    Expr::Int node;
+    node.loc = loc;
+    node.value = static_cast<uint64_t>(value);
+    expr->data = std::move(node);
+    return expr;
+}
+
+std::unique_ptr<Expr> folded_string(std::string text, SourceLoc loc) {
+    auto expr = std::make_unique<Expr>();
+    Expr::String node;
+    node.loc = loc;
+    node.text = std::move(text);
+    expr->data = std::move(node);
+    return expr;
+}
+
+const Expr *single_i32_return(const FunctionDecl &fn) {
+    if (fn.results.size() != 1 || fn.return_type != "i32" || fn.body == nullptr) {
+        return nullptr;
+    }
+    const ResultSlot &slot = fn.results.front();
+    if (slot.type_name != "i32" || !slot.type_package.empty() || slot.is_struct || slot.is_enum || slot.indirections != 0 ||
+        slot.optional != 0 || slot.is_array || slot.is_fn_ptr || slot.const_pointee != 0) {
+        return nullptr;
+    }
+    const auto *body = std::get_if<Stmt::Block>(&fn.body->data);
+    if (body == nullptr) {
+        return nullptr;
+    }
+    const Expr *value = nullptr;
+    for (const auto &stmt : body->statements) {
+        if (stmt == nullptr) {
+            continue;
+        }
+        const auto *ret = std::get_if<Stmt::Return>(&stmt->data);
+        if (ret == nullptr || value != nullptr || ret->value == nullptr || !ret->extra.empty()) {
+            return nullptr;
+        }
+        value = ret->value.get();
+    }
+    return value;
+}
+
 bool is_float_logic(TokenKind op) {
     switch (op) {
     case TokenKind::EqEq:
@@ -428,26 +489,18 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                         }
                     }
                 }
-                if (!node.type_args.empty() || !node.args.empty() || node.callee == nullptr) {
+                if (!node.type_args.empty() || node.callee == nullptr) {
                     return std::nullopt;
                 }
                 const auto *named = std::get_if<Expr::Name>(&node.callee->data);
                 if (named == nullptr) {
                     return std::nullopt;
                 }
-                const FunctionDecl *fn = comptime_named(named->text);
-                if (fn == nullptr || !fn->params.empty() || !fn->type_params.empty() || !fn->method_struct.empty()) {
+                const FunctionDecl *fn = fold_call_target(named->text, node);
+                if (fn == nullptr) {
                     return std::nullopt;
                 }
-                if (!comptime_folding_.insert(fn).second) {
-                    return std::nullopt;
-                }
-                struct Leave {
-                    std::unordered_set<const FunctionDecl *> &set;
-                    const FunctionDecl *fn;
-                    ~Leave() { set.erase(fn); }
-                } leave{comptime_folding_, fn};
-                return fold_comptime_body(*fn);
+                return fold_substituted_call(*fn, node);
             } else {
                 return std::nullopt;
             }
@@ -555,7 +608,7 @@ const FunctionDecl *CodeGen::mem_compare_decl(const Expr::Call &call) const {
     return exported(target, selector->field);
 }
 
-const FunctionDecl *CodeGen::comptime_named(const std::string &name) const {
+const FunctionDecl *CodeGen::fold_call_target(const std::string &name, const Expr::Call &call) const {
     if (graph_ == nullptr || name.empty()) {
         return nullptr;
     }
@@ -567,7 +620,19 @@ const FunctionDecl *CodeGen::comptime_named(const std::string &name) const {
         }
         for (const TopDecl &decl : node->unit.decls) {
             const auto *fn = std::get_if<FunctionDecl>(&decl.data);
-            if (fn == nullptr || !fn->is_comptime || fn->name != name || !fn->method_struct.empty()) {
+            if (fn == nullptr || fn->name != name || fn->is_macro || !fn->method_struct.empty() ||
+                !fn->type_params.empty() || fn->params.size() != call.args.size()) {
+                continue;
+            }
+            bool baked = !fn->is_comptime && !fn->params.empty();
+            if (baked) {
+                for (const Param &param : fn->params) {
+                    if (!param.is_comptime) {
+                        baked = false;
+                    }
+                }
+            }
+            if (!fn->is_comptime && !baked) {
                 continue;
             }
             if (found != nullptr) {
@@ -579,37 +644,52 @@ const FunctionDecl *CodeGen::comptime_named(const std::string &name) const {
     return found;
 }
 
-std::optional<int32_t> CodeGen::fold_comptime_body(const FunctionDecl &fn) const {
-    if (fn.results.size() != 1 || fn.return_type != "i32" || fn.body == nullptr) {
+std::optional<int32_t> CodeGen::fold_substituted_call(const FunctionDecl &fn, const Expr::Call &call) const {
+    if (fn.is_macro || fn.variadic || !fn.type_params.empty() || !fn.method_struct.empty() ||
+        call.args.size() != fn.params.size() || comptime_folding_.contains(&fn)) {
         return std::nullopt;
     }
-    const ResultSlot &slot = fn.results.front();
-    if (slot.type_name != "i32" || !slot.type_package.empty() || slot.is_struct || slot.is_enum || slot.indirections != 0 ||
-        slot.optional != 0 || slot.is_array || slot.is_fn_ptr || slot.const_pointee != 0) {
-        return std::nullopt;
-    }
-    const auto *body = std::get_if<Stmt::Block>(&fn.body->data);
-    if (body == nullptr) {
-        return std::nullopt;
-    }
-    const Expr *value = nullptr;
-    for (const auto &stmt : body->statements) {
-        if (stmt == nullptr) {
-            continue;
+    std::vector<std::unique_ptr<Expr>> owned;
+    std::vector<std::string> names;
+    owned.reserve(fn.params.size());
+    names.reserve(fn.params.size());
+    for (std::size_t i = 0; i < fn.params.size(); ++i) {
+        if (call.args[i] == nullptr || (!fn.is_comptime && !fn.params[i].is_comptime)) {
+            return std::nullopt;
         }
-        if (const auto *ret = std::get_if<Stmt::Return>(&stmt->data)) {
-            if (value != nullptr || ret->value == nullptr || !ret->extra.empty()) {
-                return std::nullopt;
+        const SourceLoc loc = expr_loc(*call.args[i]);
+        std::unique_ptr<Expr> literal;
+        if (const std::optional<int32_t> number = fold(*call.args[i])) {
+            literal = folded_int(*number, loc);
+        } else {
+            std::unordered_set<std::string> seen;
+            if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
+                literal = folded_string(*text, loc);
             }
-            value = ret->value.get();
-            continue;
         }
+        if (literal == nullptr) {
+            return std::nullopt;
+        }
+        names.push_back(fn.params[i].name);
+        owned.push_back(std::move(literal));
+    }
+    const Expr *value = single_i32_return(fn);
+    if (value == nullptr || !comptime_folding_.insert(&fn).second) {
         return std::nullopt;
     }
-    if (value == nullptr) {
-        return std::nullopt;
+    struct Leave {
+        std::unordered_set<const FunctionDecl *> &set;
+        const FunctionDecl *kept;
+        ~Leave() { set.erase(kept); }
+    } leave{comptime_folding_, &fn};
+    std::vector<const Expr *> exprs;
+    exprs.reserve(owned.size());
+    for (const auto &item : owned) {
+        exprs.push_back(item.get());
     }
-    return fold(*value);
+    std::unique_ptr<Expr> rewritten = clone_expr(*value);
+    replace_names(rewritten, names, exprs);
+    return fold(*rewritten);
 }
 
 } // namespace tlc

@@ -47,7 +47,7 @@ func main() i32 {
 
 The program returns 42. `id` and `shown` are both members. `shown` is the one another package can name.
 
-A constant on the struct is written beside it, `const Entity::next = 40`. It is not a field. `sizeof` still counts the fields only. Assigning it, or taking its address, is reported as `not an lvalue`. A `const` inside the braces is not a member. It is reported as `not supported yet`.
+A constant on the struct is written beside it, `const Entity::next = 40`. It is not a field. `sizeof` still counts the fields only. Assigning it, or taking its address, is reported as `not an lvalue`. A `const` declaration inside the braces is not a member. It is reported as `not supported yet`. A field `x const i32` stores a constant value. Assigning `value.x` is `type mismatch`. `const` before a type on a variable is `not supported yet`.
 
 ```c
 type Entity struct {

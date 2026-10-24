@@ -329,6 +329,8 @@ struct Place {
     bool elem_slice = false;
     // `[]const u8`. Const sits on the leaf, inside the brackets.
     bool elem_const = false;
+    // `kind const Type`. Const sits on the value, outside any brackets.
+    bool value_const = false;
 };
 
 std::string spell_type(const Place &place);

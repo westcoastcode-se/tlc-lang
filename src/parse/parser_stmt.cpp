@@ -726,6 +726,16 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
     if (check(TokenKind::KwDo)) {
         return parse_do();
     }
+    if (check(TokenKind::KwInline) && peek(1).kind == TokenKind::KwFor) {
+        ++pos_;
+        std::unique_ptr<Stmt> stmt = parse_for();
+        if (stmt != nullptr) {
+            if (auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
+                loop->is_inline = true;
+            }
+        }
+        return stmt;
+    }
     if (check(TokenKind::KwFor)) {
         return parse_for();
     }
@@ -808,6 +818,14 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         stmt.call = parse_expr();
         expect(TokenKind::Semicolon, "expected ';'");
         return make_stmt(std::move(stmt));
+    }
+    if (check(TokenKind::KwMacro)) {
+        diags_.error(peek().loc, "not supported yet");
+        ++pos_;
+        if (check(TokenKind::KwFunc)) {
+            parse_function(false, false, false, false, true, {});
+        }
+        return make_stmt(Stmt::Expression{});
     }
     if (check(TokenKind::KwComptime)) {
         // `comptime { ... }` inside a function is reserved. A local `comptime func` is too.

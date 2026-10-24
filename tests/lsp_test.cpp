@@ -1280,7 +1280,7 @@ int run_lsp_tests() {
     const std::string fields_hover =
         request_at(to_child[1], from_child[0], 125, "textDocument/hover", builtin_uri, fields_at);
     EXPECT_HAS(check, fields_hover, "func Type.fields");
-    EXPECT_HAS(check, fields_hover, "[]Field");
+    EXPECT_HAS(check, fields_hover, "[]const Field");
     EXPECT_HAS(check, fields_hover, "named struct");
     LineCol malloc_at = at_needle(builtin_source, "heap.malloc", false);
     malloc_at.character += static_cast<int>(std::string("heap.").size());

@@ -1,4 +1,4 @@
-comptime func hello(name comptime []const u8) void {
+macro func hello(name comptime []const u8) void {
     emit name;
 }
 

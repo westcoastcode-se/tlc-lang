@@ -9,17 +9,18 @@ package builtin;
 // The compiler adds this export. A typedef with this name would hide it.
 
 // One field returned by Type.fields. name is the field's name. kind is its type.
+// kind points at that type. The type is constant. Storing through kind is rejected.
 export type Field struct {
     export name []const u8;
-    export kind Type;
+    export kind *const Type;
 };
 
 // The spelling of this type, the same text a diagnostic prints.
 export func Type::name(self this) *u8;
 
 // The fields of a named struct, in the order they are written.
-// A type that is not a named struct has length 0.
-export func Type::fields(self this) []Field;
+// The element is constant. A type that is not a named struct has length 0.
+export func Type::fields(self this) []const Field;
 
 // The calls that have not returned, newest first.
 // The pointer addresses one buffer. The next call replaces that text.

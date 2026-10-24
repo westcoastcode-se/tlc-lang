@@ -1,0 +1,12 @@
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+macro func show() void {
+    inline for (var i = 0; i < 33; i = i + 1) {
+        emit printf("%d\n", i);
+    }
+}
+
+func main() i32 {
+    show();
+    return 0;
+}

@@ -197,6 +197,10 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &, Sour
         }
         return;
     }
+    // `kind const Type` accepts `typeof(i32)`. Dropping const still fails.
+    if (allows_added_const(got, want)) {
+        return;
+    }
     expect(got, want, loc);
 }
 
@@ -1850,6 +1854,9 @@ Type Checker::finish_overloaded(const Expr::Call &node, const Symbol &symbol, bo
         return type_invalid();
     }
     node.selected = winner->decl;
+    if (winner->decl != nullptr) {
+        require_comptime_params(*winner->decl, node);
+    }
     require_unsafe_call(winner->unsafe_fn, node.loc);
     const Type &signature = winner->type;
     if (deferring) {
