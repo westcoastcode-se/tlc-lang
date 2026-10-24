@@ -577,12 +577,6 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     }
     bool reject = false;
     SourceLoc reject_loc = type.loc;
-    for (PlacedType &result : results) {
-        // `((i32, i32))` is one tuple result. `((i32, i32), i32)` stays rejected.
-        if (result.is_tuple && results.size() != 1) {
-            drop_bare_tuple(result);
-        }
-    }
     for (const PlacedType &result : results) {
         // One result may be a function pointer. Several results may not include one.
         if (result.struct_definition || result.enum_definition || (result.is_fn_ptr && results.size() != 1)) {
@@ -615,9 +609,9 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
         type.ret_const_pointee = first.ret_const_pointee;
         return type;
     }
-    if (first.is_tuple) {
+    if (results.size() == 1 && first.is_tuple) {
         // One tuple result. The element types live on that one entry.
-        // Several results are a longer `fn_results` list, with no tuple flag.
+        // `((i32, i32), i32)` is two entries. The tuple entry keeps `is_tuple`.
         type.fn_results.push_back(fn_param_from(first));
         return type;
     }

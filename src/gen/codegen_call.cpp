@@ -824,6 +824,11 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         } else {
             result.tuple_parts.reserve(call.fn_results.size());
             for (const FnParam &part : call.fn_results) {
+                if (part.is_tuple) {
+                    // `func () ((i32, i32), i32)`. That result stays one tuple.
+                    result.tuple_parts.push_back(slot_from_fn(slot_from_fn, part));
+                    continue;
+                }
                 ResultSlot slot;
                 slot.type_name = part.type_name;
                 slot.type_package = part.type_package;

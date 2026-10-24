@@ -105,6 +105,7 @@ void append_shaped_name(std::string &out, const std::string &package, const std:
 void append_type_arg_shape(std::string &out, const TypeArg &arg, const std::vector<TypeParam> &params);
 void append_type_arg_shape_list(std::string &out, const std::vector<TypeArg> &args, const std::vector<TypeParam> &params);
 void append_fn_shape(std::string &out, const FnParam &param, const std::vector<TypeParam> &params);
+void append_mixed_fn_results(std::string &out, const std::vector<FnParam> &results, const std::vector<TypeParam> &params);
 
 void append_type_arg_shape(std::string &out, const TypeArg &arg, const std::vector<TypeParam> &params) {
     if (arg.has_value || arg.is_value) {
@@ -147,7 +148,29 @@ void append_type_arg_shape(std::string &out, const TypeArg &arg, const std::vect
     out.push_back(']');
 }
 
+void append_mixed_fn_results(std::string &out, const std::vector<FnParam> &results, const std::vector<TypeParam> &params) {
+    out.push_back('(');
+    for (std::size_t i = 0; i < results.size(); ++i) {
+        if (i != 0) {
+            out.push_back(',');
+        }
+        append_fn_shape(out, results[i], params);
+    }
+    out.push_back(')');
+}
+
 void append_fn_shape(std::string &out, const FnParam &param, const std::vector<TypeParam> &params) {
+    if (param.is_tuple) {
+        out.push_back('(');
+        for (std::size_t i = 0; i < param.results.size(); ++i) {
+            if (i != 0) {
+                out.push_back(',');
+            }
+            append_fn_shape(out, param.results[i], params);
+        }
+        out.push_back(')');
+        return;
+    }
     if (param.is_array) {
         out.push_back('[');
         if (param.array_len >= 0) {
@@ -201,6 +224,13 @@ void append_fn_shape(std::string &out, const FnParam &param, const std::vector<T
         out.push_back('(');
         append_fn_shape(out, param.results.front(), params);
         out.push_back(')');
+    } else if (param.results.size() > 1) {
+        for (const FnParam &part : param.results) {
+            if (part.is_tuple) {
+                append_mixed_fn_results(out, param.results, params);
+                break;
+            }
+        }
     }
 }
 
@@ -282,6 +312,13 @@ void append_result_shape(std::string &out, const ResultSlot &slot, const std::ve
         out.push_back('(');
         append_fn_shape(out, slot.fn_results.front(), params);
         out.push_back(')');
+    } else if (slot.fn_results.size() > 1) {
+        for (const FnParam &part : slot.fn_results) {
+            if (part.is_tuple) {
+                append_mixed_fn_results(out, slot.fn_results, params);
+                break;
+            }
+        }
     }
 }
 
@@ -356,6 +393,13 @@ void append_param_shape(std::string &out, const Param &param, const std::vector<
         out.push_back('(');
         append_fn_shape(out, param.fn_results.front(), params);
         out.push_back(')');
+    } else if (param.fn_results.size() > 1) {
+        for (const FnParam &part : param.fn_results) {
+            if (part.is_tuple) {
+                append_mixed_fn_results(out, param.fn_results, params);
+                break;
+            }
+        }
     }
 }
 

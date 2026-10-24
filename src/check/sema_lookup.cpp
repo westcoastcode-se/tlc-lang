@@ -147,6 +147,15 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
         std::vector<Type> parts;
         parts.reserve(results.size());
         for (const FnParam &part : results) {
+            if (part.is_tuple) {
+                // `func () ((i32, i32), i32)`. That result is the tuple, not two more results.
+                Type one = type_of_fn_param(part, loc);
+                if (one.kind == TypeKind::Void) {
+                    error(loc, "type mismatch");
+                }
+                parts.push_back(std::move(one));
+                continue;
+            }
             FnParam &written = const_cast<FnParam &>(part);
             std::string array_len_name;
             prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,

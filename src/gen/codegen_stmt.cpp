@@ -550,6 +550,31 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                value.value->getType()->isStructTy()) {
         parts.reserve(fn_results.size());
         for (const FnParam &part : fn_results) {
+            if (part.is_tuple) {
+                // `func () ((i32, i32), i32)`. The first name is that tuple.
+                ResultSlot slot;
+                slot.is_tuple = true;
+                slot.tuple_parts.reserve(part.results.size());
+                for (const FnParam &inner : part.results) {
+                    ResultSlot one;
+                    one.type_name = inner.type_name;
+                    one.type_package = inner.type_package;
+                    one.is_struct = inner.is_struct;
+                    one.is_enum = inner.is_enum;
+                    one.indirections = inner.indirections;
+                    one.optional = inner.optional;
+                    one.const_pointee = inner.const_pointee;
+                    one.is_array = inner.is_array && inner.array_len != 0;
+                    one.array_len = one.is_array ? inner.array_len : 0;
+                    one.elem_slice = inner.elem_slice;
+                    one.elem_const = inner.elem_const;
+                    one.shells = inner.shells;
+                    one.type_args = inner.type_args;
+                    slot.tuple_parts.push_back(std::move(one));
+                }
+                parts.push_back(lower_result(current_file_, slot));
+                continue;
+            }
             const bool array = part.is_array && !part.is_fn_ptr && part.array_len != 0;
             parts.push_back(lower(current_file_, part.type_name, part.type_package, part.is_struct, part.indirections,
                                   array, array ? part.array_len : 0, false, part.elem_slice));

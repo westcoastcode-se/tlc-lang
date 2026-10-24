@@ -171,6 +171,19 @@ void append_many_results(std::string &out, const std::vector<FnParam> &results) 
             out += ", ";
         }
         const FnParam &part = results[i];
+        if (part.is_tuple) {
+            out += '(';
+            for (std::size_t n = 0; n < part.results.size(); ++n) {
+                if (n != 0) {
+                    out += ", ";
+                }
+                const FnParam &inner = part.results[n];
+                out += type_text(inner.type_name, inner.type_package, inner.is_struct, inner.is_enum, inner.indirections,
+                                 inner.is_array, inner.array_len, inner.optional, {}, inner.const_pointee);
+            }
+            out += ')';
+            continue;
+        }
         out += type_text(part.type_name, part.type_package, part.is_struct, part.is_enum, part.indirections,
                          part.is_array, part.array_len, part.optional, {}, part.const_pointee);
     }

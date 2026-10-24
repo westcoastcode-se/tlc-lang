@@ -596,6 +596,17 @@ std::string spell_fn_results(const std::string &type_name, int indirections, uin
 }
 
 std::string spell_fn_param(const FnParam &param) {
+    if (param.is_tuple) {
+        std::string out = "(";
+        for (std::size_t n = 0; n < param.results.size(); ++n) {
+            if (n != 0) {
+                out += ", ";
+            }
+            out += spell_fn_param(param.results[n]);
+        }
+        out.push_back(')');
+        return out;
+    }
     if (!param.is_fn_ptr) {
         return spell_type(Place{param.type_name, param.indirections, param.optional, param.const_pointee, param.is_array,
                                 param.array_len, param.elem_slice, param.elem_const});

@@ -1010,6 +1010,26 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
     std::vector<llvm::Type *> args;
     args.reserve(params.size());
     auto lower_part = [&](const FnParam &part, bool parameter) {
+        if (part.is_tuple) {
+            // One result among several. The elements are that tuple.
+            // A nested tuple is already rejected, so each element is an ordinary type.
+            std::vector<llvm::Type *> fields;
+            fields.reserve(part.results.size());
+            for (const FnParam &inner : part.results) {
+                const bool slice = inner.is_array && inner.array_len < 0;
+                const Lowered one = lower(file, inner.type_name, inner.type_package, inner.is_struct, inner.indirections,
+                                          slice, slice ? inner.array_len : 0, false, inner.elem_slice, inner.shells);
+                fields.push_back(stored_type(one));
+            }
+            Lowered tuple;
+            if (fields.size() < 2) {
+                tuple.type = i32();
+                return tuple;
+            }
+            tuple.is_tuple = true;
+            tuple.type = llvm::StructType::get(context_, fields);
+            return tuple;
+        }
         if (part.is_fn_ptr) {
             return lower_fnptr(file, part.type_name, part.type_package, part.is_struct, part.is_enum,
                                part.ret_indirections, part.indirections, part.params, part.variadic, part.results);
@@ -1025,7 +1045,8 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
     out.depth = fn_depth < 1 ? 1 : fn_depth;
     out.type = ptr_type();
     if (results.size() == 1 && results.front().is_tuple) {
-        // `func () ((i32, i32))` returns that tuple. Several results are a longer list.
+        // `func () ((i32, i32))` returns that tuple.
+        // `func () ((i32, i32), i32)` is a longer list. A tuple there is one field.
         std::vector<llvm::Type *> fields;
         fields.reserve(results.front().results.size());
         for (const FnParam &part : results.front().results) {
