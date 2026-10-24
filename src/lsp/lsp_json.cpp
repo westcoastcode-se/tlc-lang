@@ -569,6 +569,18 @@ std::string spell_fn_results(const std::string &type_name, int indirections, uin
     if (many.size() == 1 && many.front().is_fn_ptr) {
         return spell_fn_param(many.front());
     }
+    if (many.size() == 1 && many.front().is_tuple) {
+        std::string inner = "(";
+        const std::vector<FnParam> &parts = many.front().results;
+        for (std::size_t n = 0; n < parts.size(); ++n) {
+            if (n != 0) {
+                inner += ", ";
+            }
+            inner += spell_fn_param(parts[n]);
+        }
+        inner.push_back(')');
+        return "(" + inner + ")";
+    }
     if (many.size() > 1) {
         std::string out = "(";
         for (std::size_t n = 0; n < many.size(); ++n) {

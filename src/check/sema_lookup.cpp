@@ -102,6 +102,18 @@ void Checker::adopt_captures(const FunctionDecl &fn) {
 }
 
 Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc) {
+    if (param.is_tuple) {
+        std::vector<Type> parts;
+        parts.reserve(param.results.size());
+        for (const FnParam &part : param.results) {
+            Type one = type_of_fn_param(part, loc);
+            if (one.kind == TypeKind::Void) {
+                error(loc, "type mismatch");
+            }
+            parts.push_back(std::move(one));
+        }
+        return type_tuple(std::move(parts));
+    }
     FnParam &written = const_cast<FnParam &>(param);
     bool is_array = false;
     int array_len = 0;
@@ -128,7 +140,10 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
                              const std::vector<FnParam> &results, SourceLoc loc, uint32_t ret_optional,
                              uint32_t ret_const) {
     Type result;
-    if (results.size() > 1) {
+    if (results.size() == 1 && results.front().is_tuple) {
+        // `func () ((i32, i32))`. One tuple result, not two results.
+        result = type_of_fn_param(results.front(), loc);
+    } else if (results.size() > 1) {
         std::vector<Type> parts;
         parts.reserve(results.size());
         for (const FnParam &part : results) {

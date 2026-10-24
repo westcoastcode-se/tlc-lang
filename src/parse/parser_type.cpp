@@ -578,7 +578,8 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     bool reject = false;
     SourceLoc reject_loc = type.loc;
     for (PlacedType &result : results) {
-        if (result.is_tuple) {
+        // `((i32, i32))` is one tuple result. `((i32, i32), i32)` stays rejected.
+        if (result.is_tuple && results.size() != 1) {
             drop_bare_tuple(result);
         }
     }
@@ -612,6 +613,12 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
         type.ret_indirections = first.ret_indirections;
         type.ret_optional = first.ret_optional;
         type.ret_const_pointee = first.ret_const_pointee;
+        return type;
+    }
+    if (first.is_tuple) {
+        // One tuple result. The element types live on that one entry.
+        // Several results are a longer `fn_results` list, with no tuple flag.
+        type.fn_results.push_back(fn_param_from(first));
         return type;
     }
     type.type_name = first.type_name;
@@ -1344,6 +1351,39 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     return fn;
 }
 
+static FnParam fn_param_from_result(const ResultSlot &slot) {
+    FnParam param;
+    param.type_name = slot.type_name;
+    param.type_package = slot.type_package;
+    param.is_struct = slot.is_struct;
+    param.is_enum = slot.is_enum;
+    param.indirections = slot.indirections;
+    param.optional = slot.optional;
+    param.const_pointee = slot.const_pointee;
+    param.is_array = slot.is_array && slot.array_len < 0;
+    param.array_len = param.is_array ? slot.array_len : 0;
+    param.elem_slice = param.is_array && slot.elem_slice;
+    param.elem_const = slot.elem_const;
+    param.shells = slot.shells;
+    param.type_args = slot.type_args;
+    if (slot.is_tuple) {
+        param.is_tuple = true;
+        param.results.reserve(slot.tuple_parts.size());
+        for (const ResultSlot &part : slot.tuple_parts) {
+            param.results.push_back(fn_param_from_result(part));
+        }
+        return param;
+    }
+    param.is_fn_ptr = slot.is_fn_ptr;
+    param.ret_indirections = slot.ret_indirections;
+    param.ret_optional = slot.ret_optional;
+    param.ret_const_pointee = slot.ret_const_pointee;
+    param.params = slot.fn_params;
+    param.variadic = slot.fn_variadic;
+    param.results = slot.fn_results;
+    return param;
+}
+
 FnParam Parser::fn_param_from(const PlacedType &type) const {
     FnParam param;
     param.type_name = type.type_name;
@@ -1364,8 +1404,16 @@ FnParam Parser::fn_param_from(const PlacedType &type) const {
     param.ret_const_pointee = type.ret_const_pointee;
     param.params = type.fn_params;
     param.variadic = type.fn_variadic;
-    param.results = type.fn_results;
     param.type_args = type.type_args;
+    if (type.is_tuple) {
+        param.is_tuple = true;
+        param.results.reserve(type.tuple_parts.size());
+        for (const ResultSlot &slot : type.tuple_parts) {
+            param.results.push_back(fn_param_from_result(slot));
+        }
+        return param;
+    }
+    param.results = type.fn_results;
     return param;
 }
 

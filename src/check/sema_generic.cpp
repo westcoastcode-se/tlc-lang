@@ -187,7 +187,17 @@ void append_fn_shape(std::string &out, const FnParam &param, const std::vector<T
         out += "...";
     }
     out.push_back(')');
-    if (param.results.size() == 1 && param.results.front().is_fn_ptr) {
+    if (param.results.size() == 1 && param.results.front().is_tuple) {
+        out += "((";
+        const std::vector<FnParam> &parts = param.results.front().results;
+        for (std::size_t i = 0; i < parts.size(); ++i) {
+            if (i != 0) {
+                out.push_back(',');
+            }
+            append_fn_shape(out, parts[i], params);
+        }
+        out += "))";
+    } else if (param.results.size() == 1 && param.results.front().is_fn_ptr) {
         out.push_back('(');
         append_fn_shape(out, param.results.front(), params);
         out.push_back(')');
@@ -258,7 +268,17 @@ void append_result_shape(std::string &out, const ResultSlot &slot, const std::ve
         append_fn_shape(out, slot.fn_params[i], params);
     }
     out.push_back(')');
-    if (slot.fn_results.size() == 1 && slot.fn_results.front().is_fn_ptr) {
+    if (slot.fn_results.size() == 1 && slot.fn_results.front().is_tuple) {
+        out += "((";
+        const std::vector<FnParam> &parts = slot.fn_results.front().results;
+        for (std::size_t i = 0; i < parts.size(); ++i) {
+            if (i != 0) {
+                out.push_back(',');
+            }
+            append_fn_shape(out, parts[i], params);
+        }
+        out += "))";
+    } else if (slot.fn_results.size() == 1 && slot.fn_results.front().is_fn_ptr) {
         out.push_back('(');
         append_fn_shape(out, slot.fn_results.front(), params);
         out.push_back(')');
@@ -322,7 +342,17 @@ void append_param_shape(std::string &out, const Param &param, const std::vector<
         out += "...";
     }
     out.push_back(')');
-    if (param.fn_results.size() == 1 && param.fn_results.front().is_fn_ptr) {
+    if (param.fn_results.size() == 1 && param.fn_results.front().is_tuple) {
+        out += "((";
+        const std::vector<FnParam> &parts = param.fn_results.front().results;
+        for (std::size_t i = 0; i < parts.size(); ++i) {
+            if (i != 0) {
+                out.push_back(',');
+            }
+            append_fn_shape(out, parts[i], params);
+        }
+        out += "))";
+    } else if (param.fn_results.size() == 1 && param.fn_results.front().is_fn_ptr) {
         out.push_back('(');
         append_fn_shape(out, param.fn_results.front(), params);
         out.push_back(')');
@@ -1714,6 +1744,12 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         return bound;
     };
     auto subst_fn_param = [&](auto &&self, FnParam &param, SourceLoc loc) -> void {
+        if (param.is_tuple) {
+            for (FnParam &inner : param.results) {
+                self(self, inner, loc);
+            }
+            return;
+        }
         if (param.is_fn_ptr) {
             bool is_array = false;
             int array_len = 0;

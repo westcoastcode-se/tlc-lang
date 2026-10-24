@@ -87,8 +87,12 @@ struct FnParam {
     uint32_t ret_const_pointee = 0;
     std::vector<FnParam> params;
     bool variadic = false;
-    // Several results, or one result that is itself a function pointer.
+    // Several results, one result that is itself a function pointer, or the
+    // elements of one tuple result when `is_tuple` is set.
     std::vector<FnParam> results;
+    // `func () ((i32, i32))` is one result, that tuple. The elements are `results`.
+    // Several results leave this unset. `((i32, i32), i32)` is not this form.
+    bool is_tuple = false;
     // `Box[i32]` on this parameter, or on the result when `is_fn_ptr` is set.
     std::vector<TypeArg> type_args;
 };

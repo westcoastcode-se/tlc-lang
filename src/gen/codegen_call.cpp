@@ -778,10 +778,43 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         stamp_array_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
                         slot.array_len, slot.elem_slice, slot.shells);
     }
+    auto slot_from_fn = [](const auto &self, const FnParam &part) -> ResultSlot {
+        ResultSlot slot;
+        slot.type_name = part.type_name;
+        slot.type_package = part.type_package;
+        slot.is_struct = part.is_struct;
+        slot.is_enum = part.is_enum;
+        slot.indirections = part.indirections;
+        slot.optional = part.optional;
+        slot.const_pointee = part.const_pointee;
+        slot.is_array = part.is_array && part.array_len != 0;
+        slot.array_len = slot.is_array ? part.array_len : 0;
+        slot.elem_slice = part.elem_slice;
+        slot.elem_const = part.elem_const;
+        slot.shells = part.shells;
+        slot.type_args = part.type_args;
+        if (part.is_tuple) {
+            slot.is_tuple = true;
+            slot.tuple_parts.reserve(part.results.size());
+            for (const FnParam &inner : part.results) {
+                slot.tuple_parts.push_back(self(self, inner));
+            }
+        }
+        return slot;
+    };
     if (inst->getType()->isStructTy() && call.decl != nullptr && call.decl->results.size() == 1 &&
         call.decl->results.front().is_tuple) {
         result.is_tuple = true;
         result.tuple_parts = call.decl->results.front().tuple_parts;
+    }
+    // An indirect call has no declaration. One tuple result is that one entry.
+    if (!result.is_tuple && inst->getType()->isStructTy() && call.fn_results.size() == 1 &&
+        call.fn_results.front().is_tuple) {
+        result.is_tuple = true;
+        result.tuple_parts.reserve(call.fn_results.front().results.size());
+        for (const FnParam &part : call.fn_results.front().results) {
+            result.tuple_parts.push_back(slot_from_fn(slot_from_fn, part));
+        }
     }
     if (inst->getType()->isStructTy() &&
         ((call.decl != nullptr && call.decl->results.size() > 1) || call.fn_results.size() > 1)) {

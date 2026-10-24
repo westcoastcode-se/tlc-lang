@@ -39,6 +39,17 @@ inline std::string function_key(const FunctionDecl &fn) {
 inline void append_type_args_key(std::string &out, const std::vector<TypeArg> &args);
 
 inline void append_fn_param_key(std::string &out, const FnParam &param) {
+    if (param.is_tuple) {
+        out += "((";
+        for (std::size_t i = 0; i < param.results.size(); ++i) {
+            if (i != 0) {
+                out.push_back(',');
+            }
+            append_fn_param_key(out, param.results[i]);
+        }
+        out += "))";
+        return;
+    }
     if (param.is_array) {
         out.push_back('[');
         if (param.array_len >= 0) {
@@ -266,6 +277,14 @@ inline FnParam fn_param_from_slot(const ResultSlot &slot) {
     param.ret_const_pointee = slot.ret_const_pointee;
     param.params = slot.fn_params;
     param.variadic = slot.fn_variadic;
+    if (slot.is_tuple) {
+        param.is_tuple = true;
+        param.results.reserve(slot.tuple_parts.size());
+        for (const ResultSlot &part : slot.tuple_parts) {
+            param.results.push_back(fn_param_from_slot(part));
+        }
+        return param;
+    }
     param.results = slot.fn_results;
     return param;
 }
@@ -993,7 +1012,9 @@ class CodeGen {
             if (auto *function = llvm::dyn_cast_or_null<llvm::Function>(binding.value)) {
                 value.fn_ty = function->getFunctionType();
             }
-            if (binding.decl != nullptr && binding.decl->results.size() > 1) {
+            if (binding.decl != nullptr && binding.decl->results.size() == 1 && binding.decl->results.front().is_tuple) {
+                value.fn_results.push_back(fn_param_from_slot(binding.decl->results.front()));
+            } else if (binding.decl != nullptr && binding.decl->results.size() > 1) {
                 value.fn_results.reserve(binding.decl->results.size());
                 for (const ResultSlot &slot : binding.decl->results) {
                     value.fn_results.push_back(fn_param_from_slot(slot));

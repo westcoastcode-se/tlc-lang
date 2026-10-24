@@ -138,6 +138,20 @@ void dump_field(const FieldDecl &field, std::string &out, int indent) {
 }
 
 void append_many_results(std::string &out, const std::vector<FnParam> &results) {
+    if (results.size() == 1 && results.front().is_tuple) {
+        out += " ((";
+        const std::vector<FnParam> &parts = results.front().results;
+        for (std::size_t i = 0; i < parts.size(); ++i) {
+            if (i != 0) {
+                out += ", ";
+            }
+            const FnParam &part = parts[i];
+            out += type_text(part.type_name, part.type_package, part.is_struct, part.is_enum, part.indirections,
+                             part.is_array, part.array_len, part.optional, {}, part.const_pointee);
+        }
+        out += "))";
+        return;
+    }
     if (results.size() == 1 && results.front().is_fn_ptr) {
         const FnParam &part = results.front();
         out += " (";

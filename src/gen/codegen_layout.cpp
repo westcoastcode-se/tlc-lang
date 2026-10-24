@@ -1296,7 +1296,9 @@ std::optional<CodeGen::Lowered> CodeGen::function_pointer_type(const Binding &fn
     low.fn_ret_char = fn.elem_char;
     low.fn_ret_bool = fn.elem_bool;
     low.fn_ret_struct = fn.struct_id;
-    if (fn.decl != nullptr && fn.decl->results.size() > 1) {
+    if (fn.decl != nullptr && fn.decl->results.size() == 1 && fn.decl->results.front().is_tuple) {
+        low.fn_results.push_back(fn_param_from_slot(fn.decl->results.front()));
+    } else if (fn.decl != nullptr && fn.decl->results.size() > 1) {
         low.fn_results.reserve(fn.decl->results.size());
         for (const ResultSlot &slot : fn.decl->results) {
             low.fn_results.push_back(fn_param_from_slot(slot));
@@ -1563,7 +1565,8 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                         return std::nullopt;
                     }
                     const Binding *global = find_global(named->text);
-                    if (global == nullptr || global->fn_ty == nullptr || global->fn_results.size() > 1) {
+                    if (global == nullptr || global->fn_ty == nullptr || global->fn_results.size() > 1 ||
+                        (global->fn_results.size() == 1 && global->fn_results.front().is_tuple)) {
                         return std::nullopt;
                     }
                     llvm::Type *ret = global->fn_ty->getReturnType();

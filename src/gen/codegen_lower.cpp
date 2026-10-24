@@ -1024,6 +1024,19 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
     Lowered out;
     out.depth = fn_depth < 1 ? 1 : fn_depth;
     out.type = ptr_type();
+    if (results.size() == 1 && results.front().is_tuple) {
+        // `func () ((i32, i32))` returns that tuple. Several results are a longer list.
+        std::vector<llvm::Type *> fields;
+        fields.reserve(results.front().results.size());
+        for (const FnParam &part : results.front().results) {
+            fields.push_back(stored_type(lower_part(part, false)));
+        }
+        if (fields.size() >= 2) {
+            out.fn_ty = llvm::FunctionType::get(llvm::StructType::get(context_, fields), args, variadic);
+            out.fn_results = results;
+            return out;
+        }
+    }
     if (results.size() > 1) {
         std::vector<llvm::Type *> fields;
         fields.reserve(results.size());

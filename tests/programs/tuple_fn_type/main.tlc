@@ -1,0 +1,9 @@
+func pair() ((i32, i32)) {
+    return (40, 2);
+}
+
+func main() i32 {
+    var op func () ((i32, i32)) = pair;
+    var value = op();
+    return value[0] + value[1];
+}
