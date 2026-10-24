@@ -1011,7 +1011,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
     args.reserve(params.size());
     auto lower_part = [&](const FnParam &part, bool parameter) {
         if (part.is_tuple) {
-            // One result among several. The elements are that tuple.
+            // A tuple parameter, or one result among several. The elements are that tuple.
             // A nested tuple is already rejected, so each element is an ordinary type.
             std::vector<llvm::Type *> fields;
             fields.reserve(part.results.size());

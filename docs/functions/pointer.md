@@ -141,7 +141,7 @@ func main() i32 {
 }
 ```
 
-`func () ((i32, i32))` is one tuple result. `return (40, 2)` matches that tuple. `return 40, 2` does not. `func () (i32, i32)` is still two results. `func () ((i32, i32), i32)` is that tuple beside another result. `return (40, 2), 0` matches it. `return 40, 2, 0` is `return type: expected 2 results, found 3`. `func ((i32, i32)) i32` is one tuple parameter. `var op func ((i32, i32)) i32 = take` stores `take` when `take` takes `(i32, i32)`, and `op((40, 2))` calls it. `op(40, 2)` is `argument count`. `func (i32, i32) i32` is still two parameters. A function of two `i32` parameters does not match, and that assignment is `type mismatch`. `op(Duo((40, 2)))` is `type mismatch`, because `type Duo (i32, i32)` is a different type. `func ((i32, i32), i32) i32` is `not supported yet`. An array inside the tuple stays an array. `func () (([2]i32, i32))` matches a function that returns `([2]i32, i32)`. `func (([2]i32, i32)) i32` matches a function that takes it. `var row, n = op()` on `func () ([2]i32, i32)` keeps the array, and `row[1]` reads an element.
+`func () ((i32, i32))` is one tuple result. `return (40, 2)` matches that tuple. `return 40, 2` does not. `func () (i32, i32)` is still two results. `func () ((i32, i32), i32)` is that tuple beside another result. `return (40, 2), 0` matches it. `return 40, 2, 0` is `return type: expected 2 results, found 3`. `func ((i32, i32)) i32` is one tuple parameter. `var op func ((i32, i32)) i32 = take` stores `take` when `take` takes `(i32, i32)`, and `op((40, 2))` calls it. `op(40, 2)` is `argument count`. `func (i32, i32) i32` is still two parameters. A function of two `i32` parameters does not match, and that assignment is `type mismatch`. `op(Duo((40, 2)))` is `type mismatch`, because `type Duo (i32, i32)` is a different type. `func ((i32, i32), i32) i32` is that tuple beside another parameter. `var op func ((i32, i32), i32) i32 = take` stores `take` when `take` takes `(i32, i32)` and an `i32`, and `op((40, 1), 1)` calls it. `func (i32, (i32, i32)) i32` is that tuple as another parameter. `op((40, 1))` is `argument count`. `op(40, 2)` is `type mismatch`. A function of three `i32` parameters does not match, and that assignment is `type mismatch`. `op(Duo((40, 1)), 1)` is `type mismatch`, because `type Duo (i32, i32)` is a different type. An array inside the tuple stays an array. `func () (([2]i32, i32))` matches a function that returns `([2]i32, i32)`. `func (([2]i32, i32)) i32` matches a function that takes it. `var row, n = op()` on `func () ([2]i32, i32)` keeps the array, and `row[1]` reads an element.
 
 ```c
 func take(value (i32, i32)) i32 {
@@ -151,6 +151,19 @@ func take(value (i32, i32)) i32 {
 func main() i32 {
     var op func ((i32, i32)) i32 = take;
     return op((40, 2));
+}
+```
+
+The program returns 42.
+
+```c
+func take(value (i32, i32), n i32) i32 {
+    return value[0] + value[1] + n;
+}
+
+func main() i32 {
+    var op func ((i32, i32), i32) i32 = take;
+    return op((40, 1), 1);
 }
 ```
 
@@ -242,6 +255,6 @@ func main() i32 {
 
 Loading a function pointer is the address of the function. `var ptr = add` is 1 `leaq` and 1 store of that address. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call. `return add` from `func pick()` is 2 instructions: `leaq` of `add` and `retq`. Omitting the result type adds no instructions. `return add` from `func pick() func (i32, i32) i32` is those same 2. `return len_text`, when `len_text` takes `[]const u8`, is those same 2 whether the result is omitted or written `func ([]const u8) i32`. `return id`, when `id` is `func (i32) func (i32) i32`, is those same 2 whether the result is omitted or written `func (i32) func (i32) i32`. `return inner`, when `inner` is `func () func (i32) i32`, is those same 2 whether the result is omitted or written `func () func (i32) i32`.
 
-`return p(20, 22)` where `p` is a `func (i32, i32) i32` parameter executes 42 instructions on the path where the trace holds fewer than 32 frames. The pointer is stored and reloaded, the frame is pushed, the two arguments are moved, and `callq *%rax` runs. The callee is extra. `var op func () ((i32, i32)) = pair; var value = op(); return value[0] + value[1];` executes 48 instructions in `main` on that path. The address is one `leaq` and one store, the frame is pushed, and `callq *%rax` runs. The callee `return (40, 2)` is 3 instructions: `movl $40, %eax`, `movl $2, %edx`, and `retq`. `var op func () ((i32, i32), i32) = pair; var value, n = op(); return value[0] + value[1] + n;` executes 52 instructions in `main` on that path. The callee `return (40, 2), 0` is 4 instructions: `movl $40, %eax`, `movl $2, %edx`, `xorl %ecx, %ecx`, and `retq`. `var op func ((i32, i32)) i32 = take; return op((40, 2));` executes 43 instructions in `main` on that path. The callee `return value[0] + value[1]` is 6 instructions: two stores of the tuple fields, two loads, `addl`, and `retq`. A cast of a pointer to a function pointer is a copy of the address, 1 `movq` once the source is loaded. An anonymous function called directly is a direct traced call, the same as a nested function.
+`return p(20, 22)` where `p` is a `func (i32, i32) i32` parameter executes 42 instructions on the path where the trace holds fewer than 32 frames. The pointer is stored and reloaded, the frame is pushed, the two arguments are moved, and `callq *%rax` runs. The callee is extra. `var op func () ((i32, i32)) = pair; var value = op(); return value[0] + value[1];` executes 48 instructions in `main` on that path. The address is one `leaq` and one store, the frame is pushed, and `callq *%rax` runs. The callee `return (40, 2)` is 3 instructions: `movl $40, %eax`, `movl $2, %edx`, and `retq`. `var op func () ((i32, i32), i32) = pair; var value, n = op(); return value[0] + value[1] + n;` executes 52 instructions in `main` on that path. The callee `return (40, 2), 0` is 4 instructions: `movl $40, %eax`, `movl $2, %edx`, `xorl %ecx, %ecx`, and `retq`. `var op func ((i32, i32)) i32 = take; return op((40, 2));` executes 43 instructions in `main` on that path. The callee `return value[0] + value[1]` is 6 instructions: two stores of the tuple fields, two loads, `addl`, and `retq`. `var op func ((i32, i32), i32) i32 = take; return op((40, 1), 1);` executes 44 instructions in `main` on that path. The callee `return value[0] + value[1] + n` is 8 instructions: three stores, two loads, two `addl`, and `retq`. A cast of a pointer to a function pointer is a copy of the address, 1 `movq` once the source is loaded. An anonymous function called directly is a direct traced call, the same as a nested function.
 
 [Index](../README.md) · [Previous: Tests](test.md) · [Next: Methods](../methods/method.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

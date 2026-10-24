@@ -1,0 +1,10 @@
+type Duo (i32, i32);
+
+func take(value (i32, i32), n i32) i32 {
+    return value[0] + value[1] + n;
+}
+
+func main() i32 {
+    var op func ((i32, i32), i32) i32 = take;
+    return op(Duo((40, 1)), 1);
+}

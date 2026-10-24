@@ -1,0 +1,11 @@
+func call(op func ((i32, i32), i32) i32) i32 {
+    return op((40, 1), 1);
+}
+
+func take(value (i32, i32), n i32) i32 {
+    return value[0] + value[1] + n;
+}
+
+func main() i32 {
+    return call(take);
+}
