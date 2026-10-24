@@ -843,14 +843,18 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 if (binding == nullptr || !binding->is_function) {
                     return {};
                 }
-                // Several results are one aggregate. `sizeof` of the call is that aggregate.
-                if (binding->decl != nullptr && binding->decl->results.size() > 1) {
+                // Several results, and one tuple result, are one aggregate. `sizeof` of the call is that aggregate.
+                const bool one_tuple = binding->decl != nullptr && binding->decl->results.size() == 1 &&
+                                       binding->decl->results.front().is_tuple;
+                if (binding->decl != nullptr && (binding->decl->results.size() > 1 || one_tuple)) {
                     llvm::Type *ret = nullptr;
                     if (const auto *function = llvm::dyn_cast_or_null<llvm::Function>(binding->value)) {
                         ret = function->getReturnType();
                     }
                     if (ret == nullptr || !ret->isSized() || ret->isVoidTy()) {
-                        const Lowered low = lower_tuple_parts(current_file_, binding->decl->results);
+                        const Lowered low =
+                            one_tuple ? lower_tuple_parts(current_file_, binding->decl->results.front().tuple_parts)
+                                      : lower_tuple_parts(current_file_, binding->decl->results);
                         ret = low.is_tuple ? low.type : nullptr;
                     }
                     if (ret != nullptr && ret->isSized() && !ret->isVoidTy()) {
@@ -1068,6 +1072,11 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         return {zero(), 0};
     }
     adopt_pointer_array(base);
+    // `[N]Duo` keeps the tuple slots on the element. That element is not a slice.
+    if (!base.tuple_parts.empty() && base.shells.empty() && !base.elem_slice && base.inner_array_len <= 0) {
+        error(node.loc, "type mismatch");
+        return {zero(), 0};
+    }
     // An omitted low bound is 0. An omitted high bound is the length already in the slice.
     const bool low_omitted = node.index == nullptr;
     const bool high_omitted = node.end == nullptr;

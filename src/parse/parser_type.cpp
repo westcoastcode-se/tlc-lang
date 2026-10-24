@@ -780,6 +780,8 @@ ResultSlot Parser::slot_from_type(const PlacedType &type) const {
     slot.array_len = type.array_len;
     slot.array_len_name = type.array_len_name;
     slot.type_args = type.type_args;
+    slot.is_tuple = type.is_tuple;
+    slot.tuple_parts = type.tuple_parts;
     return slot;
 }
 
@@ -1209,8 +1211,7 @@ void Parser::take_result(FunctionDecl &fn, const PlacedType &type) {
         diags_.error(written.loc, "not supported yet");
     }
     // `func f() (i32, i32)` is two results. The `(` was already consumed.
-    // `((i32, i32))` would be one tuple result, which is not that form.
-    drop_bare_tuple(written);
+    // `((i32, i32))` is one tuple result. A tuple beside another result is rejected after the list.
     fn.results.push_back(slot_from_type(written));
 }
 
@@ -1231,6 +1232,7 @@ void Parser::parse_results(FunctionDecl &fn) {
         fn.return_type = "invalid";
         return;
     }
+    std::vector<SourceLoc> tuple_locs;
     if (check(TokenKind::LParen)) {
         const SourceLoc loc = peek().loc;
         ++pos_;
@@ -1239,7 +1241,11 @@ void Parser::parse_results(FunctionDecl &fn) {
             ++pos_;
         } else {
             while (!check(TokenKind::RParen) && !check(TokenKind::LBrace) && !check(TokenKind::Semicolon) && !eof()) {
-                take_result(fn, parse_placed_type(false));
+                PlacedType type = parse_placed_type(false);
+                if (type.is_tuple) {
+                    tuple_locs.push_back(type.loc.valid() ? type.loc : loc);
+                }
+                take_result(fn, type);
                 if (!eat(TokenKind::Comma)) {
                     break;
                 }
@@ -1247,7 +1253,25 @@ void Parser::parse_results(FunctionDecl &fn) {
             expect(TokenKind::RParen, "expected ')'");
         }
     } else {
-        take_result(fn, parse_placed_type(false));
+        PlacedType type = parse_placed_type(false);
+        if (type.is_tuple) {
+            tuple_locs.push_back(type.loc.valid() ? type.loc : peek().loc);
+        }
+        take_result(fn, type);
+    }
+    // Several results are `(i32, i32)`. One tuple result is the extra pair, `((i32, i32))`.
+    if (fn.results.size() != 1) {
+        for (const SourceLoc &where : tuple_locs) {
+            diags_.error(where, "not supported yet");
+        }
+        for (ResultSlot &slot : fn.results) {
+            if (!slot.is_tuple) {
+                continue;
+            }
+            slot.is_tuple = false;
+            slot.tuple_parts.clear();
+            slot.type_name = "invalid";
+        }
     }
     if (fn.results.empty()) {
         fn.return_type = "invalid";

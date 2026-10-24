@@ -1536,9 +1536,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (base.kind == TypeKind::Invalid) {
                         return type_invalid();
                     }
+                    // A tuple is not a slice element. `[N]Duo` and `[N][M]Duo` stay arrays.
+                    auto tuple_element = [&](const Type &element) -> bool {
+                        if (!array_of_tuple(element)) {
+                            return false;
+                        }
+                        error(node.loc, "type mismatch");
+                        return true;
+                    };
                     // `row[0:2]` on `func open(row [4]i32)`. The pointer keeps the written length.
                     if (base.kind == TypeKind::Pointer && base.decayed_len > 0 && base.pointee != nullptr &&
                         !base.optional) {
+                        if (tuple_element(*base.pointee)) {
+                            return type_invalid();
+                        }
                         return type_array(*base.pointee, -1);
                     }
                     // `p[0:2]` on `*[4]i32` is `(*p)[0:2]`. The pointee is the array.
@@ -1548,6 +1559,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         Type element = *base.pointee->element;
                         if (base.pointee->is_const) {
                             element.is_const = true;
+                        }
+                        if (tuple_element(element)) {
+                            return type_invalid();
                         }
                         return type_array(std::move(element), -1);
                     }
@@ -1559,6 +1573,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     // A const array or a const slice yields `[]const T`, so the range cannot store.
                     if (base.is_const) {
                         element.is_const = true;
+                    }
+                    if (tuple_element(element)) {
+                        return type_invalid();
                     }
                     Type slice = type_array(std::move(element), -1);
                     // `type Row []i32` stays `Row`. A sized array becomes the plain slice `[]T`.

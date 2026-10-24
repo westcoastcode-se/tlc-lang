@@ -1480,6 +1480,21 @@ bool same_result_spelling(const FunctionDecl &lhs, const FunctionDecl &rhs) {
     for (std::size_t i = 0; i < lhs.results.size(); ++i) {
         const ResultSlot &left = lhs.results[i];
         const ResultSlot &right = rhs.results[i];
+        if (left.is_tuple != right.is_tuple || left.tuple_parts.size() != right.tuple_parts.size()) {
+            return false;
+        }
+        if (left.is_tuple) {
+            for (std::size_t part = 0; part < left.tuple_parts.size(); ++part) {
+                const ResultSlot &one = left.tuple_parts[part];
+                const ResultSlot &other = right.tuple_parts[part];
+                if (one.type_name != other.type_name || one.type_package != other.type_package ||
+                    one.indirections != other.indirections || one.is_array != other.is_array ||
+                    one.array_len != other.array_len || one.is_struct != other.is_struct || one.is_enum != other.is_enum) {
+                    return false;
+                }
+            }
+            continue;
+        }
         if (left.type_name != right.type_name || left.type_package != right.type_package ||
             left.indirections != right.indirections || left.optional != right.optional || left.is_array != right.is_array ||
             left.array_len != right.array_len || left.is_struct != right.is_struct || left.is_enum != right.is_enum) {

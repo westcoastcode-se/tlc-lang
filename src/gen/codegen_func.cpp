@@ -156,16 +156,20 @@ CodeGen::Lowered CodeGen::lower_param(const FunctionDecl &fn, std::size_t index)
 
 llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector<int> &spec) const {
     const bool many = fn.results.size() > 1;
+    const bool one_tuple = !many && fn.results.size() == 1 && fn.results.front().is_tuple;
     const bool returns_void =
         !many && fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty();
-    const bool result_slice = !many && fn.results.size() == 1 && fn.results.front().is_array &&
+    const bool result_slice = !many && !one_tuple && fn.results.size() == 1 && fn.results.front().is_array &&
                              fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
     llvm::Type *ret = many ? aggregate_return(fn, current_file_)
                            : (returns_void ? llvm::Type::getVoidTy(context_)
-                                           : stored_type(lower(current_file_, fn.return_type, fn.type_package, fn.is_struct,
-                                                               fn.indirections, result_slice,
-                                                               result_slice ? fn.results.front().array_len : 0, false,
-                                                               result_slice && fn.results.front().elem_slice)));
+                                           : (one_tuple ? stored_type(lower_tuple_parts(current_file_,
+                                                                                       fn.results.front().tuple_parts))
+                                                       : stored_type(lower(current_file_, fn.return_type, fn.type_package,
+                                                                           fn.is_struct, fn.indirections, result_slice,
+                                                                           result_slice ? fn.results.front().array_len : 0,
+                                                                           false,
+                                                                           result_slice && fn.results.front().elem_slice))));
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (std::size_t index = 0; index < fn.params.size(); ++index) {

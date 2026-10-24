@@ -114,6 +114,9 @@ bool CodeGen::is_struct_value(const Lowered &low) const {
 }
 
 CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) const {
+    if (slot.is_tuple) {
+        return lower_tuple_parts(file, slot.tuple_parts);
+    }
     // A slice is `array_len < 0`. A sized array keeps its length. Zero is not an array.
     const bool array = slot.is_array && !slot.is_fn_ptr && slot.array_len != 0;
     return lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, array,
@@ -152,6 +155,9 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
         }
     }
     auto lowered = [&]() {
+        if (fn.results.size() == 1 && fn.results.front().is_tuple) {
+            return lower_tuple_parts(file, fn.results.front().tuple_parts);
+        }
         if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
             return lower_fnptr(file, fn.results.front().type_name, fn.results.front().type_package,
                                fn.results.front().is_struct, fn.results.front().is_enum,

@@ -67,7 +67,7 @@ bool same_selection(const Type &lhs, bool skip_lhs, const Type &rhs, bool skip_r
 // `[]T`: an array whose length is unknown. `[]const T` does not store an element.
 bool is_slice(const Type &type);
 // `[N]T`, a parameter `[N]T`, and `*[N]T` convert to `[]T`.
-// `const` may be added on the element. It may not be dropped.
+// A tuple does not, including `[N][M]Duo`. `const` may be added on the element. It may not be dropped.
 // Two slices match only when they are the same type, apart from that added `const`.
 bool accepts_slice(const Type &got, const Type &want);
 

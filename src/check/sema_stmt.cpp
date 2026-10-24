@@ -1227,6 +1227,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     return check_expr(value, true);
                 };
+                // One anonymous tuple, `func pair() ((i32, i32))`, is not two results.
+                // `return (40, 2)` matches it. `return 40, 2` does not spread into the elements.
+                const bool one_tuple = !checking_.empty() && checking_.back()->results.size() == 1 &&
+                                       checking_.back()->results.front().is_tuple;
                 if (return_type_.kind == TypeKind::Tuple && exprs.size() == 1 && exprs.front() != nullptr) {
                     Type got = type_invalid();
                     if (const auto *init = std::get_if<Expr::Init>(&exprs.front()->data)) {
@@ -1241,8 +1245,14 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(node.loc, "type mismatch");
                         return;
                     }
+                    if (one_tuple) {
+                        if (got.kind != TypeKind::Invalid) {
+                            match_return(got, return_type_);
+                        }
+                        return;
+                    }
                 }
-                if (return_type_.kind == TypeKind::Tuple) {
+                if (return_type_.kind == TypeKind::Tuple && !one_tuple) {
                     if (exprs.size() != return_type_.results.size()) {
                         error(node.loc, "return type: expected " + std::to_string(return_type_.results.size()) +
                                             " results, found " + std::to_string(exprs.size()));
@@ -2047,7 +2057,7 @@ void Checker::check_function(const FunctionDecl &fn) {
         return_type_ = type_invalid();
     }
     // Codegen reads `return_type`. Preparing the result slot rewrites `Vec[i32]` to the specialization.
-    if (fn.results.size() == 1 && !fn.results.front().is_fn_ptr) {
+    if (fn.results.size() == 1 && !fn.results.front().is_fn_ptr && !fn.results.front().is_tuple) {
         FunctionDecl &written = const_cast<FunctionDecl &>(fn);
         const ResultSlot &first = written.results.front();
         written.return_type = first.type_name;

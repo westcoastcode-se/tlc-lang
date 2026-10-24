@@ -667,6 +667,13 @@ std::string spell_results(const std::vector<ResultSlot> &results) {
     if (results.empty()) {
         return {};
     }
+    if (results.size() == 1 && results.front().is_tuple) {
+        const std::string inner = spell_results(results.front().tuple_parts);
+        if (inner.empty() || inner == "invalid") {
+            return {};
+        }
+        return "(" + inner + ")";
+    }
     if (results.size() == 1) {
         const std::string one = spell_slot(results.front());
         if (one == "invalid") {

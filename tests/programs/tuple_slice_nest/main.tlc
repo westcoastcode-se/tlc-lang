@@ -1,0 +1,7 @@
+type Duo (i32, i32);
+
+func main() i32 {
+    var grid [2][2]Duo;
+    var view = grid[:];
+    return 0;
+}

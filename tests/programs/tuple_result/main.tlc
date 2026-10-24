@@ -1,0 +1,8 @@
+func pair() ((i32, i32)) {
+    return (40, 2);
+}
+
+func main() i32 {
+    var value = pair();
+    return value[0] + value[1];
+}

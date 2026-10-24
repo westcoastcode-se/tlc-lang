@@ -1070,6 +1070,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         } else if (ret != nullptr && return_type_ != nullptr && ret->getType()->isIntegerTy() &&
                                    return_type_->isIntegerTy() && ret->getType() != return_type_) {
                             ret = resize_int(ret, return_type_, value.elem_unsigned);
+                        } else if (ret != nullptr && return_type_ != nullptr && return_type_->isStructTy() &&
+                                   ret->getType()->isStructTy() && ret->getType() != return_type_) {
+                            ret = as_stored(ret, 0, return_type_, value.elem_unsigned);
                         }
                     }
                 }

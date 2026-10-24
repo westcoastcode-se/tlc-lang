@@ -209,6 +209,17 @@ void append_type_arg_shape_list(std::string &out, const std::vector<TypeArg> &ar
 }
 
 void append_result_shape(std::string &out, const ResultSlot &slot, const std::vector<TypeParam> &params) {
+    if (slot.is_tuple) {
+        out.push_back('(');
+        for (std::size_t i = 0; i < slot.tuple_parts.size(); ++i) {
+            if (i != 0) {
+                out.push_back(',');
+            }
+            append_result_shape(out, slot.tuple_parts[i], params);
+        }
+        out.push_back(')');
+        return;
+    }
     if (slot.is_array) {
         out.push_back('[');
         if (!slot.array_len_name.empty()) {

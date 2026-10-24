@@ -2089,7 +2089,7 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     }
     // `[]T` is a slice. It does not decay, even as a parameter. One more slice is `[][]T`.
     if (array_len < 0) {
-        if (nested_slice(type)) {
+        if (nested_slice(type) || array_of_tuple(type)) {
             error(loc, "not supported yet");
             return type_invalid();
         }

@@ -282,6 +282,18 @@ Type Checker::type_of_param(const Param &param) {
 }
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete) {
+    if (slot.is_tuple) {
+        Type type = type_of_written_tuple(slot.tuple_parts, slot.indirections, slot.is_array, slot.shells, loc);
+        if (type.kind == TypeKind::Tuple) {
+            for (const Type &part : type.results) {
+                if (part.kind == TypeKind::Void) {
+                    error(loc, "type mismatch");
+                    break;
+                }
+            }
+        }
+        return type;
+    }
     ResultSlot &written = const_cast<ResultSlot &>(slot);
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args, loc);

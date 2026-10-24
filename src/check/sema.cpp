@@ -277,6 +277,10 @@ bool accepts_slice(const Type &got, const Type &want) {
     if (!is_slice(want) || want.element == nullptr) {
         return false;
     }
+    // A tuple does not convert to a slice. `[N]Duo` and `[N][M]Duo` stay arrays.
+    if (array_of_tuple(*want.element)) {
+        return false;
+    }
     // A parameter `[N]T` is a pointer to the element, and `decayed_len` is that `N`.
     // `*[N]T` points at the array. A plain `*T` has no length. `?*[N]T` stays optional.
     if (got.kind == TypeKind::Pointer && !got.optional && got.alias_id == 0 && got.pointee != nullptr) {

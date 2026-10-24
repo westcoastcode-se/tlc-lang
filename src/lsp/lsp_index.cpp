@@ -103,6 +103,11 @@ void apply_result(Sym &sym, const FunctionDecl &fn) {
     if (slot.is_fn_ptr) {
         return;
     }
+    if (slot.is_tuple) {
+        sym.is_tuple = true;
+        sym.array_len = static_cast<int>(slot.tuple_parts.size());
+        return;
+    }
     mark_direct(sym, slot.type_name, slot.indirections, slot.is_array, slot.array_len, slot.optional);
 }
 
@@ -191,6 +196,12 @@ void add_sym(std::vector<Sym> &out, Sym sym) {
 
 Shape shape_from_slot(const ResultSlot &slot) {
     Shape shape;
+    if (slot.is_tuple) {
+        shape.is_tuple = true;
+        shape.array_len = static_cast<int>(slot.tuple_parts.size());
+        shape.known = true;
+        return shape;
+    }
     if (slot.type_name.empty() || slot.type_name == "invalid" || slot.is_fn_ptr) {
         return shape;
     }

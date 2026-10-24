@@ -778,6 +778,11 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         stamp_array_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
                         slot.array_len, slot.elem_slice, slot.shells);
     }
+    if (inst->getType()->isStructTy() && call.decl != nullptr && call.decl->results.size() == 1 &&
+        call.decl->results.front().is_tuple) {
+        result.is_tuple = true;
+        result.tuple_parts = call.decl->results.front().tuple_parts;
+    }
     if (inst->getType()->isStructTy() &&
         ((call.decl != nullptr && call.decl->results.size() > 1) || call.fn_results.size() > 1)) {
         result.is_tuple = true;

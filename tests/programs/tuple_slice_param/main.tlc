@@ -1,0 +1,11 @@
+type Duo (i32, i32);
+
+func take(row [2]Duo) i32 {
+    var view = row[:];
+    return 0;
+}
+
+func main() i32 {
+    var row [2]Duo;
+    return take(row);
+}
