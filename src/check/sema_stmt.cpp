@@ -612,6 +612,20 @@ std::unique_ptr<Expr> int_literal(int value, SourceLoc loc) {
     return expr;
 }
 
+std::unique_ptr<Expr> element_at(const Expr &collection, int index, SourceLoc loc) {
+    std::unique_ptr<Expr> at = int_literal(index, loc);
+    if (at == nullptr) {
+        return nullptr;
+    }
+    auto expr = std::make_unique<Expr>();
+    Expr::Index node;
+    node.loc = loc;
+    node.base = clone_expr(collection);
+    node.index = std::move(at);
+    expr->data = std::move(node);
+    return expr;
+}
+
 std::unique_ptr<Expr> string_literal(std::string text, SourceLoc loc) {
     auto expr = std::make_unique<Expr>();
     Expr::String node;
@@ -843,8 +857,45 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
 void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
                                 const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out) {
     const auto *loop = std::get_if<Stmt::For>(&stmt.data);
-    if (loop == nullptr || loop->each || loop->body == nullptr) {
+    if (loop == nullptr || loop->body == nullptr) {
         error(loop != nullptr ? loop->loc : SourceLoc{}, "not supported yet");
+        return;
+    }
+    if (loop->each) {
+        if (loop->each_expr == nullptr || loop->each_name.empty()) {
+            error(loop->loc, "not supported yet");
+            return;
+        }
+        const std::optional<int> count = known_len(*loop->each_expr);
+        // A macro unrolls a bounded compile-time loop. More than 32 trips stays out.
+        constexpr int kMaxEach = 32;
+        if (!count || *count < 0 || *count > kMaxEach) {
+            error(loop->loc, "not supported yet");
+            return;
+        }
+        const auto *each_body = std::get_if<Stmt::Block>(&loop->body->data);
+        if (each_body == nullptr) {
+            error(loop->loc, "not supported yet");
+            return;
+        }
+        for (int index = 0; index < *count; ++index) {
+            const std::unique_ptr<Expr> element = element_at(*loop->each_expr, index, loop->loc);
+            if (element == nullptr) {
+                error(loop->loc, "not supported yet");
+                return;
+            }
+            const std::vector<std::string> item_names{loop->each_name};
+            const std::vector<const Expr *> item_exprs{element.get()};
+            for (const auto &child : each_body->statements) {
+                if (child == nullptr) {
+                    continue;
+                }
+                std::unique_ptr<Stmt> piece = clone_stmt(*child);
+                const std::unordered_set<std::string> skip;
+                subst_in_stmt(*piece, item_names, item_exprs, skip);
+                expand_macro_stmt(std::move(piece), fn, names, exprs, out, false);
+            }
+        }
         return;
     }
     // Parameters were substituted before this call. The index still hides them.
@@ -1437,9 +1488,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     int saved;
                     ~RestoreMacro() { slot = saved; }
                 } restore{macro_depth_, saved_macro};
-                // A macro unrolls `for`. `for (var item : items)` has nothing to unroll.
+                // A macro unrolls `for (var item : items)` at the call. The body is checked there.
                 if (macro_depth_ > 0 && node.each) {
-                    error(node.loc, "not supported yet");
+                    return;
                 }
                 if (node.each) {
                     check_for_each(node);

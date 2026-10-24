@@ -368,6 +368,30 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
 }
 
 std::optional<int> Checker::known_len(const Expr &base) {
+    if (const auto *init = std::get_if<Expr::Init>(&base.data)) {
+        if (init->is_tuple && init->elements.size() >= 2 && init->elements.size() <= 2147483647) {
+            return static_cast<int>(init->elements.size());
+        }
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
+        const Symbol *symbol = lookup(named->text);
+        if (symbol != nullptr && symbol->type.kind == TypeKind::Tuple && symbol->type.results.size() >= 2 &&
+            symbol->type.results.size() <= 2147483647) {
+            return static_cast<int>(symbol->type.results.size());
+        }
+        if (symbol != nullptr && symbol->type.kind == TypeKind::Array && symbol->type.element != nullptr &&
+            symbol->type.length >= 0) {
+            return symbol->type.length;
+        }
+        if (symbol != nullptr && symbol->type.kind == TypeKind::Pointer && symbol->type.decayed_len > 0) {
+            return symbol->type.decayed_len;
+        }
+        if (symbol != nullptr && symbol->type.kind == TypeKind::Pointer && !symbol->type.optional &&
+            symbol->type.pointee != nullptr && symbol->type.pointee->kind == TypeKind::Array &&
+            symbol->type.pointee->length > 0 && symbol->type.pointee->element != nullptr) {
+            return symbol->type.pointee->length;
+        }
+    }
     std::unordered_set<std::string> seen;
     if (const std::optional<std::string> text = constant_string(base, seen)) {
         if (text->size() > 2147483647) {

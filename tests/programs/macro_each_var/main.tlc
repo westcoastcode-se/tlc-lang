@@ -1,0 +1,11 @@
+macro func walk(text []const u8) void {
+    for (var b : text) {
+        emit b;
+    }
+}
+
+func main() i32 {
+    var text = "hi";
+    walk(text);
+    return 0;
+}

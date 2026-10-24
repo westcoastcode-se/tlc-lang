@@ -1,0 +1,9 @@
+link: -lc
+exit: 0
+stdout:
+x
+y
+104
+105
+10
+20
