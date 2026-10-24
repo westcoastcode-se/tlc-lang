@@ -1,0 +1,27 @@
+var n i32 = 0;
+
+func touch() {
+    n = n + 1;
+}
+
+func give() {
+    return touch();
+}
+
+func written() void {
+    return touch();
+}
+
+func again(flag bool) {
+    if (flag) {
+        return touch();
+    }
+    return again(true);
+}
+
+func main() i32 {
+    give();
+    written();
+    again(false);
+    return n;
+}

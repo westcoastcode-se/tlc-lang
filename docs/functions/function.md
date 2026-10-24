@@ -64,7 +64,7 @@ A call of that function is separate. `return add(20, 22)` executes 38 instructio
 
 `func done() { return; }` is `void` too. That function is 1 instruction, `retq`. `func done() void { return; }` is that same instruction. `done()` followed by `return 42` in `main` is those same 34 instructions. A `return;` adds no instructions.
 
-`func give() { return touch(); }` is `void` when `touch` is `void`. `give` is 1 instruction, `retq`. `func give() void { return touch(); }` is that same instruction. `give()` followed by `return 42` in `main` is those same 34 instructions. Omitting `void` adds no instructions.
+`func give() { return touch(); }` is `void` when `touch` is `void`. `give` runs 33 instructions when fewer than 32 frames are stored: the traced call of `touch`, then `retq`. `touch` is 1 instruction, `retq`, and that call is extra. `func give() void { return touch(); }` is those same instructions. `give()` followed by `return 42` in `main` is 34 instructions in `main`. Omitting `void` adds no instructions.
 
 `func pick(flag bool) { if (flag) { return 40; } return pick(true); }` is `i32`. `return pick(false)` in `main` is 37 instructions in `main` when fewer than 32 frames are stored. `pick(false)` runs 46 instructions, including the call. `pick(true)` runs 12: the test, `movl $40`, and `retq`. `func pick(flag bool) i32` with the same body is those same instructions. Omitting the result adds no instructions.
 

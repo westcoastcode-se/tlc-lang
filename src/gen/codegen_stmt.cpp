@@ -1057,17 +1057,20 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                 }
                 llvm::Value *ret = nullptr;
                 const bool returns_void = return_type_ != nullptr && return_type_->isVoidTy();
-                if (!returns_void && node.value) {
+                // A void result has no bits. `return touch()` still calls `touch` before `ret`.
+                if (node.value) {
                     const TypedValue value = emit_rvalue(*node.value);
-                    ret = value.value;
-                    if (return_depth_ > 0 && value.depth == 0 && ret != nullptr && !ret->getType()->isPointerTy()) {
-                        ret = null_ptr();
-                    } else if (ret != nullptr && return_type_ != nullptr &&
-                               (return_type_->isFloatingPointTy() || ret->getType()->isFloatingPointTy())) {
-                        ret = as_stored(ret, 0, return_type_, value.elem_unsigned);
-                    } else if (ret != nullptr && return_type_ != nullptr && ret->getType()->isIntegerTy() &&
-                               return_type_->isIntegerTy() && ret->getType() != return_type_) {
-                        ret = resize_int(ret, return_type_, value.elem_unsigned);
+                    if (!returns_void) {
+                        ret = value.value;
+                        if (return_depth_ > 0 && value.depth == 0 && ret != nullptr && !ret->getType()->isPointerTy()) {
+                            ret = null_ptr();
+                        } else if (ret != nullptr && return_type_ != nullptr &&
+                                   (return_type_->isFloatingPointTy() || ret->getType()->isFloatingPointTy())) {
+                            ret = as_stored(ret, 0, return_type_, value.elem_unsigned);
+                        } else if (ret != nullptr && return_type_ != nullptr && ret->getType()->isIntegerTy() &&
+                                   return_type_->isIntegerTy() && ret->getType() != return_type_) {
+                            ret = resize_int(ret, return_type_, value.elem_unsigned);
+                        }
                     }
                 }
                 if (!terminated()) {
