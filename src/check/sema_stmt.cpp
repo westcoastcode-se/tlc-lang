@@ -626,6 +626,33 @@ std::unique_ptr<Expr> element_at(const Expr &collection, int index, SourceLoc lo
     return expr;
 }
 
+// `ptr_of(items)` is that call's argument. Anything else is the collection itself.
+const Expr *ptr_of_collection(const Expr &each) {
+    const auto *call = std::get_if<Expr::Call>(&each.data);
+    if (call == nullptr || call->callee == nullptr || call->args.size() != 1 || call->args.front() == nullptr) {
+        return nullptr;
+    }
+    const auto *named = std::get_if<Expr::Name>(&call->callee->data);
+    if (named == nullptr || named->text != "ptr_of") {
+        return nullptr;
+    }
+    return call->args.front().get();
+}
+
+std::unique_ptr<Expr> element_ref(const Expr &collection, int index, SourceLoc loc) {
+    std::unique_ptr<Expr> at = element_at(collection, index, loc);
+    if (at == nullptr) {
+        return nullptr;
+    }
+    auto expr = std::make_unique<Expr>();
+    Expr::Unary node;
+    node.loc = loc;
+    node.op = TokenKind::Amp;
+    node.expr = std::move(at);
+    expr->data = std::move(node);
+    return expr;
+}
+
 std::unique_ptr<Expr> string_literal(std::string text, SourceLoc loc) {
     auto expr = std::make_unique<Expr>();
     Expr::String node;
@@ -866,7 +893,33 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
             error(loop->loc, "not supported yet");
             return;
         }
-        const std::optional<int> count = known_len(*loop->each_expr);
+        const Expr *collection = loop->each_expr.get();
+        bool want_ref = false;
+        if (const Expr *inner = ptr_of_collection(*loop->each_expr)) {
+            want_ref = true;
+            collection = inner;
+            const bool lvalue = [&]() {
+                if (const auto *name = std::get_if<Expr::Name>(&collection->data)) {
+                    const Symbol *symbol = lookup(name->text);
+                    return symbol != nullptr && !symbol->is_function && !symbol->is_package && !symbol->is_constant;
+                }
+                if (const auto *index = std::get_if<Expr::Index>(&collection->data)) {
+                    return index->base != nullptr && !index->is_range;
+                }
+                if (const auto *selector = std::get_if<Expr::Selector>(&collection->data)) {
+                    return selector->base != nullptr;
+                }
+                if (const auto *star = std::get_if<Expr::Unary>(&collection->data)) {
+                    return star->op == TokenKind::Star && star->expr != nullptr;
+                }
+                return false;
+            }();
+            if (!lvalue) {
+                error(expr_loc(*collection), "not an lvalue");
+                return;
+            }
+        }
+        const std::optional<int> count = known_len(*collection);
         // A macro unrolls a bounded compile-time loop. More than 32 trips stays out.
         constexpr int kMaxEach = 32;
         if (!count || *count < 0 || *count > kMaxEach) {
@@ -879,7 +932,8 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
             return;
         }
         for (int index = 0; index < *count; ++index) {
-            const std::unique_ptr<Expr> element = element_at(*loop->each_expr, index, loop->loc);
+            const std::unique_ptr<Expr> element =
+                want_ref ? element_ref(*collection, index, loop->loc) : element_at(*collection, index, loop->loc);
             if (element == nullptr) {
                 error(loop->loc, "not supported yet");
                 return;

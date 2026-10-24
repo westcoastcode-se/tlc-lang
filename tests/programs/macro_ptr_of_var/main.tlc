@@ -1,0 +1,11 @@
+macro func walk(text []const u8) void {
+    for (var p : ptr_of(text)) {
+        emit *p;
+    }
+}
+
+func main() i32 {
+    var text = "hi";
+    walk(text);
+    return 0;
+}

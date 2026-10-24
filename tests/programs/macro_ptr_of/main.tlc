@@ -1,0 +1,15 @@
+macro func bump(items *[3]i32) void {
+    for (var slot : ptr_of(items)) {
+        emit *slot = *slot + 1;
+    }
+}
+
+func main() i32 {
+    var items [3]i32;
+    items[0] = 1;
+    items[1] = 2;
+    items[2] = 4;
+    var p *[3]i32 = &items;
+    bump(p);
+    return items[0] + items[1] + items[2];
+}

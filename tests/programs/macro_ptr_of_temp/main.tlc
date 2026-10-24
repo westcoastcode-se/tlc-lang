@@ -1,0 +1,10 @@
+macro func bad() void {
+    for (var slot : ptr_of((10, 20))) {
+        emit *slot;
+    }
+}
+
+func main() i32 {
+    bad();
+    return 0;
+}
