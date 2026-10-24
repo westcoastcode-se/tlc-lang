@@ -854,6 +854,26 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
             }
             return stmt;
         }
+        if (check(TokenKind::KwWhile)) {
+            std::unique_ptr<Stmt> stmt = parse_while();
+            if (stmt != nullptr) {
+                if (auto *loop = std::get_if<Stmt::While>(&stmt->data)) {
+                    loop->emit = true;
+                    loop->loc = loc;
+                }
+            }
+            return stmt;
+        }
+        if (check(TokenKind::KwDo)) {
+            std::unique_ptr<Stmt> stmt = parse_do();
+            if (stmt != nullptr) {
+                if (auto *loop = std::get_if<Stmt::DoWhile>(&stmt->data)) {
+                    loop->emit = true;
+                    loop->loc = loc;
+                }
+            }
+            return stmt;
+        }
         if (check(TokenKind::KwIf)) {
             std::unique_ptr<Stmt> stmt = parse_if();
             if (stmt != nullptr) {

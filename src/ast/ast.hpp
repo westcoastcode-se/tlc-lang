@@ -563,6 +563,8 @@ struct Stmt {
         SourceLoc loc{};
         std::unique_ptr<Expr> cond;
         std::unique_ptr<Stmt> body;
+        // `emit while`. The statement is pasted into the caller.
+        bool emit = false;
     };
     struct For {
         SourceLoc loc{};
@@ -583,6 +585,8 @@ struct Stmt {
         SourceLoc loc{};
         std::unique_ptr<Stmt> body;
         std::unique_ptr<Expr> cond;
+        // `emit do`. The statement is pasted into the caller.
+        bool emit = false;
     };
     struct Switch {
         SourceLoc loc{};

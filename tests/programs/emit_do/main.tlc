@@ -1,0 +1,12 @@
+macro func once(slot *i32, limit i32) void {
+    emit do {
+        *slot = *slot + 1;
+    } while (*slot < limit);
+}
+
+func main() i32 {
+    var n = 0;
+    var limit = 3;
+    once(&n, limit);
+    return n;
+}

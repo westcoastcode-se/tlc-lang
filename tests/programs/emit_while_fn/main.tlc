@@ -1,0 +1,7 @@
+func main() i32 {
+    var n = 0;
+    emit while (n < 1) {
+        n = 1;
+    }
+    return n;
+}

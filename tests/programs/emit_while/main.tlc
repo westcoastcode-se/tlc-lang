@@ -1,0 +1,12 @@
+macro func until(slot *i32, limit i32) void {
+    emit while (*slot < limit) {
+        *slot = *slot + 1;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    var limit = 3;
+    until(&n, limit);
+    return n;
+}

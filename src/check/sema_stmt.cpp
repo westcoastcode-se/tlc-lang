@@ -809,6 +809,24 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         }
         return;
     }
+    if (auto *loop = std::get_if<Stmt::While>(&stmt->data)) {
+        if (!loop->emit) {
+            error(loop->loc, "not supported yet");
+            return;
+        }
+        loop->emit = false;
+        append_statement(std::move(stmt), out);
+        return;
+    }
+    if (auto *loop = std::get_if<Stmt::DoWhile>(&stmt->data)) {
+        if (!loop->emit) {
+            error(loop->loc, "not supported yet");
+            return;
+        }
+        loop->emit = false;
+        append_statement(std::move(stmt), out);
+        return;
+    }
     const SourceLoc loc = std::visit(
         [](const auto &node) -> SourceLoc {
             using Node = std::decay_t<decltype(node)>;
@@ -994,6 +1012,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                     return node.emit && node.expr != nullptr;
                 } else if constexpr (std::is_same_v<T, Stmt::For> || std::is_same_v<T, Stmt::If>) {
                     return true;
+                } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                    return node.emit;
                 } else {
                     return false;
                 }
@@ -1239,6 +1259,20 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                 }
             } else if constexpr (std::is_same_v<T, Stmt::While>) {
+                const int saved_macro = macro_depth_;
+                if (node.emit) {
+                    if (saved_macro == 0) {
+                        error(node.loc, "not supported yet");
+                        return;
+                    }
+                    // The loop is pasted. Its body is ordinary code.
+                    macro_depth_ = 0;
+                }
+                struct RestoreMacro {
+                    int &slot;
+                    int saved;
+                    ~RestoreMacro() { slot = saved; }
+                } restore{macro_depth_, saved_macro};
                 AssignState on_true = assign_;
                 AssignState on_false = assign_;
                 bool can_fail = false;
@@ -1270,6 +1304,20 @@ void Checker::check_stmt(const Stmt &stmt) {
                 flow_frames_.pop_back();
                 assign_ = init_loop_exit(done.breaks, on_false, can_fail);
             } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
+                const int saved_macro = macro_depth_;
+                if (node.emit) {
+                    if (saved_macro == 0) {
+                        error(node.loc, "not supported yet");
+                        return;
+                    }
+                    // The loop is pasted. Its body is ordinary code.
+                    macro_depth_ = 0;
+                }
+                struct RestoreMacro {
+                    int &slot;
+                    int saved;
+                    ~RestoreMacro() { slot = saved; }
+                } restore{macro_depth_, saved_macro};
                 FlowFrame frame;
                 frame.kind = FlowFrame::Kind::Loop;
                 flow_frames_.push_back(std::move(frame));
