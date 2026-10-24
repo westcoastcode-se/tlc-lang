@@ -1,0 +1,72 @@
+type Point struct {
+    x i32;
+};
+
+func pick(flag bool) {
+    if (flag) {
+        return 40;
+    }
+    return pick(true);
+}
+
+func ready(flag bool) i32;
+
+func ready(flag bool) {
+    if (flag) {
+        return 2;
+    }
+    return ready(true);
+}
+
+func down(n i32) {
+    if (n == 0) {
+        return 0;
+    }
+    return up(n - 1);
+}
+
+func up(n i32) {
+    return down(n);
+}
+
+func Point::get(self *this, flag bool) {
+    if (flag) {
+        return self.x;
+    }
+    return self.get(true);
+}
+
+func hold[T type](value T, flag bool) {
+    if (flag) {
+        return value;
+    }
+    return hold(value, true);
+}
+
+func nest(flag bool) i32 {
+    func inner(go bool) {
+        if (go) {
+            return 0;
+        }
+        return inner(true);
+    }
+    return inner(flag);
+}
+
+func main() i32 {
+    if (down(1) != 0) {
+        return 0;
+    }
+    var p Point;
+    p.x = 0;
+    if (p.get(false) != 0) {
+        return 0;
+    }
+    if (hold(0, false) != 0) {
+        return 0;
+    }
+    if (nest(false) != 0) {
+        return 0;
+    }
+    return pick(false) + ready(false);
+}

@@ -320,7 +320,8 @@ class Checker {
     Type function_signature(const FunctionDecl &fn);
     // Fill `fn.results` from the body's `return` expressions. No `return`, a bare
     // `return;`, and `return` of a `void` value are `void`. Returns that name different
-    // types are an error. A trait is not a result. The body is checked again later.
+    // types are an error. A call whose result is not known yet does not choose the type.
+    // A trait is not a result. The body is checked again later.
     bool infer_omitted_result(FunctionDecl &fn);
     void infer_file_results(const TranslationUnit &unit);
     void publish_inferred(FunctionDecl &fn);

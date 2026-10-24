@@ -1,0 +1,12 @@
+func bad(flag bool) bool;
+
+func bad(flag bool) {
+    if (flag) {
+        return 1;
+    }
+    return bad(true);
+}
+
+func main() i32 {
+    return 0;
+}

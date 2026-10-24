@@ -1636,6 +1636,41 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
     } else {
         check_stmt(*fn.body);
     }
+    // A call whose result is not known yet does not choose the type. The known returns still
+    // have to agree. That call is checked again once the type is known.
+    auto known_return = [](const InferredReturn &item) {
+        if (item.bare) {
+            return true;
+        }
+        if (item.parts.empty()) {
+            return false;
+        }
+        for (const Type &part : item.parts) {
+            if (part.kind == TypeKind::Invalid) {
+                return false;
+            }
+        }
+        return true;
+    };
+    bool known = false;
+    bool unknown = false;
+    for (const InferredReturn &item : inferred_returns_) {
+        if (known_return(item)) {
+            known = true;
+        } else {
+            unknown = true;
+        }
+    }
+    if (known && unknown) {
+        std::vector<InferredReturn> kept;
+        kept.reserve(inferred_returns_.size());
+        for (InferredReturn &item : inferred_returns_) {
+            if (known_return(item)) {
+                kept.push_back(std::move(item));
+            }
+        }
+        inferred_returns_ = std::move(kept);
+    }
     // `return touch()` when `touch` is `void` is that same result. Another type still disagrees.
     bool only_void = !inferred_returns_.empty();
     for (const InferredReturn &item : inferred_returns_) {
