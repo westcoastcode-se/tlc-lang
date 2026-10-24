@@ -250,7 +250,7 @@ func main() i32 {
 }
 ```
 
-`use(bag)` returns 42. `at` is a direct call of `Bag.at`. Passing a struct whose `at` returns `u8` where `Seq[i32]` is expected is reported as `type mismatch`. `import "std/seq"` names that trait as the iteration trait. A value `seq.Seq[T]` checks `len` and `at`. A pointer `*seq.Seq[T]` checks `ref` as well. An array `[N]E` and a slice `[]E` satisfy `seq.Seq[E]`. On those values `len` is `.len` and `at` is the index. A struct still satisfies the trait by its own methods. The declaration is on [seq](../std/seq.md).
+`use(bag)` returns 42. `at` is a direct call of `Bag.at`. Passing a struct whose `at` returns `u8` where `Seq[i32]` is expected is reported as `type mismatch`. `import "std/seq"` names that trait as the iteration trait. `seq.Seq[T]` and `*seq.Seq[T]` check `len` and `at`. A pointer to an element is `ptr_of`. An array `[N]E` and a slice `[]E` satisfy `seq.Seq[E]`. On those values `len` is `.len` and `at` is the index. A struct still satisfies the trait by its own methods. The declaration is on [seq](../std/seq.md).
 
 ## Cost
 

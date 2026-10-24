@@ -3,7 +3,6 @@ package seq;
 export extern type Seq[T type] trait {
     func len() i32;
     func at(i i32) T;
-    func ref(i i32) *T;
 };
 
 export type ptr_of[T type] trait {

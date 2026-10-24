@@ -1,1 +1,1 @@
-compile-error: undeclared identifier
+exit: 1
