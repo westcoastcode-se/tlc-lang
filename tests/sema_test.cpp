@@ -7601,10 +7601,11 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
             "func main() i32 {\n"
             "  var n i32 = 1;\n"
-            "  var t Type = typeof(n);\n"
+            "  var t builtin.Type = typeof(n);\n"
             "  var text *u8 = t.name();\n"
             "  if (t == typeof(i32) && typeof('A') == typeof(u8) && typeof('A') != typeof(i8)) {\n"
             "    return 0;\n"
@@ -7615,41 +7616,60 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("func main() i32 { var t Type; return 0; }\n");
+        const std::string errors = check_program("import \"builtin\";\nfunc main() i32 { var t builtin.Type; return 0; }\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program("func main() i32 { var t Type = typeof(i32); return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = check_program(
+            "import { Type } from \"builtin\";\n"
             "func main() i32 {\n"
             "  var t Type = typeof(i32);\n"
+            "  return t == typeof(i32);\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
+            "func main() i32 {\n"
+            "  var t builtin.Type = typeof(i32);\n"
             "  return t < typeof(u8);\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
             "func main() i32 {\n"
-            "  var t Type = typeof(i32);\n"
+            "  var t builtin.Type = typeof(i32);\n"
             "  return t.other();\n"
             "}\n");
         EXPECT_HAS(check, errors, "undeclared identifier");
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
             "func main() i32 {\n"
-            "  var t Type = typeof(i32);\n"
+            "  var t builtin.Type = typeof(i32);\n"
             "  return t.name(1);\n"
             "}\n");
         EXPECT_HAS(check, errors, "argument count");
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
             "func main() i32 {\n"
-            "  var t Type = typeof(i32);\n"
+            "  var t builtin.Type = typeof(i32);\n"
             "  var text *u8 = t;\n"
             "  return 0;\n"
             "}\n");
@@ -7657,9 +7677,10 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose(
+        const std::string errors = check_program(
+            "import \"builtin\";\n"
             "func main() i32 {\n"
-            "  var t Type = typeof(i32);\n"
+            "  var t builtin.Type = typeof(i32);\n"
             "  return t.name;\n"
             "}\n");
         EXPECT_HAS(check, errors, "undeclared identifier");

@@ -128,6 +128,8 @@ struct Expr {
         std::vector<std::unique_ptr<Expr>> args;
         // Set while checking when the callee is `Type.name()`.
         mutable bool type_name = false;
+        // Set while checking when the callee is `Type.fields()`.
+        mutable bool type_fields = false;
         // The parameter list selected for this call. Null when the name has one list.
         mutable const FunctionDecl *selected = nullptr;
         // `seq.Seq(items)` names that trait. The argument is the value, not a call.

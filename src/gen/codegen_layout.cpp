@@ -91,6 +91,8 @@ void CodeGen::prepare_structs() {
     if (graph_ == nullptr) {
         return;
     }
+    // Same index the checker reserves, so an initializer's struct id still names that struct.
+    install_field_struct();
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
             const auto *item = std::get_if<StructDecl>(&decl.data);
@@ -365,6 +367,33 @@ void CodeGen::prepare_structs() {
         }
     }
     publish_spec_types();
+}
+
+void CodeGen::install_field_struct() {
+    if (field_struct_id_ >= 0) {
+        return;
+    }
+    const int id = static_cast<int>(structs_.size());
+    StructLayout layout;
+    layout.name = ".Field";
+    layout.ready = true;
+    layout.type = llvm::StructType::create(context_, "tlc.field");
+    layout.type->setBody({ptr_type(), ptr_type()});
+    FieldLayout name;
+    name.name = "name";
+    name.type = ptr_type();
+    name.depth = 1;
+    name.elem_char = true;
+    name.elem_bits = 8;
+    name.elem_unsigned = true;
+    FieldLayout kind;
+    kind.name = "kind";
+    kind.type = ptr_type();
+    kind.depth = 1;
+    layout.fields.push_back(std::move(name));
+    layout.fields.push_back(std::move(kind));
+    structs_.push_back(std::move(layout));
+    field_struct_id_ = id;
 }
 
 void CodeGen::publish_spec_types() {
@@ -1365,13 +1394,22 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     return lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, false, 0,
                                  false);
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
-                    // `typeof(T).name()` is `*u8`.
+                    // `typeof(T).name()` is `*u8`. `typeof(T).fields()` is a slice of `{ name, kind }`.
                     if (item.type_name) {
                         Lowered low;
                         low.depth = 1;
                         low.elem_bits = 8;
                         low.elem_unsigned = true;
                         low.type = ptr_type();
+                        return low;
+                    }
+                    if (item.type_fields) {
+                        Lowered low;
+                        low.is_slice = true;
+                        low.array_len = -1;
+                        low.depth = 0;
+                        low.struct_id = field_struct_id_;
+                        low.type = slice_type();
                         return low;
                     }
                     if (item.callee == nullptr) {

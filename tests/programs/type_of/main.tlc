@@ -1,6 +1,8 @@
+import "builtin";
+
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-var kind Type = typeof(i32);
+var kind builtin.Type = typeof(i32);
 
 type Point struct {
     x i32;
@@ -17,18 +19,18 @@ func id[T type](value T) i32 {
     return 0;
 }
 
-func take(value Type) *u8 {
+func take(value builtin.Type) *u8 {
     return value.name();
 }
 
 func main() i32 {
     var n i32 = 1;
-    var t Type = typeof(n);
+    var t builtin.Type = typeof(n);
     var p ?*i32 = null;
     var a [4]i32;
     var box Box[i32];
     var point Point;
-    if (sizeof(Type) != 8) {
+    if (sizeof(builtin.Type) != 8) {
         return 1;
     }
     if (typeof(i64) == typeof(i32) || kind != typeof(i32)) {
@@ -49,7 +51,7 @@ func main() i32 {
     if (take(typeof(i32)) != take(t)) {
         return 7;
     }
-    var through *Type = &t;
+    var through *builtin.Type = &t;
     if (through.name() != t.name()) {
         return 8;
     }
@@ -60,7 +62,7 @@ func main() i32 {
     printf("%s\n", typeof(box).name());
     printf("%s\n", typeof(point).name());
     printf("%s\n", typeof("hi").name());
-    printf("%s\n", typeof(Type).name());
+    printf("%s\n", typeof(builtin.Type).name());
     printf("%s\n", typeof(f32).name());
     printf("%s\n", typeof(f32).name());
     return 0;

@@ -2,12 +2,14 @@
 
 [Index](../README.md) · [Previous: Conditions](condition.md) · [Next: Casts](cast.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`typeof(i32)` and `typeof n` have type `Type`. `==` and `!=` compare two `Type` values and yield `bool`. Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` folds while compiling. `t.name()` returns the diagnostic spelling as `*u8`. Other operators on `Type` are reported as `type mismatch`.
+`typeof(i32)` and `typeof n` have type `builtin.Type`. `import "builtin"` names that type. `==` and `!=` compare two `builtin.Type` values and yield `bool`. Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` folds while compiling. `t.name()` returns the diagnostic spelling as `*u8`. `t.fields()` returns the fields of a named struct. `fields[i].name` is the field's name and `fields[i].kind` is its type. Other operators on `builtin.Type` are reported as `type mismatch`.
 
 ```c
+import "builtin";
+
 func main() i32 {
     var n i32 = 1;
-    var t Type = typeof(n);
+    var t builtin.Type = typeof(n);
     if (typeof(n) == typeof(i32) && t.name() != null) {
         return 1;
     }
@@ -17,6 +19,6 @@ func main() i32 {
 
 ## Cost
 
-Materializing `typeof` is one `leaq` of a descriptor. Comparing two `Type` values is a pointer compare, 5 instructions once both addresses are loaded. `assert` and a file-scope `const` fold the compare and add no instructions. `t.name()` is a traced call, 36 instructions in the caller when fewer than 32 frames are stored, plus the callee that builds the text.
+Materializing `typeof` is one `leaq` of a descriptor. Comparing two `Type` values is a pointer compare, 5 instructions once both addresses are loaded. `assert` and a file-scope `const` fold the compare and add no instructions. `t.name()` loads the spelling from the descriptor. A function that stores `typeof(n)` and returns `t.name()` is 5 instructions including `retq`. `return typeof(Point).fields().len` is 3 instructions including `retq`.
 
 [Index](../README.md) · [Previous: Conditions](condition.md) · [Next: Casts](cast.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

@@ -56,10 +56,6 @@ inline bool fill_builtin(const std::string &name, Type &out) {
         out = type_void();
         return true;
     }
-    if (name == "Type") {
-        out = type_meta();
-        return true;
-    }
     return false;
 }
 

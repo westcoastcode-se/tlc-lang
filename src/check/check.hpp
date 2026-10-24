@@ -225,6 +225,9 @@ class Checker {
     std::vector<Scope> scopes_;
     int function_seq_ = 0;
     std::vector<StructInfo> structs_;
+    // `fields()` yields a slice of this struct: `name *u8` and `kind Type`.
+    // Negative until `ensure_field_info` runs. The name is not a source type.
+    int field_info_id_ = -1;
     std::vector<TraitInfo> traits_;
     // The built-in `Allocator` trait. Negative until the first unit is registered.
     int allocator_trait_id_ = -1;
@@ -431,6 +434,11 @@ class Checker {
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
     Type type_of_result(const ResultSlot &slot, SourceLoc loc);
     std::string type_desc(const Type &type) const;
+    // The slice `Type.fields()` returns. Invalid before `ensure_field_info`.
+    Type type_field_slice() const;
+    void ensure_field_info();
+    // Writes `reflected_fields` on the package graph after every struct is known.
+    void publish_reflected_fields();
     void mismatch(SourceLoc loc, const Type &want, const Type &got);
     Type lookup_tag(const std::string &name, SourceLoc loc, bool allow_incomplete);
     Type lookup_qualified_type(const std::string &package, const std::string &name, SourceLoc loc);

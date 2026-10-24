@@ -908,7 +908,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 return type_invalid();
                             }
-                            if (selector->field != "name") {
+                            if (selector->field != "name" && selector->field != "fields") {
                                 error(node.loc, "undeclared identifier");
                                 for (const auto &arg : node.args) {
                                     check_expr(*arg, true);
@@ -921,6 +921,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     check_expr(*arg, true);
                                 }
                                 return type_invalid();
+                            }
+                            if (selector->field == "fields") {
+                                const Type slice = type_field_slice();
+                                if (slice.kind == TypeKind::Invalid) {
+                                    error(node.loc, "type mismatch");
+                                    return type_invalid();
+                                }
+                                node.type_fields = true;
+                                return slice;
                             }
                             node.type_name = true;
                             return type_pointer(type_rank(1, true));

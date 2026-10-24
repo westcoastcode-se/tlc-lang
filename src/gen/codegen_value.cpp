@@ -387,32 +387,35 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (node.trait_cast && node.args.size() == 1 && node.args.front() != nullptr) {
                     return emit_rvalue(*node.args.front());
                 }
-                if (node.type_name) {
+                if (node.type_name || node.type_fields) {
                     const auto *selector = node.callee == nullptr ? nullptr : std::get_if<Expr::Selector>(&node.callee->data);
                     if (selector == nullptr || selector->base == nullptr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
                     }
-                    auto name_pointer = [&](llvm::Value *value, int depth) -> TypedValue {
-                        if (value == nullptr || depth < 1 || depth > 2) {
+                    llvm::Value *desc = type_descriptor(*selector->base);
+                    if (desc == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    const int slot_index = node.type_fields ? 1 : 0;
+                    llvm::Value *slot = builder_.CreateInBoundsGEP(
+                        type_desc_type(), desc,
+                        llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(slot_index)});
+                    if (node.type_fields) {
+                        if (field_struct_id_ < 0) {
                             error(node.loc, "type mismatch");
                             return {zero(), 0};
                         }
-                        if (depth == 2) {
-                            value = builder_.CreateLoad(ptr_type(), value);
-                        }
-                        return {value, 1, true};
-                    };
-                    if (addressable(*selector->base)) {
-                        const TypedValue addr = emit_addr(*selector->base);
-                        if (addr.value == nullptr) {
-                            return {zero(), 0};
-                        }
-                        llvm::Value *loaded = builder_.CreateLoad(ptr_type(), addr.value);
-                        return name_pointer(loaded, addr.depth);
+                        TypedValue out;
+                        out.value = builder_.CreateLoad(slice_type(), slot);
+                        out.is_slice = true;
+                        out.array_len = -1;
+                        out.depth = 0;
+                        out.struct_id = field_struct_id_;
+                        return out;
                     }
-                    const TypedValue base = emit_rvalue(*selector->base);
-                    return name_pointer(base.value, base.depth);
+                    return {builder_.CreateLoad(ptr_type(), slot), 1, true};
                 }
                 if (node.callee != nullptr && is_std_builtin_call(*node.callee, "va")) {
                     return emit_builtin_va(node.loc);
@@ -840,7 +843,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     error(node.loc, "type mismatch");
                     return {zero(), 0};
                 }
-                return {intern_type_name(node.canonical), 1};
+                return {intern_type_desc(node.canonical), 1};
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 return {const_i32(node.value ? 1 : 0), 0};
             } else if constexpr (std::is_same_v<T, Expr::Nullptr>) {
@@ -1208,6 +1211,28 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
             }
         },
         expr.data);
+}
+
+llvm::Value *CodeGen::type_descriptor(const Expr &expr) {
+    // `var t builtin.Type` is one pointer. `var p *builtin.Type` is a pointer to that pointer.
+    auto narrow = [&](llvm::Value *value, int depth) -> llvm::Value * {
+        if (value == nullptr || depth < 1 || depth > 2) {
+            return nullptr;
+        }
+        if (depth == 2) {
+            value = builder_.CreateLoad(ptr_type(), value);
+        }
+        return value;
+    };
+    if (addressable(expr)) {
+        const TypedValue addr = emit_addr(expr);
+        if (addr.value == nullptr) {
+            return nullptr;
+        }
+        return narrow(builder_.CreateLoad(ptr_type(), addr.value), addr.depth);
+    }
+    const TypedValue base = emit_rvalue(expr);
+    return narrow(base.value, base.depth);
 }
 
 } // namespace tlc

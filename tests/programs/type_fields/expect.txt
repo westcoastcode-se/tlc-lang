@@ -1,0 +1,7 @@
+link: -lc
+exit: 0
+stdout:
+x i32
+y f32
+p label
+value

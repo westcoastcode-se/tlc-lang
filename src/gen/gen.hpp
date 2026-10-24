@@ -679,6 +679,11 @@ class CodeGen {
     std::vector<const TraitDecl *> trait_decls_;
     std::unordered_map<std::string, llvm::Function *> specs_;
     std::unordered_map<std::string, llvm::GlobalVariable *> type_names_;
+    // One descriptor per spelling. The value of `Type` is a pointer to it.
+    std::unordered_map<std::string, llvm::GlobalVariable *> type_descs_;
+    llvm::StructType *type_desc_ty_ = nullptr;
+    // `fields()` element: `{ name *u8, kind Type }`. Negative until `prepare_structs`.
+    int field_struct_id_ = -1;
     std::unordered_set<std::string> emitting_specs_;
     std::vector<int> active_spec_;
     // One entry per parameter of the specialization being emitted. Parallel to `active_spec_`.
@@ -1159,6 +1164,8 @@ class CodeGen {
     const Alias *selective_alias(uint32_t file, const std::string &name) const;
     bool has_typedef(uint32_t file, const std::string &name) const;
     bool alias_base_ready(uint32_t file, const TypedefDecl &item) const;
+    // `builtin.Type`, or `Type` brought in by `import { Type } from "builtin"`.
+    bool meta_type(uint32_t file, const std::string &package, const std::string &name) const;
     Lowered lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct, int indirections,
                   bool is_array, int array_len, bool parameter, bool elem_slice = false,
                   const std::vector<TypeShell> &shells = {}) const;
@@ -1263,6 +1270,11 @@ class CodeGen {
     llvm::Constant *const_initializer(const Expr &expr, const Binding &dest);
     llvm::Constant *sized_int(const Binding &dest, int32_t value) const;
     llvm::Constant *intern_type_name(const std::string &text);
+    llvm::StructType *type_desc_type();
+    llvm::Constant *intern_type_desc(const std::string &text);
+    // The descriptor pointer a `Type` or `*Type` receiver holds. Null on a bad receiver.
+    llvm::Value *type_descriptor(const Expr &expr);
+    void install_field_struct();
     llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
     // Omitted fields take the value written on the field. `strict` drops the constant when a named field does not fold.
     llvm::Constant *const_struct_into(const Expr::Init *overlay, int struct_id, bool strict,

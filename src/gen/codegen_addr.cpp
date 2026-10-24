@@ -522,6 +522,13 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 if (const Binding *binding = lookup(node.text)) {
                     return shape_from_binding(*binding);
                 }
+                // `sizeof(Type)` after `import { Type } from "builtin"`. The name is not a value.
+                if (meta_type(current_file_, "", node.text)) {
+                    Shape shape;
+                    shape.depth = 1;
+                    shape.type = ptr_type();
+                    return shape;
+                }
                 const Alias *alias = find_alias(current_file_, node.text);
                 if (alias == nullptr) {
                     alias = selective_alias(current_file_, node.text);
@@ -734,6 +741,15 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     shape.elem_bits = 8;
                     shape.elem_unsigned = true;
                     shape.type = ptr_type();
+                    return shape;
+                }
+                if (node.type_fields) {
+                    Shape shape;
+                    shape.is_slice = true;
+                    shape.array_len = -1;
+                    shape.depth = 0;
+                    shape.struct_id = field_struct_id_;
+                    shape.type = slice_type();
                     return shape;
                 }
                 if (node.callee == nullptr) {

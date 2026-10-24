@@ -1556,6 +1556,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
 }
 
 void Checker::analyze(const TranslationUnit &unit) {
+    ensure_field_info();
     primary_unit_ = const_cast<TranslationUnit *>(&unit);
     collect_templates(const_cast<TranslationUnit &>(unit), 0);
     register_structs(unit, 0);
@@ -1780,6 +1781,18 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                                            false, var->type_package, var->is_struct, var->is_enum, var->optional,
                                            var->const_pointee, false, var->elem_slice, shells);
             exports_[file_id].emplace(var->name, std::move(symbol));
+        }
+    }
+    // `builtin.Type` is the type of a type. The package has no source file for it.
+    if (graph_ != nullptr) {
+        const PackageNode *node = find_node(file_id);
+        if (node != nullptr && is_std_builtin_path(node->path) && !exports_[file_id].contains("Type")) {
+            Symbol symbol;
+            symbol.name = "Type";
+            symbol.is_type = true;
+            symbol.type = type_meta();
+            symbol.package_file = file_id;
+            exports_[file_id].emplace("Type", std::move(symbol));
         }
     }
 }
@@ -2007,6 +2020,7 @@ std::vector<uint32_t> prepare_order(const PackageGraph &graph) {
 
 void Checker::analyze_graph(const PackageGraph &graph) {
     graph_ = &graph;
+    ensure_field_info();
     for (const PackageNode &node : graph.nodes) {
         collect_templates(const_cast<TranslationUnit &>(node.unit), node.file_id);
     }
@@ -2103,6 +2117,7 @@ void Checker::analyze_graph(const PackageGraph &graph) {
         check_unit(node.unit, node.file_id, &node);
     }
     flush_appends();
+    publish_reflected_fields();
     graph_ = nullptr;
 }
 

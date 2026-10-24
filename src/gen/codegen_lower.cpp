@@ -514,6 +514,37 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
     return leaf;
 }
 
+bool CodeGen::meta_type(uint32_t file, const std::string &package, const std::string &name) const {
+    if (name != "Type" || graph_ == nullptr) {
+        return false;
+    }
+    const auto from_builtin = [&](uint32_t id) {
+        const PackageNode *node = find_node(id);
+        return node != nullptr && is_std_builtin_path(node->path);
+    };
+    if (!package.empty()) {
+        const uint32_t target = package_file(file, package);
+        return target != 0 && from_builtin(target);
+    }
+    if (from_builtin(file)) {
+        return true;
+    }
+    const PackageNode *node = find_node(file);
+    if (node == nullptr) {
+        return false;
+    }
+    for (const ImportDecl &import : node->unit.imports) {
+        if (!import_selects(import, name)) {
+            continue;
+        }
+        const PackageNode *target = import_target(graph_, file, import);
+        if (target != nullptr && is_std_builtin_path(target->path)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct,
                                  int indirections, bool is_array, int array_len, bool parameter, bool elem_slice,
                                  const std::vector<TypeShell> &shells) const {
@@ -528,7 +559,10 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         base = alias;
         have = true;
     };
-    if (!package.empty()) {
+    if (meta_type(file, package, name)) {
+        base.depth = 1;
+        have = true;
+    } else if (!package.empty()) {
         const uint32_t target = package_file(file, package);
         const int tag = target == 0 ? -1 : tag_id(target, name);
         const Alias *remote = target == 0 ? nullptr : find_alias(target, name);
@@ -595,9 +629,6 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         have = true;
     } else if (name == "void") {
         base.elem_void = true;
-        have = true;
-    } else if (name == "Type") {
-        base.depth = 1;
         have = true;
     } else if (name == "bool") {
         base.elem_bool = true;

@@ -57,7 +57,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Reflection
 
-Type information for generating code while compiling. The goal is a `macro` keyword whose body can use `typeof` to read methods, struct fields, and the types of those fields. The syntax of a macro function is not chosen, and it has to be chosen before [`const if`](#const-if) is specified. The compiler has no `macro` form.
+`typeof(T).fields()` reads the fields of a named struct: `fields[i].name` and `fields[i].kind`. Methods are not read yet. The goal is a `macro` keyword whose body can use `typeof` to read methods and these fields. The syntax of a macro function is not chosen, and it has to be chosen before [`const if`](#const-if) is specified. The compiler has no `macro` form.
 
 ## Types and operators
 

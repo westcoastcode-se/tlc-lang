@@ -32,9 +32,18 @@ struct ImportEdge {
     std::string spec;
 };
 
+// One field of a named struct, in source order. `type` is the spelling `typeof` uses.
+struct ReflectedField {
+    std::string name;
+    std::string type;
+};
+
 struct PackageGraph {
     std::vector<PackageNode> nodes;
     std::vector<ImportEdge> edges;
+    // Filled by the checker. Keyed by the spelling `typeof` stores.
+    // Codegen reads it when it builds a type descriptor. Absent means no fields.
+    std::unordered_map<std::string, std::vector<ReflectedField>> reflected_fields;
     // Linker arguments from packages loaded out of the vendor root or the
     // standard library, in import order. Ready to pass to cc. Empty when no
     // such package was loaded.

@@ -910,6 +910,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.callee = node.callee ? clone_expr(*node.callee) : nullptr;
                 copy.type_args = node.type_args;
                 copy.type_name = node.type_name;
+                copy.type_fields = node.type_fields;
                 copy.trait_method = node.trait_method;
                 for (const auto &arg : node.args) {
                     copy.args.push_back(arg ? clone_expr(*arg) : nullptr);

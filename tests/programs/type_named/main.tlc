@@ -1,0 +1,10 @@
+import { Type } from "builtin";
+
+func main() i32 {
+    var t Type = typeof(i32);
+    var through *Type = &t;
+    if (sizeof(Type) != 8 || t != typeof(i32) || through.name() != t.name()) {
+        return 1;
+    }
+    return 0;
+}

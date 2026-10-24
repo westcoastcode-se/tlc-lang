@@ -2073,4 +2073,100 @@ std::string Checker::type_desc(const Type &type) const {
     return "invalid";
 }
 
+void Checker::ensure_field_info() {
+    if (field_info_id_ >= 0) {
+        return;
+    }
+    const int id = static_cast<int>(structs_.size());
+    StructInfo info;
+    info.name = ".Field";
+    info.complete = true;
+    info.anonymous = true;
+    StructInfo::Field name;
+    name.name = "name";
+    name.exported = true;
+    name.type = type_pointer(type_rank(1, true));
+    StructInfo::Field kind;
+    kind.name = "kind";
+    kind.exported = true;
+    kind.type = type_meta();
+    info.fields.push_back(std::move(name));
+    info.fields.push_back(std::move(kind));
+    structs_.push_back(std::move(info));
+    field_info_id_ = id;
+}
+
+Type Checker::type_field_slice() const {
+    if (field_info_id_ < 0) {
+        return type_invalid();
+    }
+    return type_array(type_struct(field_info_id_), -1);
+}
+
+void Checker::publish_reflected_fields() {
+    if (graph_ == nullptr) {
+        return;
+    }
+    std::unordered_map<std::string, std::vector<ReflectedField>> table;
+    std::unordered_set<std::string> ambiguous;
+    const auto same = [](const std::vector<ReflectedField> &lhs, const std::vector<ReflectedField> &rhs) {
+        if (lhs.size() != rhs.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < lhs.size(); ++i) {
+            if (lhs[i].name != rhs[i].name || lhs[i].type != rhs[i].type) {
+                return false;
+            }
+        }
+        return true;
+    };
+    const auto add = [&](const std::string &spelling, int struct_id) {
+        // An anonymous struct spells `struct`. Several of them would share one descriptor.
+        if (spelling.empty() || spelling == "struct" || spelling == "union" || spelling == "invalid" ||
+            ambiguous.contains(spelling)) {
+            return;
+        }
+        if (struct_id < 0 || struct_id == field_info_id_ || struct_id >= static_cast<int>(structs_.size())) {
+            return;
+        }
+        const StructInfo &info = structs_[static_cast<std::size_t>(struct_id)];
+        if (info.is_union) {
+            return;
+        }
+        std::vector<ReflectedField> fields;
+        fields.reserve(info.fields.size());
+        for (const StructInfo::Field &field : info.fields) {
+            if (field.name.empty()) {
+                continue;
+            }
+            fields.push_back(ReflectedField{field.name, type_desc(field.type)});
+        }
+        if (fields.empty()) {
+            return;
+        }
+        const auto found = table.find(spelling);
+        if (found == table.end()) {
+            table.emplace(spelling, std::move(fields));
+            return;
+        }
+        if (!same(found->second, fields)) {
+            table.erase(found);
+            ambiguous.insert(spelling);
+        }
+    };
+    for (int id = 0; id < static_cast<int>(structs_.size()); ++id) {
+        add(type_desc(type_struct(id)), id);
+    }
+    for (const auto &file : typedefs_) {
+        for (const auto &item : file.second) {
+            const Type &type = item.second;
+            if (type.kind != TypeKind::Struct) {
+                continue;
+            }
+            add(type_desc(type), type.struct_id);
+        }
+    }
+    const_cast<PackageGraph *>(graph_)->reflected_fields = std::move(table);
+}
+
 } // namespace tlc

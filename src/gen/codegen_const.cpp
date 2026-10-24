@@ -1108,6 +1108,47 @@ llvm::Constant *CodeGen::intern_type_name(const std::string &text) {
     return global;
 }
 
+llvm::StructType *CodeGen::type_desc_type() {
+    if (type_desc_ty_ != nullptr) {
+        return type_desc_ty_;
+    }
+    // `{ *u8 name, []Field fields }`. `name()` loads the first field. `fields()` loads the second.
+    auto *type = llvm::StructType::create(context_, "tlc.type");
+    type->setBody({ptr_type(), slice_type()});
+    type_desc_ty_ = type;
+    return type;
+}
+
+llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
+    const auto found = type_descs_.find(text);
+    if (found != type_descs_.end()) {
+        return found->second;
+    }
+    auto *global = new llvm::GlobalVariable(module_, type_desc_type(), true, llvm::GlobalValue::PrivateLinkage, nullptr,
+                                            ".tdesc");
+    type_descs_.emplace(text, global);
+    llvm::Constant *fields = llvm::ConstantStruct::get(slice_type(), {null_ptr(), const_i32(0)});
+    if (graph_ != nullptr && field_struct_id_ >= 0 && field_struct_id_ < static_cast<int>(structs_.size())) {
+        const auto reflected = graph_->reflected_fields.find(text);
+        if (reflected != graph_->reflected_fields.end() && !reflected->second.empty()) {
+            llvm::StructType *field_ty = structs_[static_cast<std::size_t>(field_struct_id_)].type;
+            std::vector<llvm::Constant *> elems;
+            elems.reserve(reflected->second.size());
+            for (const ReflectedField &field : reflected->second) {
+                llvm::Constant *name = intern_type_name(field.name);
+                llvm::Constant *kind = intern_type_desc(field.type);
+                elems.push_back(llvm::ConstantStruct::get(field_ty, {name, kind}));
+            }
+            auto *array_ty = llvm::ArrayType::get(field_ty, elems.size());
+            auto *array = new llvm::GlobalVariable(module_, array_ty, true, llvm::GlobalValue::PrivateLinkage,
+                                                   llvm::ConstantArray::get(array_ty, elems), ".tfields");
+            fields = llvm::ConstantStruct::get(slice_type(), {array, const_i32(static_cast<int32_t>(elems.size()))});
+        }
+    }
+    global->setInitializer(llvm::ConstantStruct::get(type_desc_type(), {intern_type_name(text), fields}));
+    return global;
+}
+
 llvm::Constant *CodeGen::sized_int(const Binding &dest, int32_t value) const {
     // f64 is 64 bits wide. That width is an integer only when the slot is not a float.
     if (dest.depth != 0 || dest.struct_id >= 0 || dest.fn_ty != nullptr || dest.elem_float) {
@@ -1487,7 +1528,7 @@ void CodeGen::apply_initializer(const VarDecl &var) {
             return;
         }
         auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
-        global->setInitializer(intern_type_name(kind->canonical));
+        global->setInitializer(intern_type_desc(kind->canonical));
         file.folded.insert(key);
         return;
     }
