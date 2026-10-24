@@ -1313,6 +1313,8 @@ class CodeGen {
     std::optional<std::string> constant_string(const Expr &expr, std::unordered_set<std::string> &seen) const;
     const FunctionDecl *comptime_named(const std::string &name) const;
     std::optional<int32_t> fold_comptime_body(const FunctionDecl &fn) const;
+    // The `builtin.memeql` or `builtin.memcmp` declaration this call names.
+    const FunctionDecl *mem_compare_decl(const Expr::Call &call) const;
     // A constant float or integer. `wide` is an f64 operation. Integers leave `is_float` clear.
     struct FoldedNumber {
         double value = 0;

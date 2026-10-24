@@ -1,0 +1,7 @@
+comptime func id[T type](value comptime i32) i32 {
+    return value;
+}
+
+func main() i32 {
+    return 0;
+}

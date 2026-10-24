@@ -1102,9 +1102,12 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
         if (!spell_type(got, spelled)) {
             return false;
         }
+        // A slice of `T` may be passed where `[]const T` is expected. Dropping const may not.
+        const bool added_elem_const = param.elem_const && !spelled.elem_const;
         if (spelled.indirections != param.indirections || spelled.optional != param.optional ||
             spelled.const_pointee != param.const_pointee || spelled.is_array != param.is_array ||
-            spelled.elem_const != param.elem_const || (param.is_array && spelled.array_len != param.array_len)) {
+            (spelled.elem_const != param.elem_const && !added_elem_const) ||
+            (param.is_array && spelled.array_len != param.array_len)) {
             return false;
         }
         if (!param.type_args.empty()) {
@@ -1277,15 +1280,30 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         if (arity.size() == 1) {
             templ = arity.front();
         } else {
+            // A comptime parameter is viable only for a comptime argument, and it wins over the
+            // same parameter list without `comptime`.
             const FunctionDecl *winner = nullptr;
+            int best = -1;
             int wins = 0;
             for (const FunctionDecl *item : arity) {
                 const bool saved = quiet_;
                 quiet_ = true;
-                const bool ok = generic_candidate_matches(*item, call, probed, owner);
+                const bool ok = generic_candidate_matches(*item, call, probed, owner) && comptime_arguments(*item, call);
                 quiet_ = saved;
-                if (ok) {
+                if (!ok) {
+                    continue;
+                }
+                int score = 0;
+                for (const Param &param : item->params) {
+                    if (param.is_comptime) {
+                        ++score;
+                    }
+                }
+                if (score > best) {
+                    best = score;
                     winner = item;
+                    wins = 1;
+                } else if (score == best) {
                     ++wins;
                 }
             }
@@ -1296,8 +1314,16 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
             templ = winner;
         }
     }
+    if (templ != nullptr && !comptime_arguments(*templ, call)) {
+        error(call.loc, "type mismatch");
+        return type_invalid();
+    }
     if (templ == nullptr || templ->type_params.empty()) {
         return std::nullopt;
+    }
+    // The comptime slice overload of memeql or memcmp is the value. It has no runtime specialization.
+    if (is_std_builtin_file(owner) && mem_compare_comptime(mem_compare_kind(*templ)) && fold_mem_compare(call)) {
+        return mem_compare_bool(mem_compare_kind(*templ)) ? type_bool() : type_int();
     }
     // A body defines the symbol. A trait parameter is not specialized away with `T`.
     if (templ->body == nullptr || templ->extern_c || templ->variadic || extern_generic_trait_param(owner, *templ)) {

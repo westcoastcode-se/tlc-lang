@@ -1,0 +1,6 @@
+import "builtin";
+
+func main() i32 {
+    assert(builtin.memeql[u8]("hi", "ha"), "different");
+    return 0;
+}

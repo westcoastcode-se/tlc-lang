@@ -255,6 +255,10 @@ void append_result_shape(std::string &out, const ResultSlot &slot, const std::ve
 }
 
 void append_param_shape(std::string &out, const Param &param, const std::vector<TypeParam> &params) {
+    // `comptime T` and `T` are different overloads. The marker keeps their keys apart.
+    if (param.is_comptime) {
+        out += "comptime.";
+    }
     if (param.is_tuple) {
         out.push_back('(');
         for (std::size_t i = 0; i < param.tuple_parts.size(); ++i) {

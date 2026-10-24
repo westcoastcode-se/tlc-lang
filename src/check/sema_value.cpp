@@ -697,6 +697,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 init_store_if(*node.lhs, before);
                 return symbol->type;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (const FunctionDecl *fn = node.callee != nullptr ? mem_compare_callee(node) : nullptr) {
+                    if (fold_mem_compare(node)) {
+                        return mem_compare_bool(mem_compare_kind(*fn)) ? type_bool() : type_int();
+                    }
+                }
                 if (const FunctionDecl *fn = node.callee != nullptr ? comptime_callee(node) : nullptr) {
                     if (!fn->params.empty() || !fn->type_params.empty() || !node.args.empty() || !node.type_args.empty() ||
                         !fold_int(expr)) {

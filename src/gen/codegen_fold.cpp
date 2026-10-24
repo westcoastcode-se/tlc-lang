@@ -413,6 +413,21 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 }
                 return static_cast<int32_t>(static_cast<unsigned char>((*bytes)[static_cast<std::size_t>(*at)]));
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (const FunctionDecl *fn = node.callee != nullptr ? mem_compare_decl(node) : nullptr) {
+                    const MemCompare kind = mem_compare_kind(*fn);
+                    if (mem_compare_slice(kind) && node.args.size() == 2 && node.type_args.size() <= 1 &&
+                        node.args[0] != nullptr && node.args[1] != nullptr &&
+                        (node.type_args.empty() || (plain_named_type_arg(node.type_args.front()) &&
+                                                    node.type_args.front().type_name == "u8"))) {
+                        std::unordered_set<std::string> left_seen;
+                        std::unordered_set<std::string> right_seen;
+                        const std::optional<std::string> left = constant_string(*node.args[0], left_seen);
+                        const std::optional<std::string> right = constant_string(*node.args[1], right_seen);
+                        if (left && right) {
+                            return mem_compare_bytes(*left, *right, kind);
+                        }
+                    }
+                }
                 if (!node.type_args.empty() || !node.args.empty() || node.callee == nullptr) {
                     return std::nullopt;
                 }
@@ -438,6 +453,106 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
             }
         },
         expr.data);
+}
+
+const FunctionDecl *CodeGen::mem_compare_decl(const Expr::Call &call) const {
+    if (call.callee == nullptr || graph_ == nullptr || call.args.size() != 2 || call.type_args.size() > 1 ||
+        call.args[0] == nullptr || call.args[1] == nullptr) {
+        return nullptr;
+    }
+    if (call.type_args.size() == 1 &&
+        (!plain_named_type_arg(call.type_args.front()) || call.type_args.front().type_name != "u8")) {
+        return nullptr;
+    }
+    std::unordered_set<std::string> left_seen;
+    std::unordered_set<std::string> right_seen;
+    if (!constant_string(*call.args[0], left_seen) || !constant_string(*call.args[1], right_seen)) {
+        return nullptr;
+    }
+    auto exported = [&](uint32_t file, const std::string &name) -> const FunctionDecl * {
+        const PackageNode *start = find_node(file);
+        if (start == nullptr || !is_compiler_builtin(start)) {
+            return nullptr;
+        }
+        const FunctionDecl *comptime_fn = nullptr;
+        const FunctionDecl *runtime_fn = nullptr;
+        bool clash = false;
+        for (const uint32_t id : package_files(file)) {
+            const PackageNode *node = find_node(id);
+            if (node == nullptr || !is_compiler_builtin(node)) {
+                continue;
+            }
+            for (const TopDecl &decl : node->unit.decls) {
+                const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+                if (fn == nullptr || !fn->exported || fn->name != name || fn->params.size() != 2) {
+                    continue;
+                }
+                const MemCompare kind = mem_compare_kind(*fn);
+                if (!mem_compare_slice(kind)) {
+                    continue;
+                }
+                const FunctionDecl **slot = mem_compare_comptime(kind) ? &comptime_fn : &runtime_fn;
+                if (*slot != nullptr) {
+                    clash = true;
+                }
+                *slot = fn;
+            }
+        }
+        if (clash) {
+            return nullptr;
+        }
+        if (comptime_fn != nullptr) {
+            return comptime_fn;
+        }
+        return runtime_fn;
+    };
+    if (const auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
+        const PackageNode *node = find_node(current_file_);
+        if (node == nullptr) {
+            return nullptr;
+        }
+        const FunctionDecl *found = nullptr;
+        for (const ImportDecl &import : node->unit.imports) {
+            if (import.form != ImportDecl::Form::Selective) {
+                continue;
+            }
+            bool listed = false;
+            for (const std::string &item : import.names) {
+                if (item == named->text) {
+                    listed = true;
+                }
+            }
+            if (!listed) {
+                continue;
+            }
+            const PackageNode *target = import_target(graph_, current_file_, import);
+            if (target == nullptr) {
+                continue;
+            }
+            const FunctionDecl *fn = exported(target->file_id, named->text);
+            if (fn == nullptr) {
+                continue;
+            }
+            if (found != nullptr) {
+                return nullptr;
+            }
+            found = fn;
+        }
+        return found;
+    }
+    const auto *selector = std::get_if<Expr::Selector>(&call.callee->data);
+    if (selector == nullptr || selector->base == nullptr) {
+        return nullptr;
+    }
+    const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+    if (base == nullptr) {
+        return nullptr;
+    }
+    const uint32_t target = package_file(current_file_, base->text);
+    if (target == 0) {
+        return nullptr;
+    }
+    return exported(target, selector->field);
 }
 
 const FunctionDecl *CodeGen::comptime_named(const std::string &name) const {

@@ -461,6 +461,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 default: return std::nullopt;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (const std::optional<int> compared = fold_mem_compare(node)) {
+                    return compared;
+                }
                 return fold_comptime_call(node);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 // `"hi"[1]` is the byte. The length does not include the terminating null.
@@ -482,6 +485,109 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
             }
         },
         expr.data);
+}
+
+bool Checker::argument_is_comptime(const Expr &arg) {
+    std::unordered_set<std::string> seen;
+    if (constant_string(arg, seen)) {
+        return true;
+    }
+    return fold_int(arg).has_value();
+}
+
+bool Checker::comptime_arguments(const FunctionDecl &fn, const Expr::Call &call) {
+    const std::size_t count = fn.params.size() < call.args.size() ? fn.params.size() : call.args.size();
+    for (std::size_t i = 0; i < count; ++i) {
+        if (!fn.params[i].is_comptime) {
+            continue;
+        }
+        if (call.args[i] == nullptr || !argument_is_comptime(*call.args[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+const FunctionDecl *Checker::mem_compare_callee(const Expr::Call &call) {
+    if (call.callee == nullptr || call.args.size() != 2 || call.type_args.size() > 1 || call.args[0] == nullptr ||
+        call.args[1] == nullptr) {
+        return nullptr;
+    }
+    if (call.type_args.size() == 1 &&
+        (!plain_named_type_arg(call.type_args.front()) || call.type_args.front().type_name != "u8")) {
+        return nullptr;
+    }
+    std::unordered_set<std::string> left_seen;
+    std::unordered_set<std::string> right_seen;
+    if (!constant_string(*call.args[0], left_seen) || !constant_string(*call.args[1], right_seen)) {
+        return nullptr;
+    }
+    const Symbol *symbol = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
+        symbol = lookup(named->text);
+    } else if (const auto *selector = std::get_if<Expr::Selector>(&call.callee->data)) {
+        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+        if (package == nullptr || !package->is_package) {
+            return nullptr;
+        }
+        symbol = find_export(package->package_file, selector->field);
+    }
+    if (symbol == nullptr || !symbol->is_template || !is_std_builtin_file(symbol->package_file)) {
+        return nullptr;
+    }
+    const FunctionDecl *comptime_fn = nullptr;
+    const FunctionDecl *runtime_fn = nullptr;
+    bool clash = false;
+    const auto consider = [&](const FunctionDecl *fn) {
+        if (fn == nullptr || fn->params.size() != 2) {
+            return;
+        }
+        const MemCompare kind = mem_compare_kind(*fn);
+        if (!mem_compare_slice(kind)) {
+            return;
+        }
+        const FunctionDecl **slot = mem_compare_comptime(kind) ? &comptime_fn : &runtime_fn;
+        if (*slot != nullptr) {
+            clash = true;
+        }
+        *slot = fn;
+    };
+    if (symbol->fn_templates.empty()) {
+        consider(symbol->fn_template);
+    } else {
+        for (const FunctionDecl *fn : symbol->fn_templates) {
+            consider(fn);
+        }
+    }
+    if (clash) {
+        return nullptr;
+    }
+    // The comptime overload is the folded one. The runtime overload folds only when it is the only slice.
+    if (comptime_fn != nullptr) {
+        return comptime_fn;
+    }
+    return runtime_fn;
+}
+
+std::optional<int> Checker::fold_mem_compare(const Expr::Call &call) {
+    const FunctionDecl *fn = mem_compare_callee(call);
+    if (fn == nullptr || !mem_compare_slice(mem_compare_kind(*fn)) || call.args.size() != 2 || call.type_args.size() > 1 ||
+        call.args[0] == nullptr || call.args[1] == nullptr) {
+        return std::nullopt;
+    }
+    if (call.type_args.size() == 1 &&
+        (!plain_named_type_arg(call.type_args.front()) || call.type_args.front().type_name != "u8")) {
+        return std::nullopt;
+    }
+    std::unordered_set<std::string> left_seen;
+    std::unordered_set<std::string> right_seen;
+    const std::optional<std::string> left = constant_string(*call.args[0], left_seen);
+    const std::optional<std::string> right = constant_string(*call.args[1], right_seen);
+    if (!left || !right) {
+        return std::nullopt;
+    }
+    return mem_compare_bytes(*left, *right, mem_compare_kind(*fn));
 }
 
 std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {

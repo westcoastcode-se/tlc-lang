@@ -98,6 +98,7 @@ Each feature page ends with the instructions that feature runs. [Cost](cost.md) 
 - [`allocator`](builtin/allocator.md)
 - [`va`](builtin/va.md)
 - [`panic`](builtin/panic.md)
+- [`memeql` and `memcmp`](builtin/mem.md)
 - [`builtin/env/consts`](builtin/family.md)
 
 ### Standard library

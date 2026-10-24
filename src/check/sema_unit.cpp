@@ -1411,10 +1411,18 @@ void Checker::check_globals(const TranslationUnit &unit) {
         }
     };
     std::unordered_set<std::string> tests;
+    // A folded `builtin.memeql` or `builtin.memcmp` is the value stored in the global.
+    auto runs_at_startup = [&](const Expr &expr) {
+        if (!startup_call(expr)) {
+            return false;
+        }
+        const auto *call = std::get_if<Expr::Call>(&expr.data);
+        return call == nullptr || !fold_mem_compare(*call);
+    };
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
             if (fn->is_comptime &&
-                (!fn->method_struct.empty() || !fn->type_params.empty() || fn->exported || fn->is_extern)) {
+                (!fn->method_struct.empty() || fn->is_extern || !fn->type_params.empty() || fn->exported)) {
                 error(fn->loc, "not supported yet");
                 continue;
             }
@@ -1473,7 +1481,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                         if (assoc != nullptr) {
                             const std::size_t before = diags_.size();
                             check_against(*var->init, assoc->type);
-                            if (diags_.size() == before && !var->is_extern && startup_call(*var->init)) {
+                            if (diags_.size() == before && !var->is_extern && runs_at_startup(*var->init)) {
                                 const_cast<VarDecl *>(var)->runtime_init = true;
                             } else {
                                 require_slice_name(*var->init, assoc->type, var->loc, before);
@@ -1499,7 +1507,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     const std::size_t before = diags_.size();
                     check_against(*var->init, assoc->type);
                     if (diags_.size() == before) {
-                        if (!var->is_extern && startup_call(*var->init)) {
+                        if (!var->is_extern && runs_at_startup(*var->init)) {
                             const_cast<VarDecl *>(var)->runtime_init = true;
                         } else if (is_slice(assoc->type)) {
                             require_slice_name(*var->init, assoc->type, var->loc, before);
@@ -1522,7 +1530,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     const Type want = symbol != nullptr ? symbol->type : type_invalid();
                     const std::size_t before = diags_.size();
                     check_against(*var->init, want);
-                    if (diags_.size() == before && !var->is_extern && startup_call(*var->init)) {
+                    if (diags_.size() == before && !var->is_extern && runs_at_startup(*var->init)) {
                         const_cast<VarDecl *>(var)->runtime_init = true;
                     } else {
                         require_slice_name(*var->init, want, var->loc, before);
@@ -1550,7 +1558,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 const std::size_t before = diags_.size();
                 check_against(*var->init, want);
                 if (diags_.size() == before) {
-                    if (!var->is_const_decl && !var->is_extern && startup_call(*var->init)) {
+                    if (!var->is_const_decl && !var->is_extern && runs_at_startup(*var->init)) {
                         const_cast<VarDecl *>(var)->runtime_init = true;
                     } else if (is_slice(want)) {
                         require_slice_name(*var->init, want, var->loc, before);

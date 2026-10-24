@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Traits](../methods/trait.md) · [Next: allocator](allocator.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`import "builtin"` loads the compiler package. The compiler's own copy is `lib/tlc/builtin/builtin.tlc`. An editor shows the signatures in that file and the `//` comments above them. It exports `trace`, `va`, `panic`, and `Type`. `builtin.Type` is the type of a type, described in [The Type type](../types/type.md). `trace` returns `*const u8`. `va` returns `*u8`. Both take no arguments. An argument is reported as `argument count`. `panic` takes one message and does not return a value. The import links the C library. `import "builtin/env/consts"` loads `family`, described in [builtin/env/consts](family.md).
+`import "builtin"` loads the compiler package. The compiler's own copy is `lib/tlc/builtin/builtin.tlc`. An editor shows the signatures in that file and the `//` comments above them. It exports `trace`, `va`, `panic`, `memeql`, `memcmp`, and `Type`. `builtin.Type` is the type of a type, described in [The Type type](../types/type.md). `trace` returns `*const u8`. `va` returns `*u8`. Both take no arguments. An argument is reported as `argument count`. `panic` takes one message and does not return a value. The import links the C library. `import "builtin/env/consts"` loads `family`, described in [builtin/env/consts](family.md).
 
 ```c
 import "builtin";

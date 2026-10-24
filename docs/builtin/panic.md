@@ -1,6 +1,6 @@
 # panic
 
-[Index](../README.md) · [Previous: va](va.md) · [Next: builtin/env/consts](family.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: va](va.md) · [Next: memeql and memcmp](mem.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
 `builtin.panic(message)` prints the message and the call stack, then aborts the process. `new` calls it with `out of memory` when allocation returns `null`. Postfix `!` calls it with `null pointer` when that pointer is `null`. The message is `*const u8`. A string and a `*u8` may be passed. The text goes to the standard error stream:
 
@@ -44,4 +44,4 @@ The file name is the source path relative to the entry file's directory, as for 
 
 `builtin.panic(message)` is a traced call. The argument is the string address, one `leaq` when the message is a literal, inside the 36-instruction frame when fewer than 32 frames are stored. The callee writes the message and walks the same frames `trace` walks, then aborts. That walk is inside `panic` and grows with the number of frames. A null message is printed as `(null)`.
 
-[Index](../README.md) · [Previous: va](va.md) · [Next: builtin/env/consts](family.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: va](va.md) · [Next: memeql and memcmp](mem.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

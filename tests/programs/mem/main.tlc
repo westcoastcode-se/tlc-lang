@@ -1,0 +1,98 @@
+import "builtin";
+
+const label = "hello";
+const cut = label[1:4];
+const same = builtin.memeql[u8]("hi", "hi");
+const diff = builtin.memeql[u8]("hi", "ha");
+const longer = builtin.memeql[u8]("hi", "hi!");
+const empty = builtin.memeql[u8]("", "");
+const slice = builtin.memeql[u8]("hello"[0:2], "he");
+const named = builtin.memeql[u8](label[1:4], "ell");
+const again = builtin.memeql[u8](cut, "ell");
+const both = builtin.memeql[u8](label, label);
+const nul = builtin.memeql[u8]("a\000b", "a\000b");
+const not_ab = builtin.memeql[u8]("a\000b", "ab");
+const raw = builtin.memeql[u8](`hi`, "hi");
+const tail = builtin.memeql[u8]("hello"[1:], "ello");
+const head = builtin.memeql[u8]("hello"[:2], "he");
+const whole = builtin.memeql[u8]("hello"[:], "hello");
+const blank = builtin.memeql[u8]("hello"[2:2], "");
+const inferred = builtin.memeql("hi", "hi");
+var live = builtin.memeql[u8]("hi", "hi");
+const cmp_eq = builtin.memcmp[u8]("ab", "ab");
+const cmp_lt = builtin.memcmp[u8]("ab", "ac");
+const cmp_gt = builtin.memcmp[u8]("ac", "ab");
+const cmp_short = builtin.memcmp[u8]("a", "ab");
+const cmp_long = builtin.memcmp[u8]("ab", "a");
+const cmp_empty = builtin.memcmp[u8]("", "");
+const cmp_nul = builtin.memcmp[u8]("a\000b", "a\000c");
+const cmp_prefix = builtin.memcmp[u8]("hi", "hi!");
+const cmp_inferred = builtin.memcmp("ab", "ac");
+var live_cmp = builtin.memcmp[u8]("ab", "ac");
+
+assert(builtin.memeql[u8]("hi", "hi"), "eq");
+assert(same == 1, "same");
+assert(diff == 0, "diff");
+assert(longer == 0, "long");
+assert(empty == 1, "empty");
+assert(slice == 1, "slice");
+assert(named == 1, "named");
+assert(again == 1, "again");
+assert(both == 1, "both");
+assert(nul == 1, "nul");
+assert(not_ab == 0, "ab");
+assert(raw == 1, "raw");
+assert(tail == 1, "tail");
+assert(head == 1, "head");
+assert(whole == 1, "whole");
+assert(blank == 1, "blank");
+assert(inferred == 1, "infer");
+assert(cmp_eq == 0, "ceq");
+assert(cmp_lt == -1, "clt");
+assert(cmp_gt == 1, "cgt");
+assert(cmp_short == -1, "cshort");
+assert(cmp_long == 1, "clong");
+assert(cmp_empty == 0, "cempty");
+assert(cmp_nul == -1, "cnul");
+assert(cmp_prefix == -1, "cprefix");
+assert(cmp_inferred == -1, "cinfer");
+
+comptime func answer() i32 {
+    return builtin.memeql[u8]("hi", "hi");
+}
+
+func main() i32 {
+    var text = "hi";
+    const local = "ha";
+    var xs = [_]i32{1, 2};
+    var ys = [_]i32{1, 3};
+    var zs = [_]i32{1, 2};
+    if (!live || live_cmp != -1 || same != 1 || diff != 0 || not_ab != 0 || answer() != 1) {
+        return 0;
+    }
+    if (builtin.memeql[u8]("hi", "ha") || !builtin.memeql[u8]("hi", "hi")) {
+        return 0;
+    }
+    if (!builtin.memeql[u8](text, "hi") || builtin.memeql[u8](text, local) || !builtin.memeql[u8](local, "ha")) {
+        return 1;
+    }
+    if (builtin.memeql[u8](text, 2, local, 2) != 0 || builtin.memeql[u8]("hi", 2, "hi", 2) != 1) {
+        return 2;
+    }
+    if (builtin.memeql[u8]("", 0, "", 0) != 1 || builtin.memcmp[u8]("a", 1, "ab", 2) != -1) {
+        return 3;
+    }
+    if (builtin.memcmp[u8](text, "ha") != 1 || builtin.memcmp[u8](local, text) != -1) {
+        return 4;
+    }
+    if (builtin.memeql[i32](xs[:], ys[:]) || !builtin.memeql[i32](xs[:], zs[:])) {
+        return 5;
+    }
+    if (builtin.memcmp[i32](xs[:], ys[:]) != -1 || builtin.memcmp[i32](&xs[0], 2, &zs[0], 2) != 0) {
+        return 6;
+    }
+    if (builtin.memeql[i32](&xs[0], 2, &ys[0], 2) != 0 || builtin.memeql(text, "hi") == false) {
+        return 7;
+    }
+    return 42;
+}

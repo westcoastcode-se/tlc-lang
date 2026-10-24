@@ -1,0 +1,62 @@
+func pick[T type](value comptime T) i32 {
+    return 1;
+}
+
+func pick[T type](value T) i32 {
+    return 2;
+}
+
+func both[T type](lhs comptime T, rhs T) i32 {
+    return 1;
+}
+
+func both[T type](lhs T, rhs T) i32 {
+    return 2;
+}
+
+func side[T type](value comptime []const T) i32 {
+    return 1;
+}
+
+func side[T type](value []const T) i32 {
+    return 2;
+}
+
+const label = "hi";
+
+func main() i32 {
+    var n = 7;
+    if (pick[i32](4) != 1) {
+        return 1;
+    }
+    if (pick[i32](n) != 2) {
+        return 2;
+    }
+    if (pick(4) != 1) {
+        return 3;
+    }
+    if (both[i32](1, n) != 1) {
+        return 4;
+    }
+    if (both[i32](n, 1) != 2) {
+        return 5;
+    }
+    if (both[i32](1, 2) != 1) {
+        return 6;
+    }
+    if (side[u8]("hi") != 1) {
+        return 7;
+    }
+    if (side[u8](label) != 1) {
+        return 8;
+    }
+    var text = "hi";
+    const local = "hi";
+    if (side[u8](text) != 2) {
+        return 9;
+    }
+    if (side[u8](local) != 2) {
+        return 10;
+    }
+    return 42;
+}

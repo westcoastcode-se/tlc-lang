@@ -305,7 +305,12 @@ bool accepts_slice(const Type &got, const Type &want) {
         if (got.alias_id == 0 && want.alias_id != 0) {
             return true;
         }
-        return got.alias_id == want.alias_id && allows_added_const(got, want);
+        // A local `const` marks the binding. Element const was checked above.
+        Type got_slice = got;
+        Type want_slice = want;
+        got_slice.is_const = false;
+        want_slice.is_const = false;
+        return got.alias_id == want.alias_id && allows_added_const(got_slice, want_slice);
     }
     return got.length >= 0;
 }

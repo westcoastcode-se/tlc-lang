@@ -1,0 +1,7 @@
+import "builtin";
+
+const n = builtin.memeql[i32]("hi", "hi");
+
+func main() i32 {
+    return n;
+}

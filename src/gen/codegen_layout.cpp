@@ -1426,6 +1426,16 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     return lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, false, 0,
                                  false);
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    // A folded slice call is that constant. `memeql` is a bool. `memcmp` is an `i32`.
+                    if (const FunctionDecl *fn = mem_compare_decl(item); fn != nullptr && fold(node)) {
+                        if (mem_compare_bool(mem_compare_kind(*fn))) {
+                            Lowered low;
+                            low.elem_bool = true;
+                            low.type = i1();
+                            return low;
+                        }
+                        return as_int(32, false);
+                    }
                     // `typeof(T).name()` is `*u8`. `typeof(T).fields()` is a slice of `{ name []const u8, kind }`.
                     if (item.type_name) {
                         Lowered low;

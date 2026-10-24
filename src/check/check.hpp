@@ -592,6 +592,15 @@ class Checker {
     std::unique_ptr<Expr> comptime_argument(const Expr &arg, const Param &param);
     const FunctionDecl *comptime_callee(const Expr::Call &call);
     std::optional<int> fold_comptime_call(const Expr::Call &call);
+    // The comptime slice overload of `builtin.memeql` or `builtin.memcmp` when both arguments are
+    // constant `[]const u8`. Null when that overload is not the one to fold.
+    const FunctionDecl *mem_compare_callee(const Expr::Call &call);
+    // The folded `[]const u8` slice call. Null when an argument is not that slice, or `T` is not `u8`.
+    std::optional<int> fold_mem_compare(const Expr::Call &call);
+    // A folded integer, or a constant `[]const u8` in this file. A `var` and a local `const` are not.
+    bool argument_is_comptime(const Expr &arg);
+    // Every `comptime` parameter has a comptime argument. A function with none passes.
+    bool comptime_arguments(const FunctionDecl &fn, const Expr::Call &call);
     std::unordered_set<const FunctionDecl *> comptime_expanding_;
     std::unordered_set<const FunctionDecl *> comptime_folding_;
     int comptime_depth_ = 0;

@@ -752,6 +752,162 @@ struct FunctionDecl {
     int iteration_kind = 0;
 };
 
+// `builtin.memeql` and `builtin.memcmp`. The slice form compares `[]const T`.
+// The pointer form compares `lhslen` elements of `*const T` with `rhslen` elements.
+// A slice form whose parameters are `comptime` is a different overload.
+enum class MemCompare : uint8_t {
+    None,
+    EqlSlice,
+    EqlSliceComptime,
+    EqlPtr,
+    CmpSlice,
+    CmpSliceComptime,
+    CmpPtr
+};
+
+inline bool mem_slice_param(const Param &param, const std::string &type_param, bool comptime) {
+    if (param.is_comptime != comptime || !param.is_array || param.array_len >= 0 || !param.elem_const || param.elem_slice) {
+        return false;
+    }
+    if (param.indirections != 0 || param.optional != 0 || param.const_pointee != 0 || param.is_const) {
+        return false;
+    }
+    if (param.is_struct || param.is_enum || param.is_fn_ptr || param.is_tuple || param.is_receiver) {
+        return false;
+    }
+    if (param.type_name != type_param || !param.type_package.empty() || !param.array_len_name.empty() ||
+        !param.type_args.empty() || param.shells.size() != 1) {
+        return false;
+    }
+    const TypeShell &shell = param.shells.front();
+    return shell.kind == TypeShell::Kind::Slice && !shell.optional && !shell.const_pointee && shell.length == 0 &&
+           shell.length_name.empty();
+}
+
+inline bool mem_ptr_param(const Param &param, const std::string &type_param) {
+    if (param.is_comptime || param.is_array || param.elem_const || param.elem_slice || !param.shells.empty()) {
+        return false;
+    }
+    if (param.indirections != 1 || param.optional != 0 || param.const_pointee != 1 || param.is_const) {
+        return false;
+    }
+    if (param.is_struct || param.is_enum || param.is_fn_ptr || param.is_tuple || param.is_receiver) {
+        return false;
+    }
+    return param.type_name == type_param && param.type_package.empty() && param.array_len == 0 &&
+           param.array_len_name.empty() && param.type_args.empty();
+}
+
+inline bool mem_i32_param(const Param &param) {
+    return !param.is_comptime && !param.is_array && param.indirections == 0 && param.optional == 0 &&
+           param.const_pointee == 0 && !param.is_const && !param.elem_const && !param.elem_slice && param.shells.empty() &&
+           !param.is_struct && !param.is_enum && !param.is_fn_ptr && !param.is_tuple && !param.is_receiver &&
+           param.type_name == "i32" && param.type_package.empty() && param.array_len == 0 && param.array_len_name.empty() &&
+           param.type_args.empty();
+}
+
+inline bool mem_plain_result(const FunctionDecl &fn, const std::string &name) {
+    if (fn.return_type != name || fn.results.size() != 1 || fn.indirections != 0 || fn.optional != 0 || fn.is_struct ||
+        fn.is_enum || !fn.type_package.empty()) {
+        return false;
+    }
+    const ResultSlot &slot = fn.results.front();
+    return slot.type_name == name && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
+           slot.indirections == 0 && slot.optional == 0 && slot.const_pointee == 0 && !slot.is_array && !slot.elem_const &&
+           !slot.elem_slice && slot.shells.empty() && slot.array_len == 0 && slot.array_len_name.empty() &&
+           slot.type_args.empty() && !slot.is_fn_ptr;
+}
+
+inline bool mem_compare_header(const FunctionDecl &fn) {
+    if (fn.is_comptime || fn.body == nullptr || !fn.method_struct.empty() || !fn.method_params.empty() || fn.is_extern ||
+        fn.extern_c || fn.variadic || fn.static_method || fn.is_static || fn.unsafe || fn.iteration_kind != 0 ||
+        !fn.captures.empty() || fn.type_params.size() != 1) {
+        return false;
+    }
+    const TypeParam &type_param = fn.type_params.front();
+    return type_param.is_type && !type_param.is_value && !type_param.is_trait && !type_param.is_pack &&
+           !type_param.name.empty() && type_param.constraint.empty() && type_param.constraint_package.empty();
+}
+
+inline MemCompare mem_compare_kind(const FunctionDecl &fn) {
+    if (!mem_compare_header(fn)) {
+        return MemCompare::None;
+    }
+    const std::string &type_name = fn.type_params.front().name;
+    if (fn.name == "memeql" && fn.params.size() == 2 && mem_plain_result(fn, "bool") &&
+        mem_slice_param(fn.params[0], type_name, true) && mem_slice_param(fn.params[1], type_name, true)) {
+        return MemCompare::EqlSliceComptime;
+    }
+    if (fn.name == "memeql" && fn.params.size() == 2 && mem_plain_result(fn, "bool") &&
+        mem_slice_param(fn.params[0], type_name, false) && mem_slice_param(fn.params[1], type_name, false)) {
+        return MemCompare::EqlSlice;
+    }
+    if (fn.name == "memcmp" && fn.params.size() == 2 && mem_plain_result(fn, "i32") &&
+        mem_slice_param(fn.params[0], type_name, true) && mem_slice_param(fn.params[1], type_name, true)) {
+        return MemCompare::CmpSliceComptime;
+    }
+    if (fn.name == "memcmp" && fn.params.size() == 2 && mem_plain_result(fn, "i32") &&
+        mem_slice_param(fn.params[0], type_name, false) && mem_slice_param(fn.params[1], type_name, false)) {
+        return MemCompare::CmpSlice;
+    }
+    if (fn.params.size() == 4 && mem_plain_result(fn, "i32") && mem_ptr_param(fn.params[0], type_name) &&
+        mem_i32_param(fn.params[1]) && mem_ptr_param(fn.params[2], type_name) && mem_i32_param(fn.params[3])) {
+        if (fn.name == "memeql") {
+            return MemCompare::EqlPtr;
+        }
+        if (fn.name == "memcmp") {
+            return MemCompare::CmpPtr;
+        }
+    }
+    return MemCompare::None;
+}
+
+inline bool mem_compare_slice(MemCompare kind) {
+    return kind == MemCompare::EqlSlice || kind == MemCompare::CmpSlice || kind == MemCompare::EqlSliceComptime ||
+           kind == MemCompare::CmpSliceComptime;
+}
+
+inline bool mem_compare_comptime(MemCompare kind) {
+    return kind == MemCompare::EqlSliceComptime || kind == MemCompare::CmpSliceComptime;
+}
+
+// The slice form of `memeql` is a bool. `memcmp` and the pointer form of `memeql` are `i32`.
+inline bool mem_compare_bool(MemCompare kind) {
+    return kind == MemCompare::EqlSlice || kind == MemCompare::EqlSliceComptime;
+}
+
+// Element order of two `[]const u8` values. `memeql` is 1 or 0. `memcmp` is -1, 0, or 1.
+inline int mem_compare_bytes(const std::string &left, const std::string &right, MemCompare kind) {
+    if (kind == MemCompare::EqlSlice || kind == MemCompare::EqlSliceComptime || kind == MemCompare::EqlPtr) {
+        return left == right ? 1 : 0;
+    }
+    const std::size_t count = left.size() < right.size() ? left.size() : right.size();
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto a = static_cast<unsigned char>(left[i]);
+        const auto b = static_cast<unsigned char>(right[i]);
+        if (a < b) {
+            return -1;
+        }
+        if (b < a) {
+            return 1;
+        }
+    }
+    if (left.size() < right.size()) {
+        return -1;
+    }
+    if (right.size() < left.size()) {
+        return 1;
+    }
+    return 0;
+}
+
+// `eq[u8]`. A package, a pointer, a slice, or a value argument is not this name.
+inline bool plain_named_type_arg(const TypeArg &arg) {
+    return !arg.is_value && !arg.has_value && !arg.type_name.empty() && arg.type_package.empty() && !arg.is_struct &&
+           !arg.is_enum && arg.indirections == 0 && arg.optional == 0 && arg.const_pointee == 0 && !arg.is_array &&
+           !arg.elem_const && arg.array_len == 0 && arg.array_len_name.empty() && arg.shells.empty() && arg.args.empty();
+}
+
 struct TraitDecl {
     SourceLoc loc{};
     std::string name;

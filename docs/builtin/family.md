@@ -1,6 +1,6 @@
 # builtin/env/consts
 
-[Index](../README.md) · [Previous: panic](panic.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: memeql and memcmp](mem.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
 `import "builtin/env/consts"` loads the compiler package `consts`. It exports the constant `family`. The type is `*const u8`. On Windows the text is `windows`. On Linux, macOS, and every other system the text is `unix`. The value is chosen from the system `tlc` is running on. A directory named `builtin/env/consts` on the search path is that package instead. The compiler package is used when the search finds none.
 
@@ -21,4 +21,4 @@ On Linux or macOS the program prints `unix`. On Windows it prints `windows`. `im
 
 `consts.family` is a string constant, the same as `"unix"` or `"windows"`. Passing it to `printf` is one `leaq` of that address, plus the traced call of `printf` counted on [extern](../packages/extern.md). The name adds no load of a global variable. Assigning it is rejected while compiling.
 
-[Index](../README.md) · [Previous: panic](panic.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: memeql and memcmp](mem.md) · [Cost](../cost.md) · [Grammar](../grammar.md)

@@ -1,7 +1,9 @@
 package builtin;
 
 // Compiler intrinsics. The compiler supplies the bodies of trace, va, and panic,
-// and of the methods on Malloc.
+// and of the methods on Malloc. memeql and memcmp are ordinary tlc in this file.
+// The comptime slice overload is chosen when both arguments are comptime values.
+// A call of two constant []const u8 values is folded while compiling.
 
 // Type is the type of a type. typeof produces it.
 // The compiler adds this export. A typedef with this name would hide it.
@@ -46,3 +48,126 @@ export func Malloc::free(self *this, ptr *u8) void;
 // Changes the size of a block. A null pointer reserves a new block, as malloc does.
 // Returns null when the reservation fails. The caller handles null.
 export unsafe func Malloc::realloc(self *this, ptr *u8, size i32, align i32) ?*u8;
+
+// 1 when the lengths match and every element matches. Otherwise 0.
+export func memeql[T type](lhs *const T, lhslen i32, rhs *const T, rhslen i32) i32 {
+    if (lhslen != rhslen) {
+        return 0;
+    }
+    var i i32 = 0;
+    while (i < lhslen) {
+        if (lhs[i] != rhs[i]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// True when both slices are comptime values and hold the same elements.
+// Chosen instead of the runtime overload when both arguments are comptime.
+export func memeql[T type](lhs comptime []const T, rhs comptime []const T) bool {
+    if (lhs.len != rhs.len) {
+        return false;
+    }
+    var i i32 = 0;
+    while (i < lhs.len) {
+        if (lhs[i] != rhs[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// True when the slices have the same length and the same elements.
+export func memeql[T type](lhs []const T, rhs []const T) bool {
+    if (lhs.len != rhs.len) {
+        return false;
+    }
+    var i i32 = 0;
+    while (i < lhs.len) {
+        if (lhs[i] != rhs[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// Element order. -1 when lhs is less, 1 when lhs is greater, 0 when they match.
+// A shared prefix takes the shorter length as less.
+export func memcmp[T type](lhs *const T, lhslen i32, rhs *const T, rhslen i32) i32 {
+    var n i32 = lhslen;
+    if (rhslen < n) {
+        n = rhslen;
+    }
+    var i i32 = 0;
+    while (i < n) {
+        if (lhs[i] < rhs[i]) {
+            return -1;
+        }
+        if (rhs[i] < lhs[i]) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    if (lhslen < rhslen) {
+        return -1;
+    }
+    if (rhslen < lhslen) {
+        return 1;
+    }
+    return 0;
+}
+
+// Element order of two comptime slices, the same rule as the pointer form.
+// Chosen instead of the runtime overload when both arguments are comptime.
+export func memcmp[T type](lhs comptime []const T, rhs comptime []const T) i32 {
+    var n i32 = lhs.len;
+    if (rhs.len < n) {
+        n = rhs.len;
+    }
+    var i i32 = 0;
+    while (i < n) {
+        if (lhs[i] < rhs[i]) {
+            return -1;
+        }
+        if (rhs[i] < lhs[i]) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    if (lhs.len < rhs.len) {
+        return -1;
+    }
+    if (rhs.len < lhs.len) {
+        return 1;
+    }
+    return 0;
+}
+
+// Element order of two slices, the same rule as the pointer form.
+export func memcmp[T type](lhs []const T, rhs []const T) i32 {
+    var n i32 = lhs.len;
+    if (rhs.len < n) {
+        n = rhs.len;
+    }
+    var i i32 = 0;
+    while (i < n) {
+        if (lhs[i] < rhs[i]) {
+            return -1;
+        }
+        if (rhs[i] < lhs[i]) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    if (lhs.len < rhs.len) {
+        return -1;
+    }
+    if (rhs.len < lhs.len) {
+        return 1;
+    }
+    return 0;
+}

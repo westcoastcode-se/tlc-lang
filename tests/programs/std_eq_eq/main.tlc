@@ -1,0 +1,5 @@
+const n = "hi" == "hi";
+
+func main() i32 {
+    return n;
+}

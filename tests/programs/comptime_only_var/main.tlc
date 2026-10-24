@@ -1,0 +1,8 @@
+func only[T type](value comptime T) i32 {
+    return 1;
+}
+
+func main() i32 {
+    var n = 1;
+    return only[i32](n);
+}

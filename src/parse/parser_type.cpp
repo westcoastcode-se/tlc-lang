@@ -1220,7 +1220,8 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         // `func Type::name[T type]` and `func Vec[T]::get[U type]` are method templates.
         fn.type_params = parse_type_params();
     }
-    fn.params = parse_params(extern_c, fn.variadic, fn.method_struct, comptime_fn);
+    // A generic function may mark a parameter `comptime`. A function with no type parameter may not.
+    fn.params = parse_params(extern_c, fn.variadic, fn.method_struct, comptime_fn || !fn.type_params.empty());
     fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
     parse_results(fn);
     if (check(TokenKind::LBrace)) {
