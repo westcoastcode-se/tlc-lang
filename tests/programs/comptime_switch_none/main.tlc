@@ -1,7 +1,7 @@
 const n = 3;
 
 func main() i32 {
-    switch (n) {
+    comptime switch (n) {
     case 1:
         return "no";
     }

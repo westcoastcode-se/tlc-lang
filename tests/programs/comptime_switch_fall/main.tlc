@@ -2,7 +2,7 @@ const n = 1;
 
 func main() i32 {
     var x i32 = 0;
-    switch (n) {
+    comptime switch (n) {
     case 1:
         x = 2;
     case 2:

@@ -4,7 +4,7 @@ type Order enum {
 };
 
 func id[T type](value T, order comptime Order) T {
-    if (order == Order.acquire) {
+    comptime if (order == Order.acquire) {
         return value + 41;
     }
     return value;

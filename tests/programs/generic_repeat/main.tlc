@@ -3,9 +3,9 @@ func repeat[N i32, T type](value T) [N]T {
     var out [N]T;
     // A runtime index assigns no element. Each constant index is stored on its own.
     out[0] = value;
-    if (N > 1) { out[1] = value; }
-    if (N > 2) { out[2] = value; }
-    if (N > 3) { out[3] = value; }
+    comptime if (N > 1) { out[1] = value; }
+    comptime if (N > 2) { out[2] = value; }
+    comptime if (N > 3) { out[3] = value; }
     return out;
 }
 

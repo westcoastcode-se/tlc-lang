@@ -345,6 +345,33 @@ std::optional<int> Checker::fold_condition(const Expr &expr) {
         expr.data);
 }
 
+bool Checker::comptime_value(const Expr &expr) {
+    if (fold_int(expr) || fold_switch_case(expr)) {
+        return true;
+    }
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Name>) {
+                const Symbol *symbol = lookup(node.text);
+                return symbol != nullptr && symbol->comptime_param;
+            } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                return node.op == TokenKind::Bang && !node.postfix && node.expr != nullptr &&
+                       comptime_value(*node.expr);
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if (node.lhs == nullptr || node.rhs == nullptr) {
+                    return false;
+                }
+                const bool compare = node.op == TokenKind::EqEq || node.op == TokenKind::BangEq ||
+                                     node.op == TokenKind::AmpAmp || node.op == TokenKind::PipePipe;
+                return compare && comptime_value(*node.lhs) && comptime_value(*node.rhs);
+            } else {
+                return false;
+            }
+        },
+        expr.data);
+}
+
 std::optional<int> Checker::fold_switch_case(const Expr &expr) {
     if (const std::optional<int> folded = fold_int(expr)) {
         return folded;

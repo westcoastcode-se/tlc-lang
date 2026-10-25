@@ -21,15 +21,15 @@ export type Op enum {
     xor = 5,
 };
 
-// Each branch passes a constant. The builtin does not take this enum.
+// Each `comptime if` keeps one call. The builtin does not take this enum.
 func load_at[T type](p *T, order comptime Order) T {
-    if (order == Order.relaxed) {
+    comptime if (order == Order.relaxed) {
         return builtin.atomic_load[T](p, 0);
     }
-    if (order == Order.acquire) {
+    comptime if (order == Order.acquire) {
         return builtin.atomic_load[T](p, 1);
     }
-    if (order == Order.seq_cst) {
+    comptime if (order == Order.seq_cst) {
         return builtin.atomic_load[T](p, 4);
     }
     builtin.panic("type mismatch");
@@ -37,15 +37,15 @@ func load_at[T type](p *T, order comptime Order) T {
 }
 
 func store_at[T type](p *T, value T, order comptime Order) void {
-    if (order == Order.relaxed) {
+    comptime if (order == Order.relaxed) {
         builtin.atomic_store[T](p, value, 0);
         return;
     }
-    if (order == Order.release) {
+    comptime if (order == Order.release) {
         builtin.atomic_store[T](p, value, 2);
         return;
     }
-    if (order == Order.seq_cst) {
+    comptime if (order == Order.seq_cst) {
         builtin.atomic_store[T](p, value, 4);
         return;
     }
@@ -53,19 +53,19 @@ func store_at[T type](p *T, value T, order comptime Order) void {
 }
 
 func xchg_at[T type](p *T, value T, order comptime Order) T {
-    if (order == Order.relaxed) {
+    comptime if (order == Order.relaxed) {
         return builtin.atomic_rmw[T](p, 0, value, 0);
     }
-    if (order == Order.acquire) {
+    comptime if (order == Order.acquire) {
         return builtin.atomic_rmw[T](p, 0, value, 1);
     }
-    if (order == Order.release) {
+    comptime if (order == Order.release) {
         return builtin.atomic_rmw[T](p, 0, value, 2);
     }
-    if (order == Order.acq_rel) {
+    comptime if (order == Order.acq_rel) {
         return builtin.atomic_rmw[T](p, 0, value, 3);
     }
-    if (order == Order.seq_cst) {
+    comptime if (order == Order.seq_cst) {
         return builtin.atomic_rmw[T](p, 0, value, 4);
     }
     builtin.panic("type mismatch");
@@ -73,91 +73,91 @@ func xchg_at[T type](p *T, value T, order comptime Order) T {
 }
 
 func rmw_at[T type](p *T, value T, op comptime Op, order comptime Order) T {
-    if (op == Op.xchg) {
+    comptime if (op == Op.xchg) {
         return xchg_at[T](p, value, order);
     }
-    if (op == Op.add) {
-        if (order == Order.relaxed) {
+    comptime if (op == Op.add) {
+        comptime if (order == Order.relaxed) {
             return builtin.atomic_rmw[T](p, 1, value, 0);
         }
-        if (order == Order.acquire) {
+        comptime if (order == Order.acquire) {
             return builtin.atomic_rmw[T](p, 1, value, 1);
         }
-        if (order == Order.release) {
+        comptime if (order == Order.release) {
             return builtin.atomic_rmw[T](p, 1, value, 2);
         }
-        if (order == Order.acq_rel) {
+        comptime if (order == Order.acq_rel) {
             return builtin.atomic_rmw[T](p, 1, value, 3);
         }
-        if (order == Order.seq_cst) {
+        comptime if (order == Order.seq_cst) {
             return builtin.atomic_rmw[T](p, 1, value, 4);
         }
     }
-    if (op == Op.sub) {
-        if (order == Order.relaxed) {
+    comptime if (op == Op.sub) {
+        comptime if (order == Order.relaxed) {
             return builtin.atomic_rmw[T](p, 2, value, 0);
         }
-        if (order == Order.acquire) {
+        comptime if (order == Order.acquire) {
             return builtin.atomic_rmw[T](p, 2, value, 1);
         }
-        if (order == Order.release) {
+        comptime if (order == Order.release) {
             return builtin.atomic_rmw[T](p, 2, value, 2);
         }
-        if (order == Order.acq_rel) {
+        comptime if (order == Order.acq_rel) {
             return builtin.atomic_rmw[T](p, 2, value, 3);
         }
-        if (order == Order.seq_cst) {
+        comptime if (order == Order.seq_cst) {
             return builtin.atomic_rmw[T](p, 2, value, 4);
         }
     }
-    if (op == Op.and) {
-        if (order == Order.relaxed) {
+    comptime if (op == Op.and) {
+        comptime if (order == Order.relaxed) {
             return builtin.atomic_rmw[T](p, 3, value, 0);
         }
-        if (order == Order.acquire) {
+        comptime if (order == Order.acquire) {
             return builtin.atomic_rmw[T](p, 3, value, 1);
         }
-        if (order == Order.release) {
+        comptime if (order == Order.release) {
             return builtin.atomic_rmw[T](p, 3, value, 2);
         }
-        if (order == Order.acq_rel) {
+        comptime if (order == Order.acq_rel) {
             return builtin.atomic_rmw[T](p, 3, value, 3);
         }
-        if (order == Order.seq_cst) {
+        comptime if (order == Order.seq_cst) {
             return builtin.atomic_rmw[T](p, 3, value, 4);
         }
     }
-    if (op == Op.or) {
-        if (order == Order.relaxed) {
+    comptime if (op == Op.or) {
+        comptime if (order == Order.relaxed) {
             return builtin.atomic_rmw[T](p, 4, value, 0);
         }
-        if (order == Order.acquire) {
+        comptime if (order == Order.acquire) {
             return builtin.atomic_rmw[T](p, 4, value, 1);
         }
-        if (order == Order.release) {
+        comptime if (order == Order.release) {
             return builtin.atomic_rmw[T](p, 4, value, 2);
         }
-        if (order == Order.acq_rel) {
+        comptime if (order == Order.acq_rel) {
             return builtin.atomic_rmw[T](p, 4, value, 3);
         }
-        if (order == Order.seq_cst) {
+        comptime if (order == Order.seq_cst) {
             return builtin.atomic_rmw[T](p, 4, value, 4);
         }
     }
-    if (op == Op.xor) {
-        if (order == Order.relaxed) {
+    comptime if (op == Op.xor) {
+        comptime if (order == Order.relaxed) {
             return builtin.atomic_rmw[T](p, 5, value, 0);
         }
-        if (order == Order.acquire) {
+        comptime if (order == Order.acquire) {
             return builtin.atomic_rmw[T](p, 5, value, 1);
         }
-        if (order == Order.release) {
+        comptime if (order == Order.release) {
             return builtin.atomic_rmw[T](p, 5, value, 2);
         }
-        if (order == Order.acq_rel) {
+        comptime if (order == Order.acq_rel) {
             return builtin.atomic_rmw[T](p, 5, value, 3);
         }
-        if (order == Order.seq_cst) {
+        comptime if (order == Order.seq_cst) {
             return builtin.atomic_rmw[T](p, 5, value, 4);
         }
     }

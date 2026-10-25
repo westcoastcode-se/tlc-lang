@@ -673,6 +673,8 @@ class Checker {
     std::optional<int> fold_int(const Expr &expr);
     // A condition whose values are comptime, including an enumerator compare. A `var` does not fold.
     std::optional<int> fold_condition(const Expr &expr);
+    // True when every value is comptime, including a `comptime` parameter that this copy still receives.
+    bool comptime_value(const Expr &expr);
     // `fold_int`, and a local `const` whose initializer folded. A `var` does not.
     std::optional<int> constant_index(const Expr &expr);
     // `.len` when the number of elements is known before this selector is typechecked.

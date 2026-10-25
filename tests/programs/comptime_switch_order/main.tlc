@@ -4,7 +4,7 @@ type Order enum {
 };
 
 func take(n i32, order comptime Order) i32 {
-    switch (order) {
+    comptime switch (order) {
     case Order.acquire:
         return n + 2;
     default:

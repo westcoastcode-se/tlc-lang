@@ -1363,34 +1363,40 @@ void Checker::check_switch(const Stmt::Switch &node) {
             legal = diags_.size() == mark;
         }
     }
-    // A `var` and a local `const` do not fold, so every case stays. A macro never reaches this.
-    const std::optional<int> folded = legal && node.cond != nullptr ? fold_switch_case(*node.cond) : std::nullopt;
-    if (node.comptime_switch && !folded) {
-        error(node.loc, "not supported yet");
-    } else if (folded) {
-        Stmt::Switch &sw_node = const_cast<Stmt::Switch &>(node);
-        sw_node.folded = true;
-        sw_node.folded_value = *folded;
-        const Stmt::Case *match = nullptr;
-        const Stmt::Case *fallback = nullptr;
-        if (node.body != nullptr) {
-            find_switch_arm(*node.body, *folded, match, fallback);
-        }
-        const Stmt::Case *arm = match != nullptr ? match : fallback;
-        if (arm == nullptr) {
+    // An ordinary `switch` typechecks every case. `comptime switch` keeps one path when the value folds.
+    // A macro never reaches this.
+    if (node.comptime_switch) {
+        const std::optional<int> folded = legal && node.cond != nullptr ? fold_switch_case(*node.cond) : std::nullopt;
+        if (!folded) {
+            // A `comptime` parameter is comptime. This copy still receives it, so every case stays.
+            if (node.cond == nullptr || !comptime_value(*node.cond)) {
+                error(node.loc, "not supported yet");
+            }
+        } else {
+            Stmt::Switch &sw_node = const_cast<Stmt::Switch &>(node);
+            sw_node.folded = true;
+            sw_node.folded_value = *folded;
+            const Stmt::Case *match = nullptr;
+            const Stmt::Case *fallback = nullptr;
+            if (node.body != nullptr) {
+                find_switch_arm(*node.body, *folded, match, fallback);
+            }
+            const Stmt::Case *arm = match != nullptr ? match : fallback;
+            if (arm == nullptr) {
+                return;
+            }
+            FlowFrame frame;
+            frame.kind = FlowFrame::Kind::Switch;
+            frame.entry = assign_;
+            flow_frames_.push_back(std::move(frame));
+            switches_.push_back(std::move(sw));
+            bool active = false;
+            if (node.body != nullptr) {
+                check_switch_from(*node.body, arm, active);
+            }
+            finish_switch(false);
             return;
         }
-        FlowFrame frame;
-        frame.kind = FlowFrame::Kind::Switch;
-        frame.entry = assign_;
-        flow_frames_.push_back(std::move(frame));
-        switches_.push_back(std::move(sw));
-        bool active = false;
-        if (node.body != nullptr) {
-            check_switch_from(*node.body, arm, active);
-        }
-        finish_switch(false);
-        return;
     }
     const bool has_default = init_has_default(node.body.get());
     FlowFrame frame;
@@ -1625,14 +1631,17 @@ void Checker::check_stmt(const Stmt &stmt) {
                     on_true = cond_true_;
                     on_false = cond_false_;
                 }
-                // A comptime condition keeps one arm. A `var` leaves the runtime `if`.
-                // `emit if` is pasted first. The call folds it once the arguments are there.
-                if (!node.emit) {
+                // `comptime if` keeps one arm when the condition folds. An ordinary `if` does not.
+                // `emit if` is pasted and stays a runtime `if`. A macro folds `if` while expanding.
+                if (node.comptime_if && !node.emit) {
                     const std::optional<int> folded =
                         node.cond != nullptr ? fold_condition(*node.cond) : std::nullopt;
-                    if (node.comptime_if && !folded) {
-                        error(node.loc, "not supported yet");
-                    } else if (folded) {
+                    if (!folded) {
+                        // A `comptime` parameter is comptime. This copy still receives it, so both arms stay.
+                        if (node.cond == nullptr || !comptime_value(*node.cond)) {
+                            error(node.loc, "not supported yet");
+                        }
+                    } else {
                         Stmt::If &branch = const_cast<Stmt::If &>(node);
                         branch.folded = true;
                         branch.taken = *folded != 0;

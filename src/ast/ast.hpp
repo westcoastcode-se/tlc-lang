@@ -604,7 +604,7 @@ struct Stmt {
         bool emit = false;
         // `comptime if`. The condition has to fold. A `macro` already folds `if`.
         bool comptime_if = false;
-        // The condition folded. Codegen emits the taken arm and leaves the other out.
+        // Set when `comptime if` folds. Codegen emits the taken arm and leaves the other out.
         bool folded = false;
         bool taken = false;
     };
@@ -641,9 +641,9 @@ struct Stmt {
         SourceLoc loc{};
         std::unique_ptr<Expr> cond;
         std::unique_ptr<Stmt> body;
-        // `comptime switch`. The value has to fold. An ordinary `switch` folds when it can.
+        // `comptime switch`. The value has to fold. An ordinary `switch` does not.
         bool comptime_switch = false;
-        // The value folded. Codegen keeps the matching case and the statements that follow until `break`.
+        // Set when `comptime switch` folds. Codegen keeps the matching case and the statements that follow until `break`.
         bool folded = false;
         int folded_value = 0;
     };

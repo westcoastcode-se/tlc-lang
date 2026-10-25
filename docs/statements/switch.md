@@ -57,14 +57,14 @@ jmp .L5                          # jump
 
 The program returns 42. `break` leaves the innermost loop or `switch`. `continue` is valid inside loops.
 
-A file-scope `const`, a literal, and an enumerator fold. The matching case and the statements after it stay, through `break`. The other cases are not typechecked and not emitted. A `var` and a local `const` do not fold, so every case stays. `comptime switch` is that same choice. A value that does not fold is `not supported yet`. `comptime switch` in a `macro` is `not supported yet`.
+An ordinary `switch` runs at run time, even when the value is a file-scope `const`, a literal, or an enumerator. `comptime switch` keeps the matching case and the statements after it, through `break`, when the value folds. The other cases are not typechecked and not emitted. A value that is not comptime is `not supported yet`. A `comptime` parameter is comptime. The copy that still receives it typechecks every case. A `var` and a local `const` do not fold. `comptime switch` in a `macro` is `not supported yet`.
 
 ```c
 const n = 1;
 
 func main() i32 {
     var x i32;
-    switch (n) {
+    comptime switch (n) {
     case 1:
         x = 2;
     case 2:
@@ -133,7 +133,7 @@ xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
 
-`code(Color.Blue)` returns 4. `case 41` on that `switch` is `type mismatch`. `switch (Color.Blue)` that returns 42 from that case is two instructions. There is no compare.
+`code(Color.Blue)` returns 4. `case 41` on that `switch` is `type mismatch`. `comptime switch (Color.Blue)` that returns 42 from that case is two instructions. There is no compare.
 
 ```asm
 main:
