@@ -216,7 +216,7 @@ class Checker {
         std::vector<const FunctionDecl *> defaults;
         // Field declarations, typed after structs are complete.
         std::vector<FieldDecl> pending;
-        // The extern trait whose package links libseq.a, after it is specialized.
+        // The extern trait in `<std_root>/std/seq`, after it is specialized.
         bool iteration = false;
         // Result of the element method. Null when that method is missing.
         std::shared_ptr<Type> iteration_elem;
@@ -555,8 +555,8 @@ class Checker {
     // `pkg.Kind` on a union. Reports the diagnostic and returns -1 when the enum is not usable.
     int imported_enum(uint32_t file, const std::string &package, const std::string &name, SourceLoc loc);
     void register_traits(const TranslationUnit &unit, uint32_t file_id);
-    // The package's link file names libseq.a. The extern trait there is the iteration trait.
-    bool file_links_iteration(uint32_t file) const;
+    // The package directory is `<std_root>/std/seq`. The extern trait there is the iteration trait.
+    bool package_is_iteration(uint32_t file) const;
     enum class IterationMethod { Other, Length, Element, Ref };
     // Classifies one method of the iteration trait from the declaration. Names are not a second list.
     IterationMethod iteration_method(const FunctionDecl &method, const std::string &type_param) const;

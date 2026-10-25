@@ -68,16 +68,7 @@ target_link_libraries(tlc_lib PUBLIC LLVM)
 add_executable(tlc src/main.cpp)
 target_link_libraries(tlc PRIVATE tlc_lib)
 
-# The iteration trait has no symbol. std/seq/link names this archive under the compiler prefix.
-add_library(tlc_seq STATIC lib/tlc/std/seq/anchor.c)
-set_target_properties(tlc_seq PROPERTIES
-    OUTPUT_NAME seq
-    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
-)
-add_dependencies(tlc tlc_seq)
-
-install(TARGETS tlc_seq ARCHIVE DESTINATION lib)
-install(FILES lib/tlc/std/seq/seq.tlc lib/tlc/std/seq/link DESTINATION lib/tlc/std/seq)
+install(FILES lib/tlc/std/seq/seq.tlc DESTINATION lib/tlc/std/seq)
 
 add_executable(tlc_tests
     tests/main.cpp
@@ -93,7 +84,6 @@ add_executable(tlc_tests
     tests/lsp_test.cpp
 )
 target_link_libraries(tlc_tests PRIVATE tlc_lib)
-add_dependencies(tlc_tests tlc_seq)
 target_compile_definitions(tlc_tests PRIVATE
     "TLC_BIN=\"$<TARGET_FILE:tlc>\""
     "TLC_ROOT=\"${CMAKE_SOURCE_DIR}\""

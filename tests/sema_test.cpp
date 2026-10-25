@@ -31,26 +31,22 @@ std::string check_program(const std::string &source) {
     return output.compiler_stderr;
 }
 
-std::string check_linked_trait(const std::string &body, bool link) {
+std::string check_std_seq(const std::string &body, bool iteration) {
     static int seq = 0;
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("tlc-iter-" + std::to_string(++seq));
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
-    std::filesystem::create_directories(root / "lib" / "tlc" / "std" / "seq", ec);
+    const char *name = iteration ? "seq" : "copy";
+    const std::filesystem::path dir = root / "lib" / "tlc" / "std" / name;
+    std::filesystem::create_directories(dir, ec);
     {
-        std::ofstream out(root / "lib" / "tlc" / "std" / "seq" / "seq.tlc");
+        std::ofstream out(dir / "seq.tlc");
         out << "package seq;\n\nexport extern type Seq[T type] trait {\n" << body << "};\n";
-    }
-    if (link) {
-        std::ofstream out(root / "lib" / "tlc" / "std" / "seq" / "link");
-        out << "../../../libseq.a\n";
-        std::ofstream archive(root / "lib" / "libseq.a");
-        archive << "archive\n";
     }
     {
         std::ofstream out(root / "main.tlc");
-        out << "import \"std/seq\";\n\nfunc main() i32 {\n    return 0;\n}\n";
+        out << "import \"std/" << name << "\";\n\nfunc main() i32 {\n    return 0;\n}\n";
     }
     tlc::SourceSet sources;
     tlc::DiagnosticEngine diags(sources);
@@ -6982,28 +6978,28 @@ int run_sema_tests() {
 
     {
         const std::string body = "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n";
-        const std::string errors = check_linked_trait(body, true);
+        const std::string errors = check_std_seq(body, true);
         EXPECT(check, errors.empty());
     }
 
     {
         const std::string body =
             "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n    n i32;\n";
-        const std::string errors = check_linked_trait(body, true);
+        const std::string errors = check_std_seq(body, true);
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string body =
             "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n    func extra(i i32) i32;\n";
-        const std::string errors = check_linked_trait(body, true);
+        const std::string errors = check_std_seq(body, true);
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string body =
             "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n    n i32;\n";
-        const std::string errors = check_linked_trait(body, false);
+        const std::string errors = check_std_seq(body, false);
         EXPECT(check, errors.find("not supported yet") == std::string::npos);
     }
 

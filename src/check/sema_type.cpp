@@ -114,9 +114,9 @@ void Checker::ensure_allocator_trait() {
     traits_.push_back(std::move(info));
 }
 
-bool Checker::file_links_iteration(uint32_t file) const {
+bool Checker::package_is_iteration(uint32_t file) const {
     const PackageNode *node = find_node(file);
-    return node != nullptr && node->iteration_library;
+    return node != nullptr && node->iteration_package;
 }
 
 namespace {
@@ -232,7 +232,7 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
             }
             // The methods mention `T`. They are typed when a use specializes the trait.
             trait_templates_[file_id][item->name] = item;
-            if (item->is_extern && file_links_iteration(file_id)) {
+            if (item->is_extern && package_is_iteration(file_id)) {
                 reject_iteration_extras(*item);
             }
             continue;

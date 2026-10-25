@@ -21,8 +21,8 @@ struct PackageNode {
     SourceLoc import_loc{};
     uint32_t imported_from = 0;
     std::string import_spec;
-    // The package's link file names `<prefix>/lib/libseq.a`. Its extern trait is the iteration trait.
-    bool iteration_library = false;
+    // The package directory is `<std_root>/std/seq`. Its extern trait is the iteration trait.
+    bool iteration_package = false;
     // `<std_root>/builtin`, or the synthetic `<builtin>` node. Intrinsics apply only here.
     bool compiler_builtin = false;
 };

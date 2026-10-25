@@ -164,6 +164,7 @@ class Resolver {
         }
         graph_.nodes[index].package_key = canonical.string();
         graph_.nodes[index].compiler_builtin = directory_is_std_builtin(canonical.parent_path());
+        graph_.nodes[index].iteration_package = directory_is_std_seq(canonical.parent_path());
         if (graph_.nodes[index].qualifier.empty()) {
             graph_.nodes[index].qualifier = canonical.stem().string();
         }
@@ -195,7 +196,6 @@ class Resolver {
     std::unordered_map<std::string, std::size_t> by_path_;
     std::unordered_map<std::string, std::size_t> by_package_;
     std::vector<std::string> package_stack_;
-    bool saw_iteration_library_ = false;
 
     std::size_t load_new(const fs::path &canonical) {
         std::optional<std::string> text;
@@ -266,17 +266,26 @@ class Resolver {
 
     // True when `dir` is the compiler's own `builtin` package, `<std_root>/builtin`.
     bool directory_is_std_builtin(const fs::path &dir) const {
+        return directory_is(dir, "builtin");
+    }
+
+    // True when `dir` is the compiler's own `seq` package, `<std_root>/std/seq`.
+    bool directory_is_std_seq(const fs::path &dir) const {
+        return directory_is(dir, fs::path("std") / "seq");
+    }
+
+    bool directory_is(const fs::path &dir, const fs::path &relative) const {
         if (std_root_.empty() || dir.empty()) {
             return false;
         }
         std::error_code ec;
-        const fs::path builtin_dir = fs::canonical(std_root_ / "builtin", ec);
+        const fs::path wanted = fs::canonical(std_root_ / relative, ec);
         if (ec) {
             return false;
         }
         std::error_code dir_ec;
         const fs::path canonical_dir = fs::canonical(dir, dir_ec);
-        return !dir_ec && canonical_dir == builtin_dir;
+        return !dir_ec && canonical_dir == wanted;
     }
 
     std::string choose_qualifier(const std::vector<std::size_t> &indexes, const fs::path &dir, SourceLoc loc) {
@@ -434,25 +443,21 @@ class Resolver {
         }
         const std::string qualifier = choose_qualifier(created, dir, import.loc);
         const bool compiler_builtin = directory_is_std_builtin(dir);
+        const bool iteration_package = directory_is_std_seq(dir);
         for (const std::size_t index : created) {
             PackageNode &node = graph_.nodes[index];
             node.package_key = key;
             node.qualifier = qualifier;
             node.compiler_builtin = compiler_builtin;
+            node.iteration_package = iteration_package;
             node.imported_from = from_file;
             node.import_spec = import.path;
             node.import_loc = import.loc;
         }
         by_package_.emplace(key, created.front());
         add_edge(from_file, key, import);
-        saw_iteration_library_ = false;
         if (is_under(dir, vendor_root_) || is_under(dir, std_root_)) {
             append_vendor_libraries(dir, import.loc);
-        }
-        if (saw_iteration_library_) {
-            for (const std::size_t index : created) {
-                graph_.nodes[index].iteration_library = true;
-            }
         }
         walk_package(key);
     }
@@ -496,32 +501,10 @@ class Resolver {
             return;
         }
         if (!token.empty() && token[0] != '-') {
-            const std::string path = rooted_path(dir, token);
-            note_iteration_library(path);
-            graph_.link_args.push_back(path);
+            graph_.link_args.push_back(rooted_path(dir, token));
             return;
         }
         graph_.link_args.push_back(token);
-    }
-
-    // `<prefix>/lib/libseq.a`, next to `<prefix>/lib/tlc`. The std/seq link file names that archive.
-    void note_iteration_library(const std::string &path) {
-        if (std_root_.empty() || path.empty()) {
-            return;
-        }
-        const fs::path library = (std_root_.parent_path() / "libseq.a").lexically_normal();
-        const fs::path given = fs::path(path).lexically_normal();
-        if (given == library) {
-            saw_iteration_library_ = true;
-            return;
-        }
-        std::error_code left_ec;
-        std::error_code right_ec;
-        const fs::path left = fs::weakly_canonical(library, left_ec);
-        const fs::path right = fs::weakly_canonical(given, right_ec);
-        if (!left_ec && !right_ec && left == right) {
-            saw_iteration_library_ = true;
-        }
     }
 
     void append_link_file(const fs::path &dir, const fs::path &link_file, SourceLoc loc) {

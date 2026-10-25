@@ -88,7 +88,7 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
     TraitDecl spec_decl;
     spec_decl.loc = templ.loc;
     spec_decl.name = spec_name;
-    const bool iteration = templ.is_extern && file_links_iteration(owner);
+    const bool iteration = templ.is_extern && package_is_iteration(owner);
     const std::string type_param = templ.type_params.empty() ? std::string{} : templ.type_params.front().name;
     bool seen_length = false;
     bool seen_element = false;
