@@ -88,7 +88,6 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Methods and traits
 
-- The pointer receiver `self *this` is fixed. `self = ...` is rejected. `*self = ...` and a store such as `self.x = ...` stay, so the compiler can keep the pointer instead of reloading it for each use. Today `self = other`, when `other` is also `*Point`, typechecks. A value receiver `self this` is unchanged.
 - A trait used as a type alias, or `**Shape`. A parameter is `Shape` or `*Shape`. `var s Shape`, `var s *Shape`, `func give() Shape`, `func give() *Shape`, `[2]Shape`, `[]Shape`, and a field `item Shape` in a struct or a trait are `trait has no size`.
 - `...` is not added to a function or a method that takes a trait. `func use(s Shape, ...)`, `func use(s *Shape, ...)`, `func Rect::paint(self *this, s Shape, ...)`, `extern func use(s Shape, ...)`, and a prototype `func use(s Shape, ...) i32;` are `not supported yet`. `extern(abi="c")` on that function, with or without `...`, is `extern(abi="c") on a trait or a generic`. Further TLC arguments are a generic, not `...`. Other use cases use other forms. Those spellings are not chosen. `any` is not a keyword. `extern` and `extern(abi="tlc")` without `...` are accepted. Each struct is its own symbol. The call stays `use(r)` or `value.paint(s)`. A body defines that symbol. A prototype with no body is accepted. A call that specializes it is `not supported yet`. `export` publishes that function when the ABI is not C.
 

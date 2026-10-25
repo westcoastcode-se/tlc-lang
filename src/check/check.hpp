@@ -72,6 +72,8 @@ struct Symbol {
     bool is_constant = false;
     // `const name = expr` inside a function. The binding has storage and cannot be assigned.
     bool is_immutable = false;
+    // Pointer receiver `self *this`. The name is not assigned. `*self` and `self.x` are.
+    bool fixed_receiver = false;
     bool is_enum = false;
     bool is_typedef = false;
     bool is_struct_tag = false;

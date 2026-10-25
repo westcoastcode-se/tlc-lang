@@ -753,6 +753,60 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::set(self *this, other *Point) void { self = other; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT(check, errors.find("not supported yet") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::set(self *this, other *Point) void { (self) = other; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::both(self *this, other *Point) (*Point, i32) { return other, 1; }\n"
+            "func Point::set(self *this, other *Point) void {\n"
+            "  var n i32;\n"
+            "  self, n = self.both(other);\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::put(self *this, other Point) void {\n"
+            "  *self = other;\n"
+            "  self.x = self.x + 1;\n"
+            "}\n"
+            "func Point::copy(self this, other Point) void { self = other; }\n"
+            "func take(p *Point, other *Point) void { p = other; }\n"
+            "func Point::hide(self *this, other *Point) void {\n"
+            "  self := other;\n"
+            "  self = other;\n"
+            "}\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; y i32; };\n"
+            "func Point::set(self ?*this, other ?*Point) void { self = other; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
             "func main() i32 {\n"
             "  const n i32 = 40;\n"
             "  const m = n + 2;\n"

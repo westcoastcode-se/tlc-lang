@@ -1955,6 +1955,7 @@ bool Checker::resolve_result_typeof(FunctionDecl &fn) {
         symbol.name = param.name;
         symbol.type = type_of_param(param);
         symbol.is_auto = true;
+        symbol.fixed_receiver = param.is_receiver && param.indirections > 0;
         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
         declare(std::move(symbol), param.loc);
     }

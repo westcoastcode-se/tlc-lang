@@ -1,0 +1,15 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func Point::set(self *this, other *Point) void {
+    self = other;
+}
+
+func main() i32 {
+    var p Point;
+    var q Point;
+    p.set(&q);
+    return 0;
+}

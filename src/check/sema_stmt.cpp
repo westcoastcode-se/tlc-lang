@@ -1792,6 +1792,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(loc, "not supported yet");
                         return;
                     }
+                    if (symbol.fixed_receiver || symbol.is_immutable) {
+                        error(loc, "type mismatch");
+                        return;
+                    }
                     const int tracked = symbol.init_id;
                     const std::size_t before = diags_.size();
                     expect_value(got, symbol.type, *node.value, loc);
@@ -2077,6 +2081,7 @@ void Checker::check_function(const FunctionDecl &fn) {
         symbol.name = param.name;
         symbol.type = std::move(type);
         symbol.is_auto = true;
+        symbol.fixed_receiver = param.is_receiver && param.indirections > 0;
         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
         declare(std::move(symbol), param.loc);
     }
@@ -2652,6 +2657,7 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
         symbol.name = param.name;
         symbol.type = std::move(type);
         symbol.is_auto = true;
+        symbol.fixed_receiver = param.is_receiver && param.indirections > 0;
         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
         declare(std::move(symbol), param.loc);
     }

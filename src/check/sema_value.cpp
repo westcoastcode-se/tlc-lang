@@ -672,7 +672,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     check_expr(*node.rhs, true);
                     return type_invalid();
                 }
-                if (name && symbol != nullptr && symbol->is_immutable) {
+                // A const binding and a pointer receiver are fixed. `*self = ...` is another assignment.
+                if (name && symbol != nullptr && (symbol->is_immutable || symbol->fixed_receiver)) {
                     error(node.loc, "type mismatch");
                     check_expr(*node.rhs, true);
                     return type_invalid();
