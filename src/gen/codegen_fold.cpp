@@ -72,6 +72,22 @@ const Expr *const_struct_field(const Expr &object, const std::string &field) {
             return nullptr;
         }
     }
+    if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+        // `(Point{.x = 1}, 2)[0].x` is that field. The index is the literal.
+        if (index->is_range || index->base == nullptr || index->index == nullptr) {
+            return nullptr;
+        }
+        const auto *number = std::get_if<Expr::Int>(&index->index->data);
+        if (number == nullptr || number->value > 2147483647ULL) {
+            return nullptr;
+        }
+        const auto at = static_cast<std::size_t>(number->value);
+        const auto *tuple = std::get_if<Expr::Init>(&index->base->data);
+        if (tuple == nullptr || !tuple->is_tuple || at >= tuple->elements.size() || tuple->elements[at] == nullptr) {
+            return nullptr;
+        }
+        cursor = tuple->elements[at].get();
+    }
     const auto *init = std::get_if<Expr::Init>(&cursor->data);
     if (init == nullptr || init->is_tuple || !init->elements.empty()) {
         return nullptr;
@@ -554,6 +570,15 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 const std::optional<int32_t> at = fold(*node.index);
                 if (!at || *at < 0) {
                     return std::nullopt;
+                }
+                if (const auto *init = std::get_if<Expr::Init>(&node.base->data)) {
+                    if (init->is_tuple) {
+                        if (static_cast<std::size_t>(*at) >= init->elements.size() ||
+                            init->elements[static_cast<std::size_t>(*at)] == nullptr) {
+                            return std::nullopt;
+                        }
+                        return fold(*init->elements[static_cast<std::size_t>(*at)]);
+                    }
                 }
                 std::unordered_set<std::string> seen;
                 const std::optional<std::string> bytes = constant_string(*node.base, seen);
@@ -1055,8 +1080,31 @@ bool CodeGen::comptime_constant(const Expr &expr) const {
     std::unordered_set<std::string> seen;
     const auto visit = [&](const auto &self, const Expr &value) -> bool {
         if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
-            if (init->is_tuple || !init->elements.empty() || init->array_literal) {
+            if (init->array_literal || (!init->is_tuple && !init->elements.empty())) {
                 return false;
+            }
+            if (init->is_tuple) {
+                if (init->elements.size() < 2) {
+                    return false;
+                }
+                for (const auto &element : init->elements) {
+                    if (element == nullptr) {
+                        return false;
+                    }
+                    if (self(self, *element)) {
+                        continue;
+                    }
+                    std::unordered_set<std::string> text_seen;
+                    if (constant_string(*element, text_seen) || enumerator_value(*element)) {
+                        continue;
+                    }
+                    // A bool and `null` fold to an integer here. They are not this value.
+                    if (std::holds_alternative<Expr::Bool>(element->data) ||
+                        std::holds_alternative<Expr::Nullptr>(element->data) || !fold(*element)) {
+                        return false;
+                    }
+                }
+                return true;
             }
             return file_constant_operand(value);
         }

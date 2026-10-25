@@ -1,8 +1,18 @@
 func take(p comptime (i32, i32), n i32) i32 {
-    return n;
+    return p[0] + n;
+}
+
+type Point struct {
+    x i32;
+};
+
+func Point::shift(self *this, p comptime (i32, i32)) i32 {
+    return self.x + p[0];
 }
 
 func main() i32 {
-    var n = 1;
-    return take((1, 2), n);
+    var n = 40;
+    var here Point;
+    here.x = 40;
+    return take((2, 0), n) + here.shift((2, 0)) - 42;
 }

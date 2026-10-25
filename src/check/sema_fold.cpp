@@ -125,6 +125,22 @@ const Expr *const_struct_field(const Expr &object, const std::string &field) {
             return nullptr;
         }
     }
+    if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+        // `(Point{.x = 1}, 2)[0].x` is that field. The index is the literal.
+        if (index->is_range || index->base == nullptr || index->index == nullptr) {
+            return nullptr;
+        }
+        const auto *number = std::get_if<Expr::Int>(&index->index->data);
+        if (number == nullptr || number->value > 2147483647ULL) {
+            return nullptr;
+        }
+        const auto at = static_cast<std::size_t>(number->value);
+        const auto *tuple = std::get_if<Expr::Init>(&index->base->data);
+        if (tuple == nullptr || !tuple->is_tuple || at >= tuple->elements.size() || tuple->elements[at] == nullptr) {
+            return nullptr;
+        }
+        cursor = tuple->elements[at].get();
+    }
     const auto *init = std::get_if<Expr::Init>(&cursor->data);
     if (init == nullptr || init->is_tuple || !init->elements.empty()) {
         return nullptr;
@@ -153,6 +169,19 @@ std::string spec_hex(uint64_t bits, int digits) {
         bits >>= 4;
     }
     return text;
+}
+
+// Same spelling as a comptime `[]const u8` parameter: `s`, the length, then the bytes.
+std::string spec_text_piece(const std::string &text) {
+    static constexpr char digits[] = "0123456789abcdef";
+    std::string piece = "s";
+    piece += std::to_string(text.size());
+    for (const char byte : text) {
+        const auto value = static_cast<unsigned char>(byte);
+        piece.push_back(digits[value >> 4]);
+        piece.push_back(digits[value & 0x0f]);
+    }
+    return piece;
 }
 
 std::unique_ptr<Expr> folded_string(std::string text, SourceLoc loc) {
@@ -800,6 +829,15 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (!at || *at < 0) {
                     return std::nullopt;
                 }
+                if (const auto *init = std::get_if<Expr::Init>(&node.base->data)) {
+                    if (init->is_tuple) {
+                        if (static_cast<std::size_t>(*at) >= init->elements.size() ||
+                            init->elements[static_cast<std::size_t>(*at)] == nullptr) {
+                            return std::nullopt;
+                        }
+                        return fold_int(*init->elements[static_cast<std::size_t>(*at)]);
+                    }
+                }
                 std::unordered_set<std::string> seen;
                 const std::optional<std::string> bytes = constant_string(*node.base, seen);
                 if (!bytes || static_cast<std::size_t>(*at) >= bytes->size()) {
@@ -835,9 +873,34 @@ bool Checker::argument_is_comptime(const Expr &arg) {
 
 bool Checker::comptime_constant(const Expr &expr) {
     if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
-        // A tuple stays `not supported yet`. An array literal is not this value.
-        if (init->is_tuple || !init->elements.empty() || init->array_literal) {
+        // An array literal is not this value.
+        if (init->array_literal || (!init->is_tuple && !init->elements.empty())) {
             return false;
+        }
+        if (init->is_tuple) {
+            if (init->elements.size() < 2) {
+                return false;
+            }
+            for (const auto &element : init->elements) {
+                // A bool and `null` fold to an integer in one folder. They are not this value.
+                if (element == nullptr || std::holds_alternative<Expr::Bool>(element->data) ||
+                    std::holds_alternative<Expr::Nullptr>(element->data)) {
+                    return false;
+                }
+                // A nested tuple is this value only when every element is. `argument_is_comptime`
+                // also accepts a bool, and that element is not this value.
+                if (const auto *inner = std::get_if<Expr::Init>(&element->data);
+                    inner != nullptr && inner->is_tuple) {
+                    if (!comptime_constant(*element)) {
+                        return false;
+                    }
+                    continue;
+                }
+                if (!argument_is_comptime(*element) && !fold_switch_case(*element) && !comptime_constant(*element)) {
+                    return false;
+                }
+            }
+            return true;
         }
         return constant_operand(expr);
     }
@@ -924,10 +987,14 @@ std::optional<std::string> Checker::comptime_spec_piece(const Expr &expr) {
             const int id = enum_designator(*selector->base);
             return id >= 0 && find_enum_member(id, selector->field) != nullptr;
         }();
-        if (!enumerator) {
-            if (const std::optional<int> number = fold_int(value)) {
+        if (enumerator) {
+            if (const std::optional<int> number = fold_switch_case(value)) {
                 return spec_int_piece(*number);
             }
+            return std::nullopt;
+        }
+        if (const std::optional<int> number = fold_int(value)) {
+            return spec_int_piece(*number);
         }
         if (const std::optional<FoldedNumber> number = fold_number(value); number && number->is_float) {
             if (number->wide) {
@@ -943,8 +1010,36 @@ std::optional<std::string> Checker::comptime_spec_piece(const Expr &expr) {
             std::memcpy(&bits, &narrow, sizeof(bits));
             return "w" + spec_hex(bits, 8);
         }
+        {
+            std::unordered_set<std::string> text_seen;
+            if (const std::optional<std::string> text = constant_string(value, text_seen)) {
+                return spec_text_piece(*text);
+            }
+        }
         if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
-            if (init->is_tuple || !init->elements.empty()) {
+            if (init->array_literal) {
+                return std::nullopt;
+            }
+            if (init->is_tuple) {
+                // `(1, 2)` is `t_1_2`. Each element uses the spelling of that value.
+                if (init->elements.size() < 2) {
+                    return std::nullopt;
+                }
+                std::string text = "t";
+                for (const auto &element : init->elements) {
+                    if (element == nullptr) {
+                        return std::nullopt;
+                    }
+                    const std::optional<std::string> part = self(self, *element);
+                    if (!part) {
+                        return std::nullopt;
+                    }
+                    text.push_back('_');
+                    text += *part;
+                }
+                return text;
+            }
+            if (!init->elements.empty()) {
                 return std::nullopt;
             }
             std::string text = "p";
@@ -1220,7 +1315,7 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
         }
         // A free function specializes through `argument_is_comptime`. A method also accepts
         // a forwarded comptime name. An enumerator then builds a copy that drops the parameter.
-        // A struct, float, alias, or function is `comptime_constant`. An enumerator is not.
+        // A struct, a float, an alias, a function, or a tuple is `comptime_constant`. An enumerator is not.
         const bool accepted = fn.method_struct.empty()
                                   ? argument_is_comptime(*call.args[i]) || comptime_constant(*call.args[i])
                                   : comptime_kept_argument(*call.args[i]) || comptime_constant(*call.args[i]);

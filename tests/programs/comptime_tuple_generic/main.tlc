@@ -1,0 +1,7 @@
+func id[T type](value T, p comptime (i32, i32)) T {
+    return value + p[0];
+}
+
+func main() i32 {
+    return id[i32](40, (2, 0));
+}

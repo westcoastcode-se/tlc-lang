@@ -1,0 +1,6 @@
+func main() i32 {
+    func take(p comptime (i32, i32)) i32 {
+        return p[0];
+    }
+    return take((42, 0));
+}
