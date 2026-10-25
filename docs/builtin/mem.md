@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: panic](panic.md) · [Next: builtin/env/consts](family.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
-`import "builtin"` loads the compiler package. `builtin.memeql` and `builtin.memcmp` compare sequences of one element type. The bodies are ordinary tlc in `lib/tlc/builtin/builtin.tlc`. Each slice form has a second overload whose parameters are `comptime`. That overload is chosen when both arguments are comptime values, and a call of two constant `[]const u8` values is folded while compiling. A `var` or a local `const` chooses the overload without `comptime`, and that call runs the body.
+`import "builtin"` loads the compiler package. `builtin.memeql` and `builtin.memcmp` compare sequences of one element type. The bodies are ordinary tlc in `lib/tlc/builtin/builtin.tlc`. Each slice form has a second overload whose parameters are `comptime`. That spelling is on [Comptime](../functions/comptime.md). That overload is chosen when both arguments are comptime values, and a call of two constant `[]const u8` values is folded while compiling. A `var` or a local `const` chooses the overload without `comptime`, and that call runs the body.
 
 ```c
 import "builtin";

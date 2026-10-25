@@ -1,6 +1,6 @@
 # Generics
 
-[Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: typeof is not a result](typeof.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: Comptime](comptime.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
 
 A generic function names its parameters in brackets. `T type` is a type. `N i32` is a compile-time integer. `T Shape` is a type that must have the methods and the fields of the trait `Shape`. One body is specialized for each call. There is no `impl` and no runtime table.
 
@@ -126,4 +126,4 @@ A generic function is specialized while compiling. `return id(40)` calls `id` fo
 
 `T` bound to one integer costs whatever returning that integer costs. `T` bound to two integers is the two-result return, 5 instructions in the callee: store each half, load each half, `retq`. Choosing a parameter list adds no instructions. The call runs the selected function. `[...U]` is `expected an identifier` and adds no instructions.
 
-[Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: typeof is not a result](typeof.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: Comptime](comptime.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
