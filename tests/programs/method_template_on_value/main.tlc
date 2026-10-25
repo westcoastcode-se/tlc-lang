@@ -1,0 +1,13 @@
+type Point struct {
+    x i32;
+};
+
+func Point::id[T type](value T) T {
+    return value;
+}
+
+func main() i32 {
+    var p Point;
+    p.x = 0;
+    return p.id[i32](1);
+}

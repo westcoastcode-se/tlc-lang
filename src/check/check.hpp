@@ -969,6 +969,18 @@ class Checker {
     bool link_name_taken(const std::string &link_name) const;
     const FunctionDecl *install_default(const FunctionDecl &templ, uint32_t struct_file, const std::string &struct_name,
                                         const std::string &spec_name, const std::vector<SpecArg> &bounds);
+    // 0: no template of either staticness has this type-argument count.
+    // 1: one template of the requested staticness. 2: type mismatch.
+    struct MethodTemplateChoice {
+        const FunctionDecl *templ = nullptr;
+        int kind = 0;
+    };
+    MethodTemplateChoice pick_method_template(uint32_t home, const std::string &owner, const std::string &name,
+                                              const Expr::Call &call, bool want_static) const;
+    // Installs one specialization and rewrites the call to that concrete method.
+    // `value_base` checks the receiver when the call is rejected. A type name is not a value.
+    std::optional<Type> apply_method_template(Expr &expr, const FunctionDecl &templ, uint32_t home,
+                                              const std::string &owner, bool value_base, bool used);
     std::optional<Type> try_method_template(Expr &expr, bool used);
     void drain_deferred();
     void flush_appends();

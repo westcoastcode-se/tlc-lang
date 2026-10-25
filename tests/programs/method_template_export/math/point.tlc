@@ -1,0 +1,25 @@
+package math;
+
+export type Point struct { export x i32; };
+
+export func Point::id[T type](self *this, value T) T {
+    return value;
+}
+
+export func Point::make[T type](value T) T {
+    return value;
+}
+
+export type Integer i32;
+
+export func Integer::id[T type](self this, value T) i32 {
+    return value;
+}
+
+export func Integer::make[T type](value T) i32 {
+    return value;
+}
+
+export func Integer::from(n i32) Integer {
+    return Integer(n);
+}

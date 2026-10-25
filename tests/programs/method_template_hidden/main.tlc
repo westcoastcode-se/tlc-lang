@@ -1,0 +1,7 @@
+import "math";
+
+func main() i32 {
+    var p math.Point;
+    p.x = 0;
+    return p.id[i32](1);
+}

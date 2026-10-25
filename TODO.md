@@ -23,10 +23,15 @@ In a `macro`, a condition or a bound that does not fold is `not supported yet`. 
 - Using a function that has both a comptime parameter and a runtime parameter as a value, unless it is `extern` or `extern(abi="tlc")`. `var f = scale` is `not supported yet`. An `extern` function used as a value is the unspecialized function.
 - A comptime argument of that function that is neither a folded `i32` nor a constant `[]const u8`. A tuple is `not supported yet`.
 - More than 32 nested specializations of that function. A body that calls `scale(n + 1, x)` is `not supported yet`.
+- An enumerator as a comptime argument. `order comptime Order`, when the argument is `Order.acquire`, is `type mismatch`. A comptime value is a folded `i32` or a constant `[]const u8`. `Order.acquire` folds as a `switch` label and does not fold as that argument.
+- A comptime parameter on a method or a generic function. `func Point::id(self *this, order comptime i32)` still passes `order`. `func load_at[T type](p *T, order comptime i32)` keeps `order` as an argument of the copy, so `if (order == Order.relaxed)` stays a runtime compare. A free function with a runtime parameter beside it drops that parameter, and each use is the constant.
+- The other arm of a constant `if` in an ordinary function. Both arms are emitted. A `macro` keeps the arm whose condition folds. `comptime if` is `not supported yet`.
+
+The `if` chain in `load_at`, `store_at`, `xchg_at`, and `rmw_at` in `lib/tlc/std/atomic` stays until those three hold. Each remaining arm passes an integer literal to `builtin.atomic_load`, `builtin.atomic_store`, or `builtin.atomic_rmw`. A `var` of `Order` is not specialized. When the parameter is comptime, that call is `type mismatch`.
 
 - A tuple index that is not a constant. `t[i]` when `i` is a `var` is `index is not a compile-time constant`. `const i = 0` then `t[i]` and `t[i] = 1` choose that field while compiling, as `t[0]` does. A file-scope `const` and a folded expression do too.
 - `count(U)`.
-- A method template that is static or exported, and a method template on a type alias: `func Integer::id[T type]`, `func Point::id[T type]`, and `export func Point::id[T type]`. They are `not supported yet`. `extern` and `extern(abi="tlc")` on a method template are accepted. `extern(abi="c")` on that template is rejected. `...` on a method template is not a form. A prototype with no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`.
+- On a generic struct, `export` and a static method on `func Vec[T]::get[U type]` stay `not supported yet`. `extern` and `extern(abi="tlc")` on a method template are accepted. `extern(abi="c")` on that template is rejected. `...` on a method template is not a form. A prototype with no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`.
 - Type parameters on an alias that is not a tuple, and on an enum or a union. `type Name[T type] i32` and `type Name[T type] *T` are `expected ']'`. `type Name[T type] (i32)` is `not supported yet`. `type Name[T type] enum` and `type Name[T type] union` are `not supported yet`. `type Something[K, V] (K, V)` is `expected a type` on the comma.
 - A qualified trait constraint: `T pkg.Shape`.
 - A type argument that is `sizeof(...)`.

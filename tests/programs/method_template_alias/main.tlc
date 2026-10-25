@@ -1,0 +1,14 @@
+type Integer i32;
+
+func Integer::id[T type](self this, value T) i32 {
+    return i32(self) + value;
+}
+
+func Integer::make[T type](value T) i32 {
+    return value;
+}
+
+func main() i32 {
+    var n = Integer(2);
+    return n.id[i32](20) + Integer.make[i32](20);
+}

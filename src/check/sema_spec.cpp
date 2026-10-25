@@ -2360,18 +2360,29 @@ void Checker::register_method_template(const FunctionDecl &fn) {
     }
     const int struct_id = find_tag(file_id_, fn.method_struct);
     if (struct_id < 0) {
-        // An alias such as `type Integer i32` is not a method template.
-        error(fn.loc, "not supported yet");
-        return;
+        // A numeric or slice alias can have an instance template. A static template can also sit
+        // on a pointer alias, a sized-array alias, or a struct alias. The wrong alias is
+        // `type mismatch`. An enum, or a name that is not an alias, is `not supported yet`.
+        Type alias;
+        const bool have_alias = package_typedef(file_id_, fn.method_struct, alias) && alias.alias_id != 0;
+        if (!have_alias) {
+            error(fn.loc, "not supported yet");
+            return;
+        }
+        const bool owner_ok = fn.static_method ? static_type_owner(fn.method_struct)
+                                                : (is_numeric(alias) || is_slice(alias));
+        if (!owner_ok) {
+            error(fn.loc, "type mismatch");
+            return;
+        }
     }
     if (fn.extern_c) {
         error(fn.loc, "extern(abi=\"c\") on a trait or a generic");
         return;
     }
-    // A tlc `extern` is one symbol per specialization. `...`, `export`, a static template,
-    // a missing body, and a trait parameter are still not one concrete method.
-    if (fn.variadic || fn.exported || fn.body == nullptr || fn.static_method ||
-        extern_generic_trait_param(file_id_, fn)) {
+    // A tlc `extern` is one symbol per specialization. `...`, a missing body, and a trait
+    // parameter are still not one concrete method. `export` and a static template are.
+    if (fn.variadic || fn.body == nullptr || extern_generic_trait_param(file_id_, fn)) {
         error(fn.loc, "not supported yet");
         return;
     }
@@ -2379,16 +2390,23 @@ void Checker::register_method_template(const FunctionDecl &fn) {
         error(fn.loc, "method in another file");
         return;
     }
-    const bool receiver_ok = !fn.params.empty() && fn.params.front().is_receiver &&
-                             fn.params.front().type_name == fn.method_struct && fn.params.front().type_package.empty() &&
-                             !fn.params.front().is_array && fn.params.front().indirections <= 1;
-    if (!receiver_ok) {
-        error(fn.loc, "type mismatch");
+    if (!fn.static_method) {
+        const bool receiver_ok = !fn.params.empty() && fn.params.front().is_receiver &&
+                                 fn.params.front().type_name == fn.method_struct &&
+                                 fn.params.front().type_package.empty() && !fn.params.front().is_array &&
+                                 fn.params.front().indirections <= 1;
+        if (!receiver_ok) {
+            error(fn.loc, "type mismatch");
+            return;
+        }
+    } else if (assoc_defined(file_id_, fn.method_struct, fn.name)) {
+        error(fn.loc, "redefinition");
         return;
     }
     auto &bucket = method_templates_[file_id_][fn.method_struct][fn.name];
     for (const FunctionDecl *existing : bucket) {
-        if (existing != nullptr && same_default_shape(*existing, fn)) {
+        // `id(value T)` and `id(self, value T)` are different functions.
+        if (existing != nullptr && existing->static_method == fn.static_method && same_default_shape(*existing, fn)) {
             error(fn.loc, "redefinition");
             return;
         }
@@ -2527,8 +2545,9 @@ const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t
     method.type_params.clear();
     if (!method.params.empty() && method.params.front().is_receiver) {
         method.params.front().type_name = owner;
-        method.params.front().is_struct = true;
         method.params.front().type_package.clear();
+        // An alias receiver stays that alias. A struct receiver is the struct.
+        method.params.front().is_struct = find_tag(struct_file, owner) >= 0;
     }
     substitute_function(method, params, bounds);
     const uint32_t saved_file = file_id_;
@@ -2544,7 +2563,10 @@ const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t
     }
     if (const MethodInfo *head = find_method_head(struct_file, owner, spec_name)) {
         const auto same_slot = [&](const MethodInfo &slot) {
-            return same_selection(slot.type, !slot.is_static, signature, true);
+            // A static method has no receiver to skip. Dropping its first parameter would
+            // compare the wrong list.
+            const bool skip_new = !templ.static_method;
+            return same_selection(slot.type, !slot.is_static, signature, skip_new);
         };
         const MethodInfo *slot = nullptr;
         if (same_slot(*head)) {
@@ -2577,7 +2599,7 @@ const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t
     MethodInfo info;
     info.type = std::move(signature);
     info.has_body = stable->body != nullptr;
-    info.is_static = false;
+    info.is_static = templ.static_method;
     info.unsafe_fn = templ.unsafe;
     info.exported = templ.exported;
     info.extern_c = templ.extern_c;
@@ -2690,6 +2712,117 @@ void Checker::grant_covered_defaults(int struct_id) {
     }
 }
 
+Checker::MethodTemplateChoice Checker::pick_method_template(uint32_t home, const std::string &owner, const std::string &name,
+                                                            const Expr::Call &call, bool want_static) const {
+    MethodTemplateChoice out;
+    const auto file = method_templates_.find(home);
+    if (file == method_templates_.end()) {
+        return out;
+    }
+    const auto group = file->second.find(owner);
+    if (group == file->second.end()) {
+        return out;
+    }
+    const auto found = group->second.find(name);
+    if (found == group->second.end()) {
+        return out;
+    }
+    std::vector<const FunctionDecl *> wanted;
+    int other = 0;
+    for (const FunctionDecl *item : found->second) {
+        if (item == nullptr || !type_arg_count_ok(*item, call)) {
+            continue;
+        }
+        if (item->static_method == want_static) {
+            wanted.push_back(item);
+        } else {
+            ++other;
+        }
+    }
+    if (wanted.size() > 1 || (wanted.empty() && other > 0)) {
+        out.kind = 2;
+        return out;
+    }
+    if (wanted.size() == 1) {
+        out.kind = 1;
+        out.templ = wanted.front();
+    }
+    return out;
+}
+
+std::optional<Type> Checker::apply_method_template(Expr &expr, const FunctionDecl &templ, uint32_t home,
+                                                   const std::string &owner, bool value_base, bool used) {
+    auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
+    if (call_ptr == nullptr || call_ptr->callee == nullptr) {
+        return type_invalid();
+    }
+    Expr::Call &call = *call_ptr;
+    auto *selector = std::get_if<Expr::Selector>(&call.callee->data);
+    if (selector == nullptr) {
+        return type_invalid();
+    }
+    auto check_args = [&]() {
+        for (const auto &arg : call.args) {
+            if (arg) {
+                check_expr(*arg, true);
+            }
+        }
+    };
+    // A value call still tracks initialization. A type name is not an expression.
+    auto note_base = [&]() {
+        if (value_base && selector->base != nullptr) {
+            check_expr(*selector->base, true);
+        }
+    };
+    if (templ.body == nullptr) {
+        note_base();
+        error(call.loc, "not supported yet");
+        check_args();
+        return type_invalid();
+    }
+    // Report the source name. The field is rewritten to the specialization below.
+    if (!package_owns(home) && !templ.exported) {
+        note_base();
+        error(call.loc, selector->field + " is not exported");
+        check_args();
+        return type_invalid();
+    }
+    std::vector<Type> arg_types;
+    bool arg_invalid = false;
+    for (const auto &arg : call.args) {
+        if (arg == nullptr) {
+            arg_invalid = true;
+            arg_types.push_back(type_invalid());
+            continue;
+        }
+        Type got = check_expr(*arg, true);
+        if (got.kind == TypeKind::Invalid) {
+            arg_invalid = true;
+        }
+        arg_types.push_back(std::move(got));
+    }
+    if (arg_invalid) {
+        note_base();
+        return type_invalid();
+    }
+    const auto inferred = infer_generic_bounds(templ, call, arg_types);
+    if (!inferred) {
+        note_base();
+        return type_invalid();
+    }
+    std::vector<SpecArg> bounds = *inferred;
+    disambiguate_bounds(home, bounds);
+    const std::string spec_name = mangle_spec(templ.name, bounds);
+    const FunctionDecl *installed = install_default(templ, home, owner, spec_name, bounds);
+    if (installed == nullptr) {
+        note_base();
+        return type_invalid();
+    }
+    selector->field = spec_name;
+    call.type_args.clear();
+    return check_raw(expr, used);
+}
+
 std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
     auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
     if (call_ptr == nullptr || call_ptr->callee == nullptr) {
@@ -2708,6 +2841,77 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
             }
         }
     };
+    // A missing template, or only the other staticness, is reported here. Kind 0 is absent.
+    auto finish_static = [&](const MethodTemplateChoice &choice, uint32_t home, const std::string &owner,
+                             bool value_base) -> std::optional<Type> {
+        if (choice.kind == 2) {
+            if (value_base && selector->base != nullptr) {
+                check_expr(*selector->base, true);
+            }
+            error(call.loc, "type mismatch");
+            check_args();
+            return type_invalid();
+        }
+        if (choice.kind != 1 || choice.templ == nullptr) {
+            if (value_base && selector->base != nullptr) {
+                check_expr(*selector->base, true);
+            }
+            error(call.loc, "undeclared identifier");
+            check_args();
+            return type_invalid();
+        }
+        return apply_method_template(expr, *choice.templ, home, owner, value_base, used);
+    };
+    // `Point.id[i32](40)` and `Integer.id[i32](40)`. The name is a type, so it is not probed as a value.
+    if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
+        const Symbol *symbol = lookup(named->text);
+        const bool shadowed = symbol != nullptr && !symbol->is_type;
+        if (!shadowed && static_type_owner(named->text)) {
+            return finish_static(pick_method_template(defined_in(named->text), named->text, selector->field, call, true),
+                                 defined_in(named->text), named->text, false);
+        }
+    }
+    // `math.Point.id[i32](40)`. Probing `math.Point` as a value is `type mismatch`.
+    if (const auto *inner = std::get_if<Expr::Selector>(&selector->base->data);
+        inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
+        if (const auto *package_name = std::get_if<Expr::Name>(&inner->base->data)) {
+            const Symbol *package = lookup(package_name->text);
+            if (package != nullptr && package->is_package) {
+                const Symbol *type = find_export(package->package_file, inner->field);
+                const bool enumerator = type != nullptr && type->type.kind == TypeKind::Enum &&
+                                        find_enum_member(type->type.enum_id, selector->field) != nullptr;
+                if (type != nullptr && type->is_type && !enumerator) {
+                    uint32_t home = package->package_file;
+                    const Type &written = type->type;
+                    if (written.kind == TypeKind::Struct && written.struct_id >= 0 &&
+                        written.struct_id < static_cast<int>(structs_.size())) {
+                        home = structs_[static_cast<std::size_t>(written.struct_id)].file_id;
+                    } else if (written.kind == TypeKind::Enum && written.enum_id >= 0 &&
+                               written.enum_id < static_cast<int>(enum_types_.size())) {
+                        home = enum_types_[static_cast<std::size_t>(written.enum_id)].file_id;
+                    } else if (written.alias_id > 0 &&
+                               static_cast<std::size_t>(written.alias_id) < alias_file_.size()) {
+                        home = alias_file_[static_cast<std::size_t>(written.alias_id)];
+                    } else {
+                        for (const uint32_t id : files_in_package(package->package_file)) {
+                            const auto aliases = typedefs_.find(id);
+                            if (aliases != typedefs_.end() && aliases->second.contains(inner->field)) {
+                                home = id;
+                                break;
+                            }
+                            const auto tags = tags_.find(id);
+                            if (tags != tags_.end() && tags->second.contains(inner->field)) {
+                                home = id;
+                                break;
+                            }
+                        }
+                    }
+                    return finish_static(pick_method_template(home, inner->field, selector->field, call, true), home,
+                                         inner->field, false);
+                }
+            }
+        }
+    }
     Type probe;
     {
         const bool saved = quiet_;
@@ -2838,6 +3042,20 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
     bool through_pointer = false;
     if (!dot_object(probe, object, through_pointer) || object.struct_id < 0 ||
         object.struct_id >= static_cast<int>(structs_.size())) {
+        bool alias_pointer = false;
+        const Type *alias = scalar_alias(probe, alias_pointer);
+        if (alias == nullptr) {
+            alias = slice_alias(probe, alias_pointer);
+        }
+        if (alias != nullptr) {
+            (void)alias_pointer;
+            uint32_t home = 0;
+            if (alias->alias_id > 0 && static_cast<std::size_t>(alias->alias_id) < alias_file_.size()) {
+                home = alias_file_[static_cast<std::size_t>(alias->alias_id)];
+            }
+            return finish_static(pick_method_template(home, type_desc(*alias), selector->field, call, false), home,
+                                 type_desc(*alias), true);
+        }
         check_expr(*selector->base, true);
         error(call.loc, "not supported yet");
         check_args();
@@ -2845,33 +3063,18 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
     }
     const uint32_t struct_file = structs_[static_cast<std::size_t>(object.struct_id)].file_id;
     const std::string struct_name = structs_[static_cast<std::size_t>(object.struct_id)].name;
-    const FunctionDecl *templ = nullptr;
-    bool struct_template = false;
-    if (const auto file = method_templates_.find(struct_file); file != method_templates_.end()) {
-        const auto owner = file->second.find(struct_name);
-        if (owner != file->second.end()) {
-            const auto found = owner->second.find(selector->field);
-            if (found != owner->second.end()) {
-                std::vector<const FunctionDecl *> matches;
-                for (const FunctionDecl *item : found->second) {
-                    if (item != nullptr && type_arg_count_ok(*item, call)) {
-                        matches.push_back(item);
-                    }
-                }
-                if (matches.size() > 1) {
-                    check_expr(*selector->base, true);
-                    error(call.loc, "type mismatch");
-                    check_args();
-                    return type_invalid();
-                }
-                if (matches.size() == 1) {
-                    templ = matches.front();
-                    struct_template = true;
-                }
-            }
-        }
+    const MethodTemplateChoice choice = pick_method_template(struct_file, struct_name, selector->field, call, false);
+    if (choice.kind == 2) {
+        check_expr(*selector->base, true);
+        error(call.loc, "type mismatch");
+        check_args();
+        return type_invalid();
     }
-    if (!struct_template) {
+    if (choice.kind == 1 && choice.templ != nullptr) {
+        return apply_method_template(expr, *choice.templ, struct_file, struct_name, true, used);
+    }
+    const FunctionDecl *templ = nullptr;
+    {
         std::vector<const FunctionDecl *> matches;
         for (std::size_t trait_i = 0; trait_i < traits_.size(); ++trait_i) {
             bool named = false;
@@ -2911,46 +3114,13 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
         }
         templ = matches.front();
     }
-    if (templ == nullptr || templ->body == nullptr) {
+    if (templ == nullptr) {
         check_expr(*selector->base, true);
         error(call.loc, "not supported yet");
         check_args();
         return type_invalid();
     }
-    std::vector<Type> arg_types;
-    bool arg_invalid = false;
-    for (const auto &arg : call.args) {
-        if (arg == nullptr) {
-            arg_invalid = true;
-            arg_types.push_back(type_invalid());
-            continue;
-        }
-        Type got = check_expr(*arg, true);
-        if (got.kind == TypeKind::Invalid) {
-            arg_invalid = true;
-        }
-        arg_types.push_back(std::move(got));
-    }
-    if (arg_invalid) {
-        check_expr(*selector->base, true);
-        return type_invalid();
-    }
-    const auto inferred = infer_generic_bounds(*templ, call, arg_types);
-    if (!inferred) {
-        check_expr(*selector->base, true);
-        return type_invalid();
-    }
-    std::vector<SpecArg> bounds = *inferred;
-    disambiguate_bounds(struct_file, bounds);
-    const std::string spec_name = mangle_spec(templ->name, bounds);
-    const FunctionDecl *installed = install_default(*templ, struct_file, struct_name, spec_name, bounds);
-    if (installed == nullptr) {
-        check_expr(*selector->base, true);
-        return type_invalid();
-    }
-    selector->field = spec_name;
-    call.type_args.clear();
-    return check_raw(expr, used);
+    return apply_method_template(expr, *templ, struct_file, struct_name, true, used);
 }
 
 void Checker::drain_deferred() {

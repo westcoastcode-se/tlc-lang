@@ -1,0 +1,8 @@
+import "math";
+
+func main() i32 {
+    var p math.Point;
+    p.x = 0;
+    var n = math.Integer.from(8);
+    return p.id[i32](20) + math.Point.make[i32](10) + n.id[i32](10) + math.Integer.make[i32](2);
+}

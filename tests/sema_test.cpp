@@ -1372,6 +1372,30 @@ int run_sema_tests() {
             "type Integer i32;\n"
             "func Integer::id[T type](self this) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
+        EXPECT_EQ(check, errors, "");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Ptr *i32;\n"
+            "func Ptr::id[T type](self this) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Color enum { Red };\n"
+            "func Color::id[T type](self this) i32 { return 0; }\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "func Point::id[T type](value T) T;\n"
+            "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 

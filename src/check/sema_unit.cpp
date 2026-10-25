@@ -95,6 +95,20 @@ void Checker::declare_assoc(const VarDecl &var) {
         error(var.loc, "redefinition");
         return;
     }
+    if (const auto templates = method_templates_.find(file_id_); templates != method_templates_.end()) {
+        const auto owner = templates->second.find(var.owner);
+        if (owner != templates->second.end()) {
+            const auto found = owner->second.find(var.name);
+            if (found != owner->second.end()) {
+                for (const FunctionDecl *fn : found->second) {
+                    if (fn != nullptr && fn->static_method) {
+                        error(var.loc, "redefinition");
+                        return;
+                    }
+                }
+            }
+        }
+    }
     if (assoc_defined(file_id_, var.owner, var.name)) {
         error(var.loc, "redefinition");
         return;

@@ -47,6 +47,37 @@ retq                             # return
 
 The program returns 42. The function is written in the same file as the struct. Every file in the package can call it. `export` publishes `pkg.Type.name(...)`. Without `export` that call is reported as `name is not exported`. `var ptr = pkg.Point.make` is that function. An enum uses the same form, `Color.label()` and `pkg.Color.code()`. A missing name, `Point.missing()`, is reported as `undeclared identifier`.
 
+A static method template puts the type parameters after the name. `func Point::id[T type](value T) T` is called as `Point.id[i32](42)`. A call on a value is reported as `type mismatch`. A call without the brackets is reported as `undeclared identifier`. `export` publishes `pkg.Point.id[i32](...)`. On a generic struct, `export` and a static method on `func Vec[T]::get[U type]` are `not supported yet`. A pointer alias uses that same call, `Ptr.make[i32](2)`.
+
+```c
+type Point struct {
+    x i32;
+};
+
+func Point::id[T type](value T) T {
+    return value;
+}
+
+func main() i32 {
+    return Point.id[i32](42);
+}
+```
+
+```asm
+id.spec.i32:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+movl $42, %edi                   # constant
+callq id.spec.i32                # call id
+retq                             # return
+```
+
+The program returns 42. When the file is `main.tlc`, the symbol is `main.Point.id.spec.i32`.
+
 The name without a call is a function pointer. `var ptr = Point.make` and `take(Point.make)` use that pointer, and `ptr(40, 2)` calls it. `var ptr = add` is the same form for a free function. An instance method used as a value, `var ptr = Point.sum`, is reported as `type mismatch`. An enumerator stays a value, so `Color.Red` is not a function pointer.
 
 A pointer alias, a sized-array alias, and a struct alias use that same call. `Ptr.from(&p)`, `Pair.from(1, 2)`, and `Spot.origin(40, 2)` name the functions. `var f = Ptr.from` is that function. A call on a value, `p.from(&live)`, is reported as `type mismatch`. A method on those aliases, `func Ptr::get(self this)`, and `var Ptr::name`, are reported as `type mismatch`. `type Op func (i32) i32` cannot have a static function. The builtin name `i32` cannot either.
