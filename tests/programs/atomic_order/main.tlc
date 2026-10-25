@@ -1,0 +1,7 @@
+import "builtin";
+
+func main() i32 {
+    var n i32 = 1;
+    var order i32 = 4;
+    return builtin.atomic_load[i32](&n, order);
+}

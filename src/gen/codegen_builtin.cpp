@@ -53,6 +53,11 @@ void CodeGen::ensure_trace() {
     auto *buffer_type = llvm::ArrayType::get(i8(), 4096);
     trace_buffer_ = new llvm::GlobalVariable(module_, buffer_type, false, llvm::GlobalValue::InternalLinkage,
                                              llvm::ConstantAggregateZero::get(buffer_type), "tlc.trace.buf");
+    // One tlc invocation is one executable. Local-exec is an %fs offset.
+    // A shared library would need another model.
+    for (llvm::GlobalVariable *global : {trace_depth_, trace_stack_, trace_buffer_}) {
+        global->setThreadLocalMode(llvm::GlobalValue::LocalExecTLSModel);
+    }
 }
 
 std::string CodeGen::display_path(SourceLoc loc) const {
@@ -751,6 +756,294 @@ void CodeGen::emit_builtin_heap() {
         builder_.CreateRet(builder_.CreateCall(realloc_type, realloc_fn.getCallee(), {pointer, bytes}));
         builder_.restoreIP(saved);
     }
+}
+
+namespace {
+
+enum class AtomicBuiltin { None, Load, Store, Rmw, Cmpxchg, Fence };
+
+AtomicBuiltin atomic_builtin(const std::string &name) {
+    const auto is = [&](const char *stem) {
+        const std::string base(stem);
+        return name == base || name.starts_with(base + ".spec");
+    };
+    if (is("atomic_load")) {
+        return AtomicBuiltin::Load;
+    }
+    if (is("atomic_store")) {
+        return AtomicBuiltin::Store;
+    }
+    if (is("atomic_rmw")) {
+        return AtomicBuiltin::Rmw;
+    }
+    if (is("atomic_cmpxchg")) {
+        return AtomicBuiltin::Cmpxchg;
+    }
+    if (is("fence")) {
+        return AtomicBuiltin::Fence;
+    }
+    return AtomicBuiltin::None;
+}
+
+bool atomic_order_ok(int order, AtomicBuiltin kind) {
+    if (order < 0 || order > 4) {
+        return false;
+    }
+    if (kind == AtomicBuiltin::Load) {
+        return order != 2 && order != 3;
+    }
+    if (kind == AtomicBuiltin::Store) {
+        return order != 1 && order != 3;
+    }
+    return true;
+}
+
+bool cmpxchg_orders(int success, int failure) {
+    if (failure == 2 || failure == 3) {
+        return false;
+    }
+    if (success == failure || success == 4) {
+        return true;
+    }
+    if (success == 3) {
+        return failure != 4;
+    }
+    if (success == 1) {
+        return failure == 0 || failure == 1;
+    }
+    if (success == 2) {
+        return failure == 0 || failure == 2;
+    }
+    return failure == 0;
+}
+
+} // namespace
+
+void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
+    if (terminated() || prepared.decl == nullptr || graph_ == nullptr) {
+        return;
+    }
+    const AtomicBuiltin kind = atomic_builtin(prepared.decl->name);
+    if (kind == AtomicBuiltin::None) {
+        return;
+    }
+    bool builtin = false;
+    for (const PackageNode &file : graph_->nodes) {
+        if (!is_compiler_builtin(&file)) {
+            continue;
+        }
+        for (const TopDecl &item : file.unit.decls) {
+            if (const auto *fn = std::get_if<FunctionDecl>(&item.data); fn == prepared.decl) {
+                builtin = true;
+                break;
+            }
+        }
+        if (builtin) {
+            break;
+        }
+    }
+    if (!builtin) {
+        return;
+    }
+    const auto fail = [&](const char *message) {
+        error(node.loc, message);
+        prepared.yielded = true;
+        prepared.yield = {zero(), 0};
+    };
+    const auto fold_order = [&](const Expr &expr) -> std::optional<int> {
+        if (const std::optional<FoldedNumber> number = fold_number(expr)) {
+            if (number->is_float || number->value < -2147483648.0 || number->value > 2147483647.0) {
+                return std::nullopt;
+            }
+            return static_cast<int>(number->value);
+        }
+        const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+        if (selector == nullptr || selector->base == nullptr) {
+            return std::nullopt;
+        }
+        const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+        if (base == nullptr) {
+            return std::nullopt;
+        }
+        const auto package = packages_.find(base->text);
+        if (package == packages_.end()) {
+            return std::nullopt;
+        }
+        if (const Binding *member = visible(package->second, selector->field, false); member != nullptr && member->immediate) {
+            return member->const_value;
+        }
+        const PackageNode *owner = find_node(package->second);
+        if (owner == nullptr) {
+            return std::nullopt;
+        }
+        for (const TopDecl &item : owner->unit.decls) {
+            const auto *var = std::get_if<VarDecl>(&item.data);
+            if (var == nullptr || var->name != selector->field || !var->is_const_decl || var->init == nullptr) {
+                continue;
+            }
+            if (const std::optional<FoldedNumber> number = fold_number(*var->init);
+                number && !number->is_float && number->value >= -2147483648.0 && number->value <= 2147483647.0) {
+                return static_cast<int>(number->value);
+            }
+        }
+        return std::nullopt;
+    };
+    const auto order_at = [&](std::size_t index) -> std::optional<int> {
+        if (index >= node.args.size() || node.args[index] == nullptr) {
+            return std::nullopt;
+        }
+        return fold_order(*node.args[index]);
+    };
+    const auto llvm_order = [](int order) -> std::optional<llvm::AtomicOrdering> {
+        switch (order) {
+        case 0: return llvm::AtomicOrdering::Monotonic;
+        case 1: return llvm::AtomicOrdering::Acquire;
+        case 2: return llvm::AtomicOrdering::Release;
+        case 3: return llvm::AtomicOrdering::AcquireRelease;
+        case 4: return llvm::AtomicOrdering::SequentiallyConsistent;
+        default: return std::nullopt;
+        }
+    };
+    if (kind == AtomicBuiltin::Fence) {
+        const std::optional<int> order = order_at(0);
+        const std::optional<llvm::AtomicOrdering> mapped = order ? llvm_order(*order) : std::nullopt;
+        if (!order || !atomic_order_ok(*order, kind) || !mapped) {
+            fail("type mismatch");
+            return;
+        }
+        prepared.yielded = true;
+        prepared.yield = {zero(), 0};
+        // A relaxed fence has no effect. The other orders are one fence.
+        if (*order != 0) {
+            builder_.CreateFence(*mapped);
+        }
+        return;
+    }
+    llvm::Type *ty = nullptr;
+    if ((kind == AtomicBuiltin::Load || kind == AtomicBuiltin::Rmw) && prepared.function != nullptr) {
+        ty = prepared.function->getReturnType();
+    } else if (prepared.args.size() > 1 && prepared.args[1] != nullptr) {
+        ty = prepared.args[1]->getType();
+    }
+    const auto supported = [](llvm::Type *type) {
+        if (type == nullptr) {
+            return false;
+        }
+        if (type->isPointerTy()) {
+            return true;
+        }
+        if (!type->isIntegerTy()) {
+            return false;
+        }
+        const unsigned bits = type->getIntegerBitWidth();
+        return bits == 8 || bits == 16 || bits == 32 || bits == 64;
+    };
+    if (!supported(ty) || prepared.args.empty() || prepared.args[0] == nullptr) {
+        fail(ty != nullptr && (ty->isFloatingPointTy() || ty->isStructTy()) ? "not supported yet" : "type mismatch");
+        return;
+    }
+    const uint64_t bytes = module_.getDataLayout().getTypeStoreSize(ty).getFixedValue();
+    const llvm::Align align(bytes == 0 ? 1 : bytes);
+    llvm::Value *pointer = prepared.args[0];
+    const auto scalar = [&](llvm::Value *inst) {
+        if (prepared.depth == 0 && prepared.elem_bool) {
+            prepared.yield = {builder_.CreateZExt(inst, i32()), 0, false, -1, false, false, true};
+            return;
+        }
+        if (prepared.depth == 0 && (prepared.elem_char || prepared.elem_bits == 8 || prepared.elem_bits == 16)) {
+            const bool zero_extend = prepared.elem_unsigned || prepared.elem_char;
+            llvm::Value *wide = zero_extend ? builder_.CreateZExt(inst, i32()) : builder_.CreateSExt(inst, i32());
+            prepared.yield = {wide, 0};
+            return;
+        }
+        TypedValue value{inst, prepared.depth, prepared.elem_char, prepared.struct_id, false, prepared.elem_void,
+                         prepared.elem_bool, prepared.elem_bits, prepared.elem_unsigned};
+        value.elem_float = prepared.elem_float;
+        value.enum_id = prepared.enum_id;
+        prepared.yield = std::move(value);
+    };
+    if (kind == AtomicBuiltin::Load) {
+        const std::optional<int> order = order_at(1);
+        const std::optional<llvm::AtomicOrdering> mapped = order ? llvm_order(*order) : std::nullopt;
+        if (!order || !atomic_order_ok(*order, kind) || !mapped) {
+            fail("type mismatch");
+            return;
+        }
+        llvm::LoadInst *load = builder_.CreateAlignedLoad(ty, pointer, align);
+        load->setAtomic(*mapped);
+        prepared.yielded = true;
+        scalar(load);
+        return;
+    }
+    if (kind == AtomicBuiltin::Store) {
+        const std::optional<int> order = order_at(2);
+        const std::optional<llvm::AtomicOrdering> mapped = order ? llvm_order(*order) : std::nullopt;
+        if (!order || !atomic_order_ok(*order, kind) || !mapped || prepared.args.size() < 2 || prepared.args[1] == nullptr) {
+            fail("type mismatch");
+            return;
+        }
+        llvm::StoreInst *store = builder_.CreateAlignedStore(prepared.args[1], pointer, align);
+        store->setAtomic(*mapped);
+        prepared.yielded = true;
+        prepared.yield = {zero(), 0};
+        return;
+    }
+    if (kind == AtomicBuiltin::Rmw) {
+        const std::optional<int> op = order_at(1);
+        const std::optional<int> order = order_at(3);
+        const std::optional<llvm::AtomicOrdering> mapped = order ? llvm_order(*order) : std::nullopt;
+        if (!op || *op < 0 || *op > 5 || !order || !atomic_order_ok(*order, kind) || !mapped || prepared.args.size() < 3 ||
+            prepared.args[2] == nullptr) {
+            fail("type mismatch");
+            return;
+        }
+        if (ty->isPointerTy() && *op != 0) {
+            fail("not supported yet");
+            return;
+        }
+        llvm::AtomicRMWInst::BinOp bin = llvm::AtomicRMWInst::Xchg;
+        switch (*op) {
+        case 0: bin = llvm::AtomicRMWInst::Xchg; break;
+        case 1: bin = llvm::AtomicRMWInst::Add; break;
+        case 2: bin = llvm::AtomicRMWInst::Sub; break;
+        case 3: bin = llvm::AtomicRMWInst::And; break;
+        case 4: bin = llvm::AtomicRMWInst::Or; break;
+        case 5: bin = llvm::AtomicRMWInst::Xor; break;
+        default: break;
+        }
+        llvm::Value *previous = builder_.CreateAtomicRMW(bin, pointer, prepared.args[2], align, *mapped);
+        prepared.yielded = true;
+        scalar(previous);
+        return;
+    }
+    const std::optional<int> success = order_at(3);
+    const std::optional<int> failure = order_at(4);
+    const std::optional<llvm::AtomicOrdering> success_order = success ? llvm_order(*success) : std::nullopt;
+    const std::optional<llvm::AtomicOrdering> failure_order = failure ? llvm_order(*failure) : std::nullopt;
+    if (!success || !failure || !success_order || !failure_order || !atomic_order_ok(*success, AtomicBuiltin::Rmw) ||
+        !atomic_order_ok(*failure, AtomicBuiltin::Rmw) || !cmpxchg_orders(*success, *failure) || prepared.args.size() < 3 ||
+        prepared.args[1] == nullptr || prepared.args[2] == nullptr || prepared.decl->results.size() != 2) {
+        fail("type mismatch");
+        return;
+    }
+    llvm::Value *pair =
+        builder_.CreateAtomicCmpXchg(pointer, prepared.args[1], prepared.args[2], align, *success_order, *failure_order);
+    llvm::Type *ret = aggregate_return(*prepared.decl, current_file_);
+    auto *struct_ty = llvm::dyn_cast<llvm::StructType>(ret);
+    llvm::Value *previous = builder_.CreateExtractValue(pair, 0);
+    llvm::Value *flag = builder_.CreateExtractValue(pair, 1);
+    if (struct_ty == nullptr || struct_ty->getNumElements() != 2 || previous->getType() != struct_ty->getElementType(0) ||
+        flag->getType() != struct_ty->getElementType(1)) {
+        fail("type mismatch");
+        return;
+    }
+    llvm::Value *aggregate = llvm::ConstantAggregateZero::get(struct_ty);
+    aggregate = builder_.CreateInsertValue(aggregate, previous, 0);
+    aggregate = builder_.CreateInsertValue(aggregate, flag, 1);
+    prepared.yielded = true;
+    prepared.yield = {aggregate, 0};
+    prepared.yield.is_tuple = true;
+    prepared.yield.tuple_parts = prepared.decl->results;
 }
 
 } // namespace tlc

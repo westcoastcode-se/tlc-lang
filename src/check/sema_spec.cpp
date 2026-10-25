@@ -518,6 +518,10 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     info.spec_args = bounds;
     structs_.push_back(std::move(info));
     tags_[owner][spec_name] = id;
+    // Recorded before the fields are typed. A field type may specialize another struct.
+    if (graph_ != nullptr) {
+        const_cast<PackageGraph *>(graph_)->struct_specs.push_back(StructSpecNote{owner, spec_name});
+    }
     for (FieldDecl &field : spec.fields) {
         prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                         field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args, field.loc);
@@ -1369,6 +1373,175 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
     return true;
 }
 
+namespace {
+
+enum class AtomicBuiltin { None, Load, Store, Rmw, Cmpxchg, Fence };
+
+AtomicBuiltin atomic_builtin(const std::string &name) {
+    const auto is = [&](const char *stem) {
+        const std::string base(stem);
+        return name == base || name.starts_with(base + ".spec");
+    };
+    if (is("atomic_load")) {
+        return AtomicBuiltin::Load;
+    }
+    if (is("atomic_store")) {
+        return AtomicBuiltin::Store;
+    }
+    if (is("atomic_rmw")) {
+        return AtomicBuiltin::Rmw;
+    }
+    if (is("atomic_cmpxchg")) {
+        return AtomicBuiltin::Cmpxchg;
+    }
+    if (is("fence")) {
+        return AtomicBuiltin::Fence;
+    }
+    return AtomicBuiltin::None;
+}
+
+bool atomic_integer(const std::string &name) {
+    return name == "i8" || name == "i16" || name == "i32" || name == "i64" || name == "u8" || name == "u16" ||
+           name == "u32" || name == "u64";
+}
+
+bool atomic_type_ok(const SpecArg &bound) {
+    if (bound.is_value || bound.is_text || bound.is_struct || bound.is_enum || bound.is_pack || bound.is_array ||
+        bound.elem_slice || bound.array_len != 0) {
+        return false;
+    }
+    for (const TypeShell &shell : bound.shells) {
+        if (shell.kind != TypeShell::Kind::Pointer) {
+            return false;
+        }
+    }
+    if (bound.indirections > 0 || !bound.shells.empty()) {
+        return true;
+    }
+    return bound.type_package.empty() && atomic_integer(bound.type_name);
+}
+
+bool atomic_pointer(const SpecArg &bound) {
+    if (bound.indirections > 0) {
+        return true;
+    }
+    for (const TypeShell &shell : bound.shells) {
+        if (shell.kind == TypeShell::Kind::Pointer) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Load: relaxed, acquire, seq_cst. Store: relaxed, release, seq_cst. The rest take every order.
+bool atomic_order_ok(int order, AtomicBuiltin kind) {
+    if (order < 0 || order > 4) {
+        return false;
+    }
+    if (kind == AtomicBuiltin::Load) {
+        return order != 2 && order != 3;
+    }
+    if (kind == AtomicBuiltin::Store) {
+        return order != 1 && order != 3;
+    }
+    return true;
+}
+
+// Failure is not release or acq_rel, and success is at least as strong.
+bool cmpxchg_orders(int success, int failure) {
+    if (failure == 2 || failure == 3) {
+        return false;
+    }
+    if (success == failure || success == 4) {
+        return true;
+    }
+    if (success == 3) {
+        return failure != 4;
+    }
+    if (success == 1) {
+        return failure == 0 || failure == 1;
+    }
+    if (success == 2) {
+        return failure == 0 || failure == 2;
+    }
+    return failure == 0;
+}
+
+} // namespace
+
+bool Checker::atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &call, const SpecArg *bound) {
+    const AtomicBuiltin kind = atomic_builtin(fn.name);
+    if (kind == AtomicBuiltin::None || !is_std_builtin_file(comptime_decl_file(fn))) {
+        return false;
+    }
+    if (bound != nullptr && !atomic_type_ok(*bound)) {
+        error(call.loc, "not supported yet");
+        return true;
+    }
+    const auto folded = [&](std::size_t index, int &out) {
+        if (index >= call.args.size() || call.args[index] == nullptr) {
+            error(call.loc, "type mismatch");
+            return false;
+        }
+        const std::optional<int> number = fold_int(*call.args[index]);
+        if (!number) {
+            error(expr_loc(*call.args[index]), "type mismatch");
+            return false;
+        }
+        out = *number;
+        return true;
+    };
+    const auto want = [&](std::size_t index, AtomicBuiltin mode) {
+        int order = 0;
+        if (!folded(index, order)) {
+            return false;
+        }
+        if (!atomic_order_ok(order, mode)) {
+            error(expr_loc(*call.args[index]), "type mismatch");
+            return false;
+        }
+        return true;
+    };
+    if (kind == AtomicBuiltin::Load) {
+        return !want(1, AtomicBuiltin::Load);
+    }
+    if (kind == AtomicBuiltin::Store) {
+        return !want(2, AtomicBuiltin::Store);
+    }
+    if (kind == AtomicBuiltin::Fence) {
+        return !want(0, AtomicBuiltin::Fence);
+    }
+    if (kind == AtomicBuiltin::Rmw) {
+        int op = 0;
+        if (!folded(1, op)) {
+            return true;
+        }
+        if (op < 0 || op > 5) {
+            error(expr_loc(*call.args[1]), "type mismatch");
+            return true;
+        }
+        const bool pointer = bound != nullptr ? atomic_pointer(*bound)
+                                              : (!fn.params.empty() && (fn.params.front().indirections >= 2 ||
+                                                                        !fn.params.front().shells.empty()));
+        if (pointer && op != 0) {
+            error(call.loc, "not supported yet");
+            return true;
+        }
+        return !want(3, AtomicBuiltin::Rmw);
+    }
+    int success = 0;
+    int failure = 0;
+    if (!folded(3, success) || !folded(4, failure)) {
+        return true;
+    }
+    if (!atomic_order_ok(success, AtomicBuiltin::Rmw) || !atomic_order_ok(failure, AtomicBuiltin::Rmw) ||
+        !cmpxchg_orders(success, failure)) {
+        error(call.loc, "type mismatch");
+        return true;
+    }
+    return false;
+}
+
 std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
     if (call_ptr == nullptr || call_ptr->callee == nullptr) {
@@ -1552,15 +1725,71 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     if (templ->unsafe && unsafe_depth_ == 0) {
         error(call.loc, "unsafe call");
     }
+    // `i8` and `u16` widen to `i32` as values. An explicit `[i8]` still names that narrow
+    // type on the parameter that is that type parameter. Another parameter keeps the `i32`.
+    auto narrow_integer = [](const std::string &name) {
+        return name == "i8" || name == "u8" || name == "i16" || name == "u16";
+    };
+    auto explicit_narrow_param = [&](const std::string &name) {
+        if (name.empty()) {
+            return false;
+        }
+        const std::size_t count = call.type_args.size() < templ->type_params.size() ? call.type_args.size()
+                                                                                     : templ->type_params.size();
+        for (std::size_t i = 0; i < count; ++i) {
+            const TypeParam &slot = templ->type_params[i];
+            if (slot.name != name || !slot.is_type || slot.is_value || slot.is_pack) {
+                continue;
+            }
+            const TypeArg &item = call.type_args[i];
+            if (item.type_package.empty() && item.indirections == 0 && !item.is_array && item.shells.empty() &&
+                item.args.empty() && !item.is_value && narrow_integer(item.type_name)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    // A pointer argument is not widened, so only the value parameter is put back.
+    auto wants_narrow = [&](std::size_t index) {
+        if (index >= templ->params.size()) {
+            return false;
+        }
+        const Param &param = templ->params[index];
+        if (param.indirections != 0 || param.optional != 0 || param.is_array || param.is_tuple || param.is_fn_ptr ||
+            param.is_struct || param.is_enum || param.elem_slice || !param.type_package.empty() ||
+            !param.type_args.empty() || !param.shells.empty()) {
+            return false;
+        }
+        return explicit_narrow_param(param.type_name);
+    };
+    auto unpromoted = [&](bool narrow, Expr &arg, Type got) {
+        if (!narrow || got.kind != TypeKind::Int || got.rank != 3 || got.is_unsigned || got.alias_id != 0) {
+            return got;
+        }
+        Type raw = check_raw(arg, true);
+        raw.is_const = false;
+        raw.decayed_len = 0;
+        SpecArg spelled;
+        if (!spell_type(raw, spelled) || !spelled.type_package.empty() || spelled.indirections != 0 ||
+            !spelled.shells.empty() || spelled.is_array || spelled.is_struct || spelled.is_enum || spelled.is_pack ||
+            !narrow_integer(spelled.type_name)) {
+            return got;
+        }
+        return raw;
+    };
     std::vector<Type> arg_types;
     bool arg_invalid = false;
-    for (const auto &arg : call.args) {
+    for (std::size_t i = 0; i < call.args.size(); ++i) {
+        const auto &arg = call.args[i];
         if (arg == nullptr) {
             arg_invalid = true;
             arg_types.push_back(type_invalid());
             continue;
         }
         Type got = check_expr(*arg, true);
+        if (got.kind != TypeKind::Invalid) {
+            got = unpromoted(wants_narrow(i), *arg, std::move(got));
+        }
         if (got.kind == TypeKind::Invalid) {
             arg_invalid = true;
         }
@@ -1575,6 +1804,9 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     }
     std::vector<SpecArg> bounds = *inferred;
     disambiguate_bounds(owner, bounds);
+    if (!bounds.empty() && atomic_builtin_rejected(*templ, call, &bounds.front())) {
+        return type_invalid();
+    }
     std::string spec_name = mangle_spec(templ->name, bounds);
     if (several) {
         spec_name.push_back('.');
@@ -1704,6 +1936,12 @@ uint32_t Checker::comptime_decl_file(const FunctionDecl &fn) const {
                     return node.file_id;
                 }
             }
+        }
+    }
+    // A generic template is the clone in `owned_fns_`. The unit still has the source.
+    for (const OwnedFn &owned : owned_fns_) {
+        if (&owned.fn == &fn) {
+            return owned.file_id;
         }
     }
     return file_id_;

@@ -365,7 +365,7 @@ main.tlc:15:12: main
 
 The file name is the source path relative to the entry file's directory. A source file outside that directory is named by its file name. A method uses the method name. An anonymous function is named `anon`. Inside a `test`, the name is the test's name.
 
-At most 32 calls are kept. The text is at most 4095 bytes. The pointer refers to one buffer, and the next `builtin.trace()` replaces that text.
+At most 32 calls are kept. The text is at most 4095 bytes. The pointer refers to this thread's buffer, and the next `builtin.trace()` on that thread replaces that text. Another thread has its own frames and its own buffer.
 
 `var f = builtin.trace` is a function pointer. `defer builtin.trace()` runs the call when the deferred calls run.
 

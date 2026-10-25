@@ -1,0 +1,9 @@
+import "std/atomic";
+
+func main() i32 {
+    var slot i32 = 40;
+    var other i32 = 2;
+    var p = atomic.Ptr[i32]{.value = &slot};
+    var prev = p.swap(&other);
+    return *prev + *p.load();
+}

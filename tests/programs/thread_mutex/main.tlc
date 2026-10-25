@@ -1,0 +1,22 @@
+import "std/thread";
+
+var lock thread.Mutex;
+var n i32;
+
+func add(arg *void) *void {
+    lock.lock();
+    n = n + 1;
+    lock.unlock();
+    return arg;
+}
+
+func main() i32 {
+    lock.init();
+    var dummy i32 = 1;
+    var a = thread.spawn(add, *void(&dummy));
+    var b = thread.spawn(add, *void(&dummy));
+    thread.join(a);
+    thread.join(b);
+    lock.destroy();
+    return n;
+}

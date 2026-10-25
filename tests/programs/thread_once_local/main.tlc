@@ -1,0 +1,22 @@
+import "std/thread";
+
+var n i32;
+
+func bump() {
+    n = n + 1;
+}
+
+func main() i32 {
+    var once thread.Once;
+    once.call(bump);
+    once.call(bump);
+    if (n != 1) {
+        return 1;
+    }
+    var again thread.Once;
+    again.call(bump);
+    if (n != 2) {
+        return 2;
+    }
+    return n + 40;
+}

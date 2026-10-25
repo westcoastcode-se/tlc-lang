@@ -19,9 +19,9 @@ retq
 
 ## A call
 
-A call records a trace frame, then calls. The frame is 24 bytes: a file, a line, a column, and the name of the callee. At most 32 frames are stored. `builtin.trace` and `builtin.va` do not push a frame. A `defer` runs its call later without a frame. A function with a trait parameter is specialized, and the call of that specialized function does not push a frame. Calls inside the specialized body still push frames. `malloc` and `free`, used by `new` and `delete`, do not push a frame.
+A call records a trace frame, then calls. The frame is 24 bytes: a file, a line, a column, and the name of the callee. At most 32 frames are stored. The frame count, the 32 frames, and the text buffer are thread-local, so one thread does not see another's frames. `builtin.trace` and `builtin.va` do not push a frame. A `defer` runs its call later without a frame. A function with a trait parameter is specialized, and the call of that specialized function does not push a frame. Calls inside the specialized body still push frames. `malloc` and `free`, used by `new` and `delete`, do not push a frame.
 
-On the path where fewer than 32 frames are already stored, this program is the listing below. The line and the column are the call. At 32 frames the push and the pop are skipped. The names `frame_count`, `trace`, `file`, `name`, and the branch labels stand in for the addresses in the object file.
+On the path where fewer than 32 frames are already stored, this program is the listing below. The line and the column are the call. At 32 frames the push and the pop are skipped. The names `frame_count`, `trace`, `file`, `name`, and the branch labels stand in for the thread-local offsets and the string addresses in the object file. `frame_count` and `trace` are read and written through `%fs`.
 
 ```c
 func noop() i32 {
@@ -33,47 +33,45 @@ func main() i32 {
 ```
 
 ```asm
-subq  $24, %rsp                  # slot for the call
-movl  frame_count(%rip), %ecx    # frames already stored
+subq  $24, %rsp                       # slot for the call
+movl  %fs:frame_count, %ecx           # frames already stored
 movl  %ecx, 16(%rsp)
 xorl  %eax, %eax
-cmpl  $32, %ecx                  # the trace keeps 32 frames
-movb  %al, 23(%rsp)              # this call has not pushed
+cmpl  $32, %ecx                       # the trace keeps 32 frames
+movb  %al, 23(%rsp)                   # this call has not pushed
 jae   .no_push
 movl  16(%rsp), %eax
-leaq  trace(%rip), %rcx          # the frame buffer
-movslq %eax, %rdx
-imulq $24, %rdx, %rdx            # 24 bytes per frame
-addq  %rdx, %rcx
+movslq %eax, %rcx
+leaq  (%rcx,%rcx,2), %rcx             # index times 3, then scaled by 8
 leaq  file(%rip), %rdx
-movq  %rdx, (%rcx)               # file
-movl  $5, 8(%rcx)                # line of the call
-movl  $12, 12(%rcx)              # column of the call
+movq  %rdx, %fs:trace(,%rcx,8)        # file
+movl  $5, %fs:trace+8(,%rcx,8)        # line of the call
+movl  $12, %fs:trace+12(,%rcx,8)      # column of the call
 leaq  name(%rip), %rdx
-movq  %rdx, 16(%rcx)             # callee name
-addl  $1, %eax
-movl  %eax, frame_count(%rip)
+movq  %rdx, %fs:trace+16(,%rcx,8)     # callee name
+incl  %eax
+movl  %eax, %fs:frame_count
 movb  $1, %al
-movb  %al, 23(%rsp)              # this call pushed
+movb  %al, 23(%rsp)                   # this call pushed
 .no_push:
 movb  23(%rsp), %al
 movb  %al, 11(%rsp)
 callq noop
-movl  %eax, %ecx                 # result of noop
+movl  %eax, %ecx                      # result of noop
 movb  11(%rsp), %al
 movl  %ecx, 12(%rsp)
-testb $1, %al                    # pop only a frame this call pushed
+testb $1, %al                         # pop only a frame this call pushed
 jne   .pop
 .pop:
-movl  frame_count(%rip), %eax
-subl  $1, %eax
-movl  %eax, frame_count(%rip)
+movl  %fs:frame_count, %eax
+decl  %eax
+movl  %eax, %fs:frame_count
 movl  12(%rsp), %eax
 addq  $24, %rsp
 retq
 
 noop:
-movl  $1, %eax                   # return 1
+movl  $1, %eax                        # return 1
 retq
 ```
 

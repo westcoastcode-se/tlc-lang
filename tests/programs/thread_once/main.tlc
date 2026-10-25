@@ -1,0 +1,23 @@
+import "std/thread";
+
+var once thread.Once;
+var n i32;
+
+func bump() {
+    n = n + 40;
+}
+
+func work(arg *void) *void {
+    once.call(bump);
+    return arg;
+}
+
+func main() i32 {
+    var dummy i32 = 0;
+    var a = thread.spawn(work, *void(&dummy));
+    var b = thread.spawn(work, *void(&dummy));
+    thread.join(a);
+    thread.join(b);
+    once.call(bump);
+    return n + 2;
+}

@@ -8,7 +8,7 @@
 panic: message
 ```
 
-The stack follows, newest first, one line per call. A line is `file:line:column: name`. The name is the function that made the call. The first stack line is the function that called `builtin.panic`, at that call. `builtin.trace()` lists the same calls in that order. A null pointer is printed as `(null)`. At most 32 calls are kept.
+The stack follows, newest first, one line per call. A line is `file:line:column: name`. The name is the function that made the call. The first stack line is the function that called `builtin.panic`, at that call. The stack is the calls of the thread that called `builtin.panic`. `builtin.trace()` lists the same calls in that order. A null pointer is printed as `(null)`. At most 32 calls are kept.
 
 No argument, or more than one, is reported as `argument count`. A value that is not a pointer to `u8` is reported as `type mismatch`. The call has no result, so `var n = builtin.panic("out of memory")` is `type mismatch`.
 

@@ -101,12 +101,15 @@ Each TLC example is followed by the assembly of that example, commented so the l
 - [`va`](builtin/va.md)
 - [`panic`](builtin/panic.md)
 - [`memeql` and `memcmp`](builtin/mem.md)
+- [`atomic`](builtin/atomic.md)
 - [`builtin/env/consts`](builtin/family.md)
 
 ### Standard library
 
 - [`string`](std/string.md)
 - [`seq`](std/seq.md)
+- [`thread`](std/thread.md)
+- [`atomic`](std/atomic.md)
 
 ## Grammar
 

@@ -1,0 +1,44 @@
+import "std/atomic";
+
+func keep[T type, U type](a *T, b U) U {
+    return b + 1;
+}
+
+func take[T type](p *T, n i32) i32 {
+    return n + 1;
+}
+
+func wrap[T type](a T, b T) T {
+    return a + b;
+}
+
+func main() i32 {
+    var byte i8 = 1;
+    var wide i16 = 32767;
+    if (keep[i8](&byte, wide) != 32768) {
+        return 1;
+    }
+    if (keep[i8, i32](&byte, wide) != 32768) {
+        return 2;
+    }
+    if (take[i8](&byte, wide) != 32768) {
+        return 3;
+    }
+    var x i8 = 100;
+    var y i8 = 100;
+    if (wrap[i8](x, y) != -56) {
+        return 4;
+    }
+    var n atomic.Int8;
+    n.store(x);
+    if (n.load() != 100) {
+        return 5;
+    }
+    var z u8 = 200;
+    var u atomic.Uint8;
+    u.store(z);
+    if (u.load() != 200) {
+        return 6;
+    }
+    return 42;
+}

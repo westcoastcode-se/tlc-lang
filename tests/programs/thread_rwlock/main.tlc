@@ -1,0 +1,29 @@
+import "std/thread";
+
+var rw thread.RwLock;
+var n i32;
+
+func write(arg *void) *void {
+    rw.wlock();
+    n = 40;
+    rw.wunlock();
+    return arg;
+}
+
+func read(arg *void) *void {
+    rw.rlock();
+    n = n + 2;
+    rw.runlock();
+    return arg;
+}
+
+func main() i32 {
+    rw.init();
+    var dummy i32 = 0;
+    var w = thread.spawn(write, *void(&dummy));
+    thread.join(w);
+    var r = thread.spawn(read, *void(&dummy));
+    thread.join(r);
+    rw.destroy();
+    return n;
+}

@@ -60,7 +60,12 @@ In a `macro`, a condition or a bound that does not fold is `not supported yet`. 
 - A slice field on `extern(abi="c")`. It is `not supported yet`.
 - A file-scope slice whose initializer is not the name of an array, a slice of one of those constants, a string, a constant range of one of those, or a call. A bound that does not fold is `global initializer is not a constant`. An array literal is `global initializer is not a constant`. A range, a literal, or a call used as the initializer of a `const` slice is `global initializer is not a constant` when it is not one of those constant ranges.
 - A cast to `void`.
+- An atomic `f32`, `f64`, or `bool`. `builtin.atomic_load` of those types is `not supported yet`. `atomic.Bool` stores a `u8`.
+- Using `builtin.fence` as a value, and `defer builtin.fence(order)`. Both are `not supported yet`. A direct call is replaced with a fence.
+- An atomic value wider than 64 bits.
+- A generic `Atomic[T]` for a struct whose size is 1, 2, 4, or 8 bytes.
 - `++`, `--`, compound assignment (`+=` and the rest), `?:`, and `->`.
+- `??`. `value!.value2!.value3 ?? default_value` yields `default_value` when a pointer in that `!` chain is null, and that `!` does not call `builtin.panic("null pointer")`. `??` is not a form.
 - `goto`.
 
 ## Declarations
@@ -81,16 +86,23 @@ In a `macro`, a condition or a bound that does not fold is `not supported yet`. 
 - `builtin.va` outside a variadic function.
 - Calling `builtin.panic` on a fatal failure other than an allocation that returned `null`. `new` calls `builtin.panic("out of memory")` in that case. A non-positive element count and a size that does not fit abort without that call.
 - `...` is only legal on `extern(abi="c")`. A function with a body may use `...` today, and `builtin.va()` reads the extra arguments. That body is not the TLC form. A variadic `extern`, `extern(abi="tlc")`, and a variadic prototype with no body stay `not supported yet`. Further TLC arguments are a generic, not `...`. `any` is not a keyword.
-- An inner function that uses a local or a parameter from an enclosing function, other than a function pointer it returns or calls. The inner function is called directly. `var f = pass` and passing that function as a value are the same gap. A prototype written before the body is the same gap when the body reads that pointer. It can call functions already in scope and use globals. `export`, `extern`, and a method on a function in a block are the same gap. A short anonymous function follows that function. A full anonymous function called directly can read the function pointer.
+- An inner function that uses a local or a parameter from an enclosing function, other than a function pointer it returns or calls. The inner function is called directly. `var f = pass` and passing that function as a value are the same gap. `thread.spawn` takes a file-scope function for that reason. A prototype written before the body is the same gap when the body reads that pointer. It can call functions already in scope and use globals. `export`, `extern`, and a method on a function in a block are the same gap. A short anonymous function follows that function. A full anonymous function called directly can read the function pointer.
 
 ## Methods and traits
 
 - A trait used as a type alias, or `**Shape`. A parameter is `Shape` or `*Shape`. `var s Shape`, `var s *Shape`, `func give() Shape`, `func give() *Shape`, `[2]Shape`, `[]Shape`, and a field `item Shape` in a struct or a trait are `trait has no size`.
 - `...` is not added to a function or a method that takes a trait. `func use(s Shape, ...)`, `func use(s *Shape, ...)`, `func Rect::paint(self *this, s Shape, ...)`, `extern func use(s Shape, ...)`, and a prototype `func use(s Shape, ...) i32;` are `not supported yet`. `extern(abi="c")` on that function, with or without `...`, is `extern(abi="c") on a trait or a generic`. Further TLC arguments are a generic, not `...`. `any` is not a keyword. `extern` and `extern(abi="tlc")` without `...` are accepted. A call that specializes a prototype with no body is `not supported yet`.
 
+## Compiler
+
+- A compiler argument names the type `new` and `delete` use when the call names no allocator. Today that type is `builtin.Malloc`, and those calls use the C functions `malloc` and `free` (`docs/builtin/allocator.md`, `docs/statements/new.md`). `new(&arena)` keeps the type of that pointer. The named type satisfies `Allocator`. The later use is a `DebugAllocator` for `tlc --test`, so a test reports a block that was reserved and not released.
+- A race condition is not reported. `tlc --test` reports one, and so does a debug build. A release build that is not `tlc --test` does not. The compiler has no debug or release mode yet.
+
 ## Inconsistencies
 
-No open inconsistencies. An accepted form whose rule does not match its page is inserted here. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there.
+An accepted form whose rule does not match its page is inserted here. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there.
+
+- Postfix `!` on a `?*T` is `*T`. A null `p!` calls `builtin.panic("null pointer")` (`docs/expressions/narrowing.md`, `docs/builtin/panic.md`, `docs/grammar.md`). That call runs in a debug build and is left out of a release build. The compiler has no debug or release mode yet.
 
 ## Optimization
 

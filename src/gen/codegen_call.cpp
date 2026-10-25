@@ -657,6 +657,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
     remember(function, std::move(args), callee.depth, callee.elem_char, callee.struct_id, callee.elem_void, callee.elem_bool,
              callee.elem_bits, callee.elem_unsigned);
     prepared.elem_float = callee.elem_float;
+    yield_atomic(node, prepared);
     return prepared;
 }
 

@@ -622,7 +622,11 @@ class Checker {
     // An ordinary function whose every parameter is `comptime`. A `comptime func` is not this.
     const FunctionDecl *baked_callee(const Expr::Call &call);
     // A `comptime` parameter of an ordinary function requires a comptime argument.
-    void require_comptime_params(const FunctionDecl &fn, const Expr::Call &call);
+    // `skip` is 1 for a method call. The receiver is not an argument.
+    void require_comptime_params(const FunctionDecl &fn, const Expr::Call &call, std::size_t skip = 0);
+    // `builtin.atomic_*` and `builtin.fence`. True when the call is rejected.
+    // `bound` is the type argument. Null on `fence` and on a specialization.
+    bool atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &call, const SpecArg *bound);
     std::optional<int> fold_comptime_call(const Expr::Call &call);
     // The comptime slice overload of `builtin.memeql` or `builtin.memcmp` when both arguments are
     // constant `[]const u8`. Null when that overload is not the one to fold.

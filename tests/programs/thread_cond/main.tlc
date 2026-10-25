@@ -1,0 +1,29 @@
+import "std/thread";
+
+var lock thread.Mutex;
+var cv thread.Cond;
+var ready i32;
+
+func work(arg *void) *void {
+    lock.lock();
+    ready = 1;
+    cv.signal();
+    lock.unlock();
+    return arg;
+}
+
+func main() i32 {
+    lock.init();
+    cv.init();
+    var dummy i32 = 0;
+    var t = thread.spawn(work, *void(&dummy));
+    lock.lock();
+    while (ready == 0) {
+        cv.wait(&lock);
+    }
+    lock.unlock();
+    thread.join(t);
+    cv.destroy();
+    lock.destroy();
+    return 42;
+}

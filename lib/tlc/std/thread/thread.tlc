@@ -1,0 +1,113 @@
+package thread;
+
+import "builtin";
+
+// pthread_t is 8 bytes on the unix hosts this package runs on.
+export type Thread struct {
+    raw u64;
+};
+
+// A file-scope variable is zero, so raw starts null.
+// The field value makes a local `var lock Mutex` null too.
+// A plain `*void` field cannot be omitted.
+export type Mutex struct {
+    raw ?*void = null;
+};
+
+export func spawn(entry func (*void) *void, arg *void) Thread {
+    return os_spawn(entry, arg);
+}
+
+export func join(t Thread) *void {
+    return os_join(t.raw);
+}
+
+export func detach(t Thread) {
+    os_detach(t.raw);
+}
+
+export func Mutex::init(self *this) {
+    os_mutex_init(self);
+}
+
+export func Mutex::lock(self *this) {
+    os_mutex_lock(self);
+}
+
+export func Mutex::unlock(self *this) {
+    os_mutex_unlock(self);
+}
+
+export func Mutex::destroy(self *this) {
+    os_mutex_destroy(self);
+}
+
+export func yield() {
+    os_yield();
+}
+
+export func id() u64 {
+    return os_id();
+}
+
+export type Cond struct {
+    raw ?*void = null;
+};
+
+export func Cond::init(self *this) {
+    os_cond_init(self);
+}
+
+export func Cond::wait(self *this, mutex *Mutex) {
+    os_cond_wait(self, mutex);
+}
+
+export func Cond::signal(self *this) {
+    os_cond_signal(self);
+}
+
+export func Cond::broadcast(self *this) {
+    os_cond_broadcast(self);
+}
+
+export func Cond::destroy(self *this) {
+    os_cond_destroy(self);
+}
+
+export type RwLock struct {
+    raw ?*void = null;
+};
+
+export func RwLock::init(self *this) {
+    os_rw_init(self);
+}
+
+export func RwLock::rlock(self *this) {
+    os_rw_rlock(self);
+}
+
+export func RwLock::runlock(self *this) {
+    os_rw_unlock(self);
+}
+
+export func RwLock::wlock(self *this) {
+    os_rw_wlock(self);
+}
+
+export func RwLock::wunlock(self *this) {
+    os_rw_unlock(self);
+}
+
+export func RwLock::destroy(self *this) {
+    os_rw_destroy(self);
+}
+
+// Zero means the function has not run. A file-scope Once is zero.
+// The field value makes a local Once zero too.
+export type Once struct {
+    raw i32 = 0;
+};
+
+export func Once::call(self *this, entry func () void) {
+    os_once(self, entry);
+}

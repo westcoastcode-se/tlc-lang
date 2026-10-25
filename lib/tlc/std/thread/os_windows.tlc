@@ -1,0 +1,87 @@
+package thread;
+
+import "builtin";
+
+func os_spawn(entry func (*void) *void, arg *void) Thread {
+    builtin.panic("not supported yet");
+    return Thread{.raw = 0};
+}
+
+func os_join(raw u64) *void {
+    builtin.panic("not supported yet");
+    var dummy i32 = 0;
+    return *void(&dummy);
+}
+
+func os_detach(raw u64) {
+    builtin.panic("not supported yet");
+}
+
+func os_mutex_init(mutex *Mutex) {
+    builtin.panic("not supported yet");
+}
+
+func os_mutex_lock(mutex *Mutex) {
+    builtin.panic("not supported yet");
+}
+
+func os_mutex_unlock(mutex *Mutex) {
+    builtin.panic("not supported yet");
+}
+
+func os_mutex_destroy(mutex *Mutex) {
+    builtin.panic("not supported yet");
+}
+
+func os_yield() {
+    builtin.panic("not supported yet");
+}
+
+func os_id() u64 {
+    builtin.panic("not supported yet");
+    return 0;
+}
+
+func os_cond_init(cond *Cond) {
+    builtin.panic("not supported yet");
+}
+
+func os_cond_wait(cond *Cond, mutex *Mutex) {
+    builtin.panic("not supported yet");
+}
+
+func os_cond_signal(cond *Cond) {
+    builtin.panic("not supported yet");
+}
+
+func os_cond_broadcast(cond *Cond) {
+    builtin.panic("not supported yet");
+}
+
+func os_cond_destroy(cond *Cond) {
+    builtin.panic("not supported yet");
+}
+
+func os_rw_init(lock *RwLock) {
+    builtin.panic("not supported yet");
+}
+
+func os_rw_rlock(lock *RwLock) {
+    builtin.panic("not supported yet");
+}
+
+func os_rw_wlock(lock *RwLock) {
+    builtin.panic("not supported yet");
+}
+
+func os_rw_unlock(lock *RwLock) {
+    builtin.panic("not supported yet");
+}
+
+func os_rw_destroy(lock *RwLock) {
+    builtin.panic("not supported yet");
+}
+
+func os_once(once *Once, entry func () void) {
+    builtin.panic("not supported yet");
+}

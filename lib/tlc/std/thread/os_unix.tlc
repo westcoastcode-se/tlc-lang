@@ -1,0 +1,225 @@
+package thread;
+
+import "builtin";
+
+extern(abi="c") func pthread_create(thread *u64, attr ?*void, start func (*void) *void, arg *void) i32;
+extern(abi="c") func pthread_join(thread u64, value **void) i32;
+extern(abi="c") func pthread_detach(thread u64) i32;
+extern(abi="c") func pthread_mutex_init(mutex *void, attr ?*void) i32;
+extern(abi="c") func pthread_mutex_destroy(mutex *void) i32;
+extern(abi="c") func pthread_mutex_lock(mutex *void) i32;
+extern(abi="c") func pthread_mutex_unlock(mutex *void) i32;
+extern(abi="c") func sched_yield() i32;
+extern(abi="c") func pthread_self() u64;
+extern(abi="c") func pthread_cond_init(cond *void, attr ?*void) i32;
+extern(abi="c") func pthread_cond_destroy(cond *void) i32;
+extern(abi="c") func pthread_cond_wait(cond *void, mutex *void) i32;
+extern(abi="c") func pthread_cond_signal(cond *void) i32;
+extern(abi="c") func pthread_cond_broadcast(cond *void) i32;
+extern(abi="c") func pthread_rwlock_init(lock *void, attr ?*void) i32;
+extern(abi="c") func pthread_rwlock_destroy(lock *void) i32;
+extern(abi="c") func pthread_rwlock_rdlock(lock *void) i32;
+extern(abi="c") func pthread_rwlock_wrlock(lock *void) i32;
+extern(abi="c") func pthread_rwlock_unlock(lock *void) i32;
+extern(abi="c") func malloc(size i64) ?*u8;
+extern(abi="c") func free(ptr *void) void;
+
+// 128 bytes covers glibc, musl, and macOS pthread_mutex_t and pthread_cond_t.
+// malloc aligns to 16.
+const mutex_bytes i64 = 128;
+
+// macOS LP64 pthread_rwlock_t is 200 bytes. glibc and musl use 56.
+const rwlock_bytes i64 = 256;
+
+func fail() {
+    builtin.panic("thread");
+}
+
+func os_spawn(entry func (*void) *void, arg *void) Thread {
+    var raw u64 = 0;
+    var rc = pthread_create(&raw, null, entry, arg);
+    if (rc != 0) {
+        fail();
+    }
+    return Thread{.raw = raw};
+}
+
+func os_join(raw u64) *void {
+    var dummy i32 = 0;
+    var slot *void = *void(&dummy);
+    var rc = pthread_join(raw, &slot);
+    if (rc != 0) {
+        fail();
+    }
+    return slot;
+}
+
+func os_detach(raw u64) {
+    var rc = pthread_detach(raw);
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_mutex_init(mutex *Mutex) {
+    if (mutex.raw != null) {
+        fail();
+    }
+    var block = malloc(mutex_bytes);
+    if (block == null) {
+        fail();
+    }
+    var raw = *void(block!);
+    var rc = pthread_mutex_init(raw, null);
+    if (rc != 0) {
+        free(raw);
+        fail();
+    }
+    mutex.raw = ?*void(raw);
+}
+
+func os_mutex_lock(mutex *Mutex) {
+    var rc = pthread_mutex_lock(*void(mutex.raw!));
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_mutex_unlock(mutex *Mutex) {
+    var rc = pthread_mutex_unlock(*void(mutex.raw!));
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_mutex_destroy(mutex *Mutex) {
+    var raw = *void(mutex.raw!);
+    var rc = pthread_mutex_destroy(raw);
+    free(raw);
+    mutex.raw = null;
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_yield() {
+    sched_yield();
+}
+
+func os_id() u64 {
+    return pthread_self();
+}
+
+func alloc_handle(bytes i64) *void {
+    var block = malloc(bytes);
+    if (block == null) {
+        fail();
+    }
+    return *void(block!);
+}
+
+func os_cond_init(cond *Cond) {
+    if (cond.raw != null) {
+        fail();
+    }
+    var raw = alloc_handle(mutex_bytes);
+    var rc = pthread_cond_init(raw, null);
+    if (rc != 0) {
+        free(raw);
+        fail();
+    }
+    cond.raw = ?*void(raw);
+}
+
+func os_cond_wait(cond *Cond, mutex *Mutex) {
+    var rc = pthread_cond_wait(*void(cond.raw!), *void(mutex.raw!));
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_cond_signal(cond *Cond) {
+    var rc = pthread_cond_signal(*void(cond.raw!));
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_cond_broadcast(cond *Cond) {
+    var rc = pthread_cond_broadcast(*void(cond.raw!));
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_cond_destroy(cond *Cond) {
+    var raw = *void(cond.raw!);
+    var rc = pthread_cond_destroy(raw);
+    free(raw);
+    cond.raw = null;
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_rw_init(lock *RwLock) {
+    if (lock.raw != null) {
+        fail();
+    }
+    var raw = alloc_handle(rwlock_bytes);
+    var rc = pthread_rwlock_init(raw, null);
+    if (rc != 0) {
+        free(raw);
+        fail();
+    }
+    lock.raw = ?*void(raw);
+}
+
+func os_rw_rlock(lock *RwLock) {
+    var rc = pthread_rwlock_rdlock(*void(lock.raw!));
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_rw_wlock(lock *RwLock) {
+    var rc = pthread_rwlock_wrlock(*void(lock.raw!));
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_rw_unlock(lock *RwLock) {
+    var rc = pthread_rwlock_unlock(*void(lock.raw!));
+    if (rc != 0) {
+        fail();
+    }
+}
+
+func os_rw_destroy(lock *RwLock) {
+    var raw = *void(lock.raw!);
+    var rc = pthread_rwlock_destroy(raw);
+    free(raw);
+    lock.raw = null;
+    if (rc != 0) {
+        fail();
+    }
+}
+
+// `raw` is 0, then 1 while `entry` runs, then 2. A zero i32 is not a macOS
+// pthread_once_t, so this does not call pthread_once.
+func os_once(once *Once, entry func () void) {
+    if (builtin.atomic_load[i32](&once.raw, 4) == 2) {
+        return;
+    }
+    var prev, won = builtin.atomic_cmpxchg[i32](&once.raw, 0, 1, 4, 4);
+    if (won) {
+        entry();
+        builtin.atomic_store[i32](&once.raw, 2, 4);
+        return;
+    }
+    while (prev != 2) {
+        os_yield();
+        prev = builtin.atomic_load[i32](&once.raw, 4);
+    }
+}

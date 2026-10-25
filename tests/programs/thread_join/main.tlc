@@ -1,0 +1,16 @@
+import "std/thread";
+
+var slot i32;
+
+func work(arg *void) *void {
+    var p = unsafe *i32(arg);
+    *p = 42;
+    return arg;
+}
+
+func main() i32 {
+    var t = thread.spawn(work, *void(&slot));
+    thread.yield();
+    thread.join(t);
+    return slot;
+}

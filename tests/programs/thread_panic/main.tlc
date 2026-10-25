@@ -1,0 +1,18 @@
+import "builtin";
+import "std/thread";
+
+func leaf(arg *void) *void {
+    builtin.panic("thread");
+    return arg;
+}
+
+func work(arg *void) *void {
+    return leaf(arg);
+}
+
+func main() i32 {
+    var n i32 = 1;
+    var t = thread.spawn(work, *void(&n));
+    thread.join(t);
+    return 0;
+}

@@ -1,0 +1,7 @@
+import "builtin";
+
+func main() i32 {
+    var n f32 = 0.0f;
+    builtin.atomic_load[f32](&n, 4);
+    return 0;
+}

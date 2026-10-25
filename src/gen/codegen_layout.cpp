@@ -93,19 +93,49 @@ void CodeGen::prepare_structs() {
     }
     // Same index the checker reserves, so an initializer's struct id still names that struct.
     install_field_struct();
+    auto add_struct = [&](uint32_t file, const std::string &qualifier, const StructDecl &item) {
+        if (item.name.empty() || !item.type_params.empty() || tag_id(file, item.name) >= 0) {
+            return;
+        }
+        const int id = static_cast<int>(structs_.size());
+        StructLayout layout;
+        layout.name = item.name;
+        layout.type = llvm::StructType::create(context_, qualifier + "." + item.name);
+        structs_.push_back(std::move(layout));
+        tags_[file][item.name] = id;
+    };
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
             const auto *item = std::get_if<StructDecl>(&decl.data);
-            if (item == nullptr || item->name.empty() || !item->type_params.empty() ||
-                tag_id(node.file_id, item->name) >= 0) {
+            // A specialization is numbered after every concrete struct. The decl sits
+            // on the defining file, so registering it here would take an earlier id.
+            if (item == nullptr || item->name.find(".spec") != std::string::npos) {
                 continue;
             }
-            const int id = static_cast<int>(structs_.size());
-            StructLayout layout;
-            layout.name = item->name;
-            layout.type = llvm::StructType::create(context_, node.qualifier + "." + item->name);
-            structs_.push_back(std::move(layout));
-            tags_[node.file_id][item->name] = id;
+            add_struct(node.file_id, node.qualifier, *item);
+        }
+    }
+    for (const StructSpecNote &note : graph_->struct_specs) {
+        const PackageNode *node = package_node(graph_, note.file_id);
+        if (node == nullptr) {
+            continue;
+        }
+        for (const TopDecl &decl : node->unit.decls) {
+            const auto *item = std::get_if<StructDecl>(&decl.data);
+            if (item == nullptr || item->name != note.name) {
+                continue;
+            }
+            add_struct(node->file_id, node->qualifier, *item);
+            break;
+        }
+    }
+    for (const PackageNode &node : graph_->nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            const auto *item = std::get_if<StructDecl>(&decl.data);
+            if (item == nullptr || item->name.find(".spec") == std::string::npos) {
+                continue;
+            }
+            add_struct(node.file_id, node.qualifier, *item);
         }
     }
     std::vector<const StructDecl *> decls(structs_.size(), nullptr);

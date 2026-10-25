@@ -883,14 +883,16 @@ const FunctionDecl *Checker::baked_callee(const Expr::Call &call) {
     return found;
 }
 
-void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &call) {
+void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &call, std::size_t skip) {
     // `extern` / `extern(abi="tlc")` keeps the parameter in the symbol. A runtime value calls it.
-    if (fn.is_comptime || fn.is_macro || !fn.type_params.empty() || (fn.is_extern && !fn.extern_c)) {
+    if (fn.is_comptime || fn.is_macro || !fn.type_params.empty() || (fn.is_extern && !fn.extern_c) ||
+        skip > fn.params.size()) {
         return;
     }
-    const std::size_t count = fn.params.size() < call.args.size() ? fn.params.size() : call.args.size();
+    const std::size_t params = fn.params.size() - skip;
+    const std::size_t count = params < call.args.size() ? params : call.args.size();
     for (std::size_t i = 0; i < count; ++i) {
-        if (!fn.params[i].is_comptime || call.args[i] == nullptr) {
+        if (!fn.params[skip + i].is_comptime || call.args[i] == nullptr) {
             continue;
         }
         if (!argument_is_comptime(*call.args[i])) {

@@ -1,6 +1,6 @@
 # seq
 
-[Index](../README.md) · [Previous: string](string.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: string](string.md) · [Next: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `import "std/seq"` loads `lib/tlc/std/seq`. The package declares `seq.Seq[T]` and `ptr_of[T]`. The compiler treats the `extern` trait `Seq` in that directory as the iteration trait. It reads `len` and `at` from that declaration. A file names the trait by importing the package. A copy of the source outside that directory is an ordinary trait. `ptr_of[T]` has `len` and `ref`. `for (var item : ptr_of(items))` selects it without an import. A missing `ref` on that value is `type mismatch`.
 
@@ -90,4 +90,4 @@ This program returns 42.
 
 The trait has no size and no symbol. `var s seq.Seq[i32]`, a result, an array, a slice, and a field of the trait are reported as `trait has no size`.
 
-[Index](../README.md) · [Previous: string](string.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: string](string.md) · [Next: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

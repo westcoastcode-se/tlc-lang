@@ -1,0 +1,7 @@
+import "builtin";
+
+func main() i32 {
+    builtin.fence(0);
+    builtin.fence(4);
+    return 42;
+}

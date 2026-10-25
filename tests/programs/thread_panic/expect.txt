@@ -1,0 +1,4 @@
+exit: 128
+stderr: panic: thread
+main.tlc:5:5: leaf
+main.tlc:10:12: work

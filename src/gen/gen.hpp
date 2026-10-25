@@ -1386,6 +1386,8 @@ class CodeGen {
     std::vector<llvm::Value *> pack_extern_args(llvm::Function *function, const ExternLayout &layout,
                                                 const std::vector<TypedValue> &sources, PreparedCall &prepared);
     PreparedCall prepare_call(const Expr::Call &node);
+    // Replaces `builtin.atomic_*` and `builtin.fence` with an atomic instruction.
+    void yield_atomic(const Expr::Call &node, PreparedCall &prepared);
     TypedValue emit_prepared(const PreparedCall &call);
     // A call whose one result is a function pointer keeps that pointer's type on the value.
     void attach_returned_fn(TypedValue &value, const FunctionDecl *decl) const;

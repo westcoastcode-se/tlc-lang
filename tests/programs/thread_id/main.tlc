@@ -1,0 +1,19 @@
+import "std/thread";
+
+var other u64;
+
+func work(arg *void) *void {
+    other = thread.id();
+    return arg;
+}
+
+func main() i32 {
+    var mine = thread.id();
+    var dummy i32 = 0;
+    var t = thread.spawn(work, *void(&dummy));
+    thread.join(t);
+    if (mine != other && mine != 0) {
+        return 42;
+    }
+    return 0;
+}

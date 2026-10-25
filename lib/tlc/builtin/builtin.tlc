@@ -1,7 +1,9 @@
 package builtin;
 
 // Compiler intrinsics. The compiler supplies the bodies of trace, va, and panic,
-// and of the methods on Malloc. memeql and memcmp are ordinary tlc in this file.
+// and of the methods on Malloc. It replaces atomic_load, atomic_store, atomic_rmw,
+// atomic_cmpxchg, and fence with atomic instructions. memeql and memcmp are ordinary
+// tlc in this file.
 // The comptime slice overload is chosen when both arguments are comptime values.
 // A call of two constant []const u8 values is folded while compiling.
 
@@ -28,7 +30,7 @@ export func Type::fields(self this) []const Field;
 export func fmt[T type](text comptime []const u8, value comptime T) []const u8;
 
 // The calls that have not returned, newest first.
-// The pointer addresses one buffer. The next call replaces that text.
+// The pointer addresses this thread's buffer. The next call on that thread replaces that text.
 export func trace() *const u8;
 
 // The extra arguments of the variadic function this call is inside.
@@ -176,4 +178,37 @@ export func memcmp[T type](lhs []const T, rhs []const T) i32 {
         return 1;
     }
     return 0;
+}
+
+// Atomic operations. The body typechecks the call. Code generation replaces the call,
+// so this body does not run. order is 0 relaxed, 1 acquire, 2 release, 3 acq_rel, 4 seq_cst.
+// T is an integer of 8, 16, 32, or 64 bits, or a pointer. Another T is not supported yet.
+// A var order is type mismatch. An unknown order is type mismatch.
+export func atomic_load[T type](p *T, order comptime i32) T {
+    panic("atomic");
+    return *p;
+}
+
+export func atomic_store[T type](p *T, value T, order comptime i32) void {
+    *p = value;
+    panic("atomic");
+}
+
+// op is 0 xchg, 1 add, 2 sub, 3 and, 4 or, 5 xor. The result is the previous value.
+export func atomic_rmw[T type](p *T, op comptime i32, value T, order comptime i32) T {
+    panic("atomic");
+    return *p;
+}
+
+// Strong compare-exchange. The results are the previous value and whether the store happened.
+// success is the order when the values match. failure is the order when they do not.
+export func atomic_cmpxchg[T type](p *T, expected T, desired T, success comptime i32, failure comptime i32) (T, bool) {
+    panic("atomic");
+    return *p, false;
+}
+
+// A relaxed fence is no instruction. Another order is a fence.
+// The name is not a value. `var f = fence` is not supported yet.
+export func fence(order comptime i32) void {
+    panic("atomic");
 }

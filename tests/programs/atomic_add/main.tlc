@@ -1,0 +1,16 @@
+import "std/atomic";
+import "std/thread";
+
+var n atomic.Int32;
+
+func work(arg *void) *void {
+    n.add(1);
+    return arg;
+}
+
+func main() i32 {
+    var prev = n.add(41);
+    var t = thread.spawn(work, *void(&n));
+    thread.join(t);
+    return prev + n.load();
+}

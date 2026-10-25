@@ -1,0 +1,14 @@
+import "builtin";
+import "std/thread";
+
+func work(arg *void) *void {
+    return arg;
+}
+
+func main() i32 {
+    var n i32 = 1;
+    var t = thread.spawn(work, *void(&n));
+    thread.join(t);
+    builtin.panic("after join");
+    return 0;
+}

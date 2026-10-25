@@ -43,6 +43,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
                 }
+                // `builtin.fence` is replaced only at a direct call. The name is not a value.
+                if (symbol->is_function && !direct_callee_ && symbol->name == "fence" &&
+                    is_std_builtin_file(symbol->package_file)) {
+                    error(node.loc, "not supported yet");
+                    return type_invalid();
+                }
                 if (symbol->is_function && !direct_callee_) {
                     for (const FnList &list : symbol->lists) {
                         if (list.decl != nullptr && (list.decl->is_comptime || list.decl->is_macro)) {
@@ -1258,6 +1264,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                         check_expr(*node.args[i], true);
                                     }
                                 }
+                                if (method->decl != nullptr) {
+                                    const std::size_t skip =
+                                        !method->decl->params.empty() && method->decl->params.front().is_receiver ? 1
+                                                                                                                 : 0;
+                                    require_comptime_params(*method->decl, node, skip);
+                                }
                                 if (method->type.result == nullptr) {
                                     return type_invalid();
                                 }
@@ -1375,7 +1387,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                     }
                     if (ordinary != nullptr) {
+                        const std::size_t before = diags_.size();
                         require_comptime_params(*ordinary, node);
+                        // `builtin.fence` is one function. A generic atomic is checked on the template.
+                        if (diags_.size() == before && atomic_builtin_rejected(*ordinary, node, nullptr)) {
+                            return type_invalid();
+                        }
                     }
                 }
                 return *signature->result;
@@ -1419,6 +1436,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     const auto *base = node.base == nullptr ? nullptr : std::get_if<Expr::Name>(&node.base->data);
                     const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
                     if (node.field == "va" && package != nullptr && package->is_package &&
+                        is_std_builtin_file(package->package_file)) {
+                        error(node.loc, "not supported yet");
+                        return type_invalid();
+                    }
+                    // A call sets `direct_callee_`. `var f = builtin.fence` does not.
+                    if (node.field == "fence" && !direct_callee_ && package != nullptr && package->is_package &&
                         is_std_builtin_file(package->package_file)) {
                         error(node.loc, "not supported yet");
                         return type_invalid();

@@ -1,0 +1,6 @@
+import "builtin";
+
+func main() i32 {
+    var f = builtin.fence;
+    return 0;
+}

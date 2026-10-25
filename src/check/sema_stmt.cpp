@@ -1643,6 +1643,27 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     error(node.loc, "type mismatch");
                 } else {
+                    // A deferred call is indirect. `builtin.fence` is replaced only at a direct call.
+                    const auto *deferred = std::get_if<Expr::Call>(&call->data);
+                    bool fence = false;
+                    if (deferred != nullptr && deferred->callee != nullptr) {
+                        if (const auto *selector = std::get_if<Expr::Selector>(&deferred->callee->data)) {
+                            if (selector->field == "fence" && selector->base != nullptr) {
+                                if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
+                                    const Symbol *symbol = lookup(base->text);
+                                    fence = symbol != nullptr && symbol->is_package &&
+                                            is_std_builtin_file(symbol->package_file);
+                                }
+                            }
+                        } else if (const auto *named = std::get_if<Expr::Name>(&deferred->callee->data)) {
+                            const Symbol *symbol = lookup(named->text);
+                            fence = symbol != nullptr && symbol->is_function && symbol->name == "fence" &&
+                                    is_std_builtin_file(symbol->package_file);
+                        }
+                    }
+                    if (fence) {
+                        error(expr_loc(*call), "not supported yet");
+                    }
                     unsafe_depth_ += extra;
                     checking_defer_ = true;
                     check_expr(*call, false);

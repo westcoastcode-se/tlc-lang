@@ -40,12 +40,22 @@ struct ReflectedField {
     std::string type;
 };
 
+// One specialized struct. The checker numbers every concrete struct first, then
+// these, in the order each specialization is created. The decl is appended to
+// the defining file, which is not that order.
+struct StructSpecNote {
+    uint32_t file_id = 0;
+    std::string name;
+};
+
 struct PackageGraph {
     std::vector<PackageNode> nodes;
     std::vector<ImportEdge> edges;
     // Filled by the checker. Keyed by the spelling `typeof` stores.
     // Codegen reads it when it builds a type descriptor. Absent means no fields.
     std::unordered_map<std::string, std::vector<ReflectedField>> reflected_fields;
+    // Specialized structs in checker id order. Concrete structs are numbered first.
+    std::vector<StructSpecNote> struct_specs;
     // Linker arguments from packages loaded out of the vendor root or the
     // standard library, in import order. Ready to pass to cc. Empty when no
     // such package was loaded.

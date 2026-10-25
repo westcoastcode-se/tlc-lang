@@ -1864,6 +1864,7 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
         error(node.loc, counts == 0 ? "argument count" : "type mismatch");
         return type_invalid();
     }
+    const std::size_t order_mark = diags_.size();
     node.selected = winner->decl;
     if (winner->decl != nullptr && comptime_param_template(*winner->decl)) {
         const std::size_t before = diags_.size();
@@ -1879,6 +1880,10 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
         }
     } else if (winner->decl != nullptr) {
         require_comptime_params(*winner->decl, node);
+    }
+    if (diags_.size() == order_mark && winner->decl != nullptr &&
+        atomic_builtin_rejected(*winner->decl, node, nullptr)) {
+        return type_invalid();
     }
     require_unsafe_call(winner->unsafe_fn, node.loc);
     const Type &signature = winner->type;
@@ -1951,6 +1956,10 @@ Type Checker::finish_static_call(const Expr::Call &node, const MethodInfo &metho
                 error(expr_loc(*node.args[i]), "not supported yet");
             }
         }
+    }
+    if (method.decl != nullptr) {
+        const std::size_t skip = !method.decl->params.empty() && method.decl->params.front().is_receiver ? 1 : 0;
+        require_comptime_params(*method.decl, node, skip);
     }
     if (method.type.result == nullptr) {
         return type_invalid();
@@ -2194,6 +2203,10 @@ Type Checker::finish_value_method(const Expr::Call &node, const Expr::Selector &
         } else {
             check_expr(*node.args[i], true);
         }
+    }
+    if (method.decl != nullptr) {
+        const std::size_t skip = !method.decl->params.empty() && method.decl->params.front().is_receiver ? 1 : 0;
+        require_comptime_params(*method.decl, node, skip);
     }
     if (method.type.result == nullptr) {
         return type_invalid();
