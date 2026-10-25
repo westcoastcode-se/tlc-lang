@@ -83,6 +83,8 @@ struct Symbol {
     bool folded_local = false;
     // Pointer receiver `self *this`. The name is not assigned. `*self` and `self.x` are.
     bool fixed_receiver = false;
+    // A parameter marked `comptime`. A method or a generic call may forward the name.
+    bool comptime_param = false;
     bool is_enum = false;
     bool is_typedef = false;
     bool is_struct_tag = false;
@@ -638,6 +640,8 @@ class Checker {
     std::optional<int> fold_mem_compare(const Expr::Call &call);
     // A folded integer, or a constant `[]const u8` in this file. A `var` and a local `const` are not.
     bool argument_is_comptime(const Expr &arg);
+    // An enumerator, or the name of a `comptime` parameter. A method passes it. A generic copy keeps it.
+    bool comptime_kept_argument(const Expr &arg);
     // Every `comptime` parameter has a comptime argument. A function with none passes.
     bool comptime_arguments(const FunctionDecl &fn, const Expr::Call &call);
     std::unordered_set<const FunctionDecl *> comptime_expanding_;

@@ -8,6 +8,9 @@ type Point struct {
 };
 
 func Point::id(self *this, order comptime Order) i32 {
+    if (order == Order.acquire) {
+        return self.x + 41;
+    }
     return self.x;
 }
 

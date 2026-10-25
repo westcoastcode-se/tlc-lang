@@ -1,0 +1,8 @@
+import "std/atomic";
+
+var n atomic.Int32;
+
+func main() i32 {
+    var order atomic.Order = atomic.Order.relaxed;
+    return n.load_order(order);
+}

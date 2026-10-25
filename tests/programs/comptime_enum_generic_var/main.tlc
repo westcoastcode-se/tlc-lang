@@ -1,0 +1,13 @@
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+func id[T type](value T, order comptime Order) T {
+    return value;
+}
+
+func main() i32 {
+    var order = Order.acquire;
+    return id[i32](1, order);
+}

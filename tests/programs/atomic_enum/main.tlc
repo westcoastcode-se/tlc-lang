@@ -3,8 +3,7 @@ import "std/atomic";
 var n atomic.Int32;
 
 func main() i32 {
-    var order atomic.Order = atomic.Order.relaxed;
     n.store_order(20, atomic.Order.release);
-    n.add_order(22, order);
+    n.add_order(22, atomic.Order.relaxed);
     return n.load_order(atomic.Order.acquire);
 }

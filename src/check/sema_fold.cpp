@@ -709,6 +709,29 @@ bool Checker::argument_is_comptime(const Expr &arg) {
     return true;
 }
 
+bool Checker::comptime_kept_argument(const Expr &arg) {
+    if (argument_is_comptime(arg)) {
+        return true;
+    }
+    // `Order.acquire` and `pkg.Order.acquire`. The call still passes the value.
+    if (const auto *selector = std::get_if<Expr::Selector>(&arg.data)) {
+        if (selector->base != nullptr) {
+            const int id = enum_designator(*selector->base);
+            if (id >= 0 && find_enum_member(id, selector->field) != nullptr) {
+                return true;
+            }
+        }
+    }
+    // `load_at(p, order)` when `order` is a comptime parameter of the caller.
+    if (const auto *named = std::get_if<Expr::Name>(&arg.data)) {
+        const Symbol *symbol = lookup(named->text);
+        if (symbol != nullptr && symbol->comptime_param) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Checker::is_builtin_fmt(const Expr::Call &call) {
     if (call.callee == nullptr || call.args.size() != 2) {
         return false;
@@ -758,7 +781,7 @@ bool Checker::comptime_arguments(const FunctionDecl &fn, const Expr::Call &call)
         if (!fn.params[i].is_comptime) {
             continue;
         }
-        if (call.args[i] == nullptr || !argument_is_comptime(*call.args[i])) {
+        if (call.args[i] == nullptr || !comptime_kept_argument(*call.args[i])) {
             return false;
         }
     }
@@ -895,7 +918,10 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
         if (!fn.params[skip + i].is_comptime || call.args[i] == nullptr) {
             continue;
         }
-        if (!argument_is_comptime(*call.args[i])) {
+        // A free function specializes an enumerator. A method still passes it.
+        const bool accepted = fn.method_struct.empty() ? argument_is_comptime(*call.args[i])
+                                                       : comptime_kept_argument(*call.args[i]);
+        if (!accepted) {
             error(expr_loc(*call.args[i]), "type mismatch");
         }
     }

@@ -2114,6 +2114,7 @@ void Checker::check_function(const FunctionDecl &fn) {
         symbol.name = param.name;
         symbol.type = std::move(type);
         symbol.is_auto = true;
+        symbol.comptime_param = param.is_comptime;
         symbol.fixed_receiver = param.is_receiver && param.indirections > 0;
         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
         declare(std::move(symbol), param.loc);
@@ -2690,6 +2691,7 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
         symbol.name = param.name;
         symbol.type = std::move(type);
         symbol.is_auto = true;
+        symbol.comptime_param = param.is_comptime;
         symbol.fixed_receiver = param.is_receiver && param.indirections > 0;
         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
         declare(std::move(symbol), param.loc);

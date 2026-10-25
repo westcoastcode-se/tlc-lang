@@ -22,7 +22,7 @@ export type Op enum {
 };
 
 // Each branch passes a constant. The builtin does not take this enum.
-func load_at[T type](p *T, order Order) T {
+func load_at[T type](p *T, order comptime Order) T {
     if (order == Order.relaxed) {
         return builtin.atomic_load[T](p, 0);
     }
@@ -36,7 +36,7 @@ func load_at[T type](p *T, order Order) T {
     return *p;
 }
 
-func store_at[T type](p *T, value T, order Order) void {
+func store_at[T type](p *T, value T, order comptime Order) void {
     if (order == Order.relaxed) {
         builtin.atomic_store[T](p, value, 0);
         return;
@@ -52,7 +52,7 @@ func store_at[T type](p *T, value T, order Order) void {
     builtin.panic("type mismatch");
 }
 
-func xchg_at[T type](p *T, value T, order Order) T {
+func xchg_at[T type](p *T, value T, order comptime Order) T {
     if (order == Order.relaxed) {
         return builtin.atomic_rmw[T](p, 0, value, 0);
     }
@@ -72,7 +72,7 @@ func xchg_at[T type](p *T, value T, order Order) T {
     return *p;
 }
 
-func rmw_at[T type](p *T, value T, op Op, order Order) T {
+func rmw_at[T type](p *T, value T, op Op, order comptime Order) T {
     if (op == Op.xchg) {
         return xchg_at[T](p, value, order);
     }
@@ -173,7 +173,7 @@ export func Int8::load(self *this) i8 {
     return builtin.atomic_load[i8](&self.value, 4);
 }
 
-export func Int8::load_order(self *this, order Order) i8 {
+export func Int8::load_order(self *this, order comptime Order) i8 {
     return load_at[i8](&self.value, order);
 }
 
@@ -181,7 +181,7 @@ export func Int8::store(self *this, value i8) void {
     builtin.atomic_store[i8](&self.value, value, 4);
 }
 
-export func Int8::store_order(self *this, value i8, order Order) void {
+export func Int8::store_order(self *this, value i8, order comptime Order) void {
     store_at[i8](&self.value, value, order);
 }
 
@@ -189,7 +189,7 @@ export func Int8::swap(self *this, value i8) i8 {
     return builtin.atomic_rmw[i8](&self.value, 0, value, 4);
 }
 
-export func Int8::swap_order(self *this, value i8, order Order) i8 {
+export func Int8::swap_order(self *this, value i8, order comptime Order) i8 {
     return xchg_at[i8](&self.value, value, order);
 }
 
@@ -197,7 +197,7 @@ export func Int8::add(self *this, value i8) i8 {
     return builtin.atomic_rmw[i8](&self.value, 1, value, 4);
 }
 
-export func Int8::add_order(self *this, value i8, order Order) i8 {
+export func Int8::add_order(self *this, value i8, order comptime Order) i8 {
     return rmw_at[i8](&self.value, value, Op.add, order);
 }
 
@@ -205,7 +205,7 @@ export func Int8::sub(self *this, value i8) i8 {
     return builtin.atomic_rmw[i8](&self.value, 2, value, 4);
 }
 
-export func Int8::sub_order(self *this, value i8, order Order) i8 {
+export func Int8::sub_order(self *this, value i8, order comptime Order) i8 {
     return rmw_at[i8](&self.value, value, Op.sub, order);
 }
 
@@ -213,7 +213,7 @@ export func Int8::and(self *this, value i8) i8 {
     return builtin.atomic_rmw[i8](&self.value, 3, value, 4);
 }
 
-export func Int8::and_order(self *this, value i8, order Order) i8 {
+export func Int8::and_order(self *this, value i8, order comptime Order) i8 {
     return rmw_at[i8](&self.value, value, Op.and, order);
 }
 
@@ -221,7 +221,7 @@ export func Int8::or(self *this, value i8) i8 {
     return builtin.atomic_rmw[i8](&self.value, 4, value, 4);
 }
 
-export func Int8::or_order(self *this, value i8, order Order) i8 {
+export func Int8::or_order(self *this, value i8, order comptime Order) i8 {
     return rmw_at[i8](&self.value, value, Op.or, order);
 }
 
@@ -229,7 +229,7 @@ export func Int8::xor(self *this, value i8) i8 {
     return builtin.atomic_rmw[i8](&self.value, 5, value, 4);
 }
 
-export func Int8::xor_order(self *this, value i8, order Order) i8 {
+export func Int8::xor_order(self *this, value i8, order comptime Order) i8 {
     return rmw_at[i8](&self.value, value, Op.xor, order);
 }
 
@@ -246,7 +246,7 @@ export func Int16::load(self *this) i16 {
     return builtin.atomic_load[i16](&self.value, 4);
 }
 
-export func Int16::load_order(self *this, order Order) i16 {
+export func Int16::load_order(self *this, order comptime Order) i16 {
     return load_at[i16](&self.value, order);
 }
 
@@ -254,7 +254,7 @@ export func Int16::store(self *this, value i16) void {
     builtin.atomic_store[i16](&self.value, value, 4);
 }
 
-export func Int16::store_order(self *this, value i16, order Order) void {
+export func Int16::store_order(self *this, value i16, order comptime Order) void {
     store_at[i16](&self.value, value, order);
 }
 
@@ -262,7 +262,7 @@ export func Int16::swap(self *this, value i16) i16 {
     return builtin.atomic_rmw[i16](&self.value, 0, value, 4);
 }
 
-export func Int16::swap_order(self *this, value i16, order Order) i16 {
+export func Int16::swap_order(self *this, value i16, order comptime Order) i16 {
     return xchg_at[i16](&self.value, value, order);
 }
 
@@ -270,7 +270,7 @@ export func Int16::add(self *this, value i16) i16 {
     return builtin.atomic_rmw[i16](&self.value, 1, value, 4);
 }
 
-export func Int16::add_order(self *this, value i16, order Order) i16 {
+export func Int16::add_order(self *this, value i16, order comptime Order) i16 {
     return rmw_at[i16](&self.value, value, Op.add, order);
 }
 
@@ -278,7 +278,7 @@ export func Int16::sub(self *this, value i16) i16 {
     return builtin.atomic_rmw[i16](&self.value, 2, value, 4);
 }
 
-export func Int16::sub_order(self *this, value i16, order Order) i16 {
+export func Int16::sub_order(self *this, value i16, order comptime Order) i16 {
     return rmw_at[i16](&self.value, value, Op.sub, order);
 }
 
@@ -286,7 +286,7 @@ export func Int16::and(self *this, value i16) i16 {
     return builtin.atomic_rmw[i16](&self.value, 3, value, 4);
 }
 
-export func Int16::and_order(self *this, value i16, order Order) i16 {
+export func Int16::and_order(self *this, value i16, order comptime Order) i16 {
     return rmw_at[i16](&self.value, value, Op.and, order);
 }
 
@@ -294,7 +294,7 @@ export func Int16::or(self *this, value i16) i16 {
     return builtin.atomic_rmw[i16](&self.value, 4, value, 4);
 }
 
-export func Int16::or_order(self *this, value i16, order Order) i16 {
+export func Int16::or_order(self *this, value i16, order comptime Order) i16 {
     return rmw_at[i16](&self.value, value, Op.or, order);
 }
 
@@ -302,7 +302,7 @@ export func Int16::xor(self *this, value i16) i16 {
     return builtin.atomic_rmw[i16](&self.value, 5, value, 4);
 }
 
-export func Int16::xor_order(self *this, value i16, order Order) i16 {
+export func Int16::xor_order(self *this, value i16, order comptime Order) i16 {
     return rmw_at[i16](&self.value, value, Op.xor, order);
 }
 
@@ -319,7 +319,7 @@ export func Int32::load(self *this) i32 {
     return builtin.atomic_load[i32](&self.value, 4);
 }
 
-export func Int32::load_order(self *this, order Order) i32 {
+export func Int32::load_order(self *this, order comptime Order) i32 {
     return load_at[i32](&self.value, order);
 }
 
@@ -327,7 +327,7 @@ export func Int32::store(self *this, value i32) void {
     builtin.atomic_store[i32](&self.value, value, 4);
 }
 
-export func Int32::store_order(self *this, value i32, order Order) void {
+export func Int32::store_order(self *this, value i32, order comptime Order) void {
     store_at[i32](&self.value, value, order);
 }
 
@@ -335,7 +335,7 @@ export func Int32::swap(self *this, value i32) i32 {
     return builtin.atomic_rmw[i32](&self.value, 0, value, 4);
 }
 
-export func Int32::swap_order(self *this, value i32, order Order) i32 {
+export func Int32::swap_order(self *this, value i32, order comptime Order) i32 {
     return xchg_at[i32](&self.value, value, order);
 }
 
@@ -343,7 +343,7 @@ export func Int32::add(self *this, value i32) i32 {
     return builtin.atomic_rmw[i32](&self.value, 1, value, 4);
 }
 
-export func Int32::add_order(self *this, value i32, order Order) i32 {
+export func Int32::add_order(self *this, value i32, order comptime Order) i32 {
     return rmw_at[i32](&self.value, value, Op.add, order);
 }
 
@@ -351,7 +351,7 @@ export func Int32::sub(self *this, value i32) i32 {
     return builtin.atomic_rmw[i32](&self.value, 2, value, 4);
 }
 
-export func Int32::sub_order(self *this, value i32, order Order) i32 {
+export func Int32::sub_order(self *this, value i32, order comptime Order) i32 {
     return rmw_at[i32](&self.value, value, Op.sub, order);
 }
 
@@ -359,7 +359,7 @@ export func Int32::and(self *this, value i32) i32 {
     return builtin.atomic_rmw[i32](&self.value, 3, value, 4);
 }
 
-export func Int32::and_order(self *this, value i32, order Order) i32 {
+export func Int32::and_order(self *this, value i32, order comptime Order) i32 {
     return rmw_at[i32](&self.value, value, Op.and, order);
 }
 
@@ -367,7 +367,7 @@ export func Int32::or(self *this, value i32) i32 {
     return builtin.atomic_rmw[i32](&self.value, 4, value, 4);
 }
 
-export func Int32::or_order(self *this, value i32, order Order) i32 {
+export func Int32::or_order(self *this, value i32, order comptime Order) i32 {
     return rmw_at[i32](&self.value, value, Op.or, order);
 }
 
@@ -375,7 +375,7 @@ export func Int32::xor(self *this, value i32) i32 {
     return builtin.atomic_rmw[i32](&self.value, 5, value, 4);
 }
 
-export func Int32::xor_order(self *this, value i32, order Order) i32 {
+export func Int32::xor_order(self *this, value i32, order comptime Order) i32 {
     return rmw_at[i32](&self.value, value, Op.xor, order);
 }
 
@@ -392,7 +392,7 @@ export func Int64::load(self *this) i64 {
     return builtin.atomic_load[i64](&self.value, 4);
 }
 
-export func Int64::load_order(self *this, order Order) i64 {
+export func Int64::load_order(self *this, order comptime Order) i64 {
     return load_at[i64](&self.value, order);
 }
 
@@ -400,7 +400,7 @@ export func Int64::store(self *this, value i64) void {
     builtin.atomic_store[i64](&self.value, value, 4);
 }
 
-export func Int64::store_order(self *this, value i64, order Order) void {
+export func Int64::store_order(self *this, value i64, order comptime Order) void {
     store_at[i64](&self.value, value, order);
 }
 
@@ -408,7 +408,7 @@ export func Int64::swap(self *this, value i64) i64 {
     return builtin.atomic_rmw[i64](&self.value, 0, value, 4);
 }
 
-export func Int64::swap_order(self *this, value i64, order Order) i64 {
+export func Int64::swap_order(self *this, value i64, order comptime Order) i64 {
     return xchg_at[i64](&self.value, value, order);
 }
 
@@ -416,7 +416,7 @@ export func Int64::add(self *this, value i64) i64 {
     return builtin.atomic_rmw[i64](&self.value, 1, value, 4);
 }
 
-export func Int64::add_order(self *this, value i64, order Order) i64 {
+export func Int64::add_order(self *this, value i64, order comptime Order) i64 {
     return rmw_at[i64](&self.value, value, Op.add, order);
 }
 
@@ -424,7 +424,7 @@ export func Int64::sub(self *this, value i64) i64 {
     return builtin.atomic_rmw[i64](&self.value, 2, value, 4);
 }
 
-export func Int64::sub_order(self *this, value i64, order Order) i64 {
+export func Int64::sub_order(self *this, value i64, order comptime Order) i64 {
     return rmw_at[i64](&self.value, value, Op.sub, order);
 }
 
@@ -432,7 +432,7 @@ export func Int64::and(self *this, value i64) i64 {
     return builtin.atomic_rmw[i64](&self.value, 3, value, 4);
 }
 
-export func Int64::and_order(self *this, value i64, order Order) i64 {
+export func Int64::and_order(self *this, value i64, order comptime Order) i64 {
     return rmw_at[i64](&self.value, value, Op.and, order);
 }
 
@@ -440,7 +440,7 @@ export func Int64::or(self *this, value i64) i64 {
     return builtin.atomic_rmw[i64](&self.value, 4, value, 4);
 }
 
-export func Int64::or_order(self *this, value i64, order Order) i64 {
+export func Int64::or_order(self *this, value i64, order comptime Order) i64 {
     return rmw_at[i64](&self.value, value, Op.or, order);
 }
 
@@ -448,7 +448,7 @@ export func Int64::xor(self *this, value i64) i64 {
     return builtin.atomic_rmw[i64](&self.value, 5, value, 4);
 }
 
-export func Int64::xor_order(self *this, value i64, order Order) i64 {
+export func Int64::xor_order(self *this, value i64, order comptime Order) i64 {
     return rmw_at[i64](&self.value, value, Op.xor, order);
 }
 
@@ -465,7 +465,7 @@ export func Uint8::load(self *this) u8 {
     return builtin.atomic_load[u8](&self.value, 4);
 }
 
-export func Uint8::load_order(self *this, order Order) u8 {
+export func Uint8::load_order(self *this, order comptime Order) u8 {
     return load_at[u8](&self.value, order);
 }
 
@@ -473,7 +473,7 @@ export func Uint8::store(self *this, value u8) void {
     builtin.atomic_store[u8](&self.value, value, 4);
 }
 
-export func Uint8::store_order(self *this, value u8, order Order) void {
+export func Uint8::store_order(self *this, value u8, order comptime Order) void {
     store_at[u8](&self.value, value, order);
 }
 
@@ -481,7 +481,7 @@ export func Uint8::swap(self *this, value u8) u8 {
     return builtin.atomic_rmw[u8](&self.value, 0, value, 4);
 }
 
-export func Uint8::swap_order(self *this, value u8, order Order) u8 {
+export func Uint8::swap_order(self *this, value u8, order comptime Order) u8 {
     return xchg_at[u8](&self.value, value, order);
 }
 
@@ -489,7 +489,7 @@ export func Uint8::add(self *this, value u8) u8 {
     return builtin.atomic_rmw[u8](&self.value, 1, value, 4);
 }
 
-export func Uint8::add_order(self *this, value u8, order Order) u8 {
+export func Uint8::add_order(self *this, value u8, order comptime Order) u8 {
     return rmw_at[u8](&self.value, value, Op.add, order);
 }
 
@@ -497,7 +497,7 @@ export func Uint8::sub(self *this, value u8) u8 {
     return builtin.atomic_rmw[u8](&self.value, 2, value, 4);
 }
 
-export func Uint8::sub_order(self *this, value u8, order Order) u8 {
+export func Uint8::sub_order(self *this, value u8, order comptime Order) u8 {
     return rmw_at[u8](&self.value, value, Op.sub, order);
 }
 
@@ -505,7 +505,7 @@ export func Uint8::and(self *this, value u8) u8 {
     return builtin.atomic_rmw[u8](&self.value, 3, value, 4);
 }
 
-export func Uint8::and_order(self *this, value u8, order Order) u8 {
+export func Uint8::and_order(self *this, value u8, order comptime Order) u8 {
     return rmw_at[u8](&self.value, value, Op.and, order);
 }
 
@@ -513,7 +513,7 @@ export func Uint8::or(self *this, value u8) u8 {
     return builtin.atomic_rmw[u8](&self.value, 4, value, 4);
 }
 
-export func Uint8::or_order(self *this, value u8, order Order) u8 {
+export func Uint8::or_order(self *this, value u8, order comptime Order) u8 {
     return rmw_at[u8](&self.value, value, Op.or, order);
 }
 
@@ -521,7 +521,7 @@ export func Uint8::xor(self *this, value u8) u8 {
     return builtin.atomic_rmw[u8](&self.value, 5, value, 4);
 }
 
-export func Uint8::xor_order(self *this, value u8, order Order) u8 {
+export func Uint8::xor_order(self *this, value u8, order comptime Order) u8 {
     return rmw_at[u8](&self.value, value, Op.xor, order);
 }
 
@@ -538,7 +538,7 @@ export func Uint16::load(self *this) u16 {
     return builtin.atomic_load[u16](&self.value, 4);
 }
 
-export func Uint16::load_order(self *this, order Order) u16 {
+export func Uint16::load_order(self *this, order comptime Order) u16 {
     return load_at[u16](&self.value, order);
 }
 
@@ -546,7 +546,7 @@ export func Uint16::store(self *this, value u16) void {
     builtin.atomic_store[u16](&self.value, value, 4);
 }
 
-export func Uint16::store_order(self *this, value u16, order Order) void {
+export func Uint16::store_order(self *this, value u16, order comptime Order) void {
     store_at[u16](&self.value, value, order);
 }
 
@@ -554,7 +554,7 @@ export func Uint16::swap(self *this, value u16) u16 {
     return builtin.atomic_rmw[u16](&self.value, 0, value, 4);
 }
 
-export func Uint16::swap_order(self *this, value u16, order Order) u16 {
+export func Uint16::swap_order(self *this, value u16, order comptime Order) u16 {
     return xchg_at[u16](&self.value, value, order);
 }
 
@@ -562,7 +562,7 @@ export func Uint16::add(self *this, value u16) u16 {
     return builtin.atomic_rmw[u16](&self.value, 1, value, 4);
 }
 
-export func Uint16::add_order(self *this, value u16, order Order) u16 {
+export func Uint16::add_order(self *this, value u16, order comptime Order) u16 {
     return rmw_at[u16](&self.value, value, Op.add, order);
 }
 
@@ -570,7 +570,7 @@ export func Uint16::sub(self *this, value u16) u16 {
     return builtin.atomic_rmw[u16](&self.value, 2, value, 4);
 }
 
-export func Uint16::sub_order(self *this, value u16, order Order) u16 {
+export func Uint16::sub_order(self *this, value u16, order comptime Order) u16 {
     return rmw_at[u16](&self.value, value, Op.sub, order);
 }
 
@@ -578,7 +578,7 @@ export func Uint16::and(self *this, value u16) u16 {
     return builtin.atomic_rmw[u16](&self.value, 3, value, 4);
 }
 
-export func Uint16::and_order(self *this, value u16, order Order) u16 {
+export func Uint16::and_order(self *this, value u16, order comptime Order) u16 {
     return rmw_at[u16](&self.value, value, Op.and, order);
 }
 
@@ -586,7 +586,7 @@ export func Uint16::or(self *this, value u16) u16 {
     return builtin.atomic_rmw[u16](&self.value, 4, value, 4);
 }
 
-export func Uint16::or_order(self *this, value u16, order Order) u16 {
+export func Uint16::or_order(self *this, value u16, order comptime Order) u16 {
     return rmw_at[u16](&self.value, value, Op.or, order);
 }
 
@@ -594,7 +594,7 @@ export func Uint16::xor(self *this, value u16) u16 {
     return builtin.atomic_rmw[u16](&self.value, 5, value, 4);
 }
 
-export func Uint16::xor_order(self *this, value u16, order Order) u16 {
+export func Uint16::xor_order(self *this, value u16, order comptime Order) u16 {
     return rmw_at[u16](&self.value, value, Op.xor, order);
 }
 
@@ -611,7 +611,7 @@ export func Uint32::load(self *this) u32 {
     return builtin.atomic_load[u32](&self.value, 4);
 }
 
-export func Uint32::load_order(self *this, order Order) u32 {
+export func Uint32::load_order(self *this, order comptime Order) u32 {
     return load_at[u32](&self.value, order);
 }
 
@@ -619,7 +619,7 @@ export func Uint32::store(self *this, value u32) void {
     builtin.atomic_store[u32](&self.value, value, 4);
 }
 
-export func Uint32::store_order(self *this, value u32, order Order) void {
+export func Uint32::store_order(self *this, value u32, order comptime Order) void {
     store_at[u32](&self.value, value, order);
 }
 
@@ -627,7 +627,7 @@ export func Uint32::swap(self *this, value u32) u32 {
     return builtin.atomic_rmw[u32](&self.value, 0, value, 4);
 }
 
-export func Uint32::swap_order(self *this, value u32, order Order) u32 {
+export func Uint32::swap_order(self *this, value u32, order comptime Order) u32 {
     return xchg_at[u32](&self.value, value, order);
 }
 
@@ -635,7 +635,7 @@ export func Uint32::add(self *this, value u32) u32 {
     return builtin.atomic_rmw[u32](&self.value, 1, value, 4);
 }
 
-export func Uint32::add_order(self *this, value u32, order Order) u32 {
+export func Uint32::add_order(self *this, value u32, order comptime Order) u32 {
     return rmw_at[u32](&self.value, value, Op.add, order);
 }
 
@@ -643,7 +643,7 @@ export func Uint32::sub(self *this, value u32) u32 {
     return builtin.atomic_rmw[u32](&self.value, 2, value, 4);
 }
 
-export func Uint32::sub_order(self *this, value u32, order Order) u32 {
+export func Uint32::sub_order(self *this, value u32, order comptime Order) u32 {
     return rmw_at[u32](&self.value, value, Op.sub, order);
 }
 
@@ -651,7 +651,7 @@ export func Uint32::and(self *this, value u32) u32 {
     return builtin.atomic_rmw[u32](&self.value, 3, value, 4);
 }
 
-export func Uint32::and_order(self *this, value u32, order Order) u32 {
+export func Uint32::and_order(self *this, value u32, order comptime Order) u32 {
     return rmw_at[u32](&self.value, value, Op.and, order);
 }
 
@@ -659,7 +659,7 @@ export func Uint32::or(self *this, value u32) u32 {
     return builtin.atomic_rmw[u32](&self.value, 4, value, 4);
 }
 
-export func Uint32::or_order(self *this, value u32, order Order) u32 {
+export func Uint32::or_order(self *this, value u32, order comptime Order) u32 {
     return rmw_at[u32](&self.value, value, Op.or, order);
 }
 
@@ -667,7 +667,7 @@ export func Uint32::xor(self *this, value u32) u32 {
     return builtin.atomic_rmw[u32](&self.value, 5, value, 4);
 }
 
-export func Uint32::xor_order(self *this, value u32, order Order) u32 {
+export func Uint32::xor_order(self *this, value u32, order comptime Order) u32 {
     return rmw_at[u32](&self.value, value, Op.xor, order);
 }
 
@@ -684,7 +684,7 @@ export func Uint64::load(self *this) u64 {
     return builtin.atomic_load[u64](&self.value, 4);
 }
 
-export func Uint64::load_order(self *this, order Order) u64 {
+export func Uint64::load_order(self *this, order comptime Order) u64 {
     return load_at[u64](&self.value, order);
 }
 
@@ -692,7 +692,7 @@ export func Uint64::store(self *this, value u64) void {
     builtin.atomic_store[u64](&self.value, value, 4);
 }
 
-export func Uint64::store_order(self *this, value u64, order Order) void {
+export func Uint64::store_order(self *this, value u64, order comptime Order) void {
     store_at[u64](&self.value, value, order);
 }
 
@@ -700,7 +700,7 @@ export func Uint64::swap(self *this, value u64) u64 {
     return builtin.atomic_rmw[u64](&self.value, 0, value, 4);
 }
 
-export func Uint64::swap_order(self *this, value u64, order Order) u64 {
+export func Uint64::swap_order(self *this, value u64, order comptime Order) u64 {
     return xchg_at[u64](&self.value, value, order);
 }
 
@@ -708,7 +708,7 @@ export func Uint64::add(self *this, value u64) u64 {
     return builtin.atomic_rmw[u64](&self.value, 1, value, 4);
 }
 
-export func Uint64::add_order(self *this, value u64, order Order) u64 {
+export func Uint64::add_order(self *this, value u64, order comptime Order) u64 {
     return rmw_at[u64](&self.value, value, Op.add, order);
 }
 
@@ -716,7 +716,7 @@ export func Uint64::sub(self *this, value u64) u64 {
     return builtin.atomic_rmw[u64](&self.value, 2, value, 4);
 }
 
-export func Uint64::sub_order(self *this, value u64, order Order) u64 {
+export func Uint64::sub_order(self *this, value u64, order comptime Order) u64 {
     return rmw_at[u64](&self.value, value, Op.sub, order);
 }
 
@@ -724,7 +724,7 @@ export func Uint64::and(self *this, value u64) u64 {
     return builtin.atomic_rmw[u64](&self.value, 3, value, 4);
 }
 
-export func Uint64::and_order(self *this, value u64, order Order) u64 {
+export func Uint64::and_order(self *this, value u64, order comptime Order) u64 {
     return rmw_at[u64](&self.value, value, Op.and, order);
 }
 
@@ -732,7 +732,7 @@ export func Uint64::or(self *this, value u64) u64 {
     return builtin.atomic_rmw[u64](&self.value, 4, value, 4);
 }
 
-export func Uint64::or_order(self *this, value u64, order Order) u64 {
+export func Uint64::or_order(self *this, value u64, order comptime Order) u64 {
     return rmw_at[u64](&self.value, value, Op.or, order);
 }
 
@@ -740,7 +740,7 @@ export func Uint64::xor(self *this, value u64) u64 {
     return builtin.atomic_rmw[u64](&self.value, 5, value, 4);
 }
 
-export func Uint64::xor_order(self *this, value u64, order Order) u64 {
+export func Uint64::xor_order(self *this, value u64, order comptime Order) u64 {
     return rmw_at[u64](&self.value, value, Op.xor, order);
 }
 
@@ -764,7 +764,7 @@ export func Bool::load(self *this) bool {
     return builtin.atomic_load[u8](&self.value, 4) != 0;
 }
 
-export func Bool::load_order(self *this, order Order) bool {
+export func Bool::load_order(self *this, order comptime Order) bool {
     return load_at[u8](&self.value, order) != 0;
 }
 
@@ -772,7 +772,7 @@ export func Bool::store(self *this, value bool) void {
     builtin.atomic_store[u8](&self.value, flag(value), 4);
 }
 
-export func Bool::store_order(self *this, value bool, order Order) void {
+export func Bool::store_order(self *this, value bool, order comptime Order) void {
     store_at[u8](&self.value, flag(value), order);
 }
 
@@ -780,7 +780,7 @@ export func Bool::swap(self *this, value bool) bool {
     return builtin.atomic_rmw[u8](&self.value, 0, flag(value), 4) != 0;
 }
 
-export func Bool::swap_order(self *this, value bool, order Order) bool {
+export func Bool::swap_order(self *this, value bool, order comptime Order) bool {
     return xchg_at[u8](&self.value, flag(value), order) != 0;
 }
 
@@ -798,7 +798,7 @@ export func Ptr[T]::load(self *this) *T {
     return builtin.atomic_load[*T](&self.value, 4);
 }
 
-export func Ptr[T]::load_order(self *this, order Order) *T {
+export func Ptr[T]::load_order(self *this, order comptime Order) *T {
     return load_at[*T](&self.value, order);
 }
 
@@ -806,7 +806,7 @@ export func Ptr[T]::store(self *this, value *T) void {
     builtin.atomic_store[*T](&self.value, value, 4);
 }
 
-export func Ptr[T]::store_order(self *this, value *T, order Order) void {
+export func Ptr[T]::store_order(self *this, value *T, order comptime Order) void {
     store_at[*T](&self.value, value, order);
 }
 
@@ -814,7 +814,7 @@ export func Ptr[T]::swap(self *this, value *T) *T {
     return builtin.atomic_rmw[*T](&self.value, 0, value, 4);
 }
 
-export func Ptr[T]::swap_order(self *this, value *T, order Order) *T {
+export func Ptr[T]::swap_order(self *this, value *T, order comptime Order) *T {
     return xchg_at[*T](&self.value, value, order);
 }
 
