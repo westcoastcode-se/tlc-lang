@@ -1,0 +1,7 @@
+extern type Num[T type] union {
+    n T;
+};
+
+func main() i32 {
+    return 0;
+}

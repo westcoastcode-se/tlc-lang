@@ -1,0 +1,14 @@
+type Num[T type] union {
+    n T;
+    m T;
+};
+
+func Num[T]::get(self *this) T {
+    return self.n;
+}
+
+func main() i32 {
+    var u Num[i32];
+    u.n = 42;
+    return u.get();
+}

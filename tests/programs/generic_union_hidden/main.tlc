@@ -1,0 +1,7 @@
+import "math";
+
+func main() i32 {
+    var u math.Hidden[i32];
+    u.n = 1;
+    return u.n;
+}

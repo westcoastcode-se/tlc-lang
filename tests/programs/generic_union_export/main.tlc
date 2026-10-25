@@ -1,0 +1,7 @@
+import "math";
+
+func main() i32 {
+    var u math.Num[i32];
+    u.n = 42;
+    return u.m;
+}

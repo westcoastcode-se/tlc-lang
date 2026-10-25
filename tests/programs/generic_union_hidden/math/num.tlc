@@ -1,0 +1,5 @@
+package math;
+
+type Hidden[T type] union {
+    n T;
+};

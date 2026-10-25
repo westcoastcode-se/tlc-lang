@@ -1,0 +1,7 @@
+type Num[T type] union {
+    n T = 4;
+};
+
+func main() i32 {
+    return 0;
+}

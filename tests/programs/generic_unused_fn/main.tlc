@@ -1,0 +1,7 @@
+func id[T type](n i32) i32 {
+    return n;
+}
+
+func main() i32 {
+    return id[i32](1);
+}

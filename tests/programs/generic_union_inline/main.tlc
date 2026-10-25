@@ -1,0 +1,17 @@
+type Kind enum {
+    One,
+    Two,
+};
+
+type Shape[T type] union(Kind) {
+    One struct {
+        value T;
+    };
+    Two struct {
+        n i32;
+    };
+};
+
+func main() i32 {
+    return 0;
+}

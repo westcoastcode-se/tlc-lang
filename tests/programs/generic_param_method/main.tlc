@@ -1,0 +1,13 @@
+type Buf[N i32] struct {
+    n i32;
+};
+
+func Buf[N]::get(self *this) i32 {
+    return self.n + N;
+}
+
+func main() i32 {
+    var b Buf[2];
+    b.n = 40;
+    return b.get();
+}

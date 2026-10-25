@@ -1,0 +1,10 @@
+type Seq[T type] trait {
+    func len() i32;
+};
+
+type MyAlias[T type] Seq[T];
+
+func main() i32 {
+    var a MyAlias[i32];
+    return 0;
+}

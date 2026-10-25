@@ -1,0 +1,6 @@
+type MyAlias[T type] MyAlias[T];
+
+func main() i32 {
+    var a MyAlias[i32];
+    return 0;
+}

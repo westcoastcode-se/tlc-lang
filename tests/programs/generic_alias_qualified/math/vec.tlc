@@ -1,0 +1,5 @@
+package math;
+
+export type Vec[T type] struct {
+    export n T;
+};

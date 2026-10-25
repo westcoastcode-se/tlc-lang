@@ -1,0 +1,15 @@
+type Vec[T type] struct {
+    n T;
+};
+
+type MyAlias[T type] Vec[T];
+
+type Hold[T type] struct {
+    v MyAlias[T];
+};
+
+func main() i32 {
+    var h Hold[i32];
+    h.v.n = 42;
+    return h.v.n;
+}

@@ -1,0 +1,11 @@
+type Num[T type] union {
+    n T;
+};
+
+func main() i32 {
+    var a Num[i32];
+    var b Num[u8];
+    a = b;
+    a.n = 0;
+    return a.n;
+}

@@ -302,8 +302,15 @@ std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t o
                         slot.indirections, slot.optional, slot.is_array, slot.array_len, slot.array_len_name,
                         slot.type_args, loc, &slot.shells, &slot.elem_const, &slot.const_pointee);
     };
-    for (ResultSlot &part : spec.tuple_parts) {
-        subst_slot(subst_slot, part);
+    if (spec.is_tuple) {
+        for (ResultSlot &part : spec.tuple_parts) {
+            subst_slot(subst_slot, part);
+        }
+    } else {
+        // `type MyAlias[T type] Vec[T]` becomes a concrete alias of that specialization.
+        substitute_type(templ.type_params, bounds, spec.type_name, spec.type_package, spec.is_struct, spec.is_enum,
+                        spec.indirections, spec.optional, spec.is_array, spec.array_len, spec.array_len_name,
+                        spec.type_args, loc, &spec.shells, &spec.elem_const, &spec.const_pointee);
     }
     register_one_typedef(spec);
     Type made;
@@ -514,6 +521,8 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     info.extern_c = spec.extern_c;
     info.align = spec.align;
     info.is_union = spec.is_union;
+    info.tag_name = spec.tag_name;
+    info.tag_package = spec.tag_package;
     info.template_name = templ->name;
     info.spec_args = bounds;
     structs_.push_back(std::move(info));
@@ -541,7 +550,8 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             field_type.is_const = true;
         }
         StructInfo::Field stored{field.name, std::move(field_type), field.loc, field.exported};
-        if (field.init != nullptr) {
+        // A union arm is not a field value. The template already reports that initializer.
+        if (field.init != nullptr && !spec.is_union) {
             stored.has_init = true;
             stored.init = field.init.get();
         }
@@ -549,11 +559,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     }
     structs_[static_cast<std::size_t>(id)].complete = true;
     if (spec.is_union) {
-        for (const FieldDecl &field : spec.fields) {
-            if (field.init != nullptr) {
-                error(field.loc, "not supported yet");
-            }
-        }
+        bind_union_tag(structs_[static_cast<std::size_t>(id)]);
     } else {
         // The value is checked in the struct's file, not in the call that instantiates it.
         std::vector<Scope> saved_scopes = std::move(scopes_);

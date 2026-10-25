@@ -736,7 +736,7 @@ int run_sema_tests() {
             "  var tag Tag[i32];\n"
             "  return tag.id();\n"
             "}\n");
-        EXPECT_EQ(check, errors, "");
+        EXPECT_HAS(check, errors, "unused parameter");
     }
 
     {
@@ -1370,7 +1370,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Integer i32;\n"
-            "func Integer::id[T type](self this) i32 { return 0; }\n"
+            "func Integer::id[T type](self this, value T) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -7040,7 +7040,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Point struct { x i32; };\n"
-            "extern func Point::id[T type](self this) i32 { return 0; }\n"
+            "extern func Point::id[T type](self this, value T) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT(check, errors.empty());
     }
@@ -7173,7 +7173,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "type Vec[T type] struct { n i32; };\n"
+            "type Vec[T type] struct { n T; };\n"
             "func Vec[T]::get[U type](self *this, value U) U { return value; }\n"
             "func Vec[T]::keep[U type](self *this, value U) i32 { return self.n; }\n"
             "func main() i32 {\n"
@@ -7205,7 +7205,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "type Vec[T type] struct { n i32; };\n"
+            "type Vec[T type] struct { n T; };\n"
             "export func Vec[T]::get[U type](self *this, value U) U { return value; }\n"
             "func main() i32 {\n"
             "  var v Vec[i32] = {.n = 1};\n"
@@ -7216,7 +7216,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "type Vec[T type] struct { n i32; };\n"
+            "type Vec[T type] struct { n T; };\n"
             "func Vec[T]::make[U type](value U) U { return value; }\n"
             "func main() i32 { return Vec[i32].make[i32](42); }\n");
         EXPECT_EQ(check, errors, "");
@@ -7432,7 +7432,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "type Vec[T type] struct { n i32; };\n"
+            "type Vec[T type] struct { n T; };\n"
             "export func Vec[T]::get(self *this) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_EQ(check, errors, "");
@@ -7440,7 +7440,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "type Vec[T type] struct { n i32; };\n"
+            "type Vec[T type] struct { n T; };\n"
             "extern func Vec[T]::from() i32;\n"
             "func main() i32 { return 0; }\n");
         EXPECT_EQ(check, errors, "");

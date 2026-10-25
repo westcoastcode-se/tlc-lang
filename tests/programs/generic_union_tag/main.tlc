@@ -1,0 +1,18 @@
+type Arm[T type] struct {
+    value T;
+};
+
+type Kind enum {
+    One,
+    Two,
+};
+
+type Shape[T type] union(Kind) {
+    One Arm[T];
+    Two Arm[T];
+};
+
+func main() i32 {
+    var shape Shape[i32] = {.One = {.value = 42}};
+    return shape.One.value;
+}

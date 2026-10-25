@@ -1,0 +1,7 @@
+import "math";
+
+func main() i32 {
+    var a math.MyAlias[i32];
+    a.n = 42;
+    return a.n;
+}

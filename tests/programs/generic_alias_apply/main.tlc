@@ -1,0 +1,11 @@
+type Vec[T type] struct {
+    n T;
+};
+
+type MyAlias[T type] Vec[T];
+
+func main() i32 {
+    var a MyAlias[i32];
+    a.n = 42;
+    return a.n;
+}

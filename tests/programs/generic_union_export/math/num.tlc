@@ -1,0 +1,6 @@
+package math;
+
+export type Num[T type] union {
+    n T;
+    m T;
+};

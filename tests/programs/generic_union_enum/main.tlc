@@ -1,0 +1,8 @@
+type Name[T type] enum {
+    Red,
+    Blue = 40,
+};
+
+func main() i32 {
+    return 0;
+}

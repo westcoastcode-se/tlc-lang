@@ -1,0 +1,10 @@
+type Buf[N i32] struct {
+    n i32;
+    raw [N]u8;
+};
+
+type MyAlias[N i32] Buf[N];
+
+func main() i32 {
+    return 0;
+}

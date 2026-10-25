@@ -1,0 +1,5 @@
+type Name[T type] (T);
+
+func main() i32 {
+    return 0;
+}

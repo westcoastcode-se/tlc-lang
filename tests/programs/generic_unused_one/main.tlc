@@ -1,0 +1,5 @@
+type Pair[T type, U type] (T, i32);
+
+func main() i32 {
+    return 0;
+}

@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `i32`, and it does not convert to its representation. `type Color enum {}` has no enumerators. `sizeof(Color)` is 4. `Color.Red` is reported as `undeclared identifier`. The semicolon after `}` may be omitted.
+An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `i32`, and it does not convert to its representation. `type Color enum {}` has no enumerators. `sizeof(Color)` is 4. `Color.Red` is reported as `undeclared identifier`. The semicolon after `}` may be omitted. An enum does not take type parameters. `type Name[T type] enum` is not a form and is reported as `not supported yet`.
 
 ```c
 type Color enum {

@@ -16,12 +16,6 @@ func take(value Marker) i32 {
     return value.id();
 }
 
-type Tag[T type] struct {}
-
-func Tag[T]::id(self this) i32 {
-    return 1;
-}
-
 func keep[T type](value T) T {
     return value;
 }
@@ -43,10 +37,6 @@ func main() i32 {
     }
     if (take(e) != 7) {
         return 3;
-    }
-    var tag Tag[i32];
-    if (sizeof(tag) != 0 || tag.id() != 1 || take(tag) != 1) {
-        return 4;
     }
     var again = keep(e);
     if (again.id() != 7 || sizeof(again) != 0) {

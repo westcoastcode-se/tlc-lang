@@ -11,3 +11,7 @@ export type Vec[T type] struct {
 export type Buf[N i32, T type] struct {
     export n T;
 };
+
+func Buf[N, T]::width() i32 {
+    return N;
+}

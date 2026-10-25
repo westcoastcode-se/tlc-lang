@@ -1593,9 +1593,21 @@ bool Parser::looks_like_type_params() const {
             if (depth == 0) {
                 const TokenKind next = peek(ahead + 1).kind;
                 // `type Something[K type, V type] (K, V)`. A tuple alias takes the list.
-                // `type Name[T type] i32` stays an array length.
-                return named && (next == TokenKind::KwStruct || next == TokenKind::KwEnum || next == TokenKind::KwTrait ||
-                                 next == TokenKind::KwUnion || next == TokenKind::LParen);
+                // `type MyAlias[T type] Vec[T]` and `type MyAlias[T type] pkg.Vec[T]` name another
+                // generic type. `type Name[T type] i32` stays an array length. `enum` is included so
+                // `type Name[T type] enum` is one error. An enum does not take the list.
+                if (!named) {
+                    return false;
+                }
+                if (next == TokenKind::KwStruct || next == TokenKind::KwEnum || next == TokenKind::KwTrait ||
+                    next == TokenKind::KwUnion || next == TokenKind::LParen) {
+                    return true;
+                }
+                if (next == TokenKind::Identifier && peek(ahead + 2).kind == TokenKind::LBracket) {
+                    return true;
+                }
+                return next == TokenKind::Identifier && peek(ahead + 2).kind == TokenKind::Dot &&
+                       peek(ahead + 3).kind == TokenKind::Identifier && peek(ahead + 4).kind == TokenKind::LBracket;
             }
             continue;
         }

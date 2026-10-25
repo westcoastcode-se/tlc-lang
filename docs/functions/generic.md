@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: Comptime](comptime.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-A generic function names its parameters in brackets. `T type` is a type. `N i32` is a compile-time integer. `T Shape` is a type that must have the methods and the fields of the trait `Shape`. One body is specialized for each call. There is no `impl` and no runtime table.
+A generic function names its parameters in brackets. `T type` is a type. `N i32` is a compile-time integer. `T Shape` is a type that must have the methods and the fields of the trait `Shape`. One body is specialized for each call. There is no `impl` and no runtime table. A parameter the function does not use is `unused parameter`. The name has to appear in the signature or the body. `func id[T type](n i32) i32` is that error. `func width[N i32](n i32) i32` is that error when the body does not read `N`. `sizeof(T)` uses `T`.
 
 ```c
 func id[T type](value T) T {

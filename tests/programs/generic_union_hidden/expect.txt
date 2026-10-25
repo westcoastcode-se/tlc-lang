@@ -1,0 +1,1 @@
+compile-error: Hidden is not exported

@@ -1,0 +1,13 @@
+type Pair[K type, V type] struct {
+    k K;
+    v V;
+};
+
+type MyAlias[K type, V type] Pair[K, V];
+
+func main() i32 {
+    var a MyAlias[i32, i32];
+    a.k = 40;
+    a.v = 2;
+    return a.k + a.v;
+}

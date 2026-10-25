@@ -1,0 +1,9 @@
+import "math";
+
+type MyAlias[T type] math.Vec[T];
+
+func main() i32 {
+    var a MyAlias[i32];
+    a.n = 42;
+    return a.n;
+}

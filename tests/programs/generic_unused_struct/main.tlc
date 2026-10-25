@@ -1,0 +1,9 @@
+type Tag[T type] struct {}
+
+func Tag[T]::id(self this) i32 {
+    return 1;
+}
+
+func main() i32 {
+    return 0;
+}

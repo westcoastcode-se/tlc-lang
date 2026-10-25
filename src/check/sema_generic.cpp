@@ -4,6 +4,9 @@
 
 #include "check/generic.hpp"
 
+#include <type_traits>
+#include <unordered_set>
+
 namespace tlc {
 
 const SpecArg *find_arg(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, const std::string &name) {
@@ -472,7 +475,653 @@ std::string generic_list_suffix(const FunctionDecl &fn) {
     return out;
 }
 
+namespace {
+
+// Names already bound. A type parameter hidden by a nested parameter is not a use of the outer one.
+// A value binding hides the name in an expression. It does not hide the name in a type.
+struct Shadow {
+    std::unordered_set<std::string> types;
+    std::unordered_set<std::string> values;
+};
+
+using Used = std::unordered_set<std::string>;
+
+void note_type(Used &used, const Shadow &shadow, const std::string &name) {
+    if (name.empty() || shadow.types.contains(name)) {
+        return;
+    }
+    used.insert(name);
+}
+
+void note_value(Used &used, const Shadow &shadow, const std::string &name) {
+    if (name.empty() || shadow.types.contains(name) || shadow.values.contains(name)) {
+        return;
+    }
+    used.insert(name);
+}
+
+void note_type_arg(Used &used, const Shadow &shadow, const TypeArg &arg);
+void note_fn_param(Used &used, const Shadow &shadow, const FnParam &param);
+void note_slot(Used &used, const Shadow &shadow, const ResultSlot &slot);
+void note_expr(Used &used, const Shadow &shadow, const Expr &expr);
+void note_stmt(Used &used, Shadow &shadow, const Stmt &stmt);
+void note_function(Used &used, Shadow shadow, const FunctionDecl &fn, bool hide_type_params);
+
+void note_type_arg(Used &used, const Shadow &shadow, const TypeArg &arg) {
+    if (arg.type_package.empty()) {
+        if (arg.is_value) {
+            note_value(used, shadow, arg.type_name);
+        } else {
+            note_type(used, shadow, arg.type_name);
+        }
+    }
+    note_value(used, shadow, arg.array_len_name);
+    for (const TypeShell &shell : arg.shells) {
+        note_value(used, shadow, shell.length_name);
+    }
+    for (const TypeArg &nested : arg.args) {
+        note_type_arg(used, shadow, nested);
+    }
+}
+
+void note_fn_param(Used &used, const Shadow &shadow, const FnParam &param) {
+    if (param.type_package.empty()) {
+        note_type(used, shadow, param.type_name);
+    }
+    for (const TypeShell &shell : param.shells) {
+        note_value(used, shadow, shell.length_name);
+    }
+    for (const TypeArg &arg : param.type_args) {
+        note_type_arg(used, shadow, arg);
+    }
+    for (const FnParam &nested : param.params) {
+        note_fn_param(used, shadow, nested);
+    }
+    for (const FnParam &nested : param.results) {
+        note_fn_param(used, shadow, nested);
+    }
+}
+
+void note_slot(Used &used, const Shadow &shadow, const ResultSlot &slot) {
+    if (slot.type_package.empty()) {
+        note_type(used, shadow, slot.type_name);
+    }
+    note_value(used, shadow, slot.array_len_name);
+    for (const TypeShell &shell : slot.shells) {
+        note_value(used, shadow, shell.length_name);
+    }
+    for (const TypeArg &arg : slot.type_args) {
+        note_type_arg(used, shadow, arg);
+    }
+    for (const FnParam &param : slot.fn_params) {
+        note_fn_param(used, shadow, param);
+    }
+    for (const FnParam &result : slot.fn_results) {
+        note_fn_param(used, shadow, result);
+    }
+    for (const ResultSlot &part : slot.tuple_parts) {
+        note_slot(used, shadow, part);
+    }
+}
+
+void note_field(Used &used, const Shadow &shadow, const FieldDecl &field) {
+    if (field.type_package.empty()) {
+        note_type(used, shadow, field.type_name);
+    }
+    note_value(used, shadow, field.array_len_name);
+    for (const TypeShell &shell : field.shells) {
+        note_value(used, shadow, shell.length_name);
+    }
+    for (const TypeArg &arg : field.type_args) {
+        note_type_arg(used, shadow, arg);
+    }
+    for (const FnParam &param : field.fn_params) {
+        note_fn_param(used, shadow, param);
+    }
+    for (const FnParam &result : field.fn_results) {
+        note_fn_param(used, shadow, result);
+    }
+    for (const ResultSlot &part : field.tuple_parts) {
+        note_slot(used, shadow, part);
+    }
+    if (field.init != nullptr) {
+        note_expr(used, shadow, *field.init);
+    }
+    for (const FieldDecl &inner : field.inline_fields) {
+        note_field(used, shadow, inner);
+    }
+}
+
+void note_param(Used &used, const Shadow &shadow, const Param &param) {
+    if (param.type_package.empty()) {
+        note_type(used, shadow, param.type_name);
+    }
+    note_value(used, shadow, param.array_len_name);
+    for (const TypeShell &shell : param.shells) {
+        note_value(used, shadow, shell.length_name);
+    }
+    for (const TypeArg &arg : param.type_args) {
+        note_type_arg(used, shadow, arg);
+    }
+    for (const FnParam &fn : param.fn_params) {
+        note_fn_param(used, shadow, fn);
+    }
+    for (const FnParam &result : param.fn_results) {
+        note_fn_param(used, shadow, result);
+    }
+    for (const ResultSlot &part : param.tuple_parts) {
+        note_slot(used, shadow, part);
+    }
+}
+
+void note_var(Used &used, const Shadow &shadow, const VarDecl &var) {
+    if (var.type_package.empty()) {
+        note_type(used, shadow, var.type_name);
+    }
+    note_value(used, shadow, var.array_len_name);
+    for (const TypeShell &shell : var.shells) {
+        note_value(used, shadow, shell.length_name);
+    }
+    for (const TypeArg &arg : var.type_args) {
+        note_type_arg(used, shadow, arg);
+    }
+    for (const FnParam &param : var.fn_params) {
+        note_fn_param(used, shadow, param);
+    }
+    for (const FnParam &result : var.fn_results) {
+        note_fn_param(used, shadow, result);
+    }
+    for (const ResultSlot &part : var.tuple_parts) {
+        note_slot(used, shadow, part);
+    }
+    if (var.init != nullptr) {
+        note_expr(used, shadow, *var.init);
+    }
+}
+
+void note_typedef(Used &used, const TypedefDecl &item) {
+    const Shadow shadow;
+    if (item.type_package.empty()) {
+        note_type(used, shadow, item.type_name);
+    }
+    note_value(used, shadow, item.array_len_name);
+    for (const TypeShell &shell : item.shells) {
+        note_value(used, shadow, shell.length_name);
+    }
+    for (const TypeArg &arg : item.type_args) {
+        note_type_arg(used, shadow, arg);
+    }
+    for (const FnParam &param : item.fn_params) {
+        note_fn_param(used, shadow, param);
+    }
+    for (const FnParam &result : item.fn_results) {
+        note_fn_param(used, shadow, result);
+    }
+    for (const ResultSlot &part : item.tuple_parts) {
+        note_slot(used, shadow, part);
+    }
+}
+
+template <typename Node>
+void note_expr_node(Used &used, const Shadow &shadow, const Node &node) {
+    if constexpr (std::is_same_v<Node, Expr::Name>) {
+        note_value(used, shadow, node.text);
+    } else if constexpr (std::is_same_v<Node, Expr::Unary>) {
+        if (node.expr != nullptr) {
+            note_expr(used, shadow, *node.expr);
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Binary>) {
+        if (node.lhs != nullptr) {
+            note_expr(used, shadow, *node.lhs);
+        }
+        if (node.rhs != nullptr) {
+            note_expr(used, shadow, *node.rhs);
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Assign>) {
+        if (node.lhs != nullptr) {
+            note_expr(used, shadow, *node.lhs);
+        }
+        if (node.rhs != nullptr) {
+            note_expr(used, shadow, *node.rhs);
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Call>) {
+        if (node.callee != nullptr) {
+            note_expr(used, shadow, *node.callee);
+        }
+        for (const TypeArg &arg : node.type_args) {
+            note_type_arg(used, shadow, arg);
+        }
+        for (const std::unique_ptr<Expr> &arg : node.args) {
+            if (arg != nullptr) {
+                note_expr(used, shadow, *arg);
+            }
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Selector>) {
+        if (node.base != nullptr) {
+            note_expr(used, shadow, *node.base);
+        }
+        for (const TypeArg &arg : node.type_args) {
+            note_type_arg(used, shadow, arg);
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Index>) {
+        if (node.base != nullptr) {
+            note_expr(used, shadow, *node.base);
+        }
+        if (node.index != nullptr) {
+            note_expr(used, shadow, *node.index);
+        }
+        if (node.end != nullptr) {
+            note_expr(used, shadow, *node.end);
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Sizeof> || std::is_same_v<Node, Expr::Typeof>) {
+        if (node.type_package.empty()) {
+            note_type(used, shadow, node.type_name);
+        }
+        for (const TypeShell &shell : node.shells) {
+            note_value(used, shadow, shell.length_name);
+        }
+        if (node.expr != nullptr) {
+            note_expr(used, shadow, *node.expr);
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Cast>) {
+        if (node.type_package.empty()) {
+            note_type(used, shadow, node.type_name);
+        }
+        for (const TypeArg &arg : node.type_args) {
+            note_type_arg(used, shadow, arg);
+        }
+        for (const FnParam &param : node.fn_params) {
+            note_fn_param(used, shadow, param);
+        }
+        for (const FnParam &result : node.fn_results) {
+            note_fn_param(used, shadow, result);
+        }
+        if (node.expr != nullptr) {
+            note_expr(used, shadow, *node.expr);
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Func>) {
+        if (node.decl != nullptr) {
+            note_function(used, shadow, *node.decl, true);
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Init>) {
+        if (node.type_package.empty()) {
+            note_type(used, shadow, node.type_name);
+        }
+        note_value(used, shadow, node.elem_array_len_name);
+        for (const TypeShell &shell : node.elem_shells) {
+            note_value(used, shadow, shell.length_name);
+        }
+        for (const TypeArg &arg : node.type_args) {
+            note_type_arg(used, shadow, arg);
+        }
+        for (const FnParam &param : node.elem_fn_params) {
+            note_fn_param(used, shadow, param);
+        }
+        for (const FnParam &result : node.elem_fn_results) {
+            note_fn_param(used, shadow, result);
+        }
+        for (const Expr::FieldInit &field : node.fields) {
+            if (field.value != nullptr) {
+                note_expr(used, shadow, *field.value);
+            }
+        }
+        for (const std::unique_ptr<Expr> &element : node.elements) {
+            if (element != nullptr) {
+                note_expr(used, shadow, *element);
+            }
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::New>) {
+        if (node.allocator != nullptr) {
+            note_expr(used, shadow, *node.allocator);
+        }
+        if (node.type_package.empty()) {
+            note_type(used, shadow, node.type_name);
+        }
+        for (const TypeArg &arg : node.type_args) {
+            note_type_arg(used, shadow, arg);
+        }
+        if (node.count != nullptr) {
+            note_expr(used, shadow, *node.count);
+        }
+        if (node.init != nullptr) {
+            note_expr(used, shadow, *node.init);
+        }
+    } else if constexpr (std::is_same_v<Node, Expr::Delete>) {
+        if (node.allocator != nullptr) {
+            note_expr(used, shadow, *node.allocator);
+        }
+        if (node.expr != nullptr) {
+            note_expr(used, shadow, *node.expr);
+        }
+    } else {
+        (void)used;
+        (void)shadow;
+        (void)node;
+    }
+}
+
+void note_expr(Used &used, const Shadow &shadow, const Expr &expr) {
+    std::visit([&](const auto &node) { note_expr_node(used, shadow, node); }, expr.data);
+}
+
+void note_function(Used &used, Shadow shadow, const FunctionDecl &fn, bool hide_type_params) {
+    if (hide_type_params) {
+        for (const TypeParam &param : fn.type_params) {
+            if (param.name.empty()) {
+                continue;
+            }
+            shadow.types.insert(param.name);
+            shadow.values.insert(param.name);
+        }
+    }
+    for (const Param &param : fn.params) {
+        note_param(used, shadow, param);
+        if (!param.name.empty()) {
+            shadow.values.insert(param.name);
+        }
+    }
+    if (fn.type_package.empty()) {
+        note_type(used, shadow, fn.return_type);
+    }
+    for (const ResultSlot &slot : fn.results) {
+        note_slot(used, shadow, slot);
+    }
+    for (const std::unique_ptr<Expr> &expr : fn.result_typeof) {
+        if (expr != nullptr) {
+            note_expr(used, shadow, *expr);
+        }
+    }
+    if (fn.body != nullptr) {
+        note_stmt(used, shadow, *fn.body);
+    }
+}
+
+template <typename Node>
+void note_stmt_node(Used &used, Shadow &shadow, const Node &node) {
+    if constexpr (std::is_same_v<Node, Stmt::Block>) {
+        Shadow inner = shadow;
+        for (const std::unique_ptr<Stmt> &child : node.statements) {
+            if (child != nullptr) {
+                note_stmt(used, inner, *child);
+            }
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::Return>) {
+        if (node.value != nullptr) {
+            note_expr(used, shadow, *node.value);
+        }
+        for (const std::unique_ptr<Expr> &extra : node.extra) {
+            if (extra != nullptr) {
+                note_expr(used, shadow, *extra);
+            }
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::Expression>) {
+        if (node.expr != nullptr) {
+            note_expr(used, shadow, *node.expr);
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::If>) {
+        if (node.cond != nullptr) {
+            note_expr(used, shadow, *node.cond);
+        }
+        if (node.then_arm != nullptr) {
+            note_stmt(used, shadow, *node.then_arm);
+        }
+        if (node.else_arm != nullptr) {
+            note_stmt(used, shadow, *node.else_arm);
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::While>) {
+        if (node.cond != nullptr) {
+            note_expr(used, shadow, *node.cond);
+        }
+        if (node.body != nullptr) {
+            note_stmt(used, shadow, *node.body);
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::For>) {
+        if (node.each) {
+            if (node.each_expr != nullptr) {
+                note_expr(used, shadow, *node.each_expr);
+            }
+            Shadow inner = shadow;
+            if (!node.each_name.empty()) {
+                inner.values.insert(node.each_name);
+            }
+            if (node.body != nullptr) {
+                note_stmt(used, inner, *node.body);
+            }
+            return;
+        }
+        Shadow inner = shadow;
+        if (node.init != nullptr) {
+            note_stmt(used, inner, *node.init);
+        }
+        if (node.cond != nullptr) {
+            note_expr(used, inner, *node.cond);
+        }
+        if (node.step != nullptr) {
+            note_expr(used, inner, *node.step);
+        }
+        if (node.body != nullptr) {
+            note_stmt(used, inner, *node.body);
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::DoWhile>) {
+        if (node.body != nullptr) {
+            note_stmt(used, shadow, *node.body);
+        }
+        if (node.cond != nullptr) {
+            note_expr(used, shadow, *node.cond);
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::Switch>) {
+        if (node.cond != nullptr) {
+            note_expr(used, shadow, *node.cond);
+        }
+        if (node.body != nullptr) {
+            note_stmt(used, shadow, *node.body);
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::Case>) {
+        if (node.value != nullptr) {
+            note_expr(used, shadow, *node.value);
+        }
+        if (node.stmt != nullptr) {
+            note_stmt(used, shadow, *node.stmt);
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::Decl>) {
+        for (const VarDecl &var : node.vars) {
+            note_var(used, shadow, var);
+            if (!var.name.empty()) {
+                shadow.values.insert(var.name);
+            }
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::Func>) {
+        if (node.decl != nullptr) {
+            note_function(used, shadow, *node.decl, true);
+            if (!node.decl->name.empty()) {
+                shadow.values.insert(node.decl->name);
+            }
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::Defer>) {
+        if (node.call != nullptr) {
+            note_expr(used, shadow, *node.call);
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::Bind>) {
+        if (node.value != nullptr) {
+            note_expr(used, shadow, *node.value);
+        }
+        for (const std::string &name : node.names) {
+            if (!name.empty()) {
+                shadow.values.insert(name);
+            }
+        }
+    } else if constexpr (std::is_same_v<Node, Stmt::Assert>) {
+        if (node.cond != nullptr) {
+            note_expr(used, shadow, *node.cond);
+        }
+    } else {
+        (void)used;
+        (void)shadow;
+        (void)node;
+    }
+}
+
+void note_stmt(Used &used, Shadow &shadow, const Stmt &stmt) {
+    std::visit([&](const auto &node) { note_stmt_node(used, shadow, node); }, stmt.data);
+}
+
+// Methods and associated variables of `owner` in this file. `Vec[T]` on the method is not a use.
+void note_members(Used &used, const TranslationUnit &unit, const std::string &owner) {
+    if (owner.empty()) {
+        return;
+    }
+    const Shadow shadow;
+    for (const TopDecl &decl : unit.decls) {
+        if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+            if (fn->method_struct == owner) {
+                note_function(used, shadow, *fn, true);
+            }
+        } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (var->owner == owner) {
+                note_var(used, shadow, *var);
+            }
+        }
+    }
+}
+
+} // namespace
+
+bool Checker::mark_unused_parameters(const std::vector<TypeParam> &params, const std::unordered_set<std::string> &used) {
+    bool unused = false;
+    for (const TypeParam &param : params) {
+        if (param.name.empty() || param.is_pack) {
+            continue;
+        }
+        if (used.contains(param.name)) {
+            continue;
+        }
+        error(param.loc, "unused parameter");
+        unused = true;
+    }
+    return unused;
+}
+
+void Checker::reject_function_generics(const FunctionDecl &fn) {
+    if (!fn.generic_instance && !fn.type_params.empty()) {
+        Used used;
+        note_function(used, Shadow{}, fn, false);
+        mark_unused_parameters(fn.type_params, used);
+    }
+    if (fn.body == nullptr) {
+        return;
+    }
+    const auto walk = [&](const auto &self, const Stmt &stmt) -> void {
+        if (const auto *nested = std::get_if<Stmt::Func>(&stmt.data)) {
+            if (nested->decl != nullptr) {
+                reject_function_generics(*nested->decl);
+            }
+        }
+        std::visit(
+            [&](const auto &node) {
+                if constexpr (std::is_same_v<decltype(node), const Stmt::Block &>) {
+                    for (const std::unique_ptr<Stmt> &child : node.statements) {
+                        if (child != nullptr) {
+                            self(self, *child);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<decltype(node), const Stmt::If &>) {
+                    if (node.then_arm != nullptr) {
+                        self(self, *node.then_arm);
+                    }
+                    if (node.else_arm != nullptr) {
+                        self(self, *node.else_arm);
+                    }
+                } else if constexpr (std::is_same_v<decltype(node), const Stmt::While &> ||
+                                     std::is_same_v<decltype(node), const Stmt::DoWhile &>) {
+                    if (node.body != nullptr) {
+                        self(self, *node.body);
+                    }
+                } else if constexpr (std::is_same_v<decltype(node), const Stmt::For &>) {
+                    if (node.init != nullptr) {
+                        self(self, *node.init);
+                    }
+                    if (node.body != nullptr) {
+                        self(self, *node.body);
+                    }
+                } else if constexpr (std::is_same_v<decltype(node), const Stmt::Switch &>) {
+                    if (node.body != nullptr) {
+                        self(self, *node.body);
+                    }
+                } else if constexpr (std::is_same_v<decltype(node), const Stmt::Case &>) {
+                    if (node.stmt != nullptr) {
+                        self(self, *node.stmt);
+                    }
+                } else if constexpr (std::is_same_v<decltype(node), const Stmt::Expression &>) {
+                    if (node.expr != nullptr && std::holds_alternative<Expr::Func>(node.expr->data)) {
+                        const auto &func = std::get<Expr::Func>(node.expr->data);
+                        if (func.decl != nullptr) {
+                            reject_function_generics(*func.decl);
+                        }
+                    }
+                }
+            },
+            stmt.data);
+    };
+    walk(walk, *fn.body);
+}
+
+void Checker::reject_unused_generics(TranslationUnit &unit) {
+    for (TopDecl &decl : unit.decls) {
+        if (auto *item = std::get_if<StructDecl>(&decl.data)) {
+            if (item->name.empty() || item->type_params.empty()) {
+                continue;
+            }
+            Used used;
+            const Shadow shadow;
+            for (const FieldDecl &field : item->fields) {
+                note_field(used, shadow, field);
+            }
+            if (item->tag_package.empty()) {
+                note_type(used, shadow, item->tag_name);
+            }
+            note_members(used, unit, item->name);
+            mark_unused_parameters(item->type_params, used);
+            continue;
+        }
+        if (auto *trait = std::get_if<TraitDecl>(&decl.data)) {
+            if (!trait->type_params.empty()) {
+                Used used;
+                const Shadow shadow;
+                for (const FieldDecl &field : trait->fields) {
+                    note_field(used, shadow, field);
+                }
+                for (const FunctionDecl &method : trait->methods) {
+                    note_function(used, shadow, method, true);
+                }
+                note_members(used, unit, trait->name);
+                mark_unused_parameters(trait->type_params, used);
+            }
+            for (const FunctionDecl &method : trait->methods) {
+                reject_function_generics(method);
+            }
+            continue;
+        }
+        if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+            reject_function_generics(*fn);
+            continue;
+        }
+        if (auto *alias = std::get_if<TypedefDecl>(&decl.data)) {
+            if (alias->name.empty() || alias->type_params.empty()) {
+                continue;
+            }
+            Used used;
+            note_typedef(used, *alias);
+            note_members(used, unit, alias->name);
+            if (mark_unused_parameters(alias->type_params, used)) {
+                alias->name.clear();
+                alias->type_params.clear();
+            }
+        }
+    }
+}
+
 void Checker::collect_templates(TranslationUnit &unit, uint32_t file_id) {
+    reject_unused_generics(unit);
     std::unordered_set<std::string> generic_structs;
     for (const TopDecl &decl : unit.decls) {
         const auto *item = std::get_if<StructDecl>(&decl.data);

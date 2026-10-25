@@ -878,11 +878,22 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
             if (type_pack) {
                 continue;
             }
-            // A C type is one concrete layout. A generic struct is specialized per use.
+            // A C type is one concrete layout. A generic struct or union is specialized per use.
+            // `extern` on that union stays rejected. An empty untagged union is not a type.
             if (item->extern_c) {
                 error(item->loc, "extern(abi=\"c\") on a trait or a generic");
-            } else if (item->is_extern || item->is_union) {
+            } else if (item->is_extern) {
                 error(item->loc, "not supported yet");
+            }
+            if (item->is_union && item->fields.empty() && item->tag_name.empty()) {
+                error(item->loc, "not supported yet");
+            }
+            if (item->is_union) {
+                for (const FieldDecl &field : item->fields) {
+                    if (field.init != nullptr) {
+                        error(field.loc, "not supported yet");
+                    }
+                }
             }
             owned_structs_.push_back(*item);
             struct_templates_[file_id][item->name] = &owned_structs_.back();
@@ -1602,68 +1613,72 @@ int Checker::imported_enum(uint32_t file, const std::string &package, const std:
     return member->type.enum_id;
 }
 
+void Checker::bind_union_tag(StructInfo &info) {
+    if (info.tag_name.empty()) {
+        return;
+    }
+    file_id_ = info.file_id;
+    int enum_id = -1;
+    if (!info.tag_package.empty()) {
+        // Package names are not bound yet. The import edge names the package.
+        enum_id = imported_enum(info.file_id, info.tag_package, info.tag_name, info.loc);
+        if (enum_id < 0) {
+            return;
+        }
+    } else {
+        enum_id = find_enum(info.file_id, info.tag_name);
+    }
+    if (info.tag_package.empty() && enum_id < 0) {
+        Type alias;
+        if (package_typedef(info.file_id, info.tag_name, alias)) {
+            if (alias.kind == TypeKind::Enum) {
+                enum_id = alias.enum_id;
+            } else {
+                error(info.loc, "type mismatch");
+                return;
+            }
+        } else if (find_tag(info.file_id, info.tag_name) >= 0 || package_trait(info.file_id, info.tag_name) >= 0) {
+            error(info.loc, "type mismatch");
+            return;
+        } else {
+            error(info.loc, "undeclared identifier");
+            return;
+        }
+    }
+    if (enum_id < 0 || enum_id >= static_cast<int>(enum_types_.size())) {
+        error(info.loc, "type mismatch");
+        return;
+    }
+    info.tag_enum = enum_id;
+    const EnumInfo &enumeration = enum_types_[static_cast<std::size_t>(enum_id)];
+    for (const StructInfo::Field &field : info.fields) {
+        if (find_enum_member(enum_id, field.name) == nullptr) {
+            error(field.loc, "undeclared identifier");
+        }
+        // An invalid arm was already diagnosed. A second type mismatch adds nothing.
+        if (field.type.kind != TypeKind::Invalid &&
+            (field.type.kind != TypeKind::Struct || field.type.struct_id < 0 ||
+             field.type.struct_id >= static_cast<int>(structs_.size()) ||
+             structs_[static_cast<std::size_t>(field.type.struct_id)].is_union)) {
+            error(field.loc, "type mismatch");
+        }
+    }
+    for (const EnumInfo::Member &member : enumeration.members) {
+        bool found = false;
+        for (const StructInfo::Field &field : info.fields) {
+            if (field.name == member.name) {
+                found = true;
+            }
+        }
+        if (!found) {
+            error(info.loc, "type mismatch");
+        }
+    }
+}
+
 void Checker::check_unions() {
     for (StructInfo &info : structs_) {
-        if (info.tag_name.empty()) {
-            continue;
-        }
-        file_id_ = info.file_id;
-        int enum_id = -1;
-        if (!info.tag_package.empty()) {
-            // Package names are not bound yet. The import edge names the package.
-            enum_id = imported_enum(info.file_id, info.tag_package, info.tag_name, info.loc);
-            if (enum_id < 0) {
-                continue;
-            }
-        } else {
-            enum_id = find_enum(info.file_id, info.tag_name);
-        }
-        if (info.tag_package.empty() && enum_id < 0) {
-            Type alias;
-            if (package_typedef(info.file_id, info.tag_name, alias)) {
-                if (alias.kind == TypeKind::Enum) {
-                    enum_id = alias.enum_id;
-                } else {
-                    error(info.loc, "type mismatch");
-                    continue;
-                }
-            } else if (find_tag(info.file_id, info.tag_name) >= 0 || package_trait(info.file_id, info.tag_name) >= 0) {
-                error(info.loc, "type mismatch");
-                continue;
-            } else {
-                error(info.loc, "undeclared identifier");
-                continue;
-            }
-        }
-        if (enum_id < 0 || enum_id >= static_cast<int>(enum_types_.size())) {
-            error(info.loc, "type mismatch");
-            continue;
-        }
-        info.tag_enum = enum_id;
-        const EnumInfo &enumeration = enum_types_[static_cast<std::size_t>(enum_id)];
-        for (const StructInfo::Field &field : info.fields) {
-            if (find_enum_member(enum_id, field.name) == nullptr) {
-                error(field.loc, "undeclared identifier");
-            }
-            // An invalid arm was already diagnosed. A second type mismatch adds nothing.
-            if (field.type.kind != TypeKind::Invalid &&
-                (field.type.kind != TypeKind::Struct || field.type.struct_id < 0 ||
-                 field.type.struct_id >= static_cast<int>(structs_.size()) ||
-                 structs_[static_cast<std::size_t>(field.type.struct_id)].is_union)) {
-                error(field.loc, "type mismatch");
-            }
-        }
-        for (const EnumInfo::Member &member : enumeration.members) {
-            bool found = false;
-            for (const StructInfo::Field &field : info.fields) {
-                if (field.name == member.name) {
-                    found = true;
-                }
-            }
-            if (!found) {
-                error(info.loc, "type mismatch");
-            }
-        }
+        bind_union_tag(info);
     }
 }
 
@@ -1857,7 +1872,10 @@ void Checker::register_tuple_alias_template(const TypedefDecl &item) {
         return;
     }
     // A value parameter or a trait constraint is not this alias. The parser already rejects it.
-    if (!item.is_tuple || item.tuple_parts.size() < 2) {
+    // `type MyAlias[T type] Vec[T]` is the other template. A pointer and a bare name are not.
+    const bool application = !item.is_tuple && !item.type_args.empty() && !item.type_name.empty() &&
+                             item.indirections == 0 && !item.is_array && item.shells.empty() && !item.is_fn_ptr;
+    if ((!item.is_tuple || item.tuple_parts.size() < 2) && !application) {
         error(item.loc, "not supported yet");
         return;
     }

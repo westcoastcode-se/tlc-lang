@@ -121,6 +121,30 @@ retq                             # return
 
 `Num` is 4 bytes. `u.n` and `u.m` are the same memory, so `main` returns 4. A value on one of those fields, `n i32 = 4`, is reported as `not supported yet`. The same value inside an anonymous union field is that error too.
 
+`type Num[T type] union` is that union for each type. A parameter that no field, method, or associated variable uses is `unused parameter`. `Num[i32]` and `Num[u8]` are different types. Assigning one to the other is `type mismatch`. The fields still share one address. `type Buf[N i32] union` takes a compile-time integer. `Buf[4]` names it. A field may be `[N]u8`. `export type Num[T type] union` publishes it. Another package names `pkg.Num[i32]` when `Num` is exported. Without `export` the name is `Num is not exported`. `extern type Num[T type] union` is `not supported yet`. `extern(abi="c") type Num[T type] union` is `extern(abi="c") on a trait or a generic`. An empty `type Num[T type] union {}` is `not supported yet`. A value on a field, `n T = 4`, is `not supported yet`. A method is `func Num[T]::get(self *this) T`. The call is `u.get()`. `type Shape[T type] union(Kind)` is the tagged union. An arm names a struct, including `Arm[T]`. `One struct { value T; }` is `not supported yet`.
+
+```c
+type Num[T type] union {
+    n T;
+    m T;
+};
+
+func main() i32 {
+    var u Num[i32];
+    u.n = 42;
+    return u.m;
+}
+```
+
+```asm
+main:
+movl $42, -8(%rsp)               # constant
+movl -8(%rsp), %eax              # move
+retq                             # return
+```
+
+The program returns 42. `Num[i32]` is 4 bytes. `u.n` and `u.m` are the same memory.
+
 ### C unions
 
 `extern(abi="c") union` is the C union. It does not name an enum. `extern(abi="c") type Name union(Enum)`, a field `data union(Enum)`, and a field whose type is a tagged union, inside an `extern(abi="c")` struct or union, are `extern(abi="c") on a tagged union`. The field may be the union, a pointer to it, an array of it, or an alias of it. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A struct or an untagged union nested inside a C union must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.

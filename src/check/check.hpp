@@ -568,6 +568,8 @@ class Checker {
     bool mentions_tagged_union(const Type &type) const;
     void register_enums(const TranslationUnit &unit, uint32_t file_id);
     void check_unions();
+    // Resolve `union(Kind)` on one struct, including a specialization built later.
+    void bind_union_tag(StructInfo &info);
     // `pkg.Kind` on a union. Reports the diagnostic and returns -1 when the enum is not usable.
     int imported_enum(uint32_t file, const std::string &package, const std::string &name, SourceLoc loc);
     void register_traits(const TranslationUnit &unit, uint32_t file_id);
@@ -585,7 +587,8 @@ class Checker {
     // True when `got` is `want`, or `got`'s parent chain reaches `want`.
     bool trait_is(int got, int want) const;
     void register_typedefs(const TranslationUnit &unit, uint32_t file_id);
-    // `type Something[K type, V type] (K, V)`. The decl is a template, not a concrete alias.
+    // `type Something[K type, V type] (K, V)` and `type MyAlias[T type] Vec[T]`.
+    // The decl is a template, not a concrete alias.
     void register_tuple_alias_template(const TypedefDecl &item);
     bool name_taken(const std::string &name) const;
     Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
@@ -947,6 +950,12 @@ class Checker {
     std::unordered_set<std::string> static_spec_keys_;
 
     void collect_templates(TranslationUnit &unit, uint32_t file_id);
+    // A generic parameter the declaration does not name is `unused parameter`.
+    // A struct, union, trait, or alias also counts a method or an associated variable.
+    // Repeating `Vec[T]` on a method does not use `T`. An unused alias is cleared.
+    void reject_unused_generics(TranslationUnit &unit);
+    bool mark_unused_parameters(const std::vector<TypeParam> &params, const std::unordered_set<std::string> &used);
+    void reject_function_generics(const FunctionDecl &fn);
     void fold_early_consts(TranslationUnit &unit, uint32_t file_id);
     void bind_file_const(VarDecl &var);
     // The type of a file-scope constant. Sets `has_const` when the value folds.

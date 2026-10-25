@@ -1,0 +1,12 @@
+type Num[T type] union {
+    n T;
+    m T;
+};
+
+type MyAlias[T type] Num[T];
+
+func main() i32 {
+    var u MyAlias[i32];
+    u.n = 42;
+    return u.m;
+}
