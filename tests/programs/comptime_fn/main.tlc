@@ -1,0 +1,17 @@
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+type BinOp func (i32, i32) i32;
+
+const op = add;
+const wrapped = BinOp(add);
+
+func take(op comptime func (i32, i32) i32, n i32) i32 {
+    return op(n, 2);
+}
+
+func main() i32 {
+    var n = 40;
+    return take(BinOp(add), n) + take(wrapped, n) + take(add, n) + take(op, n) - 126;
+}

@@ -1,0 +1,13 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+comptime func field(p Point) i32 {
+    return p.x;
+}
+
+func main() i32 {
+    var p = Point{.x = 1, .y = 2};
+    return field(p);
+}

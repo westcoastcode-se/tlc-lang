@@ -23,6 +23,9 @@ struct SpecArg {
     // An enumerator bound to a comptime parameter. The use is `Type.member`, not the integer.
     bool is_enum_value = false;
     std::string enum_member;
+    // A struct, float, alias, or function bound to a comptime parameter. The use is this expression.
+    bool is_constant_expr = false;
+    std::shared_ptr<Expr> constant_expr;
     std::string type_name;
     std::string type_package;
     bool is_struct = false;
@@ -640,6 +643,13 @@ class Checker {
     std::optional<int> fold_mem_compare(const Expr::Call &call);
     // A folded integer, or a constant `[]const u8` in this file. A `var` and a local `const` are not.
     bool argument_is_comptime(const Expr &arg);
+    // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
+    // A `var`, a local `const`, and a tuple are not.
+    bool comptime_constant(const Expr &expr);
+    // That constant, with a file-scope name replaced by its initializer.
+    std::unique_ptr<Expr> comptime_substitute(const Expr &expr);
+    // The piece of a spec name for that expression. Empty when the value has none.
+    std::optional<std::string> comptime_spec_piece(const Expr &expr);
     // An enumerator, or the name of a `comptime` parameter. A method passes it. A generic copy keeps it.
     bool comptime_kept_argument(const Expr &arg);
     // Every `comptime` parameter has a comptime argument. A function with none passes.

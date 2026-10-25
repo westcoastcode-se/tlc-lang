@@ -732,7 +732,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 continue;
                             }
                             check_call_arg(*node.args[i], type_of_param(fn->params[i]));
-                            if (diags_.size() == before && !argument_is_comptime(*node.args[i])) {
+                            if (diags_.size() == before && !argument_is_comptime(*node.args[i]) &&
+                                !comptime_constant(*node.args[i]) && !fold_switch_case(*node.args[i])) {
                                 error(expr_loc(*node.args[i]), "not supported yet");
                             }
                         }

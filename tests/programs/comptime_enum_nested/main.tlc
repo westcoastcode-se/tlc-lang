@@ -1,0 +1,11 @@
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+func main() i32 {
+    func take(order comptime Order) i32 {
+        return 42;
+    }
+    return take(Order.acquire);
+}

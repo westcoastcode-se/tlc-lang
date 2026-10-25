@@ -4,6 +4,8 @@
 
 #include "ast/format.hpp"
 
+#include <cstring>
+
 namespace tlc {
 
 namespace {
@@ -109,6 +111,48 @@ std::unique_ptr<Expr> folded_int(int value, SourceLoc loc) {
     node.value = static_cast<uint64_t>(value);
     expr->data = std::move(node);
     return expr;
+}
+
+// A field of a struct literal, including `literal.inner.x`. A name is not a literal.
+const Expr *const_struct_field(const Expr &object, const std::string &field) {
+    const Expr *cursor = &object;
+    if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
+        if (selector->base == nullptr) {
+            return nullptr;
+        }
+        cursor = const_struct_field(*selector->base, selector->field);
+        if (cursor == nullptr) {
+            return nullptr;
+        }
+    }
+    const auto *init = std::get_if<Expr::Init>(&cursor->data);
+    if (init == nullptr || init->is_tuple || !init->elements.empty()) {
+        return nullptr;
+    }
+    for (const Expr::FieldInit &item : init->fields) {
+        if (item.field == field && item.value != nullptr) {
+            return item.value.get();
+        }
+    }
+    return nullptr;
+}
+
+std::string spec_int_piece(int value) {
+    std::string piece = std::to_string(value);
+    if (!piece.empty() && piece.front() == '-') {
+        piece[0] = 'n';
+    }
+    return piece;
+}
+
+std::string spec_hex(uint64_t bits, int digits) {
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string text(static_cast<std::size_t>(digits), '0');
+    for (int i = digits - 1; i >= 0; --i) {
+        text[static_cast<std::size_t>(i)] = hex[bits & 0x0f];
+        bits >>= 4;
+    }
+    return text;
 }
 
 std::unique_ptr<Expr> folded_string(std::string text, SourceLoc loc) {
@@ -603,6 +647,12 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                         }
                     }
                 }
+                // `Point{.x = 1}.x` is that field. A file-scope name is still loaded. An enumerator is not a field.
+                if (node.base != nullptr) {
+                    if (const Expr *field = const_struct_field(*node.base, node.field)) {
+                        return fold_int(*field);
+                    }
+                }
                 const auto folded_assoc = [&](uint32_t file, const std::string &owner) -> std::optional<int> {
                     const AssocVar *var = find_assoc_in(file, owner, node.field);
                     if (var == nullptr || !var->is_const || !var->has_const) {
@@ -781,6 +831,182 @@ bool Checker::argument_is_comptime(const Expr &arg) {
         }
     }
     return true;
+}
+
+bool Checker::comptime_constant(const Expr &expr) {
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
+        // A tuple stays `not supported yet`. An array literal is not this value.
+        if (init->is_tuple || !init->elements.empty() || init->array_literal) {
+            return false;
+        }
+        return constant_operand(expr);
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        const Symbol *symbol = lookup(named->text);
+        if (symbol == nullptr) {
+            return false;
+        }
+        // `add`. A local function is not a file-scope constant.
+        if (symbol->is_function && !symbol->is_local_function && symbol->function_id == 0) {
+            return true;
+        }
+        if (!symbol->is_constant || symbol->is_auto) {
+            return false;
+        }
+        const Type &type = symbol->type;
+        if (type.kind == TypeKind::Float || type.kind == TypeKind::Struct || type.alias_id != 0 || fn_pointer(type)) {
+            return true;
+        }
+        return false;
+    }
+    if (std::holds_alternative<Expr::Float>(expr.data)) {
+        return true;
+    }
+    if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+        // `Integer(4)` and `BinOp(add)`. A cast of a `var` is not a constant.
+        return cast->expr != nullptr && cast->indirections == 0 && constant_operand(*cast->expr);
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        if (unary->postfix || unary->expr == nullptr ||
+            (unary->op != TokenKind::Plus && unary->op != TokenKind::Minus)) {
+            return false;
+        }
+        return comptime_constant(*unary->expr);
+    }
+    if (std::holds_alternative<Expr::Binary>(expr.data)) {
+        const std::optional<FoldedNumber> number = fold_number(expr);
+        return number.has_value() && number->is_float;
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        // An enumerator is a separate comptime value. `.len` is an integer.
+        if (selector->base != nullptr) {
+            const int id = enum_designator(*selector->base);
+            if (id >= 0 && find_enum_member(id, selector->field) != nullptr) {
+                return false;
+            }
+        }
+        if (fold_int(expr)) {
+            return false;
+        }
+        return constant_operand(expr);
+    }
+    return false;
+}
+
+std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
+    std::unordered_set<std::string> seen;
+    const Expr *cursor = &expr;
+    while (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
+        if (!seen.insert(named->text).second) {
+            break;
+        }
+        const Symbol *symbol = lookup(named->text);
+        if (symbol == nullptr || !symbol->is_constant) {
+            break;
+        }
+        const VarDecl *var = global_var(named->text);
+        if (var == nullptr || var->init == nullptr) {
+            break;
+        }
+        cursor = var->init.get();
+    }
+    return clone_expr(*cursor);
+}
+
+std::optional<std::string> Checker::comptime_spec_piece(const Expr &expr) {
+    std::unordered_set<std::string> seen;
+    const auto piece = [&](const auto &self, const Expr &value) -> std::optional<std::string> {
+        const bool enumerator = [&]() {
+            const auto *selector = std::get_if<Expr::Selector>(&value.data);
+            if (selector == nullptr || selector->base == nullptr) {
+                return false;
+            }
+            const int id = enum_designator(*selector->base);
+            return id >= 0 && find_enum_member(id, selector->field) != nullptr;
+        }();
+        if (!enumerator) {
+            if (const std::optional<int> number = fold_int(value)) {
+                return spec_int_piece(*number);
+            }
+        }
+        if (const std::optional<FoldedNumber> number = fold_number(value); number && number->is_float) {
+            if (number->wide) {
+                uint64_t bits = 0;
+                const double wide = number->value;
+                static_assert(sizeof(wide) == sizeof(bits));
+                std::memcpy(&bits, &wide, sizeof(bits));
+                return "d" + spec_hex(bits, 16);
+            }
+            const float narrow = static_cast<float>(number->value);
+            uint32_t bits = 0;
+            static_assert(sizeof(narrow) == sizeof(bits));
+            std::memcpy(&bits, &narrow, sizeof(bits));
+            return "w" + spec_hex(bits, 8);
+        }
+        if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
+            if (init->is_tuple || !init->elements.empty()) {
+                return std::nullopt;
+            }
+            std::string text = "p";
+            for (const Expr::FieldInit &field : init->fields) {
+                if (field.value == nullptr) {
+                    return std::nullopt;
+                }
+                const std::optional<std::string> part = self(self, *field.value);
+                if (!part) {
+                    return std::nullopt;
+                }
+                text.push_back('_');
+                text += *part;
+            }
+            return text;
+        }
+        if (const auto *named = std::get_if<Expr::Name>(&value.data)) {
+            const Symbol *symbol = lookup(named->text);
+            if (symbol != nullptr && symbol->is_function && !symbol->is_local_function) {
+                return "fn" + named->text;
+            }
+            if (symbol != nullptr && symbol->is_constant && seen.insert(named->text).second) {
+                const VarDecl *var = global_var(named->text);
+                if (var != nullptr && var->init != nullptr) {
+                    const std::optional<std::string> inner = self(self, *var->init);
+                    seen.erase(named->text);
+                    return inner;
+                }
+                seen.erase(named->text);
+            }
+            return std::nullopt;
+        }
+        if (const auto *cast = std::get_if<Expr::Cast>(&value.data)) {
+            if (cast->expr == nullptr) {
+                return std::nullopt;
+            }
+            return self(self, *cast->expr);
+        }
+        if (const auto *unary = std::get_if<Expr::Unary>(&value.data)) {
+            if (unary->postfix || unary->expr == nullptr ||
+                (unary->op != TokenKind::Plus && unary->op != TokenKind::Minus)) {
+                return std::nullopt;
+            }
+            return self(self, *unary->expr);
+        }
+        if (const auto *selector = std::get_if<Expr::Selector>(&value.data)) {
+            if (selector->base == nullptr || enumerator) {
+                return std::nullopt;
+            }
+            if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
+                const Symbol *symbol = lookup(base->text);
+                if (symbol != nullptr && symbol->is_package) {
+                    return "fn" + base->text + "_" + selector->field;
+                }
+                if (symbol == nullptr || symbol->is_type) {
+                    return "fn" + base->text + "_" + selector->field;
+                }
+            }
+        }
+        return std::nullopt;
+    };
+    return piece(piece, expr);
 }
 
 bool Checker::comptime_kept_argument(const Expr &arg) {
@@ -994,8 +1220,10 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
         }
         // A free function specializes through `argument_is_comptime`. A method also accepts
         // a forwarded comptime name. An enumerator then builds a copy that drops the parameter.
-        const bool accepted = fn.method_struct.empty() ? argument_is_comptime(*call.args[i])
-                                                       : comptime_kept_argument(*call.args[i]);
+        // A struct, float, alias, or function is `comptime_constant`. An enumerator is not.
+        const bool accepted = fn.method_struct.empty()
+                                  ? argument_is_comptime(*call.args[i]) || comptime_constant(*call.args[i])
+                                  : comptime_kept_argument(*call.args[i]) || comptime_constant(*call.args[i]);
         if (!accepted) {
             error(expr_loc(*call.args[i]), "type mismatch");
         }
@@ -1027,6 +1255,9 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+                // The name of a file-scope const becomes its initializer. An enumerator stays the selector.
+                literal = comptime_substitute(*call.args[i]);
             }
         }
         if (literal == nullptr) {

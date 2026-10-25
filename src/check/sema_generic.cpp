@@ -1211,7 +1211,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
             arg.type_name.clear();
             return;
         }
-        if (bound->is_text) {
+        if (bound->is_text || bound->is_constant_expr) {
             error(arg.loc, "type mismatch");
             return;
         }
@@ -1284,7 +1284,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         type_name = "invalid";
         return;
     }
-    if (bound->is_value || bound->is_text) {
+    if (bound->is_value || bound->is_text || bound->is_constant_expr) {
         error(loc, "type mismatch");
         type_name = "invalid";
         return;
@@ -1358,8 +1358,16 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Expr::Name>) {
                 if (const SpecArg *bound = find_arg(params, bounds, node.text);
-                    bound != nullptr && (bound->is_value || bound->is_text || bound->is_enum_value)) {
+                    bound != nullptr &&
+                        (bound->is_value || bound->is_text || bound->is_enum_value || bound->is_constant_expr)) {
                     const SourceLoc loc = node.loc;
+                    if (bound->is_constant_expr) {
+                        if (bound->constant_expr != nullptr) {
+                            std::unique_ptr<Expr> cloned = clone_expr(*bound->constant_expr);
+                            expr.data = std::move(cloned->data);
+                        }
+                        return;
+                    }
                     if (bound->is_enum_value) {
                         // The copy compares and returns the enum. An integer would be `type mismatch`.
                         auto named = [&](const std::string &text) {
@@ -1422,7 +1430,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 // `sizeof(T)` is parsed as a type. The parameter is replaced before the value is folded.
                 if (node.on_type) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
-                        bound != nullptr && !bound->is_value && !bound->is_text) {
+                        bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
                         if (bound->is_array || node.is_array || (!bound->shells.empty() && node.indirections != 0)) {
                             error(node.loc, "not supported yet");
                         }
@@ -1456,7 +1464,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
-                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text) {
+                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
                         if (bound->is_array) {
                             error(node.loc, "not supported yet");
                         }
@@ -1486,7 +1494,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
-                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text) {
+                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
                         if (bound->is_array) {
                             error(node.loc, "not supported yet");
                         }
@@ -1531,7 +1539,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 if (node.type_package.empty()) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
-                        bound != nullptr && !bound->is_value && !bound->is_text) {
+                        bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
                         node.type_name = bound->type_name;
                         node.type_package = bound->type_package;
                         // `is_struct` means the source wrote `struct Name`. A specialized name is an ordinary type.
@@ -1611,7 +1619,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     // `Box[T].from` is an index. A plain type parameter becomes that type's name.
                     if (auto *named = std::get_if<Expr::Name>(&node.index->data)) {
                         if (const SpecArg *bound = find_arg(params, bounds, named->text);
-                            bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_pack && !bound->is_array &&
+                            bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr && !bound->is_pack && !bound->is_array &&
                             bound->indirections == 0 && bound->type_package.empty() && !bound->type_name.empty()) {
                             named->text = bound->type_name;
                         }

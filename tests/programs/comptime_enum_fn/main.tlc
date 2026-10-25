@@ -1,0 +1,12 @@
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+comptime func rank(order Order) i32 {
+    return 42;
+}
+
+func main() i32 {
+    return rank(Order.acquire);
+}

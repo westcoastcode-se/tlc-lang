@@ -1999,7 +1999,9 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         file_id_ = owner;
         const Type want = type_of_param(param);
         file_id_ = saved_file;
-        if (want.kind == TypeKind::Invalid || diags_.size() != mark || !same_type(got, want)) {
+        // `BinOp(add)` is that function. The alias sits on the pointer. The pointee is the parameter.
+        if (want.kind == TypeKind::Invalid || diags_.size() != mark ||
+            (!same_type(got, want) && !accepts_pointer(got, want))) {
             return false;
         }
         TypeParam slot;
@@ -2047,6 +2049,19 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
             if (!piece.empty() && piece.front() == '-') {
                 piece[0] = 'n';
             }
+        } else if (comptime_constant(*call.args[i - skip])) {
+            // The use stays the expression. An integer would change an alias into `i32`.
+            const std::unique_ptr<Expr> subst = comptime_substitute(*call.args[i - skip]);
+            const std::optional<std::string> encoded = subst != nullptr ? comptime_spec_piece(*subst) : std::nullopt;
+            if (!encoded) {
+                if (!comptime_param_kept(fn)) {
+                    error(expr_loc(*call.args[i - skip]), "not supported yet");
+                }
+                return false;
+            }
+            bound.is_constant_expr = true;
+            bound.constant_expr = clone_expr(*subst);
+            piece = *encoded;
         } else if (argument_is_comptime(*call.args[i - skip])) {
             // The unspecialized extern function accepts this argument.
             // A forwarded comptime name is not this case. The caller keeps the parameter.

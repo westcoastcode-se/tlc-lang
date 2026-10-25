@@ -1,0 +1,1 @@
+compile-error: type mismatch: expected *i32, found [2]i32

@@ -60,6 +60,34 @@ std::unique_ptr<Expr> folded_int(int32_t value, SourceLoc loc) {
     return expr;
 }
 
+// A field of a struct literal, including `literal.inner.x`. A name is not a literal.
+const Expr *const_struct_field(const Expr &object, const std::string &field) {
+    const Expr *cursor = &object;
+    if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
+        if (selector->base == nullptr) {
+            return nullptr;
+        }
+        cursor = const_struct_field(*selector->base, selector->field);
+        if (cursor == nullptr) {
+            return nullptr;
+        }
+    }
+    const auto *init = std::get_if<Expr::Init>(&cursor->data);
+    if (init == nullptr || init->is_tuple || !init->elements.empty()) {
+        return nullptr;
+    }
+    for (const Expr::FieldInit &item : init->fields) {
+        if (item.field == field && item.value != nullptr) {
+            return item.value.get();
+        }
+    }
+    return nullptr;
+}
+
+bool plain_float_name(const std::string &name) {
+    return name == "f32" || name == "f64" || name == "float" || name == "double";
+}
+
 std::unique_ptr<Expr> folded_string(std::string text, SourceLoc loc) {
     auto expr = std::make_unique<Expr>();
     Expr::String node;
@@ -399,6 +427,12 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                         if (init->is_tuple && init->elements.size() >= 2) {
                             return static_cast<int32_t>(init->elements.size());
                         }
+                    }
+                }
+                // `Point{.x = 1}.x` is that field. A file-scope name is still loaded. An enumerator is not a field.
+                if (node.base != nullptr) {
+                    if (const Expr *field = const_struct_field(*node.base, node.field)) {
+                        return fold(*field);
                     }
                 }
                 const auto *base = node.base == nullptr ? nullptr : std::get_if<Expr::Name>(&node.base->data);
@@ -785,6 +819,9 @@ std::optional<int32_t> CodeGen::fold_substituted_call(const FunctionDecl &fn, co
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
+            } else if (comptime_constant(*call.args[i]) || folded_case_value(*call.args[i])) {
+                // The name of a file-scope const becomes its initializer. An enumerator stays the selector.
+                literal = comptime_substitute(*call.args[i]);
             }
         }
         if (literal == nullptr) {
@@ -810,6 +847,300 @@ std::optional<int32_t> CodeGen::fold_substituted_call(const FunctionDecl &fn, co
     std::unique_ptr<Expr> rewritten = clone_expr(*value);
     replace_names(rewritten, names, exprs);
     return fold(*rewritten);
+}
+
+bool CodeGen::local_shadow(const std::string &name) const {
+    // scopes_[0] is the package. A file-scope const lives there. A local is a later scope.
+    for (std::size_t index = 1; index < scopes_.size(); ++index) {
+        if (scopes_[index].contains(name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CodeGen::file_function_name(const std::string &name) const {
+    if (name.empty() || graph_ == nullptr || local_shadow(name)) {
+        return false;
+    }
+    for (const uint32_t file : package_files(current_file_)) {
+        const PackageNode *node = find_node(file);
+        if (node == nullptr) {
+            continue;
+        }
+        for (const TopDecl &decl : node->unit.decls) {
+            const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+            if (fn == nullptr || fn->name != name || !fn->method_struct.empty()) {
+                continue;
+            }
+            if (file != current_file_ && fn->is_static) {
+                continue;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+const VarDecl *CodeGen::package_var(const std::string &name) const {
+    if (const VarDecl *found = global_decl(name)) {
+        return found;
+    }
+    if (graph_ == nullptr || name.empty()) {
+        return nullptr;
+    }
+    for (const uint32_t file : package_files(current_file_)) {
+        if (file == current_file_) {
+            continue;
+        }
+        const PackageNode *node = find_node(file);
+        if (node == nullptr) {
+            continue;
+        }
+        for (const TopDecl &decl : node->unit.decls) {
+            const auto *var = std::get_if<VarDecl>(&decl.data);
+            if (var != nullptr && var->owner.empty() && var->name == name && !var->is_static) {
+                return var;
+            }
+        }
+    }
+    return nullptr;
+}
+
+const TypedefDecl *CodeGen::package_typedef_decl(const std::string &name) const {
+    if (graph_ == nullptr || name.empty()) {
+        return nullptr;
+    }
+    const TypedefDecl *fallback = nullptr;
+    for (const uint32_t file : package_files(current_file_)) {
+        const PackageNode *node = find_node(file);
+        if (node == nullptr) {
+            continue;
+        }
+        for (const TopDecl &decl : node->unit.decls) {
+            const auto *alias = std::get_if<TypedefDecl>(&decl.data);
+            if (alias == nullptr || alias->name != name || !alias->type_params.empty()) {
+                continue;
+            }
+            if (file != current_file_ && !alias->exported) {
+                continue;
+            }
+            if (file == current_file_) {
+                return alias;
+            }
+            if (fallback == nullptr) {
+                fallback = alias;
+            }
+        }
+    }
+    return fallback;
+}
+
+bool CodeGen::enumerator_value(const Expr &expr) const {
+    const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+    if (selector == nullptr || selector->base == nullptr) {
+        return false;
+    }
+    const int id = enum_type_designator(*selector->base);
+    if (id < 0 || id >= static_cast<int>(enums_.size())) {
+        return false;
+    }
+    const auto &values = enums_[static_cast<std::size_t>(id)].values;
+    return values.find(selector->field) != values.end();
+}
+
+bool CodeGen::file_constant_operand(const Expr &expr) const {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Int> || std::is_same_v<T, Expr::Bool> ||
+                          std::is_same_v<T, Expr::Char> || std::is_same_v<T, Expr::Float> ||
+                          std::is_same_v<T, Expr::Nullptr>) {
+                return true;
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                return fold(expr).has_value();
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if (fold(expr)) {
+                    return true;
+                }
+                const std::optional<FoldedNumber> number = fold_number(expr);
+                return number.has_value() && number->is_float;
+            } else if constexpr (std::is_same_v<T, Expr::Name>) {
+                if (local_shadow(node.text)) {
+                    return false;
+                }
+                if (file_function_name(node.text)) {
+                    return true;
+                }
+                const VarDecl *var = package_var(node.text);
+                return var != nullptr && var->is_const_decl;
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.len_value >= 0 || enumerator_value(expr)) {
+                    return true;
+                }
+                if (node.base == nullptr) {
+                    return false;
+                }
+                const auto *named = std::get_if<Expr::Name>(&node.base->data);
+                if (named == nullptr || local_shadow(named->text)) {
+                    return false;
+                }
+                const uint32_t target = package_file(current_file_, named->text);
+                if (target == 0) {
+                    return false;
+                }
+                const PackageNode *package = find_node(target);
+                if (package == nullptr) {
+                    return false;
+                }
+                for (const TopDecl &decl : package->unit.decls) {
+                    if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+                        if (fn->name == node.field && fn->exported && fn->method_struct.empty()) {
+                            return true;
+                        }
+                    }
+                    if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+                        if (var->name == node.field && var->is_const_decl && var->exported && var->owner.empty()) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                if (node.is_range) {
+                    std::unordered_set<std::string> seen;
+                    return constant_string(expr, seen).has_value();
+                }
+                return fold(expr).has_value();
+            } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                if (node.indirections != 0 || node.is_fn_ptr || node.expr == nullptr) {
+                    return false;
+                }
+                return file_constant_operand(*node.expr);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                if (!node.elements.empty()) {
+                    return false;
+                }
+                for (const Expr::FieldInit &field : node.fields) {
+                    if (field.value == nullptr || !file_constant_operand(*field.value)) {
+                        return false;
+                    }
+                }
+                return true;
+            } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.expr == nullptr) {
+                    return false;
+                }
+                if (node.op == TokenKind::Plus || node.op == TokenKind::Minus || node.op == TokenKind::Tilde ||
+                    node.op == TokenKind::Bang || node.op == TokenKind::KwUnsafe) {
+                    return file_constant_operand(*node.expr);
+                }
+                if (node.op != TokenKind::Amp) {
+                    return false;
+                }
+                const auto *named = std::get_if<Expr::Name>(&node.expr->data);
+                if (named == nullptr || local_shadow(named->text)) {
+                    return false;
+                }
+                const VarDecl *var = package_var(named->text);
+                return var != nullptr && !var->is_const_decl && !var->is_extern && var->owner.empty();
+            } else {
+                return false;
+            }
+        },
+        expr.data);
+}
+
+bool CodeGen::comptime_constant(const Expr &expr) const {
+    std::unordered_set<std::string> seen;
+    const auto visit = [&](const auto &self, const Expr &value) -> bool {
+        if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
+            if (init->is_tuple || !init->elements.empty() || init->array_literal) {
+                return false;
+            }
+            return file_constant_operand(value);
+        }
+        if (const auto *named = std::get_if<Expr::Name>(&value.data)) {
+            if (local_shadow(named->text)) {
+                return false;
+            }
+            if (file_function_name(named->text)) {
+                return true;
+            }
+            const VarDecl *var = package_var(named->text);
+            if (var == nullptr || !var->is_const_decl) {
+                return false;
+            }
+            if (var->has_const || var->is_enum || var->indirections != 0 || var->is_tuple) {
+                return false;
+            }
+            if (var->is_struct || var->is_fn_ptr) {
+                return true;
+            }
+            if (plain_float_name(var->type_name) && !var->is_array) {
+                return true;
+            }
+            if (const TypedefDecl *alias = package_typedef_decl(var->type_name)) {
+                if (!alias->is_enum) {
+                    return true;
+                }
+            }
+            if (var->is_array) {
+                return false;
+            }
+            if (var->init != nullptr && (var->inferred || var->type_name.empty())) {
+                if (!seen.insert(named->text).second) {
+                    return false;
+                }
+                const bool inner = self(self, *var->init);
+                seen.erase(named->text);
+                return inner;
+            }
+            return false;
+        }
+        if (std::holds_alternative<Expr::Float>(value.data)) {
+            return true;
+        }
+        if (const auto *cast = std::get_if<Expr::Cast>(&value.data)) {
+            return cast->expr != nullptr && cast->indirections == 0 && file_constant_operand(*cast->expr);
+        }
+        if (const auto *unary = std::get_if<Expr::Unary>(&value.data)) {
+            if (unary->postfix || unary->expr == nullptr ||
+                (unary->op != TokenKind::Plus && unary->op != TokenKind::Minus)) {
+                return false;
+            }
+            return self(self, *unary->expr);
+        }
+        if (std::holds_alternative<Expr::Binary>(value.data)) {
+            const std::optional<FoldedNumber> number = fold_number(value);
+            return number.has_value() && number->is_float;
+        }
+        if (const auto *selector = std::get_if<Expr::Selector>(&value.data)) {
+            (void)selector;
+            if (enumerator_value(value) || fold(value)) {
+                return false;
+            }
+            return file_constant_operand(value);
+        }
+        return false;
+    };
+    return visit(visit, expr);
+}
+
+std::unique_ptr<Expr> CodeGen::comptime_substitute(const Expr &expr) const {
+    std::unordered_set<std::string> seen;
+    const Expr *cursor = &expr;
+    while (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
+        if (!seen.insert(named->text).second || local_shadow(named->text)) {
+            break;
+        }
+        const VarDecl *var = package_var(named->text);
+        if (var == nullptr || !var->is_const_decl || var->init == nullptr) {
+            break;
+        }
+        cursor = var->init.get();
+    }
+    return clone_expr(*cursor);
 }
 
 } // namespace tlc

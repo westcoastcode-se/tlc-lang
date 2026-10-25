@@ -1,0 +1,21 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+const origin = Point{.x = 2, .y = 0};
+
+func take(p comptime Point, n i32) i32 {
+    return p.x + n;
+}
+
+func Point::shift(self *this, p comptime Point) i32 {
+    return self.x + p.x;
+}
+
+func main() i32 {
+    var n = 40;
+    var here Point;
+    here.x = 40;
+    return take(origin, n) + here.shift(Point{.x = 2, .y = 0}) - 42;
+}

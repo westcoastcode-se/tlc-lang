@@ -1,0 +1,11 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func main() i32 {
+    func take(p comptime Point) i32 {
+        return p.x;
+    }
+    return take(Point{.x = 42, .y = 0});
+}

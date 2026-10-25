@@ -1364,6 +1364,19 @@ class CodeGen {
     bool is_builtin_fmt(const Expr::Call &call) const;
     const FunctionDecl *fold_call_target(const std::string &name, const Expr::Call &call) const;
     std::optional<int32_t> fold_substituted_call(const FunctionDecl &fn, const Expr::Call &call) const;
+    // A name bound in the function being emitted. A file-scope const is not one.
+    bool local_shadow(const std::string &name) const;
+    // A file-scope function. A local function and a method are not.
+    bool file_function_name(const std::string &name) const;
+    const VarDecl *package_var(const std::string &name) const;
+    const TypedefDecl *package_typedef_decl(const std::string &name) const;
+    bool enumerator_value(const Expr &expr) const;
+    // What a file-scope const may store. Wider than `comptime_constant`: an integer const is included.
+    bool file_constant_operand(const Expr &expr) const;
+    // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
+    bool comptime_constant(const Expr &expr) const;
+    // That constant, with a file-scope name replaced by its initializer.
+    std::unique_ptr<Expr> comptime_substitute(const Expr &expr) const;
     // The `builtin.memeql` or `builtin.memcmp` declaration this call names.
     const FunctionDecl *mem_compare_decl(const Expr::Call &call) const;
     // A constant float or integer. `wide` is an f64 operation. Integers leave `is_float` clear.

@@ -1,0 +1,15 @@
+type Integer i32;
+
+const other = Integer(4);
+
+comptime func id(n Integer) i32 {
+    return i32(n);
+}
+
+func take(n comptime Integer, k i32) i32 {
+    return i32(n) + k;
+}
+
+func main() i32 {
+    return id(other) + id(Integer(38)) + take(other, 38) - 42;
+}

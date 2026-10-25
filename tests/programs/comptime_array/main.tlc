@@ -1,0 +1,10 @@
+const row = [_]i32{1, 2};
+
+func take(p comptime [2]i32, n i32) i32 {
+    return n;
+}
+
+func main() i32 {
+    var n = 1;
+    return take(row, n);
+}
