@@ -16,12 +16,6 @@ func main() i32 {
 }
 ```
 
-`note(1)` runs after the anonymous call.
-
-An anonymous function is an expression, `func (parameters) { body }`. The return type may be omitted, and then it is `void`. A return type is written after the parameters when it is present: `func () i32 { return 1; }`. Several results use the same parenthesized list as a named function: `func () (i32, i32) { return 1, 2; }`. The call is the argument list after the body.
-
-## Assembly
-
 ```asm
 main:
 subq $24, %rsp                   # subtract
@@ -53,5 +47,9 @@ retq                             # return
 1:
 retq                             # return
 ```
+
+`note(1)` runs after the anonymous call.
+
+An anonymous function is an expression, `func (parameters) { body }`. The return type may be omitted, and then it is `void`. A return type is written after the parameters when it is present: `func () i32 { return 1; }`. Several results use the same parenthesized list as a named function: `func () (i32, i32) { return 1, 2; }`. The call is the argument list after the body.
 
 [Index](../README.md) · [Previous: switch](switch.md) · [Next: Bindings](binding.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

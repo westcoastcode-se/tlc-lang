@@ -13,23 +13,6 @@ func main() i32 {
 }
 ```
 
-```c
-func add(n i32) i32 {
-    return n + 1;
-}
-
-func outer(op func (i32) i32) i32 {
-    func pass() func (i32) i32 {
-        return op;
-    }
-    return pass()(41);
-}
-```
-
-The program returns 42.
-
-## Assembly
-
 ```asm
 main:
 # trace frame for the call, then the matching pop
@@ -45,5 +28,38 @@ movl -8(%rsp), %eax              # move
 addl -4(%rsp), %eax              # add
 retq                             # return
 ```
+
+```c
+func add(n i32) i32 {
+    return n + 1;
+}
+
+func outer(op func (i32) i32) i32 {
+    func pass() func (i32) i32 {
+        return op;
+    }
+    return pass()(41);
+}
+```
+
+```asm
+outer:
+# trace frame for the call, then the matching pop
+callq 1                          # call 1
+retq                             # return
+
+add:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+addl $1, %eax                    # add
+retq                             # return
+
+1:
+movq %rdi, -8(%rsp)              # move
+movq -8(%rsp), %rax              # move
+retq                             # return
+```
+
+The program returns 42.
 
 [Index](../README.md) · [Previous: Several results](result.md) · [Next: Generics](generic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

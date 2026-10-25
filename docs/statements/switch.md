@@ -26,31 +26,6 @@ func main() i32 {
 }
 ```
 
-The program returns 42. `break` leaves the innermost loop or `switch`. `continue` is valid inside loops.
-
-```c
-type Color enum {
-    Red,
-    Green = 40,
-    Blue,
-};
-
-func code(value Color) i32 {
-    switch (value) {
-    case Color.Green:
-        return 2;
-    case Color.Blue:
-        return 4;
-    default:
-        return 0;
-    }
-}
-```
-
-`code(Color.Blue)` returns 4. `case 41` on that `switch` is `type mismatch`.
-
-## Assembly
-
 ```asm
 main:
 movl $1, -8(%rsp)                # constant
@@ -79,5 +54,52 @@ jmp .L5                          # jump
 movl $7, -4(%rsp)                # constant
 jmp .L5                          # jump
 ```
+
+The program returns 42. `break` leaves the innermost loop or `switch`. `continue` is valid inside loops.
+
+```c
+type Color enum {
+    Red,
+    Green = 40,
+    Blue,
+};
+
+func code(value Color) i32 {
+    switch (value) {
+    case Color.Green:
+        return 2;
+    case Color.Blue:
+        return 4;
+    default:
+        return 0;
+    }
+}
+```
+
+```asm
+code:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+movl %eax, -8(%rsp)              # move
+subl $40, %eax                   # subtract
+je .L1                           # branch
+jmp .L2                          # jump
+.L2:
+movl -8(%rsp), %eax              # move
+subl $41, %eax                   # subtract
+je .L3                           # branch
+jmp .L4                          # jump
+.L1:
+movl $2, %eax                    # constant
+retq                             # return
+.L3:
+movl $4, %eax                    # constant
+retq                             # return
+.L4:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
+
+`code(Color.Blue)` returns 4. `case 41` on that `switch` is `type mismatch`.
 
 [Index](../README.md) · [Previous: for](for.md) · [Next: defer](defer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

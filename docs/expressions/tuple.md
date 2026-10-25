@@ -15,6 +15,17 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movl $10, -12(%rsp)              # constant
+movl $20, -8(%rsp)               # constant
+movl $12, -4(%rsp)               # constant
+movl -12(%rsp), %eax             # move
+addl -8(%rsp), %eax              # add
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
 ```c
 func main() i32 {
     var value = (40, 2);
@@ -26,16 +37,21 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
 ```asm
 main:
-movl $10, -12(%rsp)              # constant
-movl $20, -8(%rsp)               # constant
+movl $2, -28(%rsp)               # constant
+movl $40, -32(%rsp)              # constant
+movl $7, -20(%rsp)               # constant
+movb $97, -13(%rsp)              # constant
+movl $1, -24(%rsp)               # constant
 movl $12, -4(%rsp)               # constant
-movl -12(%rsp), %eax             # move
-addl -8(%rsp), %eax              # add
+movl -32(%rsp), %eax             # move
+movl -28(%rsp), %ecx             # move
+addl -24(%rsp), %eax             # add
+addl -20(%rsp), %eax             # add
 addl -4(%rsp), %eax              # add
+movzbl -13(%rsp), %ecx           # move
+addl %ecx, %eax                  # add
 retq                             # return
 ```
 

@@ -23,16 +23,19 @@ test "add joins its arguments" {
 }
 ```
 
+A build without `--test` does not emit the test. `add` is an ordinary function:
+
+```asm
+add:
+movl %edi, -8(%rsp)              # a
+movl %esi, -4(%rsp)              # b
+movl -8(%rsp), %eax
+addl -4(%rsp), %eax              # a + b
+retq
+```
+
 `main.tlc:10:16: add joins its arguments: Expected 4 but was 5` is that report when `value` is 5. `import "builtin"` is supplied by the compiler. `std/testing` is `lib/tlc/std/testing`. A directory with the same path next to the entry file is that package.
 
 `tlc --test file.tlc` compiles the program, runs every test, and skips `main`. A failing test prints `fail:` and the name. The process status is the number of failed tests. A build without `--test` typechecks the tests and does not run them.
-
-## Assembly
-
-```asm
-main:
-xorl %eax, %eax                  # zero the result
-retq                             # return
-```
 
 [Index](../README.md) · [Previous: Structs and arrays](aggregate.md) · [Next: Function pointers](pointer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

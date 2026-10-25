@@ -29,19 +29,6 @@ func main() i32 {
 }
 ```
 
-`leaf` is calling `panic`, `mid` has called `leaf`, and `main` has called `mid`. The process aborts. `tlc --run` exits with status 128, and the standard error stream is:
-
-```text
-panic: out of memory
-main.tlc:4:5: leaf
-main.tlc:8:5: mid
-main.tlc:12:5: main
-```
-
-The file name is the source path relative to the entry file's directory, as for `builtin.trace`. `var f = builtin.panic` is a function pointer, and `f("out of memory")` aborts at that call. `defer builtin.panic("out of memory")` aborts when the deferred calls run.
-
-## Assembly
-
 ```asm
 main:
 # trace frame for the call, then the matching pop
@@ -96,5 +83,16 @@ jmp .L2                          # jump
 .L1:
 callq abort                      # call abort
 ```
+
+`leaf` is calling `panic`, `mid` has called `leaf`, and `main` has called `mid`. The process aborts. `tlc --run` exits with status 128, and the standard error stream is:
+
+```text
+panic: out of memory
+main.tlc:4:5: leaf
+main.tlc:8:5: mid
+main.tlc:12:5: main
+```
+
+The file name is the source path relative to the entry file's directory, as for `builtin.trace`. `var f = builtin.panic` is a function pointer, and `f("out of memory")` aborts at that call. `defer builtin.panic("out of memory")` aborts when the deferred calls run.
 
 [Index](../README.md) · [Previous: va](va.md) · [Next: memeql and memcmp](mem.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

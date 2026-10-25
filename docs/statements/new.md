@@ -13,8 +13,6 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
 ```asm
 main:
 subq $24, %rsp                   # subtract

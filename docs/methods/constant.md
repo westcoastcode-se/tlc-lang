@@ -32,10 +32,6 @@ func main() i32 {
 }
 ```
 
-The program returns 42. `Buf[4, i32].count` is `N`, which is 4 for that instantiation. `Box[i32].extra` and `Box[Point].extra` are two constants.
-
-## Assembly
-
 ```asm
 main:
 movl $2, -8(%rsp)                # constant
@@ -45,5 +41,7 @@ addl $8, %eax                    # add
 addl $4, %eax                    # add
 retq                             # return
 ```
+
+The program returns 42. `Buf[4, i32].count` is `N`, which is 4 for that instantiation. `Box[i32].extra` and `Box[Point].extra` are two constants.
 
 [Index](../README.md) · [Previous: Variables on a type](variable.md) · [Next: Traits](trait.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

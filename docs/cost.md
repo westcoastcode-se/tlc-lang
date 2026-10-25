@@ -2,7 +2,7 @@
 
 [Index](README.md) · [Grammar](grammar.md)
 
-A feature page ends with the assembly of its smallest example. The listing shows what that example runs. It is not a count of every form on the page.
+The assembly of a TLC example comes immediately after that example. The listing shows what the example runs. It is not a section at the end of the page, and it is not a count of every form on the page.
 
 Take the instructions from the object file `tlc --emit-obj` writes for `x86_64-pc-linux-gnu` with no `-O` flag. With no `-O` flag, `tlc` removes a store that is overwritten before it is read, or that is never read. It does not run the other LLVM optimizations. `-O0` keeps that store. `-O`, `-O1`, `-O2`, and `-O3` run LLVM's optimization pipeline, and a listing on a feature page does not apply to those builds.
 

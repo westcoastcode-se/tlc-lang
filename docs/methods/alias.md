@@ -28,10 +28,6 @@ func main() i32 {
 }
 ```
 
-The program returns 42. `Integer.from` is the static function. `Integer.ten` is the variable. `n.add` takes a pointer, and `n.twice` takes the value. `var f = Integer.from` is that function. The same forms work for `bool`, `f32`, `f64`, and the other integer widths. A slice alias such as `type string_view []const u8` is a different owner. Its value methods are library source in [`std/string`](../std/string.md). `self *this` on that alias is a pointer to the slice.
-
-## Assembly
-
 ```asm
 main:
 # trace frame for the call, then the matching pop
@@ -43,5 +39,7 @@ movl %edi, -4(%rsp)              # move
 movl -4(%rsp), %eax              # move
 retq                             # return
 ```
+
+The program returns 42. `Integer.from` is the static function. `Integer.ten` is the variable. `n.add` takes a pointer, and `n.twice` takes the value. `var f = Integer.from` is that function. The same forms work for `bool`, `f32`, `f64`, and the other integer widths. A slice alias such as `type string_view []const u8` is a different owner. Its value methods are library source in [`std/string`](../std/string.md). `self *this` on that alias is a pointer to the slice.
 
 [Index](../README.md) · [Previous: Static functions](static.md) · [Next: Variables on a type](variable.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

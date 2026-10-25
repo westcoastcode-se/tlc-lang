@@ -21,6 +21,19 @@ func main() i32 {
 }
 ```
 
+```asm
+id:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+callq id                         # call id
+retq                             # return
+```
+
 `*T`, when `T` is `[4]i32`, is a pointer to that array. `p[i]` and `(*p)[i]` are the element. `**T` is a pointer to that pointer. `?*T` is that pointer or `null`. After `if (p == null) return`, `p` is `*T` and `p[i]` is the element. `*const T` is a pointer to the constant array. Reading `p[0]` is allowed. `p[0] = 1` is reported as `type mismatch`. When `T` is `[]i32`, `(*p)[i]` is the element. A field `p *T` on `Hold[T]` is that pointer. `box.p[i]` is the element.
 
 ```c
@@ -39,6 +52,18 @@ func main() i32 {
     var box Hold[[4]i32] = {.p = &data};
     return at[[4]i32](&data, 0) + box.p[2];
 }
+```
+
+```asm
+i32:
+movq %rdi, -16(%rsp)             # move
+movl %esi, -4(%rsp)              # move
+movq -16(%rsp), %rax             # move
+movl -4(%rsp), %ecx              # move
+movslq %ecx, %rdx                # move
+movl (%rax,%rdx,4), %eax         # move
+movslq %ecx, %rcx                # move
+retq                             # return
 ```
 
 `at[[4]i32](&data, 0) + box.p[2]` returns 7.
@@ -71,6 +96,20 @@ func main() i32 {
 }
 ```
 
+```asm
+measure:
+# trace frame for the call, then the matching pop
+callq area                       # call area
+retq                             # return
+
+area:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+imull -4(%rsp), %eax             # multiply
+retq                             # return
+```
+
 `measure(r)` returns 42. `value *T` accepts a value receiver and a pointer receiver. Passing the struct where the parameter is `*T` is `type mismatch`. The call is `measure(&r)`. A parameter written `T` requires a value receiver. A pointer receiver there is `type mismatch`.
 
 `export func measure[T Shape]` publishes that function. Another package calls `pkg.measure(r)`. The trait is the one in the function's package. The method on the struct is exported. Without `export` on that method, the call is `area is not exported`. `export func use(s Shape)` publishes that call without a type-parameter list. See [Traits](../methods/trait.md).
@@ -100,6 +139,41 @@ func main() i32 {
 }
 ```
 
+```asm
+id:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %edx              # move
+retq                             # return
+
+u8:
+movb %sil, %al                   # move
+movl %edi, -8(%rsp)              # move
+movb %al, -4(%rsp)               # move
+movl -8(%rsp), %eax              # move
+movb -4(%rsp), %dl               # move
+retq                             # return
+
+i32:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %edx              # move
+retq                             # return
+
+id:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+callq id                         # call id
+retq                             # return
+```
+
 `id[i32](40)` writes the type. A value in that list, such as `id[4]`, is reported as `type mismatch`. `return value` returns the tuple, and so does `return id((1, 2))` from a function with those two results. `a, b :=` unpacks them, and so does `var value1, value2 = value` when `value` holds that tuple. `var value = (40, 2)` binds the tuple itself. `...` in a type-parameter list is not the `...` that `builtin.va()` reads.
 
 ```c
@@ -112,25 +186,30 @@ func main() i32 {
 }
 ```
 
+```asm
+SomeFunc:
+movl %edi, -12(%rsp)             # move
+movl %edx, -4(%rsp)              # move
+movl %esi, -8(%rsp)              # move
+movl -12(%rsp), %eax             # move
+movl -8(%rsp), %edx              # move
+movl -4(%rsp), %ecx              # move
+addl %edx, %eax                  # add
+addl %ecx, %eax                  # add
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+movl $40, %esi                   # constant
+movl $2, %edx                    # constant
+callq SomeFunc                   # call SomeFunc
+retq                             # return
+```
+
 `SomeFunc[i32, i32](0, (40, 2))` returns 42. `SomeFunc(0, (40, 2))` is that same call. `other[0]` and `other[1]` read the elements. The index is a constant.
 
 One generic name may have several parameter lists. A call uses the types of the arguments, the same way as a function that is not generic. `func id[T type](value T) T` and `func id[T type](value T, extra i32) T` are both `id`. Type-parameter names are not part of that list, so `id[T type](value T)` and `id[U type](value U)` are one list. The same parameter list is `redefinition`. A generic function and a concrete function of the same name are `redefinition`. A call that matches none or more than one list is `type mismatch` or `argument count`.
 
 A method on a generic struct follows the same rule. The receiver is not one of those parameters. `func Box[T]::get(self *this) T` and `func Box[T]::get(self *this, n i32) T` are two methods, chosen from the remaining arguments. `func Box[T]::get(self this)` beside `func Box[T]::get(self *this)` stays `redefinition`. `extern(abi="c")` on a generic function, or on a function whose parameter is a trait, is `extern(abi="c") on a trait or a generic`. `extern` and `extern(abi="tlc")` on a generic function name that function in a tlc library. The call stays `id(value)` or `id[i32](value)`. Each specialization is its own symbol. When the file is `main.tlc` and `T` is `i32`, that symbol is `main.id.spec.i32`. A body defines the symbol. A prototype may be the declaration that says `extern`, and the body that follows defines it. A call of a generic that has no body is `not supported yet`. `...` on a generic function stays rejected. `...` is only legal on `extern(abi="c")`, so the declaration is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, is `not supported yet`. `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`.
-
-## Assembly
-
-```asm
-id:
-movl %edi, -4(%rsp)              # move
-movl -4(%rsp), %eax              # move
-retq                             # return
-
-main:
-# trace frame for the call, then the matching pop
-movl $40, %edi                   # constant
-callq id                         # call id
-retq                             # return
-```
 
 [Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: Comptime](comptime.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

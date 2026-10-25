@@ -48,53 +48,6 @@ func main() i32 {
 }
 ```
 
-The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `i32` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. `pkg.Kind(value)` reads the tag of `union(pkg.Kind)`. Reading a field does not check the tag. A zero value has tag 0. A field of an inline payload may have a value, `n i32 = 1`. `Shape{.One = {}}` uses that value when the initializer does not name the field. Naming the field replaces it. The value is a constant, and a call is reported as `global initializer is not a constant`. `{.One = {0...}}` stores 0 and does not use the value. A union with no initializer does not choose an arm. Reading a field of that union is reported as `uninitialized`.
-
-### Untagged unions
-
-`type Word union` does not name an enum. The fields share one address, as in the C union below. `extern type Word union` is that same layout. `extern(abi="c")` is what makes the union a C type: a nested struct must then be `extern(abi="c")`. An empty `type Word union {}` is reported as `not supported yet`.
-
-```c
-type Num union {
-    n i32;
-    m i32;
-};
-
-func main() i32 {
-    var u Num;
-    u.n = 4;
-    return u.m;
-}
-```
-
-`Num` is 4 bytes. `u.n` and `u.m` are the same memory, so `main` returns 4. A value on one of those fields, `n i32 = 4`, is reported as `not supported yet`. The same value inside an anonymous union field is that error too.
-
-### C unions
-
-`extern(abi="c") union` is the C union. It does not name an enum. `extern(abi="c") type Name union(Enum)`, a field `data union(Enum)`, and a field whose type is a tagged union, inside an `extern(abi="c")` struct or union, are `extern(abi="c") on a tagged union`. The field may be the union, a pointer to it, an array of it, or an alias of it. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A struct or an untagged union nested inside a C union must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
-
-```c
-extern(abi="c") type Num union {
-    n i32;
-    m i32;
-};
-
-extern(abi="c") type Word union {
-    n i32;
-    raw [8]u8;
-};
-
-func main() i32 {
-    var u Num;
-    u.n = 4;
-    return u.m;
-}
-```
-
-`Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory, so `main` returns 4.
-
-## Assembly
-
 ```asm
 main:
 movl $0x3f800000, -8(%rsp)       # constant
@@ -139,5 +92,64 @@ jmp .L4                          # jump
 xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
+
+The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field. With `Circle` as one `f32` and `Rectangle` as two, `Shape` is 12 bytes: 8 for the payload and 4 for the `i32` tag. Assigning a field, or a field of that struct, stores that enumerator as the tag. `{.Circle = {.radius = 1.0}}` does the same. `ShapeType(shape)` reads the tag. `pkg.Kind(value)` reads the tag of `union(pkg.Kind)`. Reading a field does not check the tag. A zero value has tag 0. A field of an inline payload may have a value, `n i32 = 1`. `Shape{.One = {}}` uses that value when the initializer does not name the field. Naming the field replaces it. The value is a constant, and a call is reported as `global initializer is not a constant`. `{.One = {0...}}` stores 0 and does not use the value. A union with no initializer does not choose an arm. Reading a field of that union is reported as `uninitialized`.
+
+### Untagged unions
+
+`type Word union` does not name an enum. The fields share one address, as in the C union below. `extern type Word union` is that same layout. `extern(abi="c")` is what makes the union a C type: a nested struct must then be `extern(abi="c")`. An empty `type Word union {}` is reported as `not supported yet`.
+
+```c
+type Num union {
+    n i32;
+    m i32;
+};
+
+func main() i32 {
+    var u Num;
+    u.n = 4;
+    return u.m;
+}
+```
+
+```asm
+main:
+movl $4, -8(%rsp)                # constant
+movl -8(%rsp), %eax              # move
+retq                             # return
+```
+
+`Num` is 4 bytes. `u.n` and `u.m` are the same memory, so `main` returns 4. A value on one of those fields, `n i32 = 4`, is reported as `not supported yet`. The same value inside an anonymous union field is that error too.
+
+### C unions
+
+`extern(abi="c") union` is the C union. It does not name an enum. `extern(abi="c") type Name union(Enum)`, a field `data union(Enum)`, and a field whose type is a tagged union, inside an `extern(abi="c")` struct or union, are `extern(abi="c") on a tagged union`. The field may be the union, a pointer to it, an array of it, or an alias of it. Every field starts at the same address. The size is the largest field, rounded up to the alignment, and the alignment is the strictest field. Reading a field reinterprets the stored bits. A struct or an untagged union nested inside a C union must be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`.
+
+```c
+extern(abi="c") type Num union {
+    n i32;
+    m i32;
+};
+
+extern(abi="c") type Word union {
+    n i32;
+    raw [8]u8;
+};
+
+func main() i32 {
+    var u Num;
+    u.n = 4;
+    return u.m;
+}
+```
+
+```asm
+main:
+movl $4, -8(%rsp)                # constant
+movl -8(%rsp), %eax              # move
+retq                             # return
+```
+
+`Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory, so `main` returns 4.
 
 [Index](../README.md) · [Previous: Structs](struct.md) · [Next: Arrays](array.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

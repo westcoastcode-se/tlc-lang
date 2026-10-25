@@ -12,7 +12,11 @@ Vendor packages are imported as `vendor/<name>`. `TLC_LIB` selects their directo
 
 Standard packages live in `lib/tlc` beside that vendor directory. `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`. `import "builtin"` is supplied by the compiler. `import "builtin/env/consts"` supplies `consts.family`. The entry directory and each `-P` root are searched first.
 
-## Assembly
+```c
+func main() i32 {
+    return 0;
+}
+```
 
 ```asm
 main:

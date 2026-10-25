@@ -31,6 +31,28 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movw $1, -18(%rsp)               # constant
+movq $2, -16(%rsp)               # constant
+movb $65, -3(%rsp)               # constant
+movzbl -3(%rsp), %eax            # move
+movb %al, -2(%rsp)               # move
+movzbl -3(%rsp), %eax            # move
+movb %al, -1(%rsp)               # move
+movswl -18(%rsp), %eax           # move
+movq -16(%rsp), %rcx             # move
+cltq
+addq %rcx, %rax                  # add
+movsbl -2(%rsp), %ecx            # move
+movslq %ecx, %rcx                # move
+addq %rcx, %rax                  # add
+movzbl -1(%rsp), %ecx            # move
+movl %ecx, %ecx                  # move
+addq %rcx, %rax                  # add
+retq                             # return
+```
+
 ## Rank and conversion
 
 The rank order, from narrowest to widest, is:
@@ -62,28 +84,6 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
-```asm
-main:
-movw $1, -18(%rsp)               # constant
-movq $2, -16(%rsp)               # constant
-movb $65, -3(%rsp)               # constant
-movzbl -3(%rsp), %eax            # move
-movb %al, -2(%rsp)               # move
-movzbl -3(%rsp), %eax            # move
-movb %al, -1(%rsp)               # move
-movswl -18(%rsp), %eax           # move
-movq -16(%rsp), %rcx             # move
-cltq
-addq %rcx, %rax                  # add
-movsbl -2(%rsp), %ecx            # move
-movslq %ecx, %rcx                # move
-addq %rcx, %rax                  # add
-movzbl -1(%rsp), %ecx            # move
-movl %ecx, %ecx                  # move
-addq %rcx, %rax                  # add
-retq                             # return
-```
+This example is rejected (`type mismatch`) and emits nothing.
 
 [Index](../README.md) · [Previous: extern](../packages/extern.md) · [Next: Pointers](pointer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -29,8 +29,6 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
 ```asm
 get:
 movl %edi, -8(%rsp)              # move

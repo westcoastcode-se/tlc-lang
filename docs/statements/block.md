@@ -23,8 +23,6 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
 ```asm
 main:
 movl $0, -4(%rsp)                # constant

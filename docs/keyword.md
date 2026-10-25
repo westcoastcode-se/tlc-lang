@@ -4,7 +4,11 @@
 
 Beyond C, `import`, `export`, `package`, `trait`, `func`, `defer`, `var`, `type`, and `unsafe` are keywords. `impl`, `from`, `as`, and `this` are identifiers. The full list is in the [grammar](grammar.md#tokens).
 
-## Assembly
+```c
+func main() i32 {
+    return 0;
+}
+```
 
 ```asm
 main:

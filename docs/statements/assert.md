@@ -8,8 +8,6 @@
 assert(sizeof(i32) == 4, "i32 must be 4 bytes");
 ```
 
-## Assembly
-
 ```asm
 main:
 xorl %eax, %eax                  # zero the result

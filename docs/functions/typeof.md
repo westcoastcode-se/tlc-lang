@@ -10,8 +10,6 @@ func id(x i32) typeof(x) {
 }
 ```
 
-## Assembly
-
 `func id(x i32) typeof(x)` is rejected and emits nothing.
 
 [Index](../README.md) · [Previous: Macros](macro.md) · [Next: Structs and arrays](aggregate.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

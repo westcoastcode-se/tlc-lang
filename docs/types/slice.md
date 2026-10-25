@@ -36,6 +36,21 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq head                       # call head
+retq                             # return
+
+head:
+movq %rdi, -16(%rsp)             # move
+movl %esi, -8(%rsp)              # move
+movl -8(%rsp), %eax              # move
+movq -16(%rsp), %rax             # move
+movl (%rax), %eax                # move
+retq                             # return
+```
+
 ```c
 func sum(rows [][]i32) i32 {
     return rows[0][0] + rows[1][0];
@@ -50,20 +65,16 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
 ```asm
-main:
-# trace frame for the call, then the matching pop
-callq head                       # call head
-retq                             # return
-
-head:
+sum:
 movq %rdi, -16(%rsp)             # move
 movl %esi, -8(%rsp)              # move
-movl -8(%rsp), %eax              # move
-movq -16(%rsp), %rax             # move
+movq -16(%rsp), %rdx             # move
+movq (%rdx), %rax                # move
+movq 16(%rdx), %rcx              # move
 movl (%rax), %eax                # move
+movl 24(%rdx), %edx              # move
+addl (%rcx), %eax                # add
 retq                             # return
 ```
 

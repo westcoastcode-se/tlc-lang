@@ -37,7 +37,11 @@ tlc --help
 
 `--check`, `--emit-llvm`, and `--emit-obj` accept the link flags and do not link.
 
-## Assembly
+```c
+func main() i32 {
+    return 0;
+}
+```
 
 ```asm
 main:

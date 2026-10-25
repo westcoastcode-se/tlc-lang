@@ -18,8 +18,6 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
 ```asm
 main:
 movl $16, %eax                   # constant

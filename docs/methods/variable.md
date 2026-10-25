@@ -48,6 +48,22 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq make                       # call make
+retq                             # return
+
+make:
+movl (%rip), %eax                # move
+movl %eax, -8(%rsp)              # move
+movl (%rip), %eax                # move
+incl %eax
+movl %eax, (%rip)                # move
+movl -8(%rsp), %eax              # move
+retq                             # return
+```
+
 The program returns 42. `Entity.next` is one variable for `Entity`. `Box[i32].extra` and `Box[Point].extra` are two variables. `Buf[4, Point].count` is `N`, which is 4 for that instantiation. Omitting `=` zeroes the variable, the same as any other file-scope `var`. `var Entity::bias = 0` infers the type. `var Entity::row = [_]i32{1, 2}` and `var Entity::typed [2]i32 = {3, 1}` are that variable. `var Entity::scale = 1.5f` is an `f32` variable for the type. A second `var Entity::next`, or a static function of that name, is reported as `redefinition`. A variable in another file is reported as `method in another file`. An unknown type is reported as `type mismatch`.
 
 A member is already a variable, so it is written `next i32` and not `var next i32`. `var` inside the braces is reported as `not supported yet`. The variable on the type is written beside it. `var Entity::next` inside a function is not a declaration. It is reported as `not supported yet`. `Entity::next := 1` is not a declaration either. It is reported as `expected a declaration`. A member may use the same name: `e.next` is the member and `Entity.next` is the variable. `sizeof` stays the size of the members.
@@ -64,6 +80,12 @@ export type Entity struct {
 export var Entity::next i32 = 40;
 ```
 
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
+
 ```c
 import "math";
 
@@ -71,6 +93,18 @@ func main() i32 {
     math.Entity.next = math.Entity.next + 2;
     return math.Entity.next;
 }
+```
+
+```asm
+main:
+movq (%rip), %rax                # address of Entity.next
+movl (%rax), %ecx                # load it
+addl $2, %ecx                    # add 2
+movq (%rip), %rax
+movl %ecx, (%rax)                # store it
+movq (%rip), %rax
+movl (%rax), %eax                # return it
+retq
 ```
 
 The program returns 42.
@@ -85,6 +119,12 @@ export type Box[T type] struct {
 export var Box[T]::extra i32 = 40;
 ```
 
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
+
 ```c
 import "math";
 
@@ -94,24 +134,18 @@ func main() i32 {
 }
 ```
 
-The program returns 42. `math.Box[i32].extra` and `math.Box[Point].extra` are two globals.
-
-## Assembly
-
 ```asm
 main:
-# trace frame for the call, then the matching pop
-callq make                       # call make
-retq                             # return
-
-make:
-movl (%rip), %eax                # move
-movl %eax, -8(%rsp)              # move
-movl (%rip), %eax                # move
-incl %eax
-movl %eax, (%rip)                # move
-movl -8(%rsp), %eax              # move
-retq                             # return
+movq (%rip), %rax                # address of Box[i32].extra
+movl (%rax), %ecx                # load it
+addl $2, %ecx                    # add 2
+movq (%rip), %rax
+movl %ecx, (%rax)                # store it
+movq (%rip), %rax
+movl (%rax), %eax                # return it
+retq
 ```
+
+The program returns 42. `math.Box[i32].extra` and `math.Box[Point].extra` are two globals.
 
 [Index](../README.md) · [Previous: Methods on primitive aliases](alias.md) · [Next: Constants on a type](constant.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

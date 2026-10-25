@@ -17,8 +17,6 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
 ```asm
 main:
 leaq (%rip), %rax                # address

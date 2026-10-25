@@ -10,6 +10,22 @@ import "math" as m;
 import { add, Point } from "math";
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+movl $2, %esi                    # constant
+callq add                        # call add
+retq                             # return
+
+add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
 | Form | Name in this file |
 | --- | --- |
 | `import "math"` | The qualifier, as in `math.add(40, 2)`. |
@@ -38,23 +54,5 @@ lib/tlc/vendor/sdl3/
 ```
 
 `examples/triangle` imports `vendor/sdl3` and `vendor/gl`. Each of those packages names a system library in its `link` file. `link_unix` or `link_windows` adds arguments for that family.
-
-## Assembly
-
-```asm
-main:
-# trace frame for the call, then the matching pop
-movl $40, %edi                   # constant
-movl $2, %esi                    # constant
-callq add                        # call add
-retq                             # return
-
-add:
-movl %edi, -8(%rsp)              # move
-movl %esi, -4(%rsp)              # move
-movl -8(%rsp), %eax              # move
-addl -4(%rsp), %eax              # add
-retq                             # return
-```
 
 [Index](../README.md) · [Previous: Packages](package.md) · [Next: Libraries](library.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

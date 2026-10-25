@@ -22,6 +22,19 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq read                       # call read
+retq                             # return
+
+read:
+movq %rdi, -8(%rsp)              # move
+movq -8(%rsp), %rax              # move
+movl (%rax), %eax                # move
+retq                             # return
+```
+
 ```c
 type Address struct {
     street i32;
@@ -46,18 +59,18 @@ func bind(person ?*Person, home ?*Address) void {
 }
 ```
 
-## Assembly
-
 ```asm
-main:
+bind:
 # trace frame for the call, then the matching pop
-callq read                       # call read
+callq settle                     # call settle
 retq                             # return
 
-read:
-movq %rdi, -8(%rsp)              # move
-movq -8(%rsp), %rax              # move
-movl (%rax), %eax                # move
+settle:
+movq %rdi, -16(%rsp)             # move
+movq %rsi, -8(%rsp)              # move
+movq -16(%rsp), %rax             # move
+movq -8(%rsp), %rcx              # move
+movq %rcx, (%rax)                # move
 retq                             # return
 ```
 

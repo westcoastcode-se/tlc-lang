@@ -12,7 +12,11 @@ tlc -g -o app main.tlc
 
 The executable stays on disk. `gdb app` or `lldb app` can break on a source line. In Zed, `debugger: start` uses the TLC extension. The session builds the open file with `-g` into `build/debug/` and launches it under CodeLLDB, or under GDB. A breakpoint is a click in the gutter.
 
-## Assembly
+```c
+func main() i32 {
+    return 0;
+}
+```
 
 ```asm
 main:

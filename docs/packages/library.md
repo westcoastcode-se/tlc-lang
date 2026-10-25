@@ -8,7 +8,11 @@ A file named `link` adds further linker arguments after those libraries. `link_u
 
 An import cycle is reported as `circular import` followed by the qualifiers, for example `a -> b -> a`. The same package may be imported from several files and is loaded once.
 
-## Assembly
+```c
+func main() i32 {
+    return 0;
+}
+```
 
 ```asm
 main:

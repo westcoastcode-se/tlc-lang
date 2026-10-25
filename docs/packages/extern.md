@@ -29,31 +29,6 @@ func main() i32 {
 }
 ```
 
-```c
-extern(abi="c") func printf(fmt *const u8, ...) i32;
-
-func main() i32 {
-    printf("hi\n");
-    return 0;
-}
-```
-
-```c
-extern(abi="c", name="printf") func print(fmt *const u8, ...) i32;
-extern(abi="c", name="errno") var last_error i32;
-
-func main() i32 {
-    print("hi\n");
-    return last_error;
-}
-```
-
-`print` is the name in the program. The object file links `printf` and `errno`.
-
-`*const T` on a parameter, including an `extern(abi="c")` parameter, is a pointer to constant `T`. A variadic function may be declared with `extern(abi="c")` and without a body. A function with a body may use `...`, and `builtin.va()` reads the extra arguments.
-
-## Assembly
-
 ```asm
 main:
 # trace frame for the call, then the matching pop
@@ -67,5 +42,42 @@ movl -8(%rsp), %eax              # move
 movl -4(%rsp), %edx              # move
 retq                             # return
 ```
+
+```c
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+func main() i32 {
+    printf("hi\n");
+    return 0;
+}
+```
+
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq printf                     # call printf
+retq                             # return
+```
+
+```c
+extern(abi="c", name="printf") func print(fmt *const u8, ...) i32;
+extern(abi="c", name="errno") var last_error i32;
+
+func main() i32 {
+    print("hi\n");
+    return last_error;
+}
+```
+
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq printf                     # call printf
+retq                             # return
+```
+
+`print` is the name in the program. The object file links `printf` and `errno`.
+
+`*const T` on a parameter, including an `extern(abi="c")` parameter, is a pointer to constant `T`. A variadic function may be declared with `extern(abi="c")` and without a body. A function with a body may use `...`, and `builtin.va()` reads the extra arguments.
 
 [Index](../README.md) · [Previous: Visibility](visibility.md) · [Next: Numeric types](../types/integer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

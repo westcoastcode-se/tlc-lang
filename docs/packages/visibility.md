@@ -22,6 +22,35 @@ export func add(a i32, b i32) i32 {
 }
 ```
 
+`math.add(40, 2)` adds the arguments, then calls `secret`:
+
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # 40
+movl $2, %esi                    # 2
+callq add
+retq
+
+add:
+movl %edi, 32(%rsp)              # a
+movl %esi, 36(%rsp)              # b
+movl 32(%rsp), %eax
+addl 36(%rsp), %eax              # a + b
+movl %eax, 20(%rsp)
+# trace frame for secret, then the matching pop
+callq secret
+movl 16(%rsp), %ecx              # secret()
+movl 20(%rsp), %eax              # a + b
+addl %ecx, %eax                  # a + b + secret()
+addq $40, %rsp
+retq
+
+secret:
+movl $1, %eax                    # return 1
+retq
+```
+
 `secret` can be called from any file in the package. An importer sees `add`.
 
 `export func Point::sum` publishes that value method. Another package calls `value.sum(...)`. A method without `export` is reported as `sum is not exported`. `export func use(s Shape)` publishes a function whose parameter is a trait. Another package calls `pkg.use(r)`. When the struct is in another package, its method is exported, or the call is `area is not exported`. `extern func Point::read` names the same method in a tlc library. The call stays `value.read(...)`. `extern func Vec[T]::get` is that rule for a generic struct. The call stays `value.get(...)`. `pkg.Point.sum` is reported as `not supported yet`.
@@ -39,6 +68,12 @@ export var Entity::next i32 = 40;
 export const bias = 2;
 ```
 
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
+
 ```c
 import "math";
 
@@ -46,6 +81,18 @@ func main() i32 {
     math.Entity.next = math.Entity.next + math.bias;
     return math.Entity.next;
 }
+```
+
+```asm
+main:
+movq (%rip), %rax                # address of Entity.next
+movl (%rax), %ecx                # load it
+addl $2, %ecx                    # add bias
+movq (%rip), %rax
+movl %ecx, (%rax)                # store it
+movq (%rip), %rax
+movl (%rax), %eax                # return it
+retq
 ```
 
 The program returns 42. `math.bias` is the exported constant. `math.Entity.next` is the exported variable on `Entity`. `export var Box[T]::extra` publishes a variable on a generic struct. Another package reads and assigns `pkg.Box[i32].extra` when `Box` and the variable are exported. A constant or variable without `export` is reported as `name is not exported`. Assigning `math.bias` is reported as `not an lvalue`. `export func Entity::make` publishes `math.Entity.make(...)`. Without `export` that call is reported as `make is not exported`.
@@ -69,6 +116,12 @@ export var bonus = 4;
 export spare := 2;
 ```
 
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
+
 ```c
 import "math";
 import { spare } from "math";
@@ -79,6 +132,31 @@ func main() i32 {
     math.Entity.next = math.Entity.next + math.bonus + spare;
     return math.Entity.next + math.width();
 }
+```
+
+`e.id = 4` is not read, so that store is removed. `next` is loaded, `bonus` and `spare` are added, and `width` returns `sizeof(Entity)`:
+
+```asm
+main:
+movq (%rip), %rax
+movl (%rax), %ecx                # Entity.next
+movq (%rip), %rax
+addl (%rax), %ecx                # + bonus
+movq (%rip), %rax
+addl (%rax), %ecx                # + spare
+movq (%rip), %rax
+movl %ecx, (%rax)                # store Entity.next
+movq (%rip), %rax
+movl (%rax), %eax                # reload it
+# trace frame for width, then the matching pop
+callq width
+addl %ecx, %eax                  # next + width()
+addq $24, %rsp
+retq
+
+width:
+movl $4, %eax                    # sizeof(Entity)
+retq
 ```
 
 The program returns 42. `math.width()` is `sizeof(Entity)`, which is 4. `e.id` is the exported member. `math.Entity.next` started at 32.
@@ -108,6 +186,12 @@ export const Box[T]::limit = 6;
 export const spare = 2;
 ```
 
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
+
 ```c
 import "math";
 import { spare } from "math";
@@ -126,24 +210,8 @@ func main() i32 {
 }
 ```
 
+`id` is not exported, so this example is rejected (`id is not exported`) and emits nothing.
+
 The program returns 42. `math.width()` is `sizeof(Entity)`, which is 4. `math.Box[i32].limit` is the exported constant on that specialization. `Buf[4, i32].count` is 4.
-
-## Assembly
-
-```asm
-main:
-# trace frame for the call, then the matching pop
-movl $40, %edi                   # constant
-movl $2, %esi                    # constant
-callq add                        # call add
-retq                             # return
-
-add:
-movl %edi, -8(%rsp)              # move
-movl %esi, -4(%rsp)              # move
-movl -8(%rsp), %eax              # move
-addl -4(%rsp), %eax              # add
-retq                             # return
-```
 
 [Index](../README.md) · [Previous: Libraries](library.md) · [Next: extern](extern.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -15,15 +15,13 @@ func main() i32 {
 }
 ```
 
-On Linux or macOS the program prints `unix`. On Windows it prints `windows`. `import { family } from "builtin/env/consts"` brings the name into the file. Assigning `consts.family`, or writing `consts.family[0] = 1`, is reported as `type mismatch`.
-
-## Assembly
-
 ```asm
 main:
 # trace frame for the call, then the matching pop
 callq printf                     # call printf
 retq                             # return
 ```
+
+On Linux or macOS the program prints `unix`. On Windows it prints `windows`. `import { family } from "builtin/env/consts"` brings the name into the file. Assigning `consts.family`, or writing `consts.family[0] = 1`, is reported as `type mismatch`.
 
 [Index](../README.md) · [Previous: memeql and memcmp](mem.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

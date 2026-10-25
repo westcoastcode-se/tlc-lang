@@ -20,6 +20,20 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movl $41, -4(%rsp)               # constant
+cmpl $41, -4(%rsp)               # compare
+jne .L1                          # branch
+movl $1, %eax                    # constant
+retq                             # return
+.L1:
+jmp .L2                          # jump
+.L2:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
+
 ## Values
 
 `Red` is 0, `Green` is 40, and `Blue` is 41. Without an explicit value, the next constant is one higher than the previous one. The representation is `i32` when the definition does not name a primitive. A primitive is written in parentheses after `enum`:
@@ -39,6 +53,21 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movb $1, -1(%rsp)                # constant
+movsbl -1(%rsp), %eax            # move
+cmpl $0, %eax                    # compare
+jne .L1                          # branch
+xorl %eax, %eax                  # zero the result
+retq                             # return
+.L1:
+jmp .L2                          # jump
+.L2:
+movl $1, %eax                    # constant
+retq                             # return
+```
+
 `sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `u8`. A value that does not fit is reported as `type mismatch`. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `bool`. Other operators are reported as `type mismatch`.
 
 `switch` on the enum uses that enum. A `case` is one of its enumerators. `case 1` is `type mismatch`. The enum does not convert to its representation, so `var n i32 = Color.Red` is `type mismatch`. `if (value)` is `type mismatch: expected bool, found Color`. The condition is `value == Color.Blue`.
@@ -54,6 +83,38 @@ func code(value Color) i32 {
         return 0;
     }
 }
+```
+
+`code(Color.Blue)` is 4. `Blue` is 41, one past `Green`:
+
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $41, %edi                   # Color.Blue
+callq code
+retq
+
+code:
+movl %edi, -4(%rsp)
+movl -4(%rsp), %eax
+movl %eax, -8(%rsp)
+subl $40, %eax                   # case Green
+je .L1
+jmp .L2
+.L2:
+movl -8(%rsp), %eax
+subl $41, %eax                   # case Blue
+je .L3
+jmp .L4
+.L1:
+movl $2, %eax                    # Green
+retq
+.L3:
+movl $4, %eax                    # Blue
+retq
+.L4:
+xorl %eax, %eax                  # default
+retq
 ```
 
 ## C enums
@@ -80,6 +141,20 @@ func main() i32 {
 }
 ```
 
+```asm
+enabled:
+movl %edi, -4(%rsp)              # move
+cmpl $1, -4(%rsp)                # compare
+jne .L1                          # branch
+movl $1, %eax                    # constant
+retq                             # return
+.L1:
+jmp .L2                          # jump
+.L2:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
+
 ## Export and methods
 
 An exported enum exports the type. The enumerators come with it.
@@ -91,6 +166,14 @@ func main() i32 {
     value := Color.Blue;
     return 0;
 }
+```
+
+The binding is not read, so the function is the return:
+
+```asm
+main:
+xorl %eax, %eax                  # return 0
+retq
 ```
 
 A method uses the same form as a struct method. `this` is the enum value. A function with no `this` parameter is static and is called as `Color.label()`.
@@ -119,16 +202,16 @@ func main() i32 {
 }
 ```
 
-`value.code()` passes `value`. The method is written in the same file as `type Color enum`. Every file in the package can call it, and it is not exported.
-
-## Assembly
-
 ```asm
-main:
-movl $41, -4(%rsp)               # constant
+label:
+movl $1, %eax                    # constant
+retq                             # return
+
+code:
+movl %edi, -4(%rsp)              # move
 cmpl $41, -4(%rsp)               # compare
 jne .L1                          # branch
-movl $1, %eax                    # constant
+movl $41, %eax                   # constant
 retq                             # return
 .L1:
 jmp .L2                          # jump
@@ -136,5 +219,7 @@ jmp .L2                          # jump
 xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
+
+`value.code()` passes `value`. The method is written in the same file as `type Color enum`. Every file in the package can call it, and it is not exported.
 
 [Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

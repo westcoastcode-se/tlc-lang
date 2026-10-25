@@ -10,7 +10,7 @@ A diagnostic has this form:
 file:line:column: error: message
 ```
 
-Each feature page ends with the assembly of its smallest example, commented so the listing shows what runs. [Assembly](cost.md) is how those listings are taken, including the trace frame a call pushes. With no `-O` flag, `tlc` removes a store that is overwritten or never read, and does not run the other LLVM optimizations. `-O0` keeps that store. `-O1` and above run LLVM's pipeline. A listing is for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
+Each TLC example is followed by the assembly of that example, commented so the listing shows what runs. [Assembly](cost.md) is how those listings are taken, including the trace frame a call pushes. With no `-O` flag, `tlc` removes a store that is overwritten or never read, and does not run the other LLVM optimizations. `-O0` keeps that store. `-O1` and above run LLVM's pipeline. A listing is for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
 
 ## Reference
 

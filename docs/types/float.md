@@ -25,8 +25,6 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
 ```asm
 main:
 # trace frame for the call, then the matching pop

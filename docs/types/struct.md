@@ -25,6 +25,26 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+movl $2, %esi                    # constant
+callq make                       # call make
+retq                             # return
+
+make:
+movl %edi, -16(%rsp)             # move
+movl %esi, -12(%rsp)             # move
+movl -16(%rsp), %eax             # move
+movl %eax, -8(%rsp)              # move
+movl -12(%rsp), %eax             # move
+movl %eax, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %edx              # move
+retq                             # return
+```
+
 The program returns 42.
 
 A member is a variable of the value. It is written `name type;` or `name type = expr;`, without `var`. `export name type;` publishes that member. Another package can read and assign it. A member without `export` is reported as `name is not exported` from another package. The same package sees every member. `var`, `export var`, and `const` inside the struct are reported as `not supported yet`. A variable for the type is `var Entity::next` written after the struct.
@@ -45,6 +65,15 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movl $2, -8(%rsp)                # constant
+movl $40, -4(%rsp)               # constant
+movl -4(%rsp), %eax              # move
+addl -8(%rsp), %eax              # add
+retq                             # return
+```
+
 The program returns 42. `id` and `shown` are both members. `shown` is the one another package can name.
 
 A constant on the struct is written beside it, `const Entity::next = 40`. It is not a field. `sizeof` still counts the fields only. Assigning it, or taking its address, is reported as `not an lvalue`. A `const` declaration inside the braces is not a member. It is reported as `not supported yet`. A field `x const i32` stores a constant value. Assigning `value.x` is `type mismatch`. `const` before a type on a variable is `not supported yet`.
@@ -61,6 +90,14 @@ func main() i32 {
     e.id = 2;
     return Entity.next + e.id;
 }
+```
+
+```asm
+main:
+movl $2, -8(%rsp)                # constant
+movl -8(%rsp), %eax              # move
+addl $40, %eax                   # add
+retq                             # return
 ```
 
 The program returns 42. `Entity.next` is the constant. `e.id` is the field.
@@ -85,6 +122,13 @@ func main() i32 {
 }
 ```
 
+```asm
+get:
+movl %edi, -8(%rsp)              # move
+movl -8(%rsp), %eax              # move
+retq                             # return
+```
+
 ## Layout
 
 A struct may contain a pointer to itself. It may also contain a slice of itself. The slice field is the header, a pointer and a length, not another value of that struct. `kids []Node` is that field. `kids []Row` before `type Row` is the same header. `next Node` and `kids [2]Node` inside `Node` have no finite size. The diagnostic is `recursive struct` and the types that store each other. Each name is the package qualifier and the struct. The qualifier is the `package` name, the imported directory, or the entry file name without `.tlc`. A file `main.tlc` reports `recursive struct main.Node -> main.Node`. `package pkg` with `type A struct { b B }`, `type B struct { c C }`, and `type C struct { a A }` reports `recursive struct pkg.A -> pkg.B -> pkg.C -> pkg.A`. A sized array of a struct defined later stores that value. `kids [2]Row` before `type Row` is that field. `kids [2][2]Row` is the same array, nested. `sizeof` of `{ kids [2]Row; }` is 8 when `Row` is one `i32`. `kids *[2]Node` is a pointer to an array of that struct. `kids *[]Node` is a pointer to a slice of it. `sizeof` of `{ kids *[2]Node; }` is 8. `kids *[2]Row` and `kids *[]Row` before `type Row` are that same pointer. `node.kids[0].n` reads one element. `(*node.more)[0].n` reads one element of the slice.
@@ -97,6 +141,12 @@ type Node struct {
 };
 ```
 
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
+
 `sizeof` of `{ value i32; kids []Node; }` is 24. `root.kids = child[:]` stores that header. `root.kids[0].value` reads one element. `root.kids.len` is the number of elements.
 
 `type Wide struct(align=16)` sets the alignment. The value is a positive power of two, at most 4096. The size is rounded up to that alignment. An alignment weaker than a field requires is reported as `type mismatch`.
@@ -105,6 +155,12 @@ type Node struct {
 type Wide struct(align=16) {
     n i32;
 }
+```
+
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
 ```
 
 `sizeof(Wide)` is 16.
@@ -132,6 +188,23 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+pushq %rax
+callq take                       # call take
+popq %rcx
+retq                             # return
+
+id:
+movl $7, %eax                    # constant
+retq                             # return
+
+take:
+# trace frame for the call, then the matching pop
+callq id                         # call id
+retq                             # return
+```
+
 `take` on an `Empty` returns 7. `extern type Empty struct;` has the same size. An empty `extern(abi="c") struct` is a one-byte opaque handle.
 
 `type Node struct;` is that empty struct. `type Node struct` with neither `{` nor `;`, and `type Color enum` or `type Shape trait` without `{`, are reported as `expected '{'`. A struct defined in another file of the same package is already visible, including through a pointer, so a separate declaration is not required.
@@ -156,6 +229,17 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movl $10, -16(%rsp)              # constant
+movl $20, -8(%rsp)               # constant
+movl -8(%rsp), %eax              # move
+movl %eax, -12(%rsp)             # move
+movl -16(%rsp), %eax             # move
+addl -12(%rsp), %eax             # add
+retq                             # return
+```
+
 The program returns 30. A trailing comma is allowed. `box = {.complex = {.inner_value = 42}}` replaces the whole value, so `box.value` becomes 0 when that field has no value. A call used as the whole initializer of a file-scope `var` runs before `main`. A `const`, and any other global initializer, stays a constant. A call in a local initializer is allowed.
 
 `Point{}` is a `Point`, so an inferred binding does not write the type again. `var p = Point{}`, `const origin = Point{}`, and `p := Point{}` are that form. `Point{.x = 40}` fills `x`. `y` stays uninitialized when `y` has no value. `y i32 = 2` stores 2 in the field that was left out. `Point{0...}` stores 0 in every field the list does not name. `new Point{.x = 40}`, `var p Point`, and `var p = Point{}` use that same rule. A named field replaces the value written on the field.
@@ -176,6 +260,8 @@ func main() i32 {
 }
 ```
 
+This example is rejected (`uninitialized`) and emits nothing.
+
 The program returns 42. `origin` is a constant, so `origin.x = 1` is reported as `type mismatch`, and `&origin` is reported as `not an lvalue`.
 
 ## `extern` structs
@@ -193,6 +279,8 @@ extern(abi="c") type SDL_Window struct {}
 extern(abi="c") func make_pair(a i32, b i32) Pair;
 extern(abi="c") func SDL_DestroyWindow(window *SDL_Window) void;
 ```
+
+`extern(abi="c") type SDL_Window struct {}` is `not supported yet`, so this example emits nothing.
 
 A plain struct in an `extern(abi="c")` function is reported as `struct must be extern(abi="c")`. A field of an `extern(abi="c") struct` whose type is a tagged union is `extern(abi="c") on a tagged union`. That includes the union by value, `*Shape`, `[2]Shape`, an alias of `Shape`, and the same field inside an anonymous struct of that struct. An untagged union that is not `extern(abi="c")` is `struct must be extern(abi="c")`.
 
@@ -215,6 +303,8 @@ func main() i32 {
 }
 ```
 
+`x` and `y` are not exported, so this example is rejected (`x is not exported`) and emits nothing.
+
 ```c
 package geom;
 
@@ -228,28 +318,12 @@ export func sum(p Point) i32 {
 }
 ```
 
-Inside the package the type is written `Point`. `import { Point } from "geom"` makes `Point` a type name in the importing file. A struct is visible to every file in the package, so one file can declare `type A struct { b B; }` when `type B struct` is in another file of that package.
-
-## Assembly
-
 ```asm
 main:
-# trace frame for the call, then the matching pop
-movl $40, %edi                   # constant
-movl $2, %esi                    # constant
-callq make                       # call make
-retq                             # return
-
-make:
-movl %edi, -16(%rsp)             # move
-movl %esi, -12(%rsp)             # move
-movl -16(%rsp), %eax             # move
-movl %eax, -8(%rsp)              # move
-movl -12(%rsp), %eax             # move
-movl %eax, -4(%rsp)              # move
-movl -8(%rsp), %eax              # move
-movl -4(%rsp), %edx              # move
+xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
+
+Inside the package the type is written `Point`. `import { Point } from "geom"` makes `Point` a type name in the importing file. A struct is visible to every file in the package, so one file can declare `type A struct { b B; }` when `type B struct` is in another file of that package.
 
 [Index](../README.md) · [Previous: The Type type](type.md) · [Next: Unions](union.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

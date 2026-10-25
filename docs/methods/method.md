@@ -30,6 +30,31 @@ func main() i32 {
 }
 ```
 
+```asm
+add:
+movq %rdi, -16(%rsp)             # move
+movl %esi, -8(%rsp)              # move
+movl %edx, -4(%rsp)              # move
+movq -16(%rsp), %rax             # move
+movq -16(%rsp), %rcx             # move
+movl (%rcx), %ecx                # move
+addl -8(%rsp), %ecx              # add
+movl %ecx, (%rax)                # move
+movq -16(%rsp), %rax             # move
+movq -16(%rsp), %rcx             # move
+movl 4(%rcx), %ecx               # move
+addl -4(%rsp), %ecx              # add
+movl %ecx, 4(%rax)               # move
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+movl $1, %edx                    # constant
+movl %edx, %esi                  # move
+callq add                        # call add
+retq                             # return
+```
+
 A method body may omit the result the same way a function does, including when that result is a function pointer. A body with no `return` is `void`, and so is a body that only writes `return;` or returns a `void` value. That pointer may take `[]const u8`. That pointer's result may be a function pointer. The type comes from the `return` expressions. `add` takes a pointer, so `p` must be an lvalue. The compiler passes `&p`. `sum` takes a value. A call on a `*Point` loads the struct. A pointer method on a temporary struct value is reported as `not an lvalue`.
 
 A const variable, and a `*const Point`, cannot call a method whose receiver is a non-const pointer. `origin.bump()` and `frozen.bump()`, when `bump` is `self *this`, are reported as `type mismatch: expected *Point, found *const Point`. The same call through `?*this` is reported the same way, with `?*Point` as the expected type. `self *const this` and a value receiver can be called on that variable. A store through `self *const this` is reported as `type mismatch`. A const binding of a mutable pointer still calls `self *this`: `const p = &live` then `p.bump()` changes `live`.
@@ -64,6 +89,8 @@ func main() i32 {
 }
 ```
 
+This example is rejected (`uninitialized`) and emits nothing.
+
 The program returns 42.
 
 `self ?*this` may be `null`. `p.read()` and `var q ?*Point = &p` are `type mismatch: expected ?*Point, found *Point`.
@@ -85,6 +112,21 @@ func main() i32 {
     var q ?*Point = null;
     return q.read();
 }
+```
+
+```asm
+read:
+movq %rdi, -8(%rsp)              # move
+cmpq $0, -8(%rsp)                # compare
+jne .L1                          # branch
+xorl %eax, %eax                  # zero the result
+retq                             # return
+.L1:
+jmp .L2                          # jump
+.L2:
+movq -8(%rsp), %rax              # move
+movl (%rax), %eax                # move
+retq                             # return
 ```
 
 The program returns 0. `q.read()` passes the optional pointer.
@@ -114,33 +156,22 @@ func main() i32 {
 }
 ```
 
-The program returns 42.
-
-## Assembly
-
 ```asm
-add:
-movq %rdi, -16(%rsp)             # move
-movl %esi, -8(%rsp)              # move
-movl %edx, -4(%rsp)              # move
-movq -16(%rsp), %rax             # move
-movq -16(%rsp), %rcx             # move
-movl (%rcx), %ecx                # move
-addl -8(%rsp), %ecx              # add
-movl %ecx, (%rax)                # move
-movq -16(%rsp), %rax             # move
-movq -16(%rsp), %rcx             # move
-movl 4(%rcx), %ecx               # move
-addl -4(%rsp), %ecx              # add
-movl %ecx, 4(%rax)               # move
+origin:
+movl $20, -8(%rsp)               # constant
+movl $22, -4(%rsp)               # constant
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %edx              # move
 retq                             # return
 
-main:
-# trace frame for the call, then the matching pop
-movl $1, %edx                    # constant
-movl %edx, %esi                  # move
-callq add                        # call add
+read:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
 retq                             # return
 ```
+
+The program returns 42.
 
 [Index](../README.md) · [Previous: Function pointers](../functions/pointer.md) · [Next: Generic methods](generic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

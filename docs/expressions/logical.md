@@ -21,10 +21,6 @@ func main() i32 {
 }
 ```
 
-Both operands are `bool`. An integer operand is reported as `type mismatch: expected bool, found i32`. The result is `bool`. A shift is evaluated in the common type.
-
-## Assembly
-
 ```asm
 main:
 # trace frame for the call, then the matching pop
@@ -38,5 +34,7 @@ movl %eax, (%rip)                # move
 movb $1, %al                     # constant
 retq                             # return
 ```
+
+Both operands are `bool`. An integer operand is reported as `type mismatch: expected bool, found i32`. The result is `bool`. A shift is evaluated in the common type.
 
 [Index](../README.md) · [Previous: Expressions](operator.md) · [Next: Pointers and null](null.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

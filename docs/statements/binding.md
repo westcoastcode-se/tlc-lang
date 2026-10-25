@@ -21,6 +21,22 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movl $1, -36(%rsp)               # constant
+leaq -36(%rsp), %rax             # address
+movq %rax, -32(%rsp)             # move
+movl $10, -20(%rsp)              # constant
+movl $2, -8(%rsp)                # constant
+movl $3, -4(%rsp)                # constant
+movq -32(%rsp), %rax             # move
+movl (%rax), %eax                # move
+addl -20(%rsp), %eax             # add
+addl -8(%rsp), %eax              # add
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
 A local array takes a brace list with one value per element: `var row [3]i32 = {10, 20, 12}`. A different count is reported as `type mismatch`. `row[0]` reads an element. A local `var copy = row` and `var copy [2]i32 = row` copy that array. A later store into `row` does not change `copy`. A parameter `[2]i32` is a pointer. `var copy [2]i32 = row` copies those elements. A later store into the parameter does not change the copy. `var copy = row` stays `*i32`. A list element copies that array too. `var row = [_][2]i32{inner}` and `var grid [2][2]i32 = {a, b}` store those rows. A later store into the source does not change the copy. A different length is reported as `type mismatch`. `copy = row` copies that array. A later store into `row` does not change `copy`. `row = {4, 6}` stores that list. A short list stores only the named elements. Reading an omitted element is reported as `uninitialized`. A different length, a `const` array, and `[2]const i32` are reported as `type mismatch`. `kept = row` copies those elements when `kept` is a local `[2]i32` and `row` is a parameter. A later store into the parameter does not change `kept`. A file-scope `var copy = row`, `const copy = row`, and `var copy [2]i32 = row` copy that array into the binary.
 
 `[_]i32{10, 20, 12}` is an array. `_` stands for the length, which is the number of values, so the type is `[3]i32`. `var row = [_]i32{10, 20, 12}`, `row := [_]i32{10, 20, 12}`, and a local `const row = [_]i32{10, 20, 12}` take that type. `var typed [2]i32 = [_]i32{4, 1}` matches the written length. A different length or a different element type is reported as `type mismatch`. Assigning an element of the const binding is reported as `type mismatch`. `row.len` is `i32`, the number of elements, the same spelling as a slice.
@@ -32,6 +48,23 @@ func main() i32 {
     var typed [2]i32 = [_]i32{4, 1};
     return row[0] + row[2] + other[0] + other[1] + typed[0] + typed[1];
 }
+```
+
+```asm
+main:
+movl $10, -28(%rsp)              # constant
+movl $12, -20(%rsp)              # constant
+movl $7, -16(%rsp)               # constant
+movl $8, -12(%rsp)               # constant
+movl $4, -8(%rsp)                # constant
+movl $1, -4(%rsp)                # constant
+movl -28(%rsp), %eax             # move
+addl -20(%rsp), %eax             # add
+addl -16(%rsp), %eax             # add
+addl -12(%rsp), %eax             # add
+addl -8(%rsp), %eax              # add
+addl -4(%rsp), %eax              # add
+retq                             # return
 ```
 
 The same lists are file-scope initializers when every value is a constant. The element may be an integer, `bool`, a float, a pointer, a struct, an enum, a typedef, or a function pointer. `var named [3]i32 = {10, 4, 1}`, `var row = [_]i32{10, 20, 12}`, `other := [_]i32{6, 1}`, and `const fixed = [_]i32{19, 2}` are those arrays. `var live [2]i32 = [_]i32{1, 2}` matches the written length. A different count is reported as `type mismatch`. An empty `[_]i32{}` has length 0. A nested array is a brace list. `var grid = [_][2]i32{{1, 2}, {3, 4}}` reads `grid[0][1]`. `var row [2][3]i32 = {{1, 2, 3}, {4, 5, 6}}` and `var deep = [_][2][3]i32{{{1, 2, 3}, {4, 5, 6}}}` are the next array, and `deep[0][1][2]` reads an element. A global name copies that global's initializer, so `var n = 1` then `var row = [_]i32{n, 2}` keeps `1` in `row[0]` when `main` later assigns `n`. A sized array copies another array in this file the same way: `var copy = row`, `const copy = row`, `var copy [2]i32 = row`, `const frozen [2]i32 = held`, `var whole [2][2]i32 = grid`, and `var line [2]i32 = grid[1]`. A list element copies an array in this file the same way: `var row = [_][2]i32{inner}`, `[_][2]i32{grid[1]}`, and `var row [1][2]i32 = {late}` when `late` is declared later. `const inner = [_]i32{1, 2}` before that var is that copy. `var row = [_][2]i32{give()}` and `var row = [_][2]i32{unsafe give()}` run `give` before `main`. `var row = [_]i32{give(), 2}` and `var row [2]i32 = {give(), 2}` run `give` before `main` when `give` returns `i32`. Each element is stored before the next one runs, so that call reads the elements already stored. `[_]Point{give()}` stores that value. A `const` with that call, `[_]i32{n + 1}`, `[_]i32{give() + 1}`, and `var n = give(); var row = [_]i32{n}` are reported as `global initializer is not a constant`. `var copy [2]i32 = give()` and `var copy [2]i32 = unsafe give()` run `give` before `main`. Copying an array that is itself filled by a call is reported as `global initializer is not a constant`. A value that is not a constant is reported as `global initializer is not a constant`. A const array is copied by `const copy = held`. Assigning an element is reported as `type mismatch`. A pointer to the element is `*const i32(held)`, and `*i32(held)` is reported as `unsafe cast`. The name is not an array length. `&fixed` is reported as `not an lvalue`.
@@ -46,6 +79,19 @@ func main() i32 {
     live[0] = 3;
     return fixed[0] + fixed[1] + named[0] + named[2] + other[0] + other[1] + live[0];
 }
+```
+
+```asm
+main:
+movl $3, (%rip)                  # constant
+movl (%rip), %eax                # move
+addl (%rip), %eax                # add
+addl (%rip), %eax                # add
+addl (%rip), %eax                # add
+addl (%rip), %eax                # add
+addl (%rip), %eax                # add
+addl (%rip), %eax                # add
+retq                             # return
 ```
 
 The program returns 42.
@@ -96,6 +142,19 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $1, %edi                    # constant
+callq *%rax                      # call *%rax
+retq                             # return
+
+add:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+retq                             # return
+```
+
 The program returns 42. `row[0]` stays `1` after `n = 9`. `*q` reads the new value of `n`. `f` is a copy of `ops[0]`.
 
 ### `const`
@@ -124,6 +183,18 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movl $42, -12(%rsp)              # constant
+leaq -12(%rsp), %rax             # address
+movq %rax, -8(%rsp)              # move
+movq -8(%rsp), %rax              # move
+movl (%rax), %eax                # move
+movl %eax, -28(%rsp)             # move
+movl -28(%rsp), %eax             # move
+retq                             # return
+```
+
 ```c
 type Integer i32;
 
@@ -148,6 +219,22 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $1, %esi                    # constant
+movl %esi, %edi                  # move
+callq *%rax                      # call *%rax
+retq                             # return
+
+add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
 The program returns 42.
 
 ### File scope
@@ -165,10 +252,26 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movl (%rip), %eax                # move
+addl (%rip), %eax                # add
+movq (%rip), %rcx                # move
+addl (%rcx), %eax                # add
+addl (%rip), %eax                # add
+retq                             # return
+```
+
 ```c
 extern var slot i32;
 extern(abi="c") var errno i32;
 extern(abi="c", name="errno") var last_error i32;
+```
+
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
 ```
 
 `name` sets the object symbol. The program reads `last_error`. That argument adds no instructions.
@@ -205,6 +308,116 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+movss (%rip), %xmm0              # move
+movss %xmm0, (%rip)              # move
+movss (%rip), %xmm0              # move
+movb $1, %al                     # constant
+movss (%rip), %xmm1              # move
+ucomiss %xmm1, %xmm0
+movb %al, -1(%rsp)               # move
+jne .L1                          # branch
+movsd (%rip), %xmm0              # move
+movss (%rip), %xmm1              # move
+cvtss2sd %xmm1, %xmm1
+addsd %xmm1, %xmm0
+movsd (%rip), %xmm1              # move
+ucomisd %xmm1, %xmm0
+setne %al                        # flag to byte
+movb %al, -1(%rsp)               # move
+.L1:
+movb -1(%rsp), %cl               # move
+movb $1, %al                     # constant
+testb $1, %cl                    # test
+movb %al, -2(%rsp)               # move
+jne .L2                          # branch
+movsd (%rip), %xmm0              # move
+movsd (%rip), %xmm1              # move
+ucomisd %xmm1, %xmm0
+setne %al                        # flag to byte
+movb %al, -2(%rsp)               # move
+.L2:
+movb -2(%rsp), %cl               # move
+movb $1, %al                     # constant
+testb $1, %cl                    # test
+movb %al, -3(%rsp)               # move
+jne .L3                          # branch
+movsd (%rip), %xmm0              # move
+movsd (%rip), %xmm1              # move
+ucomisd %xmm1, %xmm0
+setne %al                        # flag to byte
+movb %al, -3(%rsp)               # move
+.L3:
+movb -3(%rsp), %al               # move
+testb $1, %al                    # test
+jne .L4                          # branch
+jmp .L5                          # jump
+.L4:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+.L5:
+jmp .L6                          # jump
+.L6:
+movss (%rip), %xmm0              # move
+movb $1, %al                     # constant
+movss (%rip), %xmm1              # move
+ucomiss %xmm1, %xmm0
+movb %al, -4(%rsp)               # move
+jne .L7                          # branch
+movss (%rip), %xmm0              # move
+movss (%rip), %xmm1              # move
+ucomiss %xmm1, %xmm0
+setne %al                        # flag to byte
+movb %al, -4(%rsp)               # move
+.L7:
+movb -4(%rsp), %cl               # move
+movb $1, %al                     # constant
+testb $1, %cl                    # test
+movb %al, -5(%rsp)               # move
+jne .L8                          # branch
+movss (%rip), %xmm0              # move
+xorps %xmm1, %xmm1
+ucomiss %xmm1, %xmm0
+setne %al                        # flag to byte
+movb %al, -5(%rsp)               # move
+.L8:
+movb -5(%rsp), %cl               # move
+movb $1, %al                     # constant
+testb $1, %cl                    # test
+movb %al, -6(%rsp)               # move
+jne .L9                          # branch
+movss (%rip), %xmm0              # move
+movss (%rip), %xmm1              # move
+ucomiss %xmm1, %xmm0
+setne %al                        # flag to byte
+movb %al, -6(%rsp)               # move
+.L9:
+movb -6(%rsp), %cl               # move
+movb $1, %al                     # constant
+testb $1, %cl                    # test
+movb %al, -7(%rsp)               # move
+jne .L10                         # branch
+movss (%rip), %xmm0              # move
+movss (%rip), %xmm1              # move
+ucomiss %xmm1, %xmm0
+setne %al                        # flag to byte
+movb %al, -7(%rsp)               # move
+.L10:
+movb -7(%rsp), %al               # move
+testb $1, %al                    # test
+jne .L11                         # branch
+jmp .L12                         # jump
+.L11:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+.L12:
+jmp .L13                         # jump
+.L13:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
 The program returns 42.
 
 ```c
@@ -222,6 +435,23 @@ var next = later();
 func main() i32 {
     return item + next + 21;
 }
+```
+
+```asm
+main:
+movl (%rip), %eax                # move
+addl (%rip), %eax                # add
+addl $21, %eax                   # add
+retq                             # return
+
+later:
+movl (%rip), %eax                # move
+addl $1, %eax                    # add
+retq                             # return
+
+call_func:
+movl $10, %eax                   # constant
+retq                             # return
 ```
 
 `item` is stored before `next` is called, so `next` reads 10. The program returns 42.
@@ -248,6 +478,21 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $2, %edi                    # constant
+callq step                       # call step
+retq                             # return
+
+step:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %edx              # move
+movl %edx, %eax                  # move
+incl %eax
+retq                             # return
+```
+
 ### Pointer and array order
 
 A pointer is a leading star in every position, including a parameter, a result, a type alias, a cast, and `sizeof`: `*i32`, `*const u8`, `type Ptr *Point`, `sizeof(*i32)`, `*i32(value)`. An array is written in front of its element type in every position: `type Pair [2]i32`, `func head(a [4]i32)`. A slice uses the same place with no length: `[]i32` and `func head(a []i32) []i32`. `i32[4]` and `i32[]` are reported as `type mismatch`.
@@ -270,21 +515,11 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
 ```asm
-main:
-movl $1, -36(%rsp)               # constant
-leaq -36(%rsp), %rax             # address
-movq %rax, -32(%rsp)             # move
-movl $10, -20(%rsp)              # constant
-movl $2, -8(%rsp)                # constant
-movl $3, -4(%rsp)                # constant
-movq -32(%rsp), %rax             # move
+head:
+movq %rdi, -8(%rsp)              # move
+movq -8(%rsp), %rax              # move
 movl (%rax), %eax                # move
-addl -20(%rsp), %eax             # add
-addl -8(%rsp), %eax              # add
-addl -4(%rsp), %eax              # add
 retq                             # return
 ```
 

@@ -21,6 +21,18 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq point                      # call point
+retq                             # return
+
+point:
+movq %rdi, -8(%rsp)              # move
+movq -8(%rsp), %rax              # move
+retq                             # return
+```
+
 ## Casts
 
 A cast from one pointer to another pointer needs `unsafe` in three cases. `?`, `const`, and a type alias do not change the case. `type Integer i32` makes `*Integer` the same pointer as `*i32`.
@@ -43,6 +55,15 @@ export unsafe func point(raw *u8) *Point {
 }
 ```
 
+The cast keeps the pointer:
+
+```asm
+point:
+movq %rdi, -8(%rsp)              # raw
+movq -8(%rsp), %rax              # return that address
+retq
+```
+
 The flag is part of the function. `unsafe func point(raw *u8) *Point;` and `func point(raw *u8) *Point { ... }` are reported as `redefinition`. A nested function and an anonymous function do not inherit the context. `var f = point` and `var f = unsafe point` are reported as `type mismatch`. The function is only a call.
 
 `defer unsafe point(raw)` calls it. `defer point(raw)` is `unsafe call` outside an unsafe function. `unsafe` on a declaration that is not a function, such as `unsafe var`, is reported as `not supported yet`.
@@ -50,19 +71,5 @@ The flag is part of the function. `unsafe func point(raw *u8) *Point;` and `func
 `unsafe func draw() void;` on a trait makes that method unsafe. The call is `unsafe s.draw()` and is reported as `unsafe call` without the prefix. Inside an `unsafe func`, the prefix is not required. The struct method repeats the flag: `unsafe func Rect::draw`. A method that does not, or an `unsafe` method where the trait method is not, is reported as `type mismatch`. An anonymous function passed to a one-method trait is not itself an `unsafe func`. A named function with that signature is the same argument, and it is not an `unsafe func` either. Using an `unsafe func` as that argument is reported as `type mismatch`. The call through the trait still writes `unsafe`.
 
 `malloc` and `realloc` on `Allocator` are unsafe. The call is `unsafe arena.malloc(...)` or `unsafe arena.realloc(...)`, and it is `unsafe call` without the prefix. `free` is an ordinary call. `new` and `delete` are not unsafe calls. `malloc` returns `?*u8`, and the caller handles `null`. The cast of that pointer follows the rules above.
-
-## Assembly
-
-```asm
-main:
-# trace frame for the call, then the matching pop
-callq point                      # call point
-retq                             # return
-
-point:
-movq %rdi, -8(%rsp)              # move
-movq -8(%rsp), %rax              # move
-retq                             # return
-```
 
 [Index](../README.md) · [Previous: Casts](cast.md) · [Next: Tuples and lists](tuple.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

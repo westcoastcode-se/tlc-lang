@@ -25,6 +25,26 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+movl $1, %esi                    # constant
+callq make                       # call make
+retq                             # return
+
+make:
+movl %edi, -16(%rsp)             # move
+movl %esi, -12(%rsp)             # move
+movl -16(%rsp), %eax             # move
+movl %eax, -8(%rsp)              # move
+movl -12(%rsp), %eax             # move
+movl %eax, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %edx              # move
+retq                             # return
+```
+
 The program returns 42. The function is written in the same file as the struct. Every file in the package can call it. `export` publishes `pkg.Type.name(...)`. Without `export` that call is reported as `name is not exported`. `var ptr = pkg.Point.make` is that function. An enum uses the same form, `Color.label()` and `pkg.Color.code()`. A missing name, `Point.missing()`, is reported as `undeclared identifier`.
 
 The name without a call is a function pointer. `var ptr = Point.make` and `take(Point.make)` use that pointer, and `ptr(40, 2)` calls it. `var ptr = add` is the same form for a free function. An instance method used as a value, `var ptr = Point.sum`, is reported as `type mismatch`. An enumerator stays a value, so `Color.Red` is not a function pointer.
@@ -65,6 +85,30 @@ func main() i32 {
 }
 ```
 
+```asm
+width:
+movl $1, %eax                    # constant
+retq                             # return
+
+zero:
+# trace frame for the call, then the matching pop
+callq from                       # call from
+retq                             # return
+
+from:
+movl %edi, -12(%rsp)             # move
+movl -12(%rsp), %eax             # move
+movl %eax, -8(%rsp)              # move
+movl -8(%rsp), %eax              # move
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+callq from                       # call from
+retq                             # return
+```
+
 The program returns 42.
 
 A method can return a function pointer. The call is that pointer. An instance method and a static method both can. The value may be an anonymous function, in the short form or with the parameter types and the result written out. The program below returns 42.
@@ -90,26 +134,6 @@ func main() i32 {
 }
 ```
 
-## Assembly
-
-```asm
-main:
-# trace frame for the call, then the matching pop
-movl $40, %edi                   # constant
-movl $1, %esi                    # constant
-callq make                       # call make
-retq                             # return
-
-make:
-movl %edi, -16(%rsp)             # move
-movl %esi, -12(%rsp)             # move
-movl -16(%rsp), %eax             # move
-movl %eax, -8(%rsp)              # move
-movl -12(%rsp), %eax             # move
-movl %eax, -4(%rsp)              # move
-movl -8(%rsp), %eax              # move
-movl -4(%rsp), %edx              # move
-retq                             # return
-```
+This example is rejected (`uninitialized`) and emits nothing.
 
 [Index](../README.md) · [Previous: Generic methods](generic.md) · [Next: Methods on primitive aliases](alias.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

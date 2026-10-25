@@ -21,12 +21,6 @@ world`;
 var pointer *const u8 = "Hello";
 ```
 
-`text.len` is 5. `raw` includes the newline. `pointer[0]` is the same first byte, and the read walks bytes until the null.
-
-[`std/string`](../std/string.md) is the library package `lib/tlc/std/string`. It names this slice `string_view` and provides `equals`, `compare`, and `find_first_of`. Those functions are tlc source. The compiler does not implement them.
-
-## Assembly
-
 ```asm
 main:
 leaq (%rip), %rax                # address
@@ -36,5 +30,9 @@ movl -8(%rsp), %eax              # move
 movq -16(%rsp), %rcx             # move
 retq                             # return
 ```
+
+`text.len` is 5. `raw` includes the newline. `pointer[0]` is the same first byte, and the read walks bytes until the null.
+
+[`std/string`](../std/string.md) is the library package `lib/tlc/std/string`. It names this slice `string_view` and provides `equals`, `compare`, and `find_first_of`. Those functions are tlc source. The compiler does not implement them.
 
 [Index](../README.md) · [Previous: Literals](literal.md) · [Next: sizeof](sizeof.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

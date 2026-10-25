@@ -27,10 +27,6 @@ export func add(a i32, b i32) i32 {
 }
 ```
 
-The qualifier is that name when every file in the directory agrees. When no file has a `package` clause, the qualifier is the directory's name. Clauses that disagree are reported as `package mismatch`. The entry file's qualifier is its `package` name, or the file name without `.tlc`.
-
-## Assembly
-
 ```asm
 main:
 # trace frame for the call, then the matching pop
@@ -46,5 +42,7 @@ movl -8(%rsp), %eax              # move
 addl -4(%rsp), %eax              # add
 retq                             # return
 ```
+
+The qualifier is that name when every file in the directory agrees. When no file has a `package` clause, the qualifier is the directory's name. Clauses that disagree are reported as `package mismatch`. The entry file's qualifier is its `package` name, or the file name without `.tlc`.
 
 [Index](../README.md) · [Previous: Comments](../compiler/comment.md) · [Next: Imports](import.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

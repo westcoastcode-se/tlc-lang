@@ -41,6 +41,38 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+pushq %rax
+movl $5, (%rsp)                  # constant
+movl $6, 4(%rsp)                 # constant
+movq %rsp, %rdi                  # move
+movl $1, %esi                    # constant
+callq apply                      # call apply
+popq %rcx
+retq                             # return
+
+grow:
+movq %rdi, -16(%rsp)             # move
+movl %esi, -4(%rsp)              # move
+movq -16(%rsp), %rax             # move
+movq -16(%rsp), %rcx             # move
+movl (%rcx), %ecx                # move
+addl -4(%rsp), %ecx              # add
+movl %ecx, (%rax)                # move
+movq -16(%rsp), %rax             # move
+movq -16(%rsp), %rcx             # move
+movl 4(%rcx), %ecx               # move
+addl -4(%rsp), %ecx              # add
+movl %ecx, 4(%rax)               # move
+retq                             # return
+
+apply:
+# trace frame for the call, then the matching pop
+callq grow                       # call grow
+retq                             # return
+```
+
 `apply(&r, 1)` changes the width and height to 6 and 7. `area` returns 42.
 
 `type Shape trait(Parent)` copies `Parent`'s methods and fields into `Shape` while compiling. The child still stores `Parent` as its parent. A copied field or method keeps that trait as the place it was declared. `func need(p Parent)` accepts `s` when `s` is `Shape`. The call is still the struct's method. There is no table. A struct passed as `Shape` must provide those methods and fields too. Writing the same method or field again is `redefinition`. A missing parent is `undeclared identifier`. A parent that is not a trait, or a cycle, is `type mismatch`. `trait(pkg.Parent)` is `not supported yet`.
@@ -102,6 +134,44 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+subq $24, %rsp                   # subtract
+movl $5, 16(%rsp)                # constant
+movl $6, 20(%rsp)                # constant
+leaq 16(%rsp), %rdi              # address
+callq widen                      # call widen
+movl %eax, 12(%rsp)              # move
+movl 16(%rsp), %edi              # move
+movl 20(%rsp), %esi              # move
+callq edges                      # call edges
+movl %eax, %ecx                  # move
+movl 12(%rsp), %eax              # move
+addl %ecx, %eax                  # add
+subl $6, %eax                    # subtract
+addq $24, %rsp                   # add
+retq                             # return
+
+area:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+imull -4(%rsp), %eax             # multiply
+retq                             # return
+
+widen:
+# trace frame for the call, then the matching pop
+callq area                       # call area
+retq                             # return
+
+edges:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
 `widen` adds 1 to `w` and `area` returns 36. `edges` reads the same fields and returns 12. The program returns 42.
 
 A trait with one method and no fields also accepts an anonymous function, and a named function with that method's parameters and result. There is no receiver. The short form and the `func` form both work. The parameter may be the trait or a pointer to the trait, and the function is passed directly. `pkg.inc` is that named function when `inc` is exported. `Type.name` is that named function when it is a static function with the method's signature. A function written inside another function is the same argument when it does not read a local or a parameter from the enclosing function. A trait with a field, with no methods, or with several methods, is reported as `type mismatch`. The wrong parameters or the wrong result are reported as `type mismatch`. An overloaded name is reported as `not supported yet`. A prototype with no body is reported as `type mismatch`. `var f = inc` followed by passing `f` is reported as `type mismatch`. An `unsafe func` used as the argument is reported as `type mismatch`. An inner function that reads an enclosing local is reported as `not supported yet`.
@@ -122,6 +192,40 @@ func inc(n i32) i32 {
 func main() i32 {
     return twice((n) { return n + 1; }, 20) + twice(inc, 3);
 }
+```
+
+```asm
+main:
+pushq %rax
+leaq 72(%rip), %rdi              # address
+movl $20, %esi                   # constant
+callq fn                         # call fn
+movl %eax, 4(%rsp)               # move
+leaq 35(%rip), %rdi              # address
+movl $3, %esi                    # constant
+callq fn                         # call fn
+movl %eax, %ecx                  # move
+movl 4(%rsp), %eax               # move
+addl %ecx, %eax                  # add
+popq %rcx
+retq                             # return
+
+inc:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+addl $1, %eax                    # add
+retq                             # return
+
+1:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+addl $1, %eax                    # add
+retq                             # return
+
+fn:
+# trace frame for the call, then the matching pop
+callq *%rax                      # call *%rax
+retq                             # return
 ```
 
 `twice` calls that function twice. The `func` form is the same argument, and so is `inc`. `twice(inc, 3)` returns 8. A method takes the function the same way: `c.add(inc)`. `*Adder` takes it directly, as `take_ptr(inc)`. `(*a).apply(n)` is that same call when `a` is `*Adder`. One monomorphized copy calls it through a function pointer. A struct argument still gets its own copy and a direct call, including `(*a).apply(n)`. Passing the parameter onward, when the next parameter is the same trait, uses that same copy.
@@ -154,6 +258,40 @@ func main() i32 {
     var from_static = Counter.forward((n) { return n + 1; }, 4);
     return from_method + from_static;
 }
+```
+
+```asm
+1:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+retq                             # return
+
+fn:
+# trace frame for the call, then the matching pop
+movl $1, %edi                    # constant
+callq *%rax                      # call *%rax
+retq                             # return
+
+2:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+addl $1, %eax                    # add
+retq                             # return
+
+fn:
+subq $24, %rsp                   # subtract
+movq %rdi, 8(%rsp)               # move
+movl %esi, 20(%rsp)              # move
+movq 8(%rsp), %rdi               # move
+movl 20(%rsp), %esi              # move
+callq fn                         # call fn
+addq $24, %rsp                   # add
+retq                             # return
+
+fn:
+# trace frame for the call, then the matching pop
+callq *%rax                      # call *%rax
+retq                             # return
 ```
 
 `c.add` passes the `func` form to a method. `Counter.forward` passes the short form to a static function whose parameter is `*Adder`, and `through` receives that same parameter.
@@ -192,6 +330,35 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+pushq %rax
+movl $5, (%rsp)                  # constant
+movl $6, 4(%rsp)                 # constant
+movq %rsp, %rdi                  # move
+callq use                        # call use
+popq %rcx
+retq                             # return
+
+twice:
+# trace frame for the call, then the matching pop
+callq area                       # call area
+retq                             # return
+
+area:
+movq %rdi, -8(%rsp)              # move
+movq -8(%rsp), %rax              # move
+movl (%rax), %eax                # move
+movq -8(%rsp), %rcx              # move
+imull 4(%rcx), %eax              # multiply
+retq                             # return
+
+use:
+# trace frame for the call, then the matching pop
+callq twice                      # call twice
+retq                             # return
+```
+
 `use(&r)` is 60. `a.malloc[i32]()` when `a` is `*Allocator` is the same default as `arena.malloc[i32]()`. The call is specialized for the struct that was passed. A struct method `Arena::malloc[T type]` wins over that default. The result is `?*T`, and the caller handles `null`. The call is `unsafe`.
 
 `export func use(s Shape)` publishes that function. Another package calls `pkg.use(r)`, or `use(r)` after `import { use }`. `export func Rect::paint(self *this, s Shape)` publishes that method. Another package calls `value.paint(s)`. The parameter is `Shape` or `*Shape`. The call is still specialized. The symbol of `use(r)` when `use` is in `main` is `main.use.spec.Rect`. When the struct is in another package, its package is part of that symbol. The struct's method is exported when the function and the struct are in different packages. Without that `export`, the call is `area is not exported`. A method in the same package does not need `export`. `extern` and `extern(abi="tlc")` name that function in a tlc library. Each struct is its own symbol. The call stays `use(r)` or `value.paint(s)`. A body defines that symbol. A prototype may be the declaration that says `extern`, and the body that follows defines it. A prototype with no body is accepted. A call that specializes it is `not supported yet`. `extern(abi="c")` and `extern(abi="c", name="symbol")` on that function are `extern(abi="c") on a trait or a generic`. `...` is `not supported yet`. `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`.
@@ -222,6 +389,30 @@ func main() i32 {
 }
 ```
 
+```asm
+main:
+pushq %rax
+movl $5, (%rsp)                  # constant
+movl $6, 4(%rsp)                 # constant
+movl (%rsp), %edi                # move
+movl 4(%rsp), %esi               # move
+callq use                        # call use
+popq %rcx
+retq                             # return
+
+area:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+imull -4(%rsp), %eax             # multiply
+retq                             # return
+
+use:
+# trace frame for the call, then the matching pop
+callq area                       # call area
+retq                             # return
+```
+
 `use(r)` returns 30. `Rect::area` needs no `export` here, because `use` and `Rect` are in the same package.
 
 `type Seq[T type] trait` names one type parameter. `Seq[i32]` and `Seq[u8]` are different traits. A method may use `T` as a parameter or a result, and a field may use `T` as well. A struct satisfies `Seq[i32]` by defining those methods and fields with `i32` in place of `T`. There is no `impl`. The parameter is `items Seq[i32]` or `items *Seq[i32]`. `Seq` without arguments is reported as `type mismatch`. An integer parameter, a pack, several parameters, and `trait(Parent)` on that list are reported as `not supported yet`. `func Seq::at` is reported as `not supported yet`. `export` publishes the trait. Another package names `pkg.Seq[i32]`. `extern` and `extern(abi="tlc")` are accepted. The trait has no size and no symbol. `extern(abi="c")` is reported as `extern(abi="c") on a trait or a generic`. `func use[T type](items Seq[T])` is reported as `not supported yet`.
@@ -250,40 +441,29 @@ func main() i32 {
 }
 ```
 
-`use(bag)` returns 42. `at` is a direct call of `Bag.at`. Passing a struct whose `at` returns `u8` where `Seq[i32]` is expected is reported as `type mismatch`. `import "std/seq"` names that trait as the iteration trait. `seq.Seq[T]` and `*seq.Seq[T]` check `len` and `at`. A pointer to an element is `ptr_of`. An array `[N]E` and a slice `[]E` satisfy `seq.Seq[E]`. On those values `len` is `.len` and `at` is the index. A struct still satisfies the trait by its own methods. The declaration is on [seq](../std/seq.md).
-
-## Assembly
-
 ```asm
 main:
 pushq %rax
-movl $5, (%rsp)                  # constant
-movl $6, 4(%rsp)                 # constant
-movq %rsp, %rdi                  # move
-movl $1, %esi                    # constant
-callq apply                      # call apply
+movl $40, (%rsp)                 # constant
+movl (%rsp), %edi                # move
+callq use                        # call use
 popq %rcx
 retq                             # return
 
-grow:
-movq %rdi, -16(%rsp)             # move
+at:
+movl %edi, -8(%rsp)              # move
 movl %esi, -4(%rsp)              # move
-movq -16(%rsp), %rax             # move
-movq -16(%rsp), %rcx             # move
-movl (%rcx), %ecx                # move
-addl -4(%rsp), %ecx              # add
-movl %ecx, (%rax)                # move
-movq -16(%rsp), %rax             # move
-movq -16(%rsp), %rcx             # move
-movl 4(%rcx), %ecx               # move
-addl -4(%rsp), %ecx              # add
-movl %ecx, 4(%rax)               # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
 retq                             # return
 
-apply:
+use:
 # trace frame for the call, then the matching pop
-callq grow                       # call grow
+movl $2, %esi                    # constant
+callq at                         # call at
 retq                             # return
 ```
+
+`use(bag)` returns 42. `at` is a direct call of `Bag.at`. Passing a struct whose `at` returns `u8` where `Seq[i32]` is expected is reported as `type mismatch`. `import "std/seq"` names that trait as the iteration trait. `seq.Seq[T]` and `*seq.Seq[T]` check `len` and `at`. A pointer to an element is `ptr_of`. An array `[N]E` and a slice `[]E` satisfy `seq.Seq[E]`. On those values `len` is `.len` and `at` is the index. A struct still satisfies the trait by its own methods. The declaration is on [seq](../std/seq.md).
 
 [Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
