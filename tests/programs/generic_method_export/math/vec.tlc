@@ -1,0 +1,17 @@
+package math;
+
+export type Vec[T type] struct {
+    export n T;
+};
+
+export func Vec[T]::id[U type](value U) U {
+    return value;
+}
+
+export func Vec[T]::get[U type](self *this, value U) U {
+    return value;
+}
+
+func Vec[T]::hidden[U type](value U) U {
+    return value;
+}

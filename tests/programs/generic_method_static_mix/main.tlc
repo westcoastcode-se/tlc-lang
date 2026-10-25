@@ -1,0 +1,11 @@
+type Vec[T type] struct {
+    n T;
+};
+
+func Vec[T]::mix[U type](value U, extra T) i32 {
+    return extra + value;
+}
+
+func main() i32 {
+    return Vec[i32].mix[i32](2, 40);
+}

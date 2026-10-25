@@ -7206,17 +7206,20 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Vec[T type] struct { n i32; };\n"
-            "export func Vec[T]::get[U type](self *this) i32 { return self.n; }\n"
-            "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+            "export func Vec[T]::get[U type](self *this, value U) U { return value; }\n"
+            "func main() i32 {\n"
+            "  var v Vec[i32] = {.n = 1};\n"
+            "  return v.get[i32](42);\n"
+            "}\n");
+        EXPECT_EQ(check, errors, "");
     }
 
     {
         const std::string errors = diagnose(
             "type Vec[T type] struct { n i32; };\n"
-            "func Vec[T]::make[U type]() i32 { return 0; }\n"
-            "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+            "func Vec[T]::make[U type](value U) U { return value; }\n"
+            "func main() i32 { return Vec[i32].make[i32](42); }\n");
+        EXPECT_EQ(check, errors, "");
     }
 
     {

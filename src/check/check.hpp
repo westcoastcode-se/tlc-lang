@@ -1070,6 +1070,9 @@ class Checker {
     // `Box[i32].from` and `Buf[4, i32].width` in this package. Empty when `node` is not that form.
     // `failed` means the form was recognized and the arguments did not specialize.
     std::string same_package_spec(const Expr::Selector &node, bool &failed);
+    // `Vec[i32].get`, `Buf[4, i32].get`, `pkg.Vec[i32].get`, and `pkg.Buf[4, i32].get`.
+    // True when that form was recognized. An empty `owner` means the error is already reported.
+    bool generic_spec_base(const Expr::Selector &node, uint32_t &home, std::string &owner);
     // `pkg.Type.name(...)` and `pkg.Vec[i32].name(...)`. True when that call was handled.
     bool package_static_call(Expr &expr, const Expr::Selector &selector, bool deferring, bool used, Type &out);
     // A static function used as a value on a type from another package.

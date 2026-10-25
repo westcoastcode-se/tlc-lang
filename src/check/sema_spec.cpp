@@ -609,8 +609,9 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                     }
                 }
             }
-            const bool rejected = method.variadic || method.exported || method.static_method || method.body == nullptr ||
-                                  method.extern_c || shadow;
+            // `export` and a static method are registered. A missing body, `...`, and a
+            // trait parameter are not one concrete method.
+            const bool rejected = method.variadic || method.body == nullptr || method.extern_c || shadow;
             if (!rejected) {
                 held_method_templates_.push_back(OwnedFn{owner, std::move(method)});
                 FunctionDecl *stable = &held_method_templates_.back().fn;
@@ -3009,6 +3010,18 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
                                          inner->field, false);
                 }
             }
+        }
+    }
+    // `Vec[i32].get[U](value)`, `Buf[4, i32].get[U](value)`, and `pkg.Vec[i32].get[U](value)`.
+    {
+        uint32_t home = 0;
+        std::string owner;
+        if (generic_spec_base(*selector, home, owner)) {
+            if (owner.empty()) {
+                check_args();
+                return type_invalid();
+            }
+            return finish_static(pick_method_template(home, owner, selector->field, call, true), home, owner, false);
         }
     }
     Type probe;

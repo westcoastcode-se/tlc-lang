@@ -1,0 +1,9 @@
+package math;
+
+export type Vec[T type] struct {
+    n T;
+};
+
+func Vec[T]::hidden[U type](value U) U {
+    return value;
+}

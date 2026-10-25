@@ -1,0 +1,13 @@
+type Vec[T type] struct {
+    n T;
+};
+
+func Vec[T]::get[U type](value U) U {
+    return value;
+}
+
+func main() i32 {
+    var v Vec[i32];
+    v.n = 0;
+    return v.get[i32](1);
+}

@@ -1513,6 +1513,81 @@ std::string Checker::same_package_spec(const Expr::Selector &node, bool &failed)
     return spec;
 }
 
+bool Checker::generic_spec_base(const Expr::Selector &node, uint32_t &home, std::string &owner) {
+    home = 0;
+    owner.clear();
+    if (node.base == nullptr) {
+        return false;
+    }
+    // `pkg.Vec[i32].get` and `pkg.Buf[4, i32].get`. A comma keeps the arguments on this selector.
+    // Same-file `Buf[4, i32].get` is not a package, so it falls through.
+    std::vector<TypeArg> args = node.type_args;
+    const Expr *type_expr = nullptr;
+    const Expr::Index *index = nullptr;
+    if (!args.empty()) {
+        type_expr = node.base.get();
+    } else if (const auto *found = std::get_if<Expr::Index>(&node.base->data)) {
+        index = found;
+        type_expr = found->base.get();
+    }
+    const auto *inner = type_expr == nullptr ? nullptr : std::get_if<Expr::Selector>(&type_expr->data);
+    if (inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
+        if (const auto *package_name = std::get_if<Expr::Name>(&inner->base->data)) {
+            const Symbol *package = lookup(package_name->text);
+            if (package != nullptr && package->is_package) {
+                uint32_t templ_file = package->package_file;
+                const StructDecl *templ = nullptr;
+                for (const uint32_t id : files_in_package(package->package_file)) {
+                    const auto found = struct_templates_.find(id);
+                    if (found == struct_templates_.end()) {
+                        continue;
+                    }
+                    const auto have = found->second.find(inner->field);
+                    if (have == found->second.end()) {
+                        continue;
+                    }
+                    templ_file = id;
+                    templ = have->second;
+                    break;
+                }
+                if (templ == nullptr) {
+                    return false;
+                }
+                if (index != nullptr) {
+                    TypeArg arg;
+                    if (index->index == nullptr || !type_arg_from_expr(*index->index, arg)) {
+                        error(node.loc, "type mismatch");
+                        return true;
+                    }
+                    args.push_back(std::move(arg));
+                }
+                if (!templ->exported) {
+                    error(inner->loc, inner->field + " is not exported");
+                    return true;
+                }
+                const uint32_t saved = file_id_;
+                file_id_ = templ_file;
+                const std::string spec = specialize_type_app("", inner->field, args, node.loc);
+                file_id_ = saved;
+                home = templ_file;
+                owner = spec;
+                return true;
+            }
+        }
+    }
+    bool failed = false;
+    const std::string spec = same_package_spec(node, failed);
+    if (failed) {
+        return true;
+    }
+    if (spec.empty()) {
+        return false;
+    }
+    home = file_id_;
+    owner = spec;
+    return true;
+}
+
 bool Checker::static_method_value(const Expr::Selector &node, uint32_t home, const std::string &owner, Type &out) {
     bool hidden = false;
     const MethodInfo *method = find_visible_method(home, owner, node.field, hidden);

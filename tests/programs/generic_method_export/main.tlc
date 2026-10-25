@@ -1,0 +1,7 @@
+import "math";
+
+func main() i32 {
+    var v math.Vec[i32];
+    v.n = 0;
+    return math.Vec[i32].id[i32](20) + v.get[i32](22);
+}

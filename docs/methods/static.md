@@ -47,7 +47,7 @@ retq                             # return
 
 The program returns 42. The function is written in the same file as the struct. Every file in the package can call it. `export` publishes `pkg.Type.name(...)`. Without `export` that call is reported as `name is not exported`. `var ptr = pkg.Point.make` is that function. An enum uses the same form, `Color.label()` and `pkg.Color.code()`. A missing name, `Point.missing()`, is reported as `undeclared identifier`.
 
-A static method template puts the type parameters after the name. `func Point::id[T type](value T) T` is called as `Point.id[i32](42)`. A call on a value is reported as `type mismatch`. A call without the brackets is reported as `undeclared identifier`. `export` publishes `pkg.Point.id[i32](...)`. On a generic struct, `export` and a static method on `func Vec[T]::get[U type]` are `not supported yet`. A pointer alias uses that same call, `Ptr.make[i32](2)`.
+A static method template puts the type parameters after the name. `func Point::id[T type](value T) T` is called as `Point.id[i32](42)`. A call on a value is reported as `type mismatch`. A call without the brackets is reported as `undeclared identifier`. `export` publishes `pkg.Point.id[i32](...)`. On a generic struct, `func Vec[T]::get[U type](value U) U` is called as `Vec[i32].get[i32](value)`. `T` comes from the struct. `U` is chosen at the call. `export` publishes `pkg.Vec[i32].get[i32](...)`. Without `export`, that call is `name is not exported`. An unexported struct is `Vec is not exported`. A pointer alias uses that same call, `Ptr.make[i32](2)`.
 
 ```c
 type Point struct {
@@ -77,6 +77,37 @@ retq                             # return
 ```
 
 The program returns 42. When the file is `main.tlc`, the symbol is `main.Point.id.spec.i32`.
+
+On a generic struct the call names the specialization.
+
+```c
+type Vec[T type] struct {
+    n T;
+};
+
+func Vec[T]::get[U type](value U) U {
+    return value;
+}
+
+func main() i32 {
+    return Vec[i32].get[i32](42);
+}
+```
+
+```asm
+get.spec.i32:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+movl $42, %edi                   # constant
+callq get.spec.i32               # call get
+retq                             # return
+```
+
+The program returns 42. When the file is `main.tlc`, the symbol is `main.Vec.spec.i32.get.spec.i32`. `Buf[40, i32].width[i32](2)` is `main.Buf.spec.40.i32.width.spec.i32`.
 
 The name without a call is a function pointer. `var ptr = Point.make` and `take(Point.make)` use that pointer, and `ptr(40, 2)` calls it. `var ptr = add` is the same form for a free function. An instance method used as a value, `var ptr = Point.sum`, is reported as `type mismatch`. An enumerator stays a value, so `Color.Red` is not a function pointer.
 

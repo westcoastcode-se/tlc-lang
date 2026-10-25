@@ -1,0 +1,11 @@
+type Buf[N i32, T type] struct {
+    value T;
+};
+
+func Buf[N, T]::width[U type](value U) i32 {
+    return N + value;
+}
+
+func main() i32 {
+    return Buf[40, i32].width[i32](2);
+}
