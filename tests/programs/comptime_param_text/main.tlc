@@ -1,0 +1,7 @@
+func greet(label comptime []const u8, n i32) i32 {
+    return label.len + n;
+}
+
+func main() i32 {
+    return greet("hi", 40);
+}

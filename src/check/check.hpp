@@ -17,6 +17,9 @@ namespace tlc {
 struct SpecArg {
     bool is_value = false;
     int value = 0;
+    // A constant `[]const u8` bound to a comptime parameter. Not a type.
+    bool is_text = false;
+    std::string text;
     std::string type_name;
     std::string type_package;
     bool is_struct = false;
@@ -498,7 +501,7 @@ class Checker {
     // Picks the parameter list a call uses. Null when none matches or more than one matches.
     const MethodInfo *choose_method(const Expr::Call &node, const MethodInfo &head, bool want_static, bool foreign,
                                     const std::string &name);
-    Type finish_overloaded(const Expr::Call &node, const Symbol &symbol, bool deferring);
+    Type finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring, bool used);
     // `Integer` or `*Integer` when that alias is a primitive. Null otherwise.
     const Type *scalar_alias(const Type &base, bool &through_pointer) const;
     // A slice alias such as `type string_view []const u8`. A pointer to that alias sets `through_pointer`.
@@ -902,6 +905,8 @@ class Checker {
     std::vector<PendingAppend> pending_appends_;
     std::unordered_set<std::string> spec_checking_;
     std::unordered_set<std::string> spec_ready_;
+    // Nested comptime-parameter specializations. The cap matches a macro `for`.
+    int comptime_spec_depth_ = 0;
     // `file\nSpec` while that specialization's variables are being built.
     std::unordered_set<std::string> assoc_busy_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, Symbol>> spec_symbols_;
@@ -943,6 +948,10 @@ class Checker {
     const TraitDecl *find_trait_template(const std::string &name, uint32_t &owner) const;
     const TypedefDecl *find_tuple_alias_template(const std::string &name, uint32_t &owner) const;
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
+    // `func scale(n comptime i32, x i32)`. One copy per constant. `n` is inlined.
+    std::optional<Type> maybe_comptime_param_call(Expr &expr, bool used);
+    bool apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several);
+    uint32_t comptime_decl_file(const FunctionDecl &fn) const;
     void register_trait_default(const FunctionDecl &fn);
     void register_method_template(const FunctionDecl &fn);
     // The function type of a method with the receiver left out. Trait signatures have no receiver.

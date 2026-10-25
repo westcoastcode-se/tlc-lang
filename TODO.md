@@ -20,6 +20,10 @@ In a `macro`, a condition or a bound that does not fold is `not supported yet`. 
 
 `...` is only legal on `extern(abi="c")`. `func id[T type](value T, ...) T` is `not supported yet`. `extern(abi="c")` on a generic is `extern(abi="c") on a trait or a generic`. `any` is not a keyword. `...` in a type-parameter list is `expected an identifier`. `extern` and `extern(abi="tlc")` on a generic function are accepted. A call of a generic that has no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`.
 
+- Using a function that has both a comptime parameter and a runtime parameter as a value, unless it is `extern` or `extern(abi="tlc")`. `var f = scale` is `not supported yet`. An `extern` function used as a value is the unspecialized function.
+- A comptime argument of that function that is neither a folded `i32` nor a constant `[]const u8`. A tuple is `not supported yet`.
+- More than 32 nested specializations of that function. A body that calls `scale(n + 1, x)` is `not supported yet`.
+
 - A tuple index that is not a constant. `t[i]` when `i` is a `var` is `index is not a compile-time constant`. `const i = 0` then `t[i]` and `t[i] = 1` choose that field while compiling, as `t[0]` does. A file-scope `const` and a folded expression do too.
 - `count(U)`.
 - A method template that is static or exported, and a method template on a type alias: `func Integer::id[T type]`, `func Point::id[T type]`, and `export func Point::id[T type]`. They are `not supported yet`. `extern` and `extern(abi="tlc")` on a method template are accepted. `extern(abi="c")` on that template is rejected. `...` on a method template is not a form. A prototype with no body is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`.

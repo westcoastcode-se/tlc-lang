@@ -51,6 +51,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                     }
                 }
+                if (symbol->is_function && !symbol->is_local_function && !direct_callee_) {
+                    for (const FnList &list : symbol->lists) {
+                        if (list.decl != nullptr && comptime_param_template(*list.decl) &&
+                            !comptime_param_kept(*list.decl)) {
+                            error(node.loc, "not supported yet");
+                            return type_invalid();
+                        }
+                    }
+                }
                 if (symbol->is_function && symbol->lists.size() > 1) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
@@ -789,6 +798,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (const std::optional<Type> generic = maybe_generic_call(const_cast<Expr &>(expr), used)) {
                         return *generic;
                     }
+                    if (const std::optional<Type> specialized =
+                            maybe_comptime_param_call(const_cast<Expr &>(expr), used)) {
+                        return *specialized;
+                    }
                 }
                 if (node.callee != nullptr && is_builtin_va_call(*node.callee)) {
                     if (deferring || !variadic_function_) {
@@ -1271,7 +1284,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (const auto *named = std::get_if<Expr::Name>(&node.callee->data)) {
                         if (const Symbol *symbol = lookup(named->text);
                             symbol != nullptr && symbol->is_function && !symbol->is_template && symbol->lists.size() > 1) {
-                            return finish_overloaded(node, *symbol, deferring);
+                            return finish_overloaded(const_cast<Expr &>(expr), *symbol, deferring, used);
                         }
                     } else if (const auto *called = std::get_if<Expr::Selector>(&node.callee->data)) {
                         if (const auto *base = called->base == nullptr ? nullptr : std::get_if<Expr::Name>(&called->base->data)) {
@@ -1280,7 +1293,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 const Symbol *member = find_export(package->package_file, called->field);
                                 if (member != nullptr && member->is_function && !member->is_template &&
                                     member->lists.size() > 1) {
-                                    return finish_overloaded(node, *member, deferring);
+                                    return finish_overloaded(const_cast<Expr &>(expr), *member, deferring, used);
                                 }
                             }
                         }

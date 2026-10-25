@@ -1,0 +1,9 @@
+extern(abi="tlc") func scale(n comptime i32, x i32) i32 {
+    return x + n;
+}
+
+func main() i32 {
+    var n = 2;
+    var f = scale;
+    return scale(2, 10) + scale(n, 10) + f(2, 16);
+}

@@ -1811,7 +1811,12 @@ const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const 
     return nullptr;
 }
 
-Type Checker::finish_overloaded(const Expr::Call &node, const Symbol &symbol, bool deferring) {
+Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring, bool used) {
+    auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
+    if (call_ptr == nullptr) {
+        return type_invalid();
+    }
+    Expr::Call &node = *call_ptr;
     std::vector<Type> args;
     bool bad = false;
     args.reserve(node.args.size());
@@ -1860,7 +1865,19 @@ Type Checker::finish_overloaded(const Expr::Call &node, const Symbol &symbol, bo
         return type_invalid();
     }
     node.selected = winner->decl;
-    if (winner->decl != nullptr) {
+    if (winner->decl != nullptr && comptime_param_template(*winner->decl)) {
+        const std::size_t before = diags_.size();
+        require_comptime_params(*winner->decl, node);
+        if (diags_.size() != before) {
+            return type_invalid();
+        }
+        if (apply_comptime_template(node, *winner->decl, symbol.lists.size() > 1)) {
+            return check_raw(expr, used);
+        }
+        if (diags_.size() != before) {
+            return type_invalid();
+        }
+    } else if (winner->decl != nullptr) {
         require_comptime_params(*winner->decl, node);
     }
     require_unsafe_call(winner->unsafe_fn, node.loc);

@@ -780,6 +780,8 @@ struct FunctionDecl {
     // Specialized method of the iteration trait. 1 is length, 2 is the element, 3 is the address.
     // Zero on a declaration the program wrote.
     int iteration_kind = 0;
+    // A copy of a generic function. A comptime parameter stays an argument of that copy.
+    bool generic_instance = false;
 };
 
 // `builtin.memeql` and `builtin.memcmp`. The slice form compares `[]const T`.
@@ -929,6 +931,33 @@ inline int mem_compare_bytes(const std::string &left, const std::string &right, 
         return 1;
     }
     return 0;
+}
+
+// An ordinary function with both a comptime parameter and a runtime parameter.
+// Each distinct comptime argument is its own copy. That parameter is not passed.
+// A generic copy keeps the comptime parameter as an argument.
+// `extern(abi="c")` is one C symbol and is not specialized.
+inline bool comptime_param_template(const FunctionDecl &fn) {
+    if (fn.is_comptime || fn.is_macro || fn.extern_c || fn.variadic || fn.body == nullptr || fn.generic_instance ||
+        !fn.type_params.empty() || !fn.method_struct.empty() || fn.params.empty()) {
+        return false;
+    }
+    bool compile = false;
+    bool runtime = false;
+    for (const Param &param : fn.params) {
+        if (param.is_comptime) {
+            compile = true;
+        } else {
+            runtime = true;
+        }
+    }
+    return compile && runtime;
+}
+
+// `extern` and `extern(abi="tlc")` keep the unspecialized function for a dynamic linker.
+// A comptime argument still uses the specialized copy.
+inline bool comptime_param_kept(const FunctionDecl &fn) {
+    return fn.is_extern && comptime_param_template(fn);
 }
 
 // `eq[u8]`. A package, a pointer, a slice, or a value argument is not this name.

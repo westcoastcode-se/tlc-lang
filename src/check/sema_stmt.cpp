@@ -2512,7 +2512,7 @@ void Checker::report_call_cycles(const TranslationUnit &unit) {
     for (const TopDecl &decl : unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
         if (fn == nullptr || !fn->infer_result || fn->body == nullptr || !fn->results.empty() ||
-            !fn->type_params.empty()) {
+            !fn->type_params.empty() || (comptime_param_template(*fn) && !comptime_param_kept(*fn))) {
             continue;
         }
         if (!fn->method_struct.empty() &&
@@ -2874,7 +2874,7 @@ void Checker::infer_file_results(const TranslationUnit &unit) {
     for (const TopDecl &decl : unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
         if (fn == nullptr || !fn->infer_result || fn->body == nullptr || !fn->results.empty() ||
-            !fn->type_params.empty()) {
+            !fn->type_params.empty() || (comptime_param_template(*fn) && !comptime_param_kept(*fn))) {
             continue;
         }
         // A generic struct method and a trait default are specialized later, with `T` filled in.

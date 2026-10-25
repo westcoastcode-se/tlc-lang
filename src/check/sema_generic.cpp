@@ -25,6 +25,9 @@ int param_index(const std::vector<TypeParam> &params, const std::string &name) {
 }
 
 bool same_spec(const SpecArg &lhs, const SpecArg &rhs) {
+    if (lhs.is_text || rhs.is_text) {
+        return lhs.is_text && rhs.is_text && lhs.text == rhs.text;
+    }
     if (lhs.is_value || rhs.is_value) {
         return lhs.is_value && rhs.is_value && lhs.value == rhs.value;
     }
@@ -1208,6 +1211,10 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
             arg.type_name.clear();
             return;
         }
+        if (bound->is_text) {
+            error(arg.loc, "type mismatch");
+            return;
+        }
         const int written = arg.indirections;
         const uint32_t written_opt = arg.optional;
         const uint32_t written_const = arg.const_pointee;
@@ -1277,7 +1284,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         type_name = "invalid";
         return;
     }
-    if (bound->is_value) {
+    if (bound->is_value || bound->is_text) {
         error(loc, "type mismatch");
         type_name = "invalid";
         return;
@@ -1350,17 +1357,45 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
         [&](auto &node) {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Expr::Name>) {
-                if (const SpecArg *bound = find_arg(params, bounds, node.text); bound != nullptr && bound->is_value) {
+                if (const SpecArg *bound = find_arg(params, bounds, node.text);
+                    bound != nullptr && (bound->is_value || bound->is_text)) {
+                    const SourceLoc loc = node.loc;
+                    if (bound->is_text) {
+                        Expr::String text;
+                        text.loc = loc;
+                        text.text = bound->text;
+                        expr.data = std::move(text);
+                        return;
+                    }
+                    const int value = bound->value;
+                    if (value < 0) {
+                        if (value == -2147483647 - 1) {
+                            error(loc, "not supported yet");
+                            return;
+                        }
+                        Expr::Int inner;
+                        inner.loc = loc;
+                        inner.value = static_cast<uint64_t>(-value);
+                        auto literal = std::make_unique<Expr>();
+                        literal->data = std::move(inner);
+                        Expr::Unary unary;
+                        unary.loc = loc;
+                        unary.op = TokenKind::Minus;
+                        unary.expr = std::move(literal);
+                        expr.data = std::move(unary);
+                        return;
+                    }
                     Expr::Int literal;
-                    literal.loc = node.loc;
-                    literal.value = static_cast<uint64_t>(static_cast<unsigned>(bound->value));
+                    literal.loc = loc;
+                    literal.value = static_cast<uint64_t>(value);
                     expr.data = std::move(literal);
+                    return;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 // `sizeof(T)` is parsed as a type. The parameter is replaced before the value is folded.
                 if (node.on_type) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
-                        bound != nullptr && !bound->is_value) {
+                        bound != nullptr && !bound->is_value && !bound->is_text) {
                         if (bound->is_array || node.is_array || (!bound->shells.empty() && node.indirections != 0)) {
                             error(node.loc, "not supported yet");
                         }
@@ -1394,7 +1429,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
-                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value) {
+                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text) {
                         if (bound->is_array) {
                             error(node.loc, "not supported yet");
                         }
@@ -1424,7 +1459,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
-                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value) {
+                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text) {
                         if (bound->is_array) {
                             error(node.loc, "not supported yet");
                         }
@@ -1469,7 +1504,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 if (node.type_package.empty()) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
-                        bound != nullptr && !bound->is_value) {
+                        bound != nullptr && !bound->is_value && !bound->is_text) {
                         node.type_name = bound->type_name;
                         node.type_package = bound->type_package;
                         // `is_struct` means the source wrote `struct Name`. A specialized name is an ordinary type.
@@ -1549,7 +1584,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     // `Box[T].from` is an index. A plain type parameter becomes that type's name.
                     if (auto *named = std::get_if<Expr::Name>(&node.index->data)) {
                         if (const SpecArg *bound = find_arg(params, bounds, named->text);
-                            bound != nullptr && !bound->is_value && !bound->is_pack && !bound->is_array &&
+                            bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_pack && !bound->is_array &&
                             bound->indirections == 0 && bound->type_package.empty() && !bound->type_name.empty()) {
                             named->text = bound->type_name;
                         }

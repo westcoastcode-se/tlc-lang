@@ -1596,6 +1596,7 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     FunctionDecl spec = clone_function(*templ);
     spec.name = spec_name;
     spec.type_params.clear();
+    spec.generic_instance = true;
     spec.exported = false;
     spec.is_static = templ->is_static;
     substitute_function(spec, templ->type_params, bounds);
@@ -1664,6 +1665,257 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     queue_spec(owner, std::move(spec));
     rewrite();
     return check_raw(expr, used);
+}
+
+namespace {
+
+bool comptime_i32_param(const Param &param) {
+    return !param.is_array && param.indirections == 0 && param.optional == 0 && param.const_pointee == 0 &&
+           !param.elem_const && !param.elem_slice && param.shells.empty() && !param.is_struct && !param.is_enum &&
+           !param.is_fn_ptr && !param.is_tuple && param.type_name == "i32" && param.type_package.empty() &&
+           param.array_len == 0 && param.array_len_name.empty() && param.type_args.empty();
+}
+
+bool comptime_text_param(const Param &param) {
+    return param.is_array && param.array_len < 0 && param.elem_const && !param.elem_slice && param.indirections == 0 &&
+           param.optional == 0 && param.type_name == "u8" && param.type_package.empty() && !param.is_struct &&
+           !param.is_enum && !param.is_fn_ptr && !param.is_tuple && param.array_len_name.empty();
+}
+
+std::string comptime_text_piece(const std::string &text) {
+    static constexpr char digits[] = "0123456789abcdef";
+    std::string piece = "s";
+    piece += std::to_string(text.size());
+    for (const char byte : text) {
+        const auto value = static_cast<unsigned char>(byte);
+        piece.push_back(digits[value >> 4]);
+        piece.push_back(digits[value & 0x0f]);
+    }
+    return piece;
+}
+
+} // namespace
+
+uint32_t Checker::comptime_decl_file(const FunctionDecl &fn) const {
+    if (graph_ != nullptr) {
+        for (const PackageNode &node : graph_->nodes) {
+            for (const TopDecl &decl : node.unit.decls) {
+                if (const auto *item = std::get_if<FunctionDecl>(&decl.data); item == &fn) {
+                    return node.file_id;
+                }
+            }
+        }
+    }
+    return file_id_;
+}
+
+bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several) {
+    if (comptime_spec_depth_ >= 32) {
+        error(call.loc, "not supported yet");
+        return false;
+    }
+    if (call.callee == nullptr || call.args.size() != fn.params.size()) {
+        return false;
+    }
+    const uint32_t owner = comptime_decl_file(fn);
+    std::vector<TypeParam> names;
+    std::vector<SpecArg> bounds;
+    std::string pieces;
+    for (std::size_t i = 0; i < fn.params.size(); ++i) {
+        const Param &param = fn.params[i];
+        if (!param.is_comptime) {
+            continue;
+        }
+        if (call.args[i] == nullptr) {
+            return false;
+        }
+        const std::size_t mark = diags_.size();
+        const Type got = check_expr(*call.args[i], true);
+        if (got.kind == TypeKind::Invalid || diags_.size() != mark) {
+            return false;
+        }
+        const uint32_t saved_file = file_id_;
+        file_id_ = owner;
+        const Type want = type_of_param(param);
+        file_id_ = saved_file;
+        if (want.kind == TypeKind::Invalid || diags_.size() != mark || !same_type(got, want)) {
+            return false;
+        }
+        TypeParam slot;
+        slot.name = param.name;
+        slot.is_value = true;
+        SpecArg bound;
+        std::string piece;
+        if (comptime_i32_param(param)) {
+            const std::optional<int> number = fold_int(*call.args[i]);
+            if (!number) {
+                return false;
+            }
+            bound.is_value = true;
+            bound.value = *number;
+            piece = std::to_string(*number);
+            if (!piece.empty() && piece.front() == '-') {
+                piece[0] = 'n';
+            }
+        } else if (comptime_text_param(param)) {
+            std::unordered_set<std::string> seen;
+            const std::optional<std::string> text = constant_string(*call.args[i], seen);
+            if (!text) {
+                return false;
+            }
+            bound.is_text = true;
+            bound.text = *text;
+            piece = comptime_text_piece(*text);
+        } else if (argument_is_comptime(*call.args[i])) {
+            // The unspecialized extern function accepts this argument.
+            if (!comptime_param_kept(fn)) {
+                error(expr_loc(*call.args[i]), "not supported yet");
+            }
+            return false;
+        } else {
+            return false;
+        }
+        names.push_back(std::move(slot));
+        bounds.push_back(std::move(bound));
+        pieces.push_back('.');
+        pieces += piece;
+    }
+    if (names.empty()) {
+        return false;
+    }
+    std::string spec_name = fn.name + ".spec" + pieces;
+    if (several) {
+        spec_name.push_back('.');
+        spec_name += generic_list_suffix(fn);
+    }
+    const std::string key = std::to_string(owner) + "\n" + spec_name;
+    auto rewrite = [&]() {
+        std::vector<std::unique_ptr<Expr>> kept;
+        for (std::size_t i = 0; i < fn.params.size() && i < call.args.size(); ++i) {
+            if (!fn.params[i].is_comptime && call.args[i] != nullptr) {
+                kept.push_back(std::move(call.args[i]));
+            }
+        }
+        call.args = std::move(kept);
+        call.selected = nullptr;
+        call.type_args.clear();
+        if (auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
+            named->text = spec_name;
+        } else if (auto *selector = std::get_if<Expr::Selector>(&call.callee->data)) {
+            selector->field = spec_name;
+        }
+    };
+    if (spec_ready_.contains(key) || spec_checking_.contains(key)) {
+        rewrite();
+        return true;
+    }
+    const std::size_t before = diags_.size();
+    FunctionDecl spec = clone_function(fn);
+    spec.name = spec_name;
+    spec.type_params.clear();
+    spec.exported = false;
+    // The dynamic symbol is the unspecialized function. This copy is local.
+    spec.is_extern = false;
+    const uint32_t saved_file = file_id_;
+    file_id_ = owner;
+    substitute_function(spec, names, bounds);
+    std::vector<Param> runtime;
+    runtime.reserve(spec.params.size());
+    for (Param &param : spec.params) {
+        if (!param.is_comptime) {
+            runtime.push_back(std::move(param));
+        }
+    }
+    spec.params = std::move(runtime);
+    for (Param &param : spec.params) {
+        prepare_written(param.type_name, param.type_package, param.is_struct, param.is_enum, param.indirections,
+                        param.optional, param.is_array, param.array_len, param.array_len_name, param.type_args, param.loc);
+    }
+    for (ResultSlot &slot : spec.results) {
+        prepare_written(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections, slot.optional,
+                        slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, spec.loc);
+    }
+    if (!spec.results.empty()) {
+        const ResultSlot &first = spec.results.front();
+        spec.return_type = first.type_name;
+        spec.type_package = first.type_package;
+        spec.is_struct = first.is_struct;
+        spec.is_enum = first.is_enum;
+        spec.indirections = first.indirections;
+        spec.optional = first.optional;
+    }
+    if (diags_.size() != before || !resolve_result_typeof(spec)) {
+        file_id_ = saved_file;
+        return false;
+    }
+    spec_checking_.insert(key);
+    Type signature = function_signature(spec);
+    file_id_ = saved_file;
+    if (diags_.size() != before || signature.kind != TypeKind::Function || signature.result == nullptr ||
+        signature.result->kind == TypeKind::Invalid) {
+        spec_checking_.erase(key);
+        return false;
+    }
+    Symbol symbol;
+    symbol.name = spec_name;
+    symbol.type = std::move(signature);
+    symbol.is_function = true;
+    symbol.has_body = true;
+    symbol.unsafe_fn = fn.unsafe;
+    symbol.package_file = owner;
+    spec_symbols_[owner][spec_name] = symbol;
+    if (fn.is_static) {
+        static_spec_keys_.insert(key);
+        statics_[owner].insert_or_assign(spec_name, symbol);
+    }
+    if (fn.exported) {
+        exports_[owner].insert_or_assign(spec_name, symbol);
+    }
+    ++comptime_spec_depth_;
+    check_isolated(owner, spec);
+    --comptime_spec_depth_;
+    spec_checking_.erase(key);
+    spec_ready_.insert(key);
+    queue_spec(owner, std::move(spec));
+    rewrite();
+    return true;
+}
+
+std::optional<Type> Checker::maybe_comptime_param_call(Expr &expr, bool used) {
+    auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
+    if (call_ptr == nullptr || call_ptr->callee == nullptr || !call_ptr->type_args.empty()) {
+        return std::nullopt;
+    }
+    Expr::Call &call = *call_ptr;
+    const Symbol *symbol = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
+        symbol = lookup(named->text);
+    } else if (const auto *selector = std::get_if<Expr::Selector>(&call.callee->data)) {
+        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+        if (package == nullptr || !package->is_package) {
+            return std::nullopt;
+        }
+        symbol = find_export(package->package_file, selector->field);
+    } else {
+        return std::nullopt;
+    }
+    if (symbol == nullptr || !symbol->is_function || symbol->is_template || symbol->is_local_function ||
+        symbol->lists.size() != 1 || symbol->lists.front().decl == nullptr) {
+        return std::nullopt;
+    }
+    const FunctionDecl &fn = *symbol->lists.front().decl;
+    if (!comptime_param_template(fn) || call.args.size() != fn.params.size()) {
+        return std::nullopt;
+    }
+    const std::size_t before = diags_.size();
+    if (apply_comptime_template(call, fn, false)) {
+        return check_raw(expr, used);
+    }
+    if (diags_.size() != before) {
+        return type_invalid();
+    }
+    return std::nullopt;
 }
 
 namespace {

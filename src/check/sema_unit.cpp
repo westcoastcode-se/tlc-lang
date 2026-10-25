@@ -1432,7 +1432,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 continue;
             }
             // A trait default is checked after a struct gains it. The receiver is still the trait here.
-            if (!fn->type_params.empty() ||
+            if (!fn->type_params.empty() || (comptime_param_template(*fn) && !comptime_param_kept(*fn)) ||
                 (!fn->method_struct.empty() && (generic_struct_name(file_id_, fn->method_struct) ||
                                                 package_trait(file_id_, fn->method_struct) >= 0))) {
                 continue;
