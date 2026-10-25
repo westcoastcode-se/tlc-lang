@@ -1,0 +1,14 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Name[T type] T;
+
+func main() i32 {
+    var p Point;
+    p.x = 40;
+    p.y = 2;
+    var a Name[Point] = Name[Point](p);
+    return a.x + a.y;
+}

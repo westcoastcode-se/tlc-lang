@@ -1,0 +1,10 @@
+type Duo (i32, i32);
+type Pair (i32, i32);
+type Name[T type] T;
+
+func main() i32 {
+    var a Name[Duo] = Name[Duo](Duo((40, 2)));
+    var b Name[Pair] = Name[Pair](Pair((1, 2)));
+    a = b;
+    return 0;
+}

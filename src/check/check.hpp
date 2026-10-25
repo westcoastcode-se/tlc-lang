@@ -616,6 +616,8 @@ class Checker {
     FunctionDecl *inferred_function(const Expr &expr) const;
     Type elaborate_inferred(FunctionDecl &fn, const Type &want);
     Type check_against(const Expr &expr, const Type &want);
+    // `(value)` becomes a tuple of one element when `want` is that tuple.
+    bool adopt_one_tuple(Expr &expr, const Type &want);
     void check_stmt(const Stmt &stmt);
     // Checks each statement. A macro call is replaced by the statements it emits.
     void check_statements(std::vector<std::unique_ptr<Stmt>> &statements);

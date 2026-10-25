@@ -1,0 +1,6 @@
+type One (i32);
+
+func main() i32 {
+    var n One = (42);
+    return 0;
+}

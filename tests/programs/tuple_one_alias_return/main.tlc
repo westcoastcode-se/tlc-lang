@@ -1,0 +1,9 @@
+type One (i32);
+
+func make() One {
+    return (42);
+}
+
+func main() i32 {
+    return 0;
+}

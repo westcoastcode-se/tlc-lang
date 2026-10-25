@@ -430,7 +430,7 @@ bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
 }
 
 bool CodeGen::make_tuple_alias(uint32_t file, const TypedefDecl &item, Alias &out) const {
-    if (!item.is_tuple || item.tuple_parts.size() < 2) {
+    if (!item.is_tuple || item.tuple_parts.empty()) {
         return false;
     }
     std::vector<llvm::Type *> fields;
@@ -947,7 +947,7 @@ CodeGen::Lowered CodeGen::lower_tuple_parts(uint32_t file, const std::vector<Res
         llvm::Type *type = stored_type(part);
         fields.push_back(type == nullptr ? i32() : type);
     }
-    if (fields.size() < 2) {
+    if (fields.empty()) {
         out.type = i32();
         out.is_tuple = false;
         out.tuple_parts.clear();
@@ -1022,7 +1022,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
                 fields.push_back(stored_type(one));
             }
             Lowered tuple;
-            if (fields.size() < 2) {
+            if (fields.empty()) {
                 tuple.type = i32();
                 return tuple;
             }
@@ -1052,7 +1052,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
         for (const FnParam &part : results.front().results) {
             fields.push_back(stored_type(lower_part(part, false)));
         }
-        if (fields.size() >= 2) {
+        if (!fields.empty()) {
             out.fn_ty = llvm::FunctionType::get(llvm::StructType::get(context_, fields), args, variadic);
             out.fn_results = results;
             return out;

@@ -1790,6 +1790,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                          node.ret_const_pointee)
                         : spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
                                        node.loc, node.optional, node.const_pointee);
+                if (node.expr != nullptr && target.kind == TypeKind::Tuple && target.results.size() == 1) {
+                    Type bare = target;
+                    bare.alias_id = 0;
+                    adopt_one_tuple(const_cast<Expr &>(*node.expr), bare);
+                }
                 Type source = node.expr ? check_raw(*node.expr, true) : type_invalid();
                 // `*i32(row)` is a pointer to the element. Dropping `const` is `unsafe cast`.
                 if (target.kind == TypeKind::Pointer && source.kind == TypeKind::Array && source.length >= 0 &&
@@ -1862,6 +1867,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (node.elements.size() == 1 && node.elements.front()) {
                             return check_raw(*node.elements.front(), true);
                         }
+                        error(node.loc, "type mismatch");
+                        for (const auto &element : node.elements) {
+                            if (element) {
+                                check_expr(*element, true);
+                            }
+                        }
+                        return type_invalid();
+                    }
+                    if (node.elements.size() < 2 && !node.explicit_one) {
                         error(node.loc, "type mismatch");
                         for (const auto &element : node.elements) {
                             if (element) {

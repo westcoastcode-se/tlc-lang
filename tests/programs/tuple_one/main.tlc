@@ -1,0 +1,6 @@
+func main() i32 {
+    var n (i32) = (40);
+    var m (i32) = n;
+    m = (2);
+    return n[0] + m[0];
+}

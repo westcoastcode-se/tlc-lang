@@ -1,0 +1,10 @@
+type One (i32);
+
+func make() One {
+    return One((42));
+}
+
+func main() i32 {
+    var n One = make();
+    return n[0];
+}

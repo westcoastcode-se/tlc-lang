@@ -909,6 +909,7 @@ VarDecl clone_var(const VarDecl &var) {
 
 std::unique_ptr<Expr> clone_expr(const Expr &expr) {
     auto out = std::make_unique<Expr>();
+    out->grouped = expr.grouped;
     std::visit(
         [&](const auto &node) {
             using T = std::decay_t<decltype(node)>;
@@ -1033,6 +1034,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 Expr::Init copy;
                 copy.loc = node.loc;
                 copy.is_tuple = node.is_tuple;
+                copy.explicit_one = node.explicit_one;
                 copy.zero_rest = node.zero_rest;
                 copy.struct_id = node.struct_id;
                 copy.type_name = node.type_name;

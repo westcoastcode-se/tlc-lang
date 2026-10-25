@@ -700,6 +700,12 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
                 check_elements();
                 return type_invalid();
             }
+            // `(value,)` is not a tuple of one element. `(value)` is, when the destination is.
+            if (init.elements.size() < 2 && !init.explicit_one) {
+                error(init.loc, "type mismatch");
+                check_elements();
+                return type_invalid();
+            }
             if (init.elements.size() != dest.results.size()) {
                 error(init.loc, "type mismatch");
                 check_elements();
@@ -1233,7 +1239,29 @@ void Checker::check_call_arg(const Expr &expr, const Type &want) {
         init_address_span(expr, writes, expr_loc(expr), array_pointer);
     }
 }
+bool Checker::adopt_one_tuple(Expr &expr, const Type &want) {
+    if (!expr.grouped || want.kind != TypeKind::Tuple || want.alias_id != 0 || want.results.size() != 1) {
+        return false;
+    }
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data); init != nullptr && init->is_tuple) {
+        return false;
+    }
+    Expr::Init tuple;
+    tuple.loc = expr_loc(expr);
+    tuple.is_tuple = true;
+    tuple.explicit_one = true;
+    auto element = std::make_unique<Expr>();
+    element->data = std::move(expr.data);
+    tuple.elements.push_back(std::move(element));
+    expr.data = std::move(tuple);
+    expr.grouped = false;
+    return true;
+}
+
 Type Checker::check_against(const Expr &expr, const Type &want) {
+    if (want.kind == TypeKind::Tuple && want.alias_id == 0 && want.results.size() == 1) {
+        adopt_one_tuple(const_cast<Expr &>(expr), want);
+    }
     struct PartialRestore {
         bool &flag;
         bool saved;

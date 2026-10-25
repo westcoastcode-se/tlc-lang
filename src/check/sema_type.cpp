@@ -1056,7 +1056,7 @@ std::optional<int> Checker::type_size(const Type &type) const {
             if (current.alias_id != 0 && !seen_alias.insert(current.alias_id).second) {
                 return std::nullopt;
             }
-            if (current.results.size() < 2) {
+            if (current.results.empty()) {
                 return std::nullopt;
             }
             int size = 0;
@@ -1734,7 +1734,7 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
     Type type;
     int reserved_id = 0;
     if (item.is_tuple) {
-        if (item.tuple_parts.size() < 2) {
+        if (item.tuple_parts.empty()) {
             error(item.loc, "type mismatch");
             return;
         }
@@ -1871,11 +1871,21 @@ void Checker::register_tuple_alias_template(const TypedefDecl &item) {
     if (item.name.empty()) {
         return;
     }
-    // A value parameter or a trait constraint is not this alias. The parser already rejects it.
-    // `type MyAlias[T type] Vec[T]` is the other template. A pointer and a bare name are not.
+    // A value parameter or a trait constraint is not this alias.
+    // `type MyAlias[T type] Vec[T]` names another generic type. `type Name[T type] T` names the parameter.
+    // A pointer and a bare name that is not a parameter are not this alias.
     const bool application = !item.is_tuple && !item.type_args.empty() && !item.type_name.empty() &&
                              item.indirections == 0 && !item.is_array && item.shells.empty() && !item.is_fn_ptr;
-    if ((!item.is_tuple || item.tuple_parts.size() < 2) && !application) {
+    bool parameter = false;
+    if (!item.is_tuple && item.type_args.empty() && item.type_package.empty() && !item.type_name.empty() &&
+        item.indirections == 0 && !item.is_array && item.shells.empty() && !item.is_fn_ptr) {
+        for (const TypeParam &param : item.type_params) {
+            if (param.name == item.type_name) {
+                parameter = true;
+            }
+        }
+    }
+    if ((!item.is_tuple || item.tuple_parts.empty()) && !application && !parameter) {
         error(item.loc, "not supported yet");
         return;
     }

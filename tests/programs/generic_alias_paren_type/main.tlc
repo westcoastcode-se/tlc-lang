@@ -1,5 +1,6 @@
 type Name[T type] (T);
 
 func main() i32 {
-    return 0;
+    var n Name[i32] = Name[i32]((42));
+    return n[0];
 }

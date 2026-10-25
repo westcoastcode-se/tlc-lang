@@ -1,7 +1,7 @@
 func id(n (i32)) i32 {
-    return n;
+    return n[0];
 }
 
 func main() i32 {
-    return id(42);
+    return id((42));
 }

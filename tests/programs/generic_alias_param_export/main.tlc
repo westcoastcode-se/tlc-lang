@@ -1,0 +1,6 @@
+import "math";
+
+func main() i32 {
+    var n math.Name[i32] = math.make();
+    return i32(n);
+}

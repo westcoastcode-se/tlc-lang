@@ -258,6 +258,45 @@ std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t o
         }
         bounds.push_back(std::move(bound));
     }
+    // `type Name[T type] T`. A tuple alias stays that name. Unpacking it would make
+    // `Name[Duo]` and `Name[Pair]` the same type when both tuples are `(i32, i32)`.
+    const bool identity = !templ.is_tuple && templ.type_args.empty() && templ.type_package.empty() &&
+                          !templ.type_name.empty() && templ.indirections == 0 && !templ.is_array && templ.shells.empty() &&
+                          !templ.is_fn_ptr && param_index(templ.type_params, templ.type_name) >= 0;
+    if (identity) {
+        const int slot = param_index(templ.type_params, templ.type_name);
+        if (slot >= 0 && static_cast<std::size_t>(slot) < bounds.size() &&
+            static_cast<std::size_t>(slot) < args.size() && bounds[static_cast<std::size_t>(slot)].is_pack) {
+            TypeArg concrete = args[static_cast<std::size_t>(slot)];
+            if (!concrete.args.empty()) {
+                const std::string spec =
+                    specialize_type_app(concrete.type_package, concrete.type_name, concrete.args, concrete.loc);
+                if (!spec.empty()) {
+                    concrete.type_name = spec;
+                    concrete.type_package.clear();
+                    concrete.args.clear();
+                }
+            }
+            if (concrete.args.empty() && !concrete.type_name.empty()) {
+                const bool saved_quiet = quiet_;
+                quiet_ = true;
+                const Type type =
+                    object_type(concrete.type_name, concrete.indirections, concrete.is_array, concrete.array_len,
+                                concrete.loc, false, concrete.type_package, false, concrete.is_enum, false,
+                                concrete.optional, concrete.const_pointee, false, concrete.elem_const, false,
+                                concrete.shells);
+                quiet_ = saved_quiet;
+                if (type.alias_id > 0) {
+                    SpecArg named;
+                    named.type_name = type_desc(type);
+                    if (named.type_name == concrete.type_name) {
+                        named.type_package = concrete.type_package;
+                    }
+                    bounds[static_cast<std::size_t>(slot)] = std::move(named);
+                }
+            }
+        }
+    }
     disambiguate_bounds(owner, bounds);
     const std::string spec_name = mangle_spec(templ.name, bounds);
     const std::string key = std::to_string(owner) + "\n" + spec_name;
@@ -307,10 +346,38 @@ std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t o
             subst_slot(subst_slot, part);
         }
     } else {
-        // `type MyAlias[T type] Vec[T]` becomes a concrete alias of that specialization.
-        substitute_type(templ.type_params, bounds, spec.type_name, spec.type_package, spec.is_struct, spec.is_enum,
-                        spec.indirections, spec.optional, spec.is_array, spec.array_len, spec.array_len_name,
-                        spec.type_args, loc, &spec.shells, &spec.elem_const, &spec.const_pointee);
+        // `type Name[T type] T` when `T` is a tuple is that tuple alias. Substitution rejects the pack.
+        const bool identity = spec.type_args.empty() && spec.type_package.empty() && !spec.type_name.empty() &&
+                              spec.indirections == 0 && !spec.is_array && spec.shells.empty() && !spec.is_fn_ptr;
+        const int slot = identity ? param_index(templ.type_params, spec.type_name) : -1;
+        const SpecArg *bound =
+            slot >= 0 && static_cast<std::size_t>(slot) < bounds.size() ? &bounds[static_cast<std::size_t>(slot)] : nullptr;
+        if (bound != nullptr && bound->is_pack) {
+            spec.is_tuple = true;
+            spec.type_name.clear();
+            spec.tuple_parts.reserve(bound->parts.size());
+            for (const SpecArg &part : bound->parts) {
+                ResultSlot written;
+                written.type_name = part.type_name;
+                written.type_package = part.type_package;
+                written.is_struct = part.is_struct;
+                written.is_enum = part.is_enum;
+                written.indirections = part.indirections;
+                written.optional = part.optional;
+                written.const_pointee = part.const_pointee;
+                written.is_array = part.is_array;
+                written.elem_const = part.elem_const;
+                written.elem_slice = part.elem_slice;
+                written.shells = part.shells;
+                written.array_len = part.array_len;
+                spec.tuple_parts.push_back(std::move(written));
+            }
+        } else {
+            // `type MyAlias[T type] Vec[T]` and `type Name[T type] T` become a concrete alias.
+            substitute_type(templ.type_params, bounds, spec.type_name, spec.type_package, spec.is_struct, spec.is_enum,
+                            spec.indirections, spec.optional, spec.is_array, spec.array_len, spec.array_len_name,
+                            spec.type_args, loc, &spec.shells, &spec.elem_const, &spec.const_pointee);
+        }
     }
     register_one_typedef(spec);
     Type made;

@@ -1538,6 +1538,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                 const bool one_tuple = !checking_.empty() && checking_.back()->results.size() == 1 &&
                                        checking_.back()->results.front().is_tuple;
                 if (return_type_.kind == TypeKind::Tuple && exprs.size() == 1 && exprs.front() != nullptr) {
+                    if (return_type_.alias_id == 0 && return_type_.results.size() == 1) {
+                        adopt_one_tuple(const_cast<Expr &>(*exprs.front()), return_type_);
+                    }
                     Type got = type_invalid();
                     if (const auto *init = std::get_if<Expr::Init>(&exprs.front()->data)) {
                         got = check_init(const_cast<Expr::Init &>(*init), return_type_);
@@ -1559,15 +1562,29 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                 }
                 if (return_type_.kind == TypeKind::Tuple && !one_tuple) {
-                    if (exprs.size() != return_type_.results.size()) {
-                        error(node.loc, "return type: expected " + std::to_string(return_type_.results.size()) +
-                                            " results, found " + std::to_string(exprs.size()));
-                    }
-                    for (std::size_t i = 0; i < exprs.size(); ++i) {
-                        const Type got = i < return_type_.results.size() ? supplied(*exprs[i], return_type_.results[i])
-                                                                          : check_expr(*exprs[i], true);
-                        if (i < return_type_.results.size()) {
-                            match_return(got, return_type_.results[i]);
+                    // `func f() One` where `One` is one element. The value is that alias, not the element.
+                    if (return_type_.alias_id != 0 && return_type_.results.size() == 1) {
+                        if (exprs.size() == 1 && exprs.front() != nullptr) {
+                            match_return(check_expr(*exprs.front(), true), return_type_);
+                        } else {
+                            error(node.loc, "return type: expected " + type_desc(return_type_) + ", found " +
+                                                std::to_string(exprs.size()) + " results");
+                            for (const Expr *expr : exprs) {
+                                check_expr(*expr, true);
+                            }
+                        }
+                    } else {
+                        if (exprs.size() != return_type_.results.size()) {
+                            error(node.loc, "return type: expected " + std::to_string(return_type_.results.size()) +
+                                                " results, found " + std::to_string(exprs.size()));
+                        }
+                        for (std::size_t i = 0; i < exprs.size(); ++i) {
+                            const Type got = i < return_type_.results.size()
+                                                 ? supplied(*exprs[i], return_type_.results[i])
+                                                 : check_expr(*exprs[i], true);
+                            if (i < return_type_.results.size()) {
+                                match_return(got, return_type_.results[i]);
+                            }
                         }
                     }
                 } else if (!node.extra.empty()) {

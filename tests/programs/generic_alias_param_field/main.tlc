@@ -1,0 +1,11 @@
+type Name[T type] T;
+
+type Box[T type] struct {
+    n Name[T];
+};
+
+func main() i32 {
+    var b Box[i32];
+    b.n = Name[i32](42);
+    return i32(b.n);
+}

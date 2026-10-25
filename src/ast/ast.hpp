@@ -275,6 +275,9 @@ struct Expr {
         std::vector<std::unique_ptr<Expr>> elements;
         // `(value, value, ...)`. A brace list is not a tuple.
         bool is_tuple = false;
+        // `(value)` where the expected type is a tuple of one element.
+        // `(value,)` is not that tuple.
+        bool explicit_one = false;
         // `{1, 2, 0...}` stores 0 in every element the list does not name.
         bool zero_rest = false;
         // Filled when the destination struct is known.
@@ -365,6 +368,8 @@ struct Expr {
                               Nullptr, Char, Float, Func, Init, New, Delete, Unsupported>;
 
     Data data;
+    // `(value)` with no comma. Grouping, unless the expected type is a tuple of one element.
+    bool grouped = false;
 
     Expr();
     ~Expr();

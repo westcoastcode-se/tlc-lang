@@ -1,0 +1,12 @@
+type Vec[T type] struct {
+    n T;
+};
+
+type Name[T type] T;
+
+func main() i32 {
+    var b Vec[i32];
+    b.n = 42;
+    var a Name[Vec[i32]] = Name[Vec[i32]](b);
+    return a.n;
+}

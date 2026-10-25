@@ -1,0 +1,8 @@
+type Name[T type] T;
+
+func main() i32 {
+    var raw [1]i32;
+    raw[0] = 42;
+    var s Name[[]i32] = raw[0:1];
+    return s[0];
+}

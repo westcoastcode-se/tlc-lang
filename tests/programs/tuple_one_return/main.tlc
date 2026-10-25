@@ -1,0 +1,8 @@
+func one() ((i32)) {
+    return (42);
+}
+
+func main() i32 {
+    var n = one();
+    return n[0];
+}

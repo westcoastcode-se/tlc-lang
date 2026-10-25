@@ -736,11 +736,8 @@ Parser::PlacedType Parser::parse_tuple_type() {
         }
     }
     expect(TokenKind::RParen, "expected ')'");
-    // `(i32)` is the type `i32`. A tuple needs two elements. `(i32,)` is not one.
-    if (parts.size() == 1 && !saw_comma) {
-        return std::move(parts.front());
-    }
-    if (parts.size() < 2) {
+    // `(i32)` is a tuple of one element. `()` and `(i32,)` are not.
+    if (parts.size() < 2 && (parts.size() != 1 || saw_comma)) {
         diags_.error(loc, "type mismatch");
         PlacedType bad;
         bad.loc = loc;
@@ -1582,6 +1579,9 @@ bool Parser::looks_like_type_params() const {
     }
     int depth = 0;
     bool named = false;
+    // The identifier waiting for `type`. `N i32` and `T Shape` are not that parameter.
+    std::string pending;
+    std::vector<std::string> type_names;
     for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
         const TokenKind kind = peek(ahead).kind;
         if (kind == TokenKind::LBracket) {
@@ -1594,8 +1594,9 @@ bool Parser::looks_like_type_params() const {
                 const TokenKind next = peek(ahead + 1).kind;
                 // `type Something[K type, V type] (K, V)`. A tuple alias takes the list.
                 // `type MyAlias[T type] Vec[T]` and `type MyAlias[T type] pkg.Vec[T]` name another
-                // generic type. `type Name[T type] i32` stays an array length. `enum` is included so
-                // `type Name[T type] enum` is one error. An enum does not take the list.
+                // generic type. `type Name[T type] T` names that parameter. `type Name[T type] i32`
+                // stays an array length. `enum` is included so `type Name[T type] enum` is one error.
+                // An enum does not take the list.
                 if (!named) {
                     return false;
                 }
@@ -1606,19 +1607,42 @@ bool Parser::looks_like_type_params() const {
                 if (next == TokenKind::Identifier && peek(ahead + 2).kind == TokenKind::LBracket) {
                     return true;
                 }
-                return next == TokenKind::Identifier && peek(ahead + 2).kind == TokenKind::Dot &&
-                       peek(ahead + 3).kind == TokenKind::Identifier && peek(ahead + 4).kind == TokenKind::LBracket;
+                if (next == TokenKind::Identifier && peek(ahead + 2).kind == TokenKind::Dot &&
+                    peek(ahead + 3).kind == TokenKind::Identifier && peek(ahead + 4).kind == TokenKind::LBracket) {
+                    return true;
+                }
+                if (next == TokenKind::Identifier) {
+                    const std::string &follow = peek(ahead + 1).text;
+                    for (const std::string &param : type_names) {
+                        if (param == follow) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
             }
             continue;
         }
-        if (depth == 1 && !named) {
-            if (kind == TokenKind::Ellipsis) {
-                continue;
+        if (depth == 1) {
+            if (!named) {
+                if (kind == TokenKind::Ellipsis) {
+                    continue;
+                }
+                if (kind != TokenKind::Identifier) {
+                    return false;
+                }
+                named = true;
+                pending = peek(ahead).text;
+            } else if (kind == TokenKind::KwType && !pending.empty()) {
+                type_names.push_back(std::move(pending));
+                pending.clear();
+            } else if (kind == TokenKind::Comma) {
+                pending.clear();
+            } else if (kind == TokenKind::Identifier && pending.empty()) {
+                pending = peek(ahead).text;
+            } else if (kind == TokenKind::Identifier) {
+                pending.clear();
             }
-            if (kind != TokenKind::Identifier) {
-                return false;
-            }
-            named = true;
         }
         if (ahead > 4096) {
             return false;

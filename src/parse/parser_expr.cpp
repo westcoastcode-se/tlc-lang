@@ -894,6 +894,8 @@ std::unique_ptr<Expr> Parser::parse_primary() {
         auto expr = parse_expr();
         if (!eat(TokenKind::Comma)) {
             expect(TokenKind::RParen, "expected ')'");
+            // `(value)` is grouping until the expected type is a tuple of one element.
+            expr->grouped = true;
             return expr;
         }
         Expr::Init tuple;

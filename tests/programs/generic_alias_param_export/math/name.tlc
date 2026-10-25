@@ -1,0 +1,7 @@
+package math;
+
+export type Name[T type] T;
+
+export func make() Name[i32] {
+    return Name[i32](42);
+}

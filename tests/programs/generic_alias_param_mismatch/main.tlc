@@ -1,0 +1,6 @@
+type Name[T type] T;
+
+func main() i32 {
+    var n Name[i32] = 40;
+    return 0;
+}

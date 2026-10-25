@@ -1361,7 +1361,7 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
         return true;
     case TypeKind::Tuple: {
         // `T` is the whole tuple. A pointer to a tuple, or a tuple inside a tuple, stays rejected.
-        if (depth != 0 || out.is_array || cursor->results.size() < 2) {
+        if (depth != 0 || out.is_array || cursor->results.empty()) {
             return false;
         }
         std::vector<SpecArg> parts;
