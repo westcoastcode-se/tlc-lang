@@ -72,7 +72,7 @@ func xchg_at[T type](p *T, value T, order comptime Order) T {
     return *p;
 }
 
-func rmw_at[T type](p *T, value T, op Op, order comptime Order) T {
+func rmw_at[T type](p *T, value T, op comptime Op, order comptime Order) T {
     if (op == Op.xchg) {
         return xchg_at[T](p, value, order);
     }

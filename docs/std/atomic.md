@@ -8,7 +8,7 @@
 
 `load` and `store` use `seq_cst`. `swap`, `add`, `sub`, `and`, `or`, and `xor` do too. Each of those returns the previous value. `load_order` and `store_order`, and the `_order` forms of the updates, take `order comptime Order`. The argument is an enumerator, such as `atomic.Order.acquire`. A `var` of that enum is `type mismatch`. An `i32`, including `0`, is `type mismatch: expected Order, found i32`. `cmpxchg(expected, desired)` is a strong compare-exchange. The success order is `seq_cst` and the failure order is `relaxed`. The results are the previous value and whether the store happened. `Bool` and `Ptr[T]` have `load`, `store`, `swap`, and `cmpxchg`. They do not have `add`.
 
-`Order` is `relaxed`, `acquire`, `release`, `acq_rel`, and `seq_cst`. There is no `consume`. `Op` is `xchg`, `add`, `sub`, `and`, `or`, and `xor`. The call is `n.load_order(atomic.Order.acquire)` or `n.add_order(1, atomic.Order.relaxed)`. `n.add_order(1, order)` when `order` is a `var` is `type mismatch`. An order the operation does not allow panics with `type mismatch`. A direct builtin call still takes the integer and reports a bad order while compiling. A normal store of an `i32` is not atomic.
+`Order` is `relaxed`, `acquire`, `release`, `acq_rel`, and `seq_cst`. There is no `consume`. `Op` is `xchg`, `add`, `sub`, `and`, `or`, and `xor`. An update passes that enumerator as `op comptime Op`. The call is `n.load_order(atomic.Order.acquire)` or `n.add_order(1, atomic.Order.relaxed)`. `n.add_order(1, order)` when `order` is a `var` is `type mismatch`. An order the operation does not allow panics with `type mismatch`. A direct builtin call still takes the integer and reports a bad order while compiling. A normal store of an `i32` is not atomic.
 
 ```c
 import "std/atomic";
