@@ -753,6 +753,38 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var t = (40, 2);\n"
+            "  const i = 0;\n"
+            "  const j i32 = 1;\n"
+            "  t[j] = 2;\n"
+            "  return t[i] + t[j];\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var t = (40, 2);\n"
+            "  var i = 0;\n"
+            "  return t[i];\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "index is not a compile-time constant");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  const n = 2;\n"
+            "  var row [n]i32;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
             "type Point struct { x i32; y i32; };\n"
             "func Point::set(self *this, other *Point) void { self = other; }\n"
             "func main() i32 { return 0; }\n");
@@ -8521,13 +8553,13 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func main() i32 { var t = (40, 2); var i = 0; return t[i]; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "index is not a compile-time constant");
     }
 
     {
         const std::string errors = diagnose(
             "func main() i32 { var t = (40, 'a'); var i = 0; return t[i]; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "index is not a compile-time constant");
     }
 
     {

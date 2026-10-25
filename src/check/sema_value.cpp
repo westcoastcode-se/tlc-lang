@@ -448,7 +448,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     expect(subscript, type_int(), expr_loc(*index->index));
                     InitStep step;
                     step.kind = InitStep::Kind::Index;
-                    if (const std::optional<int> folded = fold_int(*index->index)) {
+                    if (const std::optional<int> folded = constant_index(*index->index)) {
                         step.known = true;
                         step.index = *folded;
                     }
@@ -475,10 +475,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 return type_invalid();
                             }
                         }
-                        const std::optional<int> folded = index->index ? fold_int(*index->index) : std::nullopt;
+                        const std::optional<int> folded = index->index ? constant_index(*index->index) : std::nullopt;
                         // The slot is chosen while compiling. A runtime index has no single field.
                         if (!folded) {
-                            error(node.loc, "not supported yet");
+                            error(node.loc, "index is not a compile-time constant");
                             check_expr(*node.rhs, true);
                             return type_invalid();
                         }
@@ -1596,7 +1596,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 InitStep step;
                 step.kind = InitStep::Kind::Index;
                 if (node.index != nullptr) {
-                    if (const std::optional<int> folded = fold_int(*node.index)) {
+                    if (const std::optional<int> folded = constant_index(*node.index)) {
                         step.known = true;
                         step.index = *folded;
                     }
@@ -1618,10 +1618,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return element;
                 }
                 if (base.kind == TypeKind::Tuple) {
-                    const std::optional<int> folded = node.index ? fold_int(*node.index) : std::nullopt;
+                    const std::optional<int> folded = node.index ? constant_index(*node.index) : std::nullopt;
                     if (!folded) {
                         // A tuple slot is chosen while compiling. `i` does not name a field.
-                        error(node.loc, "not supported yet");
+                        error(node.loc, "index is not a compile-time constant");
                         return type_invalid();
                     }
                     if (*folded < 0 || static_cast<std::size_t>(*folded) >= base.results.size()) {

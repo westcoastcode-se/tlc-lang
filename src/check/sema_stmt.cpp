@@ -1837,6 +1837,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     symbol.loc = loc;
+                    if (node.is_const && node.value != nullptr && plain_int_constant(parts[index])) {
+                        if (const std::optional<int> value = constant_index(*node.value)) {
+                            symbol.folded_local = true;
+                            symbol.const_value = *value;
+                        }
+                    }
                     declare(std::move(symbol), loc);
                     if (!node.is_const && node.names.size() == 1 && node.value != nullptr) {
                         if (Symbol *live = in_current(node.names[index])) {
@@ -1980,6 +1986,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                             init_new_partial_ = saved_new;
                         }
                         if ((init_ready || (!(sees_previous && plain_init) && diags_.size() == before)) && live != nullptr) {
+                            if (var.is_const_decl && var.init != nullptr && plain_int_constant(live->type)) {
+                                if (const std::optional<int> value = constant_index(*var.init)) {
+                                    live->folded_local = true;
+                                    live->const_value = *value;
+                                }
+                            }
                             init_cover(*live, var.init.get());
                             if (const auto *created = std::get_if<Expr::New>(&var.init->data);
                                 created != nullptr && created->count == nullptr && !created->count_inferred &&

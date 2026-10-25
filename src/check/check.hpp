@@ -72,6 +72,9 @@ struct Symbol {
     bool is_constant = false;
     // `const name = expr` inside a function. The binding has storage and cannot be assigned.
     bool is_immutable = false;
+    // The initializer of that local `const` folded to an `i32`. A tuple index may use it.
+    // It is not a file-scope constant, so it is not an array length.
+    bool folded_local = false;
     // Pointer receiver `self *this`. The name is not assigned. `*self` and `self.x` are.
     bool fixed_receiver = false;
     bool is_enum = false;
@@ -654,6 +657,8 @@ class Checker {
         bool wide = false;
     };
     std::optional<int> fold_int(const Expr &expr);
+    // `fold_int`, and a local `const` whose initializer folded. A `var` does not.
+    std::optional<int> constant_index(const Expr &expr);
     // `.len` when the number of elements is known before this selector is typechecked.
     std::optional<int> known_len(const Expr &base);
     bool folding_fields_len_ = false;

@@ -1,0 +1,7 @@
+func main() i32 {
+    var t = (40, 2);
+    const i = 0;
+    const j = i + 1;
+    t[j] = 2;
+    return t[i] + t[j];
+}

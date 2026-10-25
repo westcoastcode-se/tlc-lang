@@ -442,6 +442,50 @@ std::optional<int> Checker::known_len(const Expr &base) {
     return 0;
 }
 
+std::optional<int> Checker::constant_index(const Expr &expr) {
+    if (const std::optional<int> folded = fold_int(expr)) {
+        return folded;
+    }
+    return std::visit(
+        [&](const auto &node) -> std::optional<int> {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Name>) {
+                const Symbol *symbol = lookup(node.text);
+                if (symbol != nullptr && symbol->folded_local) {
+                    return symbol->const_value;
+                }
+                return std::nullopt;
+            } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.postfix || node.expr == nullptr) {
+                    return std::nullopt;
+                }
+                const std::optional<int> inner = constant_index(*node.expr);
+                if (!inner) {
+                    return std::nullopt;
+                }
+                switch (node.op) {
+                case TokenKind::Plus: return *inner;
+                case TokenKind::Minus: return static_cast<int>(static_cast<uint32_t>(-static_cast<int64_t>(*inner)));
+                case TokenKind::Tilde: return static_cast<int>(~static_cast<uint32_t>(*inner));
+                default: return std::nullopt;
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if (node.lhs == nullptr || node.rhs == nullptr) {
+                    return std::nullopt;
+                }
+                const std::optional<int> lhs = constant_index(*node.lhs);
+                const std::optional<int> rhs = constant_index(*node.rhs);
+                if (!lhs || !rhs) {
+                    return std::nullopt;
+                }
+                return eval_int_op(node.op, *lhs, *rhs);
+            } else {
+                return std::nullopt;
+            }
+        },
+        expr.data);
+}
+
 std::optional<int> Checker::fold_int(const Expr &expr) {
     auto wrap = [](int64_t value) { return static_cast<int>(static_cast<uint32_t>(value)); };
     return std::visit(

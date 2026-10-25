@@ -1,1 +1,1 @@
-compile-error: not supported yet
+compile-error: index is not a compile-time constant

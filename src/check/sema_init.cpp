@@ -393,7 +393,7 @@ bool Checker::init_collect(const Expr &expr, std::vector<InitStep> &steps) {
         InitStep step;
         step.kind = InitStep::Kind::Index;
         if (index->index != nullptr) {
-            if (const std::optional<int> folded = fold_int(*index->index)) {
+            if (const std::optional<int> folded = constant_index(*index->index)) {
                 step.known = true;
                 step.index = *folded;
             }
