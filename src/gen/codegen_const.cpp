@@ -1112,7 +1112,7 @@ llvm::StructType *CodeGen::type_desc_type() {
     if (type_desc_ty_ != nullptr) {
         return type_desc_ty_;
     }
-    // `{ *u8 name, []const Field fields }`. `name()` loads the first field. `fields()` loads the second.
+    // `{ *const u8 name, []const Field fields }`. `name()` loads the first field. `fields()` loads the second.
     auto *type = llvm::StructType::create(context_, "tlc.type");
     type->setBody({ptr_type(), slice_type()});
     type_desc_ty_ = type;

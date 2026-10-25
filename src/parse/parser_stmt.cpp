@@ -287,6 +287,19 @@ std::unique_ptr<Stmt> Parser::parse_for() {
         stmt.body = parse_required_block();
         return make_stmt(std::move(stmt));
     }
+    // `for (item : items)` is the each-loop without `var` or `const`.
+    if (check(TokenKind::Identifier) && peek(1).kind == TokenKind::Colon) {
+        diags_.error(peek().loc, "expected var");
+        stmt.each = true;
+        stmt.each_name = peek().text;
+        stmt.each_name_loc = peek().loc;
+        ++pos_;
+        expect(TokenKind::Colon, "expected ':'");
+        stmt.each_expr = parse_expr();
+        expect(TokenKind::RParen, "expected ')'");
+        stmt.body = parse_required_block();
+        return make_stmt(std::move(stmt));
+    }
     if (eat(TokenKind::Semicolon)) {
         stmt.init = nullptr;
     } else if (const_on_type()) {

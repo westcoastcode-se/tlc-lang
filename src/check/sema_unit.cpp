@@ -1569,6 +1569,13 @@ void Checker::check_globals(const TranslationUnit &unit) {
                        std::get<Expr::Init>(var->init->data).array_literal) {
                 // `var row = [_]i32{1, 2}` and `const row = [_]i32{1}` were checked while declaring them.
             } else if (var->init) {
+                // `check_file_const` already reported an initializer that is not a constant.
+                if (var->is_const_decl) {
+                    const Symbol *bound = lookup(var->name);
+                    if (bound == nullptr || bound->type.kind == TypeKind::Invalid) {
+                        continue;
+                    }
+                }
                 const Symbol *symbol = lookup(var->name);
                 const Type want = symbol != nullptr ? symbol->type : type_invalid();
                 if (mentions_trait(want)) {

@@ -1563,7 +1563,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                         }
                         return as_int(32, false);
                     }
-                    // `typeof(T).name()` is `*u8`. `typeof(T).fields()` is a slice of `{ name []const u8, kind }`.
+                    // `typeof(T).name()` is `*const u8`. `typeof(T).fields()` is a slice of `{ name []const u8, kind }`.
                     if (item.type_name) {
                         Lowered low;
                         low.depth = 1;

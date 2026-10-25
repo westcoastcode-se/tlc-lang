@@ -1,0 +1,7 @@
+import "builtin";
+
+func main() i32 {
+    var text *const u8 = typeof(i32).name();
+    *text = 0;
+    return 0;
+}

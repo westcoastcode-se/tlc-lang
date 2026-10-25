@@ -1485,7 +1485,7 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "func main() i32 {\n"
             "  var n i32;\n"
-            "  var text *u8 = typeof(n).name();\n"
+            "  var text *const u8 = typeof(n).name();\n"
             "  return 0;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());

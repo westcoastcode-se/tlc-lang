@@ -1,1 +1,1 @@
-compile-error: expected ';'
+compile-error: expected var

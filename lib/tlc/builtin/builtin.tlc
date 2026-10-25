@@ -18,7 +18,8 @@ export type Field struct {
 };
 
 // The spelling of this type, the same text a diagnostic prints.
-export func Type::name(self this) *u8;
+// The bytes are constant. A store through the pointer is type mismatch.
+export func Type::name(self this) *const u8;
 
 // The fields of a named struct, in the order they are written.
 // A tuple lists one field per element. The name is the index, "0", "1", and so on.

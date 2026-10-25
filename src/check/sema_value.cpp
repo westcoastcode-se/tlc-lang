@@ -387,6 +387,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
+                // `==` and `!=` of two byte slices are not integer compares.
+                const auto byte_slice = [](const Type &type) {
+                    if (type.alias_id != 0 || !is_slice(type) || type.element == nullptr) {
+                        return false;
+                    }
+                    const Type &elem = *type.element;
+                    return elem.kind == TypeKind::Char && elem.rank == 1 && elem.is_unsigned && !elem.plain_char;
+                };
+                if ((node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) && byte_slice(lhs) && byte_slice(rhs)) {
+                    error(node.loc, "compare with builtin.memeql");
+                    return type_invalid();
+                }
                 expect_integer(lhs, expr_loc(*node.lhs));
                 expect_integer(rhs, expr_loc(*node.rhs));
                 if (!is_integer(lhs) || !is_integer(rhs)) {
@@ -1016,7 +1028,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 return slice;
                             }
                             node.type_name = true;
-                            return type_pointer(type_rank(1, true));
+                            // The spelling lives in a constant global. `*const u8` rejects a store.
+                            Type bytes = type_rank(1, true);
+                            bytes.is_const = true;
+                            return type_pointer(std::move(bytes));
                         }
                         if (base.kind == TypeKind::Trait ||
                             (base.kind == TypeKind::Pointer && base.pointee && base.pointee->kind == TypeKind::Trait)) {

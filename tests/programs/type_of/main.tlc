@@ -19,7 +19,7 @@ func id[T type](value T) i32 {
     return 0;
 }
 
-func take(value builtin.Type) *u8 {
+func take(value builtin.Type) *const u8 {
     return value.name();
 }
 

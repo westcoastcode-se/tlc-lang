@@ -103,6 +103,14 @@ In a `macro`, a condition or a bound that does not fold is `not supported yet`. 
 An accepted form whose rule does not match its page is inserted here. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there.
 
 - Postfix `!` on a `?*T` is `*T`. A null `p!` calls `builtin.panic("null pointer")` (`docs/expressions/narrowing.md`, `docs/builtin/panic.md`, `docs/grammar.md`). That call runs in a debug build and is left out of a release build. The compiler has no debug or release mode yet.
+- `text.len()` on a slice or a sized array is `type mismatch`. The length is the field `text.len`. A parameter `seq.Seq[T]` reads the length with `items.len()` (`docs/types/slice.md`, `docs/types/array.md`, `docs/std/seq.md`, `docs/statements/for.md`).
+- `var p = ptr_of(items)` is `undeclared identifier`. `for (var p : ptr_of(items))` binds the address of each element. `ptr_of` is also the trait in `lib/tlc/std/seq` (`docs/statements/for.md`, `docs/std/seq.md`).
+- `if (builtin.memeql[i32](&a, 1, &b, 1))` is `type mismatch: expected bool, found i32`. The pointer form of `memeql` returns `i32`. The slice form returns `bool` (`docs/builtin/mem.md`).
+- A string literal is `[]const u8`. `string.string_view` does not convert to `[]const u8`. `builtin.panic` takes `*const u8` and drops the length. `fields()[i].name` is `[]const u8` (`docs/types/string.md`, `docs/std/string.md`, `docs/builtin/panic.md`, `docs/types/type.md`).
+- `func add(comptime n i32) i32 { return n; }` is `expected an identifier`. The parameter is written `n comptime i32` (`docs/grammar.md`, `docs/functions/comptime.md`).
+- `while (n < 3) n = n + 1;` is `expected '{'`. `do n = n + 1; while (n < 3);` is a statement (`docs/grammar.md`, `docs/statements/block.md`).
+- A method is declared `func Point::sum(self this, extra i32) i32`. The call is `value.sum(extra)`. In that parameter list `this` is the type (`docs/methods/method.md`, `docs/grammar.md`).
+- `(i32, i32)` as a result is two results. `((i32, i32))` is one tuple. `return 40, 2` does not match `func pair() ((i32, i32))` (`docs/functions/result.md`, `docs/grammar.md`).
 
 ## Optimization
 

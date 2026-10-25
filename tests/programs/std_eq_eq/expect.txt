@@ -1,1 +1,1 @@
-compile-error: type mismatch: expected an integer, found []const u8
+compile-error: compare with builtin.memeql
