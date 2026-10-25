@@ -14,7 +14,7 @@ No open bugs. A new bug is inserted here, before every other section, and fixed 
 
 ## `if` and `for` in a macro
 
-In a `macro`, a condition or a bound that does not fold is `not supported yet`. `comptime if` and `comptime for` are `not supported yet`. `const for` is not a form.
+In a `macro`, a condition or a bound that does not fold is `not supported yet`. `comptime if` in a `macro` is `not supported yet`. `comptime for` is `not supported yet`. `const for` is not a form.
 
 ## Generics and compile-time
 
@@ -24,10 +24,9 @@ In a `macro`, a condition or a bound that does not fold is `not supported yet`. 
 - A comptime argument of that function that is neither a folded `i32`, a constant `[]const u8`, nor an enumerator. A tuple is `not supported yet`. An enumerator is accepted. On a free function, `take(n, Order.acquire)` calls `take.spec.1` when `acquire` is `1`. A method still passes the parameter. A generic copy keeps it, so `id[i32](1, Order.acquire)` passes `Order.acquire`. A `var` of that enum is `type mismatch`. A function nested in another function does not take an enumerator.
 - Every constant as a comptime value, including a struct. A bool folds as an integer. The values are the ones a file-scope `const` already accepts. `const origin = Point{.x = 1, .y = 2}` and `Point{.x = 1, .y = 2}` passed to `comptime func field(p Point)` are `not supported yet`. The same value on `func take(p comptime Point, n i32)` is `type mismatch`. `const scale = 0.5` on `comptime func as_f64(v f64)` is `not supported yet`, and on `v comptime f64` is `type mismatch`. `const n = Integer(4)` when `type Integer i32` is `not supported yet` on a `comptime func` and `type mismatch` on `v comptime Integer`. `const op = add` on a parameter `func (i32, i32) i32` is that same pair. An enumerator passed to a `comptime func` is `not supported yet`. A parameter `[2]i32` is a pointer, so `const row = [_]i32{1, 2}` passed to it is `type mismatch: expected *i32, found [2]i32`.
 - More than 32 nested specializations of that function. A body that calls `scale(n + 1, x)` is `not supported yet`.
-- A comptime parameter on a method or a generic function. `func Point::id(self *this, order comptime i32)` still passes `order`. `func load_at[T type](p *T, order comptime i32)` keeps `order` as an argument of the copy, so `if (order == Order.relaxed)` stays a runtime compare. A free function with a runtime parameter beside it drops that parameter, and each use is the constant.
-- The other arm of a constant `if` in an ordinary function. Both arms are emitted. A `macro` keeps the arm whose condition folds. `comptime if` is `not supported yet`.
+- A comptime parameter on a method or a generic function. `func Point::id(self *this, order comptime i32)` still passes `order`. `func load_at[T type](p *T, order comptime i32)` keeps `order` as an argument of the copy, so `if (order == Order.relaxed)` stays a runtime compare. A free function with a runtime parameter beside it drops that parameter, and each use is the constant. That compare then folds, and the copy keeps one arm.
 
-The `if` chain in `load_at`, `store_at`, `xchg_at`, and `rmw_at` in `lib/tlc/std/atomic` stays until the two bullets above hold. `order` is `order comptime Order`. `op` is `op comptime Op`. An enumerator is that argument. A method still passes `order`, and the generic copy keeps both parameters, so each remaining arm passes an integer literal to `builtin.atomic_load`, `builtin.atomic_store`, or `builtin.atomic_rmw`. A `var` of `Order` is `type mismatch`.
+The `if` chain in `load_at`, `store_at`, `xchg_at`, and `rmw_at` in `lib/tlc/std/atomic` stays until the bullet above holds. `order` is `order comptime Order`. `op` is `op comptime Op`. An enumerator is that argument. A method still passes `order`, and the generic copy keeps both parameters, so `if (order == Order.relaxed)` does not fold and each arm passes an integer literal to `builtin.atomic_load`, `builtin.atomic_store`, or `builtin.atomic_rmw`. A `var` of `Order` is `type mismatch`. An ordinary `if` whose condition folds keeps one arm, and so does `comptime if`. A `comptime if` whose condition does not fold is `not supported yet`. `comptime if` in a `macro` is `not supported yet`.
 
 - A tuple index that is not a constant. `t[i]` when `i` is a `var` is `index is not a compile-time constant`. `const i = 0` then `t[i]` and `t[i] = 1` choose that field while compiling, as `t[0]` does. A file-scope `const` and a folded expression do too.
 - `count(U)`.
@@ -57,7 +56,7 @@ The `if` chain in `load_at`, `store_at`, `xchg_at`, and `rmw_at` in `lib/tlc/std
 
 ## Reflection
 
-`typeof(T).fields()` returns `[]const Field`. Methods are not read yet. A plain `while` or `do` in a `macro` is `not supported yet`. A `var` passed to a `comptime func`, `comptime { ... }` inside an ordinary function, `emit` outside a `macro`, `comptime for`, `comptime if`, a method, `extern`, `export`, a value call of a `macro`, a value call that does not fold, and `const for` are `not supported yet`.
+`typeof(T).fields()` returns `[]const Field`. Methods are not read yet. A plain `while` or `do` in a `macro` is `not supported yet`. A `var` passed to a `comptime func`, `comptime { ... }` inside an ordinary function, `emit` outside a `macro`, `comptime for`, `comptime if` in a `macro`, `comptime if` whose condition does not fold, a method, `extern`, `export`, a value call of a `macro`, a value call that does not fold, and `const for` are `not supported yet`.
 
 ## Types and operators
 

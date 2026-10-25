@@ -1,0 +1,11 @@
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+func main() i32 {
+    if (Order.acquire == Order.relaxed) {
+        return "no";
+    }
+    return 42;
+}

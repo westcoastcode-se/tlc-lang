@@ -907,9 +907,14 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                 }
                 defers_.push_back(DeferFrame{static_cast<int>(loops_.size()), {}});
                 for (const auto &child : node.statements) {
-                    if (child) {
-                        emit_stmt(*child);
+                    if (!child) {
+                        continue;
                     }
+                    // A `return` ends this block. A later `case` starts another block.
+                    if (terminated() && !std::holds_alternative<Stmt::Case>(child->data)) {
+                        continue;
+                    }
+                    emit_stmt(*child);
                 }
                 if (!terminated() && !defers_.empty()) {
                     emit_defer_frame(defers_.back());
@@ -1125,6 +1130,13 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     emit_rvalue(*node.expr);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (node.folded) {
+                    Stmt *arm = node.taken ? node.then_arm.get() : node.else_arm.get();
+                    if (arm != nullptr) {
+                        emit_stmt(*arm);
+                    }
+                    return;
+                }
                 const SourceLoc if_loc = node.loc;
                 llvm::Value *cond = emit_rvalue(*node.cond).value;
                 if (terminated()) {

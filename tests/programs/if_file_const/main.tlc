@@ -1,0 +1,9 @@
+const n = 1;
+
+func main() i32 {
+    if (n == 1) {
+        return 42;
+    } else {
+        return "no";
+    }
+}

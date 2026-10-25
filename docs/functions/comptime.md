@@ -20,7 +20,7 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
-The call folds when the body is one `return` of a constant `i32`. There is no runtime symbol and no trace frame. `emit` is not valid in a `comptime func`. A `var` passed to a `comptime func` is `not supported yet`. A type parameter, a method, `extern`, `export`, and a call that does not fold are `not supported yet`. `comptime { ... }` inside an ordinary function is `not supported yet`. `comptime for` and `comptime if` are `not supported yet`. In a [macro](macro.md), `for` and `if` run while compiling without that prefix. `const for` is not a form.
+The call folds when the body is one `return` of a constant `i32`. There is no runtime symbol and no trace frame. `emit` is not valid in a `comptime func`. A `var` passed to a `comptime func` is `not supported yet`. A type parameter, a method, `extern`, `export`, and a call that does not fold are `not supported yet`. `comptime { ... }` inside an ordinary function is `not supported yet`. `comptime for` is `not supported yet`. `comptime if` keeps one arm when the condition folds. A condition that does not fold is `not supported yet`. An ordinary `if` does the same when every value in the condition is comptime. A `var` and a local `const` leave both arms. In a [macro](macro.md), `comptime if` is `not supported yet`, and `for` and `if` run while compiling without that prefix. `const for` is not a form.
 
 An ordinary function may mark a parameter `comptime`. That argument has to be a comptime value, or the call is `type mismatch`. When every parameter is `comptime` and the body is one `return` of a constant `i32`, the call folds. The function is still compiled.
 
@@ -56,7 +56,7 @@ retq                             # return
 
 `return add(1)` folds to `1`. `return scale(2, x)` passes `x` and calls `scale`. `2` is an immediate.
 
-An enumerator is a comptime argument of that function. The copy does not receive it. The program returns 42. When the file is `main.tlc` and `acquire` is `1`, the symbol is `main.take.spec.1`. Both arms of the `if` stay.
+An enumerator is a comptime argument of that function. The copy does not receive it. The program returns 42. When the file is `main.tlc` and `acquire` is `1`, the symbol is `main.take.spec.1`. `order == Order.acquire` folds, so the copy keeps `return n + 2` and leaves the other arm out. A method still passes `order`, and a generic copy keeps it, so that `if` stays a runtime compare and both arms are typechecked.
 
 ```c
 type Order enum {
@@ -80,18 +80,8 @@ func main() i32 {
 ```asm
 take.spec.1:
 movl %edi, -4(%rsp)              # move
-movb $1, %al                     # constant
-testb $1, %al                    # compare
-jne .L1                          # branch
-jmp .L2                          # jump
-.L1:
 movl -4(%rsp), %eax              # move
 addl $2, %eax                    # add
-retq                             # return
-.L2:
-jmp .L3                          # jump
-.L3:
-movl -4(%rsp), %eax              # move
 retq                             # return
 
 main:
@@ -104,7 +94,7 @@ callq take.spec.1                # call take
 retq                             # return
 ```
 
-`Order.acquire == Order.acquire` is the constant in `%al`. The call passes `n` and does not pass `order`.
+`n` is stored, loaded, and increased by `2`. The other arm is not emitted. The call passes `n` and does not pass `order`.
 
 `extern` and `extern(abi="tlc")` keep the unspecialized function. The comptime parameter is an argument of that symbol, so a dynamic linker can call it. When the file is `main.tlc`, the symbol is `main.scale`. A constant argument uses the specialized copy. A runtime argument uses `main.scale`, and so does a use of the function as a value. `extern` is the same declaration as `extern(abi="tlc")`. `extern(abi="c")` passes the constant.
 

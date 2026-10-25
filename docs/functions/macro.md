@@ -53,7 +53,7 @@ movl -8(%rsp), %eax              # return n
 retq                             # return
 ```
 
-In a `macro`, `if` keeps the arm whose condition folds. The other arm is discarded. `for` unrolls. There is no `comptime` prefix on either statement. `comptime if` and `comptime for` are `not supported yet`. `const for` is not a form.
+In a `macro`, `if` keeps the arm whose condition folds. The other arm is discarded. `for` unrolls. There is no `comptime` prefix on either statement. `comptime if` in a `macro` is `not supported yet`. `comptime for` is `not supported yet`. `const for` is not a form. Outside a `macro`, `comptime if` keeps one arm when the condition folds, and an ordinary `if` does the same when every value in the condition is comptime.
 
 ```c
 macro func pick(slot *i32, n comptime i32) void {

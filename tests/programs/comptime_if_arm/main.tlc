@@ -1,0 +1,7 @@
+func main() i32 {
+    comptime if (1 == 1) {
+        return 42;
+    } else {
+        return "no";
+    }
+}

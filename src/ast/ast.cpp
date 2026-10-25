@@ -1140,6 +1140,9 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.then_arm = node.then_arm ? clone_stmt(*node.then_arm) : nullptr;
                 copy.else_arm = node.else_arm ? clone_stmt(*node.else_arm) : nullptr;
                 copy.emit = node.emit;
+                copy.comptime_if = node.comptime_if;
+                copy.folded = node.folded;
+                copy.taken = node.taken;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::While>) {
                 Stmt::While copy;

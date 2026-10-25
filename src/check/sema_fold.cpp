@@ -298,6 +298,53 @@ bool Checker::switch_case_matches(const SwitchFrame &frame, const Type &got) con
     return frame.c_enum && frame.subject.kind == TypeKind::Enum && same_type(got, frame.subject);
 }
 
+std::optional<int> Checker::fold_condition(const Expr &expr) {
+    if (const std::optional<int> folded = fold_int(expr)) {
+        return folded;
+    }
+    return std::visit(
+        [&](const auto &node) -> std::optional<int> {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.op != TokenKind::Bang || node.postfix || node.expr == nullptr) {
+                    return std::nullopt;
+                }
+                if (const std::optional<int> inner = fold_condition(*node.expr)) {
+                    return *inner == 0 ? 1 : 0;
+                }
+                return std::nullopt;
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if (node.lhs == nullptr || node.rhs == nullptr) {
+                    return std::nullopt;
+                }
+                if (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) {
+                    const std::optional<int> lhs = fold_switch_case(*node.lhs);
+                    const std::optional<int> rhs = fold_switch_case(*node.rhs);
+                    if (!lhs || !rhs) {
+                        return std::nullopt;
+                    }
+                    const bool same = *lhs == *rhs;
+                    return node.op == TokenKind::EqEq ? (same ? 1 : 0) : (same ? 0 : 1);
+                }
+                if (node.op != TokenKind::AmpAmp && node.op != TokenKind::PipePipe) {
+                    return std::nullopt;
+                }
+                const std::optional<int> lhs = fold_condition(*node.lhs);
+                const std::optional<int> rhs = fold_condition(*node.rhs);
+                if (!lhs || !rhs) {
+                    return std::nullopt;
+                }
+                if (node.op == TokenKind::AmpAmp) {
+                    return (*lhs != 0 && *rhs != 0) ? 1 : 0;
+                }
+                return (*lhs != 0 || *rhs != 0) ? 1 : 0;
+            } else {
+                return std::nullopt;
+            }
+        },
+        expr.data);
+}
+
 std::optional<int> Checker::fold_switch_case(const Expr &expr) {
     if (const std::optional<int> folded = fold_int(expr)) {
         return folded;

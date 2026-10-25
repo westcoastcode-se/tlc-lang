@@ -1,0 +1,16 @@
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+func id[T type](value T, order comptime Order) T {
+    if (order == Order.acquire) {
+        return value + 41;
+    } else {
+        return "no";
+    }
+}
+
+func main() i32 {
+    return id[i32](1, Order.acquire);
+}

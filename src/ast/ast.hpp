@@ -602,6 +602,11 @@ struct Stmt {
         std::unique_ptr<Stmt> else_arm;
         // `emit if`. The statement is pasted into the caller.
         bool emit = false;
+        // `comptime if`. The condition has to fold. A `macro` already folds `if`.
+        bool comptime_if = false;
+        // The condition folded. Codegen emits the taken arm and leaves the other out.
+        bool folded = false;
+        bool taken = false;
     };
     struct While {
         SourceLoc loc{};

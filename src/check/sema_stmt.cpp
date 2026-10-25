@@ -820,6 +820,10 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         return;
     }
     if (auto *branch = std::get_if<Stmt::If>(&stmt->data)) {
+        if (branch->comptime_if) {
+            error(branch->loc, "not supported yet");
+            return;
+        }
         if (branch->emit) {
             branch->emit = false;
             append_statement(std::move(stmt), out);
@@ -1306,6 +1310,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                     // The body is pasted. Nested `for` and `if` run later.
                     macro_depth_ = 0;
                 } else if (macro_depth_ > 0) {
+                    // `if` in a macro already keeps one arm. `comptime if` is not a second form.
+                    if (node.comptime_if) {
+                        error(node.loc, "not supported yet");
+                    }
                     // The arm is chosen while expanding. The call site checks the arm that remains.
                     return;
                 }
@@ -1320,6 +1328,25 @@ void Checker::check_stmt(const Stmt &stmt) {
                     expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
                     on_true = cond_true_;
                     on_false = cond_false_;
+                }
+                // A comptime condition keeps one arm. A `var` leaves the runtime `if`.
+                // `emit if` is pasted first. The call folds it once the arguments are there.
+                if (!node.emit) {
+                    const std::optional<int> folded =
+                        node.cond != nullptr ? fold_condition(*node.cond) : std::nullopt;
+                    if (node.comptime_if && !folded) {
+                        error(node.loc, "not supported yet");
+                    } else if (folded) {
+                        Stmt::If &branch = const_cast<Stmt::If &>(node);
+                        branch.folded = true;
+                        branch.taken = *folded != 0;
+                        assign_ = branch.taken ? on_true : on_false;
+                        Stmt *arm = branch.taken ? branch.then_arm.get() : branch.else_arm.get();
+                        if (arm != nullptr) {
+                            check_stmt(*arm);
+                        }
+                        return;
+                    }
                 }
                 const std::optional<NullGuard> guard = null_guard(node.cond.get());
                 if (!guard) {
