@@ -1,6 +1,6 @@
 # Pointers
 
-[Index](../README.md) · [Previous: Numeric types](integer.md) · [Next: void, bool, and floating-point types](float.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Numeric types](integer.md) · [Next: void, bool, and floating-point types](float.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `*T` is a pointer that has a value. `?*T` is that pointer or `null`. `*?*T` and `?**T` are different types. `?` is written immediately before `*`.
 
@@ -26,12 +26,20 @@ A sized array converts to `*T` when `T` is the element and that pointer is writt
 
 `var deep **[4]i32` with no initializer is reported as `type mismatch`. `var opt ?*[4]i32` may omit the initializer. The pointer is null. `*opt` and `opt[i]` are reported as `type mismatch` while `opt` is optional. Postfix operators bind left to right, so `opt![i]` is `(opt!)[i]`. It narrows the pointer, then indexes. After `if (opt == null) return`, `opt` is `*[4]i32` for the rest of the block, so `opt[i]` is the element, `opt.len` is the length, and `opt!` is reported as `type mismatch`.
 
-## Cost
+## Assembly
 
-A pointer local is 8 bytes. `var p *i32 = &n` is 1 `leaq` of `n` and 1 store of that address. `var p *i32 = row`, when `row` is a sized array of `i32`, is 1 `leaq` of the first element and 1 store of that address. `func main() i32 { var row = [_]i32{10, 20}; var p *i32 = row; return p[0]; }` is 7 instructions: two `movl` of the listed values, that `leaq`, that store, one reload of the pointer, one `movl` of the element, and `retq`. The address is kept, so the unread element stays stored. When `p` is not read, the binding adds no instruction. `*const T` is the same pointer. The const check adds no instructions. A store through `*const T` is rejected while compiling.
+```asm
+main:
+movl $1, -20(%rsp)               # constant
+leaq -20(%rsp), %rax             # address
+movq %rax, -16(%rsp)             # move
+movq -16(%rsp), %rax             # move
+movq %rax, -8(%rsp)              # move
+movq -16(%rsp), %rax             # move
+movl (%rax), %eax                # move
+movq -8(%rsp), %rcx              # move
+addl (%rcx), %eax                # add
+retq                             # return
+```
 
-`?*T` uses the same 8-byte slot. `var p ?*i32` with no initializer is null. The store of 0 remains when the pointer is read. With no `-O` flag, it is removed when the pointer is not read. `-O0` keeps that store. `var p ?*i32 = null` is 1 store of 0.
-
-`**[4]i32` and `?*[4]i32` are that same 8-byte pointer. `var deep **[4]i32 = &arr` is 1 `leaq` and 1 store. `var opt ?*[4]i32` with no initializer adds no instruction when the pointer is not read. `var opt ?*[4]i32 = &data` is `type mismatch: expected ?*[4]i32, found *[4]i32` and adds no instruction. `var opt ?*[4]i32 = null` is 1 `movq` of 0. `(**deep)[2]` loads `deep`, loads the pointer it points at, then loads the `i32`: 2 `movq` and 1 `movl`. `(*deep)[2]` is those same 3 loads. `return p[1]` when `p` is `*[2][2]i32` is 5 instructions: the pointer store, one reload, and two `movl` of that row, then `retq`. `p[1] = line` is 5 instructions after `p` and `line` are stored: one reload of `p`, two `movl` loads, and two `movl` stores. `return (*p)[1]` is those same 5. `return p[1][0]` is 4: the pointer store, one reload, one `movl`, and `retq`. `return p[1][0][1]` on `*[2][2][2]i32` and `return p[1][0][1][0]` on `*[2][2][2][2]i32` are those same 4. `return p[:]` and `return (*p)[:]` on `*[4]i32` are 4 instructions: the pointer store, one reload, 1 `movl` of the length, and `retq`. `return p` where the result is `[]i32` is those same 4. `*const [4]i32` is those same 4. `return p` where the result is `[][3]i32` or `[][]i32` is those same 4, with the length 2. `return p[1:3]` and `return (*p)[1:3]` are 5: those, plus 1 `addq` of 4. `return p.len` and `return (*p).len` on `*[4]i32` are 3: the pointer store, 1 `movl` of the length, and `retq`. The array is not read. `*const [4]i32` is those same 3. `return p.len` on `*[2][3]i32` and on `*[2][]i32` are those same 3, with the length 2. `(&row).len` on a local `[4]i32` with no initializer is 2: 1 `movl` of the length and `retq`. `return opt.len` after `if (opt == null) return` is 10 instructions when the pointer is present: the pointer store, 1 `cmpq`, 1 `sete`, 1 `andb`, 1 `movzbl`, 1 `cmpl`, 1 `je`, 1 `jmp`, 1 `movl` of the length, and `retq`. The null path is 9: those through the `je`, then 1 `xorl` and `retq`. `opt == null` is 1 `cmp` of the pointer with 0, then `sete`, `and`, and `movzx` into an `i32`.
-
-[Index](../README.md) · [Previous: Numeric types](integer.md) · [Next: void, bool, and floating-point types](float.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Numeric types](integer.md) · [Next: void, bool, and floating-point types](float.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

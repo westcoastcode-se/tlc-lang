@@ -1,6 +1,6 @@
 # void, bool, and floating-point types
 
-[Index](../README.md) · [Previous: Pointers](pointer.md) · [Next: Literals](literal.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Pointers](pointer.md) · [Next: Literals](literal.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `void` is a return type and a pointee. It is neither a value nor a variable type.
 
@@ -25,12 +25,16 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-An empty `void` function executes 1 instruction, `retq`. Calling it still pushes a trace frame: 36 instructions in the caller when fewer than 32 frames are stored.
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq skip                       # call skip
+retq                             # return
 
-A `bool` parameter is stored as one byte. Using it as a condition reloads that byte, masks it, zero-extends it, and compares with 0. That is 4 instructions before the branch. Storing an integer into a `bool` is `test` and `setne`.
+skip:
+retq                             # return
+```
 
-`f32` addition of two parameters is 2 `movss` stores on entry, then 1 `movss` and 1 `addss`. `f64` addition is the same shape with `movsd` and `addsd`. `a < b` on `f64` is 2 reloads, `ucomisd`, and `seta`: 4 instructions after the values have been stored. The result is `bool`. A floating constant in `return` is folded the same way an integer constant is.
-
-[Index](../README.md) · [Previous: Pointers](pointer.md) · [Next: Literals](literal.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Pointers](pointer.md) · [Next: Literals](literal.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -1,6 +1,6 @@
 # sizeof
 
-[Index](../README.md) · [Previous: Strings](string.md) · [Next: Slices](slice.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Strings](string.md) · [Next: Slices](slice.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `sizeof` produces `i32`. `sizeof(u8)` is 1, `sizeof(i32)` is 4, `sizeof(i64)` is 8, a pointer is 8, and `sizeof([]i32)` is 16. Both `sizeof(i32)` and `sizeof n` are accepted. `sizeof(Point)` and `sizeof(enum Color)` name a declared type. `sizeof(Shape)` names a union. `sizeof(struct Point)`, `sizeof(union Shape)`, and `sizeof(trait Area)` are reported as `expected a type`. `sizeof(Area)` when `Area` is a trait is reported as `undeclared identifier`. `sizeof(builtin.Type)` is 8.
 
@@ -18,8 +18,12 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-`sizeof` is folded. `return sizeof(i32)` is the same 2 instructions as `return 4`: `movl $4, %eax` and `retq`. `sizeof(Point)` and `sizeof n` are immediates of the same kind. The operator adds no load. `alignof` is folded the same way.
+```asm
+main:
+movl $16, %eax                   # constant
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Strings](string.md) · [Next: Slices](slice.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Strings](string.md) · [Next: Slices](slice.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

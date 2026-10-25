@@ -1,6 +1,6 @@
 # Linking
 
-[Index](../README.md) · [Previous: Language server](lsp.md) · [Next: Symbol names](symbol.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Language server](lsp.md) · [Next: Symbol names](symbol.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 ## Linking
 
@@ -12,8 +12,12 @@ Vendor packages are imported as `vendor/<name>`. `TLC_LIB` selects their directo
 
 Standard packages live in `lib/tlc` beside that vendor directory. `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`. `import "builtin"` is supplied by the compiler. `import "builtin/env/consts"` supplies `consts.family`. The entry directory and each `-P` root are searched first.
 
-## Cost
+## Assembly
 
-Search paths, `-l`, and a package's libraries are used by the linker. They add no instructions to a function. A call of a linked C function still pays the trace frame of a tlc call, described in [Cost](../cost.md).
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Language server](lsp.md) · [Next: Symbol names](symbol.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Language server](lsp.md) · [Next: Symbol names](symbol.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

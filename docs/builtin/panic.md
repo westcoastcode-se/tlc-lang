@@ -1,6 +1,6 @@
 # panic
 
-[Index](../README.md) · [Previous: va](va.md) · [Next: memeql and memcmp](mem.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: va](va.md) · [Next: memeql and memcmp](mem.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `builtin.panic(message)` prints the message and the call stack, then aborts the process. `new` calls it with `out of memory` when allocation returns `null`. Postfix `!` calls it with `null pointer` when that pointer is `null`. The message is `*const u8`. A string and a `*u8` may be passed. The text goes to the standard error stream:
 
@@ -40,8 +40,61 @@ main.tlc:12:5: main
 
 The file name is the source path relative to the entry file's directory, as for `builtin.trace`. `var f = builtin.panic` is a function pointer, and `f("out of memory")` aborts at that call. `defer builtin.panic("out of memory")` aborts when the deferred calls run.
 
-## Cost
+## Assembly
 
-`builtin.panic(message)` is a traced call. The argument is the string address, one `leaq` when the message is a literal, inside the 36-instruction frame when fewer than 32 frames are stored. The callee writes the message and walks the same frames `trace` walks, then aborts. That walk is inside `panic` and grows with the number of frames. A null message is printed as `(null)`.
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq mid                        # call mid
+retq                             # return
 
-[Index](../README.md) · [Previous: va](va.md) · [Next: memeql and memcmp](mem.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+mid:
+# trace frame for the call, then the matching pop
+callq leaf                       # call leaf
+retq                             # return
+
+leaf:
+# trace frame for the call, then the matching pop
+callq panic                      # call panic
+retq                             # return
+
+panic:
+subq $24, %rsp                   # subtract
+movq %rdi, %rdx                  # move
+leaq (%rip), %rax                # address
+cmpq $0, %rdx                    # compare
+cmoveq %rax, %rdx
+movl $2, %edi                    # constant
+leaq (%rip), %rsi                # address
+movb $0, %al                     # constant
+callq dprintf                    # call dprintf
+movl (%rip), %eax                # move
+movl %eax, 20(%rsp)              # move
+.L2:
+movl 20(%rsp), %eax              # move
+movl %eax, 16(%rsp)              # move
+cmpl $0, %eax                    # compare
+je .L1                           # branch
+movl 16(%rsp), %ecx              # move
+subl $1, %ecx                    # subtract
+movl %ecx, 12(%rsp)              # move
+leaq (%rip), %rax                # address
+movslq %ecx, %rcx                # move
+imulq $24, %rcx, %rcx            # multiply
+addq %rcx, %rax                  # add
+movq (%rax), %rdx                # move
+movl 8(%rax), %ecx               # move
+movl 12(%rax), %r8d              # move
+movq 16(%rax), %r9               # move
+movl $2, %edi                    # constant
+leaq (%rip), %rsi                # address
+movb $0, %al                     # constant
+callq dprintf                    # call dprintf
+movl 12(%rsp), %eax              # move
+movl %eax, 20(%rsp)              # move
+jmp .L2                          # jump
+.L1:
+callq abort                      # call abort
+```
+
+[Index](../README.md) · [Previous: va](va.md) · [Next: memeql and memcmp](mem.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

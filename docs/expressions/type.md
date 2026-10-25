@@ -1,6 +1,6 @@
 # Type values
 
-[Index](../README.md) · [Previous: Conditions](condition.md) · [Next: Casts](cast.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Conditions](condition.md) · [Next: Casts](cast.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `typeof(i32)` and `typeof n` have type `builtin.Type`. `import "builtin"` names that type. `==` and `!=` compare two `builtin.Type` values and yield `bool`. Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` folds while compiling. `t.name()` returns the diagnostic spelling as `*u8`. `t.fields()` returns `[]const Field`, the fields of a named struct. A tuple is that same list, one element per value, and `fields[i].name` is the index `"0"`, `"1"`, and so on. `typeof(("hi", 26)).name()` spells `([]const u8, i32)`. Assigning an element is `type mismatch`. `fields[i].name` is the field's name, a `[]const u8`, and `fields[i].kind` is `*const builtin.Type`. `*fields[i].kind` is its type. Storing through `fields[i].kind` is `type mismatch`. `typeof` of a function or a trait is `not supported yet`. Other operators on `builtin.Type` are reported as `type mismatch`.
 
@@ -17,8 +17,36 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-Materializing `typeof` is one `leaq` of a descriptor. Comparing two `Type` values is a pointer compare, 5 instructions once both addresses are loaded. `assert` and a file-scope `const` fold the compare and add no instructions. `t.name()` loads the spelling from the descriptor. A function that stores `typeof(n)` and returns `t.name()` is 5 instructions including `retq`. `return typeof(Point).fields().len` is 2 instructions: `movl $2, %eax` and `retq`. `return typeof(row).fields().len` on `var row = ("hi", 26)` is those same 2. The tuple is not stored. `*typeof(row).fields()[1].kind == typeof(i32)` is 8 instructions including `retq` on the path where that element is `i32`.
+```asm
+main:
+leaq (%rip), %rax                # address
+movq %rax, -8(%rsp)              # move
+xorl %eax, %eax                  # zero the result
+movb $1, %cl                     # constant
+testb $1, %cl                    # test
+movb %al, -9(%rsp)               # move
+jne .L1                          # branch
+jmp .L2                          # jump
+.L1:
+movq -8(%rsp), %rax              # move
+cmpq $0, (%rax)                  # compare
+setne %al                        # flag to byte
+movb %al, -9(%rsp)               # move
+.L2:
+movb -9(%rsp), %al               # move
+testb $1, %al                    # test
+jne .L3                          # branch
+jmp .L4                          # jump
+.L3:
+movl $1, %eax                    # constant
+retq                             # return
+.L4:
+jmp .L5                          # jump
+.L5:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Conditions](condition.md) · [Next: Casts](cast.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Conditions](condition.md) · [Next: Casts](cast.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

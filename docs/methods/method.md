@@ -1,6 +1,6 @@
 # Methods
 
-[Index](../README.md) · [Previous: Function pointers](../functions/pointer.md) · [Next: Generic methods](generic.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Function pointers](../functions/pointer.md) · [Next: Generic methods](generic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A method belongs to a struct, an enum, or a primitive type alias such as `type Integer i32`, and it is written in the same file as that type. A method in any other file is reported as `method in another file`. The receiver is the first parameter. It is the name, then `this`: `self this`. `this` stands for that struct, enum, or alias. A pointer receiver is `self *this`, the same order as `*Point`. Assigning that name, `self = other`, is reported as `type mismatch`. `*self = other` stores through the pointer. `self.x = 1` stores a field. A value receiver `self = other` stores that value. `self **this` is reported as `expected 'this'`. `self ?*this` may be `null`. A `*T` value is not passed to it. `this` is an ordinary identifier in every other position. On an enum, the receiver is that enum's value. On `type Integer i32`, the receiver is an `Integer`, not an `i32`. A function with no receiver is a static function. The builtin name `i32` cannot have a method. A pointer alias, a sized-array alias, and a struct alias cannot either. A static function on those aliases is `Ptr.from(...)`, described in [Static functions](static.md). A slice alias such as `type string_view []const u8` can, and the receiver is the value `self this`. `self *this` on a slice alias is a pointer to that slice. The functions on that alias live in [`std/string`](../std/string.md), which is `lib/tlc/std/string`.
 
@@ -116,14 +116,31 @@ func main() i32 {
 
 The program returns 42.
 
-## Cost
+## Assembly
 
-A value method on a struct of two `i32` fields receives those fields in registers. `return self.x + self.y` is 5 instructions, the same as a free function of two `i32` parameters. The caller copies the fields with 2 `movl` and then pays the traced call, 36 instructions plus those copies when fewer than 32 frames are stored. `extern func Point::read` with a body is that same call. `extern` changes the linkage and adds no instruction.
+```asm
+add:
+movq %rdi, -16(%rsp)             # move
+movl %esi, -8(%rsp)              # move
+movl %edx, -4(%rsp)              # move
+movq -16(%rsp), %rax             # move
+movq -16(%rsp), %rcx             # move
+movl (%rcx), %ecx                # move
+addl -8(%rsp), %ecx              # add
+movl %ecx, (%rax)                # move
+movq -16(%rsp), %rax             # move
+movq -16(%rsp), %rcx             # move
+movl 4(%rcx), %ecx               # move
+addl -4(%rsp), %ecx              # add
+movl %ecx, 4(%rax)               # move
+retq                             # return
 
-A pointer method receives the address. `self.x = self.x + n` is 6 instructions: store the pointer, store `n`, reload the pointer twice, add, and store. The caller passes the address with 1 `leaq` plus the traced call. `self = other` on that receiver is rejected and adds no instructions. `self **this` is rejected and adds no instructions.
+main:
+# trace frame for the call, then the matching pop
+movl $1, %edx                    # constant
+movl %edx, %esi                  # move
+callq add                        # call add
+retq                             # return
+```
 
-`self ?*this` uses the same pointer. The null test is the pointer compare on [Pointers and null](../expressions/null.md). A const check is rejected while compiling and adds no instruction.
-
-A value method on a slice alias is a traced call of the same shape. The callee's instructions are on [string](../std/string.md). `string_view.equals` does not record a frame of its own. The caller does.
-
-[Index](../README.md) · [Previous: Function pointers](../functions/pointer.md) · [Next: Generic methods](generic.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Function pointers](../functions/pointer.md) · [Next: Generic methods](generic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

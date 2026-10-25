@@ -1,6 +1,6 @@
 # Packages
 
-[Index](../README.md) · [Previous: Comments](../compiler/comment.md) · [Next: Imports](import.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Comments](../compiler/comment.md) · [Next: Imports](import.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A package is a directory of `.tlc` files. The file named on the command line is its own package: other `.tlc` files beside it are not compiled with it. An import names a directory. Every `.tlc` file directly in that directory belongs to one package. A subdirectory is a different package.
 
@@ -29,8 +29,22 @@ export func add(a i32, b i32) i32 {
 
 The qualifier is that name when every file in the directory agrees. When no file has a `package` clause, the qualifier is the directory's name. Clauses that disagree are reported as `package mismatch`. The entry file's qualifier is its `package` name, or the file name without `.tlc`.
 
-## Cost
+## Assembly
 
-A package clause and the decision of which `*_unix.tlc` or `*_windows.tlc` file to load happen while compiling. They add no instructions.
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+movl $2, %esi                    # constant
+callq add                        # call add
+retq                             # return
 
-[Index](../README.md) · [Previous: Comments](../compiler/comment.md) · [Next: Imports](import.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
+[Index](../README.md) · [Previous: Comments](../compiler/comment.md) · [Next: Imports](import.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

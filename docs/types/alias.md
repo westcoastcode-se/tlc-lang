@@ -1,6 +1,6 @@
 # Type aliases
 
-[Index](../README.md) · [Previous: Enums](enum.md) · [Next: Keywords](../keyword.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Enums](enum.md) · [Next: Keywords](../keyword.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 ```c
 type Point struct {
@@ -30,8 +30,22 @@ func main() i32 {
 
 `type Point struct`, `type Color enum`, and `type Shape trait` define a new type. `type Point Point` is reported as `redefinition`, because the alias repeats the struct. `type Point i32` beside `type Point struct` is reported as `redefinition`. A variable and `sizeof` use the bare name, `var p Point` and `sizeof(Point)`. `struct`, `union`, and `trait` in that position, as in `var p struct Point`, `var s union Shape`, `var t trait Area`, or `sizeof(struct Point)`, are reported as `expected a type`. An exported type alias is imported as a type name.
 
-## Cost
+## Assembly
 
-`type Integer i32` uses the same instructions as `i32`. `Integer(n)`, `i32(n)`, `Spot(p)`, `Ptr(p)`, and `Duo((40, 2))` add no instructions. The compiler changes the type and reuses the value. `var value Duo = Duo((40, 2)); return value[0] + value[1];` is 6 instructions: two `movl` stores, two loads, `addl`, and `retq`. `var value Something[i32, i32] = Something[i32, i32]((40, 2)); return value[0] + value[1];` is those same 6 instructions. `Something[i32, i32]((40, 2))` adds none. `var value (i32, i32) = (40, 2); return value[0] + value[1];` is those same 6 instructions. A field `value (i32, i32)`, assigned `(40, 2)` and returned as `box.value[0] + box.value[1]`, is those same 6 instructions. `return sizeof(Duo)` when both elements are `i32` is 2 instructions: `movl $8, %eax` and `retq`. `var row [2]Duo; row[0] = Duo((40, 2)); row[1] = Duo((1, 1)); return row[0][0] + row[1][1];` is 9 instructions: four `movl` stores, three loads, `addl`, and `retq`. A parameter `value Duo`, or `value (i32, i32)`, whose body is `return value[0] + value[1]` is those same 6 instructions. `func pair() ((i32, i32)) { return (40, 2); }` is 3 instructions: `movl $40, %eax`, `movl $2, %edx`, and `retq`. The caller `var value = pair(); return value[0] + value[1];` is 43 instructions when the trace holds fewer than 32 frames. The call is a traced call. A cast from a slice to a slice alias of the same element, such as `string_view(text)` when `text` is already `[]const u8`, also adds none. A new variable stores that value once, the same as any other initializer. A cast that changes the width, such as `Byte(n)` when `n` is `i32` and `Byte` is `i8`, keeps the low bits. A method on the alias is a traced call, the same as a method on a struct of that representation. A slice-alias method is measured on [string](../std/string.md).
+```asm
+main:
+movl $40, -32(%rsp)              # constant
+movl $2, -28(%rsp)               # constant
+leaq -32(%rsp), %rax             # address
+movq %rax, -24(%rsp)             # move
+movl $0, -12(%rsp)               # constant
+movl -32(%rsp), %eax             # move
+movl %eax, -8(%rsp)              # move
+movq -24(%rsp), %rax             # move
+movl 4(%rax), %eax               # move
+addl -12(%rsp), %eax             # add
+addl -8(%rsp), %eax              # add
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Enums](enum.md) · [Next: Keywords](../keyword.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Enums](enum.md) · [Next: Keywords](../keyword.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

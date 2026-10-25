@@ -1,6 +1,6 @@
 # Unions
 
-[Index](../README.md) · [Previous: Structs](struct.md) · [Next: Arrays](array.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Structs](struct.md) · [Next: Arrays](array.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A tlc union names the enum that selects the active field. `union` is written only in that definition. A variable, a parameter, `sizeof`, and `alignof` use the name: `var s Shape`, `sizeof(Shape)`, and `alignof(Shape)`. `var s union Shape`, `sizeof(union Shape)`, and `alignof(union Shape)` are reported as `expected a type`. `var u union(Kind) { A struct { n i32; }; B struct { n i32; }; }` is a union with no name. `u.A.n` reads that arm. The value can be passed where a trait parameter asks for the same fields. `extern type Shape union(Kind)` keeps the tag. `extern(abi="c") type Shape union(Kind)` is `extern(abi="c") on a tagged union`. A C union has no tag. The C form is `extern(abi="c") type Shape union { ... }` with no enum. A named arm of that union must itself be `extern(abi="c")`, or the error is `struct must be extern(abi="c")`. `type Shape union(Kind) {}` is that union when `Kind` has no enumerators. `sizeof(Shape)` is the size of the tag, 4 for an `i32` enum. The enum is in the same package, or it is `pkg.Kind` when `pkg` is imported and `Kind` is exported. A qualifier that names no imported package is reported as `undeclared identifier`. An enum that is not exported is reported as `Kind is not exported`. An exported name that is not an enum is reported as `type mismatch`. `import { Kind }` does not bind the package name, so `union(pkg.Kind)` is `undeclared identifier` until the package itself is imported. Each enumerator is one field, and each field is one enumerator. A field that is not an enumerator is reported as `undeclared identifier`. An enumerator with no field is reported as `type mismatch`. The field's type is a struct. It can be written inline, or it can name a struct that is already declared. The inline arm has the same members as a struct, so `data union { n i32; m i32; }` inside it is an anonymous union and `n` and `m` share one address. An anonymous union's inline struct can hold another union the same way. A field that is not a struct is reported as `type mismatch`. A field that stores the union by value, `type Word union { n i32; w Word; }`, is reported as `recursive union main.Word -> main.Word` when the file is `main.tlc`. The name in parentheses is reported as `undeclared identifier` when it names nothing, and as `type mismatch` when it is not an enum.
 
@@ -93,12 +93,51 @@ func main() i32 {
 
 `Num` is 4 bytes. `Word` is 8. `u.n` and `u.m` are the same memory, so `main` returns 4.
 
-## Cost
+## Assembly
 
-A tlc union stores the payload and then an `i32` tag. Assigning `shape.Rectangle.width` through a `*Shape` is 6 instructions including the pointer store and `retq`: the tag is stored as the immediate 1, and the `f32` is stored at offset 0. `var shape = Shape{.One = {}}` when the payload is `n i32 = 10`, then `return shape.One.n`, is 16 instructions including `retq`. One `movl` stores 10. The tag stored with that value is 0, and the union is copied into `shape`.
+```asm
+main:
+movl $0x3f800000, -8(%rsp)       # constant
+movss -8(%rsp), %xmm0            # move
+movss %xmm0, -24(%rsp)           # move
+movl $0, -16(%rsp)               # constant
+movl -16(%rsp), %eax             # move
+movb -17(%rsp), %cl              # move
+movb -18(%rsp), %cl              # move
+movb -19(%rsp), %cl              # move
+movb -20(%rsp), %cl              # move
+movb -21(%rsp), %cl              # move
+movb -22(%rsp), %cl              # move
+movb -24(%rsp), %cl              # move
+movb -23(%rsp), %cl              # move
+cmpl $0, %eax                    # compare
+je .L1                           # branch
+xorl %eax, %eax                  # zero the result
+retq                             # return
+.L1:
+jmp .L2                          # jump
+.L2:
+movl $0x40000000, -24(%rsp)      # constant
+movl $1, -16(%rsp)               # constant
+movl $0x40400000, -20(%rsp)      # constant
+movl -16(%rsp), %eax             # move
+movb -17(%rsp), %cl              # move
+movb -18(%rsp), %cl              # move
+movb -19(%rsp), %cl              # move
+movb -20(%rsp), %cl              # move
+movb -21(%rsp), %cl              # move
+movb -22(%rsp), %cl              # move
+movb -24(%rsp), %cl              # move
+movb -23(%rsp), %cl              # move
+cmpl $1, %eax                    # compare
+jne .L3                          # branch
+movl $1, %eax                    # constant
+retq                             # return
+.L3:
+jmp .L4                          # jump
+.L4:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-Reading the tag with `ShapeType(*shape)` loads the whole value. For a 12-byte `Shape` that load moves the 8 payload bytes one byte at a time and then loads the tag. The compare against `ShapeType.Circle` brings the function to 16 instructions including `retq`. Passing that union by value does the same byte-wise copy into the callee's stack. The function that builds a `Shape`, assigns one field, and returns 1 when the tag matches runs 60 instructions. A tag named `pkg.Kind` stores that same payload and the same tag.
-
-A C union does not store a tag. `u.n = 4` on a 4-byte union is 1 zero store and 1 store of 4. `return u.m` is 1 load of the same slot. The function is 4 instructions including `retq`. `extern(abi="c")` on a tagged union is rejected and adds no instructions. A tagged union used as a field of an `extern(abi="c")` struct is rejected and adds no instructions.
-
-[Index](../README.md) · [Previous: Structs](struct.md) · [Next: Arrays](array.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Structs](struct.md) · [Next: Arrays](array.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

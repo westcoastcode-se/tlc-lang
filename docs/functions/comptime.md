@@ -1,6 +1,6 @@
 # Comptime
 
-[Index](../README.md) · [Previous: Generics](generic.md) · [Next: Macros](macro.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Generics](generic.md) · [Next: Macros](macro.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A `comptime func` calculates while compiling. Every argument is a comptime value, whether or not the parameter is marked `comptime`. A comptime value is a folded integer or a constant `[]const u8`: a literal, a constant range, or a file-scope `const` in the same file. A `var` and a local `const` are not. `return` leaves the function. The call is an expression. It does not paste the body into the caller.
 
@@ -34,10 +34,12 @@ A file-scope `const text = "hi"` is a comptime string. `len(text)`, when `len` i
 
 A generic function may declare the same parameter list again with `comptime` on a parameter. That overload is chosen when every `comptime` argument is a comptime value, and it is preferred over the overload without `comptime`. A `var` does not choose it. When only the `comptime` overload matches the types and an argument is not a comptime value, the call is `type mismatch`. [`builtin.memeql`](../builtin/mem.md) and `builtin.memcmp` fold two constant `[]const u8` values through that overload.
 
-## Cost
+## Assembly
 
-`return add(41)` from `comptime func add(n i32) i32 { return n + 1; }` is 2 instructions: `movl $42, %eax` and `retq`. The body adds no symbol and pushes no trace frame. `return add(1)` from `func add(n comptime i32) i32 { return n; }` is 2 instructions: `movl $1, %eax` and `retq`. That `add` is still in the object file and is not called. `return len(text)` for a file-scope `const text = "hi"` is 2 instructions: `movl $2, %eax` and `retq`.
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
 
-`return scale(2, x)`, when `x` is a local `i32` holding 40, keeps the call. `main` executes 41 instructions when fewer than 32 frames are stored. The comptime argument is `movl $2, %edi`. `scale` is 5 instructions: store both parameters, load `x`, add the constant, and `retq`. A rejected form adds no instructions.
-
-[Index](../README.md) · [Previous: Generics](generic.md) · [Next: Macros](macro.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Generics](generic.md) · [Next: Macros](macro.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

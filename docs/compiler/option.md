@@ -1,6 +1,6 @@
 # Options
 
-[Index](../README.md) · [Next: Debug information](debug.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Next: Debug information](debug.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `tlc` compiles one entry file. The file's `main` is the program's `main`.
 
@@ -37,10 +37,12 @@ tlc --help
 
 `--check`, `--emit-llvm`, and `--emit-obj` accept the link flags and do not link.
 
-## Cost
+## Assembly
 
-`--check` emits no instructions. With no `-O` flag, `--emit-llvm` prints the instructions after dead stores are removed and does not assemble them. `--emit-obj` and a normal build write those instructions. That compile removes a store that is overwritten or never read, and does not run the other LLVM optimizations. `-O0` keeps every store. `-O`, `-O1`, `-O2`, and `-O3` run LLVM's optimization pipeline, and the counts in this reference do not apply to them. The last `-O` flag wins.
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-`return 40 + 2` is folded while compiling. `main` executes 2 instructions, `movl $42, %eax` and `retq`.
-
-[Index](../README.md) · [Next: Debug information](debug.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Next: Debug information](debug.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

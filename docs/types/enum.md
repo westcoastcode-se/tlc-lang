@@ -1,6 +1,6 @@
 # Enums
 
-[Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `i32`, and it does not convert to its representation. `type Color enum {}` has no enumerators. `sizeof(Color)` is 4. `Color.Red` is reported as `undeclared identifier`. The semicolon after `}` may be omitted.
 
@@ -121,14 +121,20 @@ func main() i32 {
 
 `value.code()` passes `value`. The method is written in the same file as `type Color enum`. Every file in the package can call it, and it is not exported.
 
-## Cost
+## Assembly
 
-An enumerator is an `i32` immediate, or the width written in parentheses. `return v == Color.Blue` stores the parameter and compares it with 41: 6 instructions including `retq`. The compare is 4 of those, the same shape as an integer compare against an immediate. No table is consulted.
+```asm
+main:
+movl $41, -4(%rsp)               # constant
+cmpl $41, -4(%rsp)               # compare
+jne .L1                          # branch
+movl $1, %eax                    # constant
+retq                             # return
+.L1:
+jmp .L2                          # jump
+.L2:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-`code` is 16 instructions. `Color.Green` subtracts 40 and branches after the parameter is stored and reloaded. `Color.Blue` reloads that value, subtracts 41, and branches. Each return is one `movl` and `retq`. That is the same dispatch as `switch` on an `i32`.
-
-A parameter of `enum(i8)` switches on that byte. One `case` and `default`, each returning a constant, is 10 instructions: the byte is stored, reloaded, and the enumerator is subtracted from it.
-
-A method on the enum is a traced call. The value is passed as that integer. `extern(abi="c")` enum uses the same `i32` and the same compare. `switch` on that enum is the `i32` dispatch.
-
-[Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

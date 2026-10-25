@@ -1,6 +1,6 @@
 # Narrowing
 
-[Index](../README.md) · [Previous: Pointers and null](null.md) · [Next: Conditions](condition.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Pointers and null](null.md) · [Next: Conditions](condition.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A name compared with `null` is `*T` where that comparison shows it has a value. After `if (p == null) { return; }`, `p` is `*T` for the rest of the function. `if (p != null) { use(p); }` narrows `p` inside the block. The `else` of `p == null`, and the `else` of `p != null` when that `else` always leaves, do the same. `while (p != null)` and `for (; p != null;)` narrow the body. The body of `do` runs before the check and stays `?*T`. A field comparison such as `person.home == null` does not narrow. `*p`, `p.field`, and `p[i]` on a `?*T` are reported as `type mismatch` until the name is narrowed. Passing `?*T` where `*T` is required is reported as `type mismatch` until then.
 
@@ -46,10 +46,19 @@ func bind(person ?*Person, home ?*Address) void {
 }
 ```
 
-## Cost
+## Assembly
 
-Narrowing a `?*T` to `*T` is a check the compiler remembers. It adds no instructions at the `if (p != null)`. The later `*p` is an ordinary load: reload the pointer, load the `i32`, 2 instructions.
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq read                       # call read
+retq                             # return
 
-`return *p!` on a `?*i32` parameter is 10 instructions when the pointer is present: `subq` of the frame, the parameter store, a reload, a copy, `cmpq` with 0, `jne`, a reload, the `i32` load, `addq` of the frame, and `retq`. The null path pushes a trace frame and calls `builtin.panic`. Those instructions are not on the path that has a pointer.
+read:
+movq %rdi, -8(%rsp)              # move
+movq -8(%rsp), %rax              # move
+movl (%rax), %eax                # move
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Pointers and null](null.md) · [Next: Conditions](condition.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Pointers and null](null.md) · [Next: Conditions](condition.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -1,6 +1,6 @@
 # Traits
 
-[Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A trait is a list of methods and fields. The receiver is implicit and is omitted from the trait type. A method inside the braces ends with `;`. `func area() i32 { return 1; }` is reported as `expected ';'`. A field is a name and a type, and it ends with `;`. A value on the field, `w i32 = 1`, is reported as `expected ';'`. `extern(abi="c") type Shape trait` is `extern(abi="c") on a trait or a generic`. `export type Shape trait` and `extern type Shape trait` are `not supported yet`.
 
@@ -252,14 +252,38 @@ func main() i32 {
 
 `use(bag)` returns 42. `at` is a direct call of `Bag.at`. Passing a struct whose `at` returns `u8` where `Seq[i32]` is expected is reported as `type mismatch`. `import "std/seq"` names that trait as the iteration trait. `seq.Seq[T]` and `*seq.Seq[T]` check `len` and `at`. A pointer to an element is `ptr_of`. An array `[N]E` and a slice `[]E` satisfy `seq.Seq[E]`. On those values `len` is `.len` and `at` is the index. A struct still satisfies the trait by its own methods. The declaration is on [seq](../std/seq.md).
 
-## Cost
+## Assembly
 
-`s.twice()` on `*Shape` is a direct call, the same as another method of that trait. A trait parameter is specialized. There is no table. `var s Shape`, `var s *Shape`, a result `Shape` or `*Shape`, `[2]Shape`, `[]Shape`, and a field `item Shape` are rejected and add no instructions. `measure(r)` for a struct of two `i32` fields executes 8 instructions in `main` and does not push a trace frame: store the fields, copy them into the argument registers, call. The struct is not zeroed first. `export func use(s Shape)` is that same call and adds no instruction. When `use` is in another package, `main` that stores 5 and 6 and returns `pkg.use(r)` executes 8 instructions. The call is `pkg.use.spec.main.Rect`. `main` that stores 5 and 7 and returns `r.paint(c)`, where `export func Rect::paint` takes `Shape`, executes 43 instructions when fewer than 32 frames are stored. That call pushes a trace frame. The specialized method is `main.Rect.paint.spec.Circle` when `paint` is in `main`. `extern func use(s Shape)` followed by `return use(r)` is that same 8 instructions in `main`. `extern(abi="tlc") func Rect::paint` followed by `return r.paint(c)` is that same 43 instructions. `extern` changes the linkage and adds no instruction. `extern(abi="c")` and `...` on that function are rejected and add no instructions. A call that specializes a prototype with no body is rejected and adds no instructions. `s.area()` inside that copy is a direct traced call of `Rect.area`, which is 5 instructions for two `i32` fields multiplied. `var a, b = p.both()` when `both` returns `(i32, i32)` is that same direct call. The two results come back in `%eax` and `%edx`. `extern func Shape::twice` is that same call. `main` that stores 5 and 6 into `Rect` and returns `use(&r)` executes 7 instructions: the two fields are stored, the pointer is passed, and `callq` runs. There is no trace frame at that call. The copy is `qualifier.Rect.twice`. `extern` changes the linkage and adds no instruction. `extern(abi="c")` and `extern(abi="c", name="symbol")` on that default are rejected, so they add no instructions. A `{` body on a method inside the trait is rejected and adds no instructions. `Square::twice` stays that struct's own function.
+```asm
+main:
+pushq %rax
+movl $5, (%rsp)                  # constant
+movl $6, 4(%rsp)                 # constant
+movq %rsp, %rdi                  # move
+movl $1, %esi                    # constant
+callq apply                      # call apply
+popq %rcx
+retq                             # return
 
-A field named by the trait is the struct field. Reading it is 1 load. Writing it through `*Shape` reloads the pointer and stores, the same as a field of `*Rect`.
+grow:
+movq %rdi, -16(%rsp)             # move
+movl %esi, -4(%rsp)              # move
+movq -16(%rsp), %rax             # move
+movq -16(%rsp), %rcx             # move
+movl (%rcx), %ecx                # move
+addl -4(%rsp), %ecx              # add
+movl %ecx, (%rax)                # move
+movq -16(%rsp), %rax             # move
+movq -16(%rsp), %rcx             # move
+movl 4(%rcx), %ecx               # move
+addl -4(%rsp), %ecx              # add
+movl %ecx, 4(%rax)               # move
+retq                             # return
 
-`export` and `extern` on `type Seq[T type] trait` add no instructions. The trait has no size and no symbol. The check that a value satisfies `seq.Seq[T]` adds no instructions. `items.len()` and `items.at(i)` on a struct are the same direct calls as another trait parameter. On an array or a slice they are `.len` and the index, and they do not push a trace frame.
+apply:
+# trace frame for the call, then the matching pop
+callq grow                       # call grow
+retq                             # return
+```
 
-An anonymous function passed to a one-method trait is a function pointer. `twice((n) { return n + 1; }, 20)` executes 6 instructions in `main`: the address and the argument are placed, and `callq` runs, with no trace frame at that call. Inside the specialized function, `a.apply(n)` is an indirect traced call. The anonymous function `return n + 1` is 4 instructions. `twice(inc, 20)` is that same call. `main` executes 6 instructions: `leaq` of `inc`, the argument, and `callq`, with no trace frame at that call. `inc`, `return n + 1`, is 4 instructions. The indirect call inside the copy is the same one the anonymous function uses. `(*a).apply(n)` is that same indirect call.
-
-[Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -1,6 +1,6 @@
 # Variables on a type
 
-[Index](../README.md) · [Previous: Methods on primitive aliases](alias.md) · [Next: Constants on a type](constant.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Methods on primitive aliases](alias.md) · [Next: Constants on a type](constant.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A variable may belong to a struct, an enum, or a primitive type alias. It is written beside the type, in the same file, and it is not a field. `sizeof` and the layout stay the same. The use names the type: `Entity.next`. A field of the same spelling is still the field, so `e.next` reads that field. A missing field is reported as `undeclared identifier`.
 
@@ -96,8 +96,22 @@ func main() i32 {
 
 The program returns 42. `math.Box[i32].extra` and `math.Box[Point].extra` are two globals.
 
-## Cost
+## Assembly
 
-`Entity.next` is a global. Reading it is 1 `movl`. Assigning it is 1 load, the arithmetic, and 1 store. It is not inside the struct, so a value of the struct does not copy it. Each specialization of a generic struct has its own global. A use of one specialization does not load the other. A zero initializer occupies the binary and adds no instruction at startup. `return Box[i32].extra` without `export` executes 2 instructions, `movl` and `retq`. `export var Box[T]::extra` keeps that global and gives it external linkage. The symbol is `qualifier.Box.spec.i32.extra`. `return pkg.Box[i32].extra` executes 3 instructions: the address is loaded, the `i32` is loaded, and `retq` runs. Assigning `pkg.Box[i32].extra = pkg.Box[i32].extra + 2` and returning it executes 8 instructions. That is the same access as `export var Entity::next`. `extern(abi="c")` on a generic or a trait variable is rejected and adds no instructions.
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq make                       # call make
+retq                             # return
 
-[Index](../README.md) · [Previous: Methods on primitive aliases](alias.md) · [Next: Constants on a type](constant.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+make:
+movl (%rip), %eax                # move
+movl %eax, -8(%rsp)              # move
+movl (%rip), %eax                # move
+incl %eax
+movl %eax, (%rip)                # move
+movl -8(%rsp), %eax              # move
+retq                             # return
+```
+
+[Index](../README.md) · [Previous: Methods on primitive aliases](alias.md) · [Next: Constants on a type](constant.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

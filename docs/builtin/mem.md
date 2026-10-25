@@ -1,6 +1,6 @@
 # memeql and memcmp
 
-[Index](../README.md) · [Previous: panic](panic.md) · [Next: builtin/env/consts](family.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: panic](panic.md) · [Next: builtin/env/consts](family.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `import "builtin"` loads the compiler package. `builtin.memeql` and `builtin.memcmp` compare sequences of one element type. The bodies are ordinary tlc in `lib/tlc/builtin/builtin.tlc`. Each slice form has a second overload whose parameters are `comptime`. That spelling is on [Comptime](../functions/comptime.md). That overload is chosen when both arguments are comptime values, and a call of two constant `[]const u8` values is folded while compiling. A `var` or a local `const` chooses the overload without `comptime`, and that call runs the body.
 
@@ -35,10 +35,13 @@ The pointer form runs the body, including when both pointers are string literals
 
 A `var` or a local `const` runs the body. `builtin.memeql(text, "hi")` infers `T` when `text` is `[]const u8`. `assert` still requires a constant, so `assert` of that call is `not supported yet`. A bound past the string is not a constant slice. `const n = builtin.memeql[u8]("hello"[1:9], "ell")` is `global initializer is not a constant`. `builtin.memeql[i32]("hi", "hi")`, `builtin.memeql[bool]("hi", "hi")`, and `builtin.memeql[u8](1, 2)` are `type mismatch`. One argument is `argument count`. `==`, `!=`, and `+` on `[]const u8` are `type mismatch: expected an integer, found []const u8`. [`string.equals`](../std/string.md) and `string.compare` remain the runtime methods on `string_view`.
 
-## Cost
+## Assembly
 
-A true `assert(builtin.memeql[u8]("hi", "hi"), "eq")` adds no instructions. `return 0` after that assert is `xorl %eax, %eax` and `retq`. `return builtin.memeql[u8]("hi", "hi")` is 2 instructions: `movl $1, %eax` and `retq`. A file-scope `const n = builtin.memeql[u8]("hi", "hi")` used as `return n` is those same 2. `return builtin.memcmp[u8]("ab", "ac")` is 2 instructions: `movl $0xffffffff, %eax` and `retq`. A file-scope `const n = builtin.memcmp[u8]("ab", "ac")` used as `return n` is those same 2. The immediate is `-1`.
+```asm
+main:
+movl $0xffffffff, -4(%rsp)       # constant
+movl -4(%rsp), %eax              # move
+retq                             # return
+```
 
-`var text = "hi"; return builtin.memeql[u8](text, "hi")` is 49 instructions in `main` when fewer than 32 frames are stored. That count includes the slice and the trace frame. The callee walks the elements and is extra.
-
-[Index](../README.md) · [Previous: panic](panic.md) · [Next: builtin/env/consts](family.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: panic](panic.md) · [Next: builtin/env/consts](family.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

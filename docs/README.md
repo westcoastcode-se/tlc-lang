@@ -10,7 +10,7 @@ A diagnostic has this form:
 file:line:column: error: message
 ```
 
-Each feature page ends with the instructions that feature runs. [Cost](cost.md) says how those counts were measured. With no `-O` flag, `tlc` removes a store that is overwritten or never read, and does not run the other LLVM optimizations. `-O0` keeps that store. `-O1` and above run LLVM's pipeline. The counts are for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
+Each feature page ends with the assembly of its smallest example, commented so the listing shows what runs. [Assembly](cost.md) is how those listings are taken, including the trace frame a call pushes. With no `-O` flag, `tlc` removes a store that is overwritten or never read, and does not run the other LLVM optimizations. `-O0` keeps that store. `-O1` and above run LLVM's pipeline. A listing is for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
 
 ## Reference
 
@@ -134,4 +134,9 @@ func main() i32 {
 tlc --run main.tlc
 ```
 
-The process exits with status 42. There is one `main`, and it belongs to the entry file. The sum is folded while compiling, so `main` executes 2 instructions: `movl $42, %eax` and `retq`.
+The process exits with status 42. There is one `main`, and it belongs to the entry file. The sum is folded while compiling:
+
+```asm
+movl $42, %eax    # 40 + 2
+retq
+```

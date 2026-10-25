@@ -1,6 +1,6 @@
 # Unsafe
 
-[Index](../README.md) · [Previous: Casts](cast.md) · [Next: Tuples and lists](tuple.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Casts](cast.md) · [Next: Tuples and lists](tuple.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `unsafe` is a prefix on an expression. The expression keeps its type and its value. The prefix adds no check.
 
@@ -51,8 +51,18 @@ The flag is part of the function. `unsafe func point(raw *u8) *Point;` and `func
 
 `malloc` and `realloc` on `Allocator` are unsafe. The call is `unsafe arena.malloc(...)` or `unsafe arena.realloc(...)`, and it is `unsafe call` without the prefix. `free` is an ordinary call. `new` and `delete` are not unsafe calls. `malloc` returns `?*u8`, and the caller handles `null`. The cast of that pointer follows the rules above.
 
-## Cost
+## Assembly
 
-The prefix adds no instructions. A pointer cast reuses the address, as on [Casts](cast.md).
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq point                      # call point
+retq                             # return
 
-[Index](../README.md) · [Previous: Casts](cast.md) · [Next: Tuples and lists](tuple.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+point:
+movq %rdi, -8(%rsp)              # move
+movq -8(%rsp), %rax              # move
+retq                             # return
+```
+
+[Index](../README.md) · [Previous: Casts](cast.md) · [Next: Tuples and lists](tuple.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

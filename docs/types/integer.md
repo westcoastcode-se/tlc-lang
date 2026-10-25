@@ -1,6 +1,6 @@
 # Numeric types
 
-[Index](../README.md) · [Previous: extern](../packages/extern.md) · [Next: Pointers](pointer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: extern](../packages/extern.md) · [Next: Pointers](pointer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 Numeric types are `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, and `f64`. `bool` and `void` are not numeric types. On `x86_64-pc-linux-gnu` a pointer is 64 bits.
 
@@ -62,16 +62,28 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-An `i32` local with no initializer is 0. Reading it is 1 store of 0 and 1 load. `var n i32; n = 20; return n` stores 20 and loads it. With no `-O` flag, the zero is removed. `-O0` keeps that store. `var a i32 = 20` executes 1 `movl` of 20. Reading the local is 1 `movl`.
+```asm
+main:
+movw $1, -18(%rsp)               # constant
+movq $2, -16(%rsp)               # constant
+movb $65, -3(%rsp)               # constant
+movzbl -3(%rsp), %eax            # move
+movb %al, -2(%rsp)               # move
+movzbl -3(%rsp), %eax            # move
+movb %al, -1(%rsp)               # move
+movswl -18(%rsp), %eax           # move
+movq -16(%rsp), %rcx             # move
+cltq
+addq %rcx, %rax                  # add
+movsbl -2(%rsp), %ecx            # move
+movslq %ecx, %rcx                # move
+addq %rcx, %rax                  # add
+movzbl -1(%rsp), %ecx            # move
+movl %ecx, %ecx                  # move
+addq %rcx, %rax                  # add
+retq                             # return
+```
 
-`a + b`, `a - b`, `a * b`, `a & b`, `a | b`, and `a ^ b` on two `i32` locals are 2 instructions: load `a`, then the operation with `b` read from its slot. `a / b` is 3: load, `cltd`, `idivl`. `a % b` is 4, because the remainder is moved out of `%edx`. `a << b` and `a >> b` are 3: load the value, load the count into `%ecx`, shift. `-a` is 2: clear `%eax`, then subtract `a`. `~a` is 2: load, then `xorl $-1`. A comparison such as `a < b` or `a == b` yields `bool` and is 4: load `a`, load `b`, subtract, `setcc`.
-
-A parameter is stored on entry before any of those. An `i32` parameter is 1 `movl`. A function that only returns `a + b` for two `i32` parameters is 5 instructions including that pair of stores and `retq`.
-
-`i8` and `i16` are widened to `i32` at each use. `a + b` on two `i8` parameters is 7 instructions plus `retq`: the bytes are stored, each is sign-extended, and then they are added. A `u8` source is zero-extended. `var d i8 = c` keeps the low 8 bits in 1 byte store. Storing into a `bool` is `testl` and `setne`, and that 0 or 1 is the store.
-
-`u32` addition is the same 2 instructions as `i32` addition. A constant expression such as `return 40 + 2` is folded, and `main` is 2 instructions.
-
-[Index](../README.md) · [Previous: extern](../packages/extern.md) · [Next: Pointers](pointer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: extern](../packages/extern.md) · [Next: Pointers](pointer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -1,6 +1,6 @@
 # Strings
 
-[Index](../README.md) · [Previous: Literals](literal.md) · [Next: sizeof](sizeof.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Literals](literal.md) · [Next: sizeof](sizeof.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A string between double quotes cannot cross a line. A string between backticks may span lines. Both are `[]const u8`: a pointer to the bytes and an `i32` length. The length is the number of bytes and does not count the terminating null. The null is still stored after the bytes, so the address is a C string. In a raw string the characters are copied as written: a backslash is not an escape, and a newline in the source is a newline in the string. The next backtick ends the string. `var text = "hi"` has type `[]const u8`. `text.len` is 2. `text[0]` reads a byte. `text[0] = 1` and `var bytes []u8 = "hi"` are reported as `type mismatch`.
 
@@ -25,10 +25,16 @@ var pointer *const u8 = "Hello";
 
 [`std/string`](../std/string.md) is the library package `lib/tlc/std/string`. It names this slice `string_view` and provides `equals`, `compare`, and `find_first_of`. Those functions are tlc source. The compiler does not implement them.
 
-## Cost
+## Assembly
 
-`var text = "hi"` is 3 instructions: 1 `leaq` of the bytes, 1 `movq` of that address, and 1 `movl` of the length 2. The bytes, including the terminating null, sit in the binary and are not copied. A raw string is the same three instructions. `text.len` is 1 load of the length. `text[0]` is 1 load of the address and 1 `movzbl` of the byte. `return "hi"[1]` is 2 instructions: `movl $105, %eax` and `retq`. A file-scope `const n = "hi"[1]` used as `return n` is those same 2. `return "hello"[1:4][0]` is 2 instructions: `movl $101, %eax` and `retq`. A file-scope `const n = "hello"[1:4][0]` used as `return n` is those same 2. `return builtin.memeql[u8]("hi", "hi")` is 2 instructions: `movl $1, %eax` and `retq`. A file-scope `const n = builtin.memeql[u8]("hi", "hi")` used as `return n` is those same 2. `return builtin.memcmp[u8]("ab", "ac")` is 2 instructions: `movl $0xffffffff, %eax` and `retq`. A file-scope `const n = builtin.memcmp[u8]("ab", "ac")` used as `return n` is those same 2. `return text.len` in `main` is 6 instructions: those three, the length load, a load of the pointer, and `retq`.
+```asm
+main:
+leaq (%rip), %rax                # address
+movq %rax, -16(%rsp)             # move
+movl $5, -8(%rsp)                # constant
+movl -8(%rsp), %eax              # move
+movq -16(%rsp), %rcx             # move
+retq                             # return
+```
 
-`var text *const u8 = "hi"` is 1 `leaq` and 1 store of that address. Passing the literal to `*const u8`, including `printf("hi\n")`, is that address and adds no length. The call stays 36 instructions in `main` when fewer than 32 frames are stored. `const label = "hi"` keeps the slice header in the binary. `return label.len` is 2 instructions: `movl $2, %eax` and `retq`. `var p *const u8 = label` followed by `return 0` is 5 instructions: both fields are loaded, the address is stored, then `xor` and `retq`.
-
-[Index](../README.md) · [Previous: Literals](literal.md) · [Next: sizeof](sizeof.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Literals](literal.md) · [Next: sizeof](sizeof.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

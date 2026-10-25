@@ -1,6 +1,6 @@
 # The Type type
 
-[Index](../README.md) · [Previous: Slices](slice.md) · [Next: Structs](struct.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Slices](slice.md) · [Next: Structs](struct.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `builtin.Type` is the type of a tlc type. `name`, `fields`, and the struct `Field` are declared in `lib/tlc/builtin/builtin.tlc`. `Type` is not a typedef there. The compiler adds that export. `fields` returns `[]const Field`. `import "builtin"` names it `builtin.Type`. `import { Type } from "builtin"` names it `Type`. `typeof(i32)` and `typeof n` produce that type. A bare `Type`, with no such import, is reported as `not supported yet`. `typeof(Point)`, `typeof(*i32)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)`, `typeof(union Shape)`, and `typeof(trait Area)` are reported as `expected a type`. `typeof('A')` is `u8`, and that value is different from `typeof(i8)`. `typeof` does not decay an array. `var t builtin.Type` with no value is reported as `type mismatch`. `typeof(builtin.Type).name()` spells `Type`.
 
@@ -31,10 +31,79 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-`typeof(i32)` used as a value is the address of a type descriptor, one `leaq`. `var t builtin.Type = typeof(n)` stores a null pointer, then that address. `t == typeof(i32)` is a pointer compare: 5 instructions once both addresses are loaded, the same shape as `a == b` on integers. The whole function that stores one parameter, materializes both descriptors, and returns the compare is 10 instructions including `retq`.
+```asm
+main:
+leaq (%rip), %rax                # address
+movq %rax, -32(%rsp)             # move
+movq -32(%rsp), %rax             # move
+movq (%rax), %rax                # move
+movq %rax, -24(%rsp)             # move
+movq (%rip), %rax                # move
+movl (%rip), %ecx                # move
+movl %ecx, -8(%rsp)              # move
+movq %rax, -16(%rsp)             # move
+xorl %eax, %eax                  # zero the result
+leaq (%rip), %rcx                # address
+cmpq %rcx, -32(%rsp)             # compare
+movb %al, -33(%rsp)              # move
+jne .L1                          # branch
+movb $1, %al                     # constant
+movb %al, -33(%rsp)              # move
+jmp .L1                          # jump
+.L1:
+movb -33(%rsp), %cl              # move
+xorl %eax, %eax                  # zero the result
+testb $1, %cl                    # test
+movb %al, -34(%rsp)              # move
+jne .L2                          # branch
+jmp .L3                          # jump
+.L2:
+cmpq $0, -24(%rsp)               # compare
+setne %al                        # flag to byte
+movb %al, -34(%rsp)              # move
+.L3:
+movb -34(%rsp), %cl              # move
+xorl %eax, %eax                  # zero the result
+testb $1, %cl                    # test
+movb %al, -35(%rsp)              # move
+jne .L4                          # branch
+jmp .L5                          # jump
+.L4:
+movl -8(%rsp), %eax              # move
+movq -16(%rsp), %rcx             # move
+cmpl $2, %eax                    # compare
+sete %al                         # flag to byte
+movb %al, -35(%rsp)              # move
+.L5:
+movb -35(%rsp), %cl              # move
+xorl %eax, %eax                  # zero the result
+testb $1, %cl                    # test
+movb %al, -36(%rsp)              # move
+jne .L6                          # branch
+jmp .L7                          # jump
+.L6:
+movl -8(%rsp), %eax              # move
+movq -16(%rsp), %rax             # move
+movq 16(%rax), %rax              # move
+leaq (%rip), %rcx                # address
+cmpq %rcx, (%rax)                # compare
+sete %al                         # flag to byte
+movb %al, -36(%rsp)              # move
+.L7:
+movb -36(%rsp), %al              # move
+testb $1, %al                    # test
+jne .L8                          # branch
+jmp .L9                          # jump
+.L8:
+movl $1, %eax                    # constant
+retq                             # return
+.L9:
+jmp .L10                         # jump
+.L10:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-`func name_of(n i32) *u8 { var t builtin.Type = typeof(n); return t.name(); }` is 5 instructions including `retq`: one `leaq` of the descriptor, the store, the reload, and the load of the spelling. `return typeof(Point).fields().len` is 2 instructions: `movl $2, %eax` and `retq`. `*typeof(Point).fields()[0].kind == typeof(i32)` is 8 instructions including `retq` on the path where the field is `i32`. Two `typeof` expressions compared from `assert` or from a file-scope `const` are folded and add no instructions. `fields().len` on a `typeof` folds. The slice `fields()` itself is not a constant, so `assert` does not fold a use of an element.
-
-[Index](../README.md) · [Previous: Slices](slice.md) · [Next: Structs](struct.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Slices](slice.md) · [Next: Structs](struct.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

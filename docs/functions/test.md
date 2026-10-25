@@ -1,6 +1,6 @@
 # Tests
 
-[Index](../README.md) · [Previous: Structs and arrays](aggregate.md) · [Next: Function pointers](pointer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Structs and arrays](aggregate.md) · [Next: Function pointers](pointer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `test "name" { ... }` is a file-scope test. A `test` inside a function is `test is only valid at file scope`. The body is a function that returns `i32`. Reaching the end passes, and so does `return 0`. Any other `return` fails that test. `return;` is reported as `type mismatch`. The same test name twice in one file is reported as `redefinition`.
 
@@ -27,8 +27,12 @@ test "add joins its arguments" {
 
 `tlc --test file.tlc` compiles the program, runs every test, and skips `main`. A failing test prints `fail:` and the name. The process status is the number of failed tests. A build without `--test` typechecks the tests and does not run them.
 
-## Cost
+## Assembly
 
-A `test` is a function that returns `i32`. Its body costs whatever the statements cost. Reaching the end returns 0, which is `xorl %eax, %eax` and `retq` when the body is empty. `testing.error` is a traced call. A build without `--test` emits no call of the test.
+```asm
+main:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Structs and arrays](aggregate.md) · [Next: Function pointers](pointer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Structs and arrays](aggregate.md) · [Next: Function pointers](pointer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

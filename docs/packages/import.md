@@ -1,6 +1,6 @@
 # Imports
 
-[Index](../README.md) · [Previous: Packages](package.md) · [Next: Libraries](library.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Packages](package.md) · [Next: Libraries](library.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 Imports follow `package` and precede every other declaration. An import is private to the file that wrote it. There are three forms:
 
@@ -39,8 +39,22 @@ lib/tlc/vendor/sdl3/
 
 `examples/triangle` imports `vendor/sdl3` and `vendor/gl`. Each of those packages names a system library in its `link` file. `link_unix` or `link_windows` adds arguments for that family.
 
-## Cost
+## Assembly
 
-An import is resolved while compiling. It adds no instructions. A call through the qualifier costs the same traced call as a call in the same file: 36 instructions in the caller when fewer than 32 frames are stored.
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+movl $2, %esi                    # constant
+callq add                        # call add
+retq                             # return
 
-[Index](../README.md) · [Previous: Packages](package.md) · [Next: Libraries](library.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
+[Index](../README.md) · [Previous: Packages](package.md) · [Next: Libraries](library.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -1,6 +1,6 @@
 # Structs
 
-[Index](../README.md) · [Previous: The Type type](type.md) · [Next: Unions](union.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: The Type type](type.md) · [Next: Unions](union.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A struct definition is `type Name struct`. Variables, parameters, results, and fields then use the bare name. A field may be an anonymous struct, `point struct { x i32; y i32; };`, or an anonymous union, `data union { n i32; m i32; };`. An inline union arm may hold that union too. `point export struct` and `data export union` publish that field. `export point struct` and `export data union` do the same. `extern(abi="c")` on the outer struct applies to those anonymous structs and unions. `data union(Kind)` inside an `extern(abi="c")` struct or union is `extern(abi="c") on a tagged union`. `var s struct { value i32; } = {.value = 10};` is a struct with no name. `var s = struct{.value = 10};` is the same kind of struct: `value` is `i32` because `10` is an `i32`. A field may be another `struct{...}` or an array literal. `s.value` is that field. Either value can be passed where a trait parameter asks for the same fields. `var s = {.value = 10};` is reported as `type mismatch`. `var p struct Point` is reported as `expected a type`. `{10, 20}` where a struct is expected is reported as `type mismatch`. A pointer is written `*Point` and `*i32`, in a parameter, a result, and every other type position. `?*Point` may be `null`. `*Point` may not. A field is a name, then its type, in the same order as `var`: `x i32`, `next ?*Node`, `home *Address`, `raw [8]u8`. `x i32 = 1` is the value used when an initializer does not name that field. The value is a constant. A call is reported as `global initializer is not a constant`. `raw [2]i32 = {1, 2}` is that value for a sized array. A short list leaves the elements it does not name uninitialized. `0...` stores 0 in those elements. A file-scope variable stores 0 in an element the list does not name. Naming the field replaces the list. A field of an inline union payload uses that same value, as in `n i32 = 1` inside `union(Enum)`. A union with no initializer does not choose an arm. A value on a trait field is reported as `not supported yet`. A field ends with `;`. The semicolon after `}` may be omitted.
 
@@ -230,20 +230,26 @@ export func sum(p Point) i32 {
 
 Inside the package the type is written `Point`. `import { Point } from "geom"` makes `Point` a type name in the importing file. A struct is visible to every file in the package, so one file can declare `type A struct { b B; }` when `type B struct` is in another file of that package.
 
-## Cost
+## Assembly
 
-`var p Point` on a struct of two `i32` fields adds no store when the fields have no value. Reading a field is reported as `uninitialized`. `p.x = 40` followed by `return p.x` is 3 instructions: one `movl` of 40, one `movl` into `%eax`, and `retq`. When the fields are `x i32 = 1` and `y i32 = 2`, `return p.x + p.y` is 5 instructions including `retq`: two `movl` of those values, one load, one `addl`, and `retq`. `raw [2]i32 = {10, 2}` and `return h.raw[0] + h.raw[1]` is those same 5. `kids [2]Row` before `type Row`, when `Row` is one `i32`, then `node.kids[0].n = 20`, `node.kids[1].n = 22`, and `return node.kids[0].n + node.kids[1].n` is those same 5. `return node.kids[0].n + node.kids[1].n` when `node` is a `*Node` parameter and `kids` is `*[2]Node` is 8 instructions: the pointer store, two reloads of `node`, two loads of `kids`, one `movl` of the first `n`, one `addl` of the second, and `retq`. `raw [2]i32 = {10}` and `return h.raw[0]` is 3: one `movl` of 10, one load, and `retq`. The element that was not named adds no store. `raw [3]i32 = {10, 0...}` and the sum of the three elements is 8: three `movl` of 0, one `movl` of 10, one load, two `addl`, and `retq`. An unread local adds no instruction. Each later `p.x = 40` is 1 `movl` when that store is the value that is read. Reading `p.x` is 1 `movl`. `p.x + p.y` is 1 load of `p.x` and 1 `addl` that reads `p.y` from its slot.
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+movl $2, %esi                    # constant
+callq make                       # call make
+retq                             # return
 
-A field through `*Point` reloads the pointer and then loads the field. `return p.x` on a `*Point` parameter is 4 instructions including the pointer store and `retq`.
+make:
+movl %edi, -16(%rsp)             # move
+movl %esi, -12(%rsp)             # move
+movl -16(%rsp), %eax             # move
+movl %eax, -8(%rsp)              # move
+movl -12(%rsp), %eax             # move
+movl %eax, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %edx              # move
+retq                             # return
+```
 
-`b = a` for two `i32` fields is 2 loads and 2 stores. Eight `i32` fields are 8 loads and 8 stores. The fields are moved one at a time.
-
-`Point{.x = 40}` stores 40 and copies both fields into the variable. `var p = Point{.x = 40}; return p.x;` is 7 instructions: one `movl` of 40, one load of that field, one load of the unset field, two `movl` into `p`, one `movl` of `p.x` into `%eax`, and `retq`. Reading `p.y` is reported as `uninitialized`. `Point{0...}` stores 0 in both fields and copies them. `return p.x + p.y` is 9 instructions: two `movl` of 0, two loads, two `movl` into `p`, one `movl` into `%eax`, one `addl`, and `retq`. When `y i32 = 2`, `Point{.x = 40}` stores 2 and 40. `return p.x + p.y` is those same 9, with the store of 2 in place of a store of 0. `Point{}` adds no store when the fields have no value. `var p = Point{}; return 0;` is 2 instructions, `xorl %eax, %eax` and `retq`. `Vec[i32]{}` and `pkg.Vec[i32]{}` follow `Point{}`. `Vec[i32]{.n = 1}` follows `Point{.x = 40}`.
-
-A generic struct is specialized while compiling. `Vec[i32]` then costs the same as a struct whose field is `i32`. `pkg.Vec[i32]` is that same specialization. `type Wide struct(align=16)` adds no instruction beyond the field stores. An empty struct has no field stores. `extern(abi="c") type Vec[T type] struct` is rejected and adds no instructions. `data union(Kind)` inside an `extern(abi="c")` struct is rejected and adds no instructions. A field whose type is a tagged union is rejected and adds no instructions.
-
-A by-value method copies every field into the argument registers before the traced call. Two `i32` fields are 2 `movl`. A pointer method passes the address with 1 `leaq`. The call itself is the 36-instruction trace frame when fewer than 32 frames are stored.
-
-A constant on the type, `Entity.next`, is an immediate when it is an integer. It adds no load. A variable on the type is an ordinary global: 1 `movl` to read it.
-
-[Index](../README.md) · [Previous: The Type type](type.md) · [Next: Unions](union.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: The Type type](type.md) · [Next: Unions](union.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

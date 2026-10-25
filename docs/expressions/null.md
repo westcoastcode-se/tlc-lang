@@ -1,6 +1,6 @@
 # Pointers and null
 
-[Index](../README.md) · [Previous: Logical operators](logical.md) · [Next: Narrowing](narrowing.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Logical operators](logical.md) · [Next: Narrowing](narrowing.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 Pointers that point at the same type can be compared with `==` and `!=`, including `*T` with `?*T`. A pointer can be compared with `null`, and `null == null` is allowed. The result is `i32`. Pointers of different types cannot be compared. Relational operators on pointers are rejected. `p == 0` is reported as `type mismatch`.
 
@@ -20,8 +20,36 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-`p == q` on two pointers is 4 instructions after the pointers are stored: load each pointer, `subq`, `sete`. The result is `bool`. `p == null` compares with 0 and has that same shape. The comparison adds no branch of its own. A relational operator on a pointer is rejected while compiling and adds none.
+```asm
+main:
+movl $1, -20(%rsp)               # constant
+leaq -20(%rsp), %rax             # address
+movq %rax, -16(%rsp)             # move
+movq $0, -8(%rsp)                # constant
+movq -16(%rsp), %rcx             # move
+xorl %eax, %eax                  # zero the result
+cmpq -8(%rsp), %rcx              # compare
+movb %al, -21(%rsp)              # move
+je .L1                           # branch
+cmpq $0, -8(%rsp)                # compare
+sete %al                         # flag to byte
+movb %al, -21(%rsp)              # move
+.L1:
+movb -21(%rsp), %al              # move
+testb $1, %al                    # test
+jne .L2                          # branch
+jmp .L3                          # jump
+.L2:
+movq -16(%rsp), %rax             # move
+movl (%rax), %eax                # move
+retq                             # return
+.L3:
+jmp .L4                          # jump
+.L4:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Logical operators](logical.md) · [Next: Narrowing](narrowing.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Logical operators](logical.md) · [Next: Narrowing](narrowing.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

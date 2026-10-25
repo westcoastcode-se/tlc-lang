@@ -1,6 +1,6 @@
 # Casts
 
-[Index](../README.md) · [Previous: Type values](type.md) · [Next: Unsafe](unsafe.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Type values](type.md) · [Next: Unsafe](unsafe.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A cast is the type followed by the value in parentheses: `i32(n)`, `i64(n)`, `*u8(bits)`, `*void(p)`, `*Point(p)`, or `func (i32) i32(p)`. `Drawable(value)` names that trait for an overloaded parameter. A generic trait takes its type from the value, so `Getter(h)` is `Getter[i32]` when the value satisfies `Getter[i32]`. `Getter[i32](h)` writes the type. The value is unchanged. `var d Drawable = Drawable(s)` is `trait has no size`. A name declared as a type in this file is a cast too: `Integer(n)` after `type Integer i32`, and `ShapeType(shape)` to read the tag of a tlc union. `func (i32) i32(p)` and `Op(p)` after `type Op func (i32) i32` convert a data pointer or another function pointer into that function pointer. `Op(p)(1)` calls it. That cast is how a value enters or leaves the alias. `Integer(n)` has type `Integer`, and `i32(value)` has type `i32`. A cast between an alias and a value with the same representation is allowed, including `Spot(p)` after `type Spot Point` and `Ptr(&p)` after `type Ptr *Point`. A cast to a different struct is reported as `type mismatch`. From another file in the package, `ShapeType(shape)` still reads that tag.
 
@@ -26,8 +26,56 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-`i64(n)` from an `i32` parameter is 1 `movslq` after the parameter store. The function is 3 instructions including `retq`. `i8(n)` is a move and `movsbl`: 2 instructions after the store. `u32(n)` from `i32` reuses the loaded value. An alias cast of the same representation, such as `Integer(n)`, `Spot(p)`, or `string_view(text)` when `text` is already `[]const u8`, also reuses it and adds no instructions. A pointer cast reuses the loaded address. `ShapeType(shape)` on a tlc union reloads the whole value, which is the byte-wise cost on [Unions](../types/union.md).
+```asm
+main:
+movl $42, -52(%rsp)              # constant
+leaq -52(%rsp), %rax             # address
+movq %rax, -48(%rsp)             # move
+movq -48(%rsp), %rax             # move
+movq %rax, -40(%rsp)             # move
+movq -40(%rsp), %rax             # move
+movq %rax, -32(%rsp)             # move
+movq $0, -24(%rsp)               # constant
+movslq -52(%rsp), %rax           # move
+movq %rax, -16(%rsp)             # move
+movl -52(%rsp), %eax             # move
+movl %eax, -4(%rsp)              # move
+xorl %eax, %eax                  # zero the result
+cmpq $0, -24(%rsp)               # compare
+movb %al, -53(%rsp)              # move
+jne .L1                          # branch
+movq -32(%rsp), %rax             # move
+movl (%rax), %eax                # move
+cmpl -4(%rsp), %eax              # compare
+sete %al                         # flag to byte
+movb %al, -53(%rsp)              # move
+.L1:
+movb -53(%rsp), %cl              # move
+xorl %eax, %eax                  # zero the result
+testb $1, %cl                    # test
+movb %al, -54(%rsp)              # move
+jne .L2                          # branch
+jmp .L3                          # jump
+.L2:
+cmpq $42, -16(%rsp)              # compare
+sete %al                         # flag to byte
+movb %al, -54(%rsp)              # move
+.L3:
+movb -54(%rsp), %al              # move
+testb $1, %al                    # test
+jne .L4                          # branch
+jmp .L5                          # jump
+.L4:
+movq -32(%rsp), %rax             # move
+movl (%rax), %eax                # move
+retq                             # return
+.L5:
+jmp .L6                          # jump
+.L6:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Type values](type.md) · [Next: Unsafe](unsafe.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Type values](type.md) · [Next: Unsafe](unsafe.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

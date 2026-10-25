@@ -1,6 +1,6 @@
 # string
 
-[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: seq](seq.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: seq](seq.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `import "std/string"` loads `lib/tlc/std/string`. The package is ordinary tlc source. The compiler does not implement these functions.
 
@@ -22,22 +22,61 @@ The program returns 3. `equals` is true when the lengths match and every byte ma
 
 `const greeting string.string_view = "hello"` keeps the alias. The header is the same slice as `const label = "hello"`.
 
-## Cost
+## Assembly
 
-Counts are the instructions that run, from `tlc --emit-obj` on `x86_64-pc-linux-gnu`. Alignment `nop` is left out. A call of one of these functions records a trace frame in the caller. None of `from`, `equals`, `compare`, or `find_first_of` records another frame. `find`, `starts_with`, and `ends_with` call `equals`, and that call does.
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $5, %ecx                    # constant
+callq equals                     # call equals
+retq                             # return
 
-`string.from(text)` is 5 instructions: store the pointer, store the length, reload both, and `retq`. `string_view(text)` adds none when the value is already a slice.
+equals:
+movq %rdi, -40(%rsp)             # move
+movl %esi, -32(%rsp)             # move
+movl %ecx, -16(%rsp)             # move
+movq %rdx, -24(%rsp)             # move
+movl -32(%rsp), %eax             # move
+movl -16(%rsp), %ecx             # move
+movq -24(%rsp), %rdx             # move
+cmpl %ecx, %eax                  # compare
+je .L1                           # branch
+xorl %eax, %eax                  # zero the result
+retq                             # return
+.L1:
+jmp .L2                          # jump
+.L2:
+movl $0, -4(%rsp)                # constant
+.L7:
+movl -4(%rsp), %eax              # move
+movl -32(%rsp), %ecx             # move
+movq -40(%rsp), %rdx             # move
+cmpl %ecx, %eax                  # compare
+jge .L3                          # branch
+movq -40(%rsp), %rax             # move
+movslq -4(%rsp), %rcx            # move
+movzbl (%rax,%rcx), %eax         # move
+movl -16(%rsp), %ecx             # move
+movq -24(%rsp), %rcx             # move
+movl -4(%rsp), %edx              # move
+movslq %edx, %rdx                # move
+movzbl (%rcx,%rdx), %ecx         # move
+cmpl %ecx, %eax                  # compare
+jne .L4                          # branch
+jmp .L5                          # jump
+.L3:
+movb $1, %al                     # constant
+retq                             # return
+.L4:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+.L5:
+jmp .L6                          # jump
+.L6:
+movl -4(%rsp), %eax              # move
+addl $1, %eax                    # add
+movl %eax, -4(%rsp)              # move
+jmp .L7                          # jump
+```
 
-`var text string.string_view = "hi"` then `if (text.equals("hi")) return 1` else `return 0` executes 52 instructions in `main` when the bytes match and fewer than 32 frames are stored. That is both slices, the frame, `callq`, the `bool` test, and `return 1`. The `else` is 53. `equals` is extra.
-
-Inside `equals`, different lengths return false in 15 instructions. Two empty views return true in 26. Equal lengths whose first byte differs return false in 40. One matching byte returns true in 55. Each further matching byte adds 29.
-
-`compare` of two empty views returns 0 in 46 instructions. An empty view compared with `"a"` returns `-1` in 34. `"a"` compared with an empty view returns `1` in 48. Equal lengths whose first byte is less return `-1` in 39.
-
-`find_first_of` on an empty view returns `-1` in 16 instructions. An empty set against one byte returns `-1` in 40. A first byte that is the first character of the set returns `0` in 41.
-
-`find` of an empty needle returns `0` in 16 instructions and does not call `equals`. A needle longer than the view returns `-1` in 26 and does not call `equals`. A match at index 0 is 90 instructions plus `equals`. Those 90 include the trace frame of that call.
-
-`starts_with` returns false in 17 instructions when the view is shorter than the prefix, and does not call `equals`. Otherwise it is 62 instructions plus `equals`. `ends_with` is 17 on that short path and 71 plus `equals` otherwise. The 62 and the 71 include the trace frame of `equals`.
-
-[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: seq](seq.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: seq](seq.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

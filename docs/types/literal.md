@@ -1,6 +1,6 @@
 # Literals
 
-[Index](../README.md) · [Previous: void, bool, and floating-point types](float.md) · [Next: Strings](string.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: void, bool, and floating-point types](float.md) · [Next: Strings](string.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 | Literal | Type |
 | --- | --- |
@@ -38,8 +38,48 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-A literal has no instructions of its own. `return 4` is `movl $4, %eax` and `retq`. `return 0` is `xorl %eax, %eax` and `retq`. A suffix, a base prefix, and a digit separator are resolved while compiling. A character literal is the same immediate as its `u8` value.
+```asm
+main:
+movl $1000, -32(%rsp)            # constant
+movl $42, -28(%rsp)              # constant
+movl $10, -24(%rsp)              # constant
+movl $8, -20(%rsp)               # constant
+movb $20, -15(%rsp)              # constant
+movw $42, -14(%rsp)              # constant
+movl $10, -12(%rsp)              # constant
+movsd (%rip), %xmm0              # move
+movsd %xmm0, -8(%rsp)            # move
+movsd -8(%rsp), %xmm0            # move
+xorl %eax, %eax                  # zero the result
+movsd (%rip), %xmm1              # move
+ucomisd %xmm1, %xmm0
+movb %al, -33(%rsp)              # move
+jne .L1                          # branch
+jp .L1                           # branch
+cmpl $10, -12(%rsp)              # compare
+sete %al                         # flag to byte
+movb %al, -33(%rsp)              # move
+.L1:
+movb -33(%rsp), %al              # move
+testb $1, %al                    # test
+jne .L2                          # branch
+jmp .L3                          # jump
+.L2:
+movl -28(%rsp), %eax             # move
+retq                             # return
+.L3:
+jmp .L4                          # jump
+.L4:
+movl -32(%rsp), %eax             # move
+addl -24(%rsp), %eax             # add
+addl -20(%rsp), %eax             # add
+movsbl -15(%rsp), %ecx           # move
+addl %ecx, %eax                  # add
+movswl -14(%rsp), %ecx           # move
+addl %ecx, %eax                  # add
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: void, bool, and floating-point types](float.md) · [Next: Strings](string.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: void, bool, and floating-point types](float.md) · [Next: Strings](string.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

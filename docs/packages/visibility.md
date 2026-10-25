@@ -1,6 +1,6 @@
 # Visibility
 
-[Index](../README.md) · [Previous: Libraries](library.md) · [Next: extern](extern.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Libraries](library.md) · [Next: extern](extern.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 ## Names inside a package
 
@@ -128,8 +128,22 @@ func main() i32 {
 
 The program returns 42. `math.width()` is `sizeof(Entity)`, which is 4. `math.Box[i32].limit` is the exported constant on that specialization. `Buf[4, i32].count` is 4.
 
-## Cost
+## Assembly
 
-`export` and a name that is visible across files in the package are resolved while compiling. They add no instructions. Reading an exported file-scope `var` is 1 `movl` from its address. A call of an exported function is a traced call, 36 instructions in the caller when fewer than 32 frames are stored.
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+movl $2, %esi                    # constant
+callq add                        # call add
+retq                             # return
 
-[Index](../README.md) · [Previous: Libraries](library.md) · [Next: extern](extern.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
+[Index](../README.md) · [Previous: Libraries](library.md) · [Next: extern](extern.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

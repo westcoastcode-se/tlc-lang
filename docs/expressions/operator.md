@@ -1,6 +1,6 @@
 # Expressions
 
-[Index](../README.md) · [Previous: Keywords](../keyword.md) · [Next: Logical operators](logical.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Keywords](../keyword.md) · [Next: Logical operators](logical.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 The operators are `+ - * / %`, `& | ^ ~ << >>`, `&& || !`, the comparisons, unary `+` and `-`, assignment `=`, calls, indexing, `.`, address-of `&`, and dereference `*`. Binding and associativity are given in the [grammar](../grammar.md#expressions).
 
@@ -21,10 +21,60 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-Each operator below is the cost after its operands are in slots. Two `i32` locals make `+`, `-`, `*`, `&`, `|`, and `^` cost 2 instructions. `/` costs 3 and `%` costs 4. A shift costs 3. Unary `-` and `~` cost 2. A comparison costs 4 and yields `bool`. `f32` and `f64` addition cost 2, a reload and an add. The full sequences are on [Numeric types](../types/integer.md) and [void, bool, and floating-point types](../types/float.md).
+```asm
+main:
+movl $6, -12(%rsp)               # constant
+leaq -12(%rsp), %rax             # address
+movq %rax, -8(%rsp)              # move
+xorl %eax, %eax                  # zero the result
+subl -12(%rsp), %eax             # subtract
+addl $8, %eax                    # add
+movl %eax, -12(%rsp)             # move
+imull $3, -12(%rsp), %eax        # multiply
+movl $2, %ecx                    # constant
+cltd
+idivl %ecx
+movl $5, %ecx                    # constant
+cltd
+idivl %ecx
+movl %edx, -12(%rsp)             # move
+movl -12(%rsp), %eax             # move
+shll %eax                        # shll
+sarl %eax                        # sarl
+movl %eax, -12(%rsp)             # move
+movl -12(%rsp), %eax             # move
+andl $7, %eax                    # andl
+orl $1, %eax                     # orl
+movl %eax, -12(%rsp)             # move
+movl -12(%rsp), %eax             # move
+xorl $1, %eax                    # xorl
+movl %eax, -12(%rsp)             # move
+movl -12(%rsp), %eax             # move
+xorl $-0x1, %eax                 # xorl
+movl %eax, -12(%rsp)             # move
+xorl %eax, %eax                  # zero the result
+cmpl $0, -12(%rsp)               # compare
+movb %al, -13(%rsp)              # move
+jge .L1                          # branch
+movq -8(%rsp), %rax              # move
+cmpl $0, (%rax)                  # compare
+setne %al                        # flag to byte
+movb %al, -13(%rsp)              # move
+.L1:
+movb -13(%rsp), %al              # move
+testb $1, %al                    # test
+jne .L2                          # branch
+jmp .L3                          # jump
+.L2:
+movl $1, %eax                    # constant
+retq                             # return
+.L3:
+jmp .L4                          # jump
+.L4:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
-Assignment of an `i32` is 1 store. Assignment of a struct is one load and one store per field. A call is 36 instructions in the caller when fewer than 32 frames are stored, plus the callee. Indexing and `.` are counted on [Arrays](../types/array.md), [Slices](../types/slice.md), and [Structs](../types/struct.md).
-
-[Index](../README.md) · [Previous: Keywords](../keyword.md) · [Next: Logical operators](logical.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Keywords](../keyword.md) · [Next: Logical operators](logical.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

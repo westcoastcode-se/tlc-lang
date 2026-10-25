@@ -1,6 +1,6 @@
 # extern
 
-[Index](../README.md) · [Previous: Visibility](visibility.md) · [Next: Numeric types](../types/integer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Visibility](visibility.md) · [Next: Numeric types](../types/integer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `extern` and `extern(abi="tlc")` name a symbol from a tlc library. The symbol is `qualifier.name`. The calling convention is the compiler's own, so the function may return several results. A method uses that same rule. The symbol is `qualifier.Type.name`, and the call is `value.name(...)` or `Type.name(...)` when the function has no receiver. A method on a generic struct is specialized with the struct, and each specialization is its own symbol. `extern(abi="c")` and `extern(abi="c", name="symbol")` on that method are `extern(abi="c") on a trait or a generic`. `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`. A trait default is copied onto each struct that gains it. `extern func Shape::twice` names that copy. The call stays `s.twice()` or `r.twice()`. `extern(abi="c")` and `extern(abi="c", name="symbol")` on that default are `extern(abi="c") on a trait or a generic`. The rules are on [Methods](../methods/method.md).
 
@@ -52,10 +52,20 @@ func main() i32 {
 
 `*const T` on a parameter, including an `extern(abi="c")` parameter, is a pointer to constant `T`. A variadic function may be declared with `extern(abi="c")` and without a body. A function with a body may use `...`, and `builtin.va()` reads the extra arguments.
 
-## Cost
+## Assembly
 
-`extern(abi="c") func printf(fmt *const u8, ...) i32` followed by `printf("hi\n")` executes 36 instructions in `main` on the path where the trace holds fewer than 32 frames. The trace frame is the same one a tlc call pushes. The format string is one `leaq`, and the variadic call also executes `movb $0, %al` because no floating argument is passed. `printf` itself is outside this count. `extern(abi="c", name="printf") func print` followed by `print("hi\n")` executes the same 36 instructions. `name` changes the object symbol and adds none.
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq parts                      # call parts
+retq                             # return
 
-`extern(abi="tlc")` uses the same trace frame. A struct of at most 16 bytes is passed in registers under `extern(abi="c")`. Each `i32` field is one `movl` into an argument register after the value has been loaded. A larger struct is passed as a pointer. `extern(abi="c")` on a trait or a generic is rejected and adds no instructions. `extern func id[T type]` followed by `return id(40)` is the same 38 instructions in `main`, and the same 3 in the specialization, as that generic function without `extern`. `extern` changes the linkage and adds none. `extern func Point::id[T type]` followed by `return p.id[i32](40)` is that same 38 instructions in `main`, and the same 3 in the specialized method. The symbol is `qualifier.Point.id.spec.i32`. `extern` changes the linkage and adds none. `extern func use(s Shape)` followed by `return use(r)`, for a struct of two `i32` fields, is 8 instructions in `main` and does not push a trace frame. `extern(abi="tlc") func Rect::paint` followed by `return r.paint(c)`, storing 5 and 7, is 43 instructions in `main` when fewer than 32 frames are stored. That call pushes a trace frame. The symbol is `qualifier.Rect.paint.spec.Circle`. `extern` changes the linkage and adds none. `extern(abi="c")` on a tagged union is rejected and adds no instructions. A tagged union used as a field of an `extern(abi="c")` struct is rejected and adds no instructions.
+parts:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %edx              # move
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Visibility](visibility.md) · [Next: Numeric types](../types/integer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Visibility](visibility.md) · [Next: Numeric types](../types/integer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

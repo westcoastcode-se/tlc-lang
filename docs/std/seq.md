@@ -1,6 +1,6 @@
 # seq
 
-[Index](../README.md) · [Previous: string](string.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: string](string.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `import "std/seq"` loads `lib/tlc/std/seq`. The package declares `seq.Seq[T]` and `ptr_of[T]`. The compiler treats the `extern` trait `Seq` in that directory as the iteration trait. It reads `len` and `at` from that declaration. A file names the trait by importing the package. A copy of the source outside that directory is an ordinary trait. `ptr_of[T]` has `len` and `ref`. `for (var item : ptr_of(items))` selects it without an import. A missing `ref` on that value is `type mismatch`.
 
@@ -54,12 +54,25 @@ This program returns 42.
 
 The trait has no size and no symbol. `var s seq.Seq[i32]`, a result, an array, a slice, and a field of the trait are reported as `trait has no size`.
 
-## Cost
+## Assembly
 
-Counts are the instructions that run, from `tlc --emit-obj` on `x86_64-pc-linux-gnu`. Alignment `nop` is left out. Checking that a struct satisfies `seq.Seq[T]` adds no instructions.
+```asm
+main:
+pushq %rax
+movl $40, (%rsp)                 # constant
+movl (%rsp), %edi                # move
+callq use                        # call use
+popq %rcx
+retq                             # return
 
-The struct example returns 42. `main` executes 6 instructions: it stores 40, passes that `i32`, and calls `main.use.spec.Bag`. That call does not push a trace frame. `use` executes 78 instructions when fewer than 32 frames are stored. Those 78 include one trace frame for `len`, one for `at`, both calls, and the add. `Bag.len`, returning 2, is 2 instructions and records no frame of its own. `Bag.at`, adding the stored `i32` and the index, is 5.
+len:
+movl $2, %eax                    # constant
+retq                             # return
 
-The array example returns 42. `main` executes 6 instructions: it stores 38, passes the address of the first element, and calls `main.use.spec.4.i32`. That call does not push a trace frame. The specialized function executes 5 instructions: the pointer store, one reload, one load of the element, the add of 4, and `retq`. `len` is that constant 4. The function pushes no trace frame. `[8]i32` is the separate copy `main.use.spec.8.i32`. `[]i32` is `main.use.spec.slice.i32`.
+use:
+# trace frame for the call, then the matching pop
+callq len                        # call len
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: string](string.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: string](string.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

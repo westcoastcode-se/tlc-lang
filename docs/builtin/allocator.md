@@ -1,6 +1,6 @@
 # allocator
 
-[Index](../README.md) · [Previous: trace](trace.md) · [Next: va](va.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: trace](trace.md) · [Next: va](va.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `Allocator` is a built-in trait. A struct satisfies it by defining these methods, each with a pointer receiver:
 
@@ -47,10 +47,48 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-`new i32` and `delete p` together execute 13 instructions in `main` when `malloc` returns a block. That count is on [new and delete](../statements/new.md). `malloc` and `free` do not push a trace frame.
+```asm
+main:
+subq $24, %rsp                   # subtract
+movl $4, %edi                    # constant
+callq malloc                     # call malloc
+movq %rax, 8(%rsp)               # move
+cmpq $0, %rax                    # compare
+jne .L1                          # branch
+movl (%rip), %eax                # move
+movl %eax, 4(%rsp)               # move
+cmpl $32, %eax                   # compare
+jb .L2                           # branch
+jmp .L3                          # jump
+.L1:
+movq 8(%rsp), %rax               # move
+movq %rax, 16(%rsp)              # move
+movq 16(%rsp), %rax              # move
+movl $40, (%rax)                 # constant
+movq 16(%rsp), %rdi              # move
+callq free                       # call free
+movl $40, %eax                   # constant
+addq $24, %rsp                   # add
+retq                             # return
+.L2:
+movl 4(%rsp), %eax               # move
+leaq (%rip), %rcx                # address
+movslq %eax, %rdx                # move
+imulq $24, %rdx, %rdx            # multiply
+addq %rdx, %rcx                  # add
+leaq (%rip), %rdx                # address
+movq %rdx, (%rcx)                # move
+movl $2, 8(%rcx)                 # constant
+movl $13, 12(%rcx)               # constant
+leaq (%rip), %rdx                # address
+movq %rdx, 16(%rcx)              # move
+addl $1, %eax                    # add
+movl %eax, (%rip)                # move
+.L3:
+leaq (%rip), %rdi                # address
+callq panic                      # call panic
+```
 
-A custom allocator is a pointer receiver plus the size and the alignment. `new(&arena) T` evaluates that pointer and calls `Arena.malloc` the same way, without a trace frame. `new(&arena) i32` does not store the reserved integer. `new(&arena) Point` stores each field after the call returns, the same as `new Point`. A `null` result calls `builtin.panic("out of memory")`, the same as a `null` from `malloc`. `new(&builtin.allocator) T` does not evaluate the pointer. It calls `malloc` directly. `Allocator.realloc` returns `?*u8`. There is no `realloc` expression, so that method adds no instructions unless a call writes it.
-
-[Index](../README.md) · [Previous: trace](trace.md) · [Next: va](va.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: trace](trace.md) · [Next: va](va.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

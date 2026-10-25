@@ -1,6 +1,6 @@
 # switch
 
-[Index](../README.md) · [Previous: for](for.md) · [Next: defer](defer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: for](for.md) · [Next: defer](defer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `switch` falls through until `break`. The value promotes to `i32`, so `i8` and `i16` match. `bool`, `u32`, `i64`, and `f32` are reported as `type mismatch: expected i32`. A `case` label is a constant `i32`. `case 1u32` is reported as `type mismatch`. Each value appears once, and `default` appears once.
 
@@ -49,10 +49,35 @@ func code(value Color) i32 {
 
 `code(Color.Blue)` returns 4. `case 41` on that `switch` is `type mismatch`.
 
-## Cost
+## Assembly
 
-`switch (n)` with `case 1` and `default` subtracts 1 from `n` and branches: that dispatch is 2 instructions after `n` is loaded. Each `case` body that stores an `i32` is 1 `movl` and 1 jump to the exit. A function that stores 0 into `x`, switches, and returns `x` is 12 instructions including the parameter store and `retq`. There is no bounds table. `break` is the jump to the exit.
+```asm
+main:
+movl $1, -8(%rsp)                # constant
+movl $0, -4(%rsp)                # constant
+movl -8(%rsp), %eax              # move
+movl %eax, -12(%rsp)             # move
+subl $1, %eax                    # subtract
+je .L1                           # branch
+jmp .L2                          # jump
+.L2:
+movl -12(%rsp), %eax             # move
+subl $2, %eax                    # subtract
+je .L3                           # branch
+jmp .L4                          # jump
+.L5:
+movl -4(%rsp), %eax              # move
+retq                             # return
+.L1:
+movl $2, -4(%rsp)                # constant
+.L3:
+movl -4(%rsp), %eax              # move
+addl $40, %eax                   # add
+movl %eax, -4(%rsp)              # move
+jmp .L5                          # jump
+.L4:
+movl $7, -4(%rsp)                # constant
+jmp .L5                          # jump
+```
 
-`code` is 16 instructions. The parameter is stored and reloaded, then `Color.Green` subtracts 40 and branches. `Color.Blue` reloads that value, subtracts 41, and branches. Each return is one `movl` and `retq`. The same function on an `i32` is 16 instructions. An `extern(abi="c")` enum uses that `i32` dispatch.
-
-[Index](../README.md) · [Previous: for](for.md) · [Next: defer](defer.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: for](for.md) · [Next: defer](defer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

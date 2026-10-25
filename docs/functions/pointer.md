@@ -1,6 +1,6 @@
 # Function pointers
 
-[Index](../README.md) · [Previous: Tests](test.md) · [Next: Methods](../methods/method.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Tests](test.md) · [Next: Methods](../methods/method.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types. A function name used as a value is a pointer to that function. A generic name is not: `var f = id` names the generic, and the call is `f(1)` or `f[i32](1)`. See [Generics](generic.md). The type can be inferred: `var ptr = add` is that pointer, and `ptr(1, 2)` calls it. A static function is the same kind of value, `var ptr = Point.make` and `take(Point.make)`. On a generic struct it is `var ptr = Box[i32].from`. Another package uses `var ptr = pkg.Point.make`. An instance method used as a value is reported as `type mismatch`.
 
@@ -251,10 +251,15 @@ func main() i32 {
 
 `() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer, including an assignment, the initializer of a typed variable, and a `return` whose result is that function pointer. A call argument whose type is a trait with one method accepts it too. The parameters and the result match that method. A named function with those parameters and that result is accepted as that argument. `pkg.name` is that function when it is exported, and `Type.name` when it is static. A prototype, an overloaded name, `var f = name`, and an `unsafe func` stay rejected there. Used anywhere else, it is reported as `type mismatch`. A short form whose parameter count does not match is reported as `type mismatch`. A short form that reads a local or a parameter from the enclosing function is reported as `not supported yet`, including a function pointer. A full anonymous function that is called directly can read a function pointer from that function, as an inner function can.
 
-## Cost
+## Assembly
 
-Loading a function pointer is the address of the function. `var ptr = add` is 1 `leaq` and 1 store of that address. Calling it is an indirect `callq *%rax` inside the same trace frame as a direct call. `return add` from `func pick()` is 2 instructions: `leaq` of `add` and `retq`. Omitting the result type adds no instructions. `return add` from `func pick() func (i32, i32) i32` is those same 2. `return len_text`, when `len_text` takes `[]const u8`, is those same 2 whether the result is omitted or written `func ([]const u8) i32`. `return id`, when `id` is `func (i32) func (i32) i32`, is those same 2 whether the result is omitted or written `func (i32) func (i32) i32`. `return inner`, when `inner` is `func () func (i32) i32`, is those same 2 whether the result is omitted or written `func () func (i32) i32`.
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $20, %edi                   # constant
+movl $22, %esi                   # constant
+callq *%rax                      # call *%rax
+retq                             # return
+```
 
-`return p(20, 22)` where `p` is a `func (i32, i32) i32` parameter executes 42 instructions on the path where the trace holds fewer than 32 frames. The pointer is stored and reloaded, the frame is pushed, the two arguments are moved, and `callq *%rax` runs. The callee is extra. `var op func () ((i32, i32)) = pair; var value = op(); return value[0] + value[1];` executes 48 instructions in `main` on that path. The address is one `leaq` and one store, the frame is pushed, and `callq *%rax` runs. The callee `return (40, 2)` is 3 instructions: `movl $40, %eax`, `movl $2, %edx`, and `retq`. `var op func () ((i32, i32), i32) = pair; var value, n = op(); return value[0] + value[1] + n;` executes 52 instructions in `main` on that path. The callee `return (40, 2), 0` is 4 instructions: `movl $40, %eax`, `movl $2, %edx`, `xorl %ecx, %ecx`, and `retq`. `var op func ((i32, i32)) i32 = take; return op((40, 2));` executes 43 instructions in `main` on that path. The callee `return value[0] + value[1]` is 6 instructions: two stores of the tuple fields, two loads, `addl`, and `retq`. `var op func ((i32, i32), i32) i32 = take; return op((40, 1), 1);` executes 44 instructions in `main` on that path. The callee `return value[0] + value[1] + n` is 8 instructions: three stores, two loads, two `addl`, and `retq`. A cast of a pointer to a function pointer is a copy of the address, 1 `movq` once the source is loaded. An anonymous function called directly is a direct traced call, the same as a nested function.
-
-[Index](../README.md) · [Previous: Tests](test.md) · [Next: Methods](../methods/method.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Tests](test.md) · [Next: Methods](../methods/method.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -1,6 +1,6 @@
 # defer
 
-[Index](../README.md) · [Previous: switch](switch.md) · [Next: Bindings](binding.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: switch](switch.md) · [Next: Bindings](binding.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `defer` runs one call when the enclosing block is left. The call can be a function, a method, an inner function, or an anonymous function. Calls in the same block run in reverse order. A `defer` whose statement did not run does not run. `return`, `break`, `continue`, and reaching the end of the block all run the calls of the blocks they leave. A `return` expression is evaluated before those calls. Arguments, and a method receiver, are evaluated at the `defer`.
 
@@ -20,10 +20,38 @@ func main() i32 {
 
 An anonymous function is an expression, `func (parameters) { body }`. The return type may be omitted, and then it is `void`. A return type is written after the parameters when it is present: `func () i32 { return 1; }`. Several results use the same parenthesized list as a named function: `func () (i32, i32) { return 1, 2; }`. The call is the argument list after the body.
 
-## Cost
+## Assembly
 
-`defer note(1)` stores the argument and sets a flag. Leaving the block tests the flag and, when it is set, moves the argument and calls `note`. `defer note(1); return 0` executes 12 instructions on that path. The call does not push a trace frame. `note` with an empty body is 2 instructions, a store of its parameter and `retq`.
+```asm
+main:
+subq $24, %rsp                   # subtract
+movl $1, 12(%rsp)                # constant
+movb $1, 11(%rsp)                # constant
+movl $10, 20(%rsp)               # constant
+movb $1, 19(%rsp)                # constant
+testb $1, 19(%rsp)               # test
+jne .L1                          # branch
+jmp .L2                          # jump
+.L1:
+movl 20(%rsp), %edi              # move
+callq 1                          # call 1
+.L2:
+testb $1, 11(%rsp)               # test
+jne .L3                          # branch
+jmp .L4                          # jump
+.L3:
+movl 12(%rsp), %edi              # move
+callq note                       # call note
+.L4:
+xorl %eax, %eax                  # zero the result
+addq $24, %rsp                   # add
+retq                             # return
 
-The flag is 1 byte. A `defer` whose statement did not run leaves the flag clear, and the test jumps over the call. Arguments are stored at the `defer`, which is 1 store per `i32` argument. Two `defer` statements in one block run the later one first. Each is its own test and call.
+note:
+retq                             # return
 
-[Index](../README.md) · [Previous: switch](switch.md) · [Next: Bindings](binding.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+1:
+retq                             # return
+```
+
+[Index](../README.md) · [Previous: switch](switch.md) · [Next: Bindings](binding.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

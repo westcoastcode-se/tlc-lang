@@ -1,6 +1,6 @@
 # Bindings
 
-[Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A variable is `var name type`, `var name = expr`, or `name := expr`. `i32 value = 1` is reported as `expected var`. When `var` has an initializer, the type may be omitted and is taken from that value: `var value = 1`, `var p = &value`, `var p = Point{}`. The type can still be written after the name, with a pointer or an array in front of its element type: `var value i32 = 1`, `var p *i32`, `var buf [32]u8`, `var ps [2]*i32`. One `var` names one variable. A variable with no initializer keeps the type: `var value i32;`. A local with no initializer is uninitialized. Reading it before a store is reported as `uninitialized`. A file-scope variable with no initializer is zero. A local struct field takes the value written on the field. A field with no value stays uninitialized. A file-scope field with no value is zero. `0...` at the end of a brace list stores 0 in every value the list does not name. An array list may be shorter than the array. The elements it does not name stay uninitialized, unless the list ends with `0...`. At file scope, a shorter list and a list that ends with `0...` are reported as `global initializer is not a constant` when code is emitted. `--check` accepts that list. `const` is fully set by its initializer: every field and every element has a value, from the list, from `0...`, or from a value written on the field. A `*T` still needs an initializer. A `?*T` may be left unset.
 
@@ -270,18 +270,22 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-`var value = 1` is 1 store of 1. `var n i32` with no initializer adds no instruction when `n` is not read. `extra := 2` is 1 store of 2. `var p *i32 = &n` is 1 `leaq` and 1 store of that address. `var deep **[4]i32 = &arr` is 1 `leaq` and 1 store. `(**deep)[2]` is 2 `movq` and 1 `movl`. `var opt ?*[4]i32` with no initializer adds no instruction when the pointer is not read. `var p Point` with no initializer adds no store when a field has no value. Reading that field is reported as `uninitialized`. `x i32 = 1` stores 1 when the field is read. `return p.x + p.y` when the fields are `x i32 = 1` and `y i32 = 2` is 5 instructions including `retq`: two `movl` of those values, one load, one `addl`, and `retq`. An unread local adds no instruction.
+```asm
+main:
+movl $1, -36(%rsp)               # constant
+leaq -36(%rsp), %rax             # address
+movq %rax, -32(%rsp)             # move
+movl $10, -20(%rsp)              # constant
+movl $2, -8(%rsp)                # constant
+movl $3, -4(%rsp)                # constant
+movq -32(%rsp), %rax             # move
+movl (%rax), %eax                # move
+addl -20(%rsp), %eax             # add
+addl -8(%rsp), %eax              # add
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
 
-A local `const value = 40 + 2` is folded and stored like `var value = 42`: 1 store of 42. It is not a compile-time integer. A file-scope `const N = 4` used as `return N` is the same 2 instructions as `return 4`. No slot is read.
-
-A file-scope `var n i32 = 7` occupies space in the binary. `return n` is 1 `movl` from that address and `retq`. `n = n + 1` in `main` is 5 instructions: load, add 1, store, load again, return.
-
-A file-scope `var item = call_func()`, with `call_func` returning 42, runs before `main`. `return item` is 1 `movl` and `retq`. The call and the store run in `tlc.init`: 37 instructions on the path where the trace holds fewer than 32 frames. `call_func` is 2 instructions, `movl $42, %eax` and `retq`. `llvm.global_ctors` is data.
-
-A tuple local `(40, 2)` is 2 stores. Unpacking it into two names is 2 loads and 2 stores. A `for` whose first clause unpacks a call pays the traced call once per check of the condition.
-
-A local array with no initializer adds no instruction when its elements are not read. A full list stores each listed value, 1 `movl` each, and does not store a zero first. A local `var copy = row` and `var copy [2]i32 = row` are 4 instructions after `row` is stored: two `movl` loads and two `movl` stores. The slot is not zeroed first. `copy = row` is those same 4. `row = {4, 6}; return row[0] + row[1];` is 5 instructions: two `movl` of 4 and 6, one `movl` into `%eax`, one `addl`, and `retq`. `var row = [_][2]i32{inner}` is those same 4 after `inner` is stored. `var copy [2]i32 = row` when `row` is a parameter `[2]i32` is 5 instructions after the pointer is stored: one reload, two `movl` loads, and two `movl` stores. The slot is not zeroed first. `kept = row` is those same 5. `return copy[1]` is 1 `movl` and `retq`. `var grid [2][2]i32 = {a, b}` is 8 instructions after `a` and `b` are stored: four `movl` loads and four `movl` stores. The slot is not zeroed first. `other = grid` is those same 8 after `grid` is stored. A shorter list stores each named value and leaves the tail unstored. `var row [4]i32 = {10, 20}; return row[0] + row[1];` is 5 instructions: two `movl`, one `movl` into `%eax`, one `addl`, and `retq`. `0...` stores 0 in every element and then stores each named value. `var row [4]i32 = {10, 20, 0...}; return row[0] + row[1] + row[2] + row[3];` is 11 instructions: four `movl` of 0, two `movl` of the named values, one `movl` into `%eax`, three `addl`, and `retq`. Those zero stores stay when a named value replaces them. A file-scope array is initialized in the binary. Reading one element of it is 1 `movl`. A file-scope `var copy = row`, `const copy = row`, and `var copy [2]i32 = row` are that same binary copy and add no instruction. `return copy[1]` is 1 `movl` and `retq`. `var row = [_][2]i32{inner}` is that same binary copy and adds no instruction. `return row[0][1]` is 1 `movl` and `retq`. `var row = [_][2]i32{give()}` runs before `main`. The call and the stores run in `tlc.init`: 44 instructions on the path where the trace holds fewer than 32 frames. `unsafe give()` is that same `tlc.init`. `var row = [_]i32{give()}` runs before `main` when `give` returns `i32`. `return row[0]` is 1 `movl` and `retq`. The call and the store run in `tlc.init`: 37 instructions on the path where the trace holds fewer than 32 frames. `give`, returning the constant 4, is 2 instructions. `unsafe give()` is that same `tlc.init`. `var row = [_]i32{give(), 2}` and `var row [2]i32 = {give(), 2}` are 38 instructions in that `tlc.init`. The extra instruction stores 2. `var copy [2]i32 = give()` runs before `main`. `return copy[0]` is 1 `movl` and `retq`. The call and the stores run in `tlc.init`: 44 instructions on the path where the trace holds fewer than 32 frames. `give`, returning a local `[2]i32`, is 5 instructions. `unsafe give()` is that same `tlc.init`. A compile-time length such as `[N]i32` adds no instructions beyond the element stores.
-
-[Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: defer](defer.md) · [Next: new and delete](new.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

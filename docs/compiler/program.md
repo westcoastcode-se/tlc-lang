@@ -1,6 +1,6 @@
 # A program
 
-[Index](../README.md) · [Previous: Symbol names](symbol.md) · [Next: Comments](comment.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Symbol names](symbol.md) · [Next: Comments](comment.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 ```c
 func main() i32 {
@@ -14,8 +14,12 @@ tlc --run main.tlc
 
 The process exits with status 42.
 
-## Cost
+## Assembly
 
-The program below executes 2 instructions. `40 + 2` is folded to 42, and `main` moves that immediate into `%eax` and returns.
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Symbol names](symbol.md) · [Next: Comments](comment.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Symbol names](symbol.md) · [Next: Comments](comment.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -1,6 +1,6 @@
 # va
 
-[Index](../README.md) · [Previous: allocator](allocator.md) · [Next: panic](panic.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: allocator](allocator.md) · [Next: panic](panic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `builtin.va()` reads the extra arguments of the variadic function it is called from. The pointer is the `ap` that `vprintf` takes. Each call reads those arguments from the start.
 
@@ -23,8 +23,18 @@ The program prints `n=40`. An extra argument is an integer, a floating-point val
 
 `builtin.va()` outside a variadic function is reported as `not supported yet`. So is `defer builtin.va()`, and so is using the name without calling it: `builtin.va` and `var p = builtin.va`.
 
-## Cost
+## Assembly
 
-`builtin.va()` does not push a trace frame. It saves the incoming argument registers and fills a `va_list`. In a variadic function with no floating arguments, saving those registers, writing the list, and returning whether the pointer is null executes 24 instructions. The eight xmm registers are saved only when the caller passed floating arguments. An integer narrower than `i32` is widened to `i32` at the call that passed it. An `f32` argument is widened to `f64` at that call. A struct argument is rejected while compiling.
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq log                        # call log
+retq                             # return
 
-[Index](../README.md) · [Previous: allocator](allocator.md) · [Next: panic](panic.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+log:
+# trace frame for the call, then the matching pop
+callq vprintf                    # call vprintf
+retq                             # return
+```
+
+[Index](../README.md) · [Previous: allocator](allocator.md) · [Next: panic](panic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

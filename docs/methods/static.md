@@ -1,6 +1,6 @@
 # Static functions
 
-[Index](../README.md) · [Previous: Generic methods](generic.md) · [Next: Methods on primitive aliases](alias.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Generic methods](generic.md) · [Next: Methods on primitive aliases](alias.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A function on the struct with no `this` parameter is static. The call names the type, not a value: `Point.make(40, 2)`. A call on a value, `p.make(40, 2)`, is reported as `type mismatch`. An instance method called on the type, `Point.sum()`, is reported as `type mismatch`.
 
@@ -90,8 +90,26 @@ func main() i32 {
 }
 ```
 
-## Cost
+## Assembly
 
-`Point.make(40, 1)` is a traced call. The two arguments are 2 `movl`. There is no receiver to copy. `Ptr.from`, `Pair.from`, and `Spot.origin` are that same call. `pkg.Point.make(40, 1)` is that same traced call. Taking the function as a value, `var ptr = Point.make`, is 1 `leaq` and 1 store of that address. Calling that pointer is the indirect call on [Function pointers](../functions/pointer.md).
+```asm
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+movl $1, %esi                    # constant
+callq make                       # call make
+retq                             # return
 
-[Index](../README.md) · [Previous: Generic methods](generic.md) · [Next: Methods on primitive aliases](alias.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+make:
+movl %edi, -16(%rsp)             # move
+movl %esi, -12(%rsp)             # move
+movl -16(%rsp), %eax             # move
+movl %eax, -8(%rsp)              # move
+movl -12(%rsp), %eax             # move
+movl %eax, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %edx              # move
+retq                             # return
+```
+
+[Index](../README.md) · [Previous: Generic methods](generic.md) · [Next: Methods on primitive aliases](alias.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

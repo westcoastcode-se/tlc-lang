@@ -1,6 +1,6 @@
 # Constants on a type
 
-[Index](../README.md) · [Previous: Variables on a type](variable.md) · [Next: Traits](trait.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Variables on a type](variable.md) · [Next: Traits](trait.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A constant may belong to a struct, an enum, or a primitive type alias. It is written beside the type, in the same file: `const Entity::next = 28`. It is not a field, so `sizeof` stays the size of the fields. A field may use the same name. Each specialization of a generic struct has its own constant. `const Box[T]::extra = 8` and `const Buf[N, T]::count = N` are those constants. The use is `Entity.next`, `Box[i32].extra`, or `Buf[4, i32].count`. A `const` inside the braces is not a member. It is reported as `not supported yet`.
 
@@ -34,8 +34,16 @@ func main() i32 {
 
 The program returns 42. `Buf[4, i32].count` is `N`, which is 4 for that instantiation. `Box[i32].extra` and `Box[Point].extra` are two constants.
 
-## Cost
+## Assembly
 
-An integer constant on a type is an immediate. `return Entity.next` when `next` is 28 is the same 2 instructions as `return 28`. There is no load and no address. `extern const Entity::next = 28` followed by `return Entity.next` is those same 2 instructions. The object file also defines `qualifier.Entity.next`. `extern` changes the linkage and adds none. A floating constant is the same kind of immediate. Each specialization has its own immediate. Using `Buf[4, i32].count` when that constant is `N` is `return 4`. `extern(abi="c")` on a generic constant is rejected and adds no instructions.
+```asm
+main:
+movl $2, -8(%rsp)                # constant
+movl -8(%rsp), %eax              # move
+addl $28, %eax                   # add
+addl $8, %eax                    # add
+addl $4, %eax                    # add
+retq                             # return
+```
 
-[Index](../README.md) · [Previous: Variables on a type](variable.md) · [Next: Traits](trait.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Variables on a type](variable.md) · [Next: Traits](trait.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

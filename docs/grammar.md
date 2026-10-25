@@ -6,7 +6,7 @@ This page is the syntax of tlc. Meaning, types, and diagnostics are in the [lang
 
 ## Notation
 
-A grammar rule adds no instructions. [Cost](cost.md) is how the counts on the feature pages were measured.
+A grammar rule adds no instructions. [Assembly](cost.md) is how a feature page shows the instructions its example runs.
 
 The grammar is EBNF. A name is a rule. `"text"` is a terminal. `[ x ]` is optional, `{ x }` is zero or more, and `( x )` groups. `|` separates alternatives. When two alternatives could match, the parser tries the earlier one.
 
@@ -44,7 +44,7 @@ declaration = function
 
 ## Functions and methods
 
-A function definition adds the instructions of its body. A call pushes a trace frame: 36 instructions in the caller when fewer than 32 frames are stored, plus the callee. The sequences are on [Functions](functions/function.md).
+A function definition adds the instructions of its body. A call pushes a trace frame, then `callq`. The frame is on [Assembly](cost.md). The function listing is on [Functions](functions/function.md).
 
 ```ebnf
 function    = [ "unsafe" ] "func" identifier [ type-params ] "(" [ parameters ] ")" ( result ( block | ";" ) | block ) ;
@@ -91,7 +91,7 @@ An inner function uses the same `function` form inside a block, and it has a bod
 
 ## Variables
 
-`var n i32 = 1` stores 1: 1 instruction. A file-scope integer `const` folds into the instruction that uses it and adds no load. The sequences are on [Bindings](statements/binding.md).
+`var n i32 = 1` stores 1. A file-scope integer `const` folds into the instruction that uses it and adds no load. The listing is on [Bindings](statements/binding.md).
 
 A typed variable names the type in Go order, after the name:
 
@@ -121,7 +121,7 @@ A variable whose type is a function pointer is a `var` whose type is a `func-typ
 
 ## Structs, enums, traits, and type aliases
 
-Declaring a type adds no instructions. A value of the type costs what [Structs](types/struct.md), [Unions](types/union.md), [Enums](types/enum.md), and [Traits](methods/trait.md) measure. A trait parameter is specialized, so the call does not consult a table.
+Declaring a type adds no instructions. A value of the type runs what [Structs](types/struct.md), [Unions](types/union.md), [Enums](types/enum.md), and [Traits](methods/trait.md) show. A trait parameter is specialized, so the call does not consult a table.
 
 ```ebnf
 type-decl   = "type" identifier [ type-params ] type-body ;
@@ -215,7 +215,7 @@ An array uses `go-type` in every position, including a parameter and a result: `
 
 ## Statements
 
-`if (n != 0)` is a compare and a jump. `while` and `for` repeat that compare. `switch` subtracts and branches. `defer` is a flag and a call without a trace frame. `assert` adds no instructions. `emit` is only valid inside a `macro`. A `for` there unrolls, and an `if` there keeps one arm and adds no branch. A macro that stores 40 when its `comptime` argument is 1, and 2 otherwise, leaves 3 instructions in `main`: the store of 40, the load, and `retq`. The counts are on the statement pages.
+`if (n != 0)` is a compare and a jump. `while` and `for` repeat that compare. `switch` subtracts and branches. `defer` is a flag and a call without a trace frame. `assert` adds no instructions. `emit` is only valid inside a `macro`. A `for` there unrolls, and an `if` there keeps one arm and adds no branch. A macro that stores 40 when its `comptime` argument is 1, and 2 otherwise, leaves the store of 40, the load, and `retq`. The listings are on the statement pages.
 
 ```ebnf
 block       = "{" { statement } "}" ;
@@ -256,7 +256,7 @@ for-init    = ";" | var-decl | binding | expression ";" ;
 
 ## Expressions
 
-An `i32` add of two locals is 2 instructions. A comparison is 4 and yields `bool`. A traced call is 36 instructions in the caller when fewer than 32 frames are stored. The operator table is on [Expressions](expressions/operator.md).
+An `i32` add of two locals is a load, an `addl`, and a store. A comparison yields `bool`. A traced call pushes the frame on [Assembly](cost.md), then `callq`. The operator table is on [Expressions](expressions/operator.md).
 
 Operators bind from the top of this list downward. Assignment is right-associative. The others are left-associative.
 

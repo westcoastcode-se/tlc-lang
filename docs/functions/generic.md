@@ -1,6 +1,6 @@
 # Generics
 
-[Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: Comptime](comptime.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: Comptime](comptime.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A generic function names its parameters in brackets. `T type` is a type. `N i32` is a compile-time integer. `T Shape` is a type that must have the methods and the fields of the trait `Shape`. One body is specialized for each call. There is no `impl` and no runtime table.
 
@@ -118,12 +118,19 @@ One generic name may have several parameter lists. A call uses the types of the 
 
 A method on a generic struct follows the same rule. The receiver is not one of those parameters. `func Box[T]::get(self *this) T` and `func Box[T]::get(self *this, n i32) T` are two methods, chosen from the remaining arguments. `func Box[T]::get(self this)` beside `func Box[T]::get(self *this)` stays `redefinition`. `extern(abi="c")` on a generic function, or on a function whose parameter is a trait, is `extern(abi="c") on a trait or a generic`. `extern` and `extern(abi="tlc")` on a generic function name that function in a tlc library. The call stays `id(value)` or `id[i32](value)`. Each specialization is its own symbol. When the file is `main.tlc` and `T` is `i32`, that symbol is `main.id.spec.i32`. A body defines the symbol. A prototype may be the declaration that says `extern`, and the body that follows defines it. A call of a generic that has no body is `not supported yet`. `...` on a generic function stays rejected. `...` is only legal on `extern(abi="c")`, so the declaration is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, is `not supported yet`. `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`.
 
-## Cost
+## Assembly
 
-A generic function is specialized while compiling. `return id(40)` calls `id` for `i32` and pushes a trace frame. `main` executes 38 instructions when fewer than 32 frames are stored, which is the no-argument frame plus 1 `movl` of the argument. The specialized `id` is 3 instructions: store the parameter, load it, `retq`. `var f = id` then `return f(40)` is that same call. The binding adds no instruction. `extern func id[T type]` followed by `return id(40)` is that same call. The symbol is `main.id.spec.i32` when the file is `main.tlc`. `extern` changes the linkage and adds no instruction. `extern(abi="c")` on that function is rejected and adds no instructions. `return SomeFunc[i32, i32](0, (40, 2))`, when the body is `value + other[0] + other[1]`, executes 40 instructions in `main` when fewer than 32 frames are stored. The specialized function is 9 instructions: store the `i32` and both tuple elements, load each, two `addl`, and `retq`. The same concrete function is that same count. The symbol is `main.SomeFunc.spec.i32.i32` when the file is `main.tlc`.
+```asm
+id:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+retq                             # return
 
-`T Shape` is also specialized. `measure(r)` for a struct of two `i32` fields stores those fields and copies them into the argument registers. The struct is not zeroed first. `main` executes 44 instructions when fewer than 32 frames are stored. The call pushes a trace frame. Inside the copy, `value.area()` is an ordinary traced call.
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+callq id                         # call id
+retq                             # return
+```
 
-`T` bound to one integer costs whatever returning that integer costs. `T` bound to two integers is the two-result return, 5 instructions in the callee: store each half, load each half, `retq`. Choosing a parameter list adds no instructions. The call runs the selected function. `[...U]` is `expected an identifier` and adds no instructions.
-
-[Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: Comptime](comptime.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Nested functions](nested.md) · [Next: Comptime](comptime.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -1,6 +1,6 @@
 # Macros
 
-[Index](../README.md) · [Previous: Comptime](comptime.md) · [Next: typeof is not a result](typeof.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Comptime](comptime.md) · [Next: typeof is not a result](typeof.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 A `macro func` generates statements. A statement call is replaced by the statements written with `emit`. A parameter without `comptime` is replaced by the argument expression. A `comptime` parameter is a value known while compiling. The values are the same ones a [`comptime func`](comptime.md) accepts. `emit` outside a `macro` is `not supported yet`.
 
@@ -73,10 +73,13 @@ macro func show[T type](values T) void {
 
 `show(("John Doe", age))` emits `printf("%s\n", "John Doe")` and `printf("%d\n", age)` when `age` is a `var`. [`builtin.fmt`](../expressions/tuple.md) fills `{0}` and `{1}` from a compile-time tuple.
 
-## Cost
+## Assembly
 
-`pick(&n, 1)` then `return n` is 3 instructions in `main`: the store of 40, the load, and `retq`. The discarded arm adds nothing. There is no compare and no trace frame. `add3(&n)` from `n` at 0, then `return n`, is 12 instructions in `main`: the zero store, three load-add-store sequences for `1`, `2`, and `3`, the return load, and `retq`. There is no compare.
+```asm
+main:
+# trace frame for the call, then the matching pop
+callq printf                     # call printf
+retq                             # return
+```
 
-`put(&n, k + 2)`, when `k` is 40 and `n` is overwritten before it is read, is 11 instructions in `main`: the store of `k`, two evaluations of `k + 2`, the two stores into `n`, the return load, and `retq`. `emit for` and `emit while` keep a runtime loop. Those counts are on [`for`](../statements/for.md). A rejected form adds no instructions.
-
-[Index](../README.md) · [Previous: Comptime](comptime.md) · [Next: typeof is not a result](typeof.md) · [Cost](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Comptime](comptime.md) · [Next: typeof is not a result](typeof.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

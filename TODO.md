@@ -90,7 +90,7 @@ No open inconsistencies. An accepted form whose rule does not match its page is 
 
 ## Optimization
 
-Go through the features, including tuples, so a form does not keep more stack or more registers than the values it moves. The measure is the x86-64 instructions that run, from `tlc --emit-obj` with no `-O` flag, as `docs/cost.md` describes. A feature page states the count after the extra moves are gone.
+Go through the features, including tuples, so a form does not keep more stack or more registers than the values it moves. The measure is the x86-64 instructions that run, from `tlc --emit-obj` with no `-O` flag, as `docs/cost.md` describes. A feature page shows the assembly after the extra moves are gone.
 
 A tuple parameter is one LLVM struct. Sending two to six `i32` values uses the same argument registers as those parameters. The same holds for two to four `i64`, two or three `f64`, a `u8`, a slice, a struct beside an `i32`, and a function pointer of two `i32`. The callee stores the whole struct and loads it again for each `t[i]`. Two `i32` is 6 instructions in the callee. Two parameters are 5. Eight `i32` is 35 in the callee. Eight parameters are 17: the registers are moved again before the fields are read. An element the body does not read is still stored. `func sum(t (i32, f64)) i32 { return t[0]; }` is 5 instructions and keeps the `movsd` of the `f64`. Two parameters that return the `i32` are 3. A pointer element is written into the struct and loaded back into the argument register, 2 instructions more in `main` than `sum(&n, b)`. Seven or eight `i32` add one `movq` of `%rsp` before the stack argument. `var t = (a, b); sum(t)` is 4 instructions more in `main` than `sum(a, b)`, from the stores of that local.
 
