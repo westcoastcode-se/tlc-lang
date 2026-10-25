@@ -294,7 +294,7 @@ element     = expression [ "..." ] ;
 delete-expr = "delete" [ "(" expression ")" ] unary ;
 ```
 
-`name[args](` is a generic call, not an index. An array length may be a file-scope `const` name: `[N]i32`.
+`name[args](` is a generic call, not an index. `(name[args])(arguments)` is that same call when `args` is a type list, including `((name[args]))(arguments)`. A single value in the brackets stays an index: `(ops[i])()` and `(ops[0])()` call that element. An array length may be a file-scope `const` name: `[N]i32`.
 
 Postfix `!` asserts that a `?*T` has a value. `pointer!` has type `*T`. `pointer!.value` reads the field. Prefix `!` is logical not on a `bool` and yields `bool`. An integer is reported as `type mismatch: expected bool, found i32`. A null pointer calls `builtin.panic("null pointer")`.
 

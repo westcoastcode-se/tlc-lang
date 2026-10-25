@@ -1,0 +1,11 @@
+func id[T type](value T) T {
+    return value;
+}
+
+func wrap[T type](value T) T {
+    return (id[T])(value);
+}
+
+func main() i32 {
+    return (id[i32])(wrap(21)) + ((id[i32]))(21);
+}

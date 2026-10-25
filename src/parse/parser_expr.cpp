@@ -885,6 +885,9 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     if (starts_short_function()) {
         return parse_short_function();
     }
+    if (check(TokenKind::LParen) && paren_generic_call()) {
+        return parse_paren_generic_call();
+    }
     if (check(TokenKind::LParen)) {
         const SourceLoc loc = peek().loc;
         ++pos_;
@@ -1058,6 +1061,221 @@ std::unique_ptr<Expr> Parser::parse_init() {
     }
     expect(TokenKind::RBrace, "expected '}'");
     return make_expr(std::move(init));
+}
+
+bool Parser::known_type_name(const std::string &name) const {
+    if (is_type_alias(name) || type_names_.count(name) != 0) {
+        return true;
+    }
+    for (const std::string &open : open_type_params_) {
+        if (open == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Parser::scan_type_core(std::size_t &ahead, bool &value_shaped) const {
+    bool pointed = false;
+    while (peek(ahead).kind == TokenKind::Star ||
+           (peek(ahead).kind == TokenKind::Question && peek(ahead + 1).kind == TokenKind::Star)) {
+        pointed = true;
+        if (peek(ahead).kind == TokenKind::Question) {
+            ++ahead;
+        }
+        ++ahead;
+        if (peek(ahead).kind == TokenKind::KwConst) {
+            ++ahead;
+        }
+    }
+    if (peek(ahead).kind == TokenKind::LBracket) {
+        bool nested_value = false;
+        if (!scan_type_arg(ahead, nested_value)) {
+            return false;
+        }
+        value_shaped = pointed ? false : nested_value;
+        return true;
+    }
+    if (peek(ahead).kind == TokenKind::KwConst) {
+        ++ahead;
+    }
+    if (peek(ahead).kind == TokenKind::KwBool || peek(ahead).kind == TokenKind::KwVoid ||
+        peek(ahead).kind == TokenKind::KwFloat || peek(ahead).kind == TokenKind::KwDouble || is_int_spec(peek(ahead).kind)) {
+        ++ahead;
+        value_shaped = false;
+        return true;
+    }
+    if (peek(ahead).kind != TokenKind::Identifier) {
+        return false;
+    }
+    const bool name_is_type = known_type_name(peek(ahead).text);
+    ++ahead;
+    if (peek(ahead).kind == TokenKind::Dot && peek(ahead + 1).kind == TokenKind::Identifier) {
+        const bool member_is_type = known_type_name(peek(ahead + 1).text);
+        ahead += 2;
+        if (peek(ahead).kind == TokenKind::LBracket) {
+            ++ahead;
+            bool inner_value = false;
+            if (!scan_type_arg_list(ahead, inner_value)) {
+                return false;
+            }
+            // `pkg.Vec[i32]` is a type. `row.cell[0]` is an index.
+            value_shaped = inner_value;
+            return true;
+        }
+        value_shaped = !member_is_type && !name_is_type;
+        return true;
+    }
+    if (peek(ahead).kind == TokenKind::LBracket) {
+        ++ahead;
+        bool inner_value = false;
+        if (!scan_type_arg_list(ahead, inner_value)) {
+            return false;
+        }
+        // `Vec[i32]` is a type. `row[0]` is an index.
+        value_shaped = inner_value;
+        return true;
+    }
+    // `i32` and `*i32` are types. `i` and `*p` are values.
+    value_shaped = !name_is_type;
+    return true;
+}
+
+bool Parser::scan_type_arg(std::size_t &ahead, bool &value_shaped) const {
+    value_shaped = false;
+    if (peek(ahead).kind == TokenKind::IntLiteral) {
+        value_shaped = true;
+        ++ahead;
+        return true;
+    }
+    if (peek(ahead).kind == TokenKind::LBracket) {
+        if (!skip_balanced(ahead, TokenKind::LBracket, TokenKind::RBracket)) {
+            return false;
+        }
+        if (peek(ahead).kind == TokenKind::LBrace) {
+            return false;
+        }
+        if (!scan_type_core(ahead, value_shaped)) {
+            return false;
+        }
+        if (peek(ahead).kind == TokenKind::LBrace) {
+            return false;
+        }
+        // `[4]i32` is a type even when the length is a literal.
+        value_shaped = false;
+        return true;
+    }
+    return scan_type_core(ahead, value_shaped);
+}
+
+bool Parser::scan_type_arg_list(std::size_t &ahead, bool &value_shaped) const {
+    value_shaped = false;
+    bool any = false;
+    bool comma = false;
+    while (peek(ahead).kind != TokenKind::RBracket && peek(ahead).kind != TokenKind::End) {
+        bool item_value = false;
+        if (!scan_type_arg(ahead, item_value)) {
+            return false;
+        }
+        any = true;
+        if (item_value) {
+            value_shaped = true;
+        }
+        if (peek(ahead).kind == TokenKind::Comma) {
+            comma = true;
+            ++ahead;
+            continue;
+        }
+        break;
+    }
+    if (!any || peek(ahead).kind != TokenKind::RBracket) {
+        return false;
+    }
+    ++ahead;
+    if (comma) {
+        value_shaped = false;
+    }
+    return true;
+}
+
+bool Parser::paren_generic_call() const {
+    std::size_t ahead = 0;
+    int wraps = 0;
+    while (peek(ahead).kind == TokenKind::LParen) {
+        ++wraps;
+        ++ahead;
+    }
+    if (wraps == 0 || peek(ahead).kind != TokenKind::Identifier) {
+        return false;
+    }
+    ++ahead;
+    if (peek(ahead).kind == TokenKind::Dot) {
+        if (peek(ahead + 1).kind != TokenKind::Identifier) {
+            return false;
+        }
+        ahead += 2;
+    }
+    if (peek(ahead).kind != TokenKind::LBracket) {
+        return false;
+    }
+    ++ahead;
+    bool value_shaped = false;
+    if (!scan_type_arg_list(ahead, value_shaped) || value_shaped) {
+        return false;
+    }
+    for (int i = 0; i < wraps; ++i) {
+        if (peek(ahead).kind != TokenKind::RParen) {
+            return false;
+        }
+        ++ahead;
+    }
+    return peek(ahead).kind == TokenKind::LParen;
+}
+
+std::unique_ptr<Expr> Parser::parse_paren_generic_call() {
+    int wraps = 0;
+    while (eat(TokenKind::LParen)) {
+        ++wraps;
+    }
+    Expr::Name name;
+    name.loc = peek().loc;
+    if (check(TokenKind::Identifier)) {
+        name.text = peek().text;
+        ++pos_;
+    } else {
+        error_here("expected an identifier");
+    }
+    std::unique_ptr<Expr> callee = make_expr(std::move(name));
+    if (eat(TokenKind::Dot)) {
+        Expr::Selector selector;
+        selector.loc = expr_loc(*callee);
+        selector.base = std::move(callee);
+        if (check(TokenKind::Identifier)) {
+            selector.field = peek().text;
+            ++pos_;
+        } else {
+            error_here("expected an identifier");
+        }
+        callee = make_expr(std::move(selector));
+    }
+    Expr::Call call;
+    call.loc = expr_loc(*callee);
+    call.callee = std::move(callee);
+    call.type_args = parse_type_args();
+    for (int i = 0; i < wraps; ++i) {
+        expect(TokenKind::RParen, "expected ')'");
+    }
+    expect(TokenKind::LParen, "expected '('");
+    if (!check(TokenKind::RParen)) {
+        while (!check(TokenKind::RParen) && !eof()) {
+            call.args.push_back(parse_assignment());
+            if (!eat(TokenKind::Comma)) {
+                break;
+            }
+        }
+    }
+    expect(TokenKind::RParen, "expected ')'");
+    return make_expr(std::move(call));
 }
 
 std::unique_ptr<Expr> Parser::parse_anon_function() {

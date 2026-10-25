@@ -6866,6 +6866,32 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func id[T type](value T) T { return value; }\n"
+            "func both[A type, B type](a A, b B) A { return a; }\n"
+            "type Point struct { x i32; };\n"
+            "func main() i32 {\n"
+            "  var n = ((id[i32]))(40);\n"
+            "  var p Point;\n"
+            "  p.x = 1;\n"
+            "  var q = (id[Point])(p);\n"
+            "  var bit = (id[*i32])(&n);\n"
+            "  return (id[i32])(n) + (both[i32, i32])(q.x, 1) + *bit - *bit;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var ops [2]i32;\n"
+            "  ops[0] = 40;\n"
+            "  return (ops[0])();\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "type mismatch");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func id[T type](value T) T { return value; }\n"
             "func main() i32 { var f = id; return f; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }

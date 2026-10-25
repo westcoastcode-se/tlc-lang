@@ -178,6 +178,13 @@ class Parser {
     // `allow_slice` accepts `[]T`. A C declarator such as `name[]` stays unsupported.
     ArrayMark parse_array_suffix(bool allow_slice = false);
     bool bracket_then_paren() const;
+    // `(id[i32])(42)` is the generic call. `(ops[i])()` and `(ops[0])()` stay an index.
+    bool paren_generic_call() const;
+    std::unique_ptr<Expr> parse_paren_generic_call();
+    bool known_type_name(const std::string &name) const;
+    bool scan_type_arg(std::size_t &ahead, bool &value_shaped) const;
+    bool scan_type_core(std::size_t &ahead, bool &value_shaped) const;
+    bool scan_type_arg_list(std::size_t &ahead, bool &value_shaped) const;
     // `Vec[i32]{}`. True when `[...]` is followed by `{`.
     bool bracket_then_brace() const;
     // `func Vec[T]::get`. True when `[...]` is followed by `::`.
@@ -315,6 +322,8 @@ class Parser {
 
     // Struct, enum, union, and type-alias names seen in this file.
     std::unordered_set<std::string> type_names_;
+    // Type parameters of the function whose body is being parsed. Value parameters stay out.
+    std::vector<std::string> open_type_params_;
 };
 
 } // namespace tlc

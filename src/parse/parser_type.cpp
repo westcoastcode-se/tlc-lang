@@ -1328,7 +1328,17 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         if (!allow_body) {
             diags_.error(peek().loc, "expected ';'");
         }
+        const std::size_t type_mark = open_type_params_.size();
+        for (const std::string &name : fn.method_params) {
+            open_type_params_.push_back(name);
+        }
+        for (const TypeParam &param : fn.type_params) {
+            if (!param.name.empty() && (param.is_type || param.is_trait)) {
+                open_type_params_.push_back(param.name);
+            }
+        }
         auto body = parse_block();
+        open_type_params_.resize(type_mark);
         if (allow_body) {
             fn.body = std::move(body);
         }
