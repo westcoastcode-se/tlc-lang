@@ -20,6 +20,9 @@ struct SpecArg {
     // A constant `[]const u8` bound to a comptime parameter. Not a type.
     bool is_text = false;
     std::string text;
+    // An enumerator bound to a comptime parameter. The use is `Type.member`, not the integer.
+    bool is_enum_value = false;
+    std::string enum_member;
     std::string type_name;
     std::string type_package;
     bool is_struct = false;

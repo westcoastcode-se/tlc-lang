@@ -24,7 +24,7 @@ The call folds when the body is one `return` of a constant `i32`. There is no ru
 
 An ordinary function may mark a parameter `comptime`. That argument has to be a comptime value, or the call is `type mismatch`. When every parameter is `comptime` and the body is one `return` of a constant `i32`, the call folds. The function is still compiled.
 
-A mix of a `comptime` parameter and a runtime parameter is specialized per constant. The comptime parameter is not passed. Each use of that name in the copy is the constant. `return scale(2, x)` calls that copy and adds `2`. When the file is `main.tlc`, the symbol is `main.scale.spec.2`. Another constant is another copy. `name comptime []const u8` is that string in the copy. A `var` is `type mismatch`, except on `extern` and `extern(abi="tlc")`. A method, and a function nested in another function, still pass the constant. Using the function as a value, a comptime argument that is neither a folded `i32` nor a constant `[]const u8`, and more than 32 nested specializations are `not supported yet`. An `extern` function used as a value is the unspecialized function.
+A mix of a `comptime` parameter and a runtime parameter is specialized per constant. The comptime parameter is not passed. Each use of that name in the copy is the constant. `return scale(2, x)` calls that copy and adds `2`. When the file is `main.tlc`, the symbol is `main.scale.spec.2`. Another constant is another copy. `name comptime []const u8` is that string in the copy. An enumerator is that argument too. `take(n, Order.acquire)` calls `take.spec.1` when `acquire` is `1`. Each use of that name is `Order.acquire`. A `var` of the enum is `type mismatch`. A method and a generic function do not take an enumerator. A `var` is `type mismatch`, except on `extern` and `extern(abi="tlc")`. A method, and a function nested in another function, still pass the constant. Using the function as a value, a comptime argument that is neither a folded `i32`, a constant `[]const u8`, nor an enumerator, and more than 32 nested specializations are `not supported yet`. An `extern` function used as a value is the unspecialized function.
 
 ```c
 func add(n comptime i32) i32 {
@@ -55,6 +55,56 @@ retq                             # return
 ```
 
 `return add(1)` folds to `1`. `return scale(2, x)` passes `x` and calls `scale`. `2` is an immediate.
+
+An enumerator is a comptime argument of that function. The copy does not receive it. The program returns 42. When the file is `main.tlc` and `acquire` is `1`, the symbol is `main.take.spec.1`. Both arms of the `if` stay.
+
+```c
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+func take(n i32, order comptime Order) i32 {
+    if (order == Order.acquire) {
+        return n + 2;
+    }
+    return n;
+}
+
+func main() i32 {
+    var n = 40;
+    return take(n, Order.acquire);
+}
+```
+
+```asm
+take.spec.1:
+movl %edi, -4(%rsp)              # move
+movb $1, %al                     # constant
+testb $1, %al                    # compare
+jne .L1                          # branch
+jmp .L2                          # jump
+.L1:
+movl -4(%rsp), %eax              # move
+addl $2, %eax                    # add
+retq                             # return
+.L2:
+jmp .L3                          # jump
+.L3:
+movl -4(%rsp), %eax              # move
+retq                             # return
+
+main:
+movl $40, 20(%rsp)               # constant
+movl 20(%rsp), %eax              # move
+movl %eax, 8(%rsp)               # move
+# trace frame for the call, then the matching pop
+movl 8(%rsp), %edi               # move
+callq take.spec.1                # call take
+retq                             # return
+```
+
+`Order.acquire == Order.acquire` is the constant in `%al`. The call passes `n` and does not pass `order`.
 
 `extern` and `extern(abi="tlc")` keep the unspecialized function. The comptime parameter is an argument of that symbol, so a dynamic linker can call it. When the file is `main.tlc`, the symbol is `main.scale`. A constant argument uses the specialized copy. A runtime argument uses `main.scale`, and so does a use of the function as a value. `extern` is the same declaration as `extern(abi="tlc")`. `extern(abi="c")` passes the constant.
 

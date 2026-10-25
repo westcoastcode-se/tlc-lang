@@ -1358,8 +1358,35 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Expr::Name>) {
                 if (const SpecArg *bound = find_arg(params, bounds, node.text);
-                    bound != nullptr && (bound->is_value || bound->is_text)) {
+                    bound != nullptr && (bound->is_value || bound->is_text || bound->is_enum_value)) {
                     const SourceLoc loc = node.loc;
+                    if (bound->is_enum_value) {
+                        // The copy compares and returns the enum. An integer would be `type mismatch`.
+                        auto named = [&](const std::string &text) {
+                            auto item = std::make_unique<Expr>();
+                            Expr::Name name;
+                            name.loc = loc;
+                            name.text = text;
+                            item->data = std::move(name);
+                            return item;
+                        };
+                        std::unique_ptr<Expr> base = named(bound->type_package.empty() ? bound->type_name : bound->type_package);
+                        if (!bound->type_package.empty()) {
+                            auto item = std::make_unique<Expr>();
+                            Expr::Selector type;
+                            type.loc = loc;
+                            type.base = std::move(base);
+                            type.field = bound->type_name;
+                            item->data = std::move(type);
+                            base = std::move(item);
+                        }
+                        Expr::Selector selector;
+                        selector.loc = loc;
+                        selector.base = std::move(base);
+                        selector.field = bound->enum_member;
+                        expr.data = std::move(selector);
+                        return;
+                    }
                     if (bound->is_text) {
                         Expr::String text;
                         text.loc = loc;

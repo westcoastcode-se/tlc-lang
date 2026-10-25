@@ -1908,6 +1908,13 @@ bool comptime_i32_param(const Param &param) {
            param.array_len == 0 && param.array_len_name.empty() && param.type_args.empty();
 }
 
+// `order comptime Order` is not marked `is_enum` by the parser. The checked type is the enum.
+bool comptime_enum_arg(const Param &param) {
+    return !param.is_array && param.indirections == 0 && param.optional == 0 && param.const_pointee == 0 &&
+           !param.elem_const && !param.elem_slice && param.shells.empty() && !param.is_fn_ptr && !param.is_tuple &&
+           param.array_len == 0 && param.array_len_name.empty() && param.type_args.empty();
+}
+
 bool comptime_text_param(const Param &param) {
     return param.is_array && param.array_len < 0 && param.elem_const && !param.elem_slice && param.indirections == 0 &&
            param.optional == 0 && param.type_name == "u8" && param.type_package.empty() && !param.is_struct &&
@@ -2004,6 +2011,26 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
             bound.is_text = true;
             bound.text = *text;
             piece = comptime_text_piece(*text);
+        } else if (want.kind == TypeKind::Enum && comptime_enum_arg(param)) {
+            const auto *selector = std::get_if<Expr::Selector>(&call.args[i]->data);
+            const EnumInfo::Member *member = nullptr;
+            if (selector != nullptr && selector->base != nullptr && enum_designator(*selector->base) == want.enum_id) {
+                member = find_enum_member(want.enum_id, selector->field);
+            }
+            if (member == nullptr || member->value != static_cast<int64_t>(static_cast<int>(member->value))) {
+                return false;
+            }
+            bound.is_enum_value = true;
+            bound.value = static_cast<int>(member->value);
+            bound.enum_member = member->name;
+            bound.type_name = param.type_name;
+            bound.type_package = param.type_package;
+            bound.is_enum = true;
+            bound.enum_id = want.enum_id;
+            piece = std::to_string(bound.value);
+            if (!piece.empty() && piece.front() == '-') {
+                piece[0] = 'n';
+            }
         } else if (argument_is_comptime(*call.args[i])) {
             // The unspecialized extern function accepts this argument.
             if (!comptime_param_kept(fn)) {

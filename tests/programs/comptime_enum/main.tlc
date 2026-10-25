@@ -1,0 +1,16 @@
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+func take(n i32, order comptime Order) i32 {
+    if (order == Order.acquire) {
+        return n + 1;
+    }
+    return n;
+}
+
+func main() i32 {
+    var n = 20;
+    return take(n, Order.relaxed) + take(21, Order.acquire);
+}
