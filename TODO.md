@@ -44,7 +44,7 @@ In a `macro`, `if` keeps the arm whose condition folds, and `for` unrolls. A con
 
 ### Parsing
 
-- `name[args](` is a generic call. A call of an indexed value is `(ops[i])()`.
+- `name[args](` is a generic call. `(name[args])(arguments)` is that call when `args` is a type list. A call of an indexed value is `(ops[i])()` or `(ops[0])()`.
 - An array length may be a name, `[N]i32`. The name has to be a file-scope `const` already folded. A length that needs `sizeof` of a struct that is not complete yet does not fold.
 
 ### Constant evaluation
@@ -93,11 +93,7 @@ An `assert` whose condition is not one of those constants is `not supported yet`
 
 ## Inconsistencies
 
-Accepted forms whose rules do not match. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there. This section records the mismatch.
-
-### Spellings
-
-- `[` is type parameters, type arguments, an array length, an index, a range, a `new` count, and `_`. `name[i32](` is a generic call, already listed under Parsing. A call of an indexed value is `(ops[i])()`. `Vec[i32]{}` is a struct value. `Buf[4, i32].count` is the constant because of the comma. `arr[i].field` is an index. Pages: `docs/grammar.md`.
+No open inconsistencies. An accepted form whose rule does not match its page is inserted here. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there.
 
 ## Optimization
 
