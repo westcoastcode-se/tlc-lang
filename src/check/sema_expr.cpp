@@ -1549,7 +1549,8 @@ bool Checker::static_method_value(const Expr::Selector &node, uint32_t home, con
     return true;
 }
 
-bool Checker::package_static_call(const Expr::Call &node, const Expr::Selector &selector, bool deferring, Type &out) {
+bool Checker::package_static_call(Expr &expr, const Expr::Selector &selector, bool deferring, bool used, Type &out) {
+    Expr::Call &node = std::get<Expr::Call>(expr.data);
     if (selector.base == nullptr || selector.field.empty()) {
         return false;
     }
@@ -1697,7 +1698,7 @@ bool Checker::package_static_call(const Expr::Call &node, const Expr::Selector &
     node.selected = method->decl;
     selector.resolved_owner = owner;
     selector.resolved_file = method->file_id;
-    out = finish_static_call(node, *method, deferring);
+    out = finish_static_call(expr, *method, deferring, used);
     return true;
 }
 
@@ -1921,7 +1922,9 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
     return *signature.result;
 }
 
-Type Checker::finish_static_call(const Expr::Call &node, const MethodInfo &method, bool deferring) {
+Type Checker::finish_static_call(Expr &expr, const MethodInfo &method, bool deferring, bool used) {
+    Expr::Call &node = std::get<Expr::Call>(expr.data);
+    const std::size_t call_mark = diags_.size();
     require_unsafe_call(method.unsafe_fn, node.loc);
     if (deferring && method.type.variadic) {
         error(node.loc, "not supported yet");
@@ -1960,6 +1963,12 @@ Type Checker::finish_static_call(const Expr::Call &node, const MethodInfo &metho
     if (method.decl != nullptr) {
         const std::size_t skip = !method.decl->params.empty() && method.decl->params.front().is_receiver ? 1 : 0;
         require_comptime_params(*method.decl, node, skip);
+        if (diags_.size() == call_mark) {
+            if (const std::optional<Type> specialized =
+                    call_comptime_spec(expr, method.decl, skip, method.file_id, used)) {
+                return *specialized;
+            }
+        }
     }
     if (method.type.result == nullptr) {
         return type_invalid();
@@ -2147,8 +2156,10 @@ bool Checker::assoc_from_selector(const Expr::Selector &node, Type &out) {
     return false;
 }
 
-Type Checker::finish_value_method(const Expr::Call &node, const Expr::Selector &selector, const Checker::MethodInfo &method,
-                                  const Type &base, bool through_pointer) {
+Type Checker::finish_value_method(Expr &expr, const Expr::Selector &selector, const Checker::MethodInfo &method,
+                                  const Type &base, bool through_pointer, bool used) {
+    Expr::Call &node = std::get<Expr::Call>(expr.data);
+    const std::size_t call_mark = diags_.size();
     if (method.is_static) {
         error(node.loc, "type mismatch");
         for (const auto &arg : node.args) {
@@ -2207,6 +2218,12 @@ Type Checker::finish_value_method(const Expr::Call &node, const Expr::Selector &
     if (method.decl != nullptr) {
         const std::size_t skip = !method.decl->params.empty() && method.decl->params.front().is_receiver ? 1 : 0;
         require_comptime_params(*method.decl, node, skip);
+        if (diags_.size() == call_mark) {
+            if (const std::optional<Type> specialized =
+                    call_comptime_spec(expr, method.decl, skip, method.file_id, used)) {
+                return *specialized;
+            }
+        }
     }
     if (method.type.result == nullptr) {
         return type_invalid();

@@ -1876,6 +1876,20 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
             return type_invalid();
         }
     }
+    // A constant comptime argument drops that parameter. A forwarded name keeps this copy.
+    // Clear the in-progress mark first. A nested call of this same generic builds its own copy.
+    // `builtin.atomic_load` and the other atomic calls keep the integer. Codegen reads it.
+    if (!(is_std_builtin_file(owner) && atomic_builtin(spec.name) != AtomicBuiltin::None)) {
+        spec_checking_.erase(key);
+        const std::size_t spec_mark = diags_.size();
+        if (apply_comptime_template(call, spec, false, 0, owner)) {
+            return check_raw(expr, used);
+        }
+        if (diags_.size() != spec_mark) {
+            return type_invalid();
+        }
+        spec_checking_.insert(key);
+    }
     Symbol symbol;
     symbol.name = spec_name;
     symbol.type = signature;
@@ -1954,28 +1968,30 @@ uint32_t Checker::comptime_decl_file(const FunctionDecl &fn) const {
     return file_id_;
 }
 
-bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several) {
+bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several, std::size_t skip,
+                                      std::optional<uint32_t> owner_file) {
     if (comptime_spec_depth_ >= 32) {
         error(call.loc, "not supported yet");
         return false;
     }
-    if (call.callee == nullptr || call.args.size() != fn.params.size()) {
+    // The receiver is not an argument. A method's comptime parameter is the next one.
+    if (call.callee == nullptr || skip > fn.params.size() || call.args.size() + skip != fn.params.size()) {
         return false;
     }
-    const uint32_t owner = comptime_decl_file(fn);
+    const uint32_t owner = owner_file.has_value() ? *owner_file : comptime_decl_file(fn);
     std::vector<TypeParam> names;
     std::vector<SpecArg> bounds;
     std::string pieces;
-    for (std::size_t i = 0; i < fn.params.size(); ++i) {
+    for (std::size_t i = skip; i < fn.params.size(); ++i) {
         const Param &param = fn.params[i];
         if (!param.is_comptime) {
             continue;
         }
-        if (call.args[i] == nullptr) {
+        if (call.args[i - skip] == nullptr) {
             return false;
         }
         const std::size_t mark = diags_.size();
-        const Type got = check_expr(*call.args[i], true);
+        const Type got = check_expr(*call.args[i - skip], true);
         if (got.kind == TypeKind::Invalid || diags_.size() != mark) {
             return false;
         }
@@ -1992,7 +2008,7 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         SpecArg bound;
         std::string piece;
         if (comptime_i32_param(param)) {
-            const std::optional<int> number = fold_int(*call.args[i]);
+            const std::optional<int> number = fold_int(*call.args[i - skip]);
             if (!number) {
                 return false;
             }
@@ -2004,7 +2020,7 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
             }
         } else if (comptime_text_param(param)) {
             std::unordered_set<std::string> seen;
-            const std::optional<std::string> text = constant_string(*call.args[i], seen);
+            const std::optional<std::string> text = constant_string(*call.args[i - skip], seen);
             if (!text) {
                 return false;
             }
@@ -2012,7 +2028,7 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
             bound.text = *text;
             piece = comptime_text_piece(*text);
         } else if (want.kind == TypeKind::Enum && comptime_enum_arg(param)) {
-            const auto *selector = std::get_if<Expr::Selector>(&call.args[i]->data);
+            const auto *selector = std::get_if<Expr::Selector>(&call.args[i - skip]->data);
             const EnumInfo::Member *member = nullptr;
             if (selector != nullptr && selector->base != nullptr && enum_designator(*selector->base) == want.enum_id) {
                 member = find_enum_member(want.enum_id, selector->field);
@@ -2031,10 +2047,11 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
             if (!piece.empty() && piece.front() == '-') {
                 piece[0] = 'n';
             }
-        } else if (argument_is_comptime(*call.args[i])) {
+        } else if (argument_is_comptime(*call.args[i - skip])) {
             // The unspecialized extern function accepts this argument.
+            // A forwarded comptime name is not this case. The caller keeps the parameter.
             if (!comptime_param_kept(fn)) {
-                error(expr_loc(*call.args[i]), "not supported yet");
+                error(expr_loc(*call.args[i - skip]), "not supported yet");
             }
             return false;
         } else {
@@ -2056,9 +2073,9 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
     const std::string key = std::to_string(owner) + "\n" + spec_name;
     auto rewrite = [&]() {
         std::vector<std::unique_ptr<Expr>> kept;
-        for (std::size_t i = 0; i < fn.params.size() && i < call.args.size(); ++i) {
-            if (!fn.params[i].is_comptime && call.args[i] != nullptr) {
-                kept.push_back(std::move(call.args[i]));
+        for (std::size_t i = skip; i < fn.params.size(); ++i) {
+            if (!fn.params[i].is_comptime && call.args[i - skip] != nullptr) {
+                kept.push_back(std::move(call.args[i - skip]));
             }
         }
         call.args = std::move(kept);
@@ -2078,6 +2095,8 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
     FunctionDecl spec = clone_function(fn);
     spec.name = spec_name;
     spec.type_params.clear();
+    // The generic instance kept the parameter. This further copy does not.
+    spec.generic_instance = false;
     spec.exported = false;
     // The dynamic symbol is the unspecialized function. This copy is local.
     spec.is_extern = false;
@@ -2133,8 +2152,27 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         static_spec_keys_.insert(key);
         statics_[owner].insert_or_assign(spec_name, symbol);
     }
-    if (fn.exported) {
+    // A generic instance is published under its mangled name even when `exported` is clear.
+    // The further copy has to be found the same way. A method is found on its type.
+    bool publish = fn.exported && fn.method_struct.empty();
+    if (!publish && fn.method_struct.empty()) {
+        const auto file = exports_.find(owner);
+        publish = file != exports_.end() && file->second.contains(fn.name);
+    }
+    if (publish) {
         exports_[owner].insert_or_assign(spec_name, symbol);
+    }
+    if (!spec.method_struct.empty()) {
+        // `decl` stays empty. Codegen finds `Type.name.spec.1` by that key.
+        // The queued copy is a different object, so a pointer here would not match it.
+        MethodInfo info;
+        info.type = symbol.type;
+        info.has_body = true;
+        info.is_static = spec.static_method;
+        info.unsafe_fn = spec.unsafe;
+        info.exported = fn.exported;
+        info.file_id = owner;
+        methods_[owner][spec.method_struct].insert_or_assign(spec_name, std::move(info));
     }
     ++comptime_spec_depth_;
     check_isolated(owner, spec);
@@ -2144,6 +2182,25 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
     queue_spec(owner, std::move(spec));
     rewrite();
     return true;
+}
+
+std::optional<Type> Checker::call_comptime_spec(Expr &expr, const FunctionDecl *fn, std::size_t skip, uint32_t owner,
+                                                bool used) {
+    if (fn == nullptr || !comptime_param_template(*fn)) {
+        return std::nullopt;
+    }
+    auto *call = std::get_if<Expr::Call>(&expr.data);
+    if (call == nullptr) {
+        return std::nullopt;
+    }
+    const std::size_t before = diags_.size();
+    if (!apply_comptime_template(*call, *fn, false, skip, owner)) {
+        if (diags_.size() != before) {
+            return type_invalid();
+        }
+        return std::nullopt;
+    }
+    return check_raw(expr, used);
 }
 
 std::optional<Type> Checker::maybe_comptime_param_call(Expr &expr, bool used) {

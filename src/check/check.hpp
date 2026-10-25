@@ -557,8 +557,8 @@ class Checker {
     bool accept_trait_named(const Expr &expr, const Type &want);
     void check_call_arg(const Expr &expr, const Type &want);
     // Receiver checks shared by an enum value and a primitive alias.
-    Type finish_value_method(const Expr::Call &node, const Expr::Selector &selector, const MethodInfo &method,
-                             const Type &base, bool through_pointer);
+    Type finish_value_method(Expr &expr, const Expr::Selector &selector, const MethodInfo &method, const Type &base,
+                             bool through_pointer, bool used);
     void register_structs(const TranslationUnit &unit, uint32_t file_id);
     void require_extern_struct(const Type &type, SourceLoc loc);
     // A tagged union, or a pointer or array of one. An alias keeps the union's `struct_id`.
@@ -963,7 +963,13 @@ class Checker {
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
     // `func scale(n comptime i32, x i32)`. One copy per constant. `n` is inlined.
     std::optional<Type> maybe_comptime_param_call(Expr &expr, bool used);
-    bool apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several);
+    // `skip` is the receiver, which is not an argument. `owner_file` is the function's file
+    // when the decl is a clone that `comptime_decl_file` cannot see.
+    bool apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several, std::size_t skip = 0,
+                                 std::optional<uint32_t> owner_file = std::nullopt);
+    // Specialize when every comptime argument is a constant. A forwarded name leaves the call.
+    std::optional<Type> call_comptime_spec(Expr &expr, const FunctionDecl *fn, std::size_t skip, uint32_t owner,
+                                           bool used);
     uint32_t comptime_decl_file(const FunctionDecl &fn) const;
     void register_trait_default(const FunctionDecl &fn);
     void register_method_template(const FunctionDecl &fn);
@@ -1044,11 +1050,11 @@ class Checker {
     // `failed` means the form was recognized and the arguments did not specialize.
     std::string same_package_spec(const Expr::Selector &node, bool &failed);
     // `pkg.Type.name(...)` and `pkg.Vec[i32].name(...)`. True when that call was handled.
-    bool package_static_call(const Expr::Call &node, const Expr::Selector &selector, bool deferring, Type &out);
+    bool package_static_call(Expr &expr, const Expr::Selector &selector, bool deferring, bool used, Type &out);
     // A static function used as a value on a type from another package.
     // True when the name is a method. False leaves the caller's diagnostic in place.
     bool static_method_value(const Expr::Selector &node, uint32_t home, const std::string &owner, Type &out);
-    Type finish_static_call(const Expr::Call &node, const MethodInfo &method, bool deferring);
+    Type finish_static_call(Expr &expr, const MethodInfo &method, bool deferring, bool used);
     // True when `node` is `Type.name` or `Type[args].name`. The diagnostic is already reported.
     bool assoc_from_selector(const Expr::Selector &node, Type &out);
 };

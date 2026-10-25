@@ -24,7 +24,7 @@ The call folds when the body is one `return` of a constant `i32`. There is no ru
 
 An ordinary function may mark a parameter `comptime`. That argument has to be a comptime value, or the call is `type mismatch`. When every parameter is `comptime` and the body is one `return` of a constant `i32`, the call folds. The function is still compiled.
 
-A mix of a `comptime` parameter and a runtime parameter is specialized per constant. The comptime parameter is not passed. Each use of that name in the copy is the constant. `return scale(2, x)` calls that copy and adds `2`. When the file is `main.tlc`, the symbol is `main.scale.spec.2`. Another constant is another copy. `name comptime []const u8` is that string in the copy. An enumerator is that argument too. `take(n, Order.acquire)` calls `take.spec.1` when `acquire` is `1`. Each use of that name is `Order.acquire`. A method and a generic function take an enumerator and still pass that parameter. The generic copy keeps it. A `var` of the enum is `type mismatch`. A function nested in another function does not take an enumerator. A `var` is `type mismatch`, except on `extern` and `extern(abi="tlc")`. A method, and a function nested in another function, still pass the constant. Using the function as a value, a comptime argument that is neither a folded `i32`, a constant `[]const u8`, nor an enumerator, and more than 32 nested specializations are `not supported yet`. An `extern` function used as a value is the unspecialized function.
+A mix of a `comptime` parameter and a runtime parameter is specialized per constant. The comptime parameter is not passed. Each use of that name in the copy is the constant. `return scale(2, x)` calls that copy and adds `2`. When the file is `main.tlc`, the symbol is `main.scale.spec.2`. Another constant is another copy. `name comptime []const u8` is that string in the copy. An enumerator is that argument too. `take(n, Order.acquire)` calls `take.spec.1` when `acquire` is `1`. Each use of that name is `Order.acquire`. A method and a generic function drop that parameter the same way. When the file is `main.tlc` and `acquire` is `1`, `p.id(Order.acquire)` calls `main.Point.id.spec.1` and `id[i32](1, Order.acquire)` calls `main.id.spec.i32.spec.1`. Each use of that name is `Order.acquire`. The other arm is not typechecked and not emitted. A `var` of the enum is `type mismatch`. A function nested in another function does not take an enumerator. A `var` is `type mismatch`, except on `extern` and `extern(abi="tlc")`. A function nested in another function still passes the constant. Using the function as a value, a comptime argument that is neither a folded `i32`, a constant `[]const u8`, nor an enumerator, and more than 32 nested specializations are `not supported yet`. An `extern` function used as a value is the unspecialized function.
 
 ```c
 func add(n comptime i32) i32 {
@@ -56,7 +56,7 @@ retq                             # return
 
 `return add(1)` folds to `1`. `return scale(2, x)` passes `x` and calls `scale`. `2` is an immediate.
 
-An enumerator is a comptime argument of that function. The copy does not receive it. The program returns 42. When the file is `main.tlc` and `acquire` is `1`, the symbol is `main.take.spec.1`. `order == Order.acquire` folds, so the copy keeps `return n + 2` and leaves the other arm out. A method still passes `order`, and a generic copy keeps it, so that `if` stays a runtime compare and both arms are typechecked.
+An enumerator is a comptime argument of that function. The copy does not receive it. The program returns 42. When the file is `main.tlc` and `acquire` is `1`, the symbol is `main.take.spec.1`. `order == Order.acquire` folds, so the copy keeps `return n + 2` and leaves the other arm out. A method and a generic function do the same. The other arm is not typechecked.
 
 ```c
 type Order enum {
@@ -95,6 +95,86 @@ retq                             # return
 ```
 
 `n` is stored, loaded, and increased by `2`. The other arm is not emitted. The call passes `n` and does not pass `order`.
+
+A method drops the parameter the same way. The program returns 42. When the file is `main.tlc` and `acquire` is `1`, the symbol is `main.Point.id.spec.1`. `order == Order.acquire` folds, so the copy keeps `return self.x + 41`.
+
+```c
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+type Point struct {
+    x i32;
+};
+
+func Point::id(self *this, order comptime Order) i32 {
+    if (order == Order.acquire) {
+        return self.x + 41;
+    }
+    return self.x;
+}
+
+func main() i32 {
+    var p Point;
+    p.x = 1;
+    return p.id(Order.acquire);
+}
+```
+
+```asm
+main.Point.id.spec.1:
+movq %rdi, -8(%rsp)              # move
+movq -8(%rsp), %rax              # move
+movl (%rax), %eax                # move
+addl $41, %eax                   # add
+retq                             # return
+
+main:
+movl $1, 16(%rsp)                # constant
+# trace frame for the call, then the matching pop
+leaq 16(%rsp), %rdi              # move
+callq main.Point.id.spec.1       # call Point.id
+retq                             # return
+```
+
+`self.x` is loaded and increased by `41`. The other arm is not emitted. The call passes `p` and does not pass `order`.
+
+A generic function drops the parameter after the type arguments. The program returns 42. When the file is `main.tlc` and `acquire` is `1`, the symbol is `main.id.spec.i32.spec.1`. The copy keeps `return value + 41`.
+
+```c
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+func id[T type](value T, order comptime Order) T {
+    if (order == Order.acquire) {
+        return value + 41;
+    }
+    return value;
+}
+
+func main() i32 {
+    return id[i32](1, Order.acquire);
+}
+```
+
+```asm
+main.id.spec.i32.spec.1:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+addl $41, %eax                   # add
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+movl $1, %edi                    # constant
+callq main.id.spec.i32.spec.1    # call id
+retq                             # return
+```
+
+`value` is loaded and increased by `41`. The call passes `1` and does not pass `order`.
 
 `extern` and `extern(abi="tlc")` keep the unspecialized function. The comptime parameter is an argument of that symbol, so a dynamic linker can call it. When the file is `main.tlc`, the symbol is `main.scale`. A constant argument uses the specialized copy. A runtime argument uses `main.scale`, and so does a use of the function as a value. `extern` is the same declaration as `extern(abi="tlc")`. `extern(abi="c")` passes the constant.
 

@@ -878,7 +878,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                         };
                         Type foreign;
-                        if (package_static_call(node, *selector, deferring, foreign)) {
+                        if (package_static_call(const_cast<Expr &>(expr), *selector, deferring, used, foreign)) {
                             return foreign;
                         }
                         bool failed = false;
@@ -906,7 +906,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     return type_invalid();
                                 }
                                 selector->resolved_owner = spec;
-                                return finish_static_call(node, *method, deferring);
+                                return finish_static_call(const_cast<Expr &>(expr), *method, deferring, used);
                             }
                         }
                         if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
@@ -928,7 +928,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     check_args();
                                     return type_invalid();
                                 }
-                                return finish_static_call(node, *method, deferring);
+                                return finish_static_call(const_cast<Expr &>(expr), *method, deferring, used);
                             }
                         }
                     }
@@ -1126,7 +1126,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     }
                                 }
                                 selector->resolved_file = method->file_id;
-                                return finish_value_method(node, *selector, *method, base, through_pointer);
+                                return finish_value_method(const_cast<Expr &>(expr), *selector, *method, base, through_pointer,
+                                                            used);
                             }
                             if (hidden) {
                                 error(node.loc, selector->field + " is not exported");
@@ -1162,7 +1163,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 selector->resolved_owner = type_desc(*alias);
                                 selector->resolved_file = method->file_id;
                             }
-                            return finish_value_method(node, *selector, *method, base, alias_pointer);
+                            return finish_value_method(const_cast<Expr &>(expr), *selector, *method, base, alias_pointer, used);
                         }
                         bool slice_pointer = false;
                         if (const Type *alias = slice_alias(base, slice_pointer)) {
@@ -1190,7 +1191,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 selector->resolved_owner = type_desc(*alias);
                                 selector->resolved_file = method->file_id;
                             }
-                            return finish_value_method(node, *selector, *method, base, slice_pointer);
+                            return finish_value_method(const_cast<Expr &>(expr), *selector, *method, base, slice_pointer, used);
                         }
                         Type object;
                         bool through_pointer = false;
@@ -1218,6 +1219,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     return type_invalid();
                                 }
                                 selector->resolved_file = method->file_id;
+                                const std::size_t call_mark = diags_.size();
                                 require_unsafe_call(method->unsafe_fn, node.loc);
                                 if (deferring && method->type.variadic) {
                                     error(node.loc, "not supported yet");
@@ -1269,6 +1271,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                         !method->decl->params.empty() && method->decl->params.front().is_receiver ? 1
                                                                                                                  : 0;
                                     require_comptime_params(*method->decl, node, skip);
+                                    if (diags_.size() == call_mark) {
+                                        if (const std::optional<Type> specialized = call_comptime_spec(
+                                                const_cast<Expr &>(expr), method->decl, skip, method->file_id, used)) {
+                                            return *specialized;
+                                        }
+                                    }
                                 }
                                 if (method->type.result == nullptr) {
                                     return type_invalid();

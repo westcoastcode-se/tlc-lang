@@ -938,13 +938,14 @@ inline int mem_compare_bytes(const std::string &left, const std::string &right, 
     return 0;
 }
 
-// An ordinary function with both a comptime parameter and a runtime parameter.
+// An ordinary function or method with both a comptime parameter and a runtime parameter.
 // Each distinct comptime argument is its own copy. That parameter is not passed.
-// A generic copy keeps the comptime parameter as an argument.
+// A generic template is instantiated first. That copy still has the comptime parameter
+// when the argument is a forwarded name. A constant argument builds a further copy.
 // `extern(abi="c")` is one C symbol and is not specialized.
 inline bool comptime_param_template(const FunctionDecl &fn) {
     if (fn.is_comptime || fn.is_macro || fn.extern_c || fn.variadic || fn.body == nullptr || fn.generic_instance ||
-        !fn.type_params.empty() || !fn.method_struct.empty() || fn.params.empty()) {
+        !fn.type_params.empty() || fn.params.empty()) {
         return false;
     }
     bool compile = false;

@@ -965,7 +965,8 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
         if (!fn.params[skip + i].is_comptime || call.args[i] == nullptr) {
             continue;
         }
-        // A free function specializes an enumerator. A method still passes it.
+        // A free function specializes through `argument_is_comptime`. A method also accepts
+        // a forwarded comptime name. An enumerator then builds a copy that drops the parameter.
         const bool accepted = fn.method_struct.empty() ? argument_is_comptime(*call.args[i])
                                                        : comptime_kept_argument(*call.args[i]);
         if (!accepted) {

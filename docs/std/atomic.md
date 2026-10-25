@@ -55,6 +55,6 @@ lock xaddl %eax, (%rcx)          # seq_cst add, previous value
 retq
 ```
 
-The program returns 42. `add` returns the value `n` held before the add. On this machine a `seq_cst` store is `xchgl` and a `seq_cst` add is `lock xaddl`. `atomic.Int32.load` is `movl (%rax), %eax` once the pointer is in `%rax`. A direct builtin call is the instruction itself, with no trace frame. That listing is on [atomic builtins](../builtin/atomic.md).
+The program returns 42. `add` returns the value `n` held before the add. On this machine a `seq_cst` store is `xchgl` and a `seq_cst` add is `lock xaddl`. `atomic.Int32.load` is `movl (%rax), %eax` once the pointer is in `%rax`. An acquire `load_order` is that same `movl` in `atomic.load_at.spec.i32.spec.1`, called from `atomic.Int32.load_order.spec.1` with the pointer. A release `store_order` is `movl %ecx, (%rax)` in `atomic.store_at.spec.i32.spec.2`, called from `atomic.Int32.store_order.spec.2` with the pointer and the value. A relaxed `add_order` is `lock xaddl` in `atomic.rmw_at.spec.i32.spec.1.0`, called from `atomic.Int32.add_order.spec.0` with the pointer and the value. Those comptime parameters are not arguments of the copies. A direct builtin call is the instruction itself, with no trace frame. That listing is on [atomic builtins](../builtin/atomic.md).
 
 [Index](../README.md) · [Previous: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
