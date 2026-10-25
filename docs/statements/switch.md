@@ -57,6 +57,39 @@ jmp .L5                          # jump
 
 The program returns 42. `break` leaves the innermost loop or `switch`. `continue` is valid inside loops.
 
+A file-scope `const`, a literal, and an enumerator fold. The matching case and the statements after it stay, through `break`. The other cases are not typechecked and not emitted. A `var` and a local `const` do not fold, so every case stays. `comptime switch` is that same choice. A value that does not fold is `not supported yet`. `comptime switch` in a `macro` is `not supported yet`.
+
+```c
+const n = 1;
+
+func main() i32 {
+    var x i32;
+    switch (n) {
+    case 1:
+        x = 2;
+    case 2:
+        x = x + 40;
+        break;
+    default:
+        x = 7;
+        break;
+    }
+    return x;
+}
+```
+
+```asm
+main:
+movl $2, -4(%rsp)                # constant
+movl -4(%rsp), %eax              # move
+addl $40, %eax                   # add
+movl %eax, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+retq                             # return
+```
+
+The program returns 42. `default` is not in the function.
+
 ```c
 type Color enum {
     Red,
@@ -100,6 +133,12 @@ xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
 
-`code(Color.Blue)` returns 4. `case 41` on that `switch` is `type mismatch`.
+`code(Color.Blue)` returns 4. `case 41` on that `switch` is `type mismatch`. `switch (Color.Blue)` that returns 42 from that case is two instructions. There is no compare.
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
 
 [Index](../README.md) · [Previous: for](for.md) · [Next: defer](defer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

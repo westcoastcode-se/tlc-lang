@@ -1,0 +1,9 @@
+const n = 3;
+
+func main() i32 {
+    switch (n) {
+    case 1:
+        return "no";
+    }
+    return 42;
+}

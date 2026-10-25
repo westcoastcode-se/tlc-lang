@@ -14,7 +14,7 @@ No open bugs. A new bug is inserted here, before every other section, and fixed 
 
 ## `if` and `for` in a macro
 
-In a `macro`, a condition or a bound that does not fold is `not supported yet`. `comptime if` in a `macro` is `not supported yet`. `comptime for` is `not supported yet`. `const for` is not a form.
+In a `macro`, a condition or a bound that does not fold is `not supported yet`. `switch` in a `macro` is `not supported yet`. `comptime if` in a `macro` is `not supported yet`. `comptime switch` in a `macro` is `not supported yet`. `comptime for` is `not supported yet`. `const for` is not a form.
 
 ## Generics and compile-time
 
@@ -53,7 +53,7 @@ In a `macro`, a condition or a bound that does not fold is `not supported yet`. 
 
 ## Reflection
 
-`typeof(T).fields()` returns `[]const Field`. Methods are not read yet. A plain `while` or `do` in a `macro` is `not supported yet`. A `var` passed to a `comptime func`, `comptime { ... }` inside an ordinary function, `emit` outside a `macro`, `comptime for`, `comptime if` in a `macro`, `comptime if` whose condition does not fold, a method, `extern`, `export`, a value call of a `macro`, a value call that does not fold, and `const for` are `not supported yet`.
+`typeof(T).fields()` returns `[]const Field`. Methods are not read yet. A plain `while` or `do` in a `macro` is `not supported yet`. A `var` passed to a `comptime func`, `comptime { ... }` inside an ordinary function, `emit` outside a `macro`, `comptime for`, `comptime if` in a `macro`, `comptime if` whose condition does not fold, `comptime switch` in a `macro`, `comptime switch` whose value does not fold, a method, `extern`, `export`, a value call of a `macro`, a value call that does not fold, and `const for` are `not supported yet`.
 
 ## Types and operators
 

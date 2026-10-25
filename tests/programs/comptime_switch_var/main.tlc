@@ -1,0 +1,15 @@
+type Color enum {
+    Red,
+    Green,
+    Blue,
+};
+
+func main() i32 {
+    var value Color = Color.Blue;
+    switch (value) {
+    case Color.Blue:
+        return 42;
+    default:
+        return "no";
+    }
+}

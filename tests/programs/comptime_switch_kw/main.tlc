@@ -1,0 +1,16 @@
+type Color enum {
+    Red,
+    Green,
+    Blue,
+};
+
+func main() i32 {
+    comptime switch (Color.Blue) {
+    case Color.Green:
+        return "no";
+    case Color.Blue:
+        return 42;
+    default:
+        return "no";
+    }
+}

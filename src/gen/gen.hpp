@@ -1406,6 +1406,12 @@ class CodeGen {
     void collect_cases(const Stmt &stmt, std::vector<CaseArm> &arms) const;
     void emit_case(const Stmt::Case &node);
     void emit_switch(const Stmt::Switch &node);
+    std::optional<int> folded_case_value(const Expr &expr) const;
+    bool find_switch_arm(const Stmt &stmt, int value, const Stmt::Case *&match, const Stmt::Case *&fallback) const;
+    bool switch_reaches_case(const Stmt &stmt, const Stmt::Case *arm) const;
+    bool emit_folded_from(const Stmt &stmt, const Stmt::Case *arm, bool &active);
+    bool emit_folded_block(const Stmt::Block &node, const Stmt::Case *arm, bool &active);
+    void emit_folded_switch(const Stmt::Switch &node);
     TypedValue emit_rvalue(const Expr &expr);
     TypedValue emit_new(const Expr::New &node);
     // Stores one element of a `new [n]T` buffer. `index` is an i32.

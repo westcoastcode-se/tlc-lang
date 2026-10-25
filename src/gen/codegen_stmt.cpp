@@ -14,23 +14,7 @@ void CodeGen::collect_cases(const Stmt &stmt, std::vector<CaseArm> &arms) const 
                 arm.node = &node;
                 arm.is_default = node.is_default;
                 if (!node.is_default && node.value) {
-                    std::optional<int32_t> folded = fold(*node.value);
-                    if (!folded) {
-                        // `Color.Red` is not an integer fold. The case still needs that enumerator's value.
-                        if (const auto *selector = std::get_if<Expr::Selector>(&node.value->data);
-                            selector != nullptr && selector->base != nullptr) {
-                            const int enum_id = enum_type_designator(*selector->base);
-                            if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size())) {
-                                const auto member =
-                                    enums_[static_cast<std::size_t>(enum_id)].values.find(selector->field);
-                                if (member != enums_[static_cast<std::size_t>(enum_id)].values.end() &&
-                                    member->second == static_cast<int64_t>(static_cast<int32_t>(member->second))) {
-                                    folded = static_cast<int32_t>(member->second);
-                                }
-                            }
-                        }
-                    }
-                    if (folded) {
+                    if (const std::optional<int> folded = folded_case_value(*node.value)) {
                         arm.value = *folded;
                         arm.has_value = true;
                     }
@@ -97,7 +81,249 @@ void CodeGen::emit_case(const Stmt::Case &node) {
     }
 }
 
+std::optional<int> CodeGen::folded_case_value(const Expr &expr) const {
+    std::optional<int32_t> folded = fold(expr);
+    if (!folded) {
+        // `Color.Red` is not an integer fold. The case still needs that enumerator's value.
+        if (const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+            selector != nullptr && selector->base != nullptr) {
+            const int enum_id = enum_type_designator(*selector->base);
+            if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size())) {
+                const auto member = enums_[static_cast<std::size_t>(enum_id)].values.find(selector->field);
+                if (member != enums_[static_cast<std::size_t>(enum_id)].values.end() &&
+                    member->second == static_cast<int64_t>(static_cast<int32_t>(member->second))) {
+                    folded = static_cast<int32_t>(member->second);
+                }
+            }
+        }
+    }
+    if (!folded) {
+        return std::nullopt;
+    }
+    return static_cast<int>(*folded);
+}
+
+bool CodeGen::find_switch_arm(const Stmt &stmt, int value, const Stmt::Case *&match,
+                              const Stmt::Case *&fallback) const {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (!node.is_default && node.value != nullptr) {
+                    const std::optional<int> folded = folded_case_value(*node.value);
+                    if (folded && *folded == value) {
+                        match = &node;
+                        return true;
+                    }
+                } else if (node.is_default && fallback == nullptr) {
+                    fallback = &node;
+                }
+                return node.stmt != nullptr && find_switch_arm(*node.stmt, value, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && find_switch_arm(*child, value, match, fallback)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (node.then_arm != nullptr && find_switch_arm(*node.then_arm, value, match, fallback)) {
+                    return true;
+                }
+                return node.else_arm != nullptr && find_switch_arm(*node.else_arm, value, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                return node.body != nullptr && find_switch_arm(*node.body, value, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.init != nullptr && find_switch_arm(*node.init, value, match, fallback)) {
+                    return true;
+                }
+                return node.body != nullptr && find_switch_arm(*node.body, value, match, fallback);
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+bool CodeGen::switch_reaches_case(const Stmt &stmt, const Stmt::Case *arm) const {
+    if (arm == nullptr) {
+        return false;
+    }
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (&node == arm) {
+                    return true;
+                }
+                return node.stmt != nullptr && switch_reaches_case(*node.stmt, arm);
+            } else if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && switch_reaches_case(*child, arm)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                return (node.then_arm != nullptr && switch_reaches_case(*node.then_arm, arm)) ||
+                       (node.else_arm != nullptr && switch_reaches_case(*node.else_arm, arm));
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                return node.body != nullptr && switch_reaches_case(*node.body, arm);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                return (node.init != nullptr && switch_reaches_case(*node.init, arm)) ||
+                       (node.body != nullptr && switch_reaches_case(*node.body, arm));
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+bool CodeGen::emit_folded_block(const Stmt::Block &node, const Stmt::Case *arm, bool &active) {
+    const bool share = share_function_scope_;
+    share_function_scope_ = false;
+    if (!share) {
+        push();
+        debug_enter(node.loc);
+    }
+    defers_.push_back(DeferFrame{static_cast<int>(loops_.size()), {}});
+    bool stop = false;
+    for (const auto &child : node.statements) {
+        if (child == nullptr || stop) {
+            continue;
+        }
+        if (!active) {
+            if (!switch_reaches_case(*child, arm)) {
+                continue;
+            }
+            stop = emit_folded_from(*child, arm, active);
+            continue;
+        }
+        // A `return` ends the taken path. A later `case` is not emitted.
+        if (terminated()) {
+            stop = true;
+            continue;
+        }
+        stop = emit_folded_from(*child, arm, active);
+    }
+    if (!terminated() && !defers_.empty()) {
+        emit_defer_frame(defers_.back());
+    }
+    if (!defers_.empty()) {
+        defers_.pop_back();
+    }
+    if (!share) {
+        debug_leave();
+        pop();
+    }
+    return stop;
+}
+
+bool CodeGen::emit_folded_from(const Stmt &stmt, const Stmt::Case *arm, bool &active) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                return emit_folded_block(node, arm, active);
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (!active && &node != arm) {
+                    if (node.stmt != nullptr && switch_reaches_case(*node.stmt, arm)) {
+                        return emit_folded_from(*node.stmt, arm, active);
+                    }
+                    return false;
+                }
+                if (!active) {
+                    active = true;
+                }
+                if (terminated()) {
+                    return true;
+                }
+                if (node.stmt != nullptr) {
+                    return emit_folded_from(*node.stmt, arm, active);
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (!active) {
+                    if (node.then_arm != nullptr && switch_reaches_case(*node.then_arm, arm)) {
+                        return emit_folded_from(*node.then_arm, arm, active);
+                    }
+                    if (node.else_arm != nullptr && switch_reaches_case(*node.else_arm, arm)) {
+                        return emit_folded_from(*node.else_arm, arm, active);
+                    }
+                    return false;
+                }
+                emit_stmt(stmt);
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                if (!active && node.body != nullptr && switch_reaches_case(*node.body, arm)) {
+                    return emit_folded_from(*node.body, arm, active);
+                }
+                if (active && !terminated()) {
+                    emit_stmt(stmt);
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (!active) {
+                    if (node.init != nullptr && switch_reaches_case(*node.init, arm)) {
+                        return emit_folded_from(*node.init, arm, active);
+                    }
+                    if (node.body != nullptr && switch_reaches_case(*node.body, arm)) {
+                        return emit_folded_from(*node.body, arm, active);
+                    }
+                    return false;
+                }
+                if (!terminated()) {
+                    emit_stmt(stmt);
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                if (active && !terminated()) {
+                    emit_stmt(stmt);
+                }
+                return false;
+            } else {
+                if (active && !terminated()) {
+                    emit_stmt(stmt);
+                }
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+void CodeGen::emit_folded_switch(const Stmt::Switch &node) {
+    if (terminated()) {
+        return;
+    }
+    const Stmt::Case *match = nullptr;
+    const Stmt::Case *fallback = nullptr;
+    if (node.body != nullptr) {
+        find_switch_arm(*node.body, node.folded_value, match, fallback);
+    }
+    const Stmt::Case *arm = match != nullptr ? match : fallback;
+    if (arm == nullptr) {
+        return;
+    }
+    llvm::BasicBlock *end_block = llvm::BasicBlock::Create(context_, "switch.end", function_);
+    llvm::BasicBlock *step = loops_.empty() ? nullptr : loops_.back().step;
+    loops_.push_back(LoopTargets{step, end_block, true});
+    bool active = false;
+    if (node.body != nullptr) {
+        emit_folded_from(*node.body, arm, active);
+    }
+    if (!terminated()) {
+        builder_.CreateBr(end_block);
+    }
+    loops_.pop_back();
+    builder_.SetInsertPoint(end_block);
+}
+
 void CodeGen::emit_switch(const Stmt::Switch &node) {
+    // A folded switch is straight-line. The runtime emitter would keep a later `case` after `return`.
+    if (node.folded) {
+        emit_folded_switch(node);
+        return;
+    }
     const TypedValue cond = node.cond ? emit_rvalue(*node.cond) : TypedValue{zero(), 0};
     if (terminated()) {
         return;

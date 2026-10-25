@@ -830,6 +830,15 @@ class Checker {
     void init_suspend(InitSuspend &saved);
     void init_resume(InitSuspend &saved);
     FlowFrame *init_switch_frame();
+    void check_switch(const Stmt::Switch &node);
+    void check_case_label(const Stmt::Case &node);
+    // `can_skip` merges the entry state. A folded value cannot skip the taken path.
+    void finish_switch(bool can_skip);
+    // The first case whose label is `value`, else the first `default` left in `fallback`.
+    bool find_switch_arm(const Stmt &stmt, int value, const Stmt::Case *&match, const Stmt::Case *&fallback);
+    bool switch_reaches_case(const Stmt &stmt, const Stmt::Case *arm) const;
+    bool check_switch_from(const Stmt &stmt, const Stmt::Case *arm, bool &active);
+    bool check_switch_block(Stmt::Block &block, const Stmt::Case *arm, bool &active);
 
     // Definite assignment. Only a function-local `var` with no settled initializer is tracked.
     AssignState assign_;

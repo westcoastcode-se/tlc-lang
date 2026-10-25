@@ -70,7 +70,7 @@ retq                             # return
 
 `sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `u8`. A value that does not fit is reported as `type mismatch`. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `bool`. Other operators are reported as `type mismatch`.
 
-`switch` on the enum uses that enum. A `case` is one of its enumerators. `case 1` is `type mismatch`. The enum does not convert to its representation, so `var n i32 = Color.Red` is `type mismatch`. `if (value)` is `type mismatch: expected bool, found Color`. The condition is `value == Color.Blue`.
+`switch` on the enum uses that enum. A `case` is one of its enumerators. `case 1` is `type mismatch`. The enum does not convert to its representation, so `var n i32 = Color.Red` is `type mismatch`. `if (value)` is `type mismatch: expected bool, found Color`. The condition is `value == Color.Blue`. A constant enumerator, such as `switch (Color.Blue)`, keeps that case and the statements that follow until `break`. The other cases are not typechecked and not emitted. A `var` does not fold.
 
 ```c
 func code(value Color) i32 {

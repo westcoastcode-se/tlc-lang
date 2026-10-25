@@ -1,0 +1,17 @@
+type Order enum {
+    relaxed,
+    acquire,
+};
+
+func take(n i32, order comptime Order) i32 {
+    switch (order) {
+    case Order.acquire:
+        return n + 2;
+    default:
+        return "no";
+    }
+}
+
+func main() i32 {
+    return take(40, Order.acquire);
+}

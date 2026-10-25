@@ -1,0 +1,9 @@
+func main() i32 {
+    var n = 1;
+    comptime switch (n) {
+    case 1:
+        return 42;
+    default:
+        return 0;
+    }
+}

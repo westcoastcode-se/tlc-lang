@@ -1110,6 +1110,302 @@ void Checker::check_statements(std::vector<std::unique_ptr<Stmt>> &statements) {
     statements = std::move(next);
 }
 
+void Checker::check_case_label(const Stmt::Case &node) {
+    if (switches_.empty()) {
+        error(node.loc, node.is_default ? "default outside switch" : "case outside switch");
+    } else if (node.is_default) {
+        if (switches_.back().has_default) {
+            error(node.loc, "redefinition");
+        } else {
+            switches_.back().has_default = true;
+        }
+    } else if (node.value) {
+        const Type got = check_expr(*node.value, true);
+        if (got.kind != TypeKind::Invalid && !switch_case_matches(switches_.back(), got)) {
+            error(expr_loc(*node.value), "type mismatch");
+        } else if (switch_case_matches(switches_.back(), got)) {
+            const std::optional<int> folded = fold_switch_case(*node.value);
+            if (!folded) {
+                error(node.loc, "not supported yet");
+            } else if (!switches_.back().values.insert(*folded).second) {
+                error(expr_loc(*node.value), "redefinition");
+            }
+        }
+    }
+}
+
+void Checker::finish_switch(bool can_skip) {
+    switches_.pop_back();
+    const FlowFrame done = std::move(flow_frames_.back());
+    flow_frames_.pop_back();
+    AssignState out;
+    out.unreachable = true;
+    for (const AssignState &stopped : done.breaks) {
+        out = init_merge(out, stopped);
+    }
+    if (!assign_.unreachable) {
+        out = init_merge(out, assign_);
+    }
+    if (can_skip) {
+        out = init_merge(out, done.entry);
+    }
+    assign_ = out;
+}
+
+bool Checker::find_switch_arm(const Stmt &stmt, int value, const Stmt::Case *&match, const Stmt::Case *&fallback) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (!node.is_default && node.value != nullptr) {
+                    const std::optional<int> folded = fold_switch_case(*node.value);
+                    if (folded && *folded == value) {
+                        match = &node;
+                        return true;
+                    }
+                } else if (node.is_default && fallback == nullptr) {
+                    fallback = &node;
+                }
+                return node.stmt != nullptr && find_switch_arm(*node.stmt, value, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && find_switch_arm(*child, value, match, fallback)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (node.then_arm != nullptr && find_switch_arm(*node.then_arm, value, match, fallback)) {
+                    return true;
+                }
+                return node.else_arm != nullptr && find_switch_arm(*node.else_arm, value, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                return node.body != nullptr && find_switch_arm(*node.body, value, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.init != nullptr && find_switch_arm(*node.init, value, match, fallback)) {
+                    return true;
+                }
+                return node.body != nullptr && find_switch_arm(*node.body, value, match, fallback);
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+bool Checker::switch_reaches_case(const Stmt &stmt, const Stmt::Case *arm) const {
+    if (arm == nullptr) {
+        return false;
+    }
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (&node == arm) {
+                    return true;
+                }
+                return node.stmt != nullptr && switch_reaches_case(*node.stmt, arm);
+            } else if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && switch_reaches_case(*child, arm)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                return (node.then_arm != nullptr && switch_reaches_case(*node.then_arm, arm)) ||
+                       (node.else_arm != nullptr && switch_reaches_case(*node.else_arm, arm));
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                return node.body != nullptr && switch_reaches_case(*node.body, arm);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                return (node.init != nullptr && switch_reaches_case(*node.init, arm)) ||
+                       (node.body != nullptr && switch_reaches_case(*node.body, arm));
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+bool Checker::check_switch_block(Stmt::Block &block, const Stmt::Case *arm, bool &active) {
+    push();
+    bool stop = false;
+    std::vector<std::unique_ptr<Stmt>> next;
+    for (auto &child : block.statements) {
+        if (child == nullptr) {
+            continue;
+        }
+        if (stop) {
+            next.push_back(std::move(child));
+            continue;
+        }
+        if (!active) {
+            if (!switch_reaches_case(*child, arm)) {
+                next.push_back(std::move(child));
+                continue;
+            }
+            stop = check_switch_from(*child, arm, active);
+            next.push_back(std::move(child));
+            continue;
+        }
+        if (std::holds_alternative<Stmt::Case>(child->data)) {
+            // A `return` or `break` ends the taken path. The next case is not checked.
+            if (assign_.unreachable) {
+                stop = true;
+                next.push_back(std::move(child));
+                continue;
+            }
+            stop = check_switch_from(*child, arm, active);
+            next.push_back(std::move(child));
+            continue;
+        }
+        if (std::holds_alternative<Stmt::Block>(child->data)) {
+            stop = check_switch_from(*child, arm, active);
+            next.push_back(std::move(child));
+            continue;
+        }
+        std::vector<std::unique_ptr<Stmt>> expanded;
+        append_statement(std::move(child), expanded);
+        for (auto &piece : expanded) {
+            next.push_back(std::move(piece));
+        }
+    }
+    block.statements = std::move(next);
+    pop();
+    return stop;
+}
+
+bool Checker::check_switch_from(const Stmt &stmt, const Stmt::Case *arm, bool &active) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                return check_switch_block(const_cast<Stmt::Block &>(node), arm, active);
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (!active && &node != arm) {
+                    if (node.stmt != nullptr && switch_reaches_case(*node.stmt, arm)) {
+                        return check_switch_from(*node.stmt, arm, active);
+                    }
+                    return false;
+                }
+                if (!active) {
+                    active = true;
+                }
+                if (assign_.unreachable) {
+                    return true;
+                }
+                // Fallthrough keeps the stores from the matching case. The entry state would drop them.
+                check_case_label(node);
+                if (node.stmt != nullptr) {
+                    return check_switch_from(*node.stmt, arm, active);
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (!active) {
+                    if (node.then_arm != nullptr && switch_reaches_case(*node.then_arm, arm)) {
+                        return check_switch_from(*node.then_arm, arm, active);
+                    }
+                    if (node.else_arm != nullptr && switch_reaches_case(*node.else_arm, arm)) {
+                        return check_switch_from(*node.else_arm, arm, active);
+                    }
+                    return false;
+                }
+                check_stmt(stmt);
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                if (!active && node.body != nullptr && switch_reaches_case(*node.body, arm)) {
+                    return check_switch_from(*node.body, arm, active);
+                }
+                if (active) {
+                    check_stmt(stmt);
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (!active) {
+                    if (node.init != nullptr && switch_reaches_case(*node.init, arm)) {
+                        return check_switch_from(*node.init, arm, active);
+                    }
+                    if (node.body != nullptr && switch_reaches_case(*node.body, arm)) {
+                        return check_switch_from(*node.body, arm, active);
+                    }
+                    return false;
+                }
+                check_stmt(stmt);
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                if (active) {
+                    check_stmt(stmt);
+                }
+                return false;
+            } else {
+                if (active) {
+                    check_stmt(stmt);
+                }
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+void Checker::check_switch(const Stmt::Switch &node) {
+    SwitchFrame sw;
+    bool legal = false;
+    if (node.cond) {
+        const Type cond = check_expr(*node.cond, true);
+        if (cond.kind == TypeKind::Enum) {
+            // A TLC enum stays that enum. A C enum is accepted here and matches `i32` cases below.
+            sw.subject = cond;
+            sw.c_enum = is_c_enum(cond);
+            legal = true;
+        } else if (cond.kind != TypeKind::Invalid) {
+            const std::size_t mark = diags_.size();
+            expect(cond, type_int(), expr_loc(*node.cond));
+            legal = diags_.size() == mark;
+        }
+    }
+    // A `var` and a local `const` do not fold, so every case stays. A macro never reaches this.
+    const std::optional<int> folded = legal && node.cond != nullptr ? fold_switch_case(*node.cond) : std::nullopt;
+    if (node.comptime_switch && !folded) {
+        error(node.loc, "not supported yet");
+    } else if (folded) {
+        Stmt::Switch &sw_node = const_cast<Stmt::Switch &>(node);
+        sw_node.folded = true;
+        sw_node.folded_value = *folded;
+        const Stmt::Case *match = nullptr;
+        const Stmt::Case *fallback = nullptr;
+        if (node.body != nullptr) {
+            find_switch_arm(*node.body, *folded, match, fallback);
+        }
+        const Stmt::Case *arm = match != nullptr ? match : fallback;
+        if (arm == nullptr) {
+            return;
+        }
+        FlowFrame frame;
+        frame.kind = FlowFrame::Kind::Switch;
+        frame.entry = assign_;
+        flow_frames_.push_back(std::move(frame));
+        switches_.push_back(std::move(sw));
+        bool active = false;
+        if (node.body != nullptr) {
+            check_switch_from(*node.body, arm, active);
+        }
+        finish_switch(false);
+        return;
+    }
+    const bool has_default = init_has_default(node.body.get());
+    FlowFrame frame;
+    frame.kind = FlowFrame::Kind::Switch;
+    frame.entry = assign_;
+    flow_frames_.push_back(std::move(frame));
+    switches_.push_back(std::move(sw));
+    // Statements before the first case are not reached. A case loads the entry state.
+    assign_.unreachable = true;
+    if (node.body) {
+        check_stmt(*node.body);
+    }
+    finish_switch(!has_default);
+}
+
 void Checker::check_stmt(const Stmt &stmt) {
     if (macro_depth_ > 0) {
         const bool allowed = std::visit(
@@ -1488,44 +1784,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 const bool can_fail = reach && node.cond && !cond_false_.unreachable;
                 assign_ = init_loop_exit(done.breaks, node.cond ? cond_false_ : at_cond, node.cond ? can_fail : reach);
             } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
-                SwitchFrame sw;
-                if (node.cond) {
-                    const Type cond = check_expr(*node.cond, true);
-                    if (cond.kind == TypeKind::Enum) {
-                        // A TLC enum stays that enum. A C enum is accepted here and matches `i32` cases below.
-                        sw.subject = cond;
-                        sw.c_enum = is_c_enum(cond);
-                    } else if (cond.kind != TypeKind::Invalid) {
-                        expect(cond, type_int(), expr_loc(*node.cond));
-                    }
-                }
-                const bool has_default = init_has_default(node.body.get());
-                FlowFrame frame;
-                frame.kind = FlowFrame::Kind::Switch;
-                frame.entry = assign_;
-                flow_frames_.push_back(std::move(frame));
-                switches_.push_back(std::move(sw));
-                // Statements before the first case are not reached. A case loads the entry state.
-                assign_.unreachable = true;
-                if (node.body) {
-                    check_stmt(*node.body);
-                }
-                switches_.pop_back();
-                const FlowFrame done = std::move(flow_frames_.back());
-                flow_frames_.pop_back();
-                AssignState out;
-                out.unreachable = true;
-                for (const AssignState &stopped : done.breaks) {
-                    out = init_merge(out, stopped);
-                }
-                if (!assign_.unreachable) {
-                    out = init_merge(out, assign_);
-                }
-                // Without `default` the switch can be skipped, so the entry state still counts.
-                if (!has_default) {
-                    out = init_merge(out, done.entry);
-                }
-                assign_ = out;
+                check_switch(node);
             } else if constexpr (std::is_same_v<T, Stmt::Case>) {
                 if (FlowFrame *sw = init_switch_frame()) {
                     const AssignState entry = sw->entry;
@@ -1540,27 +1799,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             std::vector<uint8_t>(static_cast<std::size_t>(local.leaves), 0);
                     }
                 }
-                if (switches_.empty()) {
-                    error(node.loc, node.is_default ? "default outside switch" : "case outside switch");
-                } else if (node.is_default) {
-                    if (switches_.back().has_default) {
-                        error(node.loc, "redefinition");
-                    } else {
-                        switches_.back().has_default = true;
-                    }
-                } else if (node.value) {
-                    const Type got = check_expr(*node.value, true);
-                    if (got.kind != TypeKind::Invalid && !switch_case_matches(switches_.back(), got)) {
-                        error(expr_loc(*node.value), "type mismatch");
-                    } else if (switch_case_matches(switches_.back(), got)) {
-                        const std::optional<int> folded = fold_switch_case(*node.value);
-                        if (!folded) {
-                            error(node.loc, "not supported yet");
-                        } else if (!switches_.back().values.insert(*folded).second) {
-                            error(expr_loc(*node.value), "redefinition");
-                        }
-                    }
-                }
+                check_case_label(node);
                 if (node.stmt) {
                     check_stmt(*node.stmt);
                 }

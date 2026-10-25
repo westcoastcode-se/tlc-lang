@@ -641,6 +641,11 @@ struct Stmt {
         SourceLoc loc{};
         std::unique_ptr<Expr> cond;
         std::unique_ptr<Stmt> body;
+        // `comptime switch`. The value has to fold. An ordinary `switch` folds when it can.
+        bool comptime_switch = false;
+        // The value folded. Codegen keeps the matching case and the statements that follow until `break`.
+        bool folded = false;
+        int folded_value = 0;
     };
     struct Case {
         SourceLoc loc{};

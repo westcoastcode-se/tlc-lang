@@ -1,0 +1,15 @@
+const n = 1;
+
+func main() i32 {
+    var x i32 = 0;
+    switch (n) {
+    case 1:
+        x = 2;
+    case 2:
+        x = x + 40;
+        break;
+    default:
+        return "no";
+    }
+    return x;
+}

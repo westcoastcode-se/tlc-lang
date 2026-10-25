@@ -1177,6 +1177,9 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.loc = node.loc;
                 copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
                 copy.body = node.body ? clone_stmt(*node.body) : nullptr;
+                copy.comptime_switch = node.comptime_switch;
+                copy.folded = node.folded;
+                copy.folded_value = node.folded_value;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::Case>) {
                 Stmt::Case copy;

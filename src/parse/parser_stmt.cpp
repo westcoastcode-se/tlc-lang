@@ -822,7 +822,7 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         return make_stmt(Stmt::Expression{});
     }
     if (check(TokenKind::KwComptime)) {
-        // `comptime if` keeps one arm when the condition folds. `comptime for` and `comptime { ... }` stay out.
+        // `comptime if` and `comptime switch` fold when the value does. `comptime for` and `comptime { ... }` stay out.
         if (pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == TokenKind::KwIf) {
             const SourceLoc loc = peek().loc;
             ++pos_;
@@ -831,6 +831,18 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
                 if (auto *branch = std::get_if<Stmt::If>(&stmt->data)) {
                     branch->comptime_if = true;
                     branch->loc = loc;
+                }
+            }
+            return stmt;
+        }
+        if (pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == TokenKind::KwSwitch) {
+            const SourceLoc loc = peek().loc;
+            ++pos_;
+            std::unique_ptr<Stmt> stmt = parse_switch();
+            if (stmt != nullptr) {
+                if (auto *sw = std::get_if<Stmt::Switch>(&stmt->data)) {
+                    sw->comptime_switch = true;
+                    sw->loc = loc;
                 }
             }
             return stmt;
