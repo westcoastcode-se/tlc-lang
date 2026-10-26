@@ -657,6 +657,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                    structs_[static_cast<std::size_t>(got.struct_id)].type != nullptr) {
             ty = structs_[static_cast<std::size_t>(got.struct_id)].type;
             binding.struct_id = got.struct_id;
+        } else if (got.struct_id == synthetic_type_id && fallback_type_ty_ != nullptr) {
+            ty = fallback_type_ty_;
+            binding.struct_id = synthetic_type_id;
         } else if (got.elem_float || (got.value != nullptr && got.value->getType()->isFloatingPointTy())) {
             // An f64 value is 64 bits. Checking the width first stored it as i64.
             const bool value_is_float = got.value != nullptr && got.value->getType()->isFloatingPointTy();

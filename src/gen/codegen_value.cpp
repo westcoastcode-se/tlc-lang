@@ -237,6 +237,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 default: return {zero(), 0};
                 }
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if ((node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) && node.lhs != nullptr &&
+                    node.rhs != nullptr && std::holds_alternative<Expr::Typeof>(node.lhs->data) &&
+                    std::holds_alternative<Expr::Typeof>(node.rhs->data)) {
+                    if (const auto folded = fold(expr)) {
+                        return {llvm::ConstantInt::get(i1(), *folded == 0 ? 0 : 1, false), 0, false, -1, false, false,
+                                true};
+                    }
+                }
                 if (node.op == TokenKind::AmpAmp) {
                     return {emit_short_circuit(node, true), 0, false, -1, false, false, true};
                 }
@@ -263,6 +271,24 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     llvm::Value *cmp = node.op == TokenKind::EqEq ? builder_.CreateICmpEQ(lhs, rhs)
                                                                   : builder_.CreateICmpNE(lhs, rhs);
                     return {cmp, 0, false, -1, false, false, true};
+                }
+                // `builtin.Type` compares the descriptor, the flags, and the tag. Padding is ignored.
+                if ((node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) && left.depth == 0 && right.depth == 0 &&
+                    lhs != nullptr && rhs != nullptr && lhs->getType() == rhs->getType() &&
+                    type_union_value(lhs->getType())) {
+                    const auto same_at = [&](llvm::ArrayRef<unsigned> index) {
+                        return builder_.CreateICmpEQ(builder_.CreateExtractValue(lhs, index),
+                                                     builder_.CreateExtractValue(rhs, index));
+                    };
+                    llvm::Value *same = same_at({1, 0});
+                    same = builder_.CreateAnd(same, same_at({1, 1}));
+                    same = builder_.CreateAnd(same, same_at({1, 2}));
+                    same = builder_.CreateAnd(same, same_at({1, 3}));
+                    same = builder_.CreateAnd(same, same_at({2}));
+                    if (node.op == TokenKind::BangEq) {
+                        same = builder_.CreateNot(same);
+                    }
+                    return {same, 0, false, -1, false, false, true};
                 }
                 if (left.elem_float || right.elem_float ||
                     (lhs != nullptr && lhs->getType()->isFloatingPointTy()) ||
@@ -937,7 +963,16 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     error(node.loc, "type mismatch");
                     return {zero(), 0};
                 }
-                return {intern_type_desc(node.canonical), 1};
+                llvm::Constant *value = intern_type_value(node.canonical, node.type_arm, node.type_has_this, node.type_generic,
+                                                          node.type_variadic);
+                if (value == nullptr) {
+                    error(node.loc, "type mismatch");
+                    return {zero(), 0};
+                }
+                TypedValue out;
+                out.value = value;
+                out.struct_id = type_struct_id_ >= 0 ? type_struct_id_ : synthetic_type_id;
+                return out;
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 return {const_i32(node.value ? 1 : 0), 0};
             } else if constexpr (std::is_same_v<T, Expr::Nullptr>) {
@@ -1315,25 +1350,31 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
 }
 
 llvm::Value *CodeGen::type_descriptor(const Expr &expr) {
-    // `var t builtin.Type` is one pointer. `var p *builtin.Type` is a pointer to that pointer.
-    auto narrow = [&](llvm::Value *value, int depth) -> llvm::Value * {
-        if (value == nullptr || depth < 1 || depth > 2) {
+    // Every arm starts with `desc`. A load at the union address is that pointer.
+    auto desc_at = [&](llvm::Value *union_addr) -> llvm::Value * {
+        if (union_addr == nullptr) {
             return nullptr;
         }
-        if (depth == 2) {
-            value = builder_.CreateLoad(ptr_type(), value);
-        }
-        return value;
+        return builder_.CreateLoad(ptr_type(), union_addr);
     };
     if (addressable(expr)) {
         const TypedValue addr = emit_addr(expr);
-        if (addr.value == nullptr) {
+        const bool type_value = (type_struct_id_ >= 0 && addr.struct_id == type_struct_id_) ||
+                                addr.struct_id == synthetic_type_id;
+        if (addr.value == nullptr || !type_value) {
             return nullptr;
         }
-        return narrow(builder_.CreateLoad(ptr_type(), addr.value), addr.depth);
+        llvm::Value *union_addr = addr.value;
+        for (int depth = addr.depth; depth > 0; --depth) {
+            union_addr = builder_.CreateLoad(ptr_type(), union_addr);
+        }
+        return desc_at(union_addr);
     }
     const TypedValue base = emit_rvalue(expr);
-    return narrow(base.value, base.depth);
+    if (base.value == nullptr || base.depth != 0 || !type_union_value(base.value->getType())) {
+        return nullptr;
+    }
+    return builder_.CreateExtractValue(base.value, {1, 0});
 }
 
 } // namespace tlc

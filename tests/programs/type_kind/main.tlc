@@ -1,0 +1,91 @@
+import "builtin";
+
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+type Point struct {
+    x i32;
+};
+
+type Box[T type] struct {
+    value T;
+};
+
+type Kind enum { A, B };
+
+type Shape union(Kind) {
+    A struct { n i32; };
+    B struct { n i32; };
+};
+
+func add(a i32, b i32) i32 { return a + b; }
+
+func sub(a i32, b i32) i32 { return a - b; }
+
+func take(p Point) i32 { return p.x; }
+
+func Point::get(self this) i32 { return self.x; }
+
+func Point::ptr(self *this) i32 { return self.x; }
+
+func Point::make(x i32) Point {
+    var p Point;
+    p.x = x;
+    return p;
+}
+
+func id[T type](value T) T { return value; }
+
+extern(abi="c") func logf(fmt *const u8, ...) i32;
+
+func main() i32 {
+    if (sizeof(builtin.Type) != 24) {
+        return 1;
+    }
+    if (builtin.TypeKind(typeof(i32)) != builtin.TypeKind.Other) {
+        return 2;
+    }
+    var t builtin.Type = typeof(add);
+    if (builtin.TypeKind(t) != builtin.TypeKind.Function || t.Function.has_this || t.Function.generic ||
+        t.Function.variadic) {
+        return 3;
+    }
+    if (typeof(add) != typeof(sub) || typeof(add).fields().len != 0) {
+        return 4;
+    }
+    if (builtin.TypeKind(typeof(logf)) != builtin.TypeKind.Function || typeof(logf).Function.variadic == false) {
+        return 5;
+    }
+    var f = add;
+    if (builtin.TypeKind(typeof(f)) != builtin.TypeKind.Other || typeof(f) == typeof(add)) {
+        return 6;
+    }
+    if (builtin.TypeKind(typeof(Point)) != builtin.TypeKind.Struct || typeof(Point).Struct.generic) {
+        return 7;
+    }
+    var box Box[i32];
+    if (builtin.TypeKind(typeof(box)) != builtin.TypeKind.Struct || typeof(box).Struct.generic == false) {
+        return 8;
+    }
+    if (builtin.TypeKind(typeof(Shape)) != builtin.TypeKind.Other) {
+        return 9;
+    }
+    if (typeof(Point.get).Function.has_this == false || typeof(Point.ptr).Function.has_this == false ||
+        typeof(Point.make).Function.has_this) {
+        return 10;
+    }
+    if (typeof(take) == typeof(Point.get)) {
+        return 11;
+    }
+    if (typeof(id).Function.generic == false) {
+        return 12;
+    }
+    printf("%s\n", t.name());
+    printf("%s\n", typeof(logf).name());
+    printf("%s\n", typeof(f).name());
+    printf("%s\n", typeof(box).name());
+    printf("%s\n", typeof(Point.get).name());
+    printf("%s\n", typeof(Point.ptr).name());
+    printf("%s\n", typeof(Point.make).name());
+    printf("%s\n", typeof(id).name());
+    return 0;
+}

@@ -1,0 +1,9 @@
+link: -lc
+exit: 42
+stdout:
+func(i32, i32) i32
+func(i32) i32
+func() void
+func(i32) (i32, i32)
+func(*const u8, ...) i32
+*func(i32, i32) i32

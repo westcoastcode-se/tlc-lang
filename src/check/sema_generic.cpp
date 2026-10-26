@@ -2223,6 +2223,10 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                             node.const_pointee = bound->const_pointee;
                         }
                         node.canonical.clear();
+                        node.type_arm = 0;
+                        node.type_has_this = false;
+                        node.type_generic = false;
+                        node.type_variadic = false;
                         node.expr.reset();
                     }
                 }

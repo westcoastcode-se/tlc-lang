@@ -575,6 +575,24 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 default: return std::nullopt;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                // Two `typeof` values compare by spelling and flags. The union is not required.
+                if (node.lhs != nullptr && node.rhs != nullptr &&
+                    (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq)) {
+                    const auto *left_of = std::get_if<Expr::Typeof>(&node.lhs->data);
+                    const auto *right_of = std::get_if<Expr::Typeof>(&node.rhs->data);
+                    if (left_of != nullptr && right_of != nullptr && !left_of->canonical.empty() &&
+                        !right_of->canonical.empty()) {
+                        const bool same = left_of->canonical == right_of->canonical &&
+                                          left_of->type_arm == right_of->type_arm &&
+                                          left_of->type_has_this == right_of->type_has_this &&
+                                          left_of->type_generic == right_of->type_generic &&
+                                          left_of->type_variadic == right_of->type_variadic;
+                        if (node.op == TokenKind::EqEq) {
+                            return same ? 1 : 0;
+                        }
+                        return same ? 0 : 1;
+                    }
+                }
                 if (node.lhs != nullptr && node.rhs != nullptr &&
                     (node.op == TokenKind::AmpAmp || node.op == TokenKind::PipePipe)) {
                     const auto lhs = fold(*node.lhs);

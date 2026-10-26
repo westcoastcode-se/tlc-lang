@@ -7,8 +7,46 @@ package builtin;
 // The comptime slice overload is chosen when both arguments are comptime values.
 // A call of two constant []const u8 values is folded while compiling.
 
+export type TypeKind enum {
+    Other,
+    Function,
+    Struct,
+}
+
+type Desc struct {
+    name *const u8;
+    fields []const Field;
+}
+
+export type Function struct {
+    desc *const Desc;
+    export has_this bool;
+    export generic bool;
+    export variadic bool;
+}
+
+export type Struct struct {
+    desc *const Desc;
+    export generic bool;
+}
+
+export type Other struct {
+    desc *const Desc;
+}
+
 // Type is the type of a type. typeof produces it.
-// The compiler adds this export. A typedef with this name would hide it.
+// TypeKind(value) reads which arm is active. Other is every type that is not a
+// function and not a struct: a union, a pointer, an array, a slice, an enum, a tuple.
+// Function is a function. has_this is true when it has a receiver. generic is true
+// when it has type parameters. variadic is true when the parameter list ends with `...`.
+// Struct is a struct. generic is true when that struct is a specialization.
+// desc holds the spelling and the fields. Another package cannot name desc.
+// The compiler supplies the bodies of name and fields.
+export type Type union(TypeKind) {
+    Other Other;
+    Function Function;
+    Struct Struct;
+}
 
 // One field returned by Type.fields. name is the field's name. kind is its type.
 // kind points at that type. The type is constant. Storing through kind is rejected.

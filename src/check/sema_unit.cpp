@@ -1827,7 +1827,7 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             exports_[file_id].emplace(var->name, std::move(symbol));
         }
     }
-    // `builtin.Type` is the type of a type. A typedef would hide it, so the compiler adds the export.
+    // `builtin.Type` is the tagged union in builtin.tlc. This export remains when that file does not declare it.
     if (graph_ != nullptr) {
         const PackageNode *node = find_node(file_id);
         if (is_compiler_builtin(node) && !exports_[file_id].contains("Type")) {

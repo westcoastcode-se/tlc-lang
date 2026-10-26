@@ -1112,7 +1112,15 @@ llvm::StructType *CodeGen::type_desc_type() {
     if (type_desc_ty_ != nullptr) {
         return type_desc_ty_;
     }
-    // `{ *const u8 name, []const Field fields }`. `name()` loads the first field. `fields()` loads the second.
+    // `builtin.Desc` is `{ name *const u8, fields []const Field }`. The synthetic struct is that same shape
+    // when Desc has not been laid out.
+    if (desc_struct_id_ >= 0 && desc_struct_id_ < static_cast<int>(structs_.size())) {
+        llvm::StructType *desc = structs_[static_cast<std::size_t>(desc_struct_id_)].type;
+        if (desc != nullptr && desc->isSized() && desc->getNumElements() >= 2) {
+            type_desc_ty_ = desc;
+            return desc;
+        }
+    }
     auto *type = llvm::StructType::create(context_, "tlc.type");
     type->setBody({ptr_type(), slice_type()});
     type_desc_ty_ = type;
@@ -1138,7 +1146,10 @@ llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
                 llvm::Constant *bytes = intern_type_name(field.name);
                 llvm::Constant *name = llvm::ConstantStruct::get(
                     slice_type(), {bytes, const_i32(static_cast<int32_t>(field.name.size()))});
-                llvm::Constant *kind = type_kind_ptr(field.type);
+                llvm::Constant *kind = type_kind_ptr(field.type, field.arm, field.has_this, field.generic, field.variadic);
+                if (kind == nullptr) {
+                    kind = llvm::ConstantPointerNull::get(ptr_type());
+                }
                 elems.push_back(llvm::ConstantStruct::get(field_ty, {name, kind}));
             }
             auto *array_ty = llvm::ArrayType::get(field_ty, elems.size());
@@ -1151,15 +1162,111 @@ llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
     return global;
 }
 
-llvm::Constant *CodeGen::type_kind_ptr(const std::string &text) {
-    const auto found = type_kind_ptrs_.find(text);
+namespace {
+
+std::string type_value_key(const std::string &text, int arm, bool has_this, bool generic, bool variadic) {
+    std::string key = text;
+    key.push_back('\n');
+    key.push_back(static_cast<char>('0' + (arm < 0 || arm > 9 ? 0 : arm)));
+    key.push_back(has_this ? 't' : 'f');
+    key.push_back(generic ? 't' : 'f');
+    key.push_back(variadic ? 't' : 'f');
+    return key;
+}
+
+} // namespace
+
+llvm::StructType *CodeGen::type_union_type() {
+    if (type_struct_id_ >= 0 && type_struct_id_ < static_cast<int>(structs_.size())) {
+        return structs_[static_cast<std::size_t>(type_struct_id_)].type;
+    }
+    if (fallback_type_ty_ != nullptr) {
+        return fallback_type_ty_;
+    }
+    // `{ [0 x i8], { ptr, i1, i1, i1 }, i32 }`. Same bytes as `builtin.Type`: descriptor, three flags, tag.
+    auto *payload = llvm::StructType::create(context_, {ptr_type(), i1(), i1(), i1()}, "tlc.Function");
+    fallback_type_ty_ = llvm::StructType::create(context_, "tlc.Type");
+    fallback_type_ty_->setBody({llvm::ArrayType::get(i8(), 0), payload, i32()});
+    return fallback_type_ty_;
+}
+
+bool CodeGen::type_union_value(llvm::Type *type) const {
+    if (type == nullptr) {
+        return false;
+    }
+    if (type_struct_id_ >= 0 && type_struct_id_ < static_cast<int>(structs_.size()) &&
+        structs_[static_cast<std::size_t>(type_struct_id_)].type == type) {
+        return true;
+    }
+    return fallback_type_ty_ != nullptr && type == fallback_type_ty_;
+}
+
+llvm::Constant *CodeGen::intern_type_value(const std::string &text, int arm, bool has_this, bool generic, bool variadic) {
+    llvm::StructType *union_ty = type_union_type();
+    if (union_ty == nullptr || !union_ty->isSized() || union_ty->getNumElements() != 3) {
+        return nullptr;
+    }
+    auto *prefix = llvm::dyn_cast<llvm::ArrayType>(union_ty->getElementType(0));
+    auto *payload = llvm::dyn_cast<llvm::StructType>(union_ty->getElementType(1));
+    llvm::Type *tag_ty = union_ty->getElementType(2);
+    if (prefix == nullptr || prefix->getNumElements() != 0 || payload == nullptr || payload->getNumElements() != 4 ||
+        tag_ty == nullptr) {
+        return nullptr;
+    }
+    const std::string key = type_value_key(text, arm, has_this, generic, variadic);
+    const auto inserted = type_values_.emplace(key, nullptr);
+    if (!inserted.second) {
+        return inserted.first->second;
+    }
+    llvm::Constant *desc = intern_type_desc(text);
+    llvm::Type *ptr_field = payload->getElementType(0);
+    if (desc == nullptr || desc->getType() != ptr_field) {
+        type_values_.erase(key);
+        return nullptr;
+    }
+    const auto flag = [&](unsigned index, bool value) {
+        return llvm::ConstantInt::get(payload->getElementType(index), value ? 1 : 0, false);
+    };
+    bool first = false;
+    bool second = false;
+    bool third = false;
+    if (arm == 1) {
+        first = has_this;
+        second = generic;
+        third = variadic;
+    } else if (arm == 2) {
+        first = generic;
+    }
+    llvm::Constant *payload_value =
+        llvm::ConstantStruct::get(payload, {desc, flag(1, first), flag(2, second), flag(3, third)});
+    llvm::Constant *prefix_value = llvm::ConstantArray::get(prefix, {});
+    const bool imported = type_struct_id_ >= 0 && type_struct_id_ < static_cast<int>(structs_.size()) &&
+                          structs_[static_cast<std::size_t>(type_struct_id_)].type == union_ty;
+    llvm::Constant *tag = imported ? enum_constant(structs_[static_cast<std::size_t>(type_struct_id_)].tag_enum, arm)
+                                   : const_i32(arm);
+    if (payload_value == nullptr || prefix_value == nullptr || tag == nullptr || tag->getType() != tag_ty) {
+        type_values_.erase(key);
+        return nullptr;
+    }
+    llvm::Constant *value = llvm::ConstantStruct::get(union_ty, {prefix_value, payload_value, tag});
+    type_values_[key] = value;
+    return value;
+}
+
+llvm::Constant *CodeGen::type_kind_ptr(const std::string &text, int arm, bool has_this, bool generic, bool variadic) {
+    const std::string key = type_value_key(text, arm, has_this, generic, variadic);
+    const auto found = type_kind_ptrs_.find(key);
     if (found != type_kind_ptrs_.end()) {
         return found->second;
     }
-    // `*const Type` points at the descriptor address. One cell is shared by every field of that type.
-    auto *cell = new llvm::GlobalVariable(module_, ptr_type(), true, llvm::GlobalValue::PrivateLinkage,
-                                          intern_type_desc(text), ".tkind");
-    type_kind_ptrs_.emplace(text, cell);
+    llvm::Constant *value = intern_type_value(text, arm, has_this, generic, variadic);
+    if (value == nullptr) {
+        return nullptr;
+    }
+    // `*const Type` points at this union value. One cell is shared by every field of that type.
+    auto *cell = new llvm::GlobalVariable(module_, value->getType(), true, llvm::GlobalValue::PrivateLinkage, value,
+                                          ".tkind");
+    type_kind_ptrs_.emplace(key, cell);
     return cell;
 }
 
@@ -1532,17 +1639,21 @@ void CodeGen::apply_initializer(const VarDecl &var) {
     }
     const auto found_early = file.globals.find(key);
     if (const auto *kind = std::get_if<Expr::Typeof>(&var.init->data)) {
-        const bool type_slot = found_early != file.globals.end() && found_early->second.depth == 1 &&
-                               !found_early->second.elem_char && found_early->second.struct_id < 0 &&
-                               !found_early->second.elem_void && !found_early->second.elem_bool &&
-                               !found_early->second.elem_float && found_early->second.elem_bits == 0 &&
-                               found_early->second.enum_id < 0;
+        const bool type_slot = found_early != file.globals.end() && found_early->second.depth == 0 &&
+                               ((type_struct_id_ >= 0 && found_early->second.struct_id == type_struct_id_) ||
+                                found_early->second.struct_id == synthetic_type_id);
         if (!type_slot || kind->canonical.empty() || found_early->second.value == nullptr) {
             error(var.loc, "type mismatch");
             return;
         }
-        auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
-        global->setInitializer(intern_type_desc(kind->canonical));
+        llvm::Constant *value = intern_type_value(kind->canonical, kind->type_arm, kind->type_has_this, kind->type_generic,
+                                                  kind->type_variadic);
+        auto *global = llvm::dyn_cast<llvm::GlobalVariable>(found_early->second.value);
+        if (value == nullptr || global == nullptr || value->getType() != global->getValueType()) {
+            error(var.loc, "global initializer is not a constant");
+            return;
+        }
+        global->setInitializer(value);
         file.folded.insert(key);
         return;
     }

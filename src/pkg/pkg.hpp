@@ -35,9 +35,14 @@ struct ImportEdge {
 };
 
 // One field of a named struct, in source order. `type` is the spelling `typeof` uses.
+// `arm` is the `builtin.Type` tag: 0 Other, 1 Function, 2 Struct. The flags match that arm.
 struct ReflectedField {
     std::string name;
     std::string type;
+    int arm = 0;
+    bool has_this = false;
+    bool generic = false;
+    bool variadic = false;
 };
 
 // One specialized struct. The checker numbers every concrete struct first, then

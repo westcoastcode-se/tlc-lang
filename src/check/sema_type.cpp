@@ -933,6 +933,10 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         created.tag_package = item->tag_package;
         structs_.push_back(std::move(created));
         tags_[file_id][item->name] = id;
+        // `export type Type union(TypeKind)` in builtin. `typeof` returns this union.
+        if (item->name == "Type" && item->is_union && item->tag_name == "TypeKind" && is_std_builtin_file(file_id)) {
+            type_value_id_ = id;
+        }
         if (item->fields.empty()) {
             // An empty tlc struct is zero-sized and may still have methods. An empty
             // extern(abi="c") struct is a one-byte opaque handle. An empty `union(Enum)` keeps
@@ -2087,9 +2091,6 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         } else if (receiver && have_alias) {
             // A pointer alias, a sized-array alias, or a struct alias is not a method owner.
             type = type_invalid();
-        } else if (receiver && name == "Type" && is_std_builtin_file(file_id_)) {
-            // `func Type::name(self this)`. The parser marks the receiver as a struct.
-            type = with_indirections(type_meta(), indirections, loc, optional, const_pointee);
         } else {
             type = with_indirections(lookup_tag(name, loc, indirections > 0 || allow_incomplete), indirections, loc,
                                      optional, const_pointee);
@@ -2233,6 +2234,40 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
 }
 
 bool Checker::is_lvalue_form(const Expr &expr) const { return lvalue_form(expr); }
+
+Type Checker::type_value() const {
+    if (type_value_id_ >= 0) {
+        return type_struct(type_value_id_);
+    }
+    return type_meta();
+}
+
+bool Checker::is_type_value(const Type &type) const {
+    if (type.kind == TypeKind::Meta) {
+        return true;
+    }
+    return type_value_id_ >= 0 && type.kind == TypeKind::Struct && type.struct_id == type_value_id_;
+}
+
+Checker::TypeFacts Checker::classify_type_facts(const Type &type) const {
+    TypeFacts facts;
+    if (type.kind == TypeKind::Function) {
+        facts.arm = 1;
+        facts.variadic = type.variadic;
+        return facts;
+    }
+    if (type.kind != TypeKind::Struct || type.struct_id < 0 || type.struct_id >= static_cast<int>(structs_.size())) {
+        return facts;
+    }
+    const StructInfo &info = structs_[static_cast<std::size_t>(type.struct_id)];
+    // A union is not a struct. A function pointer is a pointer, so it stays Other.
+    if (info.is_union) {
+        return facts;
+    }
+    facts.arm = 2;
+    facts.generic = !info.template_name.empty();
+    return facts;
+}
 
 std::string Checker::type_desc(const Type &type) const {
     if (type.alias_id > 0 && static_cast<std::size_t>(type.alias_id) < alias_names_.size()) {
@@ -2383,8 +2418,8 @@ int Checker::builtin_field_struct() const {
                                 name.type.element != nullptr && name.type.element->is_const &&
                                 name.type.element->kind == TypeKind::Char && name.type.element->is_unsigned;
         const bool kind_type = kind.exported && kind.name == "kind" && kind.type.kind == TypeKind::Pointer &&
-                               !kind.type.optional && kind.type.pointee != nullptr &&
-                               kind.type.pointee->kind == TypeKind::Meta && kind.type.pointee->is_const;
+                               !kind.type.optional && kind.type.pointee != nullptr && kind.type.pointee->is_const &&
+                               is_type_value(*kind.type.pointee);
         if (name_bytes && kind_type) {
             return id;
         }
@@ -2420,7 +2455,14 @@ void Checker::note_tuple_fields(const Type &type) {
     fields.reserve(type.results.size());
     for (std::size_t i = 0; i < type.results.size(); ++i) {
         note_tuple_fields(type.results[i]);
-        fields.push_back(ReflectedField{std::to_string(i), type_desc(type.results[i])});
+        ReflectedField reflected;
+        reflected.name = std::to_string(i);
+        reflected.type = type_desc(type.results[i]);
+        const TypeFacts facts = classify_type_facts(type.results[i]);
+        reflected.arm = facts.arm;
+        reflected.generic = facts.generic;
+        reflected.variadic = facts.variadic;
+        fields.push_back(std::move(reflected));
     }
     tuple_fields_[spelling] = std::move(fields);
 }
@@ -2436,7 +2478,9 @@ void Checker::publish_reflected_fields() {
             return false;
         }
         for (std::size_t i = 0; i < lhs.size(); ++i) {
-            if (lhs[i].name != rhs[i].name || lhs[i].type != rhs[i].type) {
+            if (lhs[i].name != rhs[i].name || lhs[i].type != rhs[i].type || lhs[i].arm != rhs[i].arm ||
+                lhs[i].has_this != rhs[i].has_this || lhs[i].generic != rhs[i].generic ||
+                lhs[i].variadic != rhs[i].variadic) {
                 return false;
             }
         }
@@ -2467,7 +2511,14 @@ void Checker::publish_reflected_fields() {
                 field.type.kind != TypeKind::Invalid && spelling != "invalid") {
                 spelling = "const " + spelling;
             }
-            fields.push_back(ReflectedField{field.name, std::move(spelling)});
+            ReflectedField reflected;
+            reflected.name = field.name;
+            reflected.type = std::move(spelling);
+            const TypeFacts facts = classify_type_facts(field.type);
+            reflected.arm = facts.arm;
+            reflected.generic = facts.generic;
+            reflected.variadic = facts.variadic;
+            fields.push_back(std::move(reflected));
         }
         if (fields.empty()) {
             return;

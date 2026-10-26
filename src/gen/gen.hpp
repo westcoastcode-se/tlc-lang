@@ -714,13 +714,21 @@ class CodeGen {
     std::vector<const TraitDecl *> trait_decls_;
     std::unordered_map<std::string, llvm::Function *> specs_;
     std::unordered_map<std::string, llvm::GlobalVariable *> type_names_;
-    // One descriptor per spelling. The value of `Type` is a pointer to it.
+    // One descriptor per spelling. `name()` and `fields()` load it. `builtin.Type` points at it.
     std::unordered_map<std::string, llvm::GlobalVariable *> type_descs_;
-    // One `*const Type` cell per spelling. `Field.kind` points at it.
+    // One `builtin.Type` value per spelling and flags. `Field.kind` points at it.
     std::unordered_map<std::string, llvm::GlobalVariable *> type_kind_ptrs_;
+    // One union constant per spelling and flags. Equal types share it.
+    std::unordered_map<std::string, llvm::Constant *> type_values_;
     llvm::StructType *type_desc_ty_ = nullptr;
     // `fields()` element: `{ name []const u8, kind *const Type }`. Negative until `prepare_structs`.
     int field_struct_id_ = -1;
+    // `builtin.Type` and `builtin.Desc`. Negative until those structs are laid out.
+    int type_struct_id_ = -1;
+    int desc_struct_id_ = -1;
+    // `typeof` when this compilation does not import builtin. Not an index into `structs_`.
+    static constexpr int synthetic_type_id = -2;
+    llvm::StructType *fallback_type_ty_ = nullptr;
     std::unordered_set<std::string> emitting_specs_;
     std::vector<int> active_spec_;
     // One entry per parameter of the specialization being emitted. Parallel to `active_spec_`.
@@ -761,6 +769,9 @@ class CodeGen {
         }
         if (struct_id >= 0 && struct_id < static_cast<int>(structs_.size()) && structs_[static_cast<std::size_t>(struct_id)].type != nullptr) {
             return structs_[static_cast<std::size_t>(struct_id)].type;
+        }
+        if (struct_id == synthetic_type_id && fallback_type_ty_ != nullptr) {
+            return fallback_type_ty_;
         }
         if (elem_float) {
             return elem_bits >= 64 ? f64_ty() : f32_ty();
@@ -1213,8 +1224,6 @@ class CodeGen {
     const Alias *spec_alias(const std::string &name) const;
     bool has_typedef(uint32_t file, const std::string &name) const;
     bool alias_base_ready(uint32_t file, const TypedefDecl &item) const;
-    // `builtin.Type`, or `Type` brought in by `import { Type } from "builtin"`.
-    bool meta_type(uint32_t file, const std::string &package, const std::string &name) const;
     Lowered lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct, int indirections,
                   bool is_array, int array_len, bool parameter, bool elem_slice = false,
                   const std::vector<TypeShell> &shells = {}) const;
@@ -1330,7 +1339,12 @@ class CodeGen {
     llvm::Constant *intern_type_name(const std::string &text);
     llvm::StructType *type_desc_type();
     llvm::Constant *intern_type_desc(const std::string &text);
-    llvm::Constant *type_kind_ptr(const std::string &text);
+    // The `builtin.Type` union, or the same layout when that union was not imported.
+    llvm::StructType *type_union_type();
+    bool type_union_value(llvm::Type *type) const;
+    // The `builtin.Type` constant for this spelling and these flags.
+    llvm::Constant *intern_type_value(const std::string &text, int arm, bool has_this, bool generic, bool variadic);
+    llvm::Constant *type_kind_ptr(const std::string &text, int arm, bool has_this, bool generic, bool variadic);
     // The descriptor pointer a `Type` or `*Type` receiver holds. Null on a bad receiver.
     llvm::Value *type_descriptor(const Expr &expr);
     void install_field_struct();

@@ -1002,6 +1002,10 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.shells = node.shells;
                 copy.array_len = node.array_len;
                 copy.canonical = node.canonical;
+                copy.type_arm = node.type_arm;
+                copy.type_has_this = node.type_has_this;
+                copy.type_generic = node.type_generic;
+                copy.type_variadic = node.type_variadic;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {

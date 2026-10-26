@@ -7823,7 +7823,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("func main() i32 { return typeof(main); }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "return type: expected i32, found Type");
     }
 
     {

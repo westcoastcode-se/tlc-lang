@@ -601,13 +601,6 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 if (const Binding *binding = lookup(node.text)) {
                     return shape_from_binding(*binding);
                 }
-                // `sizeof(Type)` after `import { Type } from "builtin"`. The name is not a value.
-                if (meta_type(current_file_, "", node.text)) {
-                    Shape shape;
-                    shape.depth = 1;
-                    shape.type = ptr_type();
-                    return shape;
-                }
                 const Alias *alias = find_alias(current_file_, node.text);
                 if (alias == nullptr) {
                     alias = selective_alias(current_file_, node.text);
@@ -662,6 +655,17 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
                 Shape shape;
+                if (type_struct_id_ >= 0 && type_struct_id_ < static_cast<int>(structs_.size()) &&
+                    structs_[static_cast<std::size_t>(type_struct_id_)].type != nullptr) {
+                    shape.struct_id = type_struct_id_;
+                    shape.type = structs_[static_cast<std::size_t>(type_struct_id_)].type;
+                    return shape;
+                }
+                if (fallback_type_ty_ != nullptr) {
+                    shape.struct_id = synthetic_type_id;
+                    shape.type = fallback_type_ty_;
+                    return shape;
+                }
                 shape.depth = 1;
                 shape.type = ptr_type();
                 return shape;

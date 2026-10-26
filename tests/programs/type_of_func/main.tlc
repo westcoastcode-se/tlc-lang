@@ -1,0 +1,27 @@
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+func add(a i32, b i32) i32 { return a + b; }
+func sub(a i32, b i32) i32 { return a - b; }
+func id(n i32) i32 { return n; }
+func none() {}
+func pair(n i32) (i32, i32) { return n, n; }
+extern(abi="c") func logf(fmt *const u8, ...) i32;
+
+func main() i32 {
+    var f = add;
+    printf("%s\n", typeof(add).name());
+    printf("%s\n", typeof(id).name());
+    printf("%s\n", typeof(none).name());
+    printf("%s\n", typeof(pair).name());
+    printf("%s\n", typeof(logf).name());
+    printf("%s\n", typeof(f).name());
+    if (typeof(add) != typeof(sub)) { return 1; }
+    if (typeof(add) == typeof(id)) { return 2; }
+    if (typeof(f) == typeof(add)) { return 3; }
+    if (typeof(add).name() != typeof(sub).name()) { return 4; }
+    if (typeof(none) == typeof(id)) { return 5; }
+    if (typeof(pair) == typeof(id)) { return 6; }
+    if (typeof(logf) == typeof(add)) { return 7; }
+    if (typeof(add).fields().len != 0) { return 8; }
+    return 42;
+}

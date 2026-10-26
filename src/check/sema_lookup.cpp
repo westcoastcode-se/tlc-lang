@@ -597,7 +597,7 @@ bool Checker::named_type_owner(const std::string &name) const {
     if (name.empty()) {
         return false;
     }
-    // `func Type::name` is written in the compiler package. `Type` is not a struct.
+    // `func Type::name` is written in the compiler package. The union is the owner.
     if (name == "Type" && is_std_builtin_file(file_id_)) {
         return true;
     }
@@ -786,9 +786,9 @@ Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_in
     if (const int trait = package_trait(file_id_, name); trait >= 0) {
         return type_trait(trait);
     }
-    // `kind *const Type` on `builtin.Field`. The export is added after the field is typed.
+    // `kind *const Type` on `builtin.Field`, before that tag is visible.
     if (name == "Type" && is_std_builtin_file(file_id_)) {
-        return type_meta();
+        return type_value();
     }
     uint32_t owner = file_id_;
     if (find_struct_template(name, owner) != nullptr || find_trait_template(name, owner) != nullptr ||
@@ -975,7 +975,8 @@ bool Checker::accepts_pointer(const Type &got, const Type &want) const {
 bool Checker::needs_nonnull_pointer(const Type &type) const {
     std::unordered_set<int> seen;
     const auto walk = [&](const auto &self, const Type &current) -> bool {
-        if (current.kind == TypeKind::Meta) {
+        // A zero `builtin.Type` has a null descriptor. `name()` would load it.
+        if (is_type_value(current)) {
             return true;
         }
         if (current.kind == TypeKind::Pointer) {

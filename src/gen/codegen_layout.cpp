@@ -416,6 +416,28 @@ void CodeGen::prepare_structs() {
                     }
                 }
             }
+            // `builtin.Type` stores a descriptor pointer in every arm. A byte payload cannot
+            // be a constant that holds that pointer, so the payload is the Function struct.
+            if (item->name == "Type" && item->is_union && item->tag_name == "TypeKind" &&
+                is_compiler_builtin(find_node(file))) {
+                llvm::Type *function_ty = nullptr;
+                for (const FieldLayout &slot : fields) {
+                    if (slot.name == "Function") {
+                        function_ty = slot.type;
+                    }
+                }
+                const int tag = structs_[static_cast<std::size_t>(id)].tag_enum;
+                if (function_ty != nullptr && function_ty->isStructTy() && function_ty->isSized() && tag >= 0) {
+                    body.clear();
+                    body.push_back(llvm::ArrayType::get(i8(), 0));
+                    body.push_back(function_ty);
+                    body.push_back(enum_mem_type(tag));
+                    type_struct_id_ = id;
+                }
+            }
+            if (item->name == "Desc" && !item->is_union && body.size() >= 2 && is_compiler_builtin(find_node(file))) {
+                desc_struct_id_ = id;
+            }
             structs_[static_cast<std::size_t>(id)].type->setBody(body);
             structs_[static_cast<std::size_t>(id)].fields = std::move(fields);
             structs_[static_cast<std::size_t>(id)].ready = true;
@@ -459,11 +481,16 @@ void CodeGen::prepare_structs() {
         const FieldLayout *kind = name != nullptr ? &layout.fields[1] : nullptr;
         const bool name_text = name != nullptr && name->name == "name" && name->is_slice && name->elem_unsigned &&
                                name->elem_bits == 8;
-        if (!layout.ready || !name_text || kind->name != "kind" || kind->depth != 2) {
+        if (!layout.ready || !name_text || kind->name != "kind" || kind->depth != 1 || type_struct_id_ < 0 ||
+            kind->struct_id != type_struct_id_) {
             continue;
         }
         field_struct_id_ = id;
         break;
+    }
+    // A file that does not import builtin still emits `typeof`. The value is this union.
+    if (type_struct_id_ < 0) {
+        (void)type_union_type();
     }
 }
 
@@ -1512,9 +1539,19 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                 } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                     return as_int(32, false);
                 } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                    if (type_struct_id_ >= 0 && type_struct_id_ < static_cast<int>(structs_.size()) &&
+                        structs_[static_cast<std::size_t>(type_struct_id_)].type != nullptr) {
+                        Lowered low;
+                        low.struct_id = type_struct_id_;
+                        low.type = structs_[static_cast<std::size_t>(type_struct_id_)].type;
+                        return low;
+                    }
+                    if (fallback_type_ty_ == nullptr) {
+                        return std::nullopt;
+                    }
                     Lowered low;
-                    low.depth = 1;
-                    low.type = ptr_type();
+                    low.struct_id = synthetic_type_id;
+                    low.type = fallback_type_ty_;
                     return low;
                 } else if constexpr (std::is_same_v<T, Expr::Name>) {
                     if (const Binding *global = find_global(item.text)) {

@@ -246,6 +246,8 @@ class Checker {
     // `fields()` yields `[]const Field`: `name []const u8` and `kind *const Type`.
     // Negative until `ensure_field_info` runs. `builtin.Field` replaces it when that struct is declared.
     int field_info_id_ = -1;
+    // `builtin.Type`, the tagged union. Negative until that union is declared.
+    int type_value_id_ = -1;
     std::vector<TraitInfo> traits_;
     // The built-in `Allocator` trait. Negative until the first unit is registered.
     int allocator_trait_id_ = -1;
@@ -457,6 +459,22 @@ class Checker {
     // `allow_incomplete` is a tuple alias registered before struct bodies exist.
     Type type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete = false);
     std::string type_desc(const Type &type) const;
+    // `builtin.Type`. `type_meta()` until that union is declared.
+    Type type_value() const;
+    // The injected pointer, or the `builtin.Type` union.
+    bool is_type_value(const Type &type) const;
+    // Arm of `builtin.Type` for this type. 0 is Other, 1 is Function, 2 is Struct.
+    // `has_this` is not a property of the type. `typeof` of an instance method sets it.
+    struct TypeFacts {
+        int arm = 0;
+        bool generic = false;
+        bool variadic = false;
+    };
+    TypeFacts classify_type_facts(const Type &type) const;
+    // `typeof` of a generic function or an instance method. Other expressions are skipped.
+    // Failed means a diagnostic is already recorded.
+    enum class TypeReflect { Skip, Done, Failed };
+    TypeReflect reflect_typeof(const Expr &expr, const Expr::Typeof &node);
     // The slice `Type.fields()` returns. Invalid before `ensure_field_info`.
     Type type_field_slice() const;
     void ensure_field_info();

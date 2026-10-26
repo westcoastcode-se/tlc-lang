@@ -229,6 +229,13 @@ struct Expr {
         std::unique_ptr<Expr> expr;
         // Filled while checking. Codegen interns this spelling, so equal types share one value.
         mutable std::string canonical;
+        // Arm of `builtin.Type`. 0 is Other, 1 is Function, 2 is Struct.
+        // The flags live in that arm. A function pointer is Other.
+        // Mutable like `canonical`: checking fills them on a const expression.
+        mutable int type_arm = 0;
+        mutable bool type_has_this = false;
+        mutable bool type_generic = false;
+        mutable bool type_variadic = false;
     };
     struct Cast {
         SourceLoc loc{};

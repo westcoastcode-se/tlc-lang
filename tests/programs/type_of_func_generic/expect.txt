@@ -1,0 +1,4 @@
+link: -lc
+exit: 0
+stdout:
+func[T type](T) T

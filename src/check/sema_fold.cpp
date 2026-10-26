@@ -566,7 +566,7 @@ std::optional<int> Checker::known_len(const Expr &base) {
                                    info->is_array, info->array_len, info->elem_const, info->elem_slice, info->shells);
     quiet_ = saved_quiet;
     folding_fields_len_ = false;
-    if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Function || mentions_trait(type)) {
+    if (type.kind == TypeKind::Invalid || mentions_trait(type)) {
         return std::nullopt;
     }
     if (type.kind == TypeKind::Tuple) {
@@ -776,16 +776,23 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (node.lhs == nullptr || node.rhs == nullptr) {
                     return std::nullopt;
                 }
-                if (const std::optional<std::string> left_type = type_constant(*node.lhs)) {
-                    if (const std::optional<std::string> right_type = type_constant(*node.rhs)) {
-                        const bool same = *left_type == *right_type;
-                        if (node.op == TokenKind::EqEq) {
-                            return same ? 1 : 0;
+                if (const auto *left_of = std::get_if<Expr::Typeof>(&node.lhs->data)) {
+                    if (const auto *right_of = std::get_if<Expr::Typeof>(&node.rhs->data)) {
+                        if (const std::optional<std::string> left_type = type_constant(*node.lhs)) {
+                            if (const std::optional<std::string> right_type = type_constant(*node.rhs)) {
+                                const bool same = *left_type == *right_type && left_of->type_arm == right_of->type_arm &&
+                                                  left_of->type_has_this == right_of->type_has_this &&
+                                                  left_of->type_generic == right_of->type_generic &&
+                                                  left_of->type_variadic == right_of->type_variadic;
+                                if (node.op == TokenKind::EqEq) {
+                                    return same ? 1 : 0;
+                                }
+                                if (node.op == TokenKind::BangEq) {
+                                    return same ? 0 : 1;
+                                }
+                                return std::nullopt;
+                            }
                         }
-                        if (node.op == TokenKind::BangEq) {
-                            return same ? 0 : 1;
-                        }
-                        return std::nullopt;
                     }
                 }
                 const std::optional<int> lhs = fold_int(*node.lhs);

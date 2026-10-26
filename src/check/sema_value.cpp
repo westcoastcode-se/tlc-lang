@@ -310,11 +310,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return type_bool();
                     }
                 }
-                if (lhs.kind == TypeKind::Meta || rhs.kind == TypeKind::Meta) {
+                if (is_type_value(lhs) || is_type_value(rhs)) {
                     if (lhs.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
                         return type_invalid();
                     }
-                    if (lhs.kind == TypeKind::Meta && rhs.kind == TypeKind::Meta &&
+                    if (is_type_value(lhs) && is_type_value(rhs) &&
                         (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq)) {
                         return type_bool();
                     }
@@ -994,9 +994,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 return type_invalid();
                             }
                         }
-                        const bool type_value = base.kind == TypeKind::Meta;
+                        const bool type_value = is_type_value(base);
                         const bool through_type = base.kind == TypeKind::Pointer && base.pointee &&
-                                                  base.pointee->kind == TypeKind::Meta;
+                                                  is_type_value(*base.pointee);
                         if (type_value || through_type) {
                             if (through_type && base.optional) {
                                 error(node.loc, "undeclared identifier");
@@ -1742,6 +1742,44 @@ Type Checker::check_raw(const Expr &expr, bool used) {
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
                 (void)used;
                 InitQuiet quiet(*this);
+                // `typeof(Point.get)` is parsed as a qualified type. `Point` is the type, not a package.
+                if (node.on_type && !node.type_package.empty()) {
+                    const Symbol *symbol = lookup(node.type_package);
+                    const bool package = symbol != nullptr && symbol->is_package;
+                    if (!package && static_type_owner(node.type_package)) {
+                        const MethodInfo *method = find_named_method(node.type_package, node.type_name);
+                        if (method != nullptr && method->more.empty() && method->type.kind == TypeKind::Function &&
+                            method->type.result != nullptr) {
+                            if (method->decl != nullptr && !method->decl->type_params.empty()) {
+                                error(node.loc, "not supported yet");
+                                return type_invalid();
+                            }
+                            if (mentions_trait(method->type)) {
+                                error(node.loc, "not supported yet");
+                                return type_invalid();
+                            }
+                            if (!allow_unsafe_fn(method->unsafe_fn, node.loc)) {
+                                return type_invalid();
+                            }
+                            node.canonical = type_desc(method->type);
+                            node.type_arm = 1;
+                            node.type_has_this = !method->is_static;
+                            node.type_generic = false;
+                            node.type_variadic = method->type.variadic;
+                            return type_value();
+                        }
+                    }
+                }
+                // A generic function and an instance method are not values. `typeof` still reads them.
+                if (!node.on_type && node.expr != nullptr) {
+                    const TypeReflect reflected = reflect_typeof(*node.expr, node);
+                    if (reflected == TypeReflect::Failed) {
+                        return type_invalid();
+                    }
+                    if (reflected == TypeReflect::Done) {
+                        return type_value();
+                    }
+                }
                 const Type type = operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum,
                                                node.indirections, node.optional, node.expr.get(), node.loc,
                                                node.const_pointee, node.is_array, node.array_len, node.elem_const,
@@ -1749,15 +1787,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
-                if (type.kind == TypeKind::Function || mentions_trait(type)) {
+                if (mentions_trait(type)) {
                     error(node.loc, "not supported yet");
                     return type_invalid();
                 }
                 if (type.kind == TypeKind::Tuple) {
                     note_tuple_fields(type);
                 }
+                const TypeFacts facts = classify_type_facts(type);
                 node.canonical = type_desc(type);
-                return type_meta();
+                node.type_arm = facts.arm;
+                node.type_has_this = false;
+                node.type_generic = facts.generic;
+                node.type_variadic = facts.variadic;
+                return type_value();
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 (void)used;
                 if (!node.is_fn_ptr && node.indirections == 0) {
@@ -2193,6 +2236,208 @@ Type Checker::check_raw(const Expr &expr, bool used) {
             }
         },
         expr.data);
+}
+
+namespace {
+
+// `int` in a type-parameter list is `i32`. The other C names follow that.
+std::optional<std::string> value_constraint(const std::string &name) {
+    if (name == "int") {
+        return "i32";
+    }
+    if (name == "char") {
+        return "i8";
+    }
+    if (name == "short") {
+        return "i16";
+    }
+    if (name == "long") {
+        return "i64";
+    }
+    if (name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" ||
+        name == "i64" || name == "u64") {
+        return name;
+    }
+    return std::nullopt;
+}
+
+template <typename Slot>
+std::optional<std::string> spell_written(const Slot &slot) {
+    // A shell, an array, a function pointer, or a type argument is not spelled here.
+    if (slot.is_fn_ptr || slot.is_tuple || slot.is_array || !slot.shells.empty() || !slot.type_args.empty() ||
+        slot.elem_const || slot.elem_slice || !slot.array_len_name.empty() || slot.type_name.empty()) {
+        return std::nullopt;
+    }
+    std::string text;
+    for (int level = 0; level < slot.indirections; ++level) {
+        if ((slot.optional & (1u << static_cast<unsigned>(level))) != 0) {
+            text += '?';
+        }
+        text += '*';
+        if ((slot.const_pointee & (1u << static_cast<unsigned>(level))) != 0) {
+            text += "const ";
+        }
+    }
+    if (!slot.type_package.empty()) {
+        text += slot.type_package;
+        text += '.';
+    }
+    text += slot.type_name;
+    return text;
+}
+
+// `func id[T type](value T) T` spells `func[T type](T) T`. The parameter names are the ones written.
+std::optional<std::string> spell_generic_function(const FunctionDecl &fn) {
+    if (fn.is_comptime || fn.is_macro || fn.infer_result || !fn.method_struct.empty() || fn.type_params.empty()) {
+        return std::nullopt;
+    }
+    for (const auto &slot : fn.result_typeof) {
+        if (slot != nullptr) {
+            return std::nullopt;
+        }
+    }
+    std::string text = "func[";
+    for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
+        const TypeParam &param = fn.type_params[i];
+        if (param.is_pack || param.name.empty()) {
+            return std::nullopt;
+        }
+        if (i != 0) {
+            text += ", ";
+        }
+        text += param.name;
+        if (param.is_type) {
+            text += " type";
+        } else if (param.is_value) {
+            const std::optional<std::string> constraint = value_constraint(param.constraint);
+            if (!constraint) {
+                return std::nullopt;
+            }
+            text += ' ';
+            text += *constraint;
+        } else if (param.is_trait) {
+            if (param.constraint.empty()) {
+                return std::nullopt;
+            }
+            text += ' ';
+            if (!param.constraint_package.empty()) {
+                text += param.constraint_package;
+                text += '.';
+            }
+            text += param.constraint;
+        } else {
+            return std::nullopt;
+        }
+    }
+    text += "](";
+    bool any = false;
+    for (const Param &param : fn.params) {
+        if (param.is_receiver) {
+            continue;
+        }
+        if (param.is_comptime || param.is_const) {
+            return std::nullopt;
+        }
+        const std::optional<std::string> spelled = spell_written(param);
+        if (!spelled) {
+            return std::nullopt;
+        }
+        if (any) {
+            text += ", ";
+        }
+        any = true;
+        text += *spelled;
+    }
+    if (fn.variadic) {
+        text += any ? ", ..." : "...";
+    }
+    text += ") ";
+    if (fn.results.empty()) {
+        text += "void";
+        return text;
+    }
+    if (fn.results.size() == 1) {
+        const std::optional<std::string> spelled = spell_written(fn.results.front());
+        if (!spelled) {
+            return std::nullopt;
+        }
+        text += *spelled;
+        return text;
+    }
+    text += '(';
+    for (std::size_t i = 0; i < fn.results.size(); ++i) {
+        const std::optional<std::string> spelled = spell_written(fn.results[i]);
+        if (!spelled) {
+            return std::nullopt;
+        }
+        if (i != 0) {
+            text += ", ";
+        }
+        text += *spelled;
+    }
+    text += ')';
+    return text;
+}
+
+} // namespace
+
+Checker::TypeReflect Checker::reflect_typeof(const Expr &expr, const Expr::Typeof &node) {
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        const Symbol *symbol = lookup(named->text);
+        if (symbol == nullptr || !symbol->is_template) {
+            return TypeReflect::Skip;
+        }
+        if (symbol->fn_template == nullptr || symbol->fn_templates.size() != 1 || symbol->lists.size() > 1) {
+            error(named->loc, "not supported yet");
+            return TypeReflect::Failed;
+        }
+        const std::optional<std::string> spelled = spell_generic_function(*symbol->fn_template);
+        if (!spelled) {
+            error(named->loc, "not supported yet");
+            return TypeReflect::Failed;
+        }
+        node.canonical = *spelled;
+        node.type_arm = 1;
+        node.type_has_this = false;
+        node.type_generic = true;
+        node.type_variadic = symbol->fn_template->variadic;
+        return TypeReflect::Done;
+    }
+    const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+    if (selector == nullptr || selector->base == nullptr) {
+        return TypeReflect::Skip;
+    }
+    // `pkg.Point.id` is a selector of a selector. That stays the ordinary path.
+    const auto *owner = std::get_if<Expr::Name>(&selector->base->data);
+    if (owner == nullptr) {
+        return TypeReflect::Skip;
+    }
+    const Symbol *symbol = lookup(owner->text);
+    const bool shadowed = symbol != nullptr && !symbol->is_type;
+    if (shadowed || !static_type_owner(owner->text)) {
+        return TypeReflect::Skip;
+    }
+    const MethodInfo *method = find_named_method(owner->text, selector->field);
+    if (method == nullptr || !method->more.empty() || method->is_static || method->type.kind != TypeKind::Function) {
+        return TypeReflect::Skip;
+    }
+    if (method->decl != nullptr && !method->decl->type_params.empty()) {
+        error(selector->loc, "not supported yet");
+        return TypeReflect::Failed;
+    }
+    if (mentions_trait(method->type)) {
+        error(selector->loc, "not supported yet");
+        return TypeReflect::Failed;
+    }
+    if (!allow_unsafe_fn(method->unsafe_fn, selector->loc)) {
+        return TypeReflect::Failed;
+    }
+    node.canonical = type_desc(method->type);
+    node.type_arm = 1;
+    node.type_has_this = true;
+    node.type_generic = false;
+    node.type_variadic = method->type.variadic;
+    return TypeReflect::Done;
 }
 
 Type Checker::operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
