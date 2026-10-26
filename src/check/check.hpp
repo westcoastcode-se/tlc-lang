@@ -81,8 +81,8 @@ struct Symbol {
     bool is_constant = false;
     // `const name = expr` inside a function. The binding has storage and cannot be assigned.
     bool is_immutable = false;
-    // The initializer of that local `const` folded to an `i32`. A tuple index may use it.
-    // It is not a file-scope constant, so it is not an array length.
+    // The initializer of that local `const` folded to an `i32`. A tuple index and a
+    // comptime argument may use it. It is not a file-scope constant, so it is not an array length.
     bool folded_local = false;
     // Pointer receiver `self *this`. The name is not assigned. `*self` and `self.x` are.
     bool fixed_receiver = false;
@@ -653,6 +653,9 @@ class Checker {
     std::optional<int> fold_mem_compare(const Expr::Call &call);
     // A folded integer, or a constant `[]const u8` in this file. A `var` and a local `const` are not.
     bool argument_is_comptime(const Expr &arg);
+    // A bare local `const` whose initializer folded to `i32`. A `var` is not one.
+    // `fold_int` does not see it, so `comptime if` and an array length stay unchanged.
+    std::optional<int> folded_local_int(const Expr &expr);
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     // A `var`, a local `const`, and a tuple are not.
     bool comptime_constant(const Expr &expr);
@@ -896,6 +899,8 @@ class Checker {
     struct OwnedFn {
         uint32_t file_id = 0;
         FunctionDecl fn;
+        // Generic depth that queued this body. A source function stays 0.
+        int spec_depth = 0;
     };
     struct OwnedVar {
         uint32_t file_id = 0;
@@ -951,6 +956,8 @@ class Checker {
     std::unordered_set<std::string> spec_ready_;
     // Nested comptime-parameter specializations. The cap matches a macro `for`.
     int comptime_spec_depth_ = 0;
+    // Nested generic instantiations. A body that builds the next value stops at 32.
+    int generic_spec_depth_ = 0;
     // `file\nSpec` while that specialization's variables are being built.
     std::unordered_set<std::string> assoc_busy_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, Symbol>> spec_symbols_;

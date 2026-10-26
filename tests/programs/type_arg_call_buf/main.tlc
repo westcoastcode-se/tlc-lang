@@ -1,0 +1,4 @@
+comptime func add(k i32) i32 { return k + 1; }
+type Buf[N i32] struct { raw [N]u8; };
+func Buf[N]::span() i32 { return Buf[add(N)].span(); }
+func main() i32 { return Buf[1].span(); }

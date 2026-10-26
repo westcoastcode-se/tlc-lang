@@ -564,6 +564,15 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         note_caller(spec_name);
         return spec_name;
     }
+    if (generic_spec_depth_ >= 32) {
+        error(loc, "not supported yet");
+        return {};
+    }
+    ++generic_spec_depth_;
+    struct DepthLeave {
+        int &depth;
+        ~DepthLeave() { --depth; }
+    } leave{generic_spec_depth_};
     spec_checking_.insert(key);
     const uint32_t saved_file = file_id_;
     file_id_ = owner;
@@ -748,7 +757,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         if (introducing && link_name_taken(link_name)) {
             error(method.loc, "redefinition");
         }
-        deferred_methods_.push_back(OwnedFn{owner, std::move(method)});
+        deferred_methods_.push_back(OwnedFn{owner, std::move(method), generic_spec_depth_});
         FunctionDecl *stable = &deferred_methods_.back().fn;
         if (found == table.end()) {
             MethodInfo info;
@@ -1920,6 +1929,10 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         rewrite();
         return check_raw(expr, used);
     }
+    if (generic_spec_depth_ >= 32) {
+        error(call.loc, "not supported yet");
+        return type_invalid();
+    }
     FunctionDecl spec = clone_function(*templ);
     spec.name = spec_name;
     spec.type_params.clear();
@@ -2000,7 +2013,9 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         exports_[owner].insert_or_assign(spec_name, symbol);
     }
     spec_checking_.insert(key);
+    ++generic_spec_depth_;
     check_isolated(owner, spec);
+    --generic_spec_depth_;
     spec_checking_.erase(key);
     spec_ready_.insert(key);
     queue_spec(owner, std::move(spec));
@@ -2105,7 +2120,10 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         SpecArg bound;
         std::string piece;
         if (comptime_i32_param(param)) {
-            const std::optional<int> number = fold_int(*call.args[i - skip]);
+            std::optional<int> number = fold_int(*call.args[i - skip]);
+            if (!number) {
+                number = folded_local_int(*call.args[i - skip]);
+            }
             if (!number) {
                 return false;
             }
@@ -2788,7 +2806,7 @@ const FunctionDecl *Checker::install_default(const FunctionDecl &templ, uint32_t
         error(templ.loc, "redefinition");
         return nullptr;
     }
-    deferred_methods_.push_back(OwnedFn{struct_file, std::move(method)});
+    deferred_methods_.push_back(OwnedFn{struct_file, std::move(method), generic_spec_depth_});
     FunctionDecl *stable = &deferred_methods_.back().fn;
     default_origin_.emplace(stable, &templ);
     MethodInfo info;
@@ -3338,7 +3356,10 @@ void Checker::drain_deferred() {
         if (!item.fn.type_params.empty()) {
             continue;
         }
+        const int saved = generic_spec_depth_;
+        generic_spec_depth_ = item.spec_depth;
         check_isolated(item.file_id, item.fn);
+        generic_spec_depth_ = saved;
     }
 }
 

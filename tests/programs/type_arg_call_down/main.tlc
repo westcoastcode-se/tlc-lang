@@ -1,0 +1,13 @@
+comptime func sub(k i32) i32 { return k - 1; }
+
+func down[N i32]() i32 {
+    comptime if (N == 0) {
+        return 40;
+    } else {
+        return down[sub(N)]() + 1;
+    }
+}
+
+func main() i32 {
+    return down[2]();
+}

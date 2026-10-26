@@ -1216,10 +1216,11 @@ void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
 }
 
 std::optional<int> Checker::lookup_const_value(const std::string &name) {
-    if (const Symbol *symbol = lookup(name); symbol != nullptr && symbol->is_constant) {
-        if (plain_int_constant(symbol->type)) {
+    if (const Symbol *symbol = lookup(name)) {
+        if (symbol->is_constant && plain_int_constant(symbol->type)) {
             return symbol->const_value;
         }
+        // A local, a type, or another value hides the file-scope integer.
         return std::nullopt;
     }
     auto search = [&](uint32_t file, bool allow_static) -> std::optional<int> {
@@ -1760,6 +1761,13 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
                 out = {};
                 out.is_value = true;
                 out.value = *value;
+                return true;
+            }
+            // A local `const` is not a file-scope constant. `lookup_const_value` stays the array length.
+            if (const Symbol *symbol = lookup(arg.type_name); symbol != nullptr && symbol->folded_local) {
+                out = {};
+                out.is_value = true;
+                out.value = symbol->const_value;
                 return true;
             }
         }

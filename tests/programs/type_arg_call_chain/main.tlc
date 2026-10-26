@@ -1,0 +1,3 @@
+comptime func add(k i32) i32 { return k + 1; }
+func width[N i32]() i32 { return width[add(N)](); }
+func main() i32 { return width[0](); }

@@ -193,6 +193,35 @@ retq                             # return
 
 The program returns 8. When the file is `main.tlc`, the symbol is `main.width.spec.8`. `repeat[sizeof(i32)]` is `main.repeat.spec.4.i32`.
 
+A call of a `comptime func` may be a compile-time integer type argument. `width[add(3)]()` is the same specialization as `width[4]()`. `Buf[add(3)].span()` reads the one argument as that integer. A local `const` whose initializer folds to `i32` may be that argument. `width[n]()` when `const n = 2` is `width[2]()`. That local hides a file-scope `const` of the same name, and a const brought in with `import { n }`. A `var` is `type mismatch`. An ordinary function is `not supported yet`. `add(3) + 1` is `expected ']'`. A body that builds the next value, such as `return width[add(N)]()`, stops after 32 specializations with `not supported yet`. `width[add(3)]()` in `main` is one specialization.
+
+```c
+comptime func add(n i32) i32 {
+    return n + 1;
+}
+
+func width[N i32]() i32 {
+    return N;
+}
+
+func main() i32 {
+    return width[add(3)]();
+}
+```
+
+```asm
+width.spec.4:
+movl $4, %eax                    # constant
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+callq width.spec.4               # call width
+retq                             # return
+```
+
+The program returns 4. When the file is `main.tlc`, the symbol is `main.width.spec.4`.
+
 `var f = id` names that generic. `f := id` and `const f = id` do too, and so does `var g = f`. `f(1)` and `f[i32](1)` specialize it the same way as `id`. The name is one in this package. `var f = pkg.id` is `not supported yet`, and the call stays `pkg.id(1)` or `pkg.id[i32](1)`. The binding is not a function pointer and has no storage. A use that is not a call, such as `return f` or `take(f)` where a function pointer is expected, is `not supported yet`. `f = id` is `not supported yet`. A file-scope `var f = id` is `not supported yet`. An overloaded function that is not generic stays `not supported yet` when it is used as a value. An instance method used as a value is `type mismatch`.
 
 ### One type parameter

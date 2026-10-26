@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Generics](generic.md) · [Next: Macros](macro.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-A `comptime func` calculates while compiling. Every argument is a comptime value, whether or not the parameter is marked `comptime`. A comptime value is a folded integer, a constant `[]const u8`, an enumerator, or a file-scope `const` of a struct, a float, an alias, or a function. A string is a literal, a constant range, or a file-scope `const` in the same file. A `var` and a local `const` are not. A tuple of those values is. A file-scope `const` of a tuple is `type mismatch`. `return` leaves the function. The call is an expression. It does not paste the body into the caller.
+A `comptime func` calculates while compiling. Every argument is a comptime value, whether or not the parameter is marked `comptime`. A comptime value is a folded integer, a constant `[]const u8`, an enumerator, or a file-scope `const` of a struct, a float, an alias, or a function. A string is a literal, a constant range, or a file-scope `const` in the same file. A `var` is not. A local `const` whose initializer folds to `i32` is a comptime argument. It hides a file-scope `const` of the same name. A local `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` is not. A tuple of a folded integer, a constant `[]const u8`, an enumerator, or a file-scope `const` is. A tuple element that is a local `const` is `type mismatch`. A file-scope `const` of a tuple is `type mismatch`. `return` leaves the function. The call is an expression. It does not paste the body into the caller.
 
 ```c
 comptime func add(n i32) i32 {
@@ -20,11 +20,30 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
+`const n = 41` then `return add(n)` folds the same way. A `var` is `not supported yet`.
+
+```c
+comptime func add(n i32) i32 {
+    return n + 1;
+}
+
+func main() i32 {
+    const n = 41;
+    return add(n);
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
 The call folds when the body is one `return` of a constant `i32`. There is no runtime symbol and no trace frame. `emit` is not valid in a `comptime func`. A `var` passed to a `comptime func` is `not supported yet`. A type parameter, a method, `extern`, `export`, and a call that does not fold are `not supported yet`. `comptime { ... }` inside an ordinary function is `not supported yet`. `comptime for` is `not supported yet`. `comptime if` keeps one arm when the condition folds. A condition that is not comptime is `not supported yet`. A `comptime` parameter is comptime. The copy that still receives it typechecks both arms. The copy that substitutes the value keeps one arm. An ordinary `if` typechecks both arms. `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. A value that is not comptime is `not supported yet`. A `comptime` parameter leaves every case until a call substitutes it. An ordinary `switch` typechecks every case. A `var` and a local `const` do not fold. In a [macro](macro.md), `comptime if` and `comptime switch` are `not supported yet`, and `for` and `if` run while compiling without that prefix. A `switch` in a macro is `not supported yet`. `const for` is not a form.
 
 An ordinary function may mark a parameter `comptime`. That argument has to be a comptime value, or the call is `type mismatch`. When every parameter is `comptime` and the body is one `return` of a constant `i32`, the call folds. The function is still compiled.
 
-A mix of a `comptime` parameter and a runtime parameter is specialized per constant. The comptime parameter is not passed. Each use of that name in the copy is the constant. `return scale(2, x)` calls that copy and adds `2`. When the file is `main.tlc`, the symbol is `main.scale.spec.2`. Another constant is another copy. `name comptime []const u8` is that string in the copy. An enumerator is that argument too. `take(n, Order.acquire)` calls `take.spec.1` when `acquire` is `1`. Each use of that name is `Order.acquire`. A method and a generic function drop that parameter the same way. When the file is `main.tlc` and `acquire` is `1`, `p.id(Order.acquire)` calls `main.Point.id.spec.1` and `id[i32](1, Order.acquire)` calls `main.id.spec.i32.spec.1`. Each use of that name is `Order.acquire`. `comptime if` on that compare keeps one arm. The other arm is not typechecked and not emitted. An ordinary `if` typechecks both arms. A `var` of the enum is `type mismatch`. A function nested in another function does not take an enumerator. A `var` is `type mismatch`, except on `extern` and `extern(abi="tlc")`. A function nested in another function still passes the constant. Using the function as a value and more than 32 nested specializations are `not supported yet`. A struct, a float, an alias, a function, and a tuple are comptime arguments. An `extern` function used as a value is the unspecialized function.
+A mix of a `comptime` parameter and a runtime parameter is specialized per constant. The comptime parameter is not passed. Each use of that name in the copy is the constant. `return scale(2, x)` calls that copy and adds `2`. When the file is `main.tlc`, the symbol is `main.scale.spec.2`. Another constant is another copy. `name comptime []const u8` is that string in the copy. An enumerator is that argument too. `take(n, Order.acquire)` calls `take.spec.1` when `acquire` is `1`. Each use of that name is `Order.acquire`. A method and a generic function drop that parameter the same way. When the file is `main.tlc` and `acquire` is `1`, `p.id(Order.acquire)` calls `main.Point.id.spec.1` and `id[i32](1, Order.acquire)` calls `main.id.spec.i32.spec.1`. Each use of that name is `Order.acquire`. `comptime if` on that compare keeps one arm. The other arm is not typechecked and not emitted. An ordinary `if` typechecks both arms. A `var` of the enum is `type mismatch`. A function nested in another function does not take an enumerator. A local `const` whose initializer folds to `i32` is the same specialization as that integer. A `var` is `type mismatch`, except on `extern` and `extern(abi="tlc")`. A function nested in another function still passes the constant. Using the function as a value and more than 32 nested specializations are `not supported yet`. A struct, a float, an alias, a function, and a tuple are comptime arguments. An `extern` function used as a value is the unspecialized function.
 
 ```c
 func add(n comptime i32) i32 {
@@ -55,6 +74,39 @@ retq                             # return
 ```
 
 `return add(1)` folds to `1`. `return scale(2, x)` passes `x` and calls `scale`. `2` is an immediate.
+
+A local `const` whose initializer folds to `i32` is that same argument. `const n = 2` then `return scale(n, x)` calls `main.scale.spec.2` when the file is `main.tlc`. A `var` is `type mismatch`. `scale(n + 1, x)` is `type mismatch`.
+
+```c
+func scale(n comptime i32, x i32) i32 {
+    return x + n;
+}
+
+func main() i32 {
+    const n = 2;
+    var x = 40;
+    return scale(n, x);
+}
+```
+
+```asm
+scale.spec.2:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+addl $2, %eax                    # add
+retq                             # return
+
+main:
+movl $40, 20(%rsp)               # constant
+movl 20(%rsp), %eax              # move
+movl %eax, 8(%rsp)               # move
+# trace frame for the call, then the matching pop
+movl 8(%rsp), %edi               # move
+callq scale.spec.2               # call scale
+retq                             # return
+```
+
+`n` is not stored. The call passes `x` and adds `2`.
 
 A file-scope const of a struct is that argument. The literal is the same value. `const origin = Point{.x = 40, .y = 2}` then `return field(origin)` folds when `field` is `comptime func field(p Point) i32 { return p.x + p.y; }`. There is no runtime symbol.
 
@@ -103,7 +155,7 @@ retq                             # return
 
 `p[0]` is `40` and `p[1]` is `2`. A `var` passed to that function is `not supported yet`.
 
-A mix of a struct parameter and a runtime parameter stores the literal in the copy and drops the parameter. When the file is `main.tlc`, `take(Point{.x = 2, .y = 0}, n)` calls `main.take.spec.p_2_0`. `const origin = Point{.x = 2, .y = 0}` calls that same copy. The fields are named in source order. `Point{.y = 2, .x = 1}` calls `main.take.spec.p_2_1`. `here.shift(Point{.x = 2, .y = 0})` calls `main.Point.shift.spec.p_2_0`. That copy loads `self.x` and adds the stored `x` field. A local `const` is `type mismatch`. A parameter `[2]i32` is a pointer, so `const row = [_]i32{1, 2}` is `type mismatch: expected *i32, found [2]i32`. A function nested in another function passes the struct literal. It does not take an enumerator.
+A mix of a struct parameter and a runtime parameter stores the literal in the copy and drops the parameter. When the file is `main.tlc`, `take(Point{.x = 2, .y = 0}, n)` calls `main.take.spec.p_2_0`. `const origin = Point{.x = 2, .y = 0}` calls that same copy. The fields are named in source order. `Point{.y = 2, .x = 1}` calls `main.take.spec.p_2_1`. `here.shift(Point{.x = 2, .y = 0})` calls `main.Point.shift.spec.p_2_0`. That copy loads `self.x` and adds the stored `x` field. A local `const` of a struct, a float, an alias, or a function is `type mismatch`. A parameter `[2]i32` is a pointer, so `const row = [_]i32{1, 2}` is `type mismatch: expected *i32, found [2]i32`. A function nested in another function passes the struct literal. It does not take an enumerator.
 
 ```c
 type Point struct {
@@ -143,7 +195,7 @@ retq                             # return
 
 `n` is stored. The literal stores `x` as `2` and `y` as `0`, then loads both. The add is `x + n`. The call passes `n` and does not pass the struct.
 
-A tuple is that argument too. The copy does not store the tuple. `p[0]` of `(2, 0)` is the immediate `2`. When the file is `main.tlc`, `take((2, 0), n)` calls `main.take.spec.t_2_0`. `here.shift((2, 0))` calls `main.Point.shift.spec.t_2_0` and loads `self.x` before adding `2`. `id[i32](40, (2, 0))` calls `main.id.spec.i32.spec.t_2_0`. A string element uses the spelling of a comptime string, so `("hi", 2)` calls `main.take.spec.t_s26869_2`. When the tuple is the only parameter and the body returns `p[0]`, `return take((42, 0))` is `movl $42, %eax` and `retq`. The function is still compiled. A `var` tuple is `type mismatch`. A local `const` is `type mismatch`. An element that is a `var` is `type mismatch`. A `bool` element is `not supported yet`. A file-scope `const` of a tuple is `type mismatch`. A nested tuple type is `not supported yet`. A function nested in another function passes the tuple and does not specialize.
+A tuple is that argument too. The copy does not store the tuple. `p[0]` of `(2, 0)` is the immediate `2`. When the file is `main.tlc`, `take((2, 0), n)` calls `main.take.spec.t_2_0`. `here.shift((2, 0))` calls `main.Point.shift.spec.t_2_0` and loads `self.x` before adding `2`. `id[i32](40, (2, 0))` calls `main.id.spec.i32.spec.t_2_0`. A string element uses the spelling of a comptime string, so `("hi", 2)` calls `main.take.spec.t_s26869_2`. When the tuple is the only parameter and the body returns `p[0]`, `return take((42, 0))` is `movl $42, %eax` and `retq`. The function is still compiled. A `var` tuple is `type mismatch`. A local `const` of a tuple is `type mismatch`. A tuple element that is a local `const` is `type mismatch`. An element that is a `var` is `type mismatch`. A `bool` element is `not supported yet`. A file-scope `const` of a tuple is `type mismatch`. A nested tuple type is `not supported yet`. A function nested in another function passes the tuple and does not specialize.
 
 ```c
 func take(p comptime (i32, i32), n i32) i32 {

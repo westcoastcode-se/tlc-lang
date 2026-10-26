@@ -1906,6 +1906,21 @@ TypeArg Parser::parse_one_type_arg() {
         arg.value_expr = std::shared_ptr<Expr>(parse_unary());
         return arg;
     }
+    // `width[add(3)]` and `width[math.add(3)]`. A call is a value. `Vec[i32]` stays a type.
+    if (check(TokenKind::Identifier) &&
+        (peek(1).kind == TokenKind::LParen ||
+         (peek(1).kind == TokenKind::Dot && peek(2).kind == TokenKind::Identifier &&
+          peek(3).kind == TokenKind::LParen))) {
+        std::unique_ptr<Expr> expr = parse_unary();
+        if (expr == nullptr) {
+            error_here("expected a type");
+            arg.type_name = "invalid";
+            return arg;
+        }
+        arg.is_value = true;
+        arg.value_expr = std::shared_ptr<Expr>(std::move(expr));
+        return arg;
+    }
     if (check(TokenKind::IntLiteral)) {
         arg.is_value = true;
         if (peek().suffix.is_unsigned || peek().suffix.bits == 8 || peek().suffix.bits == 16 || peek().suffix.bits == 64 ||

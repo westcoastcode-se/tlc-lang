@@ -1448,6 +1448,13 @@ bool Checker::type_arg_from_expr(const Expr &expr, TypeArg &out) const {
         out.value_expr = std::shared_ptr<Expr>(clone_expr(expr));
         return true;
     }
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        // `Buf[add(3)].span` is an index. The call is a value when it folds.
+        out.loc = call->loc;
+        out.is_value = true;
+        out.value_expr = std::shared_ptr<Expr>(clone_expr(expr));
+        return true;
+    }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         const auto *base = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
         if (base == nullptr || index->index == nullptr) {

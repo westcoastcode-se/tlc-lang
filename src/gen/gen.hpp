@@ -315,6 +315,9 @@ struct Binding {
     bool is_extern = false;
     // `const name = expr`. `value` is null and `const_value` is the folded integer.
     bool immediate = false;
+    // A local `const` whose initializer folded to `i32`. The slot is still stored.
+    // A runtime use loads it. A comptime fold may read `const_value`.
+    bool folded_local = false;
     int const_value = 0;
     const FunctionDecl *decl = nullptr;
     bool elem_float = false;
@@ -1361,6 +1364,10 @@ class CodeGen {
     // A field default `{1}` or `{1, 0...}` on `[2]i32`. Missing elements are zero in this constant.
     llvm::Constant *const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
     std::optional<int32_t> fold(const Expr &expr) const;
+    // A bare local `const` recorded while this function is emitted. `fold` does not see it.
+    std::optional<int32_t> folded_local_name(const Expr &expr) const;
+    // That integer, or a unary or binary of one. Used to record the binding, not by `fold`.
+    std::optional<int32_t> local_folded_i32(const Expr &expr) const;
     // A string literal, a constant range of one, or a file-scope const in this file
     // whose initializer is one. A pointer const is not that slice. A `var` is not a constant.
     std::optional<std::string> constant_string(const Expr &expr, std::unordered_set<std::string> &seen) const;

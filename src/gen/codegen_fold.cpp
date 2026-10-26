@@ -7,6 +7,37 @@ namespace tlc {
 
 namespace {
 
+std::optional<int32_t> eval_local_op(TokenKind op, int32_t lhs, int32_t rhs) {
+    auto wrap = [](int64_t value) { return static_cast<int32_t>(static_cast<uint32_t>(value)); };
+    const int64_t a = lhs;
+    const int64_t b = rhs;
+    switch (op) {
+    case TokenKind::Plus: return wrap(a + b);
+    case TokenKind::Minus: return wrap(a - b);
+    case TokenKind::Star: return wrap(a * b);
+    case TokenKind::Slash: return b == 0 ? std::nullopt : std::optional<int32_t>(wrap(a / b));
+    case TokenKind::Percent: return b == 0 ? std::nullopt : std::optional<int32_t>(wrap(a % b));
+    case TokenKind::Amp: return wrap(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+    case TokenKind::Pipe: return wrap(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+    case TokenKind::Caret: return wrap(static_cast<uint32_t>(a) ^ static_cast<uint32_t>(b));
+    case TokenKind::LtLt:
+        if (b < 0 || b >= 32) return std::nullopt;
+        return wrap(static_cast<uint32_t>(a) << static_cast<uint32_t>(b));
+    case TokenKind::GtGt:
+        if (b < 0 || b >= 32) return std::nullopt;
+        return static_cast<int32_t>(static_cast<uint32_t>(static_cast<int32_t>(a) >> static_cast<uint32_t>(b)));
+    case TokenKind::EqEq: return a == b ? 1 : 0;
+    case TokenKind::BangEq: return a != b ? 1 : 0;
+    case TokenKind::Lt: return a < b ? 1 : 0;
+    case TokenKind::Gt: return a > b ? 1 : 0;
+    case TokenKind::Le: return a <= b ? 1 : 0;
+    case TokenKind::Ge: return a >= b ? 1 : 0;
+    case TokenKind::AmpAmp: return (lhs != 0 && rhs != 0) ? 1 : 0;
+    case TokenKind::PipePipe: return (lhs != 0 || rhs != 0) ? 1 : 0;
+    default: return std::nullopt;
+    }
+}
+
 double round_float(double value, bool wide) {
     if (wide) {
         return value;
@@ -393,6 +424,62 @@ std::optional<int32_t> CodeGen::known_len(const Expr &base) const {
         return 0;
     }
     return static_cast<int32_t>(found->second.size());
+}
+
+std::optional<int32_t> CodeGen::folded_local_name(const Expr &expr) const {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return std::nullopt;
+    }
+    const Binding *binding = lookup(named->text);
+    if (binding == nullptr || !binding->folded_local) {
+        return std::nullopt;
+    }
+    return binding->const_value;
+}
+
+std::optional<int32_t> CodeGen::local_folded_i32(const Expr &expr) const {
+    if (const std::optional<int32_t> local = folded_local_name(expr)) {
+        return local;
+    }
+    // A unary or binary is walked here. `fold` would read a file-scope const through
+    // a local of the same name. Other expressions, including a field default, use `fold`.
+    if (std::holds_alternative<Expr::Unary>(expr.data) || std::holds_alternative<Expr::Binary>(expr.data)) {
+        return std::visit(
+            [&](const auto &node) -> std::optional<int32_t> {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Expr::Unary>) {
+                    if (node.postfix || node.expr == nullptr) {
+                        return std::nullopt;
+                    }
+                    const std::optional<int32_t> inner = local_folded_i32(*node.expr);
+                    if (!inner) {
+                        return std::nullopt;
+                    }
+                    switch (node.op) {
+                    case TokenKind::Plus: return *inner;
+                    case TokenKind::Minus:
+                        return static_cast<int32_t>(static_cast<uint32_t>(-static_cast<int64_t>(*inner)));
+                    case TokenKind::Tilde: return static_cast<int32_t>(~static_cast<uint32_t>(*inner));
+                    default: return std::nullopt;
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    if (node.lhs == nullptr || node.rhs == nullptr) {
+                        return std::nullopt;
+                    }
+                    const std::optional<int32_t> lhs = local_folded_i32(*node.lhs);
+                    const std::optional<int32_t> rhs = local_folded_i32(*node.rhs);
+                    if (!lhs || !rhs) {
+                        return std::nullopt;
+                    }
+                    return eval_local_op(node.op, *lhs, *rhs);
+                } else {
+                    return std::nullopt;
+                }
+            },
+            expr.data);
+    }
+    return fold(expr);
 }
 
 std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
@@ -838,7 +925,9 @@ std::optional<int32_t> CodeGen::fold_substituted_call(const FunctionDecl &fn, co
         }
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
-        if (const std::optional<int32_t> number = fold(*call.args[i])) {
+        if (const std::optional<int32_t> local = folded_local_name(*call.args[i])) {
+            literal = folded_int(*local, loc);
+        } else if (const std::optional<int32_t> number = fold(*call.args[i])) {
             literal = folded_int(*number, loc);
         } else {
             std::unordered_set<std::string> seen;

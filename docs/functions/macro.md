@@ -27,7 +27,7 @@ callq printf                     # call printf
 retq                             # return
 ```
 
-`hello(label, tail, 40 + 2)` emits `printf("Hello %s %s %d\n", "Per", tail, 42)`. The file-scope `const` string and the folded integer are comptime values. `tail` has no `comptime` mark, so the argument expression is pasted and read when the statement runs. A `var` passed to a `comptime` parameter is `not supported yet`. Using one parameter in two `emit` statements evaluates that argument again.
+`hello(label, tail, 40 + 2)` emits `printf("Hello %s %s %d\n", "Per", tail, 42)`. The file-scope `const` string and the folded integer are comptime values. `tail` has no `comptime` mark, so the argument expression is pasted and read when the statement runs. A `var` passed to a `comptime` parameter is `not supported yet`. A local `const` whose initializer folds to `i32` is that integer. Using one parameter in two `emit` statements evaluates that argument again.
 
 ```c
 macro func put(slot *i32, value i32) void {

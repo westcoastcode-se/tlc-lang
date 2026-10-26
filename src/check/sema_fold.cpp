@@ -851,6 +851,18 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
         expr.data);
 }
 
+std::optional<int> Checker::folded_local_int(const Expr &expr) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return std::nullopt;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || !symbol->folded_local) {
+        return std::nullopt;
+    }
+    return symbol->const_value;
+}
+
 bool Checker::argument_is_comptime(const Expr &arg) {
     std::unordered_set<std::string> seen;
     if (constant_string(arg, seen)) {
@@ -1105,7 +1117,7 @@ std::optional<std::string> Checker::comptime_spec_piece(const Expr &expr) {
 }
 
 bool Checker::comptime_kept_argument(const Expr &arg) {
-    if (argument_is_comptime(arg)) {
+    if (argument_is_comptime(arg) || folded_local_int(arg)) {
         return true;
     }
     // `Order.acquire` and `pkg.Order.acquire`. The call still passes the value.
@@ -1317,7 +1329,8 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
         // a forwarded comptime name. An enumerator then builds a copy that drops the parameter.
         // A struct, a float, an alias, a function, or a tuple is `comptime_constant`. An enumerator is not.
         const bool accepted = fn.method_struct.empty()
-                                  ? argument_is_comptime(*call.args[i]) || comptime_constant(*call.args[i])
+                                  ? argument_is_comptime(*call.args[i]) || folded_local_int(*call.args[i]) ||
+                                        comptime_constant(*call.args[i])
                                   : comptime_kept_argument(*call.args[i]) || comptime_constant(*call.args[i]);
         if (!accepted) {
             error(expr_loc(*call.args[i]), "type mismatch");
@@ -1346,6 +1359,8 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         std::unique_ptr<Expr> literal;
         if (const std::optional<int> number = fold_int(*call.args[i])) {
             literal = folded_int(*number, loc);
+        } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
+            literal = folded_int(*local, loc);
         } else {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {

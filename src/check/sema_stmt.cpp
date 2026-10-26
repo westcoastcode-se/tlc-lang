@@ -677,6 +677,9 @@ std::unique_ptr<Expr> Checker::comptime_argument(const Expr &arg, const Param &p
         if (const std::optional<int> value = fold_int(arg)) {
             return int_literal(*value, loc);
         }
+        if (const std::optional<int> value = folded_local_int(arg)) {
+            return int_literal(*value, loc);
+        }
         return nullptr;
     }
     if (!slice_of_const_u8(type)) {

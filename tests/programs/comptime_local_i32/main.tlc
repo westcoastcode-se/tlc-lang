@@ -1,0 +1,45 @@
+type Buf[N i32] struct { raw [N]u8; };
+func Buf[N]::span() i32 { return N; }
+
+comptime func add(n i32) i32 { return n + 1; }
+
+func width[N i32]() i32 { return N; }
+func scale(n comptime i32, x i32) i32 { return x + n; }
+func pick[T type](value comptime T) i32 {
+    comptime if (value == 2) { return 40; }
+    return 1;
+}
+func pick[T type](value T) i32 { return 2; }
+func only[T type](value comptime T) i32 { return 1; }
+func id[T type](value T) T { return value; }
+
+macro func bump(n comptime i32) {
+    emit x = x + n;
+}
+
+func main() i32 {
+    var x = 40;
+    const n = 2;
+    const m = n;
+    const stepped = n + 1;
+    const typed i32 = 2;
+    if (width[add(3)]() != 4) { return 1; }
+    if (width[n]() != 2) { return 2; }
+    if (width[m]() != 2) { return 3; }
+    if (width[stepped]() != 3) { return 4; }
+    if (width[typed]() != 2) { return 5; }
+    if (scale(n, x) != 42) { return 6; }
+    if (add(n) != 3) { return 7; }
+    if (add(m) != 3) { return 8; }
+    if (Buf[add(3)].span() != 4) { return 9; }
+    if (pick[i32](n) != 40) { return 10; }
+    if (pick[i32](x) != 2) { return 11; }
+    if (id(40) != 40) { return 12; }
+    if (id(n) != 2) { return 13; }
+    if (width[add(n)]() != 3) { return 14; }
+    if (pick(n) != 40) { return 15; }
+    if (only[i32](n) != 1) { return 16; }
+    bump(n);
+    if (x != 42) { return 17; }
+    return 42;
+}
