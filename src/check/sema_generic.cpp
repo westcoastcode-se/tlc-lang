@@ -2119,10 +2119,13 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 // `sizeof(T)` is parsed as a type. The parameter is replaced before the value is folded.
+                // `sizeof([N]T)` writes an array around `T`. `sizeof(*T)` adds stars around a bound
+                // that already has shells. Those two stay rejected. `sizeof(T)` when `T` is `[4]i32`
+                // copies that array.
                 if (node.on_type) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
                         bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
-                        if (bound->is_array || node.is_array || (!bound->shells.empty() && node.indirections != 0)) {
+                        if (node.is_array || (!bound->shells.empty() && node.indirections != 0)) {
                             error(node.loc, "not supported yet");
                         }
                         const int stars = node.indirections;
@@ -2157,7 +2160,8 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
                     if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
-                        if (bound->is_array) {
+                        // `sizeof *T` when `T` is an array. The stars are not a shell around that array.
+                        if (stars != 0 && bound->is_array) {
                             error(node.loc, "not supported yet");
                         }
                         node.on_type = true;
@@ -2168,6 +2172,14 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         node.is_enum = bound->is_enum;
                         node.indirections = stars + bound->indirections;
                         node.optional = bound->optional << stars;
+                        if (stars == 0 && bound->is_array) {
+                            node.is_array = true;
+                            node.array_len = bound->array_len;
+                            node.elem_const = bound->elem_const;
+                            node.elem_slice = bound->elem_slice;
+                            node.shells = bound->shells;
+                            node.const_pointee = bound->const_pointee;
+                        }
                         node.expr.reset();
                     }
                 }

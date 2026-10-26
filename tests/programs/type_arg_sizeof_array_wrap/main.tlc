@@ -1,0 +1,3 @@
+func plain[T type]() i32 { return sizeof([4]T); }
+
+func main() i32 { return plain[i32](); }
