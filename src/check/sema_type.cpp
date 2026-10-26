@@ -245,8 +245,22 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
         info.parent_package = item->parent_package;
         info.parent_loc = item->parent_loc;
         info.pending = item->fields;
+        info.exported = item->exported;
         traits_.push_back(std::move(info));
         trait_names_[file_id][item->name] = id;
+        // `export type Shape trait` publishes the name. Another package writes `T pkg.Shape`.
+        // There is no symbol. A generic trait is published by its template, not this table.
+        if (item->exported) {
+            if (exports_[file_id].contains(item->name) || exported_elsewhere(item->name)) {
+                error(item->loc, "redefinition");
+            } else {
+                Symbol symbol;
+                symbol.name = item->name;
+                symbol.is_type = true;
+                symbol.type = type_trait(id);
+                exports_[file_id].emplace(item->name, std::move(symbol));
+            }
+        }
         for (const FunctionDecl &method : item->methods) {
             if (method.name.empty()) {
                 continue;
@@ -298,7 +312,7 @@ void Checker::inherit_traits() {
         }
         file_id_ = info.file_id;
         if (!info.parent_package.empty()) {
-            // A trait in another package is not exported yet.
+            // `trait(pkg.Parent)` is not the qualified constraint `T pkg.Shape`.
             error(info.parent_loc, "not supported yet");
             info.parent_name.clear();
             continue;
@@ -1613,6 +1627,44 @@ int Checker::imported_enum(uint32_t file, const std::string &package, const std:
     return member->type.enum_id;
 }
 
+int Checker::imported_trait(uint32_t file, const std::string &package, const std::string &name, SourceLoc loc) {
+    // The constraint is written on the template. A caller in another package does not import it.
+    const PackageNode *node = find_node(file);
+    if (node == nullptr) {
+        error(loc, "undeclared identifier");
+        return -1;
+    }
+    const PackageNode *target = nullptr;
+    for (const ImportDecl &import : node->unit.imports) {
+        if (import.form == ImportDecl::Form::Selective) {
+            continue;
+        }
+        const PackageNode *candidate = target_of(*node, import);
+        if (candidate == nullptr) {
+            continue;
+        }
+        const std::string binding = import.form == ImportDecl::Form::Alias ? import.alias : candidate->qualifier;
+        if (binding == package) {
+            target = candidate;
+            break;
+        }
+    }
+    if (target == nullptr) {
+        error(loc, "undeclared identifier");
+        return -1;
+    }
+    const Symbol *member = find_export(target->file_id, name);
+    if (member == nullptr) {
+        error(loc, name + " is not exported");
+        return -1;
+    }
+    if (!member->is_type || member->type.kind != TypeKind::Trait || member->type.trait_id < 0) {
+        error(loc, "type mismatch");
+        return -1;
+    }
+    return member->type.trait_id;
+}
+
 void Checker::bind_union_tag(StructInfo &info) {
     if (info.tag_name.empty()) {
         return;
@@ -2071,6 +2123,12 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     if (mentions_trait(type) && !parameter) {
         const bool stored = shells.empty();
         error(loc, variable && stored ? "trait has no size" : "not supported yet");
+        return type_invalid();
+    }
+    // `s math.Shape` is not the constraint `T math.Shape`. A trait parameter is specialized
+    // only when the name is unqualified. Emitting the qualified parameter would be a type error.
+    if (mentions_trait(type) && !package.empty()) {
+        error(loc, "not supported yet");
         return type_invalid();
     }
     // Shells are the type. `[]T`, `[][][]T`, `*[]T`, and `[N][M]T` are the same walk.

@@ -1,0 +1,21 @@
+import "math";
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+type Hold[T math.Shape] struct {
+    value T;
+};
+
+func main() i32 {
+    var h Hold[Rect];
+    h.value.w = 6;
+    h.value.h = 7;
+    return h.value.area();
+}

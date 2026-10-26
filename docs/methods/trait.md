@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Constants on a type](constant.md) · [Next: trace](../builtin/trace.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-A trait is a list of methods and fields. The receiver is implicit and is omitted from the trait type. A method inside the braces ends with `;`. `func area() i32 { return 1; }` is reported as `expected ';'`. A field is a name and a type, and it ends with `;`. A value on the field, `w i32 = 1`, is reported as `expected ';'`. `extern(abi="c") type Shape trait` is `extern(abi="c") on a trait or a generic`. `export type Shape trait` and `extern type Shape trait` are `not supported yet`.
+A trait is a list of methods and fields. The receiver is implicit and is omitted from the trait type. A method inside the braces ends with `;`. `func area() i32 { return 1; }` is reported as `expected ';'`. A field is a name and a type, and it ends with `;`. A value on the field, `w i32 = 1`, is reported as `expected ';'`. `extern(abi="c") type Shape trait` is `extern(abi="c") on a trait or a generic`. `export type Shape trait` publishes that trait. It has no symbol. Another package writes `T pkg.Shape`. `extern type Shape trait` is `not supported yet`.
 
 ```c
 type Shape trait {
@@ -89,7 +89,7 @@ There is no `impl` keyword. A struct satisfies a trait by defining the methods, 
 - The address is not taken automatically. `apply(r)` is reported as `type mismatch` when the parameter is `*Shape`. The call is `apply(&r)`.
 - `unsafe func draw() void;` makes that method unsafe. The call is `unsafe s.draw()` and is reported as `unsafe call` without the prefix. The struct method is `unsafe func Rect::draw`. Leaving `unsafe` off that method, or writing it when the trait method has none, is reported as `type mismatch`. An anonymous function passed to that trait is not an `unsafe func`. The call through the trait still writes `unsafe`.
 
-A generic function writes the same constraint as `T Shape`. `value *T` follows `*Shape`, and `value T` follows `Shape`. See [Generics](../functions/generic.md).
+A generic function writes the same constraint as `T Shape`. `T pkg.Shape` names an exported trait in that package. `value *T` follows `*Shape`, and `value T` follows `Shape`. See [Generics](../functions/generic.md).
 
 `trait` is written only in `type Shape trait`. A parameter is `Shape` or `*Shape`. `var s Shape`, `var s *Shape`, `func give() Shape`, `func give() *Shape`, `[2]Shape`, and `[]Shape` are `trait has no size`. An omitted result is that same error: `func id(s Shape) { return s; }` and `func id(p *Shape) { return p; }`. That includes `[2]*Shape`, `[]*Shape`, a parameter `[]Shape`, and a field `item Shape` or `item *Shape` in a struct or a trait. `var s trait Shape`, `sizeof(trait Shape)`, and `alignof(trait Shape)` are reported as `expected a type`. `sizeof(Shape)` and `alignof(Shape)` are reported as `undeclared identifier`.
 

@@ -1,0 +1,5 @@
+import { Shape } from "math";
+
+func main() i32 {
+    return 0;
+}

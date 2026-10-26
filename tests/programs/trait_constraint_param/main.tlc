@@ -1,0 +1,13 @@
+import "math";
+
+func use(s math.Shape) i32 {
+    return 0;
+}
+
+func use_at(s *math.Shape) i32 {
+    return 0;
+}
+
+func main() i32 {
+    return 0;
+}

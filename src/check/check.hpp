@@ -234,6 +234,8 @@ class Checker {
         std::vector<FieldDecl> pending;
         // The extern trait in `<std_root>/std/seq`, after it is specialized.
         bool iteration = false;
+        // `export type Shape trait`. The name is published. There is no symbol.
+        bool exported = false;
         // Result of the element method. Null when that method is missing.
         std::shared_ptr<Type> iteration_elem;
     };
@@ -572,6 +574,9 @@ class Checker {
     void bind_union_tag(StructInfo &info);
     // `pkg.Kind` on a union. Reports the diagnostic and returns -1 when the enum is not usable.
     int imported_enum(uint32_t file, const std::string &package, const std::string &name, SourceLoc loc);
+    // `T pkg.Shape`. The package is an import of `file`, which is the template's file.
+    // Reports the diagnostic and returns -1 when that trait is not usable.
+    int imported_trait(uint32_t file, const std::string &package, const std::string &name, SourceLoc loc);
     void register_traits(const TranslationUnit &unit, uint32_t file_id);
     // The package directory is `<std_root>/std/seq`. The extern trait there is the iteration trait.
     bool package_is_iteration(uint32_t file) const;

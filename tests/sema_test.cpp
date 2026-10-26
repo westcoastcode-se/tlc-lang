@@ -7090,7 +7090,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "export type Shape trait { func area() i32; };\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {

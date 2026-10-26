@@ -1,0 +1,17 @@
+import "geom";
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+export func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 6;
+    r.h = 7;
+    return geom.measure(r);
+}

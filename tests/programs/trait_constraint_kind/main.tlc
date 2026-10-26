@@ -1,0 +1,15 @@
+import "math";
+
+type Rect struct {
+    n i32;
+};
+
+func measure[T math.Point](value T) i32 {
+    return value.n;
+}
+
+func main() i32 {
+    var r Rect;
+    r.n = 42;
+    return measure(r);
+}

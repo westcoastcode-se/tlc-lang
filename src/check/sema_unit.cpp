@@ -1899,6 +1899,11 @@ void Checker::bind_imports(const PackageNode &node) {
                         }
                         continue;
                     }
+                    // `import { Shape }` does not publish a trait parameter. The constraint is `T pkg.Shape`.
+                    if (exported->type.kind == TypeKind::Trait) {
+                        error(import.loc, "not supported yet");
+                        continue;
+                    }
                     const auto have = typedefs_[file_id_].find(name);
                     if (have != typedefs_[file_id_].end() && same_type(have->second, exported->type)) {
                         continue;

@@ -513,14 +513,19 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             return {};
         }
         if (templ->type_params[i].is_trait) {
-            if (!templ->type_params[i].constraint_package.empty()) {
-                error(loc, "not supported yet");
-                return {};
-            }
-            const int trait_id = package_trait(owner, templ->type_params[i].constraint);
-            if (trait_id < 0) {
-                error(loc, "undeclared identifier");
-                return {};
+            const TypeParam &param = templ->type_params[i];
+            int trait_id = -1;
+            if (param.constraint_package.empty()) {
+                trait_id = package_trait(owner, param.constraint);
+                if (trait_id < 0) {
+                    error(loc, "undeclared identifier");
+                    return {};
+                }
+            } else {
+                trait_id = imported_trait(owner, param.constraint_package, param.constraint, loc);
+                if (trait_id < 0) {
+                    return {};
+                }
             }
             if (bound.is_value || bound.is_array || bound.indirections > 1) {
                 error(loc, "type mismatch");
@@ -1262,12 +1267,9 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         if (!param.is_trait) {
             continue;
         }
-        if (!param.constraint_package.empty()) {
-            error(call.loc, "not supported yet");
-            return std::nullopt;
-        }
         // The clone is stored under the file id `collect_templates` used. A lone unit
         // registers its trait at 0, while `loc.file` is the source file.
+        // `T pkg.Shape` uses that file's imports. The caller does not have to import `pkg`.
         uint32_t home = file_id_;
         for (const OwnedFn &owned : owned_fns_) {
             if (&owned.fn == &templ) {
@@ -1275,10 +1277,18 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
                 break;
             }
         }
-        const int trait_id = package_trait(home, param.constraint);
-        if (trait_id < 0) {
-            error(call.loc, "undeclared identifier");
-            return std::nullopt;
+        int trait_id = -1;
+        if (param.constraint_package.empty()) {
+            trait_id = package_trait(home, param.constraint);
+            if (trait_id < 0) {
+                error(call.loc, "undeclared identifier");
+                return std::nullopt;
+            }
+        } else {
+            trait_id = imported_trait(home, param.constraint_package, param.constraint, call.loc);
+            if (trait_id < 0) {
+                return std::nullopt;
+            }
         }
         const SpecArg &bound = bounds[i];
         if (bound.is_value || bound.is_array || bound.indirections > 1) {
@@ -2392,7 +2402,8 @@ bool same_type_param_kinds(const FunctionDecl &lhs, const FunctionDecl &rhs) {
         const TypeParam &left = lhs.type_params[i];
         const TypeParam &right = rhs.type_params[i];
         if (left.is_type != right.is_type || left.is_value != right.is_value || left.is_trait != right.is_trait ||
-            left.is_pack != right.is_pack || left.constraint != right.constraint) {
+            left.is_pack != right.is_pack || left.constraint != right.constraint ||
+            left.constraint_package != right.constraint_package) {
             return false;
         }
     }

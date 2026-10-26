@@ -114,6 +114,56 @@ retq                             # return
 
 `export func measure[T Shape]` publishes that function. Another package calls `pkg.measure(r)`. The trait is the one in the function's package. The method on the struct is exported. Without `export` on that method, the call is `area is not exported`. `export func use(s Shape)` publishes that call without a type-parameter list. See [Traits](../methods/trait.md).
 
+`T math.Shape` names the exported trait `Shape` in `math`. The file that writes the function imports `math`. A caller in another package does not. `geom.measure(r)` is that call when `geom` wrote `T math.Shape`.
+
+```c
+package math;
+
+export type Shape trait {
+    func area() i32;
+};
+```
+
+```c
+import "math";
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+func measure[T math.Shape](value T) i32 {
+    return value.area();
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 6;
+    r.h = 7;
+    return measure(r);
+}
+```
+
+```asm
+measure:
+# trace frame for the call, then the matching pop
+callq area                       # call area
+retq                             # return
+
+area:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+imull -4(%rsp), %eax             # multiply
+retq                             # return
+```
+
+`measure(r)` returns 42. `export type Shape trait` publishes the trait. It has no symbol. `extern type Shape trait` is `not supported yet`. A name that is not exported is `Shape is not exported`. A name that is not a trait is `type mismatch`. A qualifier that is not an imported package is `undeclared identifier`. `import "math" as m` writes `T m.Shape`. `value *T`, `measure[Rect](r)`, and a missing method follow `T Shape`. `type Hold[T math.Shape] struct` is that constraint on a struct. `func Point::measure[T math.Shape]` is that constraint on a method. The call is `Point.measure[Rect](r)`. `func use(s math.Shape)`, `func use(s *math.Shape)`, and `import { Shape }` are `not supported yet`. `var s math.Shape` is `trait has no size`.
+
 `id(1)` infers `T`. The result may be omitted: `func id[T type](value T) { return value; }` is that same function. A body with no `return` is `void`, and so is a body that only writes `return;` or returns a `void` value. The omitted result may be a function pointer: `func hold[T type](value T) { return add; }` is `func (i32, i32) i32` when `add` is `func (i32, i32) i32`. `repeat[4](7)` writes `N` and infers `T`. `id[i32](1)` writes the type. A type that cannot be inferred is reported as `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[i32]` and `Vec[u8]` for `Vec[T]`, is reported as `type mismatch`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
 
 `var f = id` names that generic. `f := id` and `const f = id` do too, and so does `var g = f`. `f(1)` and `f[i32](1)` specialize it the same way as `id`. The name is one in this package. `var f = pkg.id` is `not supported yet`, and the call stays `pkg.id(1)` or `pkg.id[i32](1)`. The binding is not a function pointer and has no storage. A use that is not a call, such as `return f` or `take(f)` where a function pointer is expected, is `not supported yet`. `f = id` is `not supported yet`. A file-scope `var f = id` is `not supported yet`. An overloaded function that is not generic stays `not supported yet` when it is used as a value. An instance method used as a value is `type mismatch`.

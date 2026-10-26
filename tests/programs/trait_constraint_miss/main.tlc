@@ -1,0 +1,15 @@
+import "math";
+
+type Empty struct {
+    n i32;
+};
+
+func measure[T math.Shape](value T) i32 {
+    return value.area();
+}
+
+func main() i32 {
+    var e Empty;
+    e.n = 1;
+    return measure(e);
+}

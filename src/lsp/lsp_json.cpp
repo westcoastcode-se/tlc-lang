@@ -745,6 +745,10 @@ std::string spell_function(const FunctionDecl &fn) {
                 out += " int";
             } else if (!param.constraint.empty()) {
                 out.push_back(' ');
+                if (!param.constraint_package.empty()) {
+                    out += param.constraint_package;
+                    out.push_back('.');
+                }
                 out += param.constraint;
             }
         }

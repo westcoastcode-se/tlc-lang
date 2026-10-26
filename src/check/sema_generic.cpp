@@ -94,6 +94,10 @@ void append_shaped_name(std::string &out, const std::string &package, const std:
                 out += ":value";
             } else if (param.is_trait) {
                 out += ":trait:";
+                if (!param.constraint_package.empty()) {
+                    out += param.constraint_package;
+                    out.push_back('.');
+                }
                 out += param.constraint;
             } else {
                 out += ":type";

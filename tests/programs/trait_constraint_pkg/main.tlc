@@ -1,0 +1,25 @@
+import "math";
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+func measure[T math.Shape](value T) i32 {
+    return value.area();
+}
+
+func measure_at[T math.Shape](value *T) i32 {
+    return value.area();
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 6;
+    r.h = 7;
+    return measure(r) + measure[Rect](r) + measure_at(&r) - 84;
+}

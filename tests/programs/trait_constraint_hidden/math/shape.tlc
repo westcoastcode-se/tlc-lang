@@ -1,0 +1,5 @@
+package math;
+
+type Shape trait {
+    func area() i32;
+};

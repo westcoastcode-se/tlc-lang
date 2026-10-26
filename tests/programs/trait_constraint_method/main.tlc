@@ -1,0 +1,25 @@
+import "math";
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+type Point struct {
+    n i32;
+};
+
+func Point::measure[T math.Shape](value T) i32 {
+    return value.area();
+}
+
+func main() i32 {
+    var r Rect;
+    r.w = 6;
+    r.h = 7;
+    return Point.measure[Rect](r);
+}

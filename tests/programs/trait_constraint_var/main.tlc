@@ -1,0 +1,6 @@
+import "math";
+
+func main() i32 {
+    var s math.Shape;
+    return 0;
+}

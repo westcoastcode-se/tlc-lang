@@ -1,0 +1,7 @@
+package geom;
+
+import "math";
+
+export func measure[T math.Shape](value T) i32 {
+    return value.area();
+}
