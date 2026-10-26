@@ -2200,7 +2200,9 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
                     if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
-                        if (bound->is_array) {
+                        // `typeof *T` when `T` is an array. The stars are not a shell around that array.
+                        // `typeof(T)` when `T` is `[4]i32` copies that array.
+                        if (stars != 0 && bound->is_array) {
                             error(node.loc, "not supported yet");
                         }
                         node.on_type = true;
@@ -2210,6 +2212,16 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         node.is_enum = bound->is_enum;
                         node.indirections = stars + bound->indirections;
                         node.optional = bound->optional << stars;
+                        if (stars == 0 && bound->is_array) {
+                            // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
+                            node.is_struct = false;
+                            node.is_array = true;
+                            node.array_len = bound->array_len;
+                            node.elem_const = bound->elem_const;
+                            node.elem_slice = bound->elem_slice;
+                            node.shells = bound->shells;
+                            node.const_pointee = bound->const_pointee;
+                        }
                         node.canonical.clear();
                         node.expr.reset();
                     }

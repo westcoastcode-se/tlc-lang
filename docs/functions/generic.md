@@ -166,7 +166,7 @@ retq                             # return
 
 `id(1)` infers `T`. The result may be omitted: `func id[T type](value T) { return value; }` is that same function. A body with no `return` is `void`, and so is a body that only writes `return;` or returns a `void` value. The omitted result may be a function pointer: `func hold[T type](value T) { return add; }` is `func (i32, i32) i32` when `add` is `func (i32, i32) i32`. `repeat[4](7)` writes `N` and infers `T`. `id[i32](1)` writes the type. A type that cannot be inferred is reported as `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[i32]` and `Vec[u8]` for `Vec[T]`, is reported as `type mismatch`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
 
-`sizeof` produces `i32`, so it may be a compile-time integer type argument. `width[sizeof(Point)]()` is the same specialization as `width[8]()`. `repeat[sizeof(i32)](7)` is the same specialization as `repeat[4](7)`. `sizeof n` is that integer. `Buf[sizeof(i32)].span()` reads the one argument as that integer. `sizeof(math.Point)` is the size of an exported struct. `id[sizeof(i32)](1)` is `type mismatch`. `alignof` in a type argument is `expected a type`. `Buf[alignof(i32)].span()` is `type mismatch`. `sizeof(i32) + 1` is `expected ']'`. `sizeof(T)` when `T` is an array is that array's size. `use[[4]i32]()` is the same specialization as `width[16]()`. When the file is `main.tlc`, `use` is `main.use.spec.arr.4.i32`. `plain[[4]u8]()` is `movl $4, %eax` and `retq`. `[]i32` is 16. `[2][]i32` is 32. `*[4]i32` is 8. `[4]*i32` is 32. `[2][3]i32` is 24. `[2]Point` is 16. `alignof(T)` is the alignment of that type. `sizeof T` is that same integer. `sizeof(*T)` when `T` is an array is `not supported yet`. `sizeof([4]T)` is `not supported yet`.
+`sizeof` produces `i32`, so it may be a compile-time integer type argument. `width[sizeof(Point)]()` is the same specialization as `width[8]()`. `repeat[sizeof(i32)](7)` is the same specialization as `repeat[4](7)`. `sizeof n` is that integer. `Buf[sizeof(i32)].span()` reads the one argument as that integer. `sizeof(math.Point)` is the size of an exported struct. `id[sizeof(i32)](1)` is `type mismatch`. `alignof` in a type argument is `expected a type`. `Buf[alignof(i32)].span()` is `type mismatch`. `sizeof(i32) + 1` is `expected ']'`. `sizeof(T)` when `T` is an array is that array's size. `use[[4]i32]()` is the same specialization as `width[16]()`. When the file is `main.tlc`, `use` is `main.use.spec.arr.4.i32`. `plain[[4]u8]()` is `movl $4, %eax` and `retq`. `[]i32` is 16. `[2][]i32` is 32. `*[4]i32` is 8. `[4]*i32` is 32. `[2][3]i32` is 24. `[2]Point` is 16. `alignof(T)` is the alignment of that type. `sizeof T` is that same integer. `sizeof(*T)` when `T` is an array is `not supported yet`. `sizeof([4]T)` is `not supported yet`. `typeof(T)` when `T` is an array is that array. `kind[[4]i32]()` is the same type as `typeof([4]i32)`. When the file is `main.tlc`, `kind` is `main.kind.spec.arr.4.i32`. `typeof T` is that same type. `[4]u8` spells `[4]u8`. `[2][3]i32` spells `[2][3]i32`. `[]i32` spells `[]i32`. `*[4]i32` spells `*[4]i32`. `[4]*i32` spells `[4]*i32`. `[2][]i32` spells `[2][]i32`. `[2]Point` spells `[2]Point`. `[]const u8` spells `[]const u8`. `typeof(T).name()` is that spelling. A parameter `[4]i32` is a pointer, so `typeof(value)` is `*i32`. `typeof(*T)` when `T` is an array is `not supported yet`. `typeof([4]T)` is `not supported yet`.
 
 ```c
 type Point struct { x i32; y i32; };
@@ -224,6 +224,29 @@ retq                             # return
 ```
 
 The program returns 16. When the file is `main.tlc`, `use` is `main.use.spec.arr.4.i32` and `width` is `main.width.spec.16`.
+
+```c
+func kind[T type]() i32 {
+    return i32(typeof(T) == typeof([4]i32));
+}
+
+func main() i32 {
+    return kind[[4]i32]();
+}
+```
+
+```asm
+kind.spec.arr.4.i32:
+movl $1, %eax                    # constant
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+callq kind.spec.arr.4.i32        # call kind
+retq                             # return
+```
+
+The program returns 1. When the file is `main.tlc`, the symbol is `main.kind.spec.arr.4.i32`.
 
 A call of a `comptime func` may be a compile-time integer type argument. `width[add(3)]()` is the same specialization as `width[4]()`. `Buf[add(3)].span()` reads the one argument as that integer. A local `const` whose initializer folds to `i32` may be that argument. `width[n]()` when `const n = 2` is `width[2]()`. That local hides a file-scope `const` of the same name, and a const brought in with `import { n }`. A `var` is `type mismatch`. An ordinary function is `not supported yet`. `add(3) + 1` is `expected ']'`. A body that builds the next value, such as `return width[add(N)]()`, stops after 32 specializations with `not supported yet`. `width[add(3)]()` in `main` is one specialization.
 

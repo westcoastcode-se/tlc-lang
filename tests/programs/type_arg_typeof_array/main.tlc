@@ -1,0 +1,63 @@
+import "builtin";
+
+type Point struct { x i32; y i32; };
+
+func same[T type](value T) bool {
+    return typeof(T) == typeof(value);
+}
+
+func bare[T type]() bool {
+    return typeof T == typeof([4]i32);
+}
+
+func row_type[T type]() bool { return typeof(T) == typeof([4]i32); }
+
+func byte_type[T type]() bool { return typeof(T) == typeof([4]u8); }
+
+func grid_type[T type]() bool { return typeof(T) == typeof([2][3]i32); }
+
+func slice_type[T type]() bool { return typeof(T) == typeof([]i32); }
+
+func elem_type[T type]() bool { return typeof(T) == typeof([4]*i32); }
+
+func rows_type[T type]() bool { return typeof(T) == typeof([2][]i32); }
+
+func point_type[T type]() bool { return typeof(T) == typeof([2]Point); }
+
+func text_type[T type]() bool { return typeof(T) == typeof([]const u8); }
+
+func star_type[T type]() bool { return typeof(*T) == typeof(*i32); }
+
+func both[T type, U type]() bool { return typeof(T) == typeof(U); }
+
+func name_row[T type]() bool {
+    return typeof(T).name() == typeof([4]i32).name();
+}
+
+func main() i32 {
+    var n i32 = 1;
+    var row [4]i32;
+    var slice []i32 = row;
+    var ptr *[4]i32 = &row;
+    var text []const u8 = "hi";
+    if (!same(n)) { return 1; }
+    if (!bare[[4]i32]()) { return 2; }
+    if (!row_type[[4]i32]()) { return 3; }
+    if (!name_row[[4]i32]()) { return 4; }
+    if (row_type[[4]u8]()) { return 5; }
+    if (!byte_type[[4]u8]()) { return 6; }
+    if (!grid_type[[2][3]i32]()) { return 7; }
+    if (!slice_type[[]i32]()) { return 8; }
+    if (!same(slice)) { return 9; }
+    if (!same(ptr)) { return 10; }
+    if (!both[*[4]i32, *[4]i32]()) { return 11; }
+    if (both[*[4]i32, [4]i32]()) { return 12; }
+    if (!elem_type[[4]*i32]()) { return 13; }
+    if (!rows_type[[2][]i32]()) { return 14; }
+    if (!point_type[[2]Point]()) { return 15; }
+    if (!text_type[[]const u8]()) { return 16; }
+    if (!same(text)) { return 17; }
+    if (!star_type[i32]()) { return 18; }
+    if (typeof(row) != typeof([4]i32)) { return 19; }
+    return 42;
+}
