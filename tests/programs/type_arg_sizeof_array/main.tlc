@@ -1,0 +1,4 @@
+func width[N i32]() i32 { return N; }
+func use[T type]() i32 { return width[sizeof(T)](); }
+
+func main() i32 { return use[[4]i32](); }

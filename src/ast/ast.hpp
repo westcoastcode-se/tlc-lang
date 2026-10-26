@@ -40,7 +40,11 @@ struct TypeParam {
     std::string constraint_package;
 };
 
-// One argument of `id[int](1)` or `Vec[int]`. A value argument is a folded integer or a constant name.
+struct Expr;
+
+// One argument of `id[int](1)` or `Vec[int]`. A value argument is a folded integer, a constant name,
+// or `sizeof(...)`. The expression is folded while checking. Each copy owns its own expression, so
+// substituting one specialization does not change the template.
 struct TypeArg {
     SourceLoc loc{};
     bool is_value = false;
@@ -61,6 +65,14 @@ struct TypeArg {
     // Constructors outside the leaf, outermost first. Empty when the argument is only a name and pointers.
     std::vector<TypeShell> shells;
     std::vector<TypeArg> args;
+    // `sizeof(...)` or `sizeof n`. Null on a literal, a name, or a type.
+    std::shared_ptr<Expr> value_expr;
+
+    TypeArg() = default;
+    TypeArg(const TypeArg &other);
+    TypeArg &operator=(const TypeArg &other);
+    TypeArg(TypeArg &&) noexcept = default;
+    TypeArg &operator=(TypeArg &&) noexcept = default;
 };
 
 // A parameter of a function-pointer type. Nested pointers use the same shape.
@@ -978,9 +990,10 @@ inline bool comptime_param_kept(const FunctionDecl &fn) {
 
 // `eq[u8]`. A package, a pointer, a slice, or a value argument is not this name.
 inline bool plain_named_type_arg(const TypeArg &arg) {
-    return !arg.is_value && !arg.has_value && !arg.type_name.empty() && arg.type_package.empty() && !arg.is_struct &&
-           !arg.is_enum && arg.indirections == 0 && arg.optional == 0 && arg.const_pointee == 0 && !arg.is_array &&
-           !arg.elem_const && arg.array_len == 0 && arg.array_len_name.empty() && arg.shells.empty() && arg.args.empty();
+    return arg.value_expr == nullptr && !arg.is_value && !arg.has_value && !arg.type_name.empty() &&
+           arg.type_package.empty() && !arg.is_struct && !arg.is_enum && arg.indirections == 0 && arg.optional == 0 &&
+           arg.const_pointee == 0 && !arg.is_array && !arg.elem_const && arg.array_len == 0 && arg.array_len_name.empty() &&
+           arg.shells.empty() && arg.args.empty();
 }
 
 struct TraitDecl {
@@ -1065,6 +1078,8 @@ StructDecl clone_struct(const StructDecl &item);
 
 SourceLoc expr_loc(const Expr &expr);
 std::string dump_expr(const Expr &expr);
+// A stable spelling of a `sizeof` type argument. Two different operands stay different.
+void append_value_expr_key(std::string &out, const Expr &expr);
 std::string dump_translation_unit(const TranslationUnit &unit);
 
 } // namespace tlc

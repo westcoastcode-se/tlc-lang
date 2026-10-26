@@ -166,6 +166,33 @@ retq                             # return
 
 `id(1)` infers `T`. The result may be omitted: `func id[T type](value T) { return value; }` is that same function. A body with no `return` is `void`, and so is a body that only writes `return;` or returns a `void` value. The omitted result may be a function pointer: `func hold[T type](value T) { return add; }` is `func (i32, i32) i32` when `add` is `func (i32, i32) i32`. `repeat[4](7)` writes `N` and infers `T`. `id[i32](1)` writes the type. A type that cannot be inferred is reported as `type mismatch`. A type parameter bound to two different types in one call, such as `Vec[i32]` and `Vec[u8]` for `Vec[T]`, is reported as `type mismatch`. `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
 
+`sizeof` produces `i32`, so it may be a compile-time integer type argument. `width[sizeof(Point)]()` is the same specialization as `width[8]()`. `repeat[sizeof(i32)](7)` is the same specialization as `repeat[4](7)`. `sizeof n` is that integer. `Buf[sizeof(i32)].span()` reads the one argument as that integer. `sizeof(math.Point)` is the size of an exported struct. `id[sizeof(i32)](1)` is `type mismatch`. `alignof` in a type argument is `expected a type`. `Buf[alignof(i32)].span()` is `type mismatch`. `sizeof(i32) + 1` is `expected ']'`. `sizeof(T)` when `T` is an array is `not supported yet`.
+
+```c
+type Point struct { x i32; y i32; };
+
+func width[N i32]() i32 {
+    return N;
+}
+
+func main() i32 {
+    return width[sizeof(Point)]();
+}
+```
+
+```asm
+width.spec.8:
+movl $8, %eax                    # constant
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+callq width.spec.8               # call width
+retq                             # return
+```
+
+The program returns 8. When the file is `main.tlc`, the symbol is `main.width.spec.8`. `repeat[sizeof(i32)]` is `main.repeat.spec.4.i32`.
+
 `var f = id` names that generic. `f := id` and `const f = id` do too, and so does `var g = f`. `f(1)` and `f[i32](1)` specialize it the same way as `id`. The name is one in this package. `var f = pkg.id` is `not supported yet`, and the call stays `pkg.id(1)` or `pkg.id[i32](1)`. The binding is not a function pointer and has no storage. A use that is not a call, such as `return f` or `take(f)` where a function pointer is expected, is `not supported yet`. `f = id` is `not supported yet`. A file-scope `var f = id` is `not supported yet`. An overloaded function that is not generic stays `not supported yet` when it is used as a value. An instance method used as a value is `type mismatch`.
 
 ### One type parameter

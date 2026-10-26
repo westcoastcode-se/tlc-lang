@@ -1,0 +1,10 @@
+import "math";
+
+func width[N i32]() i32 { return N; }
+func use[T type]() i32 { return width[sizeof(T)](); }
+
+func main() i32 {
+    if (width[sizeof(math.Point)]() != 8) { return 1; }
+    if (use[math.Point]() != 8) { return 2; }
+    return 42;
+}

@@ -1,0 +1,9 @@
+type Point struct { x i32; y i32; };
+
+type Buf[N i32] struct {
+    raw [N]u8;
+};
+
+func Buf[N]::span() i32 { return N; }
+
+func main() i32 { return Buf[alignof(Point)].span(); }

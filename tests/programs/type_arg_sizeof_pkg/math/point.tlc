@@ -1,0 +1,6 @@
+package math;
+
+export type Point struct {
+    export x i32;
+    export y i32;
+};

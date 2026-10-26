@@ -1,0 +1,47 @@
+type Point struct { x i32; y i32; };
+type Empty struct {};
+type Integer i32;
+
+type Buf[N i32] struct {
+    raw [N]u8;
+};
+
+func Buf[N]::span() i32 { return N; }
+
+func width[N i32]() i32 { return N; }
+func use[T type]() i32 { return width[sizeof(T)](); }
+func plain[T type]() i32 { return sizeof(T); }
+
+func repeat[N i32, T type](value T) [N]T {
+    assert(N > 0, "empty");
+    var out [N]T;
+    out[0] = value;
+    comptime if (N > 1) { out[1] = value; }
+    comptime if (N > 2) { out[2] = value; }
+    comptime if (N > 3) { out[3] = value; }
+    return out;
+}
+
+const N = sizeof(i32);
+
+func main() i32 {
+    var n i32 = 1;
+    if (width[sizeof(i32)]() != 4) { return 1; }
+    if (width[sizeof(Point)]() != 8) { return 2; }
+    if (use[Point]() != 8) { return 3; }
+    if (plain[Point]() != 8) { return 4; }
+    if (plain[i32]() != 4) { return 5; }
+    if (width[sizeof(*i32)]() != 8) { return 6; }
+    if (width[sizeof([]i32)]() != 16) { return 7; }
+    if (width[sizeof([4]u8)]() != 4) { return 8; }
+    if (width[sizeof n]() + width[sizeof(n)]() != 8) { return 9; }
+    if (width[sizeof(Empty)]() != 0) { return 10; }
+    if (width[sizeof(Integer)]() != 4) { return 11; }
+    if (Buf[sizeof(i32)].span() != 4) { return 12; }
+    if (Buf[sizeof(Point)].span() != 8) { return 13; }
+    if (repeat[sizeof(i32)](34)[0] != 34) { return 14; }
+    if (width[N]() != 4) { return 15; }
+    var made = Buf[sizeof(Point)]{};
+    if (sizeof(made) != 8) { return 16; }
+    return 42;
+}

@@ -118,6 +118,10 @@ void append_fn_shape(std::string &out, const FnParam &param, const std::vector<T
 void append_mixed_fn_results(std::string &out, const std::vector<FnParam> &results, const std::vector<TypeParam> &params);
 
 void append_type_arg_shape(std::string &out, const TypeArg &arg, const std::vector<TypeParam> &params) {
+    if (arg.value_expr != nullptr && !arg.has_value) {
+        append_value_expr_key(out, *arg.value_expr);
+        return;
+    }
     if (arg.has_value || arg.is_value) {
         out += std::to_string(arg.value);
         return;
@@ -512,6 +516,9 @@ void note_stmt(Used &used, Shadow &shadow, const Stmt &stmt);
 void note_function(Used &used, Shadow shadow, const FunctionDecl &fn, bool hide_type_params);
 
 void note_type_arg(Used &used, const Shadow &shadow, const TypeArg &arg) {
+    if (arg.value_expr != nullptr) {
+        note_expr(used, shadow, *arg.value_expr);
+    }
     if (arg.type_package.empty()) {
         if (arg.is_value) {
             note_value(used, shadow, arg.type_name);
@@ -1733,6 +1740,21 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
             out.value = arg.value;
             return true;
         }
+        if (arg.value_expr != nullptr) {
+            const Type got = check_expr(*arg.value_expr, true);
+            if (got.kind == TypeKind::Invalid) {
+                return false;
+            }
+            const std::optional<int> folded = fold_int(*arg.value_expr);
+            if (!folded) {
+                error(loc.valid() ? loc : arg.loc, "not supported yet");
+                return false;
+            }
+            out = {};
+            out.is_value = true;
+            out.value = *folded;
+            return true;
+        }
         if (!arg.type_name.empty() && arg.type_package.empty() && arg.indirections == 0 && arg.args.empty() && !arg.is_array) {
             if (const std::optional<int> value = lookup_const_value(arg.type_name)) {
                 out = {};
@@ -1829,6 +1851,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         }
     }
     auto subst_arg = [&](auto &&self, TypeArg &arg) -> void {
+        substitute_value_arg(params, bounds, arg);
         if (arg.has_value) {
             return;
         }
@@ -2005,6 +2028,13 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
     }
 }
 
+void Checker::substitute_value_arg(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, TypeArg &arg) {
+    if (arg.value_expr == nullptr) {
+        return;
+    }
+    substitute_expr(params, bounds, *arg.value_expr);
+}
+
 void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Expr &expr) {
     std::visit(
         [&](auto &node) {
@@ -2090,7 +2120,8 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         const int stars = node.indirections;
                         node.type_name = bound->type_name;
                         node.type_package = bound->type_package;
-                        node.is_struct = bound->is_struct;
+                        // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
+                        node.is_struct = false;
                         node.is_enum = bound->is_enum;
                         node.indirections = stars + bound->indirections;
                         node.optional = bound->optional << static_cast<unsigned>(stars);
@@ -2124,7 +2155,8 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         node.on_type = true;
                         node.type_name = bound->type_name;
                         node.type_package = bound->type_package;
-                        node.is_struct = bound->is_struct;
+                        // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
+                        node.is_struct = false;
                         node.is_enum = bound->is_enum;
                         node.indirections = stars + bound->indirections;
                         node.optional = bound->optional << stars;
@@ -2173,6 +2205,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     substitute_expr(params, bounds, *node.init);
                 }
                 for (TypeArg &arg : node.type_args) {
+                    substitute_value_arg(params, bounds, arg);
                     if (!arg.has_value && arg.type_package.empty() && arg.indirections == 0 && !arg.is_array &&
                         arg.args.empty()) {
                         if (const SpecArg *bound = find_arg(params, bounds, arg.type_name);
@@ -2223,6 +2256,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     substitute_expr(params, bounds, *node.callee);
                 }
                 for (TypeArg &arg : node.type_args) {
+                    substitute_value_arg(params, bounds, arg);
                     if (!arg.has_value && arg.type_package.empty() && arg.indirections == 0 && !arg.is_array && arg.args.empty()) {
                         if (const SpecArg *bound = find_arg(params, bounds, arg.type_name); bound != nullptr && bound->is_value) {
                             arg.is_value = true;

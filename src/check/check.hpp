@@ -1061,6 +1061,8 @@ class Checker {
                          SourceLoc loc, std::vector<TypeShell> *shells = nullptr, bool *elem_const = nullptr,
                          uint32_t *const_pointee = nullptr);
     void substitute_expr(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Expr &expr);
+    // `sizeof(T)` written as a type argument. The operand is substituted. The value is folded later.
+    void substitute_value_arg(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, TypeArg &arg);
     void substitute_stmt(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Stmt &stmt);
     void substitute_function(FunctionDecl &fn, const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds);
     // Replace `typeof(expr)` results with the type of that expression. Parameters must typecheck.

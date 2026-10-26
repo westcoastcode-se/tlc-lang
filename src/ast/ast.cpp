@@ -1332,4 +1332,82 @@ void replace_names(std::unique_ptr<Expr> &slot, const std::vector<std::string> &
         slot->data);
 }
 
+TypeArg::TypeArg(const TypeArg &other)
+    : loc(other.loc), is_value(other.is_value), has_value(other.has_value), value(other.value),
+      type_name(other.type_name), type_package(other.type_package), is_struct(other.is_struct),
+      is_enum(other.is_enum), indirections(other.indirections), optional(other.optional),
+      const_pointee(other.const_pointee), is_array(other.is_array), elem_const(other.elem_const),
+      array_len(other.array_len), array_len_name(other.array_len_name), shells(other.shells), args(other.args) {
+    if (other.value_expr != nullptr) {
+        value_expr = std::shared_ptr<Expr>(clone_expr(*other.value_expr));
+    }
+}
+
+TypeArg &TypeArg::operator=(const TypeArg &other) {
+    if (this == &other) {
+        return *this;
+    }
+    TypeArg copy(other);
+    *this = std::move(copy);
+    return *this;
+}
+
+void append_value_expr_key(std::string &out, const Expr &expr) {
+    const auto *sized = std::get_if<Expr::Sizeof>(&expr.data);
+    if (sized == nullptr || !sized->on_type) {
+        out += dump_expr(expr);
+        return;
+    }
+    out += "sizeof(";
+    if (sized->is_array) {
+        out.push_back('[');
+        if (!sized->elem_slice && sized->array_len >= 0) {
+            out += std::to_string(sized->array_len);
+        }
+        out.push_back(']');
+        if (sized->elem_const) {
+            out += "const.";
+        }
+    }
+    for (const TypeShell &shell : sized->shells) {
+        if (shell.kind == TypeShell::Kind::Slice) {
+            out += "[]";
+            continue;
+        }
+        if (shell.kind == TypeShell::Kind::Array) {
+            out.push_back('[');
+            if (!shell.length_name.empty()) {
+                out += shell.length_name;
+            } else {
+                out += std::to_string(shell.length);
+            }
+            out.push_back(']');
+            continue;
+        }
+        if (shell.optional) {
+            out.push_back('?');
+        }
+        out.push_back('*');
+        if (shell.const_pointee) {
+            out += "const";
+        }
+    }
+    for (int bit = sized->indirections - 1; bit >= 0; --bit) {
+        const uint32_t mask = 1u << static_cast<unsigned>(bit);
+        if ((sized->optional & mask) != 0) {
+            out.push_back('?');
+        }
+        out.push_back('*');
+        if ((sized->const_pointee & mask) != 0) {
+            out += "const";
+        }
+    }
+    if (!sized->type_package.empty()) {
+        out += sized->type_package;
+        out.push_back('.');
+    }
+    out += sized->type_name;
+    out.push_back(')');
+}
+
 } // namespace tlc

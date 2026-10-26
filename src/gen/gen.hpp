@@ -126,6 +126,10 @@ inline void append_type_args_key(std::string &out, const std::vector<TypeArg> &a
             out.push_back(',');
         }
         const TypeArg &arg = args[i];
+        if (arg.value_expr != nullptr && !arg.has_value) {
+            append_value_expr_key(out, *arg.value_expr);
+            continue;
+        }
         if (arg.has_value || arg.is_value) {
             out += std::to_string(arg.value);
             continue;

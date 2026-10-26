@@ -1438,6 +1438,16 @@ bool Checker::type_arg_from_expr(const Expr &expr, TypeArg &out) const {
         out.type_name = selector->field;
         return true;
     }
+    if (const auto *sized = std::get_if<Expr::Sizeof>(&expr.data)) {
+        // `Buf[sizeof(i32)].span` is an index. `alignof` is not a type argument.
+        if (sized->align) {
+            return false;
+        }
+        out.loc = sized->loc;
+        out.is_value = true;
+        out.value_expr = std::shared_ptr<Expr>(clone_expr(expr));
+        return true;
+    }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         const auto *base = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
         if (base == nullptr || index->index == nullptr) {

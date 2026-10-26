@@ -1900,6 +1900,12 @@ std::vector<TypeParam> Parser::parse_type_params() {
 TypeArg Parser::parse_one_type_arg() {
     TypeArg arg;
     arg.loc = peek().loc;
+    // `width[sizeof(Point)]`. The operand is the same `sizeof` expression. It is not folded here.
+    if (check(TokenKind::KwSizeof)) {
+        arg.is_value = true;
+        arg.value_expr = std::shared_ptr<Expr>(parse_unary());
+        return arg;
+    }
     if (check(TokenKind::IntLiteral)) {
         arg.is_value = true;
         if (peek().suffix.is_unsigned || peek().suffix.bits == 8 || peek().suffix.bits == 16 || peek().suffix.bits == 64 ||
