@@ -90,10 +90,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                     std::vector<llvm::Type *> fields;
                     fields.reserve(parts.size());
                     for (const ResultSlot &slot : parts) {
-                        const Lowered low =
-                            lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                  slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
-                        fields.push_back(stored_type(low));
+                        fields.push_back(stored_type(lower_result(current_file_, slot)));
                     }
                     aggregate = llvm::StructType::get(context_, fields);
                 }
@@ -107,8 +104,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             llvm::Value *field = builder_.CreateInBoundsGEP(
                 aggregate, aggregate_ptr, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(part)});
             const ResultSlot &slot = parts[static_cast<std::size_t>(part)];
-            const Lowered low = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                      slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
+            const Lowered low = lower_result(current_file_, slot);
             TypedValue out{field,        low.depth,     low.elem_char, low.struct_id, low.is_array && !low.is_slice,
                            low.elem_void, low.elem_bool, low.elem_bits, low.elem_unsigned, -1, low.elem_float};
             out.enum_id = low.enum_id;
@@ -117,6 +113,10 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             out.inner_array_len = low.inner_array_len;
             out.elem_slice = low.elem_slice;
             out.shells = low.shells;
+            if (low.is_tuple) {
+                out.is_tuple = true;
+                out.tuple_parts = low.tuple_parts;
+            }
             if (low.type != nullptr && low.type->isArrayTy()) {
                 out.array_type = low.type;
             }
@@ -748,9 +748,7 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     if (binding != nullptr && binding->is_tuple &&
                         static_cast<std::size_t>(node.tuple_index) < binding->tuple_parts.size()) {
                         const ResultSlot &slot = binding->tuple_parts[static_cast<std::size_t>(node.tuple_index)];
-                        const Lowered low = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct,
-                                                  slot.indirections, slot.is_array, slot.array_len, false,
-                                                  slot.elem_slice);
+                        const Lowered low = lower_result(current_file_, slot);
                         Shape shape;
                         shape.depth = low.depth;
                         shape.elem_char = low.elem_char;
@@ -977,9 +975,7 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         std::vector<llvm::Type *> fields;
         fields.reserve(addr.tuple_parts.size());
         for (const ResultSlot &slot : addr.tuple_parts) {
-            const Lowered part = lower(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                       slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
-            fields.push_back(stored_type(part));
+            fields.push_back(stored_type(lower_result(current_file_, slot)));
         }
         llvm::StructType *type = llvm::StructType::get(context_, fields);
         TypedValue loaded;

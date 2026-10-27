@@ -736,6 +736,7 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 return fold(*node.expr);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 // `"hi"[1]` is the byte. The length does not include the terminating null.
+                // `pair[0][1]` walks each index. The base may itself be an index.
                 if (node.is_range || node.base == nullptr || node.index == nullptr) {
                     return std::nullopt;
                 }
@@ -743,35 +744,49 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 if (!at || *at < 0) {
                     return std::nullopt;
                 }
-                const auto tuple_at = [&](const Expr::Init &init) -> std::optional<int32_t> {
-                    if (!init.is_tuple || static_cast<std::size_t>(*at) >= init.elements.size() ||
-                        init.elements[static_cast<std::size_t>(*at)] == nullptr) {
-                        return std::nullopt;
+                const auto tuple_element = [&](const auto &self, const Expr &base, int index, int depth) -> const Expr * {
+                    if (depth > 8 || index < 0) {
+                        return nullptr;
                     }
-                    return fold(*init.elements[static_cast<std::size_t>(*at)]);
-                };
-                if (const auto *init = std::get_if<Expr::Init>(&node.base->data)) {
-                    if (const std::optional<int32_t> element = tuple_at(*init)) {
-                        return element;
-                    }
-                }
-                if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
-                    const Expr *init_expr = nullptr;
-                    if (const Binding *binding = lookup(named->text)) {
-                        init_expr = binding->const_init;
-                    }
-                    if (init_expr == nullptr) {
-                        if (const VarDecl *var = global_decl(named->text); var != nullptr && var->is_comptime) {
-                            init_expr = var->init.get();
+                    if (const auto *init = std::get_if<Expr::Init>(&base.data)) {
+                        if (!init->is_tuple || static_cast<std::size_t>(index) >= init->elements.size()) {
+                            return nullptr;
                         }
+                        return init->elements[static_cast<std::size_t>(index)].get();
                     }
-                    if (init_expr != nullptr) {
-                        if (const auto *init = std::get_if<Expr::Init>(&init_expr->data)) {
-                            if (const std::optional<int32_t> element = tuple_at(*init)) {
-                                return element;
+                    if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
+                        const Expr *init_expr = nullptr;
+                        if (const Binding *binding = lookup(named->text)) {
+                            init_expr = binding->const_init;
+                        }
+                        if (init_expr == nullptr) {
+                            if (const VarDecl *var = global_decl(named->text); var != nullptr && var->is_comptime) {
+                                init_expr = var->init.get();
                             }
                         }
+                        if (init_expr == nullptr) {
+                            return nullptr;
+                        }
+                        return self(self, *init_expr, index, depth + 1);
                     }
+                    if (const auto *inner = std::get_if<Expr::Index>(&base.data)) {
+                        if (inner->is_range || inner->base == nullptr || inner->index == nullptr) {
+                            return nullptr;
+                        }
+                        const std::optional<int32_t> at_inner = fold(*inner->index);
+                        if (!at_inner || *at_inner < 0) {
+                            return nullptr;
+                        }
+                        const Expr *element = self(self, *inner->base, *at_inner, depth + 1);
+                        if (element == nullptr) {
+                            return nullptr;
+                        }
+                        return self(self, *element, index, depth + 1);
+                    }
+                    return nullptr;
+                };
+                if (const Expr *element = tuple_element(tuple_element, *node.base, *at, 0)) {
+                    return fold(*element);
                 }
                 std::unordered_set<std::string> seen;
                 const std::optional<std::string> bytes = constant_string(*node.base, seen);

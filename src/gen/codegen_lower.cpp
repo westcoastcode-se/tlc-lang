@@ -978,17 +978,13 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
     (void)ret_enum;
     std::vector<llvm::Type *> args;
     args.reserve(params.size());
-    auto lower_part = [&](const FnParam &part, bool parameter) {
+    const auto lower_part = [&](const auto &self, const FnParam &part, bool parameter) -> Lowered {
         if (part.is_tuple) {
-            // A tuple parameter, or one result among several. The elements are that tuple.
-            // A nested tuple is already rejected, so each element is an ordinary type.
+            // A tuple parameter, or one result among several. An element may be a tuple.
             std::vector<llvm::Type *> fields;
             fields.reserve(part.results.size());
             for (const FnParam &inner : part.results) {
-                const bool slice = inner.is_array && inner.array_len < 0;
-                const Lowered one = lower(file, inner.type_name, inner.type_package, inner.is_struct, inner.indirections,
-                                          slice, slice ? inner.array_len : 0, false, inner.elem_slice, inner.shells);
-                fields.push_back(stored_type(one));
+                fields.push_back(stored_type(self(self, inner, false)));
             }
             Lowered tuple;
             if (fields.empty()) {
@@ -1008,7 +1004,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
                      slice ? part.array_len : 0, parameter, part.elem_slice, part.shells);
     };
     for (const FnParam &param : params) {
-        args.push_back(stored_type(lower_part(param, true)));
+        args.push_back(stored_type(lower_part(lower_part, param, true)));
     }
     Lowered out;
     out.depth = fn_depth < 1 ? 1 : fn_depth;
@@ -1019,7 +1015,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
         std::vector<llvm::Type *> fields;
         fields.reserve(results.front().results.size());
         for (const FnParam &part : results.front().results) {
-            fields.push_back(stored_type(lower_part(part, false)));
+            fields.push_back(stored_type(lower_part(lower_part, part, false)));
         }
         if (!fields.empty()) {
             out.fn_ty = llvm::FunctionType::get(llvm::StructType::get(context_, fields), args, variadic);
@@ -1031,7 +1027,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
         std::vector<llvm::Type *> fields;
         fields.reserve(results.size());
         for (const FnParam &part : results) {
-            fields.push_back(stored_type(lower_part(part, false)));
+            fields.push_back(stored_type(lower_part(lower_part, part, false)));
         }
         out.fn_ty = llvm::FunctionType::get(llvm::StructType::get(context_, fields), args, variadic);
         out.fn_results = results;
@@ -1059,20 +1055,7 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
 
 CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) const {
     if (param.is_tuple) {
-        std::vector<llvm::Type *> fields;
-        Lowered out;
-        out.is_tuple = true;
-        out.tuple_parts = param.tuple_parts;
-        for (const ResultSlot &slot : param.tuple_parts) {
-            const Lowered part = lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                       slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
-            fields.push_back(stored_type(part));
-        }
-        if (fields.empty()) {
-            fields.push_back(i32());
-        }
-        out.type = llvm::StructType::get(context_, fields);
-        return out;
+        return lower_tuple_parts(file, param.tuple_parts);
     }
     if (param.is_fn_ptr) {
         return lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,

@@ -1,0 +1,6 @@
+var n = 1;
+comptime const pair = ((40, 2), n);
+
+func main() i32 {
+    return 0;
+}

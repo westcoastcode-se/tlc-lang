@@ -1,0 +1,5 @@
+comptime const flags = ((true, 0), 1);
+
+func main() i32 {
+    return flags[0][0] + 1;
+}

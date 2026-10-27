@@ -1266,6 +1266,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     }
                     auto slot_of = [&](const TypedValue &element) {
                         ResultSlot slot;
+                        if (element.is_tuple) {
+                            // `((40, 2), 1)`. The first index stays that tuple.
+                            slot.is_tuple = true;
+                            slot.tuple_parts = element.tuple_parts;
+                            return slot;
+                        }
                         auto scalar = [&]() -> std::string {
                             if (element.elem_bool) {
                                 return "bool";

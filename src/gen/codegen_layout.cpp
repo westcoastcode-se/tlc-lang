@@ -1390,6 +1390,9 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         low.enum_id = binding.enum_id;
         low.is_slice = binding.is_slice;
         low.elem_slice = binding.elem_slice;
+        // `(inner, 1)` when `inner` is `(40, 2)`. The name is that tuple.
+        low.is_tuple = binding.is_tuple;
+        low.tuple_parts = binding.tuple_parts;
         // `var band = grid[1:]` is `[][M]T`. The row length is what `band[0][i]` steps by.
         low.inner_array_len = binding.inner_array_len;
         low.shells = binding.shells;
@@ -1697,7 +1700,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                         return lower_array_literal(file, item);
                     }
                     if (item.is_tuple && item.elements.size() >= 2) {
-                        // `comptime const pair = (40, 2)`. A nested tuple stays out.
+                        // `comptime const pair = (40, 2)` and `comptime const nested = ((40, 2), 1)`.
                         // A bool literal stays `i1`. `value` would promote it to `i32`.
                         std::vector<llvm::Type *> fields;
                         std::vector<ResultSlot> parts;
@@ -1725,8 +1728,19 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                                     one = low;
                                 }
                             }
-                            if (!one || one->type == nullptr || one->is_tuple || one->elem_void) {
+                            if (!one || one->type == nullptr || one->elem_void) {
                                 return std::nullopt;
+                            }
+                            if (one->is_tuple) {
+                                if (one->tuple_parts.size() < 2 || !one->type->isStructTy()) {
+                                    return std::nullopt;
+                                }
+                                fields.push_back(one->type);
+                                ResultSlot slot;
+                                slot.is_tuple = true;
+                                slot.tuple_parts = one->tuple_parts;
+                                parts.push_back(std::move(slot));
+                                continue;
                             }
                             // `"hi"` in a tuple is `[]const u8`, the same header a local tuple stores.
                             if (std::holds_alternative<Expr::String>(element->data)) {

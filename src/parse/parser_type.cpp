@@ -749,11 +749,10 @@ Parser::PlacedType Parser::parse_tuple_type() {
     type.is_tuple = true;
     type.tuple_parts.reserve(parts.size());
     for (PlacedType &part : parts) {
-        if (part.is_tuple || part.is_fn_ptr) {
+        // `((i32, i32), i32)` is a tuple element. A function pointer is not.
+        if (part.is_fn_ptr) {
             diags_.error(part.loc.valid() ? part.loc : loc, "not supported yet");
-            part.is_tuple = false;
             part.is_fn_ptr = false;
-            part.tuple_parts.clear();
             part.type_name = "invalid";
         }
         type.tuple_parts.push_back(slot_from_type(part));

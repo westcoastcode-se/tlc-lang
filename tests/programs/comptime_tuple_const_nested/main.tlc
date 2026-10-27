@@ -1,5 +1,32 @@
-comptime const pair = ((40, 2), 1);
+comptime const pair = ((36, 2), 1);
+comptime const inner = (3, 0);
+comptime const wrapped = (inner, 0);
+
+comptime func take(p ((i32, i32), i32)) i32 {
+    return p[0][1];
+}
+
+func widen(p comptime ((i32, i32), i32), n i32) i32 {
+    return p[0][0] + p[1] + n;
+}
+
+func flag(value bool) i32 {
+    if (value) {
+        return 1;
+    }
+    return 0;
+}
 
 func main() i32 {
-    return 0;
+    comptime const local = ((1, 0), 0);
+    comptime const flags = ((true, 0), 1);
+    comptime const n = pair[0][1];
+    var row [n]i32;
+    var live ((i32, i32), i32) = ((0, 1), 0);
+    var seen = ((4, 0), 0);
+    var k = 0;
+    if (wrapped[0][0] != 3 || row.len != 2 || live[0][1] != 1 || seen[0][0] != 4 || ((40, 2), 1)[0][1] != 2) {
+        return 0;
+    }
+    return pair[0][0] + take(pair) + widen(local, k) + flag(flags[0][0]) + pair[1] - flags[1] + row.len;
 }

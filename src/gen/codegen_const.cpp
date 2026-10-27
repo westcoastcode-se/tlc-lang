@@ -1317,7 +1317,7 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
     if (const auto *init = std::get_if<Expr::Init>(&cursor->data)) {
         if (init->is_tuple && init->elements.size() >= 2) {
             // `comptime const wide = (0.5, 40)`, `(Point{.x = 40, .y = 2}, 1)`, `("hi", 2)`,
-            // `(Color.Blue, 2)`, and `(true, 1)`. An integer element still uses an empty binding.
+            // `(Color.Blue, 2)`, `(true, 1)`, and `((40, 2), 1)`. An integer element still uses an empty binding.
             // A bool literal is `i1`. `null` stays rejected.
             const auto element_constant = [&](const auto &self, const Expr &element, int depth) -> llvm::Constant * {
                 if (depth > 8) {
@@ -1331,7 +1331,26 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                 }
                 if (const auto *made = std::get_if<Expr::Init>(&element.data)) {
                     if (made->is_tuple) {
-                        return nullptr;
+                        // `((40, 2), 1)`. The inner tuple is one struct field.
+                        if (made->elements.size() < 2) {
+                            return nullptr;
+                        }
+                        std::vector<llvm::Constant *> nested;
+                        std::vector<llvm::Type *> nested_types;
+                        nested.reserve(made->elements.size());
+                        nested_types.reserve(made->elements.size());
+                        for (const auto &inner : made->elements) {
+                            if (inner == nullptr) {
+                                return nullptr;
+                            }
+                            llvm::Constant *field = self(self, *inner, depth + 1);
+                            if (field == nullptr) {
+                                return nullptr;
+                            }
+                            nested.push_back(field);
+                            nested_types.push_back(field->getType());
+                        }
+                        return llvm::ConstantStruct::get(llvm::StructType::get(context_, nested_types), nested);
                     }
                     if (made->struct_id >= 0 && !made->array_literal) {
                         return const_struct(*made, made->struct_id);
