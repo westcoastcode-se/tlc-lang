@@ -1,5 +1,22 @@
-comptime const pair = (true, 1);
+comptime const pair = (true, 2);
+
+comptime func take(p (bool, i32)) i32 {
+    return p[1];
+}
+
+func flag(value bool) i32 {
+    if (value) {
+        return 40;
+    }
+    return 0;
+}
+
+func widen(p comptime (bool, i32), n i32) i32 {
+    return i32(p[0]) + p[1] + n;
+}
 
 func main() i32 {
-    return 0;
+    comptime const local = (false, 1);
+    var n = 0;
+    return take(pair) + flag(pair[0]) + flag(local[0]) + i32(pair[0] == true) + i32(local[0] == false) + pair[1] + local[1] + widen(pair, n) - 8;
 }

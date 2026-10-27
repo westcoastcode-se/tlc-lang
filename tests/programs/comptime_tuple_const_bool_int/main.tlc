@@ -1,0 +1,5 @@
+comptime const pair = (true, 1);
+
+func main() i32 {
+    return pair[0] + 1;
+}

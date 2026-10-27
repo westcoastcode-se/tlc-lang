@@ -1317,8 +1317,8 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
     if (const auto *init = std::get_if<Expr::Init>(&cursor->data)) {
         if (init->is_tuple && init->elements.size() >= 2) {
             // `comptime const wide = (0.5, 40)`, `(Point{.x = 40, .y = 2}, 1)`, `("hi", 2)`,
-            // and `(Color.Blue, 2)`. An integer element still uses an empty binding.
-            // A bool element stays rejected.
+            // `(Color.Blue, 2)`, and `(true, 1)`. An integer element still uses an empty binding.
+            // A bool literal is `i1`. `null` stays rejected.
             const auto element_constant = [&](const auto &self, const Expr &element, int depth) -> llvm::Constant * {
                 if (depth > 8) {
                     return nullptr;
@@ -1359,6 +1359,11 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                     part.elem_bits = number->wide ? 64 : 32;
                     return const_initializer(element, part);
                 }
+                if (std::holds_alternative<Expr::Bool>(element.data)) {
+                    Binding part;
+                    part.elem_bool = true;
+                    return const_initializer(element, part);
+                }
                 Binding part;
                 return const_initializer(element, part);
             };
@@ -1392,7 +1397,8 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                         if (integer == nullptr || !field_ty->isIntegerTy()) {
                             return nullptr;
                         }
-                        fields[index] = llvm::ConstantInt::get(field_ty, integer->getValue());
+                        // The APInt keeps its own width. `get` of that width would leave an `i1` in an `i32` slot.
+                        fields[index] = llvm::ConstantInt::get(field_ty, integer->getZExtValue(), false, true);
                     }
                     packed = want;
                 }

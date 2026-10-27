@@ -1300,9 +1300,8 @@ bool CodeGen::comptime_constant(const Expr &expr) const {
                     if (constant_string(*element, text_seen) || enumerator_value(*element)) {
                         continue;
                     }
-                    // A bool and `null` fold to an integer here. They are not this value.
-                    if (std::holds_alternative<Expr::Bool>(element->data) ||
-                        std::holds_alternative<Expr::Nullptr>(element->data) || !fold(*element)) {
+                    // `null` folds to 0 here. It is not this value. A bool literal folds to 0 or 1 and is.
+                    if (std::holds_alternative<Expr::Nullptr>(element->data) || !fold(*element)) {
                         return false;
                     }
                 }

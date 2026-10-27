@@ -1698,6 +1698,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     }
                     if (item.is_tuple && item.elements.size() >= 2) {
                         // `comptime const pair = (40, 2)`. A nested tuple stays out.
+                        // A bool literal stays `i1`. `value` would promote it to `i32`.
                         std::vector<llvm::Type *> fields;
                         std::vector<ResultSlot> parts;
                         fields.reserve(item.elements.size());
@@ -1706,7 +1707,8 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                             if (element == nullptr) {
                                 return std::nullopt;
                             }
-                            auto one = value(*element);
+                            auto one = std::holds_alternative<Expr::Bool>(element->data) ? raw(*element)
+                                                                                             : value(*element);
                             // `Color.Blue` is that enumerator. A bare `comptime const ink = Color.Blue`
                             // stays rejected in the checker.
                             if (!one) {

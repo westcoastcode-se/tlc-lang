@@ -943,13 +943,11 @@ bool Checker::comptime_constant(const Expr &expr) {
                 return false;
             }
             for (const auto &element : init->elements) {
-                // A bool and `null` fold to an integer in one folder. They are not this value.
-                if (element == nullptr || std::holds_alternative<Expr::Bool>(element->data) ||
-                    std::holds_alternative<Expr::Nullptr>(element->data)) {
+                // `null` folds to 0. It is not this value. A bool literal is, and it stays `bool`.
+                if (element == nullptr || std::holds_alternative<Expr::Nullptr>(element->data)) {
                     return false;
                 }
-                // A nested tuple is this value only when every element is. `argument_is_comptime`
-                // also accepts a bool, and that element is not this value.
+                // A nested tuple is this value only when every element is.
                 if (const auto *inner = std::get_if<Expr::Init>(&element->data);
                     inner != nullptr && inner->is_tuple) {
                     if (!comptime_constant(*element)) {
@@ -1086,6 +1084,10 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
 std::optional<std::string> Checker::comptime_spec_piece(const Expr &expr) {
     std::unordered_set<std::string> seen;
     const auto piece = [&](const auto &self, const Expr &value) -> std::optional<std::string> {
+        // `fold_int` spells `true` as `1`. That collides with the integer, so a bool literal is `b1` or `b0`.
+        if (const auto *flag = std::get_if<Expr::Bool>(&value.data)) {
+            return flag->value ? std::string("b1") : std::string("b0");
+        }
         const bool enumerator = [&]() {
             const auto *selector = std::get_if<Expr::Selector>(&value.data);
             if (selector == nullptr || selector->base == nullptr) {

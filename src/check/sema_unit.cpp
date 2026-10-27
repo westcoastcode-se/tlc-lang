@@ -1090,8 +1090,9 @@ Type Checker::check_file_const(VarDecl &written) {
         return type_invalid();
     }
     if (got.kind == TypeKind::Tuple) {
-        // `comptime const pair = (40, 2)`. A bool element and a value that is not
-        // constant stay `type mismatch`. A nested tuple is `not supported yet`.
+        // `comptime const pair = (40, 2)` and `comptime const flags = (true, 1)`.
+        // A bool element is that bool. `null` and a value that is not constant stay
+        // `type mismatch`. A nested tuple is `not supported yet`.
         if (written.init == nullptr || !comptime_constant(*written.init)) {
             error(written.loc, "type mismatch");
             return type_invalid();
