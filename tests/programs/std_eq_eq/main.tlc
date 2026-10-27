@@ -1,4 +1,4 @@
-const n = "hi" == "hi";
+comptime const n = "hi" == "hi";
 
 func main() i32 {
     return n;

@@ -192,7 +192,8 @@ bool Checker::const_path(const Expr &expr) {
                     if (member->type.kind == TypeKind::Pointer) {
                         return member->type.pointee != nullptr && member->type.pointee->is_const;
                     }
-                    return member->is_constant;
+                    // A runtime `const` is immutable storage. A `comptime const` is `is_constant`.
+                    return member->is_constant || member->is_immutable || member->type.is_const;
                 }
             }
         }
@@ -2155,11 +2156,24 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     symbol.loc = loc;
-                    if (node.is_const && node.value != nullptr && plain_int_constant(parts[index])) {
-                        if (const std::optional<int> value = constant_index(*node.value)) {
-                            symbol.folded_local = true;
-                            symbol.const_value = *value;
+                    if (node.is_comptime && node.is_const && node.value != nullptr) {
+                        Stmt::Bind &bind = const_cast<Stmt::Bind &>(node);
+                        if (const Expr *src = promotable_init(*bind.value)) {
+                            bind.value = clone_expr(*src);
                         }
+                        if (!strict_comptime_expr(*bind.value) && !comptime_address(*bind.value)) {
+                            error(loc, "not supported yet");
+                        } else if (plain_int_constant(parts[index])) {
+                            if (const std::optional<int> value = constant_index(*bind.value)) {
+                                symbol.is_constant = true;
+                                symbol.folded_local = true;
+                                symbol.const_value = *value;
+                            }
+                        } else {
+                            symbol.is_constant = true;
+                        }
+                    } else if (node.is_const && !node.is_comptime) {
+                        note_promotable(symbol, node.value.get());
                     }
                     declare(std::move(symbol), loc);
                     if (!node.is_const && node.names.size() == 1 && node.value != nullptr) {
@@ -2305,11 +2319,24 @@ void Checker::check_stmt(const Stmt &stmt) {
                             init_new_partial_ = saved_new;
                         }
                         if ((init_ready || (!(sees_previous && plain_init) && diags_.size() == before)) && live != nullptr) {
-                            if (var.is_const_decl && var.init != nullptr && plain_int_constant(live->type)) {
-                                if (const std::optional<int> value = constant_index(*var.init)) {
-                                    live->folded_local = true;
-                                    live->const_value = *value;
+                            if (var.is_comptime && var.init != nullptr) {
+                                VarDecl &written = const_cast<VarDecl &>(var);
+                                if (const Expr *src = promotable_init(*written.init)) {
+                                    written.init = clone_expr(*src);
                                 }
+                                if (!strict_comptime_expr(*written.init) && !comptime_address(*written.init)) {
+                                    error(var.loc, "not supported yet");
+                                } else if (plain_int_constant(live->type)) {
+                                    if (const std::optional<int> value = constant_index(*written.init)) {
+                                        live->is_constant = true;
+                                        live->folded_local = true;
+                                        live->const_value = *value;
+                                    }
+                                } else {
+                                    live->is_constant = true;
+                                }
+                            } else if ((var.is_const_decl || live->type.is_const) && var.init != nullptr) {
+                                note_promotable(*live, var.init.get());
                             }
                             init_cover(*live, var.init.get());
                             if (const auto *created = std::get_if<Expr::New>(&var.init->data);

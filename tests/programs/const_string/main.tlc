@@ -1,4 +1,4 @@
-const label *const u8 = "hi";
+comptime const label *const u8 = "hi";
 
 func main() i32 {
     if (label[0] == 'h' && label[1] == 'i' && label[2] == 0) {

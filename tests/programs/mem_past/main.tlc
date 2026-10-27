@@ -1,6 +1,6 @@
 import "builtin";
 
-const n = builtin.memeql[u8]("hello"[1:9], "ell");
+comptime const n = builtin.memeql[u8]("hello"[1:9], "ell");
 
 func main() i32 {
     return n;

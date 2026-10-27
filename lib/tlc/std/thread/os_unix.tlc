@@ -26,10 +26,10 @@ extern(abi="c") func free(ptr *void) void;
 
 // 128 bytes covers glibc, musl, and macOS pthread_mutex_t and pthread_cond_t.
 // malloc aligns to 16.
-const mutex_bytes i64 = 128;
+comptime const mutex_bytes i64 = 128;
 
 // macOS LP64 pthread_rwlock_t is 200 bytes. glibc and musl use 56.
-const rwlock_bytes i64 = 256;
+comptime const rwlock_bytes i64 = 256;
 
 func fail() {
     builtin.panic("thread");

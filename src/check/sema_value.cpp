@@ -168,12 +168,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return *inner.pointee;
                 }
                 if (node.op == TokenKind::Amp) {
-                    if (const auto *named = std::get_if<Expr::Name>(&node.expr->data)) {
-                        if (const Symbol *symbol = lookup(named->text); symbol != nullptr && symbol->is_constant) {
-                            error(node.loc, "not an lvalue");
-                            return type_invalid();
-                        }
-                    }
+                    // `comptime const` has an address. `&name` is a comptime pointer when `name` is one.
                     if (const auto *selector = std::get_if<Expr::Selector>(&node.expr->data)) {
                         if (selector->base != nullptr && enum_designator(*selector->base) >= 0) {
                             error(node.loc, "not an lvalue");
@@ -184,11 +179,6 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 if (const Symbol *symbol = lookup(base->text); symbol != nullptr && symbol->is_package) {
                                     const SelectorTarget target = resolve_selector(*selector);
                                     if (target.kind == SelectorTarget::Kind::Failed) {
-                                        return type_invalid();
-                                    }
-                                    if (target.kind == SelectorTarget::Kind::Package && target.symbol != nullptr &&
-                                        target.symbol->is_constant) {
-                                        error(node.loc, "not an lvalue");
                                         return type_invalid();
                                     }
                                 }

@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Generics](generic.md) · [Next: Macros](macro.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-A `comptime func` calculates while compiling. Every argument is a comptime value, whether or not the parameter is marked `comptime`. A comptime value is a folded integer, a constant `[]const u8`, an enumerator, or a file-scope `const` of a struct, a float, an alias, or a function. A string is a literal, a constant range, or a file-scope `const` in the same file. A `var` is not. A local `const` whose initializer folds to `i32` is a comptime argument. It hides a file-scope `const` of the same name. A local `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` is not. A tuple of a folded integer, a constant `[]const u8`, an enumerator, or a file-scope `const` is. A tuple element that is a local `const` is `type mismatch`. A file-scope `const` of a tuple is `type mismatch`. `return` leaves the function. The call is an expression. It does not paste the body into the caller.
+A `comptime func` calculates while compiling. Every argument is a comptime value, whether or not the parameter is marked `comptime`. A comptime value is a folded integer, a constant `[]const u8`, an enumerator, or a `comptime const` of a struct, a float, an alias, or a function. A string is a literal, a constant range, or a `comptime const` in the same file. A `var` is not. A runtime `const` is not, until `comptime const folded = name`. A `comptime const` whose initializer folds to `i32` is a comptime argument, at file scope and inside a function. It hides a `comptime const` of the same name. A runtime `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` is not a comptime value. A tuple of a folded integer, a constant `[]const u8`, an enumerator, or a file-scope `const` is. A tuple element that is a local `const` is `type mismatch`. A file-scope `const` of a tuple is `type mismatch`. `return` leaves the function. The call is an expression. It does not paste the body into the caller.
 
 ```c
 comptime func add(n i32) i32 {
@@ -20,7 +20,7 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
-`const n = 41` then `return add(n)` folds the same way. A `var` is `not supported yet`.
+`comptime const n = 41` then `return add(n)` folds the same way. A runtime `const` and a `var` are `not supported yet`.
 
 ```c
 comptime func add(n i32) i32 {
@@ -28,7 +28,7 @@ comptime func add(n i32) i32 {
 }
 
 func main() i32 {
-    const n = 41;
+    comptime const n = 41;
     return add(n);
 }
 ```
@@ -39,7 +39,7 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
-The call folds when the body is one `return` of a constant `i32`. There is no runtime symbol and no trace frame. `emit` is not valid in a `comptime func`. A `var` passed to a `comptime func` is `not supported yet`. A type parameter, a method, `extern`, `export`, and a call that does not fold are `not supported yet`. `comptime { ... }` inside an ordinary function is `not supported yet`. `comptime for` is `not supported yet`. `comptime if` keeps one arm when the condition folds. A condition that is not comptime is `not supported yet`. A `comptime` parameter is comptime. The copy that still receives it typechecks both arms. The copy that substitutes the value keeps one arm. An ordinary `if` typechecks both arms. `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. A value that is not comptime is `not supported yet`. A `comptime` parameter leaves every case until a call substitutes it. An ordinary `switch` typechecks every case. A `var` and a local `const` do not fold. In a [macro](macro.md), `comptime if` and `comptime switch` are `not supported yet`, and `for` and `if` run while compiling without that prefix. A `switch` in a macro is `not supported yet`. `const for` is not a form.
+The call folds when the body is one `return` of a constant `i32`. There is no runtime symbol and no trace frame. `emit` is not valid in a `comptime func`. A `var` passed to a `comptime func` is `not supported yet`. A type parameter, a method, `extern`, `export`, and a call that does not fold are `not supported yet`. `comptime { ... }` inside an ordinary function is `not supported yet`. `comptime for` is `not supported yet`. `comptime if` keeps one arm when the condition folds. A condition that is not comptime is `not supported yet`. A `comptime` parameter is comptime. The copy that still receives it typechecks both arms. The copy that substitutes the value keeps one arm. An ordinary `if` typechecks both arms. `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. A value that is not comptime is `not supported yet`. A `comptime` parameter leaves every case until a call substitutes it. An ordinary `switch` typechecks every case. A `var` and a runtime `const` do not fold. In a [macro](macro.md), `comptime if` and `comptime switch` are `not supported yet`, and `for` and `if` run while compiling without that prefix. A `switch` in a macro is `not supported yet`. `const for` is not a form.
 
 An ordinary function may mark a parameter `comptime`. That argument has to be a comptime value, or the call is `type mismatch`. When every parameter is `comptime` and the body is one `return` of a constant `i32`, the call folds. The function is still compiled.
 
@@ -75,7 +75,7 @@ retq                             # return
 
 `return add(1)` folds to `1`. `return scale(2, x)` passes `x` and calls `scale`. `2` is an immediate.
 
-A local `const` whose initializer folds to `i32` is that same argument. `const n = 2` then `return scale(n, x)` calls `main.scale.spec.2` when the file is `main.tlc`. A `var` is `type mismatch`. `scale(n + 1, x)` is `type mismatch`.
+A `comptime const` whose initializer folds to `i32` is that same argument. `comptime const n = 2` then `return scale(n, x)` calls `main.scale.spec.2` when the file is `main.tlc`. A runtime `const` and a `var` are `type mismatch`. `scale(n + 1, x)` is `type mismatch`.
 
 ```c
 func scale(n comptime i32, x i32) i32 {
@@ -83,7 +83,7 @@ func scale(n comptime i32, x i32) i32 {
 }
 
 func main() i32 {
-    const n = 2;
+    comptime const n = 2;
     var x = 40;
     return scale(n, x);
 }

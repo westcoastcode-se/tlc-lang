@@ -663,7 +663,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     }
     if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
         // `extern const name` and `extern const Type::name` are file scope.
-        VarDecl var = parse_const_decl(exported);
+        VarDecl var = parse_const_decl(exported, false);
         var.is_extern = is_extern;
         var.extern_c = extern_c;
         var.link_name = link_name;
@@ -718,6 +718,18 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
     }
     if (check(TokenKind::KwComptime)) {
         const SourceLoc loc = peek().loc;
+        if (peek(1).kind == TokenKind::KwConst) {
+            ++pos_;
+            VarDecl var = parse_const_decl(exported, true);
+            var.is_extern = is_extern;
+            var.extern_c = extern_c;
+            var.link_name = link_name;
+            TopDecl top;
+            top.data = std::move(var);
+            unit.decls.push_back(std::move(top));
+            saw_decl_ = true;
+            return;
+        }
         if (peek(1).kind != TokenKind::KwFunc) {
             diags_.error(loc, "not supported yet");
             ++pos_;

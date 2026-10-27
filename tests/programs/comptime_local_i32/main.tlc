@@ -19,10 +19,10 @@ macro func bump(n comptime i32) {
 
 func main() i32 {
     var x = 40;
-    const n = 2;
-    const m = n;
-    const stepped = n + 1;
-    const typed i32 = 2;
+    comptime const n = 2;
+    comptime const m = n;
+    comptime const stepped = n + 1;
+    comptime const typed i32 = 2;
     if (width[add(3)]() != 4) { return 1; }
     if (width[n]() != 2) { return 2; }
     if (width[m]() != 2) { return 3; }

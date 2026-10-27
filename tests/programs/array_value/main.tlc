@@ -1,6 +1,6 @@
 var file_row = [_]i32{4, 6};
 var file_copy = file_row;
-const file_held = file_row;
+comptime const file_held = file_row;
 
 func poke(row [2]i32) i32 {
     var copy = row;

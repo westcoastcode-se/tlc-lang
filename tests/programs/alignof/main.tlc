@@ -2,8 +2,8 @@ type Node struct {
     p *i32;
 };
 
-const n = alignof(i32);
-const p = alignof(Node);
+comptime const n = alignof(i32);
+comptime const p = alignof(Node);
 
 func main() i32 {
     var a = alignof(i32);

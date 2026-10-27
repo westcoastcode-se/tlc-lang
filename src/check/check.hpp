@@ -82,9 +82,12 @@ struct Symbol {
     // `const name = expr`, `var name const Type`, `const Type name`, and a parameter `name const Type`.
     // The binding has storage and cannot be assigned.
     bool is_immutable = false;
-    // The initializer of that local `const` folded to an `i32`. A tuple index and a
-    // comptime argument may use it. It is not a file-scope constant, so it is not an array length.
+    // The initializer of a local `comptime const` folded to an `i32`.
     bool folded_local = false;
+    // A runtime `const` whose initializer is a compile-time constant.
+    // `comptime const name = this` promotes it. The name is not itself a compiler constant.
+    bool promotable = false;
+    const Expr *promote_init = nullptr;
     // Pointer receiver `self *this`. The name is not assigned. `*self` and `self.x` are.
     bool fixed_receiver = false;
     // A parameter marked `comptime`. A method or a generic call may forward the name.
@@ -991,9 +994,16 @@ class Checker {
     void reject_function_generics(const FunctionDecl &fn);
     void fold_early_consts(TranslationUnit &unit, uint32_t file_id);
     void bind_file_const(VarDecl &var);
-    // The type of a file-scope constant. Sets `has_const` when the value folds.
+    // The type of a file-scope `comptime const`. Sets `has_const` when the value folds.
     // Does not declare the name. Invalid means the constant was rejected.
     Type check_file_const(VarDecl &var);
+    // A runtime `const` whose initializer is a compile-time constant. The name itself is not.
+    const Expr *promotable_init(const Expr &expr);
+    // `&name` where `name` is a `comptime const`.
+    bool comptime_address(const Expr &expr);
+    // Literals, `comptime const` names, and expressions built from those. A runtime `const` is not.
+    bool strict_comptime_expr(const Expr &expr);
+    void note_promotable(Symbol &symbol, const Expr *init);
     // `var row = [_]i32{1, 2}`, `var row [3]i32 = {1, 2, 3}`, and `const row = [_]i32{1}`.
     // `declared` is the symbol type when it was already stored.
     Type file_array_initializer(VarDecl &var, const Type *declared);

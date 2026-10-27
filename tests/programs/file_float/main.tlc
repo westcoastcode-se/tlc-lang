@@ -4,20 +4,20 @@ type Entity struct {
     id i32;
 };
 
-const n = 4;
+comptime const n = 4;
 var scale = 1.5f;
 var wide = 20.0;
-const bias = 0.5f;
-const lifted f64 = bias;
+comptime const bias = 0.5f;
+comptime const lifted f64 = bias;
 var neg = -1.0;
 var copied = scale;
 var flipped = -scale;
 var typed f64 = 18.0;
-const from_const f32 = n;
+comptime const from_const f32 = n;
 var from_int f32 = n;
 var from_sum f64 = 1 + 1;
 live := 2.0f;
-const mark = Real(1.0f);
+comptime const mark = Real(1.0f);
 var spare f32;
 var Entity::scale = 1.5f;
 

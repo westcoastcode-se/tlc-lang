@@ -1,5 +1,5 @@
 var row = [_][2]i32{inner};
-const inner = [_]i32{1, 2};
+comptime const inner = [_]i32{1, 2};
 
 func main() i32 {
     return row[0][0];

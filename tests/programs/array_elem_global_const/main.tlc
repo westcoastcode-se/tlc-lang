@@ -3,7 +3,7 @@ func give() [2]i32 {
     return out;
 }
 
-const row = [_][2]i32{give()};
+comptime const row = [_][2]i32{give()};
 
 func main() i32 {
     return 0;

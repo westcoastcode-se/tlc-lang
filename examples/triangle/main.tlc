@@ -47,8 +47,8 @@ import {
 
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-const width = 960;
-const height = 540;
+comptime const width = 960;
+comptime const height = 540;
 
 var gpu_array = 0u32;
 var gpu_buffer = 0u32;

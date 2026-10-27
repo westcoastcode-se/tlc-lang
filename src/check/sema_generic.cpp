@@ -1191,7 +1191,7 @@ void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
     push();
     for (TopDecl &decl : unit.decls) {
         auto *var = std::get_if<VarDecl>(&decl.data);
-        if (var == nullptr || !var->is_const_decl || var->has_const || var->name.empty() || var->init == nullptr ||
+        if (var == nullptr || !var->is_comptime || var->has_const || var->name.empty() || var->init == nullptr ||
             !var->owner.empty()) {
             continue;
         }
@@ -1588,7 +1588,7 @@ void Checker::instantiate_assoc(uint32_t owner_file, const StructDecl &templ, co
         if (copy.init) {
             substitute_expr(templ.type_params, bounds, *copy.init);
         }
-        if (copy.is_const_decl) {
+        if (copy.is_const_decl && copy.is_comptime) {
             const std::size_t before = diags_.size();
             store_assoc_const(owner_file, copy);
             const AssocVar *stored = find_assoc_in(owner_file, spec_name, copy.name);
@@ -1623,7 +1623,7 @@ void Checker::instantiate_assoc(uint32_t owner_file, const StructDecl &templ, co
                 error(copy.loc, "type mismatch");
             }
         }
-        assoc_vars_[owner_file][spec_name].emplace(copy.name, AssocVar{type, copy.exported});
+        assoc_vars_[owner_file][spec_name].emplace(copy.name, AssocVar{type, copy.exported, copy.is_const_decl});
         PendingAppend appended;
         appended.file_id = owner_file;
         appended.decl.data = std::move(copy);

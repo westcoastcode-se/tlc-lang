@@ -1,0 +1,7 @@
+const a = 1;
+comptime const b = 2;
+comptime const c = a + b;
+
+func main() i32 {
+    return c;
+}

@@ -681,7 +681,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             stored = as_stored(stored, got.depth, ty, got.elem_unsigned);
         }
         // A local `const` of `i32` keeps the slot. The folded integer is only for a comptime fold.
-        if (node.is_const && node.names.size() == 1 && node.value != nullptr && binding.depth == 0 &&
+        if (node.is_comptime && node.is_const && node.names.size() == 1 && node.value != nullptr && binding.depth == 0 &&
             binding.struct_id < 0 && binding.enum_id < 0 && !binding.elem_float && !binding.elem_bool &&
             !binding.elem_char && !binding.elem_unsigned && !binding.elem_void && binding.elem_bits == 0) {
             if (const std::optional<int32_t> number = local_folded_i32(*node.value)) {
@@ -1645,7 +1645,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     binding.elem_bool = low.elem_bool;
                     apply_low(binding, low);
                     // A local `const` of `i32` keeps the slot. The folded integer is only for a comptime fold.
-                    const bool plain_i32 = var.is_const_decl && var.init != nullptr && binding.depth == 0 &&
+                    const bool plain_i32 = var.is_comptime && var.init != nullptr && binding.depth == 0 &&
                                            binding.struct_id < 0 && binding.enum_id < 0 && !binding.elem_float &&
                                            !binding.elem_bool && !binding.elem_char && !binding.elem_unsigned &&
                                            !binding.elem_void && !binding.is_array && !binding.is_slice &&

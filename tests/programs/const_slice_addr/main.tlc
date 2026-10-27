@@ -1,7 +1,7 @@
 var row = [_]i32{10, 20};
-const v []i32 = row;
+comptime const v []i32 = row;
 
 func main() i32 {
     var p = &v;
-    return p.len;
+    return v[1];
 }

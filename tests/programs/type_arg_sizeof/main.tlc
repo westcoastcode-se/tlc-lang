@@ -22,7 +22,7 @@ func repeat[N i32, T type](value T) [N]T {
     return out;
 }
 
-const N = sizeof(i32);
+comptime const N = sizeof(i32);
 
 func main() i32 {
     var n i32 = 1;

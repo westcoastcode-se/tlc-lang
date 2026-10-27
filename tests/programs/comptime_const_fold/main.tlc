@@ -1,0 +1,9 @@
+comptime const n = 40;
+
+func main() i32 {
+    comptime const len = 2;
+    var buf [len]i32;
+    buf[0] = n;
+    buf[1] = 2;
+    return buf[0] + buf[1];
+}

@@ -1,6 +1,6 @@
 import "std/string";
 
-const greeting string.string_view = "hello";
+comptime const greeting string.string_view = "hello";
 
 func main() i32 {
     var text string.string_view = "hello";

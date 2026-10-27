@@ -1,4 +1,4 @@
-const row = [_]i32{1, 2};
+comptime const row = [_]i32{1, 2};
 
 func take(p comptime [2]i32, n i32) i32 {
     return n;

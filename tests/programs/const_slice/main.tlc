@@ -1,10 +1,10 @@
 var row = [_]i32{10, 20, 30};
-const v []i32 = row;
-const again []i32 = v;
+comptime const v []i32 = row;
+comptime const again []i32 = v;
 type Row []i32;
-const named Row = row;
-const fixed = [_]i32{4, 5};
-const from []const i32 = fixed;
+comptime const named Row = row;
+comptime const fixed = [_]i32{4, 5};
+comptime const from []const i32 = fixed;
 
 func main() i32 {
     if (v.len != 3 || v[0] != 10 || v[2] != 30 || again[1] != 20 || named.len != 3 || named[0] != 10) {

@@ -4,7 +4,7 @@ comptime func add(k i32) i32 { return k + 1; }
 func width[N i32]() i32 { return N; }
 
 func main() i32 {
-    const n = 2;
+    comptime const n = 2;
     if (width[n]() != 2) { return 1; }
     if (add(n) != 3) { return 2; }
     return 42;

@@ -19,7 +19,7 @@ export var Integer::ten i32 = 10;
 export var Color::label i32 = 8;
 var Entity::hidden i32 = 100;
 
-export const base = 4;
-export const pad = 0.0f;
-export const origin Point = {.x = 1, .y = 1};
-export const row = [_]i32{3, 1};
+export comptime const base = 4;
+export comptime const pad = 0.0f;
+export comptime const origin Point = {.x = 1, .y = 1};
+export comptime const row = [_]i32{3, 1};

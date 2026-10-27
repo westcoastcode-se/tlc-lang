@@ -326,7 +326,7 @@ std::optional<CodeGen::FoldedNumber> CodeGen::fold_number(const Expr &expr, std:
         }
         const VarDecl *written = global_decl(named->text);
         std::optional<FoldedNumber> inner;
-        if (written != nullptr && written->is_const_decl && written->init != nullptr) {
+        if (written != nullptr && written->is_comptime && written->init != nullptr) {
             inner = fold_number(*written->init, seen);
         }
         seen.erase(named->text);
@@ -392,7 +392,7 @@ std::optional<std::string> CodeGen::constant_string(const Expr &expr, std::unord
     const VarDecl *var = global_decl(named->text);
     std::optional<std::string> bytes;
     // `const label = "hi"` is that slice. `const p *const u8 = "hi"` is a pointer, and a `var` can be reseated.
-    if (var != nullptr && var->is_const_decl && var->indirections == 0 && var->init != nullptr) {
+    if (var != nullptr && var->is_comptime && var->indirections == 0 && var->init != nullptr) {
         bytes = constant_string(*var->init, seen);
     }
     seen.erase(named->text);
@@ -1105,7 +1105,7 @@ bool CodeGen::file_constant_operand(const Expr &expr) const {
                     return true;
                 }
                 const VarDecl *var = package_var(node.text);
-                return var != nullptr && var->is_const_decl;
+                return var != nullptr && var->is_comptime;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
                 if (node.len_value >= 0 || enumerator_value(expr)) {
                     return true;
@@ -1132,7 +1132,7 @@ bool CodeGen::file_constant_operand(const Expr &expr) const {
                         }
                     }
                     if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
-                        if (var->name == node.field && var->is_const_decl && var->exported && var->owner.empty()) {
+                        if (var->name == node.field && var->is_comptime && var->exported && var->owner.empty()) {
                             return true;
                         }
                     }
@@ -1175,7 +1175,7 @@ bool CodeGen::file_constant_operand(const Expr &expr) const {
                     return false;
                 }
                 const VarDecl *var = package_var(named->text);
-                return var != nullptr && !var->is_const_decl && !var->is_extern && var->owner.empty();
+                return var != nullptr && !var->is_extern && var->owner.empty();
             } else {
                 return false;
             }
@@ -1223,7 +1223,7 @@ bool CodeGen::comptime_constant(const Expr &expr) const {
                 return true;
             }
             const VarDecl *var = package_var(named->text);
-            if (var == nullptr || !var->is_const_decl) {
+            if (var == nullptr || !var->is_comptime) {
                 return false;
             }
             if (var->has_const || var->is_enum || var->indirections != 0 || var->is_tuple) {
@@ -1290,7 +1290,7 @@ std::unique_ptr<Expr> CodeGen::comptime_substitute(const Expr &expr) const {
             break;
         }
         const VarDecl *var = package_var(named->text);
-        if (var == nullptr || !var->is_const_decl || var->init == nullptr) {
+        if (var == nullptr || !var->is_comptime || var->init == nullptr) {
             break;
         }
         cursor = var->init.get();

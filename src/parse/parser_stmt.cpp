@@ -313,8 +313,11 @@ std::unique_ptr<Stmt> Parser::parse_for() {
         decl.loc = peek().loc;
         decl.vars.push_back(parse_const_type_var(false, false, false, {}));
         stmt.init = make_stmt(std::move(decl));
+    } else if (check(TokenKind::KwComptime) && peek(1).kind == TokenKind::KwConst) {
+        ++pos_;
+        stmt.init = parse_const_local(true);
     } else if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
-        stmt.init = parse_const_local();
+        stmt.init = parse_const_local(false);
     } else if (check(TokenKind::KwVar)) {
         stmt.init = parse_var_or_bind();
     } else if (check(TokenKind::Identifier) &&
@@ -523,9 +526,10 @@ void Parser::take_var_owner(VarDecl &var) {
     }
 }
 
-VarDecl Parser::parse_const_decl(bool exported) {
+VarDecl Parser::parse_const_decl(bool exported, bool is_comptime) {
     VarDecl var;
     var.is_const_decl = true;
+    var.is_comptime = is_comptime;
     var.exported = exported;
     var.loc = peek().loc;
     expect(TokenKind::KwConst, "expected 'const'");
@@ -733,7 +737,7 @@ void Parser::parse_inferred_global(TranslationUnit &unit, bool is_static, bool f
     saw_decl_ = true;
 }
 
-std::unique_ptr<Stmt> Parser::parse_const_local() {
+std::unique_ptr<Stmt> Parser::parse_const_local(bool is_comptime) {
     const SourceLoc start = peek().loc;
     expect(TokenKind::KwConst, "expected 'const'");
     std::string name;
@@ -750,6 +754,7 @@ std::unique_ptr<Stmt> Parser::parse_const_local() {
         Stmt::Bind stmt;
         stmt.loc = name_loc;
         stmt.is_const = true;
+        stmt.is_comptime = is_comptime;
         stmt.is_var = true;
         stmt.names.push_back(std::move(name));
         stmt.name_locs.push_back(name_loc);
@@ -779,6 +784,7 @@ std::unique_ptr<Stmt> Parser::parse_const_local() {
     var.loc = name_loc;
     var.name = std::move(name);
     var.is_const_decl = true;
+    var.is_comptime = is_comptime;
     var.type_name = type.type_name;
     var.type_package = type.type_package;
     var.is_struct = type.is_struct;
@@ -947,6 +953,10 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         }
         return make_stmt(Stmt::Expression{});
     }
+    if (check(TokenKind::KwComptime) && peek(1).kind == TokenKind::KwConst) {
+        ++pos_;
+        return parse_const_local(true);
+    }
     if (check(TokenKind::KwComptime)) {
         // `comptime if` and `comptime switch` fold when the value does. `comptime for` and `comptime { ... }` stay out.
         if (pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == TokenKind::KwIf) {
@@ -1068,7 +1078,7 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         return make_stmt(std::move(decl));
     }
     if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
-        return parse_const_local();
+        return parse_const_local(false);
     }
     if (check(TokenKind::KwVar)) {
         return parse_var_or_bind();

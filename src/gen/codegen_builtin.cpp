@@ -878,7 +878,7 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
         }
         for (const TopDecl &item : owner->unit.decls) {
             const auto *var = std::get_if<VarDecl>(&item.data);
-            if (var == nullptr || var->name != selector->field || !var->is_const_decl || var->init == nullptr) {
+            if (var == nullptr || var->name != selector->field || !var->is_comptime || var->init == nullptr) {
                 continue;
             }
             if (const std::optional<FoldedNumber> number = fold_number(*var->init);

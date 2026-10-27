@@ -4,10 +4,10 @@ type Hold struct {
     items *[4]i32;
 };
 
-const COUNT = 4;
+comptime const COUNT = 4;
 
 var file_row = [_]i32{1, 2, 3, 4};
-const FILE_N = (&file_row).len;
+comptime const FILE_N = (&file_row).len;
 
 func written(p *[4]i32) i32 {
     return p.len;

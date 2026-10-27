@@ -15,7 +15,7 @@ func Point::bump(self *this) void {
     self.x = self.x + 1;
 }
 
-const origin Point = {.x = 20, .y = 2};
+comptime const origin Point = {.x = 20, .y = 2};
 
 func main() i32 {
     var live Point;

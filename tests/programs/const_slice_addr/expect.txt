@@ -1,1 +1,1 @@
-compile-error: not an lvalue
+exit: 20

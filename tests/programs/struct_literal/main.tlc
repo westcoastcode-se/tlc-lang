@@ -3,7 +3,7 @@ type Point struct {
     y i32;
 };
 
-const origin = Point{0...};
+comptime const origin = Point{0...};
 
 func main() i32 {
     var p = Point{};

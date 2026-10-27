@@ -114,7 +114,8 @@ void Checker::declare_assoc(const VarDecl &var) {
         return;
     }
     // `check_file_const` is the only check. The variable path below would type the initializer twice.
-    if (var.is_const_decl) {
+    // A plain `const` on a type is a runtime value that cannot be assigned.
+    if (var.is_const_decl && var.is_comptime) {
         store_assoc_const(file_id_, const_cast<VarDecl &>(var));
         return;
     }
@@ -138,7 +139,7 @@ void Checker::declare_assoc(const VarDecl &var) {
     } else {
         type = type_of_var(var);
     }
-    assoc_vars_[file_id_][var.owner].emplace(var.name, AssocVar{std::move(type), var.exported});
+    assoc_vars_[file_id_][var.owner].emplace(var.name, AssocVar{std::move(type), var.exported, var.is_const_decl});
 }
 
 FnList Checker::function_list(const FunctionDecl &fn, Type signature) const {
@@ -669,7 +670,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 declare_assoc(*var);
                 continue;
             }
-            if (var->is_const_decl) {
+            if (var->is_const_decl && var->is_comptime) {
                 VarDecl &written = const_cast<VarDecl &>(*var);
                 // Folded before typedefs, so `[N]i32` can use it. A later const keeps its own type.
                 if (written.has_const) {
@@ -689,6 +690,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (lookup_scope(var->name) != nullptr || shared_has(var->name)) {
                 error(var->loc, "redefinition");
                 continue;
+            }
+            if (var->is_const_decl && var->init == nullptr && !var->is_extern) {
+                error(var->loc, "type mismatch");
             }
             Type type = type_invalid();
             if (var->inferred) {
@@ -714,7 +718,14 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             Symbol symbol;
             symbol.name = var->name;
             symbol.type = std::move(type);
-            symbol.is_immutable = symbol.type.is_const;
+            // `const name = expr` is runtime storage that cannot be assigned. `var name const Type` is too.
+            symbol.is_immutable = symbol.type.is_const || var->is_const_decl;
+            if (var->is_const_decl && symbol.type.kind != TypeKind::Invalid) {
+                symbol.type.is_const = true;
+            }
+            if ((var->is_const_decl || var->is_const) && !var->is_comptime) {
+                note_promotable(symbol, var->init.get());
+            }
             symbol.link_name = var->link_name;
             bool defined = false;
             if (var->is_static) {
@@ -855,7 +866,7 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
         }
         // `[_][2]i32{inner}` copies that array. A call runs before `main`.
         if (element.kind == TypeKind::Array && element.length >= 0) {
-            if (!var.is_const_decl && !var.is_extern && startup_call(value)) {
+            if (!(var.is_const_decl && var.is_comptime) && !var.is_extern && startup_call(value)) {
                 startup = true;
                 return;
             }
@@ -868,11 +879,11 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
         }
         // `[_]i32{give()}` and `[_]Point{give()}` run before `main`.
         // A `const` stays a constant. `n + 1` is not this call.
-        if (!var.is_const_decl && !var.is_extern && startup_call(value)) {
+        if (!(var.is_const_decl && var.is_comptime) && !var.is_extern && startup_call(value)) {
             startup = true;
             return;
         }
-        const FileConst kind = file_constant(value, seen, !var.is_const_decl);
+        const FileConst kind = file_constant(value, seen, !(var.is_const_decl && var.is_comptime));
         if (kind == FileConst::Unfolded) {
             unfolded = true;
         } else if (kind == FileConst::No) {
@@ -925,7 +936,7 @@ bool Checker::accept_file_scalar(const VarDecl &var, const Type &type) {
         break;
     }
     std::unordered_set<std::string> seen;
-    const FileConst kind = file_constant(*cursor, seen, !var.is_const_decl);
+    const FileConst kind = file_constant(*cursor, seen, !(var.is_const_decl && var.is_comptime));
     if (kind == FileConst::Yes) {
         return true;
     }
@@ -1022,6 +1033,18 @@ Type Checker::check_file_const(VarDecl &written) {
     if (written.init == nullptr) {
         error(written.loc, "type mismatch");
         return type_invalid();
+    }
+    // `comptime const folded = value` promotes a runtime `const` whose initializer is constant.
+    if (const Expr *src = promotable_init(*written.init)) {
+        written.init = clone_expr(*src);
+    }
+    // `comptime const p = &addr` points at a comptime variable.
+    if (const auto *unary = std::get_if<Expr::Unary>(&written.init->data);
+        unary != nullptr && unary->op == TokenKind::Amp) {
+        if (!comptime_address(*written.init)) {
+            error(written.loc, "global initializer is not a constant");
+            return type_invalid();
+        }
     }
     const auto *init = std::get_if<Expr::Init>(&written.init->data);
     const bool literal = init != nullptr && init->array_literal;
@@ -1128,6 +1151,9 @@ Type Checker::check_file_const(VarDecl &written) {
         }
         return got;
     }
+    if (got.kind == TypeKind::Pointer && comptime_address(*written.init)) {
+        return got;
+    }
     if (!stored_const_type(got)) {
         error(written.loc, "type mismatch");
         return type_invalid();
@@ -1187,7 +1213,7 @@ bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::st
     }
     bool ok = false;
     if (std::holds_alternative<Expr::Init>(var->init->data)) {
-        ok = file_constant(*var->init, seen, !var->is_const_decl) == FileConst::Yes;
+        ok = file_constant(*var->init, seen, !(var->is_const_decl && var->is_comptime)) == FileConst::Yes;
     } else {
         ok = constant_array_source(*var->init, seen);
     }
@@ -1200,7 +1226,7 @@ bool Checker::accept_array_copy(VarDecl &var) {
         return true;
     }
     // `var copy [2]i32 = give()` runs before `main`. A `const` stays a constant.
-    if (!var.is_const_decl && !var.is_extern && startup_call(*var.init)) {
+    if (!(var.is_const_decl && var.is_comptime) && !var.is_extern && startup_call(*var.init)) {
         var.runtime_init = true;
         return true;
     }
@@ -1406,8 +1432,9 @@ bool Checker::constant_operand(const Expr &expr) {
                     return false;
                 }
                 const Symbol *symbol = lookup(named->text);
+                // A file-scope variable has an address, including a `comptime const`.
                 return symbol != nullptr && !symbol->is_auto && !symbol->is_function && !symbol->is_package &&
-                       !symbol->is_type && !symbol->is_constant;
+                       !symbol->is_type;
             } else {
                 return false;
             }
@@ -1465,7 +1492,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 bool saved;
                 ~PartialFlag() { slot = saved; }
             } partial{init_allow_partial_, init_allow_partial_};
-            if (!var->is_const_decl) {
+            if (!(var->is_const_decl && var->is_comptime)) {
                 init_allow_partial_ = true;
             }
             struct GlobalNote {
@@ -1487,8 +1514,8 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 if (!var->owner_params.empty() || generic_struct_name(file_id_, var->owner)) {
                     continue;
                 }
-                // The constant was checked while it was declared.
-                if (var->is_const_decl) {
+                // A `comptime const` was checked while it was declared.
+                if (var->is_const_decl && var->is_comptime) {
                     continue;
                 }
                 const AssocVar *assoc = find_assoc(var->owner, var->name);
@@ -1545,7 +1572,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 }
             }
             if (var->is_array && !var->ptr_to_array && var->init) {
-                if (!var->is_const_decl && var->array_len < 0) {
+                if (!(var->is_const_decl && var->is_comptime) && var->array_len < 0) {
                     const Symbol *symbol = lookup(var->name);
                     const Type want = symbol != nullptr ? symbol->type : type_invalid();
                     const std::size_t before = diags_.size();
@@ -1555,7 +1582,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     } else {
                         require_slice_name(*var->init, want, var->loc, before);
                     }
-                } else if (!var->is_const_decl) {
+                } else if (!(var->is_const_decl && var->is_comptime)) {
                     const Symbol *symbol = lookup(var->name);
                     if (symbol != nullptr && symbol->type.kind == TypeKind::Array) {
                         const std::size_t before = diags_.size();
@@ -1570,7 +1597,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 // `var row = [_]i32{1, 2}` and `const row = [_]i32{1}` were checked while declaring them.
             } else if (var->init) {
                 // `check_file_const` already reported an initializer that is not a constant.
-                if (var->is_const_decl) {
+                if (var->is_const_decl && var->is_comptime) {
                     const Symbol *bound = lookup(var->name);
                     if (bound == nullptr || bound->type.kind == TypeKind::Invalid) {
                         continue;
@@ -1585,7 +1612,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 const std::size_t before = diags_.size();
                 check_against(*var->init, want);
                 if (diags_.size() == before) {
-                    if (!var->is_const_decl && !var->is_extern &&
+                    if (!(var->is_const_decl && var->is_comptime) && !var->is_extern &&
                         (runs_at_startup(*var->init) || want.kind == TypeKind::Tuple)) {
                         const_cast<VarDecl *>(var)->runtime_init = true;
                     } else if (is_slice(want)) {
@@ -1792,7 +1819,7 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             if (var->inferred && !var->is_const_decl) {
                 continue;
             }
-            if (var->is_const_decl) {
+            if (var->is_const_decl && var->is_comptime) {
                 if (!var->exported || var->is_static || var->name.empty() || !var->has_const) {
                     continue;
                 }
@@ -1803,6 +1830,9 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 symbol.const_value = var->const_value;
                 symbol.package_file = file_id;
                 exports_[file_id].insert_or_assign(var->name, std::move(symbol));
+                continue;
+            }
+            if (var->inferred) {
                 continue;
             }
             if (var->exported && var->is_extern) {
@@ -1825,6 +1855,10 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             symbol.type = published_object(var->type_name, var->indirections, var->is_array, var->array_len, var->loc,
                                            false, var->type_package, var->is_struct, var->is_enum, var->optional,
                                            var->const_pointee, false, var->elem_slice, shells);
+            if (var->is_const_decl || var->is_const) {
+                symbol.is_immutable = true;
+                symbol.type.is_const = true;
+            }
             exports_[file_id].emplace(var->name, std::move(symbol));
         }
     }

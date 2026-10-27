@@ -1,5 +1,5 @@
-const held = [_]i32{4, 5};
-const q *const i32 = held;
+comptime const held = [_]i32{4, 5};
+comptime const q *const i32 = held;
 
 var row = [_]i32{10, 20};
 var p *i32 = row;

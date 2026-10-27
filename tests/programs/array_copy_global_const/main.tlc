@@ -3,7 +3,7 @@ func give() [2]i32 {
     return out;
 }
 
-const frozen [2]i32 = give();
+comptime const frozen [2]i32 = give();
 
 func main() i32 {
     return frozen[0];

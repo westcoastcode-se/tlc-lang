@@ -1,4 +1,4 @@
-const scale = 0.5;
+comptime const scale = 0.5;
 
 func take(v comptime f64, n i32) i32 {
     comptime if (v == 0.5) {

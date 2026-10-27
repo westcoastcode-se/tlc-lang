@@ -32,13 +32,13 @@ var empty = [_]i32{};
 var Entity::row = [_]i32{1, 2};
 var Entity::typed [2]i32 = {3, 1};
 
-const fixed_grid = [_][2]i32{{5, 0}, {0, 0}};
-const const_ops = [_]func (i32) i32{add};
-const const_pts = [_]Point{Point{.x = 1, .y = 0}};
-const const_colors = [_]Color{Color.Red};
-const const_tags = [_]Integer{Integer(1)};
-const const_scales = [_]f32{1.0f};
-const const_ptrs = [_]*i32{&n};
+comptime const fixed_grid = [_][2]i32{{5, 0}, {0, 0}};
+comptime const const_ops = [_]func (i32) i32{add};
+comptime const const_pts = [_]Point{Point{.x = 1, .y = 0}};
+comptime const const_colors = [_]Color{Color.Red};
+comptime const const_tags = [_]Integer{Integer(1)};
+comptime const const_scales = [_]f32{1.0f};
+comptime const const_ptrs = [_]*i32{&n};
 
 func main() i32 {
     snap = 9;

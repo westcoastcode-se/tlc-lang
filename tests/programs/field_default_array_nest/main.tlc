@@ -11,7 +11,7 @@ type Row struct {
     raw [2]Point = {{.x = 10}, {.y = 6}};
 };
 
-const held = [_]i32{8, 9};
+comptime const held = [_]i32{8, 9};
 
 type Copy struct {
     raw [2]i32 = held;

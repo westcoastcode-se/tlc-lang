@@ -1,5 +1,5 @@
-const inner = [_]i32{1, 2};
-const copied [2]i32 = inner;
+comptime const inner = [_]i32{1, 2};
+comptime const copied [2]i32 = inner;
 var from_const = [_][2]i32{inner};
 var from_chain = [_][2]i32{copied};
 
@@ -31,7 +31,7 @@ var late = [_]i32{7, 1};
 
 var mixed = [_][2]i32{inner, give()};
 
-const frozen [2]i32 = earlier;
+comptime const frozen [2]i32 = earlier;
 var earlier = [_]i32{3, 1};
 
 func main() i32 {

@@ -4,7 +4,7 @@ func pair() []i32 {
     return row[0:2];
 }
 
-const v []i32 = pair();
+comptime const v []i32 = pair();
 
 func main() i32 {
     return v.len;

@@ -4,8 +4,8 @@ func add(a i32, b i32) i32 {
 
 type BinOp func (i32, i32) i32;
 
-const op = add;
-const wrapped = BinOp(add);
+comptime const op = add;
+comptime const wrapped = BinOp(add);
 
 func take(op comptime func (i32, i32) i32, n i32) i32 {
     return op(n, 2);

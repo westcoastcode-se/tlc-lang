@@ -593,8 +593,11 @@ struct VarDecl {
     // `name := expr` at file scope. The type comes from the initializer.
     bool inferred = false;
     // File-scope `const name = expr` or `const name Type = expr`.
-    // A plain integer is folded and has no address. A struct, a function pointer, or a typedef keeps that type.
+    // Without `comptime` this is a runtime variable that cannot be assigned.
+    // `comptime const` is a compiler constant. Its initializer has to be one too.
     bool is_const_decl = false;
+    // `comptime const name = expr`. The initializer is a compile-time constant.
+    bool is_comptime = false;
     // `var name const Type` and `const Type name`. The value is constant and the variable has an address.
     bool is_const = false;
     bool has_const = false;
@@ -707,6 +710,8 @@ struct Stmt {
         bool is_define = false;
         // `const name = expr`. The name is immutable.
         bool is_const = false;
+        // `comptime const name = expr`. The initializer is a compile-time constant.
+        bool is_comptime = false;
     };
     struct Assert {
         SourceLoc loc{};

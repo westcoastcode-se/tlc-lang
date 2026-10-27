@@ -789,7 +789,8 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
                 sym.is_tuple = true;
                 sym.array_len = static_cast<int>(var.tuple_parts.size());
             }
-            sym.detail = var.is_const_decl ? "const " + var.name : var.name;
+            sym.detail = var.is_comptime ? "comptime const " + var.name
+                                        : (var.is_const_decl ? "const " + var.name : var.name);
             if (!var.type_name.empty() || var.is_tuple) {
                 sym.detail += " ";
                 sym.detail += spell_var(var);
@@ -1145,7 +1146,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.outline = entry && var->owner.empty();
             sym.role = var->is_const_decl ? Role::Constant : Role::Variable;
             if (!var->owner.empty()) {
-                std::string detail = (var->is_const_decl ? "const " : "var ") + var->owner;
+                std::string detail = (var->is_comptime ? "comptime const " : (var->is_const_decl ? "const " : "var ")) + var->owner;
                 if (!var->owner_params.empty()) {
                     detail += '[';
                     for (std::size_t i = 0; i < var->owner_params.size(); ++i) {
@@ -1164,9 +1165,10 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 }
                 sym.detail = std::move(detail);
             } else if (var->is_const_decl) {
+                const char *kind = var->is_comptime ? "comptime const " : "const ";
                 sym.detail = var->type_name.empty() && !var->is_fn_ptr && !var->is_tuple
-                                 ? "const " + var->name
-                                 : "const " + var->name + " " + spell_var(*var);
+                                 ? kind + var->name
+                                 : kind + var->name + " " + spell_var(*var);
             } else if (!var->type_name.empty() || var->is_tuple) {
                 sym.detail = var->name + " " + spell_var(*var);
             } else {

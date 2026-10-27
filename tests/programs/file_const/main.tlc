@@ -15,13 +15,13 @@ func add(a i32, b i32) i32 {
 type BinOp func (i32, i32) i32;
 
 var base Point;
-const value Integer = Integer(6);
-const other = Integer(4);
-const origin Point = {.x = 10, .y = 10};
-const spot Spot = {.x = 6, .y = 2};
-const op BinOp = BinOp(add);
-const plain func (i32, i32) i32 = add;
-const p Ptr = Ptr(&base);
+comptime const value Integer = Integer(6);
+comptime const other = Integer(4);
+comptime const origin Point = {.x = 10, .y = 10};
+comptime const spot Spot = {.x = 6, .y = 2};
+comptime const op BinOp = BinOp(add);
+comptime const plain func (i32, i32) i32 = add;
+comptime const p Ptr = Ptr(&base);
 
 func main() i32 {
     base.x = 2;

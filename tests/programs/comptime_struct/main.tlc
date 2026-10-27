@@ -3,7 +3,7 @@ type Point struct {
     y i32;
 };
 
-const origin = Point{.x = 40, .y = 2};
+comptime const origin = Point{.x = 40, .y = 2};
 
 comptime func field(p Point) i32 {
     return p.x + p.y;

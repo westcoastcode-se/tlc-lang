@@ -196,26 +196,24 @@ void CodeGen::declare_globals(const PackageNode &node) {
             binding.const_value = var->const_value;
             binding.elem_bits = 32;
             binding.is_static = var->is_static;
-            file.globals.emplace(key, binding);
-            // A use stays the immediate. `extern` still defines the object symbol.
-            if (var->is_extern) {
-                llvm::Type *ty = i32();
-                if (!var->inferred && !var->type_name.empty()) {
-                    const Lowered low = lower_declared(node.file_id, *var);
-                    if (llvm::Type *stored = stored_type(low); stored != nullptr && stored->isIntegerTy()) {
-                        ty = stored;
-                    }
-                }
-                const SymbolForm form = symbol_form(node, key, true, var->extern_c, var->is_static, var->exported, false,
-                                                    var->link_name);
-                if (module_.getNamedValue(form.name) != nullptr) {
-                    error(var->loc, "redefinition");
-                } else {
-                    llvm::Constant *init =
-                        llvm::ConstantInt::get(ty, static_cast<uint64_t>(static_cast<int64_t>(var->const_value)), true);
-                    new llvm::GlobalVariable(module_, ty, true, form.linkage, init, form.name);
+            // The value folds to an immediate. The object exists so `&name` is that address.
+            llvm::Type *ty = i32();
+            if (!var->inferred && !var->type_name.empty()) {
+                const Lowered low = lower_declared(node.file_id, *var);
+                if (llvm::Type *stored = stored_type(low); stored != nullptr && stored->isIntegerTy()) {
+                    ty = stored;
                 }
             }
+            const SymbolForm form = symbol_form(node, key, var->is_extern, var->extern_c, var->is_static, var->exported,
+                                                false, var->link_name);
+            if (module_.getNamedValue(form.name) != nullptr) {
+                error(var->loc, "redefinition");
+            } else {
+                llvm::Constant *init =
+                    llvm::ConstantInt::get(ty, static_cast<uint64_t>(static_cast<int64_t>(var->const_value)), true);
+                binding.value = new llvm::GlobalVariable(module_, ty, true, form.linkage, init, form.name);
+            }
+            file.globals.emplace(key, binding);
             continue;
         }
         const SymbolForm form = symbol_form(node, key, var->is_extern, var->extern_c, var->is_static, var->exported,

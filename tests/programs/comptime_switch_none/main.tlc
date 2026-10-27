@@ -1,4 +1,4 @@
-const n = 3;
+comptime const n = 3;
 
 func main() i32 {
     comptime switch (n) {

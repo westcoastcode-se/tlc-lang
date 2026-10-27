@@ -5,7 +5,7 @@ type Buf[N i32, T type] struct {
     value T;
 };
 
-const Buf[N, T]::count = N;
+comptime const Buf[N, T]::count = N;
 
 func main() i32 {
     var e math.Entity;

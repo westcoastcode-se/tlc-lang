@@ -1,7 +1,7 @@
 type Entity struct { n i32; };
 extern const limit = 4;
 extern const Entity::next = 15;
-extern(abi="tlc") const step = 3;
+extern(abi="tlc") comptime const step = 3;
 type Box[T type] struct { value T; };
 extern const Box[T]::extra = 8;
 

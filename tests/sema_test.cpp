@@ -755,8 +755,8 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func main() i32 {\n"
             "  var t = (40, 2);\n"
-            "  const i = 0;\n"
-            "  const j i32 = 1;\n"
+            "  comptime const i = 0;\n"
+            "  comptime const j i32 = 1;\n"
             "  t[j] = 2;\n"
             "  return t[i] + t[j];\n"
             "}\n");
@@ -2563,12 +2563,12 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Point struct { x i32; y i32; };\n"
-            "const origin = Point{};\n"
+            "const origin = Point{.x = 1, .y = 2};\n"
             "func main() i32 {\n"
             "  var p *Point = &origin;\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not an lvalue");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
@@ -6889,7 +6889,7 @@ int run_sema_tests() {
             "var n i32 = 1;\n"
             "const p *i32 = &n;\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -7962,8 +7962,8 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "const N = 3;\n"
-            "const fixed = [_]i32{19, 2};\n"
+            "comptime const N = 3;\n"
+            "comptime const fixed = [_]i32{19, 2};\n"
             "var named [N]i32 = {10, 4, 1};\n"
             "other := [_]i32{6, 1};\n"
             "var live [2]i32 = [_]i32{1, 2};\n"
@@ -7988,7 +7988,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "const row = [_]i32{1};\n"
             "func main() i32 { var p = &row; return 0; }\n");
-        EXPECT_HAS(check, errors, "not an lvalue");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -8036,8 +8036,8 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "const bias = 0.5f;\n"
-            "const sum = bias + 1.5f;\n"
+            "comptime const bias = 0.5f;\n"
+            "comptime const sum = bias + 1.5f;\n"
             "func main() i32 { return 0; }\n");
         EXPECT(check, errors.empty());
     }
@@ -8049,14 +8049,14 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "const N = 1u32;\n"
+            "comptime const N = 1u32;\n"
             "func main() i32 { var buf [N]i32; return 0; }\n");
         EXPECT(check, errors.empty());
     }
 
     {
         const std::string errors = diagnose(
-            "const N = 3000000000u32;\n"
+            "comptime const N = 3000000000u32;\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
@@ -8072,14 +8072,14 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "const x = 1.0f;\n"
             "func main() i32 { x = 2.0f; return 0; }\n");
-        EXPECT_HAS(check, errors, "not an lvalue");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {
         const std::string errors = diagnose(
             "const x = 1.0f;\n"
             "func main() i32 { var p = &x; return 0; }\n");
-        EXPECT_HAS(check, errors, "not an lvalue");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -8093,7 +8093,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func one() f32 { return 1.0f; }\n"
-            "const x = one();\n"
+            "comptime const x = one();\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "global initializer is not a constant");
     }
@@ -8127,7 +8127,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func call_func() i32 { return 1; }\n"
-            "const item = call_func();\n"
+            "comptime const item = call_func();\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "global initializer is not a constant");
     }
@@ -8143,7 +8143,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "func call_func() i32 { return 1; }\n"
-            "const row = [_]i32{call_func()};\n"
+            "comptime const row = [_]i32{call_func()};\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "global initializer is not a constant");
     }
@@ -8194,7 +8194,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "var n = 1;\n"
-            "const x f32 = n;\n"
+            "comptime const x f32 = n;\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "global initializer is not a constant");
     }
@@ -8436,7 +8436,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "var n = 1;\n"
-            "const row = [_]i32{n};\n"
+            "comptime const row = [_]i32{n};\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "global initializer is not a constant");
     }
@@ -9134,7 +9134,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "var n i32 = 1;\n"
             "type Entity struct { id i32; };\n"
-            "const Entity::next = n;\n"
+            "comptime const Entity::next = n;\n"
             "func main() i32 { return 0; }\n");
         const auto at = errors.find("global initializer is not a constant");
         EXPECT(check, at != std::string::npos);

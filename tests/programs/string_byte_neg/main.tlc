@@ -1,4 +1,4 @@
-const n = "hi"[-1];
+comptime const n = "hi"[-1];
 
 func main() i32 {
     return n;

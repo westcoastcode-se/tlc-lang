@@ -1,13 +1,13 @@
-const label = "hi";
-const again = label;
-const i = 1;
-const n = "hi"[i];
-const named = again[1];
-const nl = "\n"[0];
-const raw = `i`[0];
-const hex = "\xFF"[0];
-const N = "\x01"[0];
-const row = [_]i32{"hi"[0], 1};
+comptime const label = "hi";
+comptime const again = label;
+comptime const i = 1;
+comptime const n = "hi"[i];
+comptime const named = again[1];
+comptime const nl = "\n"[0];
+comptime const raw = `i`[0];
+comptime const hex = "\xFF"[0];
+comptime const N = "\x01"[0];
+comptime const row = [_]i32{"hi"[0], 1};
 var live = "hi"[1];
 
 assert(n == 105, "byte");

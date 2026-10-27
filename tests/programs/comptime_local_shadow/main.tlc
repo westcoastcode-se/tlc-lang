@@ -1,12 +1,12 @@
-const n = 9;
+comptime const n = 9;
 
 comptime func add(k i32) i32 { return k + 1; }
 func width[N i32]() i32 { return N; }
 func scale(k comptime i32, x i32) i32 { return x + k; }
 
 func main() i32 {
-    const n = 2;
-    const stepped = n + 1;
+    comptime const n = 2;
+    comptime const stepped = n + 1;
     var x = 40;
     if (width[n]() != 2) { return 1; }
     if (scale(n, x) != 42) { return 2; }

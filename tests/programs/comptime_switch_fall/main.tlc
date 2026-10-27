@@ -1,4 +1,4 @@
-const n = 1;
+comptime const n = 1;
 
 func main() i32 {
     var x i32 = 0;

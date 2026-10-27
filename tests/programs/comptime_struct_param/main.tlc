@@ -3,7 +3,7 @@ type Point struct {
     y i32;
 };
 
-const origin = Point{.x = 2, .y = 0};
+comptime const origin = Point{.x = 2, .y = 0};
 
 func take(p comptime Point, n i32) i32 {
     return p.x + n;

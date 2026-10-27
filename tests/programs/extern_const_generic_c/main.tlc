@@ -1,5 +1,5 @@
 type Box[T type] struct { value T; };
-extern(abi="c") const Box[T]::limit = 4;
+extern(abi="c") comptime const Box[T]::limit = 4;
 
 func main() i32 {
     return Box[i32].limit;

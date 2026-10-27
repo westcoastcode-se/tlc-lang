@@ -1,9 +1,9 @@
-const N = 3;
-const fixed = [_]i32{19, 2};
+comptime const N = 3;
+comptime const fixed = [_]i32{19, 2};
 var named [N]i32 = {10, 4, 1};
 listed := [_]i32{6, 1};
 var live [2]i32 = [_]i32{1, 2};
-const flags = [_]bool{true, false};
+comptime const flags = [_]bool{true, false};
 var narrow = [_]i8{-1, 2};
 
 func read(p *const i32) i32 {

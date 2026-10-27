@@ -1,5 +1,5 @@
-const n = "hi".len;
-const cut = "hello"[1:4].len;
+comptime const n = "hi".len;
+comptime const cut = "hello"[1:4].len;
 
 func main() i32 {
     if (n != 2 || cut != 3) {

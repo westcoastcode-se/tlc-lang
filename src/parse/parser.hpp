@@ -243,7 +243,7 @@ class Parser {
     std::unique_ptr<Stmt> parse_case();
     std::unique_ptr<Stmt> parse_return();
     std::unique_ptr<Stmt> parse_bind(bool is_var);
-    std::unique_ptr<Stmt> parse_const_local();
+    std::unique_ptr<Stmt> parse_const_local(bool is_comptime);
     bool var_is_bind() const;
     bool var_is_inferred() const;
     // `const Type::name` or `const Type[T]::name`. A local one is rejected.
@@ -259,7 +259,7 @@ class Parser {
     VarDecl parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c,
                             bool allow_bare_inferred = false, std::string link_name = {});
     // `const name = expr`, `const name Type = expr`, and `const Type::name`.
-    VarDecl parse_const_decl(bool exported);
+    VarDecl parse_const_decl(bool exported, bool is_comptime);
     // `const i32 x` and `const i32 x = 1`. The variable has an address. It is not `const name = expr`.
     VarDecl parse_const_type_var(bool exported, bool is_extern, bool extern_c, std::string link_name);
     void parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var, bool exported);

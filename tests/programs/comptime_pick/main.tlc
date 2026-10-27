@@ -22,7 +22,7 @@ func side[T type](value []const T) i32 {
     return 2;
 }
 
-const label = "hi";
+comptime const label = "hi";
 
 func main() i32 {
     var n = 7;

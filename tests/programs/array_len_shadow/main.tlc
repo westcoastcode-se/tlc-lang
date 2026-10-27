@@ -1,4 +1,4 @@
-const n = 4;
+comptime const n = 4;
 
 func main() i32 {
     const n = 2;

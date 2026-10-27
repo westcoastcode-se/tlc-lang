@@ -1,0 +1,8 @@
+const n = 40;
+comptime const folded = n;
+
+func main() i32 {
+    const local = 2;
+    comptime const extra = local;
+    return folded + extra;
+}

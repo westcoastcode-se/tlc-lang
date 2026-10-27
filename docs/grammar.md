@@ -94,7 +94,7 @@ An inner function uses the same `function` form inside a block, and it has a bod
 
 ## Variables
 
-`var n i32 = 1` stores 1. A file-scope integer `const` folds into the instruction that uses it and adds no load. The listing is on [Bindings](statements/binding.md).
+`var n i32 = 1` stores 1. A file-scope `comptime const` integer folds into the instruction that uses it and adds no load. A plain `const` is loaded. The listing is on [Bindings](statements/binding.md).
 
 A typed variable names the type in Go order, after the name:
 
@@ -105,12 +105,12 @@ var-decl    = "var" identifier go-type [ "=" expression ] ";"
             | "var" identifier [ "[" name { "," name } "]" ] "::" identifier [ go-type ] "=" expression ";"
             | "var" identifier [ "[" name { "," name } "]" ] "::" identifier go-type [ "=" expression ] ";"
             | identifier ":=" expression ";" ;
-const-decl  = "const" identifier [ go-type ] "=" expression ";"
+const-decl  = [ "comptime" ] "const" identifier [ go-type ] "=" expression ";"
             | "const" go-type identifier [ "=" expression ] ";"
-            | "const" identifier [ "[" name { "," name } "]" ] "::" identifier [ go-type ] "=" expression ";" ;
+            | [ "comptime" ] "const" identifier [ "[" name { "," name } "]" ] "::" identifier [ go-type ] "=" expression ";" ;
 ```
 
-`var n const i32` and `const i32 n` name a variable whose value is constant. The variable has an address. `const i32 = 1` is a binding named `i32`, because `=` follows the type. `const n i32 = 1` and `const n = 1` are the binding whose name comes first. `const Point p` is the variable when `Point` is already a type. `const Point p` before `type Point` is not. `const int n` is `not supported yet`. `i32 n` is `expected var`. `const [4]i32 row` and `const n const i32` are `not supported yet`. `var row const [4]i32` is `expected a type`. `type Count const i32` is that alias. `type Name[T type] const T` is `expected ']'`. `var Point::origin const Point` is `not supported yet`. See [Bindings](statements/binding.md).
+`const name = expr` is a runtime variable that cannot be assigned. It has an address. `comptime const name = expr` is a compiler constant. The expression has to be a compile-time constant. A runtime `const` whose initializer is a compile-time constant can be promoted with `comptime const folded = name`. Using that runtime `const` in the same expression as a `comptime const` is `global initializer is not a constant` until it is written `comptime`. `comptime const p = &addr` is a comptime pointer when `addr` is a `comptime const`. `var n const i32` and `const i32 n` name a variable whose value is constant. The variable has an address. `const i32 = 1` is a binding named `i32`, because `=` follows the type. `const n i32 = 1` and `const n = 1` are the binding whose name comes first. `const Point p` is the variable when `Point` is already a type. `const Point p` before `type Point` is not. `const int n` is `not supported yet`. `i32 n` is `expected var`. `const [4]i32 row` and `const n const i32` are `not supported yet`. `var row const [4]i32` is `expected a type`. `type Count const i32` is that alias. `type Name[T type] const T` is `expected ']'`. `var Point::origin const Point` is `not supported yet`. See [Bindings](statements/binding.md).
 
 `var Entity::next i32 = 1` belongs to the struct or enum `Entity`. It is not a field. On a generic struct the names match the struct, as in `var Box[T]::extra i32` and `var Buf[N, T]::count i32 = N`. The use is `Entity.next`, `Box[i32].extra`, or `Buf[4, i32].count`. `export var Box[T]::extra` publishes that variable. Another package reads and assigns `pkg.Box[i32].extra`. `const Entity::next = 1` and `const Box[T]::limit = 4` are constants on the type, written beside it. See [Variables on a type](methods/variable.md) and [Constants on a type](methods/constant.md).
 

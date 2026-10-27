@@ -507,7 +507,7 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
     const VarDecl *var = symbol != nullptr && symbol->is_constant ? global_var(named->text) : nullptr;
     std::optional<std::string> bytes;
     // `const label = "hi"` is that slice. `const p *const u8 = "hi"` is a pointer, and a `var` can be reseated.
-    if (var != nullptr && var->is_const_decl && var->indirections == 0 && var->init != nullptr) {
+    if (var != nullptr && var->is_comptime && var->indirections == 0 && var->init != nullptr) {
         bytes = constant_string(*var->init, seen);
     }
     seen.erase(named->text);
@@ -1400,6 +1400,56 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     std::unique_ptr<Expr> rewritten = clone_expr(*value);
     replace_names(rewritten, names, exprs);
     return fold_int(*rewritten);
+}
+
+const Expr *Checker::promotable_init(const Expr &expr) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->is_constant || symbol->promote_init == nullptr) {
+        return nullptr;
+    }
+    return symbol->promote_init;
+}
+
+bool Checker::comptime_address(const Expr &expr) {
+    const auto *unary = std::get_if<Expr::Unary>(&expr.data);
+    if (unary == nullptr || unary->postfix || unary->op != TokenKind::Amp || unary->expr == nullptr) {
+        return false;
+    }
+    const auto *named = std::get_if<Expr::Name>(&unary->expr->data);
+    if (named == nullptr) {
+        return false;
+    }
+    const Symbol *symbol = lookup(named->text);
+    return symbol != nullptr && symbol->is_constant;
+}
+
+bool Checker::strict_comptime_expr(const Expr &expr) {
+    if (fold_int(expr) || fold_switch_case(expr)) {
+        return true;
+    }
+    std::unordered_set<std::string> seen;
+    if (constant_string(expr, seen)) {
+        return true;
+    }
+    return comptime_constant(expr) || comptime_address(expr);
+}
+
+void Checker::note_promotable(Symbol &symbol, const Expr *init) {
+    if (init == nullptr || symbol.is_constant) {
+        return;
+    }
+    if (!strict_comptime_expr(*init)) {
+        return;
+    }
+    symbol.promotable = true;
+    symbol.promote_init = init;
+    if (const std::optional<int> value = fold_int(*init)) {
+        symbol.const_value = *value;
+    }
 }
 
 } // namespace tlc

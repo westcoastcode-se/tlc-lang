@@ -911,6 +911,7 @@ VarDecl clone_var(const VarDecl &var) {
     copy.link_name = var.link_name;
     copy.inferred = var.inferred;
     copy.is_const_decl = var.is_const_decl;
+    copy.is_comptime = var.is_comptime;
     copy.is_const = var.is_const;
     copy.has_const = var.has_const;
     copy.const_value = var.const_value;
@@ -1234,6 +1235,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.is_var = node.is_var;
                 copy.is_define = node.is_define;
                 copy.is_const = node.is_const;
+                copy.is_comptime = node.is_comptime;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
                 Stmt::Assert copy;

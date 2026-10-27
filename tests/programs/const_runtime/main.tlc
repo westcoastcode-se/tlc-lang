@@ -1,0 +1,5 @@
+const n = 40;
+
+func main() i32 {
+    return n + 2;
+}
