@@ -130,6 +130,9 @@ void dump_field(const FieldDecl &field, std::string &out, int indent) {
     out += ' ';
     out += type_text(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                      field.is_array, field.array_len, field.optional, {}, field.const_pointee);
+    if (field.is_const) {
+        out += " const";
+    }
     if (field.is_fn_ptr) {
         out += " fnptr";
         append_many_results(out, field.fn_results);
@@ -239,6 +242,9 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
     } else {
         out += type_text(var.type_name, var.type_package, var.is_struct, var.is_enum, var.indirections, var.is_array,
                          var.array_len, var.optional, var.array_len_name, var.const_pointee);
+        if (var.is_const) {
+            out += " const";
+        }
         if (var.ptr_to_array) {
             out += " ptrarr";
         }
@@ -465,6 +471,9 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
         out += ' ';
         out += type_text(param.type_name, param.type_package, param.is_struct, param.is_enum, param.indirections,
                          param.is_array, param.array_len, param.optional, {}, param.const_pointee);
+        if (param.is_const) {
+            out += " const";
+        }
         if (param.is_fn_ptr) {
             out += " fnptr";
             append_many_results(out, param.fn_results);
@@ -811,6 +820,9 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             out += ' ';
             out += type_text(item->type_name, item->type_package, item->is_struct, item->is_enum, item->indirections,
                              item->is_array, item->array_len, item->optional, {}, item->const_pointee);
+            if (item->is_const) {
+                out += " const";
+            }
             if (item->is_fn_ptr) {
                 out += " fnptr";
                 append_many_results(out, item->fn_results);
@@ -899,6 +911,7 @@ VarDecl clone_var(const VarDecl &var) {
     copy.link_name = var.link_name;
     copy.inferred = var.inferred;
     copy.is_const_decl = var.is_const_decl;
+    copy.is_const = var.is_const;
     copy.has_const = var.has_const;
     copy.const_value = var.const_value;
     copy.runtime_init = var.runtime_init;

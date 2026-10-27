@@ -79,7 +79,8 @@ struct Symbol {
     bool is_package = false;
     bool is_type = false;
     bool is_constant = false;
-    // `const name = expr` inside a function. The binding has storage and cannot be assigned.
+    // `const name = expr`, `var name const Type`, `const Type name`, and a parameter `name const Type`.
+    // The binding has storage and cannot be assigned.
     bool is_immutable = false;
     // The initializer of that local `const` folded to an `i32`. A tuple index and a
     // comptime argument may use it. It is not a file-scope constant, so it is not an array length.

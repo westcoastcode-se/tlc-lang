@@ -1021,7 +1021,8 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
             return parse_func_type();
         }
         // `[]const u8` marks the element. `kind const Type` marks the field value.
-        // `const i32` on a variable, and `[]const [4]T`, are not forms.
+        // `var name const Type` marks the value when `allow_value_const` is set.
+        // `[]const [4]T` is not a form.
         if (check(TokenKind::KwConst)) {
             if (type.shells.empty()) {
                 if (!allow_value_const) {
@@ -1056,8 +1057,7 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
     }
 }
 
-std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const std::string &method_struct,
-                                    bool comptime_params) {
+std::vector<Param> Parser::parse_params(bool &variadic, const std::string &method_struct, bool comptime_params) {
     std::vector<Param> params;
     variadic = false;
     expect(TokenKind::LParen, "expected '('");
@@ -1169,7 +1169,7 @@ std::vector<Param> Parser::parse_params(bool allow_const, bool &variadic, const 
                     diags_.error(mark, "not supported yet");
                 }
             }
-            const PlacedType type = parse_placed_type(allow_const);
+            const PlacedType type = parse_placed_type(true);
             if (type.struct_definition || type.enum_definition) {
                 diags_.error(type.loc, "not supported yet");
             }
@@ -1317,7 +1317,7 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     // `comptime` on a parameter is a value known while compiling. A `comptime func` requires
     // every argument to be that kind of value. A `macro` may mix it with a runtime parameter.
     // `(P1, P2)` keeps each type parameter. Substitution fills them in at the call.
-    fn.params = parse_params(extern_c, fn.variadic, fn.method_struct, true);
+    fn.params = parse_params(fn.variadic, fn.method_struct, true);
     fn.static_method = !fn.method_struct.empty() && (fn.params.empty() || !fn.params.front().is_receiver);
     parse_results(fn);
     if (check(TokenKind::LBrace)) {
@@ -1345,13 +1345,6 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         expect(TokenKind::Semicolon, "expected ';'");
     } else {
         expect(TokenKind::Semicolon, "expected ';'");
-    }
-    if (fn.body) {
-        for (const Param &param : fn.params) {
-            if (param.is_const) {
-                diags_.error(param.loc, "not supported yet");
-            }
-        }
     }
     return fn;
 }

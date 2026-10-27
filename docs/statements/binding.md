@@ -171,6 +171,29 @@ An integer or bool array can be that constant too: `const fixed = [_]i32{19, 2}`
 
 Inside a function, `const name = expr` is an immutable binding. The type is the type of the expression. `const name Type = expr` writes the type. `name = ...` is reported as `type mismatch`. `&name` has type `*const T`, so a store through that pointer is reported as `type mismatch`. When the initializer folds to `i32`, the name is a comptime argument. `comptime if` and `comptime switch` do not fold it. It cannot be an array length. A `const` inside a function used as `[N]i32` is `not supported yet`. A local `const` with no initializer is reported as `expected '='`.
 
+`var name const Type` and `const Type name` are a variable whose value is constant. The variable has an address, including at file scope, so it is not the folded binding `const name = expr`. Assigning the name is `type mismatch`. `&name` has type `*const T`, and `var p *i32 = &name` is `type mismatch: expected *i32, found *const i32`. A copy of the value is not const, so `plain(n)` matches `func plain(n i32)` when `n` is `var n const i32`. That copy does not match a `comptime` parameter. `const n = 2` does. A file-scope variable with no initializer is zero, the same as `var`. A local with no initializer is `uninitialized` when it is read. A parameter is `name const Type`, including `extern(abi="c")`. Assigning that parameter is `type mismatch`. The argument is still an `i32`. `type Name const Type` is an alias of that constant value. `type Count const i32` is a different type from `i32`. `Count(40)` and `i32(n)` confirm it. `var n Count = 40` is `type mismatch`. Assigning `n` is `type mismatch`.
+
+`const Type name` is that variable when the token after `const` is a type the file already knows and the next token is the name. `i32`, `bool`, and a declared `Point` are those types. `const Vec[i32] v` is that variable when `Vec` is already a type. `const i32 = 1` is still a binding named `i32`, because `=` follows the type. `const n i32 = 1` and `const n = 1` are still the binding whose name comes first. `const Point p` before `type Point` is not this variable. `const int n` is `not supported yet`. `i32 n` is `expected var`. `for (const i32 i = 0; i < 1; i = i + 1)` is `type mismatch` on the increment. `const [4]i32 row`, `const n const i32`, `const *i32 p`, `func (const i32) i32`, and a result written `const i32` are `not supported yet`. `var row const [4]i32` is `expected a type`. `var Type::name const Type` is `not supported yet`. `type Name[T type] const T` is `expected ']'`. `[]const [4]T` is `not supported yet`. `*const T` and `kind const Type` are unchanged.
+
+```c
+func main() i32 {
+    var n const i32 = 40;
+    const i32 extra = 2;
+    return n + extra;
+}
+```
+
+```asm
+main:
+movl $40, -8(%rsp)               # constant
+movl $2, -4(%rsp)                # constant
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
+The program returns 42. `n` and `extra` are both stored. Assigning either name emits nothing.
+
 ```c
 const N = 4;
 

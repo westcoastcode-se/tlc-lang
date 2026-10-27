@@ -547,6 +547,8 @@ struct TypedefDecl {
     std::vector<ResultSlot> tuple_parts;
     // `type Something[K type, V type] (K, V)`. Empty on a concrete alias.
     std::vector<TypeParam> type_params;
+    // `type Name const i32`. The value is constant. This is not `*const T`.
+    bool is_const = false;
 };
 
 struct VarDecl {
@@ -593,6 +595,8 @@ struct VarDecl {
     // File-scope `const name = expr` or `const name Type = expr`.
     // A plain integer is folded and has no address. A struct, a function pointer, or a typedef keeps that type.
     bool is_const_decl = false;
+    // `var name const Type` and `const Type name`. The value is constant and the variable has an address.
+    bool is_const = false;
     bool has_const = false;
     int const_value = 0;
     // File-scope `var` whose initializer is a call. The call runs before `main`.

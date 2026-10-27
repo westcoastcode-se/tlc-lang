@@ -1,0 +1,16 @@
+func take(x const i32) i32 {
+    return x;
+}
+
+extern(abi="c") func from_c(x const i32) i32 {
+    return x;
+}
+
+const i32 bias = 2;
+
+func main() i32 {
+    var n const i32 = 40;
+    const i32 extra = 0;
+    var p *const i32 = &n;
+    return take(n) + from_c(bias) + extra + *p - 40;
+}

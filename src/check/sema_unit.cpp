@@ -714,6 +714,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             Symbol symbol;
             symbol.name = var->name;
             symbol.type = std::move(type);
+            symbol.is_immutable = symbol.type.is_const;
             symbol.link_name = var->link_name;
             bool defined = false;
             if (var->is_static) {

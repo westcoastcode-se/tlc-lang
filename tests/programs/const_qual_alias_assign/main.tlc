@@ -1,0 +1,7 @@
+type Count const i32;
+
+func main() i32 {
+    var n Count = Count(1);
+    n = Count(2);
+    return i32(n);
+}

@@ -1491,7 +1491,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     const bool widened = accepts_pointer(got, want);
                     const bool scalar =
                         is_scalar(got) && is_scalar(want) && got.alias_id == 0 && want.alias_id == 0;
-                    if (!null_pointer && !widened && !scalar && !accepts_slice(got, want) &&
+                    // A copy is not const. `return Count(1)` still matches `type Count const i32`.
+                    const bool added = allows_added_const(got, want);
+                    if (!null_pointer && !widened && !scalar && !accepts_slice(got, want) && !added &&
                         (want.kind == TypeKind::Void ||
                          (got.kind != TypeKind::Invalid && want.kind != TypeKind::Invalid && !same_type(got, want)))) {
                         error(node.loc, "return type: expected " + type_desc(want) + ", found " + type_desc(got));
@@ -2266,10 +2268,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.name = var.name;
                     symbol.type = type;
                     symbol.is_auto = true;
-                    symbol.is_immutable = var.is_const_decl;
                     if (var.is_const_decl) {
                         symbol.type.is_const = true;
                     }
+                    // `const name = expr` and `var name const Type`. Both have storage.
+                    symbol.is_immutable = var.is_const_decl || symbol.type.is_const;
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     Symbol *live = nullptr;
                     if (declare(std::move(symbol), var.loc)) {
@@ -2409,6 +2412,7 @@ void Checker::check_function(const FunctionDecl &fn) {
         symbol.name = param.name;
         symbol.type = std::move(type);
         symbol.is_auto = true;
+        symbol.is_immutable = symbol.type.is_const;
         symbol.comptime_param = param.is_comptime;
         symbol.fixed_receiver = param.is_receiver && param.indirections > 0;
         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
@@ -2986,6 +2990,7 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
         symbol.name = param.name;
         symbol.type = std::move(type);
         symbol.is_auto = true;
+        symbol.is_immutable = symbol.type.is_const;
         symbol.comptime_param = param.is_comptime;
         symbol.fixed_receiver = param.is_receiver && param.indirections > 0;
         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;

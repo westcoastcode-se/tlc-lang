@@ -1,0 +1,8 @@
+func plain(n i32) i32 {
+    return n;
+}
+
+func main() i32 {
+    var n const i32 = 40;
+    return plain(n) + 2;
+}

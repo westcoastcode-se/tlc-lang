@@ -1287,7 +1287,7 @@ std::unique_ptr<Expr> Parser::parse_anon_function() {
     if (!check(TokenKind::LParen)) {
         error_here("expected '('");
     }
-    fn.params = parse_params(false, fn.variadic);
+    fn.params = parse_params(fn.variadic);
     if (check(TokenKind::LBrace)) {
         fn.return_type = "void";
         ResultSlot slot;
@@ -1304,11 +1304,6 @@ std::unique_ptr<Expr> Parser::parse_anon_function() {
     }
     if (fn.variadic) {
         diags_.error(fn.loc, "not supported yet");
-    }
-    for (const Param &param : fn.params) {
-        if (param.is_const) {
-            diags_.error(param.loc, "not supported yet");
-        }
     }
     Expr::Func node;
     node.loc = fn.loc;

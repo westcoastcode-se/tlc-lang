@@ -1,0 +1,5 @@
+func main() i32 {
+    var n const i32 = 1;
+    n = 2;
+    return n;
+}

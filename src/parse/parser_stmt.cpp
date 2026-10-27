@@ -308,6 +308,11 @@ std::unique_ptr<Stmt> Parser::parse_for() {
             ++pos_;
         }
         stmt.init = make_stmt(Stmt::Expression{});
+    } else if (const_type_var()) {
+        Stmt::Decl decl;
+        decl.loc = peek().loc;
+        decl.vars.push_back(parse_const_type_var(false, false, false, {}));
+        stmt.init = make_stmt(std::move(decl));
     } else if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
         stmt.init = parse_const_local();
     } else if (check(TokenKind::KwVar)) {
@@ -434,6 +439,60 @@ bool Parser::const_on_type() const {
     return false;
 }
 
+bool Parser::const_type_var() const {
+    // `const Entity::next` is a constant on that type, not `const Type name`.
+    if (!check(TokenKind::KwConst) || const_on_type()) {
+        return false;
+    }
+    auto known = [&](std::size_t index) {
+        const Token &token = peek(index);
+        if (token.kind == TokenKind::KwBool) {
+            return true;
+        }
+        if (token.kind != TokenKind::Identifier) {
+            return false;
+        }
+        if (is_type_alias(token.text) || type_names_.count(token.text) != 0) {
+            return true;
+        }
+        for (const std::string &name : open_type_params_) {
+            if (name == token.text) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (!known(1)) {
+        return false;
+    }
+    std::size_t ahead = 2;
+    if (peek(ahead).kind == TokenKind::LBracket) {
+        int depth = 0;
+        for (; peek(ahead).kind != TokenKind::End; ++ahead) {
+            const TokenKind kind = peek(ahead).kind;
+            if (kind == TokenKind::LBracket) {
+                ++depth;
+            } else if (kind == TokenKind::RBracket) {
+                --depth;
+                if (depth == 0) {
+                    ++ahead;
+                    break;
+                }
+            } else if (depth == 0) {
+                return false;
+            }
+            if (ahead > 4096) {
+                return false;
+            }
+        }
+    }
+    // The next identifier is the variable. `const i32 = 1` stays a binding named `i32`.
+    if (peek(ahead).kind != TokenKind::Identifier || peek(ahead + 1).kind == TokenKind::ColonColon) {
+        return false;
+    }
+    return true;
+}
+
 void Parser::take_var_owner(VarDecl &var) {
     // `var Entity::next` and `var Box[T]::extra`. The variable is not a field.
     if (bracket_then_colon_colon()) {
@@ -546,7 +605,7 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     if (check(TokenKind::Eq) || check(TokenKind::ColonEq) || check(TokenKind::Comma)) {
         error_here("expected a type");
     }
-    PlacedType type = parse_go_type();
+    PlacedType type = parse_go_type(true);
     if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc, "not supported yet");
     }
@@ -574,6 +633,60 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     var.fn_results = type.fn_results;
     var.is_tuple = type.is_tuple;
     var.tuple_parts = std::move(type.tuple_parts);
+    var.is_const = type.is_const;
+    // `var Type::name const Type` is not the variable form. The value would not stay constant.
+    if (!var.owner.empty() && var.is_const) {
+        diags_.error(var.loc, "not supported yet");
+    }
+    if (eat(TokenKind::Eq)) {
+        var.init = parse_assignment();
+    }
+    expect(TokenKind::Semicolon, "expected ';'");
+    return var;
+}
+
+VarDecl Parser::parse_const_type_var(bool exported, bool is_extern, bool extern_c, std::string link_name) {
+    VarDecl var;
+    var.exported = exported;
+    var.is_extern = is_extern;
+    var.extern_c = extern_c;
+    var.link_name = std::move(link_name);
+    const PlacedType type = parse_go_type(true);
+    if (type.struct_definition || type.enum_definition) {
+        diags_.error(type.loc, "not supported yet");
+    }
+    if (check(TokenKind::Identifier)) {
+        var.name = peek().text;
+        var.loc = peek().loc;
+        ++pos_;
+    } else {
+        error_here("expected an identifier");
+    }
+    var.type_name = type.type_name;
+    var.type_package = type.type_package;
+    var.is_struct = type.is_struct;
+    var.is_enum = type.is_enum;
+    var.indirections = type.indirections;
+    var.optional = type.optional;
+    var.const_pointee = type.const_pointee;
+    var.is_array = type.is_array;
+    var.elem_const = type.elem_const;
+    var.elem_slice = type.elem_slice;
+    var.shells = type.shells;
+    var.array_len = type.array_len;
+    var.array_len_name = type.array_len_name;
+    var.type_args = type.type_args;
+    var.ptr_to_array = type.ptr_to_array;
+    var.is_fn_ptr = type.is_fn_ptr;
+    var.ret_indirections = type.ret_indirections;
+    var.ret_optional = type.ret_optional;
+    var.ret_const_pointee = type.ret_const_pointee;
+    var.fn_params = type.fn_params;
+    var.fn_variadic = type.fn_variadic;
+    var.fn_results = type.fn_results;
+    var.is_tuple = type.is_tuple;
+    var.tuple_parts = type.tuple_parts;
+    var.is_const = type.is_const;
     if (eat(TokenKind::Eq)) {
         var.init = parse_assignment();
     }
@@ -947,6 +1060,12 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         }
         eat(TokenKind::Semicolon);
         return make_stmt(Stmt::Expression{});
+    }
+    if (const_type_var()) {
+        Stmt::Decl decl;
+        decl.loc = peek().loc;
+        decl.vars.push_back(parse_const_type_var(false, false, false, {}));
+        return make_stmt(std::move(decl));
     }
     if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
         return parse_const_local();

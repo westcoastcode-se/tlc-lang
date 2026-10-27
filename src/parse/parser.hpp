@@ -209,11 +209,13 @@ class Parser {
     void drop_bare_tuple(PlacedType &type);
     // `var` and field types use Go order: `*i32`, `**Point`, `[32]u8`, `[2]*int`.
     // A pointer is prefix in every other position too: `*int`, `*const char`.
-    // `allow_value_const` accepts `kind const Type` on a field. Elsewhere that form is rejected.
+    // `allow_value_const` accepts `kind const Type` on a field, and `const Type` on a variable,
+    // a parameter, or a typedef. A cast, a result, and `const name const Type` stay rejected.
     PlacedType parse_go_type(bool allow_value_const = false);
     // `method_struct` is empty for a free function. A method receiver is `name this` or `name *this`.
     // `name **this` is `expected 'this'`.
-    std::vector<Param> parse_params(bool allow_const, bool &variadic, const std::string &method_struct = {},
+    // A parameter may be `name const Type`. A function type still rejects `const` before its argument type.
+    std::vector<Param> parse_params(bool &variadic, const std::string &method_struct = {},
                                     bool comptime_params = false);
     void take_result(FunctionDecl &fn, const PlacedType &type);
     void parse_results(FunctionDecl &fn);
@@ -246,6 +248,9 @@ class Parser {
     bool var_is_inferred() const;
     // `const Type::name` or `const Type[T]::name`. A local one is rejected.
     bool const_on_type() const;
+    // `const i32 x` and `const Point p` when `Point` is already a type.
+    // `const n = expr`, `const n Type = expr`, `const i32 = 1`, and `const Type::name` stay bindings.
+    bool const_type_var() const;
     std::unique_ptr<Stmt> parse_var_or_bind();
     // `var Type::name` and `var Type[T]::name`. The first identifier is the owner.
     void take_var_owner(VarDecl &var);
@@ -255,6 +260,8 @@ class Parser {
                             bool allow_bare_inferred = false, std::string link_name = {});
     // `const name = expr`, `const name Type = expr`, and `const Type::name`.
     VarDecl parse_const_decl(bool exported);
+    // `const i32 x` and `const i32 x = 1`. The variable has an address. It is not `const name = expr`.
+    VarDecl parse_const_type_var(bool exported, bool is_extern, bool extern_c, std::string link_name);
     void parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var, bool exported);
     void reject_c_var(SourceLoc loc);
 

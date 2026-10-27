@@ -1887,6 +1887,10 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         }
         return;
     }
+    // `type Name const i32`. The alias is that constant value.
+    if (item.is_const) {
+        type.is_const = true;
+    }
     // The name is a different type from its representation. A cast confirms either side.
     Type distinct = type;
     if (reserved_id == 0) {
@@ -1925,6 +1929,11 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
 
 void Checker::register_tuple_alias_template(const TypedefDecl &item) {
     if (item.name.empty()) {
+        return;
+    }
+    // `type Name[T type] const T` is not this alias. A concrete `type Name const i32` is.
+    if (item.is_const) {
+        error(item.loc, "not supported yet");
         return;
     }
     // A value parameter or a trait constraint is not this alias.

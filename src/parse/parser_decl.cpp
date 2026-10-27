@@ -569,7 +569,7 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     TypedefDecl item;
     item.loc = name_loc;
     item.name = std::move(name);
-    PlacedType type = parse_go_type();
+    PlacedType type = parse_go_type(true);
     if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
         diags_.error(type.loc.valid() ? type.loc : item.loc, "not supported yet");
     }
@@ -596,6 +596,7 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.fn_results = type.fn_results;
     item.is_tuple = type.is_tuple;
     item.tuple_parts = std::move(type.tuple_parts);
+    item.is_const = type.is_const;
     // `type Something[K type, V type] (K, V)`, `type MyAlias[T type] Vec[T]`, and `type Name[T type] T`.
     // The checker rejects an unused parameter and a shape that is not a tuple, a type application,
     // or that parameter. `...` is already `expected an identifier`, so that list is not reported again.
@@ -652,6 +653,14 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         break;
     }
     reject_tlc_link_name(extern_c, link_name, name_loc);
+    if (const_type_var()) {
+        VarDecl var = parse_const_type_var(exported, is_extern, extern_c, link_name);
+        TopDecl top;
+        top.data = std::move(var);
+        unit.decls.push_back(std::move(top));
+        saw_decl_ = true;
+        return;
+    }
     if (check(TokenKind::KwConst) && peek(1).kind == TokenKind::Identifier) {
         // `extern const name` and `extern const Type::name` are file scope.
         VarDecl var = parse_const_decl(exported);

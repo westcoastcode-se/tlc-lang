@@ -2748,6 +2748,7 @@ bool Checker::resolve_result_typeof(FunctionDecl &fn) {
         symbol.name = param.name;
         symbol.type = type_of_param(param);
         symbol.is_auto = true;
+        symbol.is_immutable = symbol.type.is_const;
         symbol.comptime_param = param.is_comptime;
         symbol.fixed_receiver = param.is_receiver && param.indirections > 0;
         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;

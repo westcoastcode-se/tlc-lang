@@ -618,17 +618,62 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source("var x const i32;\n"
 "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var x i32 const)\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("const i32 x = 1;\nfunc main() i32 { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var x i32 const (int 1))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("const i32 = 1;\nfunc main() i32 { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var i32 := (int 1))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("const n i32 = 1;\nfunc main() i32 { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var n i32 (int 1))\n");
+        EXPECT(check, parsed.dump.find("(var n i32 const") == std::string::npos);
+    }
+
+    {
+        const Parsed parsed = parse_source("type Point struct { x i32; }\nconst Point p;\nfunc main() i32 { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var p Point const)\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("type Count const i32;\nfunc main() i32 { return 0; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(type Count i32 const)\n");
     }
 
     {
         const Parsed parsed = parse_source("func f(x const i32) i32 { return x; }\nfunc main() i32 { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(x i32 const)");
     }
 
     {
         const Parsed parsed = parse_source("extern(abi=\"c\") func f(x const i32) i32 { return x; }\nfunc main() i32 { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(x i32 const)");
+    }
+
+    {
+        const Parsed parsed = parse_source("func main() i32 { const i32 x = 1; return x; }\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(var x i32 const (int 1))\n");
+    }
+
+    {
+        const Parsed parsed = parse_source("i32 x = 1;\nfunc main() i32 { return 0; }\n");
+        EXPECT_HAS(check, parsed.errors, "expected var");
     }
 
     {

@@ -1,0 +1,8 @@
+func f(x const i32) i32 {
+    x = 2;
+    return x;
+}
+
+func main() i32 {
+    return f(1);
+}

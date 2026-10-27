@@ -218,33 +218,40 @@ Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int in
 }
 
 Type Checker::type_of_var(const VarDecl &var) {
+    Type type = type_invalid();
     if (var.is_tuple) {
-        return type_of_written_tuple(var.tuple_parts, var.indirections, var.is_array, var.shells, var.loc);
+        type = type_of_written_tuple(var.tuple_parts, var.indirections, var.is_array, var.shells, var.loc);
+    } else {
+        VarDecl &written = const_cast<VarDecl &>(var);
+        prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
+                        written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
+                        written.loc);
+        fold_shells(written.shells, written.loc);
+        type = var.is_fn_ptr
+                   ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
+                                    var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
+                                    var.ret_optional, var.ret_const_pointee)
+                   : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
+                                 var.type_package, var.is_struct, var.is_enum, false, var.optional, var.const_pointee,
+                                 false, var.elem_const, var.elem_slice, written.shells, true);
+        // A pointer shell is already applied. The flag is the flat spelling of `*[N]T`.
+        if (written.shells.empty() && var.ptr_to_array && type.kind != TypeKind::Invalid) {
+            if (type.kind != TypeKind::Array) {
+                error(var.loc, "type mismatch");
+                type = type_invalid();
+            } else {
+                if ((var.const_pointee & 1u) != 0) {
+                    type.is_const = true;
+                }
+                type = type_pointer(std::move(type));
+            }
+        }
     }
-    VarDecl &written = const_cast<VarDecl &>(var);
-    prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
-                    written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
-                    written.loc);
-    fold_shells(written.shells, written.loc);
-    Type type = var.is_fn_ptr
-                    ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
-                                     var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
-                                     var.ret_optional, var.ret_const_pointee)
-                    : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
-                                  var.type_package, var.is_struct, var.is_enum, false, var.optional, var.const_pointee,
-                                  false, var.elem_const, var.elem_slice, written.shells, true);
-    // A pointer shell is already applied. The flag is the flat spelling of `*[N]T`.
-    if (!written.shells.empty() || !var.ptr_to_array || type.kind == TypeKind::Invalid) {
-        return type;
-    }
-    if (type.kind != TypeKind::Array) {
-        error(var.loc, "type mismatch");
-        return type_invalid();
-    }
-    if ((var.const_pointee & 1u) != 0) {
+    // `var name const Type`. The value is constant. A pointer to constant data is `*const T`.
+    if (var.is_const && type.kind != TypeKind::Invalid) {
         type.is_const = true;
     }
-    return type_pointer(std::move(type));
+    return type;
 }
 
 bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) const {
@@ -283,27 +290,35 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
 }
 
 Type Checker::type_of_param(const Param &param) {
+    Type type = type_invalid();
     if (param.is_tuple) {
         std::vector<Type> parts;
         parts.reserve(param.tuple_parts.size());
         for (const ResultSlot &slot : param.tuple_parts) {
             parts.push_back(type_of_result(slot, param.loc));
         }
-        return type_tuple(std::move(parts));
+        type = type_tuple(std::move(parts));
+    } else {
+        Param &written = const_cast<Param &>(param);
+        prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
+                        written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
+                        written.loc);
+        fold_shells(written.shells, written.loc);
+        if (param.is_fn_ptr) {
+            type = type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum,
+                                  param.ret_indirections, param.indirections, param.fn_params, param.fn_variadic,
+                                  param.fn_results, param.loc, param.ret_optional, param.ret_const_pointee);
+        } else {
+            type = object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
+                               param.type_package, param.is_struct, param.is_enum, param.is_receiver, param.optional,
+                               param.const_pointee, false, param.elem_const, param.elem_slice, written.shells);
+        }
     }
-    Param &written = const_cast<Param &>(param);
-    prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
-                    written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
-                    written.loc);
-    fold_shells(written.shells, written.loc);
-    if (param.is_fn_ptr) {
-        return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
-                              param.indirections, param.fn_params, param.fn_variadic, param.fn_results, param.loc,
-                              param.ret_optional, param.ret_const_pointee);
+    // `name const Type`. The parameter has storage and cannot be assigned.
+    if (param.is_const && type.kind != TypeKind::Invalid) {
+        type.is_const = true;
     }
-    return object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
-                       param.type_package, param.is_struct, param.is_enum, param.is_receiver, param.optional,
-                       param.const_pointee, false, param.elem_const, param.elem_slice, written.shells);
+    return type;
 }
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete) {
