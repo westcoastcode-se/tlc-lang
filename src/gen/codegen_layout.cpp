@@ -1707,6 +1707,22 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                                 return std::nullopt;
                             }
                             auto one = value(*element);
+                            // `Color.Blue` is that enumerator. A bare `comptime const ink = Color.Blue`
+                            // stays rejected in the checker.
+                            if (!one) {
+                                const int id = enum_value_id(*element);
+                                if (id >= 0 && id < static_cast<int>(enums_.size())) {
+                                    const EnumLayout &layout = enums_[static_cast<std::size_t>(id)];
+                                    Lowered low;
+                                    low.enum_id = id;
+                                    low.elem_bool = layout.is_bool;
+                                    low.elem_char = layout.is_char;
+                                    low.elem_unsigned = layout.is_unsigned;
+                                    low.elem_bits = layout.is_bool ? 0 : layout.bits;
+                                    low.type = leaf_type(0, low.elem_char, -1, low.elem_bool, low.elem_bits, false);
+                                    one = low;
+                                }
+                            }
                             if (!one || one->type == nullptr || one->is_tuple || one->elem_void) {
                                 return std::nullopt;
                             }

@@ -1,0 +1,22 @@
+type Color enum {
+    Red = 1,
+    Blue = 40,
+}
+
+comptime const pair = (Color.Blue, 2);
+
+comptime func take(p (Color, i32)) i32 {
+    return p[1];
+}
+
+func rank(c Color) i32 {
+    if (c == Color.Blue) {
+        return 40;
+    }
+    return 0;
+}
+
+func main() i32 {
+    comptime const local = (Color.Red, 1);
+    return take(pair) + rank(pair[0]) + i32(pair[0] == Color.Blue) + i32(local[0] == Color.Red) + pair[1] + local[1] - 5;
+}

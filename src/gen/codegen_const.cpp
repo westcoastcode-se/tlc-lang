@@ -1316,8 +1316,9 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
     }
     if (const auto *init = std::get_if<Expr::Init>(&cursor->data)) {
         if (init->is_tuple && init->elements.size() >= 2) {
-            // `comptime const wide = (0.5, 40)`, `(Point{.x = 40, .y = 2}, 1)`, and `("hi", 2)`.
-            // An integer element still uses an empty binding. A bool element stays rejected.
+            // `comptime const wide = (0.5, 40)`, `(Point{.x = 40, .y = 2}, 1)`, `("hi", 2)`,
+            // and `(Color.Blue, 2)`. An integer element still uses an empty binding.
+            // A bool element stays rejected.
             const auto element_constant = [&](const auto &self, const Expr &element, int depth) -> llvm::Constant * {
                 if (depth > 8) {
                     return nullptr;
@@ -1334,6 +1335,15 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                     }
                     if (made->struct_id >= 0 && !made->array_literal) {
                         return const_struct(*made, made->struct_id);
+                    }
+                }
+                if (const auto *selector = std::get_if<Expr::Selector>(&element.data)) {
+                    const int id = enum_value_id(element);
+                    if (id >= 0 && selector->base != nullptr) {
+                        const auto member = enums_[static_cast<std::size_t>(id)].values.find(selector->field);
+                        if (member != enums_[static_cast<std::size_t>(id)].values.end()) {
+                            return enum_constant(id, member->second);
+                        }
                     }
                 }
                 std::unordered_set<std::string> text_seen;
