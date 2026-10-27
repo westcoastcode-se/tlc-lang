@@ -1433,6 +1433,9 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                low.enum_id < 0 && low.fn_ty == nullptr && !low.elem_void;
     };
     const auto promote = [&](Lowered low) {
+        if (low.is_tuple) {
+            return low;
+        }
         if (low.is_slice) {
             return low;
         }
@@ -1692,6 +1695,64 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     if (item.array_literal) {
                         // `var row = [_]i32{1, 2}` keeps the array. The elements are filled later.
                         return lower_array_literal(file, item);
+                    }
+                    if (item.is_tuple && item.elements.size() >= 2) {
+                        // `comptime const pair = (40, 2)`. A nested tuple stays out.
+                        std::vector<llvm::Type *> fields;
+                        std::vector<ResultSlot> parts;
+                        fields.reserve(item.elements.size());
+                        parts.reserve(item.elements.size());
+                        for (const auto &element : item.elements) {
+                            if (element == nullptr) {
+                                return std::nullopt;
+                            }
+                            const auto one = value(*element);
+                            if (!one || one->type == nullptr || one->is_tuple || one->elem_void) {
+                                return std::nullopt;
+                            }
+                            llvm::Type *stored = stored_type(*one);
+                            if (stored == nullptr) {
+                                return std::nullopt;
+                            }
+                            fields.push_back(stored);
+                            ResultSlot slot;
+                            slot.is_struct = one->struct_id >= 0;
+                            slot.is_enum = one->enum_id >= 0;
+                            slot.indirections = one->depth;
+                            slot.is_array = one->is_array || one->is_slice;
+                            slot.array_len = one->is_slice ? -1 : one->array_len;
+                            slot.elem_slice = one->elem_slice;
+                            slot.shells = one->shells;
+                            if (one->struct_id >= 0 && one->struct_id < static_cast<int>(structs_.size())) {
+                                slot.type_name = structs_[static_cast<std::size_t>(one->struct_id)].name;
+                                slot.is_struct = true;
+                            } else if (one->enum_id >= 0 && one->enum_id < static_cast<int>(enums_.size())) {
+                                slot.type_name = enums_[static_cast<std::size_t>(one->enum_id)].name;
+                                slot.is_enum = true;
+                            } else if (one->is_slice) {
+                                slot.type_name = one->elem_char ? "u8" : "i32";
+                            } else if (one->elem_float) {
+                                slot.type_name = one->elem_bits >= 64 ? "f64" : "f32";
+                            } else if (one->elem_bool) {
+                                slot.type_name = "bool";
+                            } else if (one->elem_char || one->elem_bits == 8) {
+                                slot.type_name = "u8";
+                            } else if (one->elem_bits == 16) {
+                                slot.type_name = one->elem_unsigned ? "u16" : "i16";
+                            } else if (one->elem_bits == 64) {
+                                slot.type_name = one->elem_unsigned ? "u64" : "i64";
+                            } else if (one->elem_unsigned) {
+                                slot.type_name = "u32";
+                            } else {
+                                slot.type_name = "i32";
+                            }
+                            parts.push_back(std::move(slot));
+                        }
+                        Lowered low;
+                        low.is_tuple = true;
+                        low.tuple_parts = std::move(parts);
+                        low.type = llvm::StructType::get(context_, fields);
+                        return low;
                     }
                     if (item.type_name.empty()) {
                         return std::nullopt;

@@ -858,13 +858,33 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (!at || *at < 0) {
                     return std::nullopt;
                 }
+                const auto tuple_at = [&](const Expr::Init &init) -> std::optional<int> {
+                    if (!init.is_tuple || static_cast<std::size_t>(*at) >= init.elements.size() ||
+                        init.elements[static_cast<std::size_t>(*at)] == nullptr) {
+                        return std::nullopt;
+                    }
+                    return fold_int(*init.elements[static_cast<std::size_t>(*at)]);
+                };
                 if (const auto *init = std::get_if<Expr::Init>(&node.base->data)) {
-                    if (init->is_tuple) {
-                        if (static_cast<std::size_t>(*at) >= init->elements.size() ||
-                            init->elements[static_cast<std::size_t>(*at)] == nullptr) {
-                            return std::nullopt;
+                    if (const std::optional<int> element = tuple_at(*init)) {
+                        return element;
+                    }
+                }
+                // `comptime const pair = (40, 2)` then `pair[0]` is that element.
+                if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                    const Symbol *symbol = lookup(named->text);
+                    const Expr *init_expr = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
+                    if (init_expr == nullptr) {
+                        if (const VarDecl *var = global_var(named->text); var != nullptr && var->is_comptime) {
+                            init_expr = var->init.get();
                         }
-                        return fold_int(*init->elements[static_cast<std::size_t>(*at)]);
+                    }
+                    if (init_expr != nullptr) {
+                        if (const auto *init = std::get_if<Expr::Init>(&init_expr->data)) {
+                            if (const std::optional<int> element = tuple_at(*init)) {
+                                return element;
+                            }
+                        }
                     }
                 }
                 std::unordered_set<std::string> seen;
@@ -973,6 +993,15 @@ bool Checker::comptime_constant(const Expr &expr) {
         // `add`. A local function is not a file-scope constant.
         if (symbol->is_function && !symbol->is_local_function && symbol->function_id == 0) {
             return true;
+        }
+        if (symbol->is_constant && symbol->type.kind == TypeKind::Tuple) {
+            const Expr *init = symbol->const_init;
+            if (init == nullptr) {
+                if (const VarDecl *var = global_var(named->text); var != nullptr && var->is_comptime) {
+                    init = var->init.get();
+                }
+            }
+            return init != nullptr && comptime_constant(*init);
         }
         if (!symbol->is_constant || symbol->is_auto) {
             return false;

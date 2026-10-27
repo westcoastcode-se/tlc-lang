@@ -527,6 +527,10 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.value = slot;
             binding.is_tuple = true;
             binding.tuple_parts = got.tuple_parts;
+            // `comptime const local = (20, 1)` keeps the literal so `local[1]` folds.
+            if (node.is_comptime && node.value != nullptr) {
+                binding.const_init = node.value.get();
+            }
             scopes_.back()[name] = binding;
             alias_capture(name, binding);
             note(name, binding);

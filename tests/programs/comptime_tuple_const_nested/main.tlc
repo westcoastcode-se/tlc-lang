@@ -1,0 +1,5 @@
+comptime const pair = ((40, 2), 1);
+
+func main() i32 {
+    return 0;
+}

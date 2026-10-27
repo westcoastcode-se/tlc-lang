@@ -1089,7 +1089,23 @@ Type Checker::check_file_const(VarDecl &written) {
     if (got.kind == TypeKind::Invalid) {
         return type_invalid();
     }
-    if (got.kind == TypeKind::Void || got.kind == TypeKind::Tuple || got.kind == TypeKind::Nullptr) {
+    if (got.kind == TypeKind::Tuple) {
+        // `comptime const pair = (40, 2)`. A bool element and a value that is not
+        // constant stay `type mismatch`. A nested tuple is `not supported yet`.
+        if (written.init == nullptr || !comptime_constant(*written.init)) {
+            error(written.loc, "type mismatch");
+            return type_invalid();
+        }
+        for (const Type &part : got.results) {
+            if (part.kind == TypeKind::Tuple) {
+                error(written.loc, "not supported yet");
+                return type_invalid();
+            }
+        }
+        got.is_const = true;
+        return got;
+    }
+    if (got.kind == TypeKind::Void || got.kind == TypeKind::Nullptr) {
         error(written.loc, "type mismatch");
         return type_invalid();
     }

@@ -743,13 +743,34 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 if (!at || *at < 0) {
                     return std::nullopt;
                 }
+                const auto tuple_at = [&](const Expr::Init &init) -> std::optional<int32_t> {
+                    if (!init.is_tuple || static_cast<std::size_t>(*at) >= init.elements.size() ||
+                        init.elements[static_cast<std::size_t>(*at)] == nullptr) {
+                        return std::nullopt;
+                    }
+                    return fold(*init.elements[static_cast<std::size_t>(*at)]);
+                };
                 if (const auto *init = std::get_if<Expr::Init>(&node.base->data)) {
-                    if (init->is_tuple) {
-                        if (static_cast<std::size_t>(*at) >= init->elements.size() ||
-                            init->elements[static_cast<std::size_t>(*at)] == nullptr) {
-                            return std::nullopt;
+                    if (const std::optional<int32_t> element = tuple_at(*init)) {
+                        return element;
+                    }
+                }
+                if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                    const Expr *init_expr = nullptr;
+                    if (const Binding *binding = lookup(named->text)) {
+                        init_expr = binding->const_init;
+                    }
+                    if (init_expr == nullptr) {
+                        if (const VarDecl *var = global_decl(named->text); var != nullptr && var->is_comptime) {
+                            init_expr = var->init.get();
                         }
-                        return fold(*init->elements[static_cast<std::size_t>(*at)]);
+                    }
+                    if (init_expr != nullptr) {
+                        if (const auto *init = std::get_if<Expr::Init>(&init_expr->data)) {
+                            if (const std::optional<int32_t> element = tuple_at(*init)) {
+                                return element;
+                            }
+                        }
                     }
                 }
                 std::unordered_set<std::string> seen;

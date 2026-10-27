@@ -1,0 +1,13 @@
+comptime const pair = (40, 2);
+comptime const n = pair[0];
+
+comptime func take(p (i32, i32)) i32 {
+    return p[0] + p[1];
+}
+
+func main() i32 {
+    comptime const local = (20, 1);
+    var buf [n]i32;
+    buf[0] = 1;
+    return pair[1] + take(pair) + local[1] + buf[0] - 4;
+}

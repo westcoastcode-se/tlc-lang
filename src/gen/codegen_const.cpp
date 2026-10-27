@@ -1315,6 +1315,45 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
         cursor = cast->expr.get();
     }
     if (const auto *init = std::get_if<Expr::Init>(&cursor->data)) {
+        if (init->is_tuple && init->elements.size() >= 2) {
+            std::vector<llvm::Constant *> fields;
+            std::vector<llvm::Type *> types;
+            fields.reserve(init->elements.size());
+            types.reserve(init->elements.size());
+            for (const auto &element : init->elements) {
+                if (element == nullptr) {
+                    return nullptr;
+                }
+                Binding part;
+                llvm::Constant *field = const_initializer(*element, part);
+                if (field == nullptr) {
+                    return nullptr;
+                }
+                fields.push_back(field);
+                types.push_back(field->getType());
+            }
+            llvm::StructType *packed = llvm::StructType::get(context_, types);
+            if (const auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(dest.value)) {
+                if (auto *want = llvm::dyn_cast<llvm::StructType>(global->getValueType())) {
+                    if (want->getNumElements() != fields.size()) {
+                        return nullptr;
+                    }
+                    for (unsigned index = 0; index < fields.size(); ++index) {
+                        llvm::Type *field_ty = want->getElementType(index);
+                        if (fields[index]->getType() == field_ty) {
+                            continue;
+                        }
+                        const auto *integer = llvm::dyn_cast<llvm::ConstantInt>(fields[index]);
+                        if (integer == nullptr || !field_ty->isIntegerTy()) {
+                            return nullptr;
+                        }
+                        fields[index] = llvm::ConstantInt::get(field_ty, integer->getValue());
+                    }
+                    packed = want;
+                }
+            }
+            return llvm::ConstantStruct::get(packed, fields);
+        }
         if (dest.is_array) {
             return const_array(*init, dest);
         }
