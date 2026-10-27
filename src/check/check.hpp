@@ -363,6 +363,8 @@ class Checker {
     void pop();
     bool captured(const Symbol &symbol) const;
     bool fn_pointer(const Type &type) const;
+    // A tuple element that is a function pointer. A nested tuple counts.
+    bool tuple_holds_fn(const Type &type) const;
     void note_capture(FunctionDecl &fn, const std::string &name, int function_id);
     void note_owned(FunctionDecl &fn, const std::string &name);
     void adopt_captures(const FunctionDecl &fn);
@@ -683,6 +685,8 @@ class Checker {
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     // A `var`, a local `const`, and a tuple are not.
     bool comptime_constant(const Expr &expr);
+    // The element of a comptime tuple index. Null when `expr` is not that index.
+    const Expr *comptime_tuple_element(const Expr &expr);
     // That constant, with a file-scope name replaced by its initializer.
     std::unique_ptr<Expr> comptime_substitute(const Expr &expr);
     // The piece of a spec name for that expression. Empty when the value has none.

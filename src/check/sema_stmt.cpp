@@ -2066,6 +2066,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (rhs.kind == TypeKind::Invalid) {
                     return;
                 }
+                // A runtime binding of that tuple has no signature on the loaded field.
+                if (!node.is_comptime && tuple_holds_fn(rhs)) {
+                    error(node.loc, "type mismatch");
+                    return;
+                }
                 std::vector<Type> parts;
                 if (node.names.size() == 1) {
                     parts.push_back(rhs);
@@ -2248,6 +2253,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                         continue;
                     }
                     Type type = type_of_var(var);
+                    if (!var.is_comptime && tuple_holds_fn(type)) {
+                        error(var.loc, "type mismatch");
+                        continue;
+                    }
                     // Same-block `var n i32 = n + 1` replaces the name. An outer `n` stays, and the
                     // initializer still reads it. A name with no earlier binding is opened first.
                     const bool same_block =
@@ -2439,6 +2448,11 @@ void Checker::check_function(const FunctionDecl &fn) {
         quiet_ = true;
         Type type = type_of_param(param);
         quiet_ = saved_param_quiet;
+        // `p comptime (func (i32, i32) i32, i32)` stays. A runtime parameter is not that value.
+        if (!param.is_comptime && tuple_holds_fn(type)) {
+            error(param.loc, "type mismatch");
+            type = type_invalid();
+        }
         Symbol symbol;
         symbol.name = param.name;
         symbol.type = std::move(type);

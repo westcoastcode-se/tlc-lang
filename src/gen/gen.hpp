@@ -1404,6 +1404,8 @@ class CodeGen {
     bool file_constant_operand(const Expr &expr) const;
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     bool comptime_constant(const Expr &expr) const;
+    // The element of a comptime tuple index. Null when `expr` is not that index.
+    const Expr *comptime_tuple_element(const Expr &expr) const;
     // That constant, with a file-scope name replaced by its initializer.
     std::unique_ptr<Expr> comptime_substitute(const Expr &expr) const;
     // The `builtin.memeql` or `builtin.memcmp` declaration this call names.

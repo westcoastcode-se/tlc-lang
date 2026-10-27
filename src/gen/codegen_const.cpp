@@ -1383,6 +1383,20 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                     part.elem_bool = true;
                     return const_initializer(element, part);
                 }
+                // `(add, 1)` and `(BinOp(add), 1)`. An empty binding has no function type, so the
+                // integer fallback rejects the function.
+                const Expr *cursor = &element;
+                while (const auto *cast = std::get_if<Expr::Cast>(&cursor->data)) {
+                    if (cast->expr == nullptr || cast->indirections != 0) {
+                        break;
+                    }
+                    cursor = cast->expr.get();
+                }
+                if (const Binding *designator = function_designator(current_file_, *cursor)) {
+                    if (auto *function = llvm::dyn_cast_or_null<llvm::Function>(designator->value)) {
+                        return function;
+                    }
+                }
                 Binding part;
                 return const_initializer(element, part);
             };

@@ -748,13 +748,8 @@ Parser::PlacedType Parser::parse_tuple_type() {
     type.loc = loc;
     type.is_tuple = true;
     type.tuple_parts.reserve(parts.size());
-    for (PlacedType &part : parts) {
-        // `((i32, i32), i32)` is a tuple element. A function pointer is not.
-        if (part.is_fn_ptr) {
-            diags_.error(part.loc.valid() ? part.loc : loc, "not supported yet");
-            part.is_fn_ptr = false;
-            part.type_name = "invalid";
-        }
+    for (const PlacedType &part : parts) {
+        // `((i32, i32), i32)` is a tuple element. A function pointer is that element.
         type.tuple_parts.push_back(slot_from_type(part));
     }
     return type;

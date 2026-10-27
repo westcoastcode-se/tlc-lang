@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Generics](generic.md) · [Next: Macros](macro.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-A `comptime func` calculates while compiling. Every argument is a comptime value, whether or not the parameter is marked `comptime`. A comptime value is a folded integer, a constant `[]const u8`, an enumerator, or a `comptime const` of a struct, a float, an alias, or a function. A string is a literal, a constant range, or a `comptime const` in the same file. A `var` is not. A runtime `const` is not, until `comptime const folded = name`. A `comptime const` whose initializer folds to `i32` is a comptime argument, at file scope and inside a function. It hides a `comptime const` of the same name. A runtime `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` is not a comptime value. A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, or a file-scope `const` is. A tuple element that is a local `const` is `type mismatch`. `comptime const pair = (40, 2)` names that tuple. An element may be a `bool`, an `f64`, an `f32`, a struct, a `[]const u8`, an enumerator, or a tuple. `comptime const nested = ((40, 2), 1)` names that tuple. `nested[0][1]` is `2`. A runtime `const` of a tuple is `type mismatch`. `return` leaves the function. The call is an expression. It does not paste the body into the caller.
+A `comptime func` calculates while compiling. Every argument is a comptime value, whether or not the parameter is marked `comptime`. A comptime value is a folded integer, a constant `[]const u8`, an enumerator, or a `comptime const` of a struct, a float, an alias, or a function. A string is a literal, a constant range, or a `comptime const` in the same file. A `var` is not. A runtime `const` is not, until `comptime const folded = name`. A `comptime const` whose initializer folds to `i32` is a comptime argument, at file scope and inside a function. It hides a `comptime const` of the same name. A runtime `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` is not a comptime value. A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, or a file-scope `const` is. A tuple element that is a local `const` is `type mismatch`. `comptime const pair = (40, 2)` names that tuple. An element may be a `bool`, an `f64`, an `f32`, a struct, a `[]const u8`, an enumerator, a tuple, or a function. `comptime const nested = ((40, 2), 1)` names that tuple. `nested[0][1]` is `2`. `comptime const ops = (add, 1)` names a tuple whose element is that function. `(ops[0])(40, 2)` calls `add`. A runtime `const` of a tuple is `type mismatch`. `return` leaves the function. The call is an expression. It does not paste the body into the caller.
 
 ```c
 comptime func add(n i32) i32 {
@@ -195,7 +195,7 @@ retq                             # return
 
 `n` is stored. The literal stores `x` as `2` and `y` as `0`, then loads both. The add is `x + n`. The call passes `n` and does not pass the struct.
 
-A tuple is that argument too. The copy does not store the tuple. `p[0]` of `(2, 0)` is the immediate `2`. When the file is `main.tlc`, `take((2, 0), n)` calls `main.take.spec.t_2_0`. `here.shift((2, 0))` calls `main.Point.shift.spec.t_2_0` and loads `self.x` before adding `2`. `id[i32](40, (2, 0))` calls `main.id.spec.i32.spec.t_2_0`. A string element uses the spelling of a comptime string, so `("hi", 2)` calls `main.take.spec.t_s26869_2`. When the tuple is the only parameter and the body returns `p[0]`, `return take((42, 0))` is `movl $42, %eax` and `retq`. The function is still compiled. A `var` tuple is `type mismatch`. A local `const` of a tuple is `type mismatch`. A tuple element that is a local `const` is `type mismatch`. An element that is a `var` is `type mismatch`. A `bool` element stays `bool`. When the file is `main.tlc`, `take((true, 2), n)` calls `main.take.spec.t_b1_2`. `p[0]` is `true`. `i32(p[0])` is `1`. `false` is `b0`. `p[0] + 1` is `type mismatch`. `comptime const pair = (40, 2)` names that tuple. `pair[0]` is that element. `comptime const flags = (true, 1)` names that tuple. `flags[0]` stays `bool`. `if (flags[0])` and `flags[0] == true` use that value. `flags[0] + 1` is `type mismatch`. An element may be a `bool`, an `f64`, an `f32`, a struct, a `[]const u8`, an enumerator, or a tuple. A runtime `const` of a tuple is `type mismatch`. A tuple may be an element. `comptime const pair = ((40, 2), 1)` names that tuple. `pair[0]` is `(40, 2)`. `pair[0][1]` is `2`. When the file is `main.tlc`, `take(((40, 2), 1), n)` calls `main.take.spec.t_t_40_2_1`. The parameter is not passed. `p[0][1]` is the immediate `2`. `((true, 2), 1)` is `t_t_b1_2_1`. `p[0][0]` stays `bool`. `p[0][0] + 1` is `type mismatch`. `null` and an element that is not constant are `type mismatch`. A function pointer element is `not supported yet`. A type parameter does not match a tuple inside a tuple. A function nested in another function passes the tuple and does not specialize.
+A tuple is that argument too. The copy does not store the tuple. `p[0]` of `(2, 0)` is the immediate `2`. When the file is `main.tlc`, `take((2, 0), n)` calls `main.take.spec.t_2_0`. `here.shift((2, 0))` calls `main.Point.shift.spec.t_2_0` and loads `self.x` before adding `2`. `id[i32](40, (2, 0))` calls `main.id.spec.i32.spec.t_2_0`. A string element uses the spelling of a comptime string, so `("hi", 2)` calls `main.take.spec.t_s26869_2`. When the tuple is the only parameter and the body returns `p[0]`, `return take((42, 0))` is `movl $42, %eax` and `retq`. The function is still compiled. A `var` tuple is `type mismatch`. A local `const` of a tuple is `type mismatch`. A tuple element that is a local `const` is `type mismatch`. An element that is a `var` is `type mismatch`. A `bool` element stays `bool`. When the file is `main.tlc`, `take((true, 2), n)` calls `main.take.spec.t_b1_2`. `p[0]` is `true`. `i32(p[0])` is `1`. `false` is `b0`. `p[0] + 1` is `type mismatch`. `comptime const pair = (40, 2)` names that tuple. `pair[0]` is that element. `comptime const flags = (true, 1)` names that tuple. `flags[0]` stays `bool`. `if (flags[0])` and `flags[0] == true` use that value. `flags[0] + 1` is `type mismatch`. An element may be a `bool`, an `f64`, an `f32`, a struct, a `[]const u8`, an enumerator, a tuple, or a function. A runtime `const` of a tuple is `type mismatch`. A tuple may be an element. `comptime const pair = ((40, 2), 1)` names that tuple. `pair[0]` is `(40, 2)`. `pair[0][1]` is `2`. When the file is `main.tlc`, `take(((40, 2), 1), n)` calls `main.take.spec.t_t_40_2_1`. The parameter is not passed. `p[0][1]` is the immediate `2`. `((true, 2), 1)` is `t_t_b1_2_1`. `p[0][0]` stays `bool`. `p[0][0] + 1` is `type mismatch`. `null` and an element that is not constant are `type mismatch`. A function is that element. `comptime const ops = (add, 1)` names that tuple. The element is a function pointer, the same type as `comptime const op = add`. `(ops[0])(40, 2)` calls `add`. `ops[0](40, 2)` is a generic call of `ops`. `(ops[0][0])(40, 2)` calls a function in a nested tuple. When the file is `main.tlc`, `take((add, 1), n)` calls `main.take.spec.t_fnadd_1`. `take(ops, n)` is that copy. `comptime const op = add` then `(op, 1)` is `t_fnadd_1`. `lone(ops[0], n)` calls `main.lone.spec.fnadd`, the same spelling as `take(add, n)`. `((add, 1), 2)` is `t_t_fnadd_1_2`. The parameter is not passed. The copy calls `main.add`. A `var` of that tuple is `type mismatch`. A parameter that is not `comptime` is `type mismatch`. `null` is `type mismatch`. `var f = add` then `comptime const ops = (f, 1)` is `not supported yet`. A type parameter does not match a tuple inside a tuple. A function nested in another function passes the tuple and does not specialize.
 
 ```c
 func take(p comptime (i32, i32), n i32) i32 {
@@ -226,6 +226,54 @@ retq                             # return
 ```
 
 `n` is stored and increased by `2`. The call passes `n` and does not pass the tuple.
+
+A function element is called through that pointer. `(p[0])(n, 2)` is the call. `p[0](n, 2)` is a generic call of `p`.
+
+```c
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+func take(p comptime (func (i32, i32) i32, i32), n i32) i32 {
+    return (p[0])(n, 2) + p[1];
+}
+
+func main() i32 {
+    var n = 39;
+    return take((add, 1), n);
+}
+```
+
+```asm
+add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+
+take.spec.t_fnadd_1:
+movl %edi, 20(%rsp)              # move
+movl 20(%rsp), %eax              # move
+movl %eax, 8(%rsp)               # move
+# trace frame for the call, then the matching pop
+movl 8(%rsp), %edi               # move
+movl $2, %esi                    # constant
+callq main.add                   # call add
+addl $1, %eax                    # add
+retq                             # return
+
+main:
+movl $39, 20(%rsp)               # constant
+movl 20(%rsp), %eax              # move
+movl %eax, 8(%rsp)               # move
+# trace frame for the call, then the matching pop
+movl 8(%rsp), %edi               # move
+callq main.take.spec.t_fnadd_1   # call take
+retq                             # return
+```
+
+`n` is stored. The copy calls `main.add` with `n` and `2`, then adds `1`. The call passes `n` and does not pass the tuple.
 
 A float is that argument too. `comptime if (v == 0.5)` keeps one arm. When the file is `main.tlc`, `const scale = 0.5` and the literal `0.5` call `main.take.spec.d3fe0000000000000`. The other arm is not emitted.
 

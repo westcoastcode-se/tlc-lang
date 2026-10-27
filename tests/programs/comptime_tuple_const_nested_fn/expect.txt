@@ -1,1 +1,1 @@
-compile-error: not supported yet
+compile-error: type mismatch

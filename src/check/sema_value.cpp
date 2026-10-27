@@ -1928,6 +1928,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             continue;
                         }
                         Type part = check_raw(*element, true);
+                        // A function name is `func`. The element is the pointer, as `comptime const op = add` is.
+                        if (part.kind == TypeKind::Function) {
+                            part = type_pointer(std::move(part));
+                        }
                         if (part.kind == TypeKind::Invalid) {
                             invalid = true;
                         }

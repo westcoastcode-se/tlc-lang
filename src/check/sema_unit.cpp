@@ -714,6 +714,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 }
             } else {
                 type = type_of_var(*var);
+                // `comptime const` is handled above. A runtime tuple does not hold a function.
+                if (tuple_holds_fn(type)) {
+                    error(var->loc, "type mismatch");
+                    type = type_invalid();
+                }
             }
             Symbol symbol;
             symbol.name = var->name;

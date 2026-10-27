@@ -1,0 +1,32 @@
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+comptime const pair = (add, 1);
+comptime const op = add;
+comptime const named = (op, 1);
+comptime const nested = ((add, 1), 2);
+
+func take(p comptime (func (i32, i32) i32, i32), n i32) i32 {
+    return (p[0])(n, 2) + p[1];
+}
+
+func lone(f comptime func (i32, i32) i32, n i32) i32 {
+    return f(n, 2);
+}
+
+func widen(p comptime ((func (i32, i32) i32, i32), i32), n i32) i32 {
+    return (p[0][0])(n, 2) + p[0][1] + p[1];
+}
+
+func main() i32 {
+    comptime const local = (add, 0);
+    var n = 39;
+    if (((pair[0])(40, 1) + pair[1]) != 42 || ((named[0])(40, 1) + named[1]) != 42) {
+        return 0;
+    }
+    if (((local[0])(1, 0) + local[1]) != 1 || widen(nested, 36) != 41) {
+        return 0;
+    }
+    return take((add, 1), n) + lone(pair[0], 0) + take(named, 0) - 5;
+}

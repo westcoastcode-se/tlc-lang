@@ -1293,9 +1293,76 @@ bool CodeGen::file_constant_operand(const Expr &expr) const {
         expr.data);
 }
 
+const Expr *CodeGen::comptime_tuple_element(const Expr &expr) const {
+    const auto *index = std::get_if<Expr::Index>(&expr.data);
+    if (index == nullptr || index->is_range || index->base == nullptr || index->index == nullptr) {
+        return nullptr;
+    }
+    const std::optional<int32_t> at = fold(*index->index);
+    if (!at || *at < 0) {
+        return nullptr;
+    }
+    const auto walk = [&](const auto &self, const Expr &base, int slot, int depth) -> const Expr * {
+        if (depth > 8 || slot < 0) {
+            return nullptr;
+        }
+        if (const auto *init = std::get_if<Expr::Init>(&base.data)) {
+            if (!init->is_tuple || static_cast<std::size_t>(slot) >= init->elements.size()) {
+                return nullptr;
+            }
+            return init->elements[static_cast<std::size_t>(slot)].get();
+        }
+        if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
+            const Expr *init_expr = nullptr;
+            if (const Binding *binding = lookup(named->text)) {
+                init_expr = binding->const_init;
+            }
+            if (init_expr == nullptr) {
+                if (const VarDecl *var = global_decl(named->text); var != nullptr && var->is_comptime) {
+                    init_expr = var->init.get();
+                }
+            }
+            if (init_expr == nullptr) {
+                return nullptr;
+            }
+            return self(self, *init_expr, slot, depth + 1);
+        }
+        if (const auto *inner = std::get_if<Expr::Index>(&base.data)) {
+            if (inner->is_range || inner->base == nullptr || inner->index == nullptr) {
+                return nullptr;
+            }
+            const std::optional<int32_t> at_inner = fold(*inner->index);
+            if (!at_inner || *at_inner < 0) {
+                return nullptr;
+            }
+            const Expr *element = self(self, *inner->base, *at_inner, depth + 1);
+            if (element == nullptr) {
+                return nullptr;
+            }
+            return self(self, *element, slot, depth + 1);
+        }
+        return nullptr;
+    };
+    return walk(walk, *index->base, *at, 0);
+}
+
 bool CodeGen::comptime_constant(const Expr &expr) const {
     std::unordered_set<std::string> seen;
     const auto visit = [&](const auto &self, const Expr &value) -> bool {
+        // `pair[0]` is that element. A function does not fold to an integer.
+        if (const Expr *element = comptime_tuple_element(value)) {
+            if (self(self, *element)) {
+                return true;
+            }
+            std::unordered_set<std::string> text_seen;
+            if (constant_string(*element, text_seen) || enumerator_value(*element)) {
+                return true;
+            }
+            if (std::holds_alternative<Expr::Nullptr>(element->data)) {
+                return false;
+            }
+            return fold(*element).has_value();
+        }
         if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
             if (init->array_literal || (!init->is_tuple && !init->elements.empty())) {
                 return false;
@@ -1402,6 +1469,10 @@ std::unique_ptr<Expr> CodeGen::comptime_substitute(const Expr &expr) const {
     std::unordered_set<std::string> seen;
     const Expr *cursor = &expr;
     while (cursor != nullptr) {
+        if (const Expr *element = comptime_tuple_element(*cursor)) {
+            cursor = element;
+            continue;
+        }
         if (const auto *star = std::get_if<Expr::Unary>(&cursor->data);
             star != nullptr && !star->postfix && star->op == TokenKind::Star && star->expr != nullptr) {
             std::unordered_set<std::string> pointed;

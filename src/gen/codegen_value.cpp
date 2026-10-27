@@ -750,6 +750,82 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
                     }
+                    // The loaded field is a pointer and does not keep the signature. Emit the function.
+                    const auto tuple_element =
+                        [&](const auto &self, const Expr &base, int index, int depth) -> const Expr * {
+                        if (depth > 8 || index < 0) {
+                            return nullptr;
+                        }
+                        if (const auto *init = std::get_if<Expr::Init>(&base.data)) {
+                            if (!init->is_tuple || static_cast<std::size_t>(index) >= init->elements.size()) {
+                                return nullptr;
+                            }
+                            return init->elements[static_cast<std::size_t>(index)].get();
+                        }
+                        if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
+                            const Expr *init_expr = nullptr;
+                            if (const Binding *binding = lookup(named->text)) {
+                                init_expr = binding->const_init;
+                            }
+                            if (init_expr == nullptr) {
+                                if (const VarDecl *var = global_decl(named->text);
+                                    var != nullptr && var->is_comptime) {
+                                    init_expr = var->init.get();
+                                }
+                            }
+                            if (init_expr == nullptr) {
+                                return nullptr;
+                            }
+                            return self(self, *init_expr, index, depth + 1);
+                        }
+                        if (const auto *inner = std::get_if<Expr::Index>(&base.data)) {
+                            if (inner->is_range || inner->base == nullptr || inner->index == nullptr) {
+                                return nullptr;
+                            }
+                            const std::optional<int32_t> at_inner = fold(*inner->index);
+                            if (!at_inner || *at_inner < 0) {
+                                return nullptr;
+                            }
+                            const Expr *found = self(self, *inner->base, *at_inner, depth + 1);
+                            if (found == nullptr) {
+                                return nullptr;
+                            }
+                            return self(self, *found, index, depth + 1);
+                        }
+                        return nullptr;
+                    };
+                    if (const Expr *element = tuple_element(tuple_element, *node.base, node.tuple_index, 0)) {
+                        const Expr *cursor = element;
+                        for (int follow = 0; cursor != nullptr && follow <= 8; ++follow) {
+                            while (const auto *cast = std::get_if<Expr::Cast>(&cursor->data)) {
+                                if (cast->expr == nullptr || cast->indirections != 0) {
+                                    break;
+                                }
+                                cursor = cast->expr.get();
+                            }
+                            if (function_designator(current_file_, *cursor) != nullptr) {
+                                return emit_rvalue(*cursor);
+                            }
+                            const auto *named = std::get_if<Expr::Name>(&cursor->data);
+                            if (named == nullptr) {
+                                break;
+                            }
+                            const Expr *init = nullptr;
+                            if (const Binding *binding = lookup(named->text)) {
+                                init = binding->const_init;
+                            }
+                            if (init == nullptr) {
+                                if (const VarDecl *var = global_decl(named->text);
+                                    var != nullptr && var->is_comptime) {
+                                    init = var->init.get();
+                                }
+                            }
+                            if (init == nullptr || init == cursor) {
+                                break;
+                            }
+                            cursor = init;
+                        }
+                    }
                     const TypedValue base = emit_rvalue(*node.base);
                     if (base.value == nullptr || !base.value->getType()->isStructTy()) {
                         error(node.loc, "type mismatch");

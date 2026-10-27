@@ -1,0 +1,11 @@
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+comptime const pair = (add, 1);
+
+func main() i32 {
+    var live = (add, 1);
+    var other = pair;
+    return live[1] + other[1];
+}

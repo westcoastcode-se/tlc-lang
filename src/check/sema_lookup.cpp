@@ -55,6 +55,18 @@ bool Checker::fn_pointer(const Type &type) const {
     return type.kind == TypeKind::Pointer && type.pointee != nullptr && type.pointee->kind == TypeKind::Function;
 }
 
+bool Checker::tuple_holds_fn(const Type &type) const {
+    if (type.kind != TypeKind::Tuple) {
+        return false;
+    }
+    for (const Type &part : type.results) {
+        if (part.kind == TypeKind::Function || fn_pointer(part) || tuple_holds_fn(part)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void Checker::note_capture(FunctionDecl &fn, const std::string &name, int function_id) {
     if (name.empty()) {
         return;

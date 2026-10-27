@@ -946,7 +946,62 @@ bool Checker::argument_is_comptime(const Expr &arg) {
     return true;
 }
 
+const Expr *Checker::comptime_tuple_element(const Expr &expr) {
+    const auto *index = std::get_if<Expr::Index>(&expr.data);
+    if (index == nullptr || index->is_range || index->base == nullptr || index->index == nullptr) {
+        return nullptr;
+    }
+    const std::optional<int> at = fold_int(*index->index);
+    if (!at || *at < 0) {
+        return nullptr;
+    }
+    const auto walk = [&](const auto &self, const Expr &base, int slot, int depth) -> const Expr * {
+        if (depth > 8 || slot < 0) {
+            return nullptr;
+        }
+        if (const auto *init = std::get_if<Expr::Init>(&base.data)) {
+            if (!init->is_tuple || static_cast<std::size_t>(slot) >= init->elements.size()) {
+                return nullptr;
+            }
+            return init->elements[static_cast<std::size_t>(slot)].get();
+        }
+        if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
+            const Symbol *symbol = lookup(named->text);
+            const Expr *init_expr = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
+            if (init_expr == nullptr) {
+                if (const VarDecl *var = global_var(named->text); var != nullptr && var->is_comptime) {
+                    init_expr = var->init.get();
+                }
+            }
+            if (init_expr == nullptr) {
+                return nullptr;
+            }
+            return self(self, *init_expr, slot, depth + 1);
+        }
+        if (const auto *inner = std::get_if<Expr::Index>(&base.data)) {
+            if (inner->is_range || inner->base == nullptr || inner->index == nullptr) {
+                return nullptr;
+            }
+            const std::optional<int> at_inner = fold_int(*inner->index);
+            if (!at_inner || *at_inner < 0) {
+                return nullptr;
+            }
+            const Expr *element = self(self, *inner->base, *at_inner, depth + 1);
+            if (element == nullptr) {
+                return nullptr;
+            }
+            return self(self, *element, slot, depth + 1);
+        }
+        return nullptr;
+    };
+    return walk(walk, *index->base, *at, 0);
+}
+
 bool Checker::comptime_constant(const Expr &expr) {
+    // `pair[0]` is that element. A function does not fold to an integer.
+    if (const Expr *element = comptime_tuple_element(expr)) {
+        return argument_is_comptime(*element) || fold_switch_case(*element) || comptime_constant(*element);
+    }
     if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
         // An array literal is not this value.
         if (init->array_literal || (!init->is_tuple && !init->elements.empty())) {
@@ -1062,6 +1117,10 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
     std::unordered_set<std::string> seen;
     const Expr *cursor = &expr;
     while (cursor != nullptr) {
+        if (const Expr *element = comptime_tuple_element(*cursor)) {
+            cursor = element;
+            continue;
+        }
         if (const auto *star = std::get_if<Expr::Unary>(&cursor->data);
             star != nullptr && !star->postfix && star->op == TokenKind::Star && star->expr != nullptr) {
             std::unordered_set<std::string> pointed;
@@ -1098,6 +1157,10 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
 std::optional<std::string> Checker::comptime_spec_piece(const Expr &expr) {
     std::unordered_set<std::string> seen;
     const auto piece = [&](const auto &self, const Expr &value) -> std::optional<std::string> {
+        // `pair[0]` spells as that element. `(add, 1)` is `t_fnadd_1`, and `pair[0]` alone is `fnadd`.
+        if (const Expr *element = comptime_tuple_element(value)) {
+            return self(self, *element);
+        }
         // `fold_int` spells `true` as `1`. That collides with the integer, so a bool literal is `b1` or `b0`.
         if (const auto *flag = std::get_if<Expr::Bool>(&value.data)) {
             return flag->value ? std::string("b1") : std::string("b0");
