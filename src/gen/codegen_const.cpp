@@ -1316,6 +1316,42 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
     }
     if (const auto *init = std::get_if<Expr::Init>(&cursor->data)) {
         if (init->is_tuple && init->elements.size() >= 2) {
+            // `comptime const wide = (0.5, 40)`, `(Point{.x = 40, .y = 2}, 1)`, and `("hi", 2)`.
+            // An integer element still uses an empty binding. A bool element stays rejected.
+            const auto element_constant = [&](const auto &self, const Expr &element, int depth) -> llvm::Constant * {
+                if (depth > 8) {
+                    return nullptr;
+                }
+                if (const auto *named = std::get_if<Expr::Name>(&element.data)) {
+                    if (const VarDecl *written = global_decl(named->text);
+                        written != nullptr && written->is_comptime && written->init != nullptr) {
+                        return self(self, *written->init, depth + 1);
+                    }
+                }
+                if (const auto *made = std::get_if<Expr::Init>(&element.data)) {
+                    if (made->is_tuple) {
+                        return nullptr;
+                    }
+                    if (made->struct_id >= 0 && !made->array_literal) {
+                        return const_struct(*made, made->struct_id);
+                    }
+                }
+                std::unordered_set<std::string> text_seen;
+                if (constant_string(element, text_seen)) {
+                    std::unordered_set<std::string> slice_seen;
+                    return constant_slice(element, slice_seen);
+                }
+                std::unordered_set<std::string> number_seen;
+                if (const std::optional<FoldedNumber> number = fold_number(element, number_seen);
+                    number && number->is_float) {
+                    Binding part;
+                    part.elem_float = true;
+                    part.elem_bits = number->wide ? 64 : 32;
+                    return const_initializer(element, part);
+                }
+                Binding part;
+                return const_initializer(element, part);
+            };
             std::vector<llvm::Constant *> fields;
             std::vector<llvm::Type *> types;
             fields.reserve(init->elements.size());
@@ -1324,8 +1360,7 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                 if (element == nullptr) {
                     return nullptr;
                 }
-                Binding part;
-                llvm::Constant *field = const_initializer(*element, part);
+                llvm::Constant *field = element_constant(element_constant, *element, 0);
                 if (field == nullptr) {
                     return nullptr;
                 }

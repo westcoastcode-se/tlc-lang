@@ -1706,9 +1706,24 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                             if (element == nullptr) {
                                 return std::nullopt;
                             }
-                            const auto one = value(*element);
+                            auto one = value(*element);
                             if (!one || one->type == nullptr || one->is_tuple || one->elem_void) {
                                 return std::nullopt;
+                            }
+                            // `"hi"` in a tuple is `[]const u8`, the same header a local tuple stores.
+                            if (std::holds_alternative<Expr::String>(element->data)) {
+                                one->is_slice = true;
+                                one->is_array = false;
+                                one->array_len = -1;
+                                one->depth = 0;
+                                one->struct_id = -1;
+                                one->enum_id = -1;
+                                one->elem_float = false;
+                                one->elem_bool = false;
+                                one->elem_char = true;
+                                one->elem_bits = 8;
+                                one->elem_unsigned = true;
+                                one->type = slice_type();
                             }
                             llvm::Type *stored = stored_type(*one);
                             if (stored == nullptr) {

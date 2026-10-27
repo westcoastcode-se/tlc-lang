@@ -1,0 +1,39 @@
+type Point struct {
+    x i32;
+    y i32;
+}
+
+comptime const bias = 0.5;
+comptime const wide = (bias, 20);
+comptime const narrow = (0.5f, 1);
+comptime const origin = (Point{.x = 40, .y = 2}, 1);
+comptime const label = ("hi", 2);
+
+comptime func take_wide(p (f64, i32)) i32 {
+    return p[1];
+}
+
+comptime func take_narrow(p (f32, i32)) i32 {
+    return p[1];
+}
+
+comptime func field(p (Point, i32)) i32 {
+    return p[0].x + p[0].y + p[1];
+}
+
+func text(p comptime ([]const u8, i32)) i32 {
+    return p[0].len + p[1];
+}
+
+func as_one(value f64) i32 {
+    return i32(value == 0.5);
+}
+
+func as_half(value f32) i32 {
+    return i32(value == 0.5f);
+}
+
+func main() i32 {
+    comptime const local = (0.5, 1);
+    return as_one(wide[0]) + as_half(narrow[0]) + as_one(local[0]) + take_wide(wide) + take_narrow(narrow) + field(origin) + text(label) + origin[0].x + label[0].len + local[1] - 72;
+}
