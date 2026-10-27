@@ -313,7 +313,7 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
-`return pair[0][0] + pair[0][1]` is those same two instructions. A `comptime func` whose body is `return value[0][0] + value[0][1]` folds the same way when the call is `use(pair)`. A `var` array in the comptime const is `not supported yet`. Passing `(row, 0)` to `p comptime ([2]i32, i32)` is `not supported yet`. `var pair = (row, 0)` copies the array. `pair[0][0] = 1` leaves `row[0]` as `40`.
+`return pair[0][0] + pair[0][1]` is those same two instructions. A `comptime func` whose body is `return value[0][0] + value[0][1]` folds the same way when the call is `use(pair)`. A `var` array in the comptime const is `not supported yet`. Passing `(row, 0)` to `p comptime ([2]i32, i32)` is `not supported yet`. `var pair = (row, 0)` copies the array. `pair[0][0] = 1` leaves `row[0]` as `40`. `var nested = ((row, 1), 0)` keeps the array in that copy, so `nested[0][0][0] = 2` leaves `row[0]` as `40`. A second array index folds the same way. When the element is `[_][2]i32{{40, 1}, {2, 3}}`, `pair[0][1][0]` is `2`, and `comptime const n = pair[0][1][0]` folds it. A lone `row[0]` does not.
 
 A float is that argument too. `comptime if (v == 0.5)` keeps one arm. When the file is `main.tlc`, `const scale = 0.5` and the literal `0.5` call `main.take.spec.d3fe0000000000000`. The other arm is not emitted.
 

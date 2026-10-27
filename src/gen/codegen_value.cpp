@@ -858,14 +858,26 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         const Lowered part = lower(current_file_, slot->type_name, slot->type_package, slot->is_struct,
                                                    slot->indirections, slot->is_array, slot->array_len, false,
                                                    slot->elem_slice, slot->shells);
-                        // An array name is the address of the array. A tuple element keeps that address,
-                        // so `value[0][1]` indexes it and a copy loads the elements.
+                        // An array name is the address of the array. The element keeps that address
+                        // when the tuple is stored, including `nested[0][0]`. A temporary is copied.
                         if (part.is_array && !part.is_slice && part.array_len > 0) {
-                            const bool named =
-                                node.base != nullptr && std::holds_alternative<Expr::Name>(node.base->data);
+                            const auto stored_tuple = [&](const Expr *cursor) {
+                                while (cursor != nullptr) {
+                                    if (const auto *name = std::get_if<Expr::Name>(&cursor->data)) {
+                                        const Binding *binding = lookup(name->text);
+                                        return binding != nullptr && binding->is_tuple && binding->value != nullptr;
+                                    }
+                                    const auto *index = std::get_if<Expr::Index>(&cursor->data);
+                                    if (index == nullptr || index->is_range || index->tuple_index < 0) {
+                                        return false;
+                                    }
+                                    cursor = index->base.get();
+                                }
+                                return false;
+                            };
                             llvm::Value *address = nullptr;
                             TypedValue addr;
-                            if (named) {
+                            if (stored_tuple(node.base.get())) {
                                 addr = emit_addr(expr);
                                 if (addr.value == nullptr) {
                                     return {zero(), 0};

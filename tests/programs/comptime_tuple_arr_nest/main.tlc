@@ -1,0 +1,12 @@
+comptime const row = [_]i32{40, 1};
+
+func main() i32 {
+    var nested = ((row, 1), 0);
+    nested[0][0][0] = 2;
+    var p = &nested[0][0][1];
+    *p = 3;
+    if (row[0] != 40 || row[1] != 1) {
+        return 0;
+    }
+    return nested[0][0][0] + nested[0][0][1];
+}

@@ -859,90 +859,62 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (!at || *at < 0) {
                     return std::nullopt;
                 }
-                const auto tuple_element = [&](const auto &self, const Expr &base, int index, int depth) -> const Expr * {
+                // A tuple index selects that element. An array index counts only after one,
+                // so `pair[0][1][0]` folds and a lone `row[0]` still loads.
+                const auto elements_at = [&](const auto &self, const Expr &value, int index, int depth,
+                                             bool array_ok) -> const Expr * {
                     if (depth > 8 || index < 0) {
                         return nullptr;
                     }
-                    if (const auto *init = std::get_if<Expr::Init>(&base.data)) {
-                        if (!init->is_tuple || static_cast<std::size_t>(index) >= init->elements.size()) {
+                    if (const auto *init = std::get_if<Expr::Init>(&value.data)) {
+                        const bool row = array_ok && !init->is_tuple && !init->array_literal && init->fields.empty() &&
+                                         !init->elements.empty();
+                        if (!init->is_tuple && !(array_ok && (init->array_literal || row))) {
+                            return nullptr;
+                        }
+                        if (static_cast<std::size_t>(index) >= init->elements.size()) {
                             return nullptr;
                         }
                         return init->elements[static_cast<std::size_t>(index)].get();
                     }
-                    if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
-                        const Symbol *symbol = lookup(named->text);
-                        const Expr *init_expr = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
-                        if (init_expr == nullptr) {
-                            if (const VarDecl *var = global_var(named->text); var != nullptr && var->is_comptime) {
-                                init_expr = var->init.get();
-                            }
+                    const auto *named = std::get_if<Expr::Name>(&value.data);
+                    if (named == nullptr) {
+                        return nullptr;
+                    }
+                    const Symbol *symbol = lookup(named->text);
+                    const Expr *next = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
+                    if (next == nullptr) {
+                        if (const VarDecl *var = global_var(named->text); var != nullptr && var->is_comptime) {
+                            next = var->init.get();
                         }
-                        if (init_expr == nullptr) {
-                            return nullptr;
-                        }
-                        return self(self, *init_expr, index, depth + 1);
+                    }
+                    if (next == nullptr || next == &value) {
+                        return nullptr;
+                    }
+                    return self(self, *next, index, depth + 1, array_ok);
+                };
+                const auto indexed = [&](const auto &self, const Expr &base, int index, int depth) -> const Expr * {
+                    if (depth > 8 || index < 0) {
+                        return nullptr;
                     }
                     if (const auto *inner = std::get_if<Expr::Index>(&base.data)) {
                         if (inner->is_range || inner->base == nullptr || inner->index == nullptr) {
                             return nullptr;
                         }
-                        const std::optional<int> at_inner = fold_int(*inner->index);
-                        if (!at_inner || *at_inner < 0) {
+                        const std::optional<int> slot = fold_int(*inner->index);
+                        if (!slot || *slot < 0) {
                             return nullptr;
                         }
-                        const Expr *element = self(self, *inner->base, *at_inner, depth + 1);
-                        if (element == nullptr) {
+                        const Expr *inner_value = self(self, *inner->base, *slot, depth + 1);
+                        if (inner_value == nullptr) {
                             return nullptr;
                         }
-                        return self(self, *element, index, depth + 1);
+                        return elements_at(elements_at, *inner_value, index, depth + 1, true);
                     }
-                    return nullptr;
+                    return elements_at(elements_at, base, index, depth, false);
                 };
-                if (const Expr *element = tuple_element(tuple_element, *node.base, *at, 0)) {
+                if (const Expr *element = indexed(indexed, *node.base, *at, 0)) {
                     return fold_int(*element);
-                }
-                // `pair[0][0]` reads that array element. A lone `row[0]` still loads.
-                if (const auto *inner = std::get_if<Expr::Index>(&node.base->data);
-                    inner != nullptr && !inner->is_range && inner->base != nullptr && inner->index != nullptr) {
-                    const std::optional<int> slot = fold_int(*inner->index);
-                    if (slot && *slot >= 0) {
-                        if (const Expr *array = tuple_element(tuple_element, *inner->base, *slot, 0)) {
-                            const auto array_at = [&](const auto &self, const Expr &value, int depth) -> const Expr * {
-                                if (depth > 8) {
-                                    return nullptr;
-                                }
-                                if (const auto *made = std::get_if<Expr::Init>(&value.data)) {
-                                    if (!made->array_literal ||
-                                        static_cast<std::size_t>(*at) >= made->elements.size()) {
-                                        return nullptr;
-                                    }
-                                    return made->elements[static_cast<std::size_t>(*at)].get();
-                                }
-                                const auto *named = std::get_if<Expr::Name>(&value.data);
-                                if (named == nullptr) {
-                                    return nullptr;
-                                }
-                                const Symbol *symbol = lookup(named->text);
-                                if (symbol == nullptr || !symbol->is_constant) {
-                                    return nullptr;
-                                }
-                                const Expr *next = symbol->const_init;
-                                if (next == nullptr) {
-                                    if (const VarDecl *var = global_var(named->text);
-                                        var != nullptr && var->is_comptime) {
-                                        next = var->init.get();
-                                    }
-                                }
-                                if (next == nullptr || next == &value) {
-                                    return nullptr;
-                                }
-                                return self(self, *next, depth + 1);
-                            };
-                            if (const Expr *item = array_at(array_at, *array, 0)) {
-                                return fold_int(*item);
-                            }
-                        }
-                    }
                 }
                 std::unordered_set<std::string> seen;
                 const std::optional<std::string> bytes = constant_string(*node.base, seen);
@@ -1089,7 +1061,10 @@ bool Checker::comptime_constant(const Expr &expr) {
                     return false;
                 }
                 if (const auto *made = std::get_if<Expr::Init>(&start.data)) {
-                    if (!made->array_literal) {
+                    // A nested brace list is a row. Only the outer `[_]T{...}` sets `array_literal`.
+                    const bool row = !made->is_tuple && !made->array_literal && made->fields.empty() &&
+                                     !made->elements.empty();
+                    if (!made->array_literal && !row) {
                         return false;
                     }
                     for (const auto &item : made->elements) {
@@ -1097,7 +1072,9 @@ bool Checker::comptime_constant(const Expr &expr) {
                             return false;
                         }
                         if (const auto *inner = std::get_if<Expr::Init>(&item->data);
-                            inner != nullptr && inner->array_literal) {
+                            inner != nullptr &&
+                            (inner->array_literal ||
+                             (!inner->is_tuple && inner->fields.empty() && !inner->elements.empty()))) {
                             if (!self(self, *item, depth + 1)) {
                                 return false;
                             }

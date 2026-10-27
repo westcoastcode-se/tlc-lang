@@ -1,0 +1,16 @@
+comptime const grid = [_][2]i32{{40, 1}, {2, 3}};
+comptime const pair = (grid, 0);
+comptime const nested = ((grid, 1), 0);
+comptime const n = pair[0][1][0];
+comptime const m = nested[0][0][0][1];
+
+comptime func pick(value ([2][2]i32, i32)) i32 {
+    return value[0][1][0] + value[0][0][1];
+}
+
+func main() i32 {
+    if (n != 2 || m != 1 || pick(pair) != 3) {
+        return 0;
+    }
+    return n + pair[0][0][0];
+}

@@ -1,0 +1,10 @@
+comptime const grid = [_][2]i32{{40, 1}, {2, 3}};
+
+func main() i32 {
+    var nested = ((grid, 1), 0);
+    nested[0][0][1][0] = 7;
+    if (grid[1][0] != 2) {
+        return 0;
+    }
+    return nested[0][0][1][0];
+}

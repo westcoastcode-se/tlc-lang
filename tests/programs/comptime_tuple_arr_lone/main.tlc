@@ -1,0 +1,6 @@
+comptime const row = [_]i32{40, 2};
+comptime const n = row[0];
+
+func main() i32 {
+    return n;
+}
