@@ -2,7 +2,23 @@
 
 [Index](../README.md) · [Previous: Tuples and lists](../expressions/tuple.md) · [Next: for](for.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-A block is a sequence of statements in braces. `if`, `while`, and `for` take a block. In a [macro](../functions/macro.md), `if` keeps the arm whose condition folds. `else` is a block or another `if`. A body without `{` is reported as `expected '{'`. `do` and `switch` take a statement, so their body need not be a block. An empty statement is `;`.
+This page describes a block, and the statements that choose or repeat other statements.
+
+## Blocks
+
+A block is a sequence of statements in braces, and `if`, `while`, and `for` take a block.
+
+In a [macro](../functions/macro.md), `if` keeps the arm whose condition folds.
+
+`else` is a block or another `if`.
+
+The compiler reports a body without `{` as `expected '{'`.
+
+## Statements that are not blocks
+
+`do` and `switch` take a statement, so their body need not be a block.
+
+An empty statement is `;`.
 
 ```c
 func main() i32 {

@@ -2,7 +2,21 @@
 
 [Index](../README.md) · [Previous: switch](switch.md) · [Next: Bindings](binding.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`defer` runs one call when the enclosing block is left. The call can be a function, a method, an inner function, or an anonymous function. Calls in the same block run in reverse order. A `defer` whose statement did not run does not run. `return`, `break`, `continue`, and reaching the end of the block all run the calls of the blocks they leave. A `return` expression is evaluated before those calls. Arguments, and a method receiver, are evaluated at the `defer`.
+This page describes `defer`, which runs one call when the enclosing block is left.
+
+## When the call runs
+
+The call can be a function, a method, an inner function, or an anonymous function.
+
+Calls in the same block run in reverse order.
+
+A `defer` whose statement did not run does not run.
+
+`return`, `break`, `continue`, and reaching the end of the block all run the calls of the blocks they leave.
+
+A `return` expression is evaluated before those calls.
+
+> **Warning:** Arguments, and a method receiver, are evaluated at the `defer`, not when the block is left.
 
 ```c
 func note(n i32) void {
@@ -50,6 +64,16 @@ retq                             # return
 
 `note(1)` runs after the anonymous call.
 
-An anonymous function is an expression, `func (parameters) { body }`. The return type may be omitted, and then it is `void`. A return type is written after the parameters when it is present: `func () i32 { return 1; }`. Several results use the same parenthesized list as a named function: `func () (i32, i32) { return 1, 2; }`. The call is the argument list after the body.
+## Anonymous functions
+
+An anonymous function is an expression, `func (parameters) { body }`.
+
+The return type may be omitted, and then it is `void`.
+
+A return type is written after the parameters when it is present: `func () i32 { return 1; }`.
+
+Several results use the same parenthesized list as a named function: `func () (i32, i32) { return 1, 2; }`.
+
+The call is the argument list after the body.
 
 [Index](../README.md) · [Previous: switch](switch.md) · [Next: Bindings](binding.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

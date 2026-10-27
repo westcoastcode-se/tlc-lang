@@ -2,9 +2,45 @@
 
 [Index](../README.md) · [Previous: Strings](string.md) · [Next: Slices](slice.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`sizeof` produces `i32`. `sizeof(u8)` is 1, `sizeof(i32)` is 4, `sizeof(i64)` is 8, a pointer is 8, and `sizeof([]i32)` is 16. Both `sizeof(i32)` and `sizeof n` are accepted. `sizeof(Point)` and `sizeof(enum Color)` name a declared type. `sizeof(Shape)` names a union. `sizeof(struct Point)`, `sizeof(union Shape)`, and `sizeof(trait Area)` are reported as `expected a type`. `sizeof(Area)` when `Area` is a trait is reported as `undeclared identifier`. `sizeof(add)` when `add` is a function is `not supported yet`. `sizeof(builtin.Type)` is 24. That `i32` may be a compile-time integer type argument: `width[sizeof(Point)]()` is `width[8]()`.
+This page describes `sizeof` and `alignof`, and which type forms each one accepts.
 
-`alignof` produces `i32`, the alignment in bytes. `alignof(i32)` is 4. `alignof(Node)` when `Node` contains a pointer is 8. `alignof(Shape)` names a union. `alignof(union Shape)` and `alignof(trait Area)` are reported as `expected a type`. `alignof(Area)` when `Area` is a trait is reported as `undeclared identifier`. It folds the same way as `sizeof`. Both `alignof(i32)` and `alignof n` are accepted.
+## sizeof
+
+`sizeof` produces `i32`, the size of a type or a value.
+
+`sizeof(u8)` is 1, `sizeof(i32)` is 4, and `sizeof(i64)` is 8.
+
+A pointer is 8, and `sizeof([]i32)` is 16.
+
+Both `sizeof(i32)` and `sizeof n` are accepted.
+
+`sizeof(Point)` and `sizeof(enum Color)` name a declared type, and `sizeof(Shape)` names a union.
+
+The compiler reports `sizeof(struct Point)`, `sizeof(union Shape)`, and `sizeof(trait Area)` as `expected a type`.
+
+The compiler reports `sizeof(Area)` as `undeclared identifier` when `Area` is a trait.
+
+The compiler reports `sizeof(add)` as `not supported yet` when `add` is a function.
+
+`sizeof(builtin.Type)` is 24.
+
+That `i32` may be a compile-time integer type argument, so `width[sizeof(Point)]()` is `width[8]()`.
+
+## alignof
+
+`alignof` produces `i32`, the alignment in bytes.
+
+`alignof(i32)` is 4, and `alignof(Node)` is 8 when `Node` contains a pointer.
+
+`alignof(Shape)` names a union.
+
+The compiler reports `alignof(union Shape)` and `alignof(trait Area)` as `expected a type`.
+
+The compiler reports `alignof(Area)` as `undeclared identifier` when `Area` is a trait.
+
+`alignof` folds the same way as `sizeof`, and both `alignof(i32)` and `alignof n` are accepted.
+
+## A sum of three sizes
 
 ```c
 type Point struct {

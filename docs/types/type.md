@@ -2,15 +2,83 @@
 
 [Index](../README.md) · [Previous: Slices](slice.md) · [Next: Structs](struct.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`builtin.Type` is the type of a tlc type. It is the tagged union `Type` in `lib/tlc/builtin/builtin.tlc`. `TypeKind(value)` reads which arm is active. `Other` is every type that is not a function and not a struct: an integer, a pointer, an array, a slice, an enum, a tuple, a union, and an alias of a primitive. `Function` is a function. `has_this` is true when it has a receiver, including `self *this`. A free function and a static method have `has_this` false. `generic` is true when it has type parameters. `variadic` is true when the parameter list ends with `...`. `Struct` is a struct. `generic` is true when that struct is a specialization. `desc` holds the spelling and the fields. Another package cannot name `desc`. The compiler supplies the bodies of `name` and `fields`. `fields` returns `[]const Field`. `import "builtin"` names the union `builtin.Type`. `import { Type } from "builtin"` names it `Type`. From another package the tag is `builtin.TypeKind(value)` and an enumerator is `builtin.TypeKind.Function`. `typeof(i32)` and `typeof n` produce that type. A bare `Type`, with no such import, is reported as `not supported yet`. `typeof(Point)`, `typeof(*i32)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)`, `typeof(union Shape)`, and `typeof(trait Area)` are reported as `expected a type`. `typeof('A')` is `u8`, and that value is different from `typeof(i8)`. `typeof` does not decay an array. `typeof(T)` when `T` is `[4]i32` is that array. A parameter `[4]i32` is a pointer, so `typeof(value)` is `*i32`. `var t builtin.Type` with no value is reported as `type mismatch`. `typeof(builtin.Type).name()` spells `Type`. `sizeof(builtin.Type)` is 24.
+`builtin.Type` is the type of a tlc type.
 
-`TypeKind(t) == TypeKind.Function && t.Function.has_this == false` reads `has_this` only when the arm is `Function`. `t.Struct.generic` is that struct's flag. `typeof(add)` for `func add(a i32, b i32) i32` has `has_this` false, `generic` false, and `variadic` false. `typeof(Point.get)` for an instance method has `has_this` true and spells `func(Point) i32`. `typeof(Point.ptr)` for `self *this` spells `func(*Point) i32`. `typeof(Point.make)` for a static method has `has_this` false and spells `func(i32) Point`. `typeof(id)` for `func id[T type](value T) T` spells `func[T type](T) T` and `generic` is true. `var f = id` is reported as `not supported yet`. `var f = Point.get` is reported as `type mismatch`. A function pointer is `Other`.
+## The union
 
-`typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*builtin.Type` uses the value `p` points at. `name` is a method of `builtin.Type`. `t.name()` returns `*const u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box.spec.i32`, `func(i32, i32) i32`, `*func(i32, i32) i32`. The bytes are constant. `*text = 0` and `text[0] = 0` are reported as `type mismatch`. `name` takes no arguments. Another argument is reported as `argument count`. Another method is reported as `undeclared identifier`. `t.name` without the call is reported as `undeclared identifier`.
+`builtin.Type` is the tagged union `Type` in `lib/tlc/builtin/builtin.tlc`. `TypeKind(value)` reads which arm is active.
 
-`t.fields()` returns the fields of a named struct, in the order they are written. The result is `[]const Field`. Assigning `fields[i]`, or a field of that element, is `type mismatch`. `fields.len` is how many there are. `fields[i].name` is that field's name as `[]const u8`. The length is the number of bytes in the spelling. It converts to `*const u8` where that pointer is expected. `fields[i].kind` is `*const builtin.Type`. `*fields[i].kind` is that field's type. `fields[i].kind.name()` spells it and `fields[i].kind.fields()` reads a struct field's own fields. Storing through `fields[i].kind` is `type mismatch`. The field is `kind` because `type` is a keyword. An alias of a struct lists that struct's fields. `typeof(Alias)` stays different from `typeof(Point)`. A generic struct lists the fields of that specialization. When `box` is `Box[i32]`, `typeof(box)` has `value` of type `i32`. Any other type has length 0, including `i32`, a pointer, an array, a slice, a function, an alias of a primitive, an anonymous struct, and a union. `fields` takes no arguments. Another argument is reported as `argument count`. `t.fields` without the call is reported as `undeclared identifier`. `p.fields()` on a `*builtin.Type` uses the value `p` points at.
+`Other` is every type that is not a function and not a struct: an integer, a pointer, an array, a slice, an enum, a tuple, a union, and an alias of a primitive.
 
-`==` and `!=` compare two `builtin.Type` values and yield `bool`. The compare uses the spelling and the flags. A method and a free function with the same parameters are not equal, because `has_this` differs. Other operators on `builtin.Type` are reported as `type mismatch`.
+`Function` is a function. `has_this` is true when it has a receiver, including `self *this`. A free function and a static method have `has_this` false.
+
+`generic` is true when it has type parameters. `variadic` is true when the parameter list ends with `...`.
+
+`Struct` is a struct. `generic` is true when that struct is a specialization. `desc` holds the spelling and the fields. Another package cannot name `desc`.
+
+The compiler supplies the bodies of `name` and `fields`. `fields` returns `[]const Field`.
+
+`import "builtin"` names the union `builtin.Type`. `import { Type } from "builtin"` names it `Type`. From another package the tag is `builtin.TypeKind(value)` and an enumerator is `builtin.TypeKind.Function`.
+
+## `typeof`
+
+`typeof(i32)` and `typeof n` produce that type. A bare `Type`, with no such import, is reported as `not supported yet`.
+
+`typeof(Point)`, `typeof(*i32)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)`, `typeof(union Shape)`, and `typeof(trait Area)` are reported as `expected a type`.
+
+`typeof('A')` is `u8`, and that value is different from `typeof(i8)`.
+
+`typeof` does not decay an array. `typeof(T)` when `T` is `[4]i32` is that array. A parameter `[4]i32` is a pointer, so `typeof(value)` is `*i32`.
+
+`var t builtin.Type` with no value is reported as `type mismatch`. `typeof(builtin.Type).name()` spells `Type`. `sizeof(builtin.Type)` is 24.
+
+## Arms
+
+`TypeKind(t) == TypeKind.Function && t.Function.has_this == false` reads `has_this` only when the arm is `Function`. `t.Struct.generic` is that struct's flag.
+
+`typeof(add)` for `func add(a i32, b i32) i32` has `has_this` false, `generic` false, and `variadic` false. `typeof(Point.get)` for an instance method has `has_this` true and spells `func(Point) i32`.
+
+`typeof(Point.ptr)` for `self *this` spells `func(*Point) i32`. `typeof(Point.make)` for a static method has `has_this` false and spells `func(i32) Point`.
+
+`typeof(id)` for `func id[T type](value T) T` spells `func[T type](T) T` and `generic` is true. `var f = id` is reported as `not supported yet`. `var f = Point.get` is reported as `type mismatch`.
+
+A function pointer is `Other`.
+
+## `name`
+
+`typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*builtin.Type` uses the value `p` points at.
+
+`name` is a method of `builtin.Type`. `t.name()` returns `*const u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box.spec.i32`, `func(i32, i32) i32`, `*func(i32, i32) i32`.
+
+The bytes are constant. `*text = 0` and `text[0] = 0` are reported as `type mismatch`.
+
+`name` takes no arguments. Another argument is reported as `argument count`. Another method is reported as `undeclared identifier`. `t.name` without the call is reported as `undeclared identifier`.
+
+## `fields`
+
+`t.fields()` returns the fields of a named struct, in the order they are written. The result is `[]const Field`.
+
+Assigning `fields[i]`, or a field of that element, is `type mismatch`. `fields.len` is how many there are.
+
+`fields[i].name` is that field's name as `[]const u8`. The length is the number of bytes in the spelling. It converts to `*const u8` where that pointer is expected.
+
+`fields[i].kind` is `*const builtin.Type`. `*fields[i].kind` is that field's type. `fields[i].kind.name()` spells it and `fields[i].kind.fields()` reads a struct field's own fields.
+
+Storing through `fields[i].kind` is `type mismatch`. The field is `kind` because `type` is a keyword.
+
+An alias of a struct lists that struct's fields. `typeof(Alias)` stays different from `typeof(Point)`.
+
+A generic struct lists the fields of that specialization. When `box` is `Box[i32]`, `typeof(box)` has `value` of type `i32`.
+
+Any other type has length 0, including `i32`, a pointer, an array, a slice, a function, an alias of a primitive, an anonymous struct, and a union.
+
+`fields` takes no arguments. Another argument is reported as `argument count`. `t.fields` without the call is reported as `undeclared identifier`. `p.fields()` on a `*builtin.Type` uses the value `p` points at.
+
+## Comparison
+
+`==` and `!=` compare two `builtin.Type` values and yield `bool`. The compare uses the spelling and the flags.
+
+A method and a free function with the same parameters are not equal, because `has_this` differs. Other operators on `builtin.Type` are reported as `type mismatch`.
 
 ```c
 import "builtin";

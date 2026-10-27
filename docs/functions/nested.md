@@ -2,7 +2,31 @@
 
 [Index](../README.md) · [Previous: Several results](result.md) · [Next: Generics](generic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-A function may be written inside a block. A body with no `return` is `void`, and so is a body that only writes `return;` or returns a `void` value. Its name is visible from that declaration through the end of the block, including blocks nested inside it. It has a body in that block. The function can call functions already in scope, and it can use globals. It can also read a function pointer from an enclosing function, either a parameter or a local that holds that pointer. The inner function returns that pointer or calls it. The call of the inner function is direct. A method is an enclosing function in the same way. An anonymous function, used from `defer` or called directly, is that same kind of function. `var f = pass`, and passing that inner function as an argument, are reported as `not supported yet`. Several parameter lists on one inner name are chosen by the call, the same way as a file-scope function. A local or a parameter that is not a function pointer is reported as `not supported yet`.
+This page describes a function written inside a block, and which names that function can use.
+
+## Where the function is written
+
+A function may be written inside a block, and it has a body in that block.
+
+Its name is visible from that declaration through the end of the block, including blocks nested inside it.
+
+A body with no `return` is `void`, and so is a body that only writes `return;` or returns a `void` value.
+
+## What the function can use
+
+The function can call functions already in scope, and it can use globals.
+
+It can also read a function pointer from an enclosing function, either a parameter or a local that holds that pointer. The inner function returns that pointer or calls it.
+
+The call of the inner function is direct. A method is an enclosing function in the same way.
+
+An anonymous function, used from `defer` or called directly, is that same kind of function.
+
+> **Warning:** The compiler reports `not supported yet` for `var f = pass`, and for passing that inner function as an argument. It reports `not supported yet` for a local or a parameter that is not a function pointer.
+
+## Several parameter lists
+
+Several parameter lists on one inner name are chosen by the call, the same way as a file-scope function.
 
 ```c
 func main() i32 {
@@ -28,6 +52,8 @@ movl -8(%rsp), %eax              # move
 addl -4(%rsp), %eax              # add
 retq                             # return
 ```
+
+## Returning an enclosing function pointer
 
 ```c
 func add(n i32) i32 {

@@ -2,6 +2,10 @@
 
 [Index](../README.md) · [Previous: void, bool, and floating-point types](float.md) · [Next: Strings](string.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
+This page lists each literal spelling and the type that spelling has.
+
+## Types
+
 | Literal | Type |
 | --- | --- |
 | `42` | `i32` |
@@ -15,11 +19,35 @@
 | `true`, `false` | `bool` |
 | `null` | null pointer, stored only in `?*T` |
 
-An unsuffixed number greater than `2147483647` is reported as `type mismatch`. It does not become `i64`. A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`. `1u` and `1l` are reported as `invalid integer suffix`. A value that does not fit in the suffix is reported as `type mismatch`.
+## Integer suffixes
 
-A character literal has type `u8`. `'A'` is 65 and `'\n'` is 10. A value above 255 is reported as `type mismatch`. The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
+> **Warning:** The compiler reports an unsuffixed number greater than `2147483647` as `type mismatch`. It does not become `i64`.
 
-An integer literal is decimal, `0x` hex, `0b` binary, or `0` octal. A `'` between digits is a separator. `0x1p+4` is a hexadecimal floating literal. It is `f64`, and it needs a binary exponent. A suffix `f` makes a floating literal `f32`.
+A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`.
+
+The compiler reports `1u` and `1l` as `invalid integer suffix`.
+
+The compiler reports a value that does not fit in the suffix as `type mismatch`.
+
+## Character literals
+
+A character literal has type `u8`, so `'A'` is 65 and `'\n'` is 10.
+
+The compiler reports a value above 255 as `type mismatch`.
+
+The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
+
+## Bases and floating literals
+
+An integer literal is decimal, `0x` hex, `0b` binary, or `0` octal.
+
+A `'` between digits is a separator and does not change the value.
+
+`0x1p+4` is a hexadecimal floating literal of type `f64`, and it needs a binary exponent.
+
+A suffix `f` makes a floating literal `f32` rather than `f64`.
+
+## A mix of literal forms
 
 ```c
 func main() i32 {

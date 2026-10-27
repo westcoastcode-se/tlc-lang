@@ -1,0 +1,20 @@
+{
+  "skill": "lang-docs",
+  "test_cases": [
+    {
+      "name": "tutorial_request",
+      "input": "Write a getting started tutorial for my language called Nimbus that has simple syntax for functions and lists.",
+      "assertions": ["Produces a tutorial following Diátaxis", "Includes complete code examples with expected output", "Asks for more details if needed"]
+    },
+    {
+      "name": "reference_request",
+      "input": "Document the type system for my programming language.",
+      "assertions": ["Generates a reference-style document", "Does not invent syntax", "Includes examples"]
+    },
+    {
+      "name": "full_docs",
+      "input": "Help me outline and write the documentation for the programming language I'm developing.",
+      "assertions": ["Suggests Diátaxis structure", "Provides templates or outline", "Emphasizes examples"]
+    }
+  ]
+}

@@ -2,7 +2,9 @@
 
 [Index](../README.md) · [Next: Debug information](debug.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`tlc` compiles one entry file. The file's `main` is the program's `main`.
+`tlc` compiles one entry file.
+
+The file's `main` is the program's `main`.
 
 ```text
 tlc [options] <entry.tlc>
@@ -11,7 +13,7 @@ tlc --version
 tlc --help
 ```
 
-## Options
+## Flags
 
 | Option | Meaning |
 | --- | --- |

@@ -2,13 +2,81 @@
 
 [Index](../README.md) · [Previous: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`import "std/atomic"` loads `lib/tlc/std/atomic`. The package is ordinary tlc. A method calls [`builtin.atomic_load`](../builtin/atomic.md), `builtin.atomic_store`, `builtin.atomic_rmw`, or `builtin.atomic_cmpxchg`. The compiler replaces that call with one atomic instruction. The method call still records a trace frame.
+This page describes the atomic integers, `Bool`, and `Ptr[T]` in `std/atomic`.
 
-`Int8`, `Int16`, `Int32`, `Int64`, `Uint8`, `Uint16`, `Uint32`, and `Uint64` each hold one integer. `Bool` holds a `u8` that is `0` or `1`. `Ptr[T]` holds a `*T`. The integer field and the `Bool` field are not exported. A file-scope variable starts at `0`. A local integer starts uninitialized until a store. `Ptr[T].value` is exported, because a pointer field cannot be left out: `atomic.Ptr[i32]{.value = &slot}`. `var p atomic.Ptr[i32]` is `type mismatch`.
+## What a method calls
 
-`load` and `store` use `seq_cst`. `swap`, `add`, `sub`, `and`, `or`, and `xor` do too. Each of those returns the previous value. `load_order` and `store_order`, and the `_order` forms of the updates, take `order comptime Order`. The argument is an enumerator, such as `atomic.Order.acquire`. A `var` of that enum is `type mismatch`. An `i32`, including `0`, is `type mismatch: expected Order, found i32`. `cmpxchg(expected, desired)` is a strong compare-exchange. The success order is `seq_cst` and the failure order is `relaxed`. The results are the previous value and whether the store happened. `Bool` and `Ptr[T]` have `load`, `store`, `swap`, and `cmpxchg`. They do not have `add`.
+`import "std/atomic"` loads `lib/tlc/std/atomic`.
 
-`Order` is `relaxed`, `acquire`, `release`, `acq_rel`, and `seq_cst`. There is no `consume`. `Op` is `xchg`, `add`, `sub`, `and`, `or`, and `xor`. An update passes that enumerator as `op comptime Op`. The call is `n.load_order(atomic.Order.acquire)` or `n.add_order(1, atomic.Order.relaxed)`. `n.add_order(1, order)` when `order` is a `var` is `type mismatch`. An order the operation does not allow panics with `type mismatch`. A direct builtin call still takes the integer and reports a bad order while compiling. A normal store of an `i32` is not atomic.
+The package is ordinary tlc.
+
+A method calls [`builtin.atomic_load`](../builtin/atomic.md), `builtin.atomic_store`, `builtin.atomic_rmw`, or `builtin.atomic_cmpxchg`.
+
+The compiler replaces that call with one atomic instruction.
+
+The method call still records a trace frame.
+
+## The stored value
+
+`Int8`, `Int16`, `Int32`, `Int64`, `Uint8`, `Uint16`, `Uint32`, and `Uint64` each hold one integer.
+
+`Bool` holds a `u8` that is `0` or `1`.
+
+`Ptr[T]` holds a `*T`.
+
+The integer field and the `Bool` field are not exported.
+
+A file-scope variable starts at `0`.
+
+A local integer starts uninitialized until a store.
+
+`Ptr[T].value` is exported, because a pointer field cannot be left out: `atomic.Ptr[i32]{.value = &slot}`.
+
+`var p atomic.Ptr[i32]` is `type mismatch`.
+
+## Orders and updates
+
+`load` and `store` use `seq_cst`.
+
+`swap`, `add`, `sub`, `and`, `or`, and `xor` do too.
+
+Each of those returns the previous value.
+
+`load_order` and `store_order`, and the `_order` forms of the updates, take `order comptime Order`.
+
+The argument is an enumerator, such as `atomic.Order.acquire`.
+
+A `var` of that enum is `type mismatch`.
+
+An `i32`, including `0`, is `type mismatch: expected Order, found i32`.
+
+`cmpxchg(expected, desired)` is a strong compare-exchange.
+
+The success order is `seq_cst` and the failure order is `relaxed`.
+
+The results are the previous value and whether the store happened.
+
+`Bool` and `Ptr[T]` have `load`, `store`, `swap`, and `cmpxchg`.
+
+They do not have `add`.
+
+`Order` is `relaxed`, `acquire`, `release`, `acq_rel`, and `seq_cst`.
+
+There is no `consume`.
+
+`Op` is `xchg`, `add`, `sub`, `and`, `or`, and `xor`.
+
+An update passes that enumerator as `op comptime Op`.
+
+The call is `n.load_order(atomic.Order.acquire)` or `n.add_order(1, atomic.Order.relaxed)`.
+
+`n.add_order(1, order)` when `order` is a `var` is `type mismatch`.
+
+An order the operation does not allow panics with `type mismatch`.
+
+A direct builtin call still takes the integer and reports a bad order while compiling.
+
+A normal store of an `i32` is not atomic.
 
 ```c
 import "std/atomic";
@@ -55,6 +123,28 @@ lock xaddl %eax, (%rcx)          # seq_cst add, previous value
 retq
 ```
 
-The program returns 42. `add` returns the value `n` held before the add. On this machine a `seq_cst` store is `xchgl` and a `seq_cst` add is `lock xaddl`. `atomic.Int32.load` is `movl (%rax), %eax` once the pointer is in `%rax`. An acquire `load_order` is that same `movl` in `atomic.load_at.spec.i32.spec.1`, called from `atomic.Int32.load_order.spec.1` with the pointer. A release `store_order` is `movl %ecx, (%rax)` in `atomic.store_at.spec.i32.spec.2`, called from `atomic.Int32.store_order.spec.2` with the pointer and the value. A relaxed `add_order` is `lock xaddl` in `atomic.rmw_at.spec.i32.spec.1.0`, called from `atomic.Int32.add_order.spec.0` with the pointer and the value. The helpers write `comptime if`, so the other orders are not in that copy. Those comptime parameters are not arguments of the copies. A direct builtin call is the instruction itself, with no trace frame. That listing is on [atomic builtins](../builtin/atomic.md).
+## What the listing shows
+
+The program returns 42.
+
+`add` returns the value `n` held before the add.
+
+On this machine a `seq_cst` store is `xchgl` and a `seq_cst` add is `lock xaddl`.
+
+`atomic.Int32.load` is `movl (%rax), %eax` once the pointer is in `%rax`.
+
+An acquire `load_order` is that same `movl` in `atomic.load_at.spec.i32.spec.1`, called from `atomic.Int32.load_order.spec.1` with the pointer.
+
+A release `store_order` is `movl %ecx, (%rax)` in `atomic.store_at.spec.i32.spec.2`, called from `atomic.Int32.store_order.spec.2` with the pointer and the value.
+
+A relaxed `add_order` is `lock xaddl` in `atomic.rmw_at.spec.i32.spec.1.0`, called from `atomic.Int32.add_order.spec.0` with the pointer and the value.
+
+The helpers write `comptime if`, so the other orders are not in that copy.
+
+Those comptime parameters are not arguments of the copies.
+
+A direct builtin call is the instruction itself, with no trace frame.
+
+That listing is on [atomic builtins](../builtin/atomic.md).
 
 [Index](../README.md) · [Previous: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

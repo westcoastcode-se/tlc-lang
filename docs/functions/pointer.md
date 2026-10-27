@@ -2,7 +2,19 @@
 
 [Index](../README.md) · [Previous: Tests](test.md) · [Next: Methods](../methods/method.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types. A function name used as a value is a pointer to that function. A generic name is not: `var f = id` names the generic, and the call is `f(1)` or `f[i32](1)`. See [Generics](generic.md). The type can be inferred: `var ptr = add` is that pointer, and `ptr(1, 2)` calls it. A static function is the same kind of value, `var ptr = Point.make` and `take(Point.make)`. On a generic struct it is `var ptr = Box[i32].from`. Another package uses `var ptr = pkg.Point.make`. An instance method used as a value is reported as `type mismatch`.
+This page describes a function pointer's type, a returned pointer, a cast, and an anonymous function.
+
+## The pointer type
+
+A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types.
+
+A function name used as a value is a pointer to that function. A generic name is not a function pointer. `var f = id` names the generic, and the call is `f(1)` or `f[i32](1)`. See [Generics](generic.md).
+
+The type can be inferred. `var ptr = add` is that pointer, and `ptr(1, 2)` calls it.
+
+A static function is the same kind of value, as in `var ptr = Point.make` and `take(Point.make)`. On a generic struct it is `var ptr = Box[i32].from`. Another package uses `var ptr = pkg.Point.make`.
+
+The compiler reports `type mismatch` when an instance method is used as a value.
 
 ```c
 func add(a i32, b i32) i32 {
@@ -23,7 +35,15 @@ callq *%rax                      # call *%rax
 retq                             # return
 ```
 
-A function returns a function pointer the same way it returns any other value. The result may be omitted: `plain` is that same pointer. `var fp = pick()` infers that pointer, and `fp(20, 10)` calls it. `pick()(20, 10)` calls it without naming the pointer. A method returns one the same way: `box.choose()` and `Box.static_choose()` are pointers, and calling the pointer passes the arguments. The returned value may be an anonymous function. The full form writes the parameter types and the result. The short form writes the parameter names, and their types and the result come from the function pointer being returned.
+## Returning a function pointer
+
+A function returns a function pointer the same way it returns any other value. The result may be omitted, and `plain` is that same pointer.
+
+`var fp = pick()` infers that pointer, and `fp(20, 10)` calls it. `pick()(20, 10)` calls it without naming the pointer.
+
+A method returns one the same way. `box.choose()` and `Box.static_choose()` are pointers, and calling the pointer passes the arguments.
+
+The returned value may be an anonymous function. The full form writes the parameter types and the result. The short form writes the parameter names, and their types and the result come from the function pointer being returned.
 
 ```c
 func add(a i32, b i32) i32 {
@@ -64,6 +84,8 @@ retq                             # return
 
 The program returns 42.
 
+## A parameter of `[]const u8`
+
 A parameter of that pointer may be `[]const u8`. Omitting the result and writing `func ([]const u8) i32` are the same type. `pick()("hi")` calls the pointer with a string.
 
 ```c
@@ -103,7 +125,11 @@ retq                             # return
 
 The program returns 4.
 
-A function pointer's result may itself be a function pointer. Omitting the result and writing `func (i32) func (i32) i32` are the same type. `outer()(1)` is the pointer `id` returns, and `outer()(1)(40)` calls that pointer. The same form with no arguments is `func () func (i32) i32`. A method returns one the same way.
+## A pointer whose result is a pointer
+
+A function pointer's result may itself be a function pointer. Omitting the result and writing `func (i32) func (i32) i32` are the same type.
+
+`outer()(1)` is the pointer `id` returns, and `outer()(1)(40)` calls that pointer. The same form with no arguments is `func () func (i32) i32`. A method returns one the same way.
 
 ```c
 func add(n i32) i32 {
@@ -149,6 +175,8 @@ retq                             # return
 
 The program returns 43.
 
+## An anonymous function as the returned value
+
 ```c
 func make() func (i32) i32 {
     return (n) { return n + 1; };
@@ -188,7 +216,17 @@ retq                             # return
 
 The program returns 42.
 
-A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, `var op func () ((i32, i32)) = pair`, inside a struct, `op func (i32, i32) i32`, and `type BinOp func (i32, i32) i32;`. `BinOp` is a distinct type. `BinOp(add)` confirms that the function pointer is a `BinOp`. A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type does too. An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
+## A variable, a field, or an alias
+
+A variable, a field, or a type alias names the value, then the type: `var fp func (i32, i32) i32 = add`, `var fp func (i32) (i32, i32) = pair`, and `var op func () ((i32, i32)) = pair`.
+
+Inside a struct, the field is written `op func (i32, i32) i32`. `type BinOp func (i32, i32) i32;` names an alias.
+
+`BinOp` is a distinct type. `BinOp(add)` confirms that the function pointer is a `BinOp`.
+
+A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type needs an initializer too.
+
+An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
 ```c
 func add(a i32, b i32) i32 {
@@ -269,7 +307,9 @@ addl $1, %eax                    # add
 retq                             # return
 ```
 
-`func () ((i32, i32))` is one tuple result. `return (40, 2)` matches that tuple. `return 40, 2` does not. `func () (i32, i32)` is still two results. `func () ((i32, i32), i32)` is that tuple beside another result. `return (40, 2), 0` matches it. `return 40, 2, 0` is `return type: expected 2 results, found 3`. `func ((i32, i32)) i32` is one tuple parameter. `var op func ((i32, i32)) i32 = take` stores `take` when `take` takes `(i32, i32)`, and `op((40, 2))` calls it. `op(40, 2)` is `argument count`. `func (i32, i32) i32` is still two parameters. A function of two `i32` parameters does not match, and that assignment is `type mismatch`. `op(Duo((40, 2)))` is `type mismatch`, because `type Duo (i32, i32)` is a different type. `func ((i32, i32), i32) i32` is that tuple beside another parameter. `var op func ((i32, i32), i32) i32 = take` stores `take` when `take` takes `(i32, i32)` and an `i32`, and `op((40, 1), 1)` calls it. `func (i32, (i32, i32)) i32` is that tuple as another parameter. `op((40, 1))` is `argument count`. `op(40, 2)` is `type mismatch`. A function of three `i32` parameters does not match, and that assignment is `type mismatch`. `op(Duo((40, 1)), 1)` is `type mismatch`, because `type Duo (i32, i32)` is a different type. An array inside the tuple stays an array. `func () (([2]i32, i32))` matches a function that returns `([2]i32, i32)`. `func (([2]i32, i32)) i32` matches a function that takes it. `var row, n = op()` on `func () ([2]i32, i32)` keeps the array, and `row[1]` reads an element.
+## A tuple parameter
+
+`func ((i32, i32)) i32` is one tuple parameter. `var op func ((i32, i32)) i32 = take` stores `take` when `take` takes `(i32, i32)`, and `op((40, 2))` calls it. `op(40, 2)` is `argument count`.
 
 ```c
 func take(value (i32, i32)) i32 {
@@ -300,6 +340,10 @@ retq                             # return
 ```
 
 The program returns 42.
+
+`func (i32, i32) i32` is still two parameters. A function of two `i32` parameters does not match, and that assignment is `type mismatch`. `op(Duo((40, 2)))` is `type mismatch`, because `type Duo (i32, i32)` is a different type.
+
+`func ((i32, i32), i32) i32` is that tuple beside another parameter. `var op func ((i32, i32), i32) i32 = take` stores `take` when `take` takes `(i32, i32)` and an `i32`, and `op((40, 1), 1)` calls it.
 
 ```c
 func take(value (i32, i32), n i32) i32 {
@@ -334,6 +378,18 @@ retq                             # return
 
 The program returns 42.
 
+`func (i32, (i32, i32)) i32` is that tuple as another parameter. `op((40, 1))` is `argument count`, and `op(40, 2)` is `type mismatch`.
+
+A function of three `i32` parameters does not match, and that assignment is `type mismatch`. `op(Duo((40, 1)), 1)` is `type mismatch`, because `type Duo (i32, i32)` is a different type.
+
+An array inside the tuple stays an array. `func () (([2]i32, i32))` matches a function that returns `([2]i32, i32)`. `func (([2]i32, i32)) i32` matches a function that takes it.
+
+`var row, n = op()` on `func () ([2]i32, i32)` keeps the array, and `row[1]` reads an element.
+
+## One tuple as the result
+
+`func () ((i32, i32))` is one tuple result. `return (40, 2)` matches that tuple, and `return 40, 2` does not. `func () (i32, i32)` is still two results.
+
 ```c
 func pair() ((i32, i32)) {
     return (40, 2);
@@ -354,6 +410,10 @@ retq                             # return
 ```
 
 The program returns 42.
+
+## A tuple beside another result
+
+`func () ((i32, i32), i32)` is that tuple beside another result. `return (40, 2), 0` matches it, and `return 40, 2, 0` is `return type: expected 2 results, found 3`.
 
 ```c
 func pair() ((i32, i32), i32) {
@@ -377,7 +437,13 @@ retq                             # return
 
 The program returns 42.
 
-A cast converts a data pointer, or a function pointer with another signature, into a function pointer you can call. `func (i32) i32(raw)` writes the type in the cast. `Op(raw)` does the same when `Op` is an alias of that function pointer. `Op(raw)(1)` calls it. A loader such as `SDL_GL_GetProcAddress` returns one generic pointer. The cast gives that address the signature of the entry point.
+## A cast to a function pointer
+
+A cast converts a data pointer, or a function pointer with another signature, into a function pointer you can call.
+
+`func (i32) i32(raw)` writes the type in the cast. `Op(raw)` does the same when `Op` is an alias of that function pointer, and `Op(raw)(1)` calls it.
+
+A loader such as `SDL_GL_GetProcAddress` returns one generic pointer. The cast gives that address the signature of the entry point.
 
 ```c
 func add(n i32) i32 {
@@ -421,7 +487,9 @@ retq                             # return
 
 The program returns 42.
 
-A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result:
+## An anonymous function as an argument
+
+A function or a method that takes a function pointer accepts an anonymous function as that argument. The full form writes the parameter types and the result.
 
 ```c
 func dosomething(op func (i32, i32) i32) i32 {
@@ -449,7 +517,7 @@ addl -4(%rsp), %eax              # add
 retq                             # return
 ```
 
-The short form writes only the parameter names. Their types, and the result type, come from the function pointer:
+The short form writes only the parameter names. Their types, and the result type, come from the function pointer.
 
 ```c
 func dosomething(op func (i32, i32) i32) i32 {
@@ -477,6 +545,16 @@ addl -4(%rsp), %eax              # add
 retq                             # return
 ```
 
-`() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer, including an assignment, the initializer of a typed variable, and a `return` whose result is that function pointer. A call argument whose type is a trait with one method accepts it too. The parameters and the result match that method. A named function with those parameters and that result is accepted as that argument. `pkg.name` is that function when it is exported, and `Type.name` when it is static. A prototype, an overloaded name, `var f = name`, and an `unsafe func` stay rejected there. Used anywhere else, it is reported as `type mismatch`. A short form whose parameter count does not match is reported as `type mismatch`. A short form that reads a local or a parameter from the enclosing function is reported as `not supported yet`, including a function pointer. A full anonymous function that is called directly can read a function pointer from that function, as an inner function can.
+## Where the short form is allowed
+
+`() { return 1; }` is the short form with no parameters. The short form is also accepted where a value is checked against a known function pointer. That includes an assignment, the initializer of a typed variable, and a `return` whose result is that function pointer.
+
+A call argument whose type is a trait with one method accepts it too. The parameters and the result match that method.
+
+A named function with those parameters and that result is accepted as that argument. `pkg.name` is that function when it is exported, and `Type.name` when it is static.
+
+A prototype, an overloaded name, `var f = name`, and an `unsafe func` stay rejected there. Used anywhere else, the compiler reports `type mismatch`. The compiler reports `type mismatch` when a short form's parameter count does not match.
+
+> **Warning:** A short form that reads a local or a parameter from the enclosing function is reported as `not supported yet`, including a function pointer. A full anonymous function that is called directly can read a function pointer from that function, as an inner function can.
 
 [Index](../README.md) · [Previous: Tests](test.md) · [Next: Methods](../methods/method.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

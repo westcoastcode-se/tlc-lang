@@ -2,13 +2,65 @@
 
 [Index](README.md) · [Grammar](grammar.md)
 
-The assembly of a TLC example comes immediately after that example. The listing shows what the example runs. It is not a section at the end of the page, and it is not a count of every form on the page.
+This page states how an assembly listing in the reference is taken.
 
-Take the instructions from the object file `tlc --emit-obj` writes for `x86_64-pc-linux-gnu` with no `-O` flag. With no `-O` flag, `tlc` removes a store that is overwritten before it is read, or that is never read. It does not run the other LLVM optimizations. `-O0` keeps that store. `-O`, `-O1`, `-O2`, and `-O3` run LLVM's optimization pipeline, and a listing on a feature page does not apply to those builds.
+## Where the listing sits
 
-Write AT&T syntax, one instruction a line. Drop addresses, raw bytes, and alignment `nop`. Leave out a path the example does not take. Write a source immediate in decimal. A comment on the line names the source step. A label in the listing names a branch from the object file. It is not a symbol the compiler emits.
+The assembly of a TLC example comes immediately after that example.
 
-A parameter is stored on entry: `movl` for an `i32`, `movq` for a pointer, `movss` or `movsd` for a float. A local with no initializer is uninitialized. Reading it is reported as `uninitialized`. There is no store for that local, and `-O0` does not add one. A file-scope variable with no initializer is zero. A struct field uses the value written on the field when it has one. With no `-O` flag, that store is removed when the value is not read.
+The listing shows what the example runs.
+
+It is not a section at the end of the page.
+
+It is not a count of every form on the page.
+
+## Which build the listing comes from
+
+Take the instructions from the object file `tlc --emit-obj` writes for `x86_64-pc-linux-gnu` with no `-O` flag.
+
+With no `-O` flag, `tlc` removes a store that is overwritten before it is read, or that is never read.
+
+It does not run the other LLVM optimizations.
+
+`-O0` keeps that store.
+
+`-O`, `-O1`, `-O2`, and `-O3` run LLVM's optimization pipeline.
+
+A listing on a feature page does not apply to those builds.
+
+## What to write and what to drop
+
+Write AT&T syntax, one instruction a line.
+
+Drop addresses, raw bytes, and alignment `nop`.
+
+Leave out a path the example does not take.
+
+Write a source immediate in decimal.
+
+A comment on the line names the source step.
+
+A label in the listing names a branch from the object file.
+
+It is not a symbol the compiler emits.
+
+## Parameters, locals, and fields
+
+A parameter is stored on entry: `movl` for an `i32`, `movq` for a pointer, `movss` or `movsd` for a float.
+
+A local with no initializer is uninitialized.
+
+Reading it is reported as `uninitialized`.
+
+There is no store for that local, and `-O0` does not add one.
+
+A file-scope variable with no initializer is zero.
+
+A struct field uses the value written on the field when it has one.
+
+With no `-O` flag, that store is removed when the value is not read.
+
+## A folded return
 
 `return 40 + 2` is folded while compiling:
 
@@ -19,9 +71,33 @@ retq
 
 ## A call
 
-A call records a trace frame, then calls. The frame is 24 bytes: a file, a line, a column, and the name of the callee. At most 32 frames are stored. The frame count, the 32 frames, and the text buffer are thread-local, so one thread does not see another's frames. `builtin.trace` and `builtin.va` do not push a frame. A `defer` runs its call later without a frame. A function with a trait parameter is specialized, and the call of that specialized function does not push a frame. Calls inside the specialized body still push frames. `malloc` and `free`, used by `new` and `delete`, do not push a frame.
+A call records a trace frame, then calls.
 
-On the path where fewer than 32 frames are already stored, this program is the listing below. The line and the column are the call. At 32 frames the push and the pop are skipped. The names `frame_count`, `trace`, `file`, `name`, and the branch labels stand in for the thread-local offsets and the string addresses in the object file. `frame_count` and `trace` are read and written through `%fs`.
+The frame is 24 bytes: a file, a line, a column, and the name of the callee.
+
+At most 32 frames are stored.
+
+The frame count, the 32 frames, and the text buffer are thread-local, so one thread does not see another's frames.
+
+`builtin.trace` and `builtin.va` do not push a frame.
+
+A `defer` runs its call later without a frame.
+
+A function with a trait parameter is specialized, and the call of that specialized function does not push a frame.
+
+Calls inside the specialized body still push frames.
+
+`malloc` and `free`, used by `new` and `delete`, do not push a frame.
+
+On the path where fewer than 32 frames are already stored, this program is the listing below.
+
+The line and the column are the call.
+
+At 32 frames the push and the pop are skipped.
+
+The names `frame_count`, `trace`, `file`, `name`, and the branch labels stand in for the thread-local offsets and the string addresses in the object file.
+
+`frame_count` and `trace` are read and written through `%fs`.
 
 ```c
 func noop() i32 {
@@ -75,6 +151,8 @@ movl  $1, %eax                        # return 1
 retq
 ```
 
-Another feature page keeps `callq` and the instructions that are that feature. It replaces the push and the pop with one comment that points here.
+Another feature page keeps `callq` and the instructions that are that feature.
+
+It replaces the push and the pop with one comment that points here.
 
 [Index](README.md) · [Grammar](grammar.md)

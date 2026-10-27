@@ -2,11 +2,37 @@
 
 [Index](../README.md) · [Previous: for](for.md) · [Next: defer](defer.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`switch` falls through until `break`. The value promotes to `i32`, so `i8` and `i16` match. `bool`, `u32`, `i64`, and `f32` are reported as `type mismatch: expected i32`. A `case` label is a constant `i32`. `case 1u32` is reported as `type mismatch`. Each value appears once, and `default` appears once.
+This page describes `switch`, which selects statements from an `i32` or an enum value.
 
-A TLC enum switches as that enum. `case Color.Blue` matches a `Color`. `case 1` is `type mismatch`. The enum does not convert to `i32`. A `case` that is not a constant is `not supported yet`. Two labels with the same representation are `redefinition`.
+## Fallthrough
 
-An `extern(abi="c")` enum switches as `i32`. `case Flag.On` and `case 1` are that integer. A TLC enumerator in that `switch` is `type mismatch`. An enum is still not a condition. `if (value)` is `type mismatch: expected bool, found Color`.
+> **Warning:** `switch` falls through until `break`.
+
+The value promotes to `i32`, so `i8` and `i16` match.
+
+The compiler reports `bool`, `u32`, `i64`, and `f32` as `type mismatch: expected i32`.
+
+A `case` label is a constant `i32`, and `case 1u32` is `type mismatch`.
+
+Each value appears once, and `default` appears once.
+
+## A TLC enum
+
+A TLC enum switches as that enum, so `case Color.Blue` matches a `Color`.
+
+`case 1` is `type mismatch`, and the enum does not convert to `i32`.
+
+A `case` that is not a constant is `not supported yet`.
+
+Two labels with the same representation are `redefinition`.
+
+## A C enum
+
+An `extern(abi="c")` enum switches as `i32`, so `case Flag.On` and `case 1` are that integer.
+
+A TLC enumerator in that `switch` is `type mismatch`.
+
+An enum is still not a condition, so `if (value)` is `type mismatch: expected bool, found Color`.
 
 ```c
 func main() i32 {
@@ -55,9 +81,29 @@ movl $7, -4(%rsp)                # constant
 jmp .L5                          # jump
 ```
 
-The program returns 42. `break` leaves the innermost loop or `switch`. `continue` is valid inside loops.
+The program returns 42.
 
-An ordinary `switch` runs at run time, even when the value is a file-scope `const`, a literal, or an enumerator. `comptime switch` keeps the matching case and the statements after it, through `break`, when the value folds. The other cases are not typechecked and not emitted. A value that is not comptime is `not supported yet`. A `comptime` parameter is comptime. The copy that still receives it typechecks every case. A `var` and a local `const` do not fold. `comptime switch` in a `macro` is `not supported yet`.
+`break` leaves the innermost loop or `switch`, and `continue` is valid inside loops.
+
+## A switch that runs at run time
+
+An ordinary `switch` runs at run time, even when the value is a file-scope `const`, a literal, or an enumerator.
+
+## `comptime switch`
+
+`comptime switch` keeps the matching case and the statements after it, through `break`, when the value folds.
+
+> **Warning:** The other cases are not typechecked and not emitted.
+
+A value that is not comptime is `not supported yet`.
+
+A `comptime` parameter is comptime.
+
+The copy that still receives it typechecks every case.
+
+A `var` and a local `const` do not fold.
+
+`comptime switch` in a `macro` is `not supported yet`.
 
 ```c
 const n = 1;
@@ -88,7 +134,9 @@ movl -4(%rsp), %eax              # move
 retq                             # return
 ```
 
-The program returns 42. `default` is not in the function.
+The program returns 42.
+
+`default` is not in the function.
 
 ```c
 type Color enum {
@@ -133,7 +181,13 @@ xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
 
-`code(Color.Blue)` returns 4. `case 41` on that `switch` is `type mismatch`. `comptime switch (Color.Blue)` that returns 42 from that case is two instructions. There is no compare.
+`code(Color.Blue)` returns 4.
+
+`case 41` on that `switch` is `type mismatch`.
+
+`comptime switch (Color.Blue)` that returns 42 from that case is two instructions.
+
+There is no compare.
 
 ```asm
 main:

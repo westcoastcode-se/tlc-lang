@@ -2,7 +2,19 @@
 
 [Index](../README.md) · [Previous: Static functions](static.md) · [Next: Variables on a type](variable.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`type Integer i32` can have methods, static functions, and a variable, the same way a struct can. `Integer` and `i32` stay different types, so `n + 1` is `type mismatch` and the arithmetic uses `Integer` values. `type Word Integer` is a different alias, with its own methods. A missing method is reported as `undeclared identifier`. A static function called on a value is reported as `type mismatch`.
+A primitive type alias can have methods, static functions, and a variable.
+
+## Methods on the alias
+
+`type Integer i32` can have methods, static functions, and a variable, the same way a struct can.
+
+`Integer` and `i32` stay different types, so `n + 1` is `type mismatch` and the arithmetic uses `Integer` values.
+
+`type Word Integer` is a different alias, with its own methods.
+
+A missing method is reported as `undeclared identifier`.
+
+A static function called on a value is reported as `type mismatch`.
 
 ```c
 type Integer i32;
@@ -40,9 +52,35 @@ movl -4(%rsp), %eax              # move
 retq                             # return
 ```
 
-The program returns 42. `Integer.from` is the static function. `Integer.ten` is the variable. `n.add` takes a pointer, and `n.twice` takes the value. `var f = Integer.from` is that function. The same forms work for `bool`, `f32`, `f64`, and the other integer widths. A slice alias such as `type string_view []const u8` is a different owner. Its value methods are library source in [`std/string`](../std/string.md). `self *this` on that alias is a pointer to the slice.
+The program returns 42.
 
-A method template on the alias puts the type parameters after the name. `func Integer::id[T type](self this, value T) i32` is called as `Integer(2).id[i32](40)`. `func Integer::make[T type](value T) i32` is the static function, called as `Integer.make[i32](20)`. A call without the brackets is reported as `undeclared identifier`. A static template called on a value is reported as `type mismatch`.
+`Integer.from` is the static function.
+
+`Integer.ten` is the variable.
+
+`n.add` takes a pointer, and `n.twice` takes the value.
+
+`var f = Integer.from` is that function.
+
+The same forms work for `bool`, `f32`, `f64`, and the other integer widths.
+
+A slice alias such as `type string_view []const u8` is a different owner.
+
+Its value methods are library source in [`std/string`](../std/string.md).
+
+`self *this` on that alias is a pointer to the slice.
+
+## Templates on the alias
+
+A method template on the alias puts the type parameters after the name.
+
+`func Integer::id[T type](self this, value T) i32` is called as `Integer(2).id[i32](40)`.
+
+`func Integer::make[T type](value T) i32` is the static function, called as `Integer.make[i32](20)`.
+
+A call without the brackets is reported as `undeclared identifier`.
+
+A static template called on a value is reported as `type mismatch`.
 
 ```c
 type Integer i32;
@@ -72,6 +110,10 @@ callq id.spec.i32                # call id
 retq                             # return
 ```
 
-The program returns 42. `Integer(2)` adds no instruction. When the file is `main.tlc`, the symbol is `main.Integer.id.spec.i32`.
+The program returns 42.
+
+`Integer(2)` adds no instruction.
+
+When the file is `main.tlc`, the symbol is `main.Integer.id.spec.i32`.
 
 [Index](../README.md) · [Previous: Static functions](static.md) · [Next: Variables on a type](variable.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

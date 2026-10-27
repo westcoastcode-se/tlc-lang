@@ -1,8 +1,24 @@
 # The tlc language
 
-tlc is a compiled language in the C family. A program is a single entry file. A function is written `func name(parameter type) result`. A type is written after the name it describes, as in `var n i32` and `x i32` inside a struct. An import names a directory of source files. Structs and enums may have methods, and a struct may satisfy a trait by defining those methods.
+tlc is a compiled language in the C family.
 
-The language accepts a subset of ISO C, together with the forms described in this reference. A syntactic form that the [grammar](grammar.md) does not list is not part of the language, even when the parser recognizes a similar C spelling and then rejects it.
+A program is a single entry file.
+
+A function is written `func name(parameter type) result`.
+
+A type is written after the name it describes, as in `var n i32` and `x i32` inside a struct.
+
+An import names a directory of source files.
+
+Structs and enums may have methods.
+
+A struct may satisfy a trait by defining those methods.
+
+The language accepts a subset of ISO C, together with the forms described in this reference.
+
+A syntactic form that the [grammar](grammar.md) does not list is not part of the language.
+
+That remains true when the parser recognizes a similar C spelling and then rejects it.
 
 A diagnostic has this form:
 
@@ -10,7 +26,21 @@ A diagnostic has this form:
 file:line:column: error: message
 ```
 
-Each TLC example is followed by the assembly of that example, commented so the listing shows what runs. [Assembly](cost.md) is how those listings are taken, including the trace frame a call pushes. With no `-O` flag, `tlc` removes a store that is overwritten or never read, and does not run the other LLVM optimizations. `-O0` keeps that store. `-O1` and above run LLVM's pipeline. A listing is for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
+Each TLC example is followed by the assembly of that example.
+
+Comments in the listing show what runs.
+
+[Assembly](cost.md) is how those listings are taken, including the trace frame a call pushes.
+
+With no `-O` flag, `tlc` removes a store that is overwritten or never read.
+
+It does not run the other LLVM optimizations.
+
+`-O0` keeps that store.
+
+`-O1` and above run LLVM's pipeline.
+
+A listing is for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
 
 ## Reference
 

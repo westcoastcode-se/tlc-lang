@@ -2,7 +2,25 @@
 
 [Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-An enum is its own type. A value is named with the type, a dot, and the enumerator. It is not an `i32`, and it does not convert to its representation. `type Color enum {}` has no enumerators. `sizeof(Color)` is 4. `Color.Red` is reported as `undeclared identifier`. The semicolon after `}` may be omitted. An enum does not take type parameters. `type Name[T type] enum` is not a form and is reported as `not supported yet`.
+This page describes an enum as its own type, how its enumerators get values, and how methods use that value.
+
+## An enum is its own type
+
+An enum is its own type.
+
+A value is named with the type, a dot, and the enumerator.
+
+It is not an `i32`, and it does not convert to its representation.
+
+`type Color enum {}` has no enumerators, and `sizeof(Color)` is 4.
+
+The compiler reports `Color.Red` as `undeclared identifier`.
+
+The semicolon after `}` may be omitted.
+
+An enum does not take type parameters, so `type Name[T type] enum` is not a form.
+
+The compiler reports that spelling as `not supported yet`.
 
 ```c
 type Color enum {
@@ -34,9 +52,15 @@ xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
 
-## Values
+## Enumerator values
 
-`Red` is 0, `Green` is 40, and `Blue` is 41. Without an explicit value, the next constant is one higher than the previous one. The representation is `i32` when the definition does not name a primitive. A primitive is written in parentheses after `enum`:
+`Red` is 0, `Green` is 40, and `Blue` is 41.
+
+Without an explicit value, the next constant is one higher than the previous one.
+
+The representation is `i32` when the definition does not name a primitive.
+
+A primitive is written in parentheses after `enum`.
 
 ```c
 type Tiny enum(i8) {
@@ -68,9 +92,35 @@ movl $1, %eax                    # constant
 retq                             # return
 ```
 
-`sizeof(Tiny)` is 1. The primitive may be `bool` or an integer type, including `i8`, `u32`, and `u8`. A value that does not fit is reported as `type mismatch`. An enumerator is not an lvalue. `==` and `!=` compare two values of the same enum and yield `bool`. Other operators are reported as `type mismatch`.
+`sizeof(Tiny)` is 1.
 
-`switch` on the enum uses that enum. A `case` is one of its enumerators. `case 1` is `type mismatch`. The enum does not convert to its representation, so `var n i32 = Color.Red` is `type mismatch`. `if (value)` is `type mismatch: expected bool, found Color`. The condition is `value == Color.Blue`. An ordinary `switch`, including `switch (Color.Blue)`, typechecks every case. `comptime switch (Color.Blue)` keeps that case and the statements that follow until `break`. The other cases are not typechecked and not emitted. A `var` does not fold, so `comptime switch` on it is `not supported yet`.
+The primitive may be `bool` or an integer type, including `i8`, `u32`, and `u8`.
+
+The compiler reports a value that does not fit as `type mismatch`.
+
+An enumerator is not an lvalue.
+
+`==` and `!=` compare two values of the same enum and yield `bool`.
+
+The compiler reports any other operator as `type mismatch`.
+
+## switch
+
+`switch` on the enum uses that enum, and a `case` is one of its enumerators.
+
+The compiler reports `case 1` as `type mismatch`.
+
+The enum does not convert to its representation, so `var n i32 = Color.Red` is `type mismatch`.
+
+> **Warning:** `if (value)` is `type mismatch: expected bool, found Color`. The condition is `value == Color.Blue`.
+
+An ordinary `switch`, including `switch (Color.Blue)`, typechecks every case.
+
+`comptime switch (Color.Blue)` keeps that case and the statements that follow until `break`.
+
+The other cases are not typechecked and not emitted.
+
+A `var` does not fold, so `comptime switch` on it is `not supported yet`.
 
 ```c
 func code(value Color) i32 {
@@ -84,8 +134,6 @@ func code(value Color) i32 {
     }
 }
 ```
-
-`code(Color.Blue)` is 4. `Blue` is 41, one past `Green`:
 
 ```asm
 main:
@@ -117,9 +165,21 @@ xorl %eax, %eax                  # default
 retq
 ```
 
+`code(Color.Blue)` is 4, and `Blue` is 41, one past `Green`.
+
 ## C enums
 
-`extern(abi="c") type Name enum` is the C form. It has no underlying type of its own. The representation is `i32`, and a value may be passed or compared where an integer is expected. `switch` on that enum is an `i32` switch, so `case Flag.On` and `case 1` both match. `if (f)` is still `type mismatch: expected bool, found Flag`. `extern(abi="c") type Name enum(i8)` is reported as `extern enum`. Methods are still allowed.
+`extern(abi="c") type Name enum` is the C form, and it has no underlying type of its own.
+
+The representation is `i32`, and a value may be passed or compared where an integer is expected.
+
+`switch` on that enum is an `i32` switch, so `case Flag.On` and `case 1` both match.
+
+`if (f)` is still `type mismatch: expected bool, found Flag`.
+
+The compiler reports `extern(abi="c") type Name enum(i8)` as `extern enum`.
+
+Methods are still allowed on that C enum.
 
 ```c
 extern(abi="c") type Flag enum {
@@ -155,9 +215,9 @@ xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
 
-## Export and methods
+## Export
 
-An exported enum exports the type. The enumerators come with it.
+An exported enum exports the type, and the enumerators come with it.
 
 ```c
 import { Color } from "geom";
@@ -168,15 +228,19 @@ func main() i32 {
 }
 ```
 
-The binding is not read, so the function is the return:
-
 ```asm
 main:
 xorl %eax, %eax                  # return 0
 retq
 ```
 
-A method uses the same form as a struct method. `this` is the enum value. A function with no `this` parameter is static and is called as `Color.label()`.
+The binding is not read, so the function is the return.
+
+## Methods
+
+A method uses the same form as a struct method, and `this` is the enum value.
+
+A function with no `this` parameter is static and is called as `Color.label()`.
 
 ```c
 type Color enum {
@@ -220,6 +284,10 @@ xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
 
-`value.code()` passes `value`. The method is written in the same file as `type Color enum`. Every file in the package can call it, and it is not exported.
+`value.code()` passes `value`.
+
+The method is written in the same file as `type Color enum`.
+
+Every file in the package can call it, and it is not exported.
 
 [Index](../README.md) · [Previous: Arrays](array.md) · [Next: Type aliases](alias.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

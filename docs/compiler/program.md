@@ -2,6 +2,8 @@
 
 [Index](../README.md) · [Previous: Symbol names](symbol.md) · [Next: Comments](comment.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
+A program is an entry file, and `tlc --run` executes its `main`.
+
 ```c
 func main() i32 {
     return 40 + 2;

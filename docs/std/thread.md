@@ -2,11 +2,39 @@
 
 [Index](../README.md) · [Previous: seq](seq.md) · [Next: atomic](atomic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`import "std/thread"` loads `lib/tlc/std/thread`. The package is ordinary tlc. On unix it calls the pthread functions and the package link file adds `-lpthread`. On windows each of those functions calls `builtin.panic("not supported yet")`.
+This page describes threads, mutexes, and the other types in `std/thread`.
 
-`thread.spawn` takes `func (*void) *void` and a pointer, and starts that function on a new thread. The pointer is the function's argument. `thread.join` waits for the thread and returns the pointer the function returned. The thread's writes happen before `join` reads them. `thread.detach` detaches the thread. `join` and `detach` are each called once. `thread.yield` calls `sched_yield`. `thread.id` returns the calling thread's id. A failed pthread call panics with `thread`.
+## Starting a thread
 
-An inner function that uses a local or a parameter from an enclosing function is `not supported yet`. The entry is a file-scope function.
+`import "std/thread"` loads `lib/tlc/std/thread`.
+
+The package is ordinary tlc.
+
+On unix it calls the pthread functions and the package link file adds `-lpthread`.
+
+On windows each of those functions calls `builtin.panic("not supported yet")`.
+
+`thread.spawn` takes `func (*void) *void` and a pointer, and starts that function on a new thread.
+
+The pointer is the function's argument.
+
+`thread.join` waits for the thread and returns the pointer the function returned.
+
+The thread's writes happen before `join` reads them.
+
+`thread.detach` detaches the thread.
+
+`join` and `detach` are each called once.
+
+`thread.yield` calls `sched_yield`.
+
+`thread.id` returns the calling thread's id.
+
+A failed pthread call panics with `thread`.
+
+An inner function that uses a local or a parameter from an enclosing function is `not supported yet`.
+
+The entry is a file-scope function.
 
 ```c
 import "std/thread";
@@ -55,8 +83,40 @@ retq
 
 The program returns 42.
 
-`thread.Mutex` holds one pointer, `raw ?*void`. The field value is `null`, so `var lock thread.Mutex` starts null, at file scope and in a function. `lock.init` allocates 128 bytes and calls `pthread_mutex_init`. That size covers the unix mutex types this package uses. `malloc` aligns the block to 16. A second `init` panics with `thread`. `lock`, `unlock`, and `destroy` on a null mutex panic with `null pointer`. `destroy` calls `pthread_mutex_destroy` and `free`, then stores `null`. A copy of a `Mutex` is a copy of the pointer.
+## Mutex, condition, and once
 
-`thread.Cond` uses that same 128-byte block. `thread.RwLock` allocates 256 bytes, which covers a macOS `pthread_rwlock_t` of 200 bytes and the 56-byte glibc and musl locks. `wait` takes `*Mutex`. `rlock` and `wlock` share `pthread_rwlock_unlock` for `runlock` and `wunlock`. `thread.Once` is one `i32`. Zero means the function has not run, at file scope and in a function. `call` runs a `func () void` once. That function takes no argument.
+`thread.Mutex` holds one pointer, `raw ?*void`.
+
+The field value is `null`, so `var lock thread.Mutex` starts null, at file scope and in a function.
+
+`lock.init` allocates 128 bytes and calls `pthread_mutex_init`.
+
+That size covers the unix mutex types this package uses.
+
+`malloc` aligns the block to 16.
+
+A second `init` panics with `thread`.
+
+`lock`, `unlock`, and `destroy` on a null mutex panic with `null pointer`.
+
+`destroy` calls `pthread_mutex_destroy` and `free`, then stores `null`.
+
+A copy of a `Mutex` is a copy of the pointer.
+
+`thread.Cond` uses that same 128-byte block.
+
+`thread.RwLock` allocates 256 bytes, which covers a macOS `pthread_rwlock_t` of 200 bytes and the 56-byte glibc and musl locks.
+
+`wait` takes `*Mutex`.
+
+`rlock` and `wlock` share `pthread_rwlock_unlock` for `runlock` and `wunlock`.
+
+`thread.Once` is one `i32`.
+
+Zero means the function has not run, at file scope and in a function.
+
+`call` runs a `func () void` once.
+
+That function takes no argument.
 
 [Index](../README.md) · [Previous: seq](seq.md) · [Next: atomic](atomic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -2,11 +2,61 @@
 
 [Index](../README.md) · [Previous: Logical operators](logical.md) · [Next: Narrowing](narrowing.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-Pointers that point at the same type can be compared with `==` and `!=`, including `*T` with `?*T`. A pointer can be compared with `null`, and `null == null` is allowed. The result is `i32`. Pointers of different types cannot be compared. Relational operators on pointers are rejected. `p == 0` is reported as `type mismatch`.
+This page describes pointer comparisons, `null`, and which pointers must be initialized.
 
-`*T` has a value. `?*T` may be `null`. `null` may be assigned or returned only to `?*T`. `&x` has type `*T` and may be stored in `*T`. `var p ?*i32 = &x` is `type mismatch: expected ?*i32, found *i32`. `var p = null` has no pointer type to take and is reported as `type mismatch`. Write `var p ?*Point = null`. A `*T` with no initializer is reported as `type mismatch`, and so is a struct or array that contains one, because that pointer has to be initialized. An omitted `?*T` field of a struct value may be `null`. An omitted `*T` field is reported as `type mismatch`. A local `var p ?*i32` is null. `extern` storage is not checked. Assigning an integer, including `0`, to a pointer is reported as `type mismatch`. An address that comes from an integer is a cast, `*i32(n)`. Assigning `null` to `i32` or `bool` is reported as `type mismatch`. `true` and `false` do not convert to pointers.
+## Comparing pointers
 
-Pointer arithmetic is reported as `type mismatch`. A subscript index has type `i32`.
+Pointers that point at the same type can be compared with `==` and `!=`, including `*T` with `?*T`.
+
+A pointer can be compared with `null`, and `null == null` is allowed.
+
+> **Warning:** The result of that comparison is `i32`.
+
+Pointers of different types cannot be compared.
+
+Relational operators on pointers are rejected.
+
+The compiler reports `p == 0` as `type mismatch`.
+
+## Which pointers may be `null`
+
+`*T` has a value, and `?*T` may be `null`.
+
+`null` may be assigned or returned only to `?*T`.
+
+`&x` has type `*T` and may be stored in `*T`.
+
+The compiler reports `var p ?*i32 = &x` as `type mismatch: expected ?*i32, found *i32`.
+
+`var p = null` has no pointer type to take and is reported as `type mismatch`.
+
+Write `var p ?*Point = null`.
+
+A `*T` with no initializer is reported as `type mismatch`, and so is a struct or array that contains one.
+
+That pointer has to be initialized.
+
+An omitted `?*T` field of a struct value may be `null`.
+
+An omitted `*T` field is reported as `type mismatch`.
+
+A local `var p ?*i32` is null.
+
+`extern` storage is not checked.
+
+Assigning an integer, including `0`, to a pointer is reported as `type mismatch`.
+
+An address that comes from an integer is a cast, `*i32(n)`.
+
+Assigning `null` to `i32` or `bool` is reported as `type mismatch`.
+
+`true` and `false` do not convert to pointers.
+
+## Arithmetic and subscripts
+
+Pointer arithmetic is reported as `type mismatch`.
+
+A subscript index has type `i32`.
 
 ```c
 func main() i32 {

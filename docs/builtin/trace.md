@@ -2,7 +2,33 @@
 
 [Index](../README.md) · [Previous: Traits](../methods/trait.md) · [Next: allocator](allocator.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`import "builtin"` loads the compiler package. The compiler's own copy is `lib/tlc/builtin/builtin.tlc`. An editor shows the signatures in that file and the `//` comments above them. It exports `trace`, `va`, `panic`, `memeql`, `memcmp`, and `Type`. `builtin.Type` is the type of a type, described in [The Type type](../types/type.md). `trace` returns `*const u8`. `va` returns `*u8`. Both take no arguments. An argument is reported as `argument count`. `panic` takes one message and does not return a value. The import links the C library. `import "builtin/env/consts"` loads `family`, described in [builtin/env/consts](family.md).
+This page describes `import "builtin"` and the call-stack text from `builtin.trace`.
+
+## The compiler package
+
+`import "builtin"` loads the compiler package.
+
+The compiler's own copy is `lib/tlc/builtin/builtin.tlc`.
+
+An editor shows the signatures in that file and the `//` comments above them.
+
+It exports `trace`, `va`, `panic`, `memeql`, `memcmp`, and `Type`.
+
+`builtin.Type` is the type of a type, described in [The Type type](../types/type.md).
+
+`trace` returns `*const u8`.
+
+`va` returns `*u8`.
+
+Both take no arguments.
+
+An argument is reported as `argument count`.
+
+`panic` takes one message and does not return a value.
+
+The import links the C library.
+
+`import "builtin/env/consts"` loads `family`, described in [builtin/env/consts](family.md).
 
 ```c
 import "builtin";
@@ -93,11 +119,35 @@ addq $40, %rsp                   # add
 retq                             # return
 ```
 
-The first form calls them as `builtin.trace()`, `builtin.va()`, and `builtin.panic(message)`. The alias uses the new qualifier. The selective form brings the names into the file. A directory named `builtin` on the search path is that package. The compiler package is used when the search finds none.
+## How the names are spelled
 
-## `trace`
+The first form calls them as `builtin.trace()`, `builtin.va()`, and `builtin.panic(message)`.
 
-`builtin.trace()` returns `*const u8`. The text lists the calls that have not returned, newest first. A line is `file:line:column: name`. The name is the function that made the call, and the location is that call. The last line has no newline. Calls of `builtin.trace` and `builtin.va` are omitted. A call of `builtin.panic` is kept. When no such call is still running, the text is empty.
+The alias uses the new qualifier.
+
+The selective form brings the names into the file.
+
+A directory named `builtin` on the search path is that package.
+
+The compiler package is used when the search finds none.
+
+## The text `trace` returns
+
+`builtin.trace()` returns `*const u8`.
+
+The text lists the calls that have not returned, newest first.
+
+A line is `file:line:column: name`.
+
+The name is the function that made the call, and the location is that call.
+
+The last line has no newline.
+
+Calls of `builtin.trace` and `builtin.va` are omitted.
+
+A call of `builtin.panic` is kept.
+
+When no such call is still running, the text is empty.
 
 ```c
 import "builtin";
@@ -356,18 +406,42 @@ popq %rax
 retq                             # return
 ```
 
-`leaf` is calling `printf`, whose argument is the trace. `mid` has called `leaf`, and `main` has called `mid`, so the program prints:
+`leaf` is calling `printf`, whose argument is the trace.
+
+`mid` has called `leaf`, and `main` has called `mid`, so the program prints:
 
 ```text
 main.tlc:11:12: mid
 main.tlc:15:12: main
 ```
 
-The file name is the source path relative to the entry file's directory. A source file outside that directory is named by its file name. A method uses the method name. An anonymous function is named `anon`. Inside a `test`, the name is the test's name.
+## How a line is named
 
-At most 32 calls are kept. The text is at most 4095 bytes. The pointer refers to this thread's buffer, and the next `builtin.trace()` on that thread replaces that text. Another thread has its own frames and its own buffer.
+The file name is the source path relative to the entry file's directory.
 
-`var f = builtin.trace` is a function pointer. `defer builtin.trace()` runs the call when the deferred calls run.
+A source file outside that directory is named by its file name.
+
+A method uses the method name.
+
+An anonymous function is named `anon`.
+
+Inside a `test`, the name is the test's name.
+
+## How much text is kept
+
+At most 32 calls are kept.
+
+The text is at most 4095 bytes.
+
+The pointer refers to this thread's buffer, and the next `builtin.trace()` on that thread replaces that text.
+
+Another thread has its own frames and its own buffer.
+
+## A function pointer and `defer`
+
+`var f = builtin.trace` is a function pointer.
+
+`defer builtin.trace()` runs the call when the deferred calls run.
 
 ```c
 import "builtin";

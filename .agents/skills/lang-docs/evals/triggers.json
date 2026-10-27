@@ -1,0 +1,10 @@
+{
+  "skill": "lang-docs",
+  "test_cases": [
+    {"input": "Write documentation for my programming language", "should_trigger": true},
+    {"input": "Create a tutorial for my custom language", "should_trigger": true},
+    {"input": "Document the syntax of the language I'm building", "should_trigger": true},
+    {"input": "Write a blog post about programming", "should_trigger": false},
+    {"input": "Help me debug this Python code", "should_trigger": false}
+  ]
+}

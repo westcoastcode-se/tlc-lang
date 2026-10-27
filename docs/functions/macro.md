@@ -2,7 +2,21 @@
 
 [Index](../README.md) · [Previous: Comptime](comptime.md) · [Next: typeof is not a result](typeof.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-A `macro func` generates statements. A statement call is replaced by the statements written with `emit`. A parameter without `comptime` is replaced by the argument expression. A `comptime` parameter is a value known while compiling. The values are the same ones a [`comptime func`](comptime.md) accepts. `emit` outside a `macro` is `not supported yet`.
+This page is how a `macro func` pastes statements into the caller while tlc compiles.
+
+## A macro pastes statements
+
+A `macro func` generates statements.
+
+A statement call is replaced by the statements written with `emit`.
+
+A parameter without `comptime` is replaced by the argument expression.
+
+A `comptime` parameter is a value known while compiling.
+
+The values are the same ones a [`comptime func`](comptime.md) accepts.
+
+`emit` outside a `macro` is `not supported yet`.
 
 ```c
 extern(abi="c") func printf(fmt *const u8, ...) i32;
@@ -27,7 +41,21 @@ callq printf                     # call printf
 retq                             # return
 ```
 
-`hello(label, tail, 40 + 2)` emits `printf("Hello %s %s %d\n", "Per", tail, 42)`. The file-scope `const` string and the folded integer are comptime values. `tail` has no `comptime` mark, so the argument expression is pasted and read when the statement runs. A `var` passed to a `comptime` parameter is `not supported yet`. A local `const` whose initializer folds to `i32` is that integer. Using one parameter in two `emit` statements evaluates that argument again.
+`hello(label, tail, 40 + 2)` emits `printf("Hello %s %s %d\n", "Per", tail, 42)`.
+
+The file-scope `const` string and the folded integer are comptime values.
+
+`tail` has no `comptime` mark.
+
+The argument expression is pasted and read when the statement runs.
+
+A `var` passed to a `comptime` parameter is `not supported yet`.
+
+A local `const` whose initializer folds to `i32` is that integer.
+
+Using one parameter in two `emit` statements evaluates that argument again.
+
+`put(&n, k + 2)` with `k` holding 40 evaluates `k + 2` twice.
 
 ```c
 macro func put(slot *i32, value i32) void {
@@ -35,8 +63,6 @@ macro func put(slot *i32, value i32) void {
     emit *slot = *slot + value;
 }
 ```
-
-`put(&n, k + 2)` with `k` holding 40 evaluates `k + 2` twice:
 
 ```asm
 main:
@@ -53,7 +79,43 @@ movl -8(%rsp), %eax              # return n
 retq                             # return
 ```
 
-In a `macro`, `if` keeps the arm whose condition folds. The other arm is discarded. `for` unrolls. There is no `comptime` prefix on either statement. `switch` in a `macro` is `not supported yet`. `comptime if` in a `macro` is `not supported yet`. `comptime switch` in a `macro` is `not supported yet`. `comptime for` is `not supported yet`. `const for` is not a form. Outside a `macro`, an ordinary `if` and an ordinary `switch` run at run time. `comptime if` keeps one arm when the condition folds. The other arm is not typechecked and not emitted. A condition that is not comptime is `not supported yet`. A `comptime` parameter is comptime. The copy that still receives it typechecks both arms. `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. The other cases are not typechecked and not emitted. A value that is not comptime is `not supported yet`. A `var` and a local `const` do not fold.
+## Conditions and loops
+
+In a `macro`, `if` keeps the arm whose condition folds and discards the other arm.
+
+`for` unrolls, and neither `for` nor `if` takes a `comptime` prefix.
+
+`switch` in a `macro` is `not supported yet`.
+
+`comptime if` in a `macro` is `not supported yet`.
+
+`comptime switch` in a `macro` is `not supported yet`.
+
+`comptime for` is `not supported yet`.
+
+`const for` is not a form.
+
+Outside a `macro`, an ordinary `if` and an ordinary `switch` run at run time.
+
+`comptime if` keeps one arm when the condition folds.
+
+The other arm is not typechecked and not emitted.
+
+A condition that is not comptime is `not supported yet`.
+
+A `comptime` parameter is comptime.
+
+The copy that still receives it typechecks both arms.
+
+`comptime switch` keeps the matching case and the statements that follow until `break` when the value folds.
+
+The other cases are not typechecked and not emitted.
+
+A value that is not comptime is `not supported yet`.
+
+A `var` and a local `const` do not fold.
+
+`pick(&n, 1)` then `add3(&n)`, from `n` at 0, stores 40 and then adds `1`, `2`, and `3`.
 
 ```c
 macro func pick(slot *i32, n comptime i32) void {
@@ -71,8 +133,6 @@ macro func add3(slot *i32) void {
 }
 ```
 
-`pick(&n, 1)` then `add3(&n)`, from `n` at 0, stores 40 and then adds 1, 2, and 3:
-
 ```asm
 main:
 movl $40, -4(%rsp)               # pick stores 40
@@ -89,11 +149,65 @@ movl -4(%rsp), %eax              # return n
 retq
 ```
 
-`pick(&n, 1)` stores 40. `add3` emits the body for `1`, `2`, and `3`. `for (var i = low; i < high; i = i + step)` unrolls when `low`, `high`, and `step` fold to integers, `step` is positive, and the trip count is at most 32. The index in each copy is that integer. `for (var item : items)` unrolls when the length is known, at most 32 elements. A slice `var`, `ptr_of` on a temporary, a length past 32, a bound that does not fold, and a step that is not positive are `not supported yet`. Those loops are on [`for`](../statements/for.md). A condition that does not fold is `not supported yet`.
+`pick(&n, 1)` stores 40.
 
-`emit for`, `emit if`, `emit while`, and `emit do` paste that statement into the caller. The body is ordinary code, so a nested `for` or `if` runs later. The bound of an `emit for` may be a `var`. Those forms outside a `macro` are `not supported yet`. A plain `while` or `do` in a `macro` is `not supported yet`.
+`add3` emits the body for `1`, `2`, and `3`.
 
-A value call of a `macro`, `var f = name`, a method, `extern`, and `export` are `not supported yet`. A type parameter is accepted. The parameter is the argument expression, so a tuple may contain a `var`. `values comptime T` does not: a tuple that contains a `var` is `not supported yet`.
+## How far a macro loop unrolls
+
+`for (var i = low; i < high; i = i + step)` unrolls when `low`, `high`, and `step` fold to integers.
+
+`step` has to be positive.
+
+The trip count is at most 32.
+
+The index in each copy is that integer.
+
+`for (var item : items)` unrolls when the length is known, at most 32 elements.
+
+A slice `var` is `not supported yet`.
+
+`ptr_of` on a temporary is `not supported yet`.
+
+A length past 32 is `not supported yet`.
+
+A bound that does not fold is `not supported yet`.
+
+A step that is not positive is `not supported yet`.
+
+Those loops are on [`for`](../statements/for.md).
+
+A condition that does not fold is `not supported yet`.
+
+## Pasting a loop or a branch
+
+`emit for`, `emit if`, `emit while`, and `emit do` paste that statement into the caller.
+
+The body is ordinary code.
+
+A nested `for` or `if` in that body runs later.
+
+The bound of an `emit for` may be a `var`.
+
+Those forms outside a `macro` are `not supported yet`.
+
+A plain `while` or `do` in a `macro` is `not supported yet`.
+
+## Limits on a macro
+
+A value call of a `macro` is `not supported yet`.
+
+`var f = name` is `not supported yet`.
+
+A method on a `macro` is `not supported yet`.
+
+`extern` and `export` on a `macro` are `not supported yet`.
+
+A type parameter is accepted.
+
+The parameter is the argument expression, so a tuple may contain a `var`.
+
+`values comptime T` does not: a tuple that contains a `var` is `not supported yet`.
 
 ```c
 import "builtin";
@@ -299,6 +413,8 @@ popq %rax
 retq                             # return
 ```
 
-`show(("John Doe", age))` emits `printf("%s\n", "John Doe")` and `printf("%d\n", age)` when `age` is a `var`. [`builtin.fmt`](../expressions/tuple.md) fills `{0}` and `{1}` from a compile-time tuple.
+`show(("John Doe", age))` emits `printf("%s\n", "John Doe")` and `printf("%d\n", age)` when `age` is a `var`.
+
+[`builtin.fmt`](../expressions/tuple.md) fills `{0}` and `{1}` from a compile-time tuple.
 
 [Index](../README.md) · [Previous: Comptime](comptime.md) · [Next: typeof is not a result](typeof.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

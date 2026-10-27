@@ -2,7 +2,21 @@
 
 [Index](../README.md) · [Previous: Keywords](../keyword.md) · [Next: Logical operators](logical.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-The operators are `+ - * / %`, `& | ^ ~ << >>`, `&& || !`, the comparisons, unary `+` and `-`, assignment `=`, calls, indexing, `.`, address-of `&`, and dereference `*`. Binding and associativity are given in the [grammar](../grammar.md#expressions).
+This page describes the operators you can write in an expression.
+
+## The operator set
+
+The arithmetic operators are `+ - * / %`, and the bitwise operators are `& | ^ ~ << >>`.
+
+`&& || !` are the logical operators, and the comparisons are operators too.
+
+Unary `+` and `-` are operators, and so is assignment `=`.
+
+Calls, indexing, `.`, address-of `&`, and dereference `*` are operators too.
+
+## Binding and associativity
+
+Binding and associativity are given in the [grammar](../grammar.md#expressions).
 
 ```c
 func main() i32 {

@@ -2,7 +2,15 @@
 
 [Index](../README.md) · [Previous: allocator](allocator.md) · [Next: panic](panic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-`builtin.va()` reads the extra arguments of the variadic function it is called from. The pointer is the `ap` that `vprintf` takes. Each call reads those arguments from the start.
+This page describes `builtin.va`, which reads the extra arguments of a variadic function.
+
+## The pointer `vprintf` takes
+
+`builtin.va()` reads the extra arguments of the variadic function it is called from.
+
+The pointer is the `ap` that `vprintf` takes.
+
+Each call reads those arguments from the start.
 
 ```c
 import "builtin";
@@ -31,8 +39,24 @@ callq vprintf                    # call vprintf
 retq                             # return
 ```
 
-The program prints `n=40`. An extra argument is an integer, a floating-point value, a pointer, an enum, or `null`. A struct is reported as `not supported yet`. An integer narrower than `i32` is passed as `i32`. `f32` is passed as `f64`.
+## Which values may be passed
 
-`builtin.va()` outside a variadic function is reported as `not supported yet`. So is `defer builtin.va()`, and so is using the name without calling it: `builtin.va` and `var p = builtin.va`.
+The program prints `n=40`.
+
+An extra argument is an integer, a floating-point value, a pointer, an enum, or `null`.
+
+A struct is reported as `not supported yet`.
+
+An integer narrower than `i32` is passed as `i32`.
+
+`f32` is passed as `f64`.
+
+## Calls the compiler rejects
+
+`builtin.va()` outside a variadic function is reported as `not supported yet`.
+
+So is `defer builtin.va()`.
+
+So is using the name without calling it: `builtin.va` and `var p = builtin.va`.
 
 [Index](../README.md) · [Previous: allocator](allocator.md) · [Next: panic](panic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
