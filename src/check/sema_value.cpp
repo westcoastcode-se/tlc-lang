@@ -1680,7 +1680,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return type_invalid();
                     }
                     node.tuple_index = *folded;
-                    return base.results[static_cast<std::size_t>(*folded)];
+                    Type element = base.results[static_cast<std::size_t>(*folded)];
+                    // `comptime const pair` keeps the copy const, so `pair[0][0] = 1` does not store.
+                    // A nested tuple carries that const: `nested[0][0][0] = 1` is the same.
+                    if (base.is_const && (element.kind == TypeKind::Array || element.kind == TypeKind::Tuple)) {
+                        element.is_const = true;
+                    }
+                    return element;
                 }
                 if (base.kind == TypeKind::Pointer && base.optional) {
                     error(node.loc, "type mismatch");
@@ -1931,6 +1937,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         // A function name is `func`. The element is the pointer, as `comptime const op = add` is.
                         if (part.kind == TypeKind::Function) {
                             part = type_pointer(std::move(part));
+                        }
+                        // An array element is a copy. The source binding's `const` stays on that binding.
+                        // `[2]const i32` still names a const element.
+                        if (part.kind == TypeKind::Array && !is_slice(part) && part.length >= 0) {
+                            part.is_const = false;
                         }
                         if (part.kind == TypeKind::Invalid) {
                             invalid = true;

@@ -1331,6 +1331,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             }
                             value.value = as_slice_value(value, node.loc);
                         }
+                        // `(row, 0)` copies the array. The field is `[N]T`, not a pointer to `row`.
+                        if (!value.is_slice && !value.is_tuple && value.array_type != nullptr &&
+                            value.array_type->isArrayTy() && value.value != nullptr &&
+                            value.value->getType()->isPointerTy()) {
+                            if (llvm::Value *loaded = array_bits(value.value, value.array_type, node.loc)) {
+                                value.value = loaded;
+                                value.depth = 0;
+                            }
+                        }
                         fields.push_back(value.value);
                         types.push_back(value.value->getType());
                         element_values.push_back(std::move(value));
@@ -1372,6 +1381,30 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             }
                             return "i32";
                         };
+                        if (element.depth == 0 && element.array_type != nullptr && element.array_type->isArrayTy() &&
+                            element.value != nullptr && element.value->getType()->isArrayTy()) {
+                            // The loaded value is the array. `pair[0][0] = 1` stores into that copy.
+                            llvm::Type *cursor = element.array_type;
+                            while (auto *array = llvm::dyn_cast<llvm::ArrayType>(cursor)) {
+                                TypeShell shell;
+                                shell.kind = TypeShell::Kind::Array;
+                                shell.length = static_cast<int>(array->getNumElements());
+                                slot.shells.push_back(shell);
+                                cursor = array->getElementType();
+                            }
+                            slot.is_array = true;
+                            slot.array_len = slot.shells.empty() ? 0 : slot.shells.front().length;
+                            if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
+                                slot.is_struct = true;
+                                slot.type_name = structs_[static_cast<std::size_t>(element.struct_id)].name;
+                            } else if (element.enum_id >= 0 && element.enum_id < static_cast<int>(enums_.size())) {
+                                slot.is_enum = true;
+                                slot.type_name = enums_[static_cast<std::size_t>(element.enum_id)].name;
+                            } else {
+                                slot.type_name = scalar();
+                            }
+                            return slot;
+                        }
                         if (element.is_slice) {
                             slot.is_array = true;
                             slot.array_len = -1;

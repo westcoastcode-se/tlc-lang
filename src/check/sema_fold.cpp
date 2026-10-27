@@ -901,6 +901,49 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (const Expr *element = tuple_element(tuple_element, *node.base, *at, 0)) {
                     return fold_int(*element);
                 }
+                // `pair[0][0]` reads that array element. A lone `row[0]` still loads.
+                if (const auto *inner = std::get_if<Expr::Index>(&node.base->data);
+                    inner != nullptr && !inner->is_range && inner->base != nullptr && inner->index != nullptr) {
+                    const std::optional<int> slot = fold_int(*inner->index);
+                    if (slot && *slot >= 0) {
+                        if (const Expr *array = tuple_element(tuple_element, *inner->base, *slot, 0)) {
+                            const auto array_at = [&](const auto &self, const Expr &value, int depth) -> const Expr * {
+                                if (depth > 8) {
+                                    return nullptr;
+                                }
+                                if (const auto *made = std::get_if<Expr::Init>(&value.data)) {
+                                    if (!made->array_literal ||
+                                        static_cast<std::size_t>(*at) >= made->elements.size()) {
+                                        return nullptr;
+                                    }
+                                    return made->elements[static_cast<std::size_t>(*at)].get();
+                                }
+                                const auto *named = std::get_if<Expr::Name>(&value.data);
+                                if (named == nullptr) {
+                                    return nullptr;
+                                }
+                                const Symbol *symbol = lookup(named->text);
+                                if (symbol == nullptr || !symbol->is_constant) {
+                                    return nullptr;
+                                }
+                                const Expr *next = symbol->const_init;
+                                if (next == nullptr) {
+                                    if (const VarDecl *var = global_var(named->text);
+                                        var != nullptr && var->is_comptime) {
+                                        next = var->init.get();
+                                    }
+                                }
+                                if (next == nullptr || next == &value) {
+                                    return nullptr;
+                                }
+                                return self(self, *next, depth + 1);
+                            };
+                            if (const Expr *item = array_at(array_at, *array, 0)) {
+                                return fold_int(*item);
+                            }
+                        }
+                    }
+                }
                 std::unordered_set<std::string> seen;
                 const std::optional<std::string> bytes = constant_string(*node.base, seen);
                 if (!bytes || static_cast<std::size_t>(*at) >= bytes->size()) {
@@ -1039,6 +1082,56 @@ bool Checker::comptime_constant(const Expr &expr) {
                 }
                 return false;
             };
+            // `([_]i32{40, 2}, 0)` and `(row, 0)` when `row` is that array. A lone array is not
+            // `comptime_constant`. The element stays `[N]T`.
+            const auto array_element = [&](const auto &self, const Expr &start, int depth) -> bool {
+                if (depth > 8) {
+                    return false;
+                }
+                if (const auto *made = std::get_if<Expr::Init>(&start.data)) {
+                    if (!made->array_literal) {
+                        return false;
+                    }
+                    for (const auto &item : made->elements) {
+                        if (item == nullptr || std::holds_alternative<Expr::Nullptr>(item->data)) {
+                            return false;
+                        }
+                        if (const auto *inner = std::get_if<Expr::Init>(&item->data);
+                            inner != nullptr && inner->array_literal) {
+                            if (!self(self, *item, depth + 1)) {
+                                return false;
+                            }
+                            continue;
+                        }
+                        if (!argument_is_comptime(*item) && !fold_switch_case(*item) && !comptime_constant(*item)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                const auto *named = std::get_if<Expr::Name>(&start.data);
+                if (named == nullptr) {
+                    return false;
+                }
+                const Symbol *symbol = lookup(named->text);
+                if (symbol == nullptr || !symbol->is_constant) {
+                    return false;
+                }
+                if (!symbol->is_auto && symbol->type.kind == TypeKind::Array && symbol->type.element != nullptr &&
+                    !is_slice(symbol->type) && symbol->type.length >= 0) {
+                    return global_var(named->text) != nullptr;
+                }
+                const Expr *next = symbol->const_init;
+                if (next == nullptr) {
+                    if (const VarDecl *var = global_var(named->text); var != nullptr && var->is_comptime) {
+                        next = var->init.get();
+                    }
+                }
+                if (next == nullptr || next == &start) {
+                    return false;
+                }
+                return self(self, *next, depth + 1);
+            };
             for (const auto &element : init->elements) {
                 // `null` folds to 0. It is not this value. A bool literal is, and it stays `bool`.
                 if (element == nullptr || std::holds_alternative<Expr::Nullptr>(element->data)) {
@@ -1053,7 +1146,7 @@ bool Checker::comptime_constant(const Expr &expr) {
                     continue;
                 }
                 if (!argument_is_comptime(*element) && !fold_switch_case(*element) && !comptime_constant(*element) &&
-                    !address_element(*element)) {
+                    !address_element(*element) && !array_element(array_element, *element, 0)) {
                     return false;
                 }
             }

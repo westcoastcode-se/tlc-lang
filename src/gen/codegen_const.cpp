@@ -1352,6 +1352,17 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                         }
                         return llvm::ConstantStruct::get(llvm::StructType::get(context_, nested_types), nested);
                     }
+                    if (made->array_literal) {
+                        // `([_]i32{40, 2}, 0)` and `(row, 0)`. The field is the array, not a pointer.
+                        // An empty binding is not an array, so the fallback below rejects the literal.
+                        const std::optional<Lowered> shape = lower_array_literal(current_file_, *made);
+                        if (!shape || shape->type == nullptr || !shape->type->isArrayTy()) {
+                            return nullptr;
+                        }
+                        Binding flags;
+                        apply_low(flags, *shape);
+                        return fill_array(*made, llvm::cast<llvm::ArrayType>(shape->type), flags);
+                    }
                     if (made->struct_id >= 0 && !made->array_literal) {
                         return const_struct(*made, made->struct_id);
                     }

@@ -1,0 +1,10 @@
+comptime const row = [_]i32{40, 2};
+comptime const pair = (row, 0);
+
+func take(p comptime ([2]i32, i32), n i32) i32 {
+    return p[0][0] + p[0][1] + n;
+}
+
+func main() i32 {
+    return take(pair, 0);
+}

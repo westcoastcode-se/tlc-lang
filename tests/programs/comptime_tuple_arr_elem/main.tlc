@@ -1,0 +1,24 @@
+comptime const row = [_]i32{15, 2};
+comptime const pair = (row, 0);
+comptime const literal = ([_]i32{8, 1}, 0);
+comptime const nested = ((row, 1), 0);
+comptime const n = pair[0][0];
+
+comptime func use(value ([2]i32, i32)) i32 {
+    return value[0][0] + value[0][1] + value[1];
+}
+
+func main() i32 {
+    comptime const here = ([_]i32{4, 2}, 0);
+    comptime const local = (row, 0);
+    if (nested[0][0][0] + nested[0][1] != 16) {
+        return 0;
+    }
+    if (local[0][0] + local[0][1] != 17) {
+        return 0;
+    }
+    if (n != 15 || use(pair) != 17 || use(literal) != 9) {
+        return 0;
+    }
+    return pair[0][0] + pair[0][1] + literal[0][0] + here[0][1] + n;
+}

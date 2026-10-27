@@ -792,6 +792,48 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 if (const Expr *element = tuple_element(tuple_element, *node.base, *at, 0)) {
                     return fold(*element);
                 }
+                // `pair[0][0]` reads that array element. A lone `row[0]` still loads.
+                if (const auto *inner = std::get_if<Expr::Index>(&node.base->data);
+                    inner != nullptr && !inner->is_range && inner->base != nullptr && inner->index != nullptr) {
+                    const std::optional<int32_t> slot = fold(*inner->index);
+                    if (slot && *slot >= 0) {
+                        if (const Expr *array = tuple_element(tuple_element, *inner->base, *slot, 0)) {
+                            const auto array_at = [&](const auto &self, const Expr &value, int depth) -> const Expr * {
+                                if (depth > 8) {
+                                    return nullptr;
+                                }
+                                if (const auto *made = std::get_if<Expr::Init>(&value.data)) {
+                                    if (!made->array_literal ||
+                                        static_cast<std::size_t>(*at) >= made->elements.size()) {
+                                        return nullptr;
+                                    }
+                                    return made->elements[static_cast<std::size_t>(*at)].get();
+                                }
+                                const auto *named = std::get_if<Expr::Name>(&value.data);
+                                if (named == nullptr) {
+                                    return nullptr;
+                                }
+                                const Expr *next = nullptr;
+                                if (const Binding *binding = lookup(named->text)) {
+                                    next = binding->const_init;
+                                }
+                                if (next == nullptr) {
+                                    if (const VarDecl *var = global_decl(named->text);
+                                        var != nullptr && var->is_comptime) {
+                                        next = var->init.get();
+                                    }
+                                }
+                                if (next == nullptr || next == &value) {
+                                    return nullptr;
+                                }
+                                return self(self, *next, depth + 1);
+                            };
+                            if (const Expr *item = array_at(array_at, *array, 0)) {
+                                return fold(*item);
+                            }
+                        }
+                    }
+                }
                 std::unordered_set<std::string> seen;
                 const std::optional<std::string> bytes = constant_string(*node.base, seen);
                 if (!bytes || static_cast<std::size_t>(*at) >= bytes->size()) {
@@ -1416,6 +1458,68 @@ bool CodeGen::comptime_constant(const Expr &expr) const {
                     }
                     return false;
                 };
+                // `([_]i32{40, 2}, 0)` and `(row, 0)` when `row` is that array. A lone array is not
+                // this value. The element stays `[N]T`.
+                const auto array_element = [&](const auto &self_array, const Expr &start, int depth) -> bool {
+                    if (depth > 8) {
+                        return false;
+                    }
+                    if (const auto *made = std::get_if<Expr::Init>(&start.data)) {
+                        if (!made->array_literal) {
+                            return false;
+                        }
+                        for (const auto &item : made->elements) {
+                            if (item == nullptr || std::holds_alternative<Expr::Nullptr>(item->data)) {
+                                return false;
+                            }
+                            if (const auto *inner = std::get_if<Expr::Init>(&item->data);
+                                inner != nullptr && inner->array_literal) {
+                                if (!self_array(self_array, *item, depth + 1)) {
+                                    return false;
+                                }
+                                continue;
+                            }
+                            if (self(self, *item)) {
+                                continue;
+                            }
+                            std::unordered_set<std::string> text_seen;
+                            if (constant_string(*item, text_seen) || enumerator_value(*item)) {
+                                continue;
+                            }
+                            if (!fold(*item)) {
+                                return false;
+                            }
+                        }
+                        return true;
+                    }
+                    const auto *named = std::get_if<Expr::Name>(&start.data);
+                    if (named == nullptr || local_shadow(named->text)) {
+                        return false;
+                    }
+                    if (const VarDecl *var = global_decl(named->text); var != nullptr && var->is_comptime) {
+                        if (var->is_array && var->ptr_to_array) {
+                            return false;
+                        }
+                        if (var->is_array && var->array_len < 0) {
+                            return false;
+                        }
+                        if (var->is_array && var->array_len >= 0) {
+                            return true;
+                        }
+                        if (var->init == nullptr) {
+                            return false;
+                        }
+                        return self_array(self_array, *var->init, depth + 1);
+                    }
+                    const Expr *local = nullptr;
+                    if (const Binding *binding = lookup(named->text)) {
+                        local = binding->const_init;
+                    }
+                    if (local == nullptr || local == &start) {
+                        return false;
+                    }
+                    return self_array(self_array, *local, depth + 1);
+                };
                 for (const auto &element : init->elements) {
                     if (element == nullptr) {
                         return false;
@@ -1428,6 +1532,9 @@ bool CodeGen::comptime_constant(const Expr &expr) const {
                         continue;
                     }
                     if (address_element(*element)) {
+                        continue;
+                    }
+                    if (array_element(array_element, *element, 0)) {
                         continue;
                     }
                     // `null` folds to 0 here. It is not this value. A bool literal folds to 0 or 1 and is.

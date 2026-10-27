@@ -1,0 +1,5 @@
+func main() i32 {
+    var row = [_]i32{40, 2};
+    comptime const pair = (row, 0);
+    return pair[0][0] + pair[0][1];
+}
