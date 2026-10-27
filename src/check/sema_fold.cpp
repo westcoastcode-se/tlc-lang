@@ -1011,6 +1011,34 @@ bool Checker::comptime_constant(const Expr &expr) {
             if (init->elements.size() < 2) {
                 return false;
             }
+            // `(&addr, 2)` and `(p, 2)` when `p` is `&addr`. A lone `&addr` is not `comptime_constant`.
+            const auto address_element = [&](const Expr &start) {
+                const Expr *cursor = &start;
+                for (int depth = 0; cursor != nullptr && depth <= 8; ++depth) {
+                    if (comptime_address(*cursor)) {
+                        return true;
+                    }
+                    const auto *named = std::get_if<Expr::Name>(&cursor->data);
+                    if (named == nullptr) {
+                        return false;
+                    }
+                    const Symbol *symbol = lookup(named->text);
+                    if (symbol == nullptr || !symbol->is_constant) {
+                        return false;
+                    }
+                    const Expr *next = symbol->const_init;
+                    if (next == nullptr) {
+                        if (const VarDecl *var = global_var(named->text); var != nullptr && var->is_comptime) {
+                            next = var->init.get();
+                        }
+                    }
+                    if (next == nullptr || next == cursor) {
+                        return false;
+                    }
+                    cursor = next;
+                }
+                return false;
+            };
             for (const auto &element : init->elements) {
                 // `null` folds to 0. It is not this value. A bool literal is, and it stays `bool`.
                 if (element == nullptr || std::holds_alternative<Expr::Nullptr>(element->data)) {
@@ -1024,7 +1052,8 @@ bool Checker::comptime_constant(const Expr &expr) {
                     }
                     continue;
                 }
-                if (!argument_is_comptime(*element) && !fold_switch_case(*element) && !comptime_constant(*element)) {
+                if (!argument_is_comptime(*element) && !fold_switch_case(*element) && !comptime_constant(*element) &&
+                    !address_element(*element)) {
                     return false;
                 }
             }
@@ -1595,6 +1624,10 @@ bool Checker::comptime_address(const Expr &expr) {
 }
 
 const Expr *Checker::comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen) {
+    // `*pair[0]` is the pointee of that element. `pair[0]` is `&addr`.
+    if (const Expr *element = comptime_tuple_element(pointer)) {
+        return comptime_pointee(*element, seen);
+    }
     if (const auto *unary = std::get_if<Expr::Unary>(&pointer.data)) {
         if (unary->postfix || unary->expr == nullptr) {
             return nullptr;

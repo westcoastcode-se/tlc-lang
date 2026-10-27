@@ -1397,6 +1397,18 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                         return function;
                     }
                 }
+                // `(&addr, 2)`. An empty binding has depth 0, so the address arm below rejects it.
+                if (const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
+                    unary != nullptr && !unary->postfix && unary->op == TokenKind::Amp && unary->expr != nullptr) {
+                    if (const auto *named = std::get_if<Expr::Name>(&unary->expr->data)) {
+                        if (const Binding *binding = find_here(named->text)) {
+                            if (auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(binding->value)) {
+                                return global;
+                            }
+                        }
+                    }
+                    return nullptr;
+                }
                 Binding part;
                 return const_initializer(element, part);
             };

@@ -1,0 +1,5 @@
+func main() i32 {
+    var n = 40;
+    comptime const pair = (&n, 2);
+    return *pair[0] + pair[1];
+}

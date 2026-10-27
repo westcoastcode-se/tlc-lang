@@ -446,6 +446,10 @@ std::optional<int32_t> CodeGen::folded_local_name(const Expr &expr) const {
 }
 
 const Expr *CodeGen::comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen) const {
+    // `*pair[0]` is the pointee of that element. `pair[0]` is `&addr`.
+    if (const Expr *element = comptime_tuple_element(pointer)) {
+        return comptime_pointee(*element, seen);
+    }
     if (const auto *unary = std::get_if<Expr::Unary>(&pointer.data)) {
         if (unary->postfix || unary->expr == nullptr) {
             return nullptr;
@@ -1371,6 +1375,47 @@ bool CodeGen::comptime_constant(const Expr &expr) const {
                 if (init->elements.size() < 2) {
                     return false;
                 }
+                // `(&addr, 2)` and `(p, 2)` when `p` is `&addr`. A lone `&addr` is not this value.
+                const auto address_element = [&](const Expr &start) {
+                    const Expr *cursor = &start;
+                    for (int depth = 0; cursor != nullptr && depth <= 8; ++depth) {
+                        if (const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
+                            unary != nullptr && !unary->postfix && unary->op == TokenKind::Amp &&
+                            unary->expr != nullptr) {
+                            const auto *named = std::get_if<Expr::Name>(&unary->expr->data);
+                            if (named == nullptr) {
+                                return false;
+                            }
+                            if (const Binding *binding = lookup(named->text);
+                                binding != nullptr && binding->const_init != nullptr) {
+                                return true;
+                            }
+                            if (const VarDecl *var = global_decl(named->text); var != nullptr && var->is_comptime) {
+                                return true;
+                            }
+                            return false;
+                        }
+                        const auto *named = std::get_if<Expr::Name>(&cursor->data);
+                        if (named == nullptr) {
+                            return false;
+                        }
+                        const Expr *next = nullptr;
+                        if (const Binding *binding = lookup(named->text)) {
+                            next = binding->const_init;
+                        }
+                        if (next == nullptr) {
+                            if (const VarDecl *var = global_decl(named->text);
+                                var != nullptr && var->is_comptime) {
+                                next = var->init.get();
+                            }
+                        }
+                        if (next == nullptr || next == cursor) {
+                            return false;
+                        }
+                        cursor = next;
+                    }
+                    return false;
+                };
                 for (const auto &element : init->elements) {
                     if (element == nullptr) {
                         return false;
@@ -1380,6 +1425,9 @@ bool CodeGen::comptime_constant(const Expr &expr) const {
                     }
                     std::unordered_set<std::string> text_seen;
                     if (constant_string(*element, text_seen) || enumerator_value(*element)) {
+                        continue;
+                    }
+                    if (address_element(*element)) {
                         continue;
                     }
                     // `null` folds to 0 here. It is not this value. A bool literal folds to 0 or 1 and is.

@@ -1,0 +1,34 @@
+type Point struct {
+    x i32;
+    y i32;
+}
+
+comptime const addr = 30;
+comptime const pair = (&addr, 2);
+comptime const p = &addr;
+comptime const named = (p, 0);
+comptime const origin = Point{.x = 8, .y = 2};
+comptime const spots = (&origin, 0);
+comptime const nested = ((&addr, 1), 0);
+comptime const got = *pair[0];
+
+comptime func use(value (*i32, i32)) i32 {
+    return *value[0] + value[1];
+}
+
+func main() i32 {
+    comptime const local_addr = 4;
+    comptime const local = (&local_addr, 1);
+    comptime const here = Point{.x = 1, .y = 0};
+    comptime const local_spots = (&here, 0);
+    if (*named[0] != 30 || spots[0].x + spots[0].y != 10) {
+        return 0;
+    }
+    if (*nested[0][0] + nested[0][1] != 31 || *local[0] + local[1] != 5) {
+        return 0;
+    }
+    if (got != 30 || use(pair) != 32 || local_spots[0].x != 1) {
+        return 0;
+    }
+    return *pair[0] + pair[1] + spots[0].x + spots[0].y;
+}

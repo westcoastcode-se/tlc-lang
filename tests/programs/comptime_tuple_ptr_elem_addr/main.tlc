@@ -1,0 +1,9 @@
+comptime const addr = 40;
+
+func take(p comptime *i32, n i32) i32 {
+    return *p + n;
+}
+
+func main() i32 {
+    return take(&addr, 2);
+}
