@@ -1234,6 +1234,13 @@ bool CodeGen::file_constant_operand(const Expr &expr) const {
                     node.op == TokenKind::Bang || node.op == TokenKind::KwUnsafe) {
                     return file_constant_operand(*node.expr);
                 }
+                if (node.op == TokenKind::Star && !node.postfix) {
+                    std::unordered_set<std::string> pointed;
+                    if (const Expr *target = comptime_pointee(*node.expr, pointed)) {
+                        return file_constant_operand(*target);
+                    }
+                    return false;
+                }
                 if (node.op != TokenKind::Amp) {
                     return false;
                 }
@@ -1327,6 +1334,13 @@ bool CodeGen::comptime_constant(const Expr &expr) const {
             return cast->expr != nullptr && cast->indirections == 0 && file_constant_operand(*cast->expr);
         }
         if (const auto *unary = std::get_if<Expr::Unary>(&value.data)) {
+            if (!unary->postfix && unary->op == TokenKind::Star && unary->expr != nullptr) {
+                std::unordered_set<std::string> pointed;
+                if (const Expr *target = comptime_pointee(*unary->expr, pointed)) {
+                    return self(self, *target);
+                }
+                return false;
+            }
             if (unary->postfix || unary->expr == nullptr ||
                 (unary->op != TokenKind::Plus && unary->op != TokenKind::Minus)) {
                 return false;
@@ -1352,8 +1366,19 @@ bool CodeGen::comptime_constant(const Expr &expr) const {
 std::unique_ptr<Expr> CodeGen::comptime_substitute(const Expr &expr) const {
     std::unordered_set<std::string> seen;
     const Expr *cursor = &expr;
-    while (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
-        if (!seen.insert(named->text).second || local_shadow(named->text)) {
+    while (cursor != nullptr) {
+        if (const auto *star = std::get_if<Expr::Unary>(&cursor->data);
+            star != nullptr && !star->postfix && star->op == TokenKind::Star && star->expr != nullptr) {
+            std::unordered_set<std::string> pointed;
+            const Expr *target = comptime_pointee(*star->expr, pointed);
+            if (target == nullptr) {
+                break;
+            }
+            cursor = target;
+            continue;
+        }
+        const auto *named = std::get_if<Expr::Name>(&cursor->data);
+        if (named == nullptr || !seen.insert(named->text).second || local_shadow(named->text)) {
             break;
         }
         const VarDecl *var = package_var(named->text);

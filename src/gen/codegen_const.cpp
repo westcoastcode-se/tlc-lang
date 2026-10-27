@@ -1354,6 +1354,14 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
         return llvm::ConstantFP::get(float_ty, std::strtod(number.c_str(), nullptr));
     }
     if (const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
+        unary != nullptr && !unary->postfix && unary->op == TokenKind::Star && unary->expr != nullptr) {
+        std::unordered_set<std::string> pointed;
+        if (const Expr *target = comptime_pointee(*unary->expr, pointed)) {
+            return const_initializer(*target, dest);
+        }
+        return nullptr;
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
         unary != nullptr && unary->expr != nullptr && dest.elem_float &&
         (unary->op == TokenKind::Plus || unary->op == TokenKind::Minus)) {
         llvm::Constant *inner = const_initializer(*unary->expr, dest);

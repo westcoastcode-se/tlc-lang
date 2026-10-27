@@ -263,6 +263,13 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
                 if (symbol == nullptr || !symbol->is_constant || symbol->type.kind != TypeKind::Float) {
                     return std::nullopt;
                 }
+                if (symbol->const_init != nullptr && seen.insert(node.text).second) {
+                    const std::optional<FoldedNumber> local = fold_number(*symbol->const_init, seen);
+                    seen.erase(node.text);
+                    if (local) {
+                        return local;
+                    }
+                }
                 const VarDecl *var = global_var(node.text);
                 if (var == nullptr || var->init == nullptr || !seen.insert(node.text).second) {
                     return std::nullopt;
@@ -938,6 +945,26 @@ bool Checker::comptime_constant(const Expr &expr) {
         }
         return constant_operand(expr);
     }
+    if (const auto *star = std::get_if<Expr::Unary>(&expr.data);
+        star != nullptr && !star->postfix && star->op == TokenKind::Star && star->expr != nullptr) {
+        std::unordered_set<std::string> pointed;
+        const Expr *target = comptime_pointee(*star->expr, pointed);
+        if (target == nullptr) {
+            return false;
+        }
+        // A local `comptime const` is `is_auto`. `*p` is still that float or struct.
+        if (const auto *named = std::get_if<Expr::Name>(&target->data)) {
+            const Symbol *symbol = lookup(named->text);
+            if (symbol != nullptr && symbol->is_constant) {
+                const Type &type = symbol->type;
+                if (type.kind == TypeKind::Float || type.kind == TypeKind::Struct || type.alias_id != 0 ||
+                    fn_pointer(type)) {
+                    return true;
+                }
+            }
+        }
+        return comptime_constant(*target);
+    }
     if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
         const Symbol *symbol = lookup(named->text);
         if (symbol == nullptr) {
@@ -993,19 +1020,36 @@ bool Checker::comptime_constant(const Expr &expr) {
 std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
     std::unordered_set<std::string> seen;
     const Expr *cursor = &expr;
-    while (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
-        if (!seen.insert(named->text).second) {
+    while (cursor != nullptr) {
+        if (const auto *star = std::get_if<Expr::Unary>(&cursor->data);
+            star != nullptr && !star->postfix && star->op == TokenKind::Star && star->expr != nullptr) {
+            std::unordered_set<std::string> pointed;
+            const Expr *target = comptime_pointee(*star->expr, pointed);
+            if (target == nullptr) {
+                break;
+            }
+            cursor = target;
+            continue;
+        }
+        const auto *named = std::get_if<Expr::Name>(&cursor->data);
+        if (named == nullptr || !seen.insert(named->text).second) {
             break;
         }
         const Symbol *symbol = lookup(named->text);
         if (symbol == nullptr || !symbol->is_constant) {
             break;
         }
-        const VarDecl *var = global_var(named->text);
-        if (var == nullptr || var->init == nullptr) {
+        const Expr *init = symbol->const_init;
+        if (init == nullptr) {
+            const VarDecl *var = global_var(named->text);
+            if (var != nullptr) {
+                init = var->init.get();
+            }
+        }
+        if (init == nullptr) {
             break;
         }
-        cursor = var->init.get();
+        cursor = init;
     }
     return clone_expr(*cursor);
 }

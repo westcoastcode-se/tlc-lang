@@ -1,0 +1,38 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+comptime const bias = 0.5f;
+comptime const wide = 20.0;
+comptime const origin = Point{.x = 40, .y = 2};
+comptime const pb = &bias;
+comptime const pw = &wide;
+comptime const po = &origin;
+comptime const lifted = *pb;
+comptime const from_wide = *pw;
+comptime const copy = *po;
+comptime const pp = &po;
+comptime const again = **pp;
+
+comptime func field(p Point) i32 {
+    return p.x + p.y;
+}
+
+func take(v comptime f64, n i32) i32 {
+    comptime if (v == 20.0) {
+        return n + 1;
+    }
+    return n;
+}
+
+func main() i32 {
+    comptime const local = 0.5f;
+    comptime const lp = &local;
+    comptime const back = *lp;
+    var n = 0;
+    comptime if (lifted == 0.5f && back == 0.5f) {
+        return field(copy) + field(again) + take(from_wide, n) - 43;
+    }
+    return 0;
+}

@@ -1425,6 +1425,13 @@ bool Checker::constant_operand(const Expr &expr) {
                     node.op == TokenKind::Bang || node.op == TokenKind::KwUnsafe) {
                     return constant_operand(*node.expr);
                 }
+                if (node.op == TokenKind::Star && !node.postfix) {
+                    std::unordered_set<std::string> pointed;
+                    if (const Expr *target = comptime_pointee(*node.expr, pointed)) {
+                        return constant_operand(*target);
+                    }
+                    return false;
+                }
                 if (node.op != TokenKind::Amp) {
                     return false;
                 }

@@ -1,0 +1,12 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+comptime const origin = Point{.x = 1, .y = 2};
+const p = &origin;
+comptime const copy = *p;
+
+func main() i32 {
+    return copy.x;
+}
