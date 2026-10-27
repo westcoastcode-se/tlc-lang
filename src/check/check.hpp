@@ -88,6 +88,8 @@ struct Symbol {
     // `comptime const name = this` promotes it. The name is not itself a compiler constant.
     bool promotable = false;
     const Expr *promote_init = nullptr;
+    // Initializer of a `comptime const`. `*p` reads it when `p` is a comptime pointer.
+    const Expr *const_init = nullptr;
     // Pointer receiver `self *this`. The name is not assigned. `*self` and `self.x` are.
     bool fixed_receiver = false;
     // A parameter marked `comptime`. A method or a generic call may forward the name.
@@ -1001,6 +1003,8 @@ class Checker {
     const Expr *promotable_init(const Expr &expr);
     // `&name` where `name` is a `comptime const`.
     bool comptime_address(const Expr &expr);
+    // What a comptime pointer expression points at. Null when it is not one.
+    const Expr *comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen);
     // Literals, `comptime const` names, and expressions built from those. A runtime `const` is not.
     bool strict_comptime_expr(const Expr &expr);
     void note_promotable(Symbol &symbol, const Expr *init);

@@ -274,6 +274,13 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
                 if (node.op == TokenKind::KwUnsafe && node.expr != nullptr) {
                     return fold_number(*node.expr, seen);
                 }
+                if (node.op == TokenKind::Star && node.expr != nullptr && !node.postfix) {
+                    std::unordered_set<std::string> pointed;
+                    if (const Expr *target = comptime_pointee(*node.expr, pointed)) {
+                        return fold_number(*target, seen);
+                    }
+                    return std::nullopt;
+                }
                 if (node.postfix || node.expr == nullptr ||
                     (node.op != TokenKind::Plus && node.op != TokenKind::Minus)) {
                     return std::nullopt;
@@ -738,6 +745,14 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 }
                 if (node.op == TokenKind::KwUnsafe) {
                     return fold_int(*node.expr);
+                }
+                // `*p` is the comptime value `p` points at.
+                if (node.op == TokenKind::Star) {
+                    std::unordered_set<std::string> seen;
+                    if (const Expr *target = comptime_pointee(*node.expr, seen)) {
+                        return fold_int(*target);
+                    }
+                    return std::nullopt;
                 }
                 if (node.op == TokenKind::Bang) {
                     if (const std::optional<int> inner = fold_int(*node.expr)) {
@@ -1425,6 +1440,49 @@ bool Checker::comptime_address(const Expr &expr) {
     }
     const Symbol *symbol = lookup(named->text);
     return symbol != nullptr && symbol->is_constant;
+}
+
+const Expr *Checker::comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen) {
+    if (const auto *unary = std::get_if<Expr::Unary>(&pointer.data)) {
+        if (unary->postfix || unary->expr == nullptr) {
+            return nullptr;
+        }
+        // `&addr` points at that comptime variable.
+        if (unary->op == TokenKind::Amp) {
+            const auto *named = std::get_if<Expr::Name>(&unary->expr->data);
+            if (named == nullptr) {
+                return nullptr;
+            }
+            const Symbol *symbol = lookup(named->text);
+            if (symbol == nullptr || !symbol->is_constant) {
+                return nullptr;
+            }
+            return unary->expr.get();
+        }
+        // `**pp` points at whatever `*pp` points at.
+        if (unary->op == TokenKind::Star) {
+            const Expr *mid = comptime_pointee(*unary->expr, seen);
+            if (mid == nullptr) {
+                return nullptr;
+            }
+            return comptime_pointee(*mid, seen);
+        }
+        return nullptr;
+    }
+    const auto *named = std::get_if<Expr::Name>(&pointer.data);
+    if (named == nullptr || !seen.insert(named->text).second) {
+        return nullptr;
+    }
+    const Symbol *symbol = lookup(named->text);
+    const Expr *init = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
+    if (init == nullptr) {
+        if (const VarDecl *var = global_var(named->text); var != nullptr && var->is_comptime) {
+            init = var->init.get();
+        }
+    }
+    const Expr *target = init == nullptr ? nullptr : comptime_pointee(*init, seen);
+    seen.erase(named->text);
+    return target;
 }
 
 bool Checker::strict_comptime_expr(const Expr &expr) {

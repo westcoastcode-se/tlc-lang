@@ -779,6 +779,7 @@ void Checker::define_constant(const VarDecl &var, Type type, int folded) {
     symbol.type = std::move(type);
     symbol.is_constant = true;
     symbol.const_value = folded;
+    symbol.const_init = var.init.get();
     symbol.package_file = file_id_;
     Symbol exported = symbol;
     bool defined = false;

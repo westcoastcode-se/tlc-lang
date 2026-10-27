@@ -689,6 +689,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                 binding.const_value = *number;
             }
         }
+        if (node.is_comptime && node.value != nullptr) {
+            binding.const_init = node.value.get();
+        }
         builder_.CreateStore(stored, slot);
         binding.value = slot;
         scopes_.back()[name] = binding;
@@ -1655,6 +1658,9 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                             binding.folded_local = true;
                             binding.const_value = *number;
                         }
+                    }
+                    if (var.is_comptime && var.init != nullptr) {
+                        binding.const_init = var.init.get();
                     }
                     if (!hides) {
                         publish(binding);

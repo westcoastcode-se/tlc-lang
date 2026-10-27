@@ -255,6 +255,13 @@ std::optional<CodeGen::FoldedNumber> CodeGen::fold_number(const Expr &expr, std:
         if (unary->op == TokenKind::KwUnsafe && unary->expr != nullptr) {
             return fold_number(*unary->expr, seen);
         }
+        if (unary->op == TokenKind::Star && !unary->postfix && unary->expr != nullptr) {
+            std::unordered_set<std::string> pointed;
+            if (const Expr *target = comptime_pointee(*unary->expr, pointed)) {
+                return fold_number(*target, seen);
+            }
+            return std::nullopt;
+        }
         if (unary->postfix || unary->expr == nullptr ||
             (unary->op != TokenKind::Plus && unary->op != TokenKind::Minus)) {
             return std::nullopt;
@@ -438,6 +445,52 @@ std::optional<int32_t> CodeGen::folded_local_name(const Expr &expr) const {
     return binding->const_value;
 }
 
+const Expr *CodeGen::comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen) const {
+    if (const auto *unary = std::get_if<Expr::Unary>(&pointer.data)) {
+        if (unary->postfix || unary->expr == nullptr) {
+            return nullptr;
+        }
+        if (unary->op == TokenKind::Amp) {
+            const auto *named = std::get_if<Expr::Name>(&unary->expr->data);
+            if (named == nullptr) {
+                return nullptr;
+            }
+            if (const Binding *binding = lookup(named->text);
+                binding != nullptr && (binding->folded_local || binding->immediate || binding->const_init != nullptr)) {
+                return unary->expr.get();
+            }
+            if (const VarDecl *var = global_decl(named->text); var != nullptr && var->is_comptime) {
+                return unary->expr.get();
+            }
+            return nullptr;
+        }
+        if (unary->op == TokenKind::Star) {
+            const Expr *mid = comptime_pointee(*unary->expr, seen);
+            if (mid == nullptr) {
+                return nullptr;
+            }
+            return comptime_pointee(*mid, seen);
+        }
+        return nullptr;
+    }
+    const auto *named = std::get_if<Expr::Name>(&pointer.data);
+    if (named == nullptr || !seen.insert(named->text).second) {
+        return nullptr;
+    }
+    const Expr *init = nullptr;
+    if (const Binding *binding = lookup(named->text)) {
+        init = binding->const_init;
+    }
+    if (init == nullptr) {
+        if (const VarDecl *var = global_decl(named->text); var != nullptr && var->is_comptime) {
+            init = var->init.get();
+        }
+    }
+    const Expr *target = init == nullptr ? nullptr : comptime_pointee(*init, seen);
+    seen.erase(named->text);
+    return target;
+}
+
 std::optional<int32_t> CodeGen::local_folded_i32(const Expr &expr) const {
     if (const std::optional<int32_t> local = folded_local_name(expr)) {
         return local;
@@ -450,6 +503,13 @@ std::optional<int32_t> CodeGen::local_folded_i32(const Expr &expr) const {
                 using T = std::decay_t<decltype(node)>;
                 if constexpr (std::is_same_v<T, Expr::Unary>) {
                     if (node.postfix || node.expr == nullptr) {
+                        return std::nullopt;
+                    }
+                    if (node.op == TokenKind::Star) {
+                        std::unordered_set<std::string> pointed;
+                        if (const Expr *target = comptime_pointee(*node.expr, pointed)) {
+                            return local_folded_i32(*target);
+                        }
                         return std::nullopt;
                     }
                     const std::optional<int32_t> inner = local_folded_i32(*node.expr);
@@ -553,6 +613,13 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 }
                 if (node.op == TokenKind::KwUnsafe) {
                     return fold(*node.expr);
+                }
+                if (node.op == TokenKind::Star) {
+                    std::unordered_set<std::string> pointed;
+                    if (const Expr *target = comptime_pointee(*node.expr, pointed)) {
+                        return fold(*target);
+                    }
+                    return std::nullopt;
                 }
                 if (node.op == TokenKind::Bang) {
                     if (const auto inner = fold(*node.expr)) {

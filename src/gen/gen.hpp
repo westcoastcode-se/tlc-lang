@@ -318,6 +318,8 @@ struct Binding {
     // A local `const` whose initializer folded to `i32`. The slot is still stored.
     // A runtime use loads it. A comptime fold may read `const_value`.
     bool folded_local = false;
+    // Initializer of a local `comptime const`. `*p` reads it.
+    const Expr *const_init = nullptr;
     int const_value = 0;
     const FunctionDecl *decl = nullptr;
     bool elem_float = false;
@@ -1378,6 +1380,8 @@ class CodeGen {
     // A field default `{1}` or `{1, 0...}` on `[2]i32`. Missing elements are zero in this constant.
     llvm::Constant *const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
     std::optional<int32_t> fold(const Expr &expr) const;
+    // What a comptime pointer expression points at. Null when it is not one.
+    const Expr *comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen) const;
     // A bare local `const` recorded while this function is emitted. `fold` does not see it.
     std::optional<int32_t> folded_local_name(const Expr &expr) const;
     // That integer, or a unary or binary of one. Used to record the binding, not by `fold`.

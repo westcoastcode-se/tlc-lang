@@ -1,0 +1,7 @@
+comptime const addr = 40;
+const p = &addr;
+comptime const n = *p;
+
+func main() i32 {
+    return n;
+}

@@ -2168,9 +2168,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                                 symbol.is_constant = true;
                                 symbol.folded_local = true;
                                 symbol.const_value = *value;
+                                symbol.const_init = bind.value.get();
                             }
                         } else {
                             symbol.is_constant = true;
+                            symbol.const_init = bind.value.get();
                         }
                     } else if (node.is_const && !node.is_comptime) {
                         note_promotable(symbol, node.value.get());
@@ -2331,9 +2333,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                                         live->is_constant = true;
                                         live->folded_local = true;
                                         live->const_value = *value;
+                                        live->const_init = written.init.get();
                                     }
                                 } else {
                                     live->is_constant = true;
+                                    live->const_init = written.init.get();
                                 }
                             } else if ((var.is_const_decl || live->type.is_const) && var.init != nullptr) {
                                 note_promotable(*live, var.init.get());
