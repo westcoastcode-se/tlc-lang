@@ -43,6 +43,23 @@ double float_arith(TokenKind op, double lhs, double rhs, bool wide) {
     return static_cast<double>(value);
 }
 
+// A narrowing cast keeps the destination's low bits, then widens to `i32`.
+// `bool` is one bit. Sign-extending that bit makes true into `-1`.
+int cast_folded(int value, int bits, bool zero_extend, bool as_bool) {
+    if (as_bool) {
+        return value != 0 ? -1 : 0;
+    }
+    if (bits <= 0 || bits >= 32) {
+        return value;
+    }
+    const uint32_t mask = (1u << static_cast<unsigned>(bits)) - 1u;
+    const uint32_t low = static_cast<uint32_t>(value) & mask;
+    if (zero_extend || (low & (1u << static_cast<unsigned>(bits - 1))) == 0) {
+        return static_cast<int>(low);
+    }
+    return static_cast<int>(low | ~mask);
+}
+
 std::optional<int> eval_int_op(TokenKind op, int lhs, int rhs) {
     auto wrap = [](int64_t value) { return static_cast<int>(static_cast<uint32_t>(value)); };
     const int64_t a = lhs;
@@ -333,9 +350,15 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
                     inner->value = round_float(inner->value, false);
                     inner->is_float = true;
                     inner->wide = false;
-                } else if (node.type_name == "f64" || node.type_name == "double") {
+                    return inner;
+                }
+                if (node.type_name == "f64" || node.type_name == "double") {
                     inner->is_float = true;
                     inner->wide = true;
+                    return inner;
+                }
+                if (const std::optional<int> narrowed = fold_int(expr)) {
+                    return from_int(*narrowed);
                 }
                 return inner;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
@@ -429,8 +452,14 @@ std::optional<int> Checker::fold_runtime_const(const Expr &expr, int depth) {
             using T = std::decay_t<decltype(item)>;
             if constexpr (std::is_same_v<T, Expr::Name>) {
                 const Symbol *symbol = lookup(item.text);
-                if (symbol == nullptr || !symbol->runtime_const || symbol->promote_init == nullptr ||
-                    !plain_int_constant(symbol->type)) {
+                if (symbol == nullptr || !symbol->runtime_const || !plain_int_constant(symbol->type)) {
+                    return std::nullopt;
+                }
+                // `const n = a` keeps the value from that declaration.
+                if (symbol->folded_init) {
+                    return symbol->const_value;
+                }
+                if (symbol->promote_init == nullptr) {
                     return std::nullopt;
                 }
                 return fold_runtime_const(*symbol->promote_init, depth + 1);
@@ -715,7 +744,8 @@ std::optional<int> Checker::constant_index(const Expr &expr) {
                     if (symbol == nullptr) {
                         return std::nullopt;
                     }
-                    if (symbol->folded_local) {
+                    if (symbol->folded_local ||
+                        (symbol->folded_init && symbol->runtime_const && plain_int_constant(symbol->type))) {
                         return symbol->const_value;
                     }
                     // `const i = 0` then `t[i]`. A `var` has no folded initializer.
@@ -903,7 +933,15 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (!is_integer(named) && named.kind != TypeKind::Bool && !is_c_enum(named)) {
                     return std::nullopt;
                 }
-                return fold_int(*node.expr);
+                const std::optional<int> inner = fold_int(*node.expr);
+                if (!inner || is_c_enum(named)) {
+                    return inner;
+                }
+                if (named.kind == TypeKind::Bool) {
+                    return cast_folded(*inner, 1, false, true);
+                }
+                // `i8` and `u8` are `Char`. Only `u8` and a plain `char` zero-extend.
+                return cast_folded(*inner, width_of(named), named.is_unsigned || named.plain_char, false);
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
                 if (node.lhs == nullptr || node.rhs == nullptr) {
                     return std::nullopt;
@@ -2112,6 +2150,7 @@ void Checker::note_promotable(Symbol &symbol, const Expr *init) {
         symbol.promote_init = init;
         if (const std::optional<int> value = fold_int(*init)) {
             symbol.const_value = *value;
+            symbol.folded_init = true;
         }
         return;
     }
@@ -2123,6 +2162,7 @@ void Checker::note_promotable(Symbol &symbol, const Expr *init) {
     if (const std::optional<int> value = constant_index(*init)) {
         symbol.promote_init = init;
         symbol.const_value = *value;
+        symbol.folded_init = true;
     }
 }
 

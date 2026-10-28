@@ -1,0 +1,38 @@
+func main() i32 {
+    const narrow = i8(300);
+    const wide = u8(-1);
+    const mid = i16(70000);
+    const sign = i8(128);
+    const flag = i32(bool(2));
+    comptime if (narrow != 44) {
+        return 1;
+    }
+    comptime if (wide != 255) {
+        return 2;
+    }
+    comptime if (mid != 4464) {
+        return 3;
+    }
+    comptime if (sign != -128) {
+        return 4;
+    }
+    comptime if (flag != -1) {
+        return 5;
+    }
+    if (narrow != 44) {
+        return 6;
+    }
+    if (wide != 255) {
+        return 7;
+    }
+    if (mid != 4464) {
+        return 8;
+    }
+    if (sign != -128) {
+        return 9;
+    }
+    if (flag != -1) {
+        return 10;
+    }
+    return 42;
+}

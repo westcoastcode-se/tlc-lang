@@ -108,6 +108,9 @@ struct Symbol {
     // Every value-parameter list of this generic name. One entry is the usual template.
     std::vector<const FunctionDecl *> fn_templates;
     int const_value = 0;
+    // `const_value` was computed when this runtime `const` was declared.
+    // A later binding of a name in the initializer does not change it.
+    bool folded_init = false;
     int function_id = 0;
     uint32_t package_file = 0;
     SourceLoc loc{};

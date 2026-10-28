@@ -1,0 +1,45 @@
+const base = 4;
+
+func main() i32 {
+    const n = base;
+    const i = base - 4;
+    var pair = (40, 2);
+    {
+        const base = 1;
+        comptime switch (n) {
+        case 4:
+            break;
+        default:
+            return 1;
+        }
+        comptime if (n != 4) {
+            return 2;
+        }
+        var row [n]i32;
+        if (row.len != 4) {
+            return 3;
+        }
+        if (pair[i] != 40) {
+            return 4;
+        }
+    }
+    const kept = 1;
+    const m = kept;
+    var kept = 9;
+    comptime switch (m) {
+    case 1:
+        break;
+    default:
+        return 5;
+    }
+    const outer = 1;
+    {
+        const outer = outer + 1;
+        comptime switch (outer) {
+        case 2:
+            return 42;
+        default:
+            return 6;
+        }
+    }
+}

@@ -1258,8 +1258,14 @@ std::optional<int> Checker::array_length_value(const std::string &name) {
     // `lookup_const_value` stops when any local hides the file-scope constant.
     // A runtime `const` whose initializer folds is still that length.
     const Symbol *symbol = lookup(name);
-    if (symbol == nullptr || !symbol->runtime_const || symbol->promote_init == nullptr ||
-        !plain_int_constant(symbol->type)) {
+    if (symbol == nullptr || !symbol->runtime_const || !plain_int_constant(symbol->type)) {
+        return std::nullopt;
+    }
+    // The length is the value from the declaration, not a name that init still mentions.
+    if (symbol->folded_init) {
+        return symbol->const_value;
+    }
+    if (symbol->promote_init == nullptr) {
         return std::nullopt;
     }
     return constant_index(*symbol->promote_init);

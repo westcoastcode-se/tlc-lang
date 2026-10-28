@@ -7,6 +7,23 @@ namespace tlc {
 
 namespace {
 
+// A narrowing cast keeps the destination's low bits, then widens to `i32`.
+// `bool` is one bit. Sign-extending that bit makes true into `-1`.
+int32_t cast_folded(int32_t value, int bits, bool zero_extend, bool as_bool) {
+    if (as_bool) {
+        return value != 0 ? -1 : 0;
+    }
+    if (bits <= 0 || bits >= 32) {
+        return value;
+    }
+    const uint32_t mask = (1u << static_cast<unsigned>(bits)) - 1u;
+    const uint32_t low = static_cast<uint32_t>(value) & mask;
+    if (zero_extend || (low & (1u << static_cast<unsigned>(bits - 1))) == 0) {
+        return static_cast<int32_t>(low);
+    }
+    return static_cast<int32_t>(low | ~mask);
+}
+
 std::optional<int32_t> eval_local_op(TokenKind op, int32_t lhs, int32_t rhs) {
     auto wrap = [](int64_t value) { return static_cast<int32_t>(static_cast<uint32_t>(value)); };
     const int64_t a = lhs;
@@ -277,9 +294,15 @@ std::optional<CodeGen::FoldedNumber> CodeGen::fold_number(const Expr &expr, std:
             inner->value = round_float(inner->value, false);
             inner->is_float = true;
             inner->wide = false;
-        } else if (cast->type_name == "f64" || cast->type_name == "double") {
+            return inner;
+        }
+        if (cast->type_name == "f64" || cast->type_name == "double") {
             inner->is_float = true;
             inner->wide = true;
+            return inner;
+        }
+        if (const std::optional<int32_t> narrowed = fold(expr)) {
+            return from_int(*narrowed);
         }
         return inner;
     }
@@ -790,7 +813,24 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 if (node.indirections != 0 || node.is_struct || node.is_enum || node.is_fn_ptr || node.expr == nullptr) {
                     return std::nullopt;
                 }
-                return fold(*node.expr);
+                const std::optional<int32_t> inner = fold(*node.expr);
+                if (!inner || !node.type_package.empty()) {
+                    return inner;
+                }
+                const Lowered target =
+                    lower(current_file_, node.type_name, "", node.is_struct, 0, false, 0, false);
+                if (target.elem_float || target.elem_void || target.depth != 0 || target.struct_id >= 0 ||
+                    target.is_slice || target.fn_ty != nullptr) {
+                    return std::nullopt;
+                }
+                if (target.elem_bool) {
+                    return cast_folded(*inner, 1, false, true);
+                }
+                if (target.elem_bits == 0 && !target.elem_char) {
+                    return inner;
+                }
+                const int bits = target.elem_bits == 0 ? 8 : target.elem_bits;
+                return cast_folded(*inner, bits, target.elem_unsigned || target.elem_char, false);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 // `"hi"[1]` is the byte. The length does not include the terminating null.
                 // `pair[0][1]` walks each index. The base may itself be an index.
