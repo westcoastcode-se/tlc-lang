@@ -30,7 +30,7 @@ func main() i32 {
     var a [4]i32;
     var box Box[i32];
     var point Point;
-    if (sizeof(builtin.Type) != 24) {
+    if (sizeof(builtin.Type) != 8 || sizeof(builtin.CompiledType) != 24) {
         return 1;
     }
     if (typeof(i64) == typeof(i32) || kind != typeof(i32)) {

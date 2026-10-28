@@ -1251,6 +1251,20 @@ std::optional<int> Checker::lookup_const_value(const std::string &name) {
     return std::nullopt;
 }
 
+std::optional<int> Checker::array_length_value(const std::string &name) {
+    if (const std::optional<int> value = lookup_const_value(name)) {
+        return value;
+    }
+    // `lookup_const_value` stops when any local hides the file-scope constant.
+    // A runtime `const` whose initializer folds is still that length.
+    const Symbol *symbol = lookup(name);
+    if (symbol == nullptr || !symbol->runtime_const || symbol->promote_init == nullptr ||
+        !plain_int_constant(symbol->type)) {
+        return std::nullopt;
+    }
+    return constant_index(*symbol->promote_init);
+}
+
 bool Checker::spell_type(const Type &type, SpecArg &out) const {
     const Type *cursor = &type;
     // Look through pointers only to find an array. A plain `*T` stays on `cursor` and is counted below.
@@ -1706,8 +1720,8 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
     (void)indirections;
     (void)optional;
     if (!array_len_name.empty()) {
-        const std::optional<int> value = lookup_const_value(array_len_name);
-        if (!value || *value <= 0) {
+        const std::optional<int> value = array_length_value(array_len_name);
+        if (!value || *value < 0) {
             error(loc, "not supported yet");
         } else {
             array_len = *value;
@@ -1763,11 +1777,48 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
                 out.value = *value;
                 return true;
             }
-            // A local `const` is not a file-scope constant. `lookup_const_value` stays the array length.
+            // A local `comptime const` is this value argument. A runtime `const` is an array length.
             if (const Symbol *symbol = lookup(arg.type_name); symbol != nullptr && symbol->folded_local) {
                 out = {};
                 out.is_value = true;
                 out.value = symbol->const_value;
+                return true;
+            }
+        }
+        // `width[made.x]` is that integer. `made.x` is parsed as a dotted name.
+        if (!arg.type_package.empty() && !arg.type_name.empty() && arg.indirections == 0 && arg.args.empty() &&
+            !arg.is_array && arg.shells.empty()) {
+            Expr selector;
+            Expr::Selector node;
+            auto base = std::make_unique<Expr>();
+            Expr::Name name;
+            name.text = arg.type_package;
+            name.loc = arg.loc;
+            base->data = std::move(name);
+            node.base = std::move(base);
+            node.field = arg.type_name;
+            node.loc = arg.loc;
+            selector.data = std::move(node);
+            const auto *dotted = std::get_if<Expr::Selector>(&selector.data);
+            if (dotted != nullptr && dotted->base != nullptr &&
+                comptime_struct_field(*dotted->base, dotted->field) != nullptr) {
+                const std::size_t before = diags_.size();
+                const Type got = check_expr(selector, true);
+                if (diags_.size() != before || got.kind == TypeKind::Invalid) {
+                    return false;
+                }
+                if (!is_integer(got)) {
+                    error(loc.valid() ? loc : arg.loc, "type mismatch");
+                    return false;
+                }
+                const std::optional<int> folded = fold_int(selector);
+                if (!folded) {
+                    error(loc.valid() ? loc : arg.loc, "not supported yet");
+                    return false;
+                }
+                out = {};
+                out.is_value = true;
+                out.value = *folded;
                 return true;
             }
         }
@@ -1780,8 +1831,8 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
     }
     TypeArg concrete = arg;
     if (!concrete.array_len_name.empty()) {
-        const std::optional<int> len = lookup_const_value(concrete.array_len_name);
-        if (!len || *len <= 0) {
+        const std::optional<int> len = array_length_value(concrete.array_len_name);
+        if (!len || *len < 0) {
             error(arg.loc, "not supported yet");
             return false;
         }
@@ -1834,7 +1885,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
     (void)is_struct;
     if (!array_len_name.empty()) {
         if (const SpecArg *bound = find_arg(params, bounds, array_len_name); bound != nullptr && bound->is_value) {
-            if (bound->value <= 0) {
+            if (bound->value < 0) {
                 error(loc, "not supported yet");
             } else {
                 array_len = bound->value;
@@ -1849,7 +1900,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
                 continue;
             }
             if (const SpecArg *bound = find_arg(params, bounds, shell.length_name); bound != nullptr && bound->is_value) {
-                if (bound->value <= 0) {
+                if (bound->value < 0) {
                     error(loc, "not supported yet");
                 } else {
                     shell.length = bound->value;
@@ -1865,9 +1916,13 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         }
         if (!arg.array_len_name.empty()) {
             if (const SpecArg *bound = find_arg(params, bounds, arg.array_len_name); bound != nullptr && bound->is_value) {
-                arg.array_len = bound->value;
-                arg.array_len_name.clear();
-                arg.is_array = true;
+                if (bound->value < 0) {
+                    error(arg.loc, "not supported yet");
+                } else {
+                    arg.array_len = bound->value;
+                    arg.array_len_name.clear();
+                    arg.is_array = true;
+                }
             }
         }
         for (TypeArg &nested : arg.args) {

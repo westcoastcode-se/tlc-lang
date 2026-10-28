@@ -42,6 +42,7 @@ add_library(tlc_lib
     src/check/sema_generic.cpp
     src/check/sema_spec.cpp
     src/gen/codegen.cpp
+    src/gen/codegen_eval.cpp
     src/gen/codegen_abi.cpp
     src/gen/codegen_lower.cpp
     src/gen/codegen_layout.cpp

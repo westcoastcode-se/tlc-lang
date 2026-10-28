@@ -981,7 +981,7 @@ bool ident_continue(unsigned char c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
 }
 
-// `builtin.Type` has no typedef. The comment that starts with `Type` is its documentation.
+// Used when builtin.tlc does not declare `type Type`. The comment that starts with `Type` is its documentation.
 void add_builtin_type(const PackageNode &node, const std::string &text, const std::string &uri, bool entry,
                       std::vector<Sym> &out) {
     if (!is_compiler_builtin(&node)) {

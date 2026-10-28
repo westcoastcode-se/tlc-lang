@@ -1,0 +1,16 @@
+macro func add(slot *i32, n i32) void {
+    for (var i = 0; i < n; i = i + 1) {
+        if (i == 0) {
+            emit *slot = *slot + 40;
+        } else {
+            emit *slot = *slot + 1;
+        }
+    }
+}
+
+func main() i32 {
+    var total = 0;
+    var n = 3;
+    add(&total, n);
+    return total;
+}

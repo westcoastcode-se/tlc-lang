@@ -1,0 +1,13 @@
+comptime func add(n i32) i32 {
+    var x = n;
+    var i = 0;
+    while (i < 3) {
+        x = x + 1;
+        i = i + 1;
+    }
+    return x;
+}
+
+func main() i32 {
+    return add(39);
+}

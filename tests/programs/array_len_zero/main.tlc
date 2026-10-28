@@ -1,0 +1,22 @@
+var file_row [0]i32;
+var empty = [_]i32{};
+comptime const N = 0;
+comptime const M = empty.len;
+
+func buf[K i32]() i32 {
+    var local [K]i32;
+    return sizeof(local);
+}
+
+func main() i32 {
+    var row [N]i32;
+    var written [0]i32;
+    var again [M]i32;
+    if (sizeof(row) != 0 || row.len != 0) { return 1; }
+    if (sizeof(written) != 0 || written.len != 0) { return 2; }
+    if (sizeof(again) != 0 || again.len != 0) { return 3; }
+    if (sizeof(file_row) != 0 || file_row.len != 0) { return 4; }
+    if (sizeof(empty) != 0 || empty.len != 0) { return 5; }
+    if (buf[0]() != 0 || buf[2]() != 8) { return 6; }
+    return 42;
+}

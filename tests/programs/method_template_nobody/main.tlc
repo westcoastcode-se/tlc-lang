@@ -1,0 +1,9 @@
+type Point struct {
+    x i32;
+};
+
+func Point::id[T type](self *this, value T) T;
+
+func main() i32 {
+    return 0;
+}

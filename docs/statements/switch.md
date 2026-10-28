@@ -103,7 +103,7 @@ The copy that still receives it typechecks every case.
 
 A `var` and a local `const` do not fold.
 
-`comptime switch` in a `macro` is `not supported yet`.
+`comptime switch` in a `macro` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`.
 
 ```c
 const n = 1;

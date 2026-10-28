@@ -290,6 +290,7 @@ void CodeGen::prepare_structs() {
                 slot.elem_bits = low.elem_bits;
                 slot.elem_unsigned = low.elem_unsigned;
                 slot.elem_float = low.elem_float;
+                slot.enum_id = low.enum_id;
                 slot.is_slice = low.is_slice;
                 slot.elem_slice = low.elem_slice;
                 slot.shells = low.shells;
@@ -416,9 +417,9 @@ void CodeGen::prepare_structs() {
                     }
                 }
             }
-            // `builtin.Type` stores a descriptor pointer in every arm. A byte payload cannot
+            // `builtin.CompiledType` stores a descriptor pointer in every arm. A byte payload cannot
             // be a constant that holds that pointer, so the payload is the Function struct.
-            if (item->name == "Type" && item->is_union && item->tag_name == "TypeKind" &&
+            if (item->name == "CompiledType" && item->is_union && item->tag_name == "TypeKind" &&
                 is_compiler_builtin(find_node(file))) {
                 llvm::Type *function_ty = nullptr;
                 for (const FieldLayout &slot : fields) {
@@ -481,6 +482,7 @@ void CodeGen::prepare_structs() {
         const FieldLayout *kind = name != nullptr ? &layout.fields[1] : nullptr;
         const bool name_text = name != nullptr && name->name == "name" && name->is_slice && name->elem_unsigned &&
                                name->elem_bits == 8;
+        // `kind` is `Type`, one pointer to `CompiledType`.
         if (!layout.ready || !name_text || kind->name != "kind" || kind->depth != 1 || type_struct_id_ < 0 ||
             kind->struct_id != type_struct_id_) {
             continue;
@@ -488,7 +490,7 @@ void CodeGen::prepare_structs() {
         field_struct_id_ = id;
         break;
     }
-    // A file that does not import builtin still emits `typeof`. The value is this union.
+    // A file that does not import builtin still emits `typeof`. The pointer addresses this union.
     if (type_struct_id_ < 0) {
         (void)type_union_type();
     }
@@ -514,7 +516,8 @@ void CodeGen::install_field_struct() {
     FieldLayout kind;
     kind.name = "kind";
     kind.type = ptr_type();
-    kind.depth = 2;
+    kind.depth = 1;
+    kind.struct_id = synthetic_type_id;
     layout.fields.push_back(std::move(name));
     layout.fields.push_back(std::move(kind));
     structs_.push_back(std::move(layout));
@@ -932,6 +935,10 @@ CodeGen::SymbolForm CodeGen::symbol_form(const PackageNode &node, const std::str
         return form;
     }
     form.linkage = exported && !is_static ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::InternalLinkage;
+    // The eval module is thrown away. ORC lookup only sees external symbols, and a function field needs that address.
+    if (eval_) {
+        form.linkage = llvm::GlobalValue::ExternalLinkage;
+    }
     return form;
 }
 
@@ -1545,19 +1552,10 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                 } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                     return as_int(32, false);
                 } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
-                    if (type_struct_id_ >= 0 && type_struct_id_ < static_cast<int>(structs_.size()) &&
-                        structs_[static_cast<std::size_t>(type_struct_id_)].type != nullptr) {
-                        Lowered low;
-                        low.struct_id = type_struct_id_;
-                        low.type = structs_[static_cast<std::size_t>(type_struct_id_)].type;
-                        return low;
-                    }
-                    if (fallback_type_ty_ == nullptr) {
-                        return std::nullopt;
-                    }
                     Lowered low;
-                    low.struct_id = synthetic_type_id;
-                    low.type = fallback_type_ty_;
+                    low.depth = 1;
+                    low.struct_id = type_struct_id_ >= 0 ? type_struct_id_ : synthetic_type_id;
+                    low.type = ptr_type();
                     return low;
                 } else if constexpr (std::is_same_v<T, Expr::Name>) {
                     if (const Binding *global = find_global(item.text)) {

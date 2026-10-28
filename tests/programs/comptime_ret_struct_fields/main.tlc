@@ -1,0 +1,68 @@
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+type Point struct {
+    x i32;
+};
+
+type Color enum {
+    Red,
+    Green,
+    Blue,
+};
+
+type Box struct {
+    at Point;
+    row [2]i32;
+    label []const u8;
+    op func (i32, i32) i32;
+    p ?*i32;
+    ink Color;
+    bias f64;
+    narrow f32;
+    flag bool;
+};
+
+comptime func make() Box {
+    var box = Box{
+        .at = Point{.x = 10},
+        .row = [_]i32{20, 1},
+        .label = "hi",
+        .op = add,
+        .p = null,
+        .ink = Color.Blue,
+        .bias = 0.5,
+        .narrow = 0.5f,
+        .flag = true,
+    };
+    return box;
+}
+
+comptime const made = make();
+
+func main() i32 {
+    comptime if (!made.flag) {
+        return 0;
+    }
+    comptime if (made.label[0] != 104 || made.label.len != 2) {
+        return 0;
+    }
+    comptime if (made.row[0] != 20 || made.row[1] != 1) {
+        return 0;
+    }
+    comptime if (made.at.x != 10) {
+        return 0;
+    }
+    comptime if (made.ink != Color.Blue) {
+        return 0;
+    }
+    comptime if (made.bias != 0.5 || made.narrow != 0.5f) {
+        return 0;
+    }
+    var extra = 0;
+    if (made.p == null) {
+        extra = 1;
+    }
+    return made.at.x + made.row[0] + made.row[1] + (made.op)(4, 1) + extra + 5;
+}

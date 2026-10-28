@@ -288,7 +288,7 @@ bool accepts_slice(const Type &got, const Type &want) {
             return true;
         }
         const Type &array = *got.pointee;
-        if (got.decayed_len == 0 && array.kind == TypeKind::Array && array.length > 0 && array.alias_id == 0 &&
+        if (got.decayed_len == 0 && array.kind == TypeKind::Array && array.length >= 0 && array.alias_id == 0 &&
             array.element != nullptr) {
             Type element = *array.element;
             if (array.is_const) {

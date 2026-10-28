@@ -414,7 +414,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 require_method_params(*fn);
                 if (generic_struct_name(file_id_, fn->method_struct)) {
                     // `func Vec[T]::get[U type]` is a method template on each specialization.
-                    // A missing body, `...`, and a trait parameter stay rejected.
+                    // `...` and a trait parameter stay rejected. An `extern` prototype names
+                    // the specialization.
                     if (!fn->type_params.empty()) {
                         for (const TypeParam &param : fn->type_params) {
                             for (const std::string &used : fn->method_params) {
@@ -423,7 +424,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                                 }
                             }
                         }
-                        if (fn->variadic || fn->body == nullptr || extern_generic_trait_param(file_id_, *fn)) {
+                        if (fn->variadic || extern_generic_trait_param(file_id_, *fn) ||
+                            (fn->body == nullptr && !extern_generic_prototype(*fn))) {
                             error(fn->loc, "not supported yet");
                         }
                     }
@@ -730,6 +732,12 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             }
             if ((var->is_const_decl || var->is_const) && !var->is_comptime) {
                 note_promotable(symbol, var->init.get());
+            } else if (!var->is_comptime && var->init != nullptr) {
+                // `var f = add` when `add` is a `comptime func`. A later `comptime const` names it.
+                if (const auto *named = std::get_if<Expr::Name>(&var->init->data);
+                    named != nullptr && named->runtime_body) {
+                    note_promotable(symbol, var->init.get());
+                }
             }
             symbol.link_name = var->link_name;
             bool defined = false;
@@ -1068,10 +1076,6 @@ Type Checker::check_file_const(VarDecl &written) {
         return got;
     }
     Type got = type_invalid();
-    // `comptime const op = add` names that comptime func. A cast stays rejected.
-    const bool name_init = written.is_const_decl && written.is_comptime && written.init != nullptr &&
-                           std::holds_alternative<Expr::Name>(written.init->data);
-    AllowComptimeFn allow{allow_comptime_fn_, name_init};
     if (written.inferred) {
         got = check_expr(*written.init, true);
     } else {
@@ -1369,6 +1373,9 @@ bool Checker::constant_operand(const Expr &expr) {
                           std::is_same_v<T, Expr::Char> || std::is_same_v<T, Expr::Float> ||
                           std::is_same_v<T, Expr::Nullptr>) {
                 return true;
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                // The call kept a struct literal. A string is not a constant operand on its own.
+                return node.comptime_struct != nullptr;
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 return fold_int(expr).has_value();
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
@@ -1639,9 +1646,6 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 }
                 const std::size_t before = diags_.size();
                 // The declaration check already accepted this name. This pass checks it again.
-                const bool name_init = var->is_const_decl && var->is_comptime &&
-                                       std::holds_alternative<Expr::Name>(var->init->data);
-                AllowComptimeFn allow{allow_comptime_fn_, name_init};
                 check_against(*var->init, want);
                 if (diags_.size() == before) {
                     if (!(var->is_const_decl && var->is_comptime) && !var->is_extern &&
@@ -1894,7 +1898,7 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
             exports_[file_id].emplace(var->name, std::move(symbol));
         }
     }
-    // `builtin.Type` is the tagged union in builtin.tlc. This export remains when that file does not declare it.
+    // `builtin.Type` is the pointer alias in builtin.tlc. This export remains when that file does not declare it.
     if (graph_ != nullptr) {
         const PackageNode *node = find_node(file_id);
         if (is_compiler_builtin(node) && !exports_[file_id].contains("Type")) {

@@ -88,7 +88,13 @@ Another package reads `pkg.Type.name` or `pkg.Box[i32].name`.
 
 Another package reads and assigns `pkg.Entity.next` or `pkg.Box[i32].extra`.
 
-A `const` inside the braces is not a member and is reported as `not supported yet`.
+`const name = expr` and `var name type` inside the braces are the constant and the variable on that type.
+
+`const Type::name` inside a function is `const on a type is only valid at file scope`. `var Type::name` inside a function is that file-scope variable.
+
+`export` and `extern` on either form inside the braces are `not supported yet`.
+
+`Entity::name := expr` is `expected a declaration`.
 
 `extern` and `extern(abi="tlc")` on a file-scope `const` or `const Type::name` name `qualifier.name` or `qualifier.Type.name`.
 
@@ -208,11 +214,39 @@ A runtime `const` of a tuple is `type mismatch`.
 
 `return` leaves the function.
 
-A call used as a value folds when the body is one `return` of a constant `i32`.
+A call used as a value folds when every argument is a comptime value and the result is `i32` or a struct.
+
+A body that is one `return` of a constant `i32` folds. A body with statements is compiled and run, and that integer is the constant.
 
 That call has no runtime symbol and pushes no trace frame.
 
 `return add(41)` when `add` is `comptime func add(n i32) i32 { return n + 1; }` is `movl $42, %eax` and `retq`.
+
+`return add(41)` when that body is `var x = n; x = x + 1; return x;` is those same two instructions.
+
+A struct result is kept as that literal.
+
+`return move(origin).x` when `move` returns `Point{.x = 42, .y = 1}` is `movl $42, %eax` and `retq`.
+
+The body may be `var copy = p; copy.x = copy.x + 1; return copy;` or `return Point{.x = p.x + 1, .y = p.y}`.
+
+`comptime const made = move(origin)` names that struct.
+
+A field may be an integer, a `bool`, an `f32`, an `f64`, an enumerator, a nested struct, an array of those, a `[]const u8`, a function, or `null`.
+
+`made.flag + 1` is `type mismatch`.
+
+`width[made.x]()` is `main.width.spec.42` when the file is `main.tlc`.
+
+`take(move(origin), n)` calls `main.take.spec.p_42_1`.
+
+A `var` of the struct is `not supported yet`.
+
+A value that does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
+
+A data pointer field and a union result are `global initializer is not a constant`.
+
+A result that is not `i32` and not a struct is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 
@@ -242,7 +276,7 @@ A local `const` whose initializer folds to `i32` is that integer.
 
 `emit while` and `emit do` paste that loop.
 
-A plain `while` or `do` in a `macro` is `not supported yet`.
+A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement.
 
 In a `macro`, `for` and `if` run while compiling.
 
@@ -252,13 +286,15 @@ In a `macro`, `for` and `if` run while compiling.
 
 The other arm is discarded.
 
-A condition or a bound that does not fold is `not supported yet`.
+A condition or a bound that does not fold runs at run time.
 
 `for (var item : items)` in a `macro` unrolls when the length is known.
 
 `ptr_of(items)` unrolls to the address of each element when `items` is an lvalue.
 
-A slice `var` and `ptr_of` on a temporary are `not supported yet`.
+A slice `var` is `not supported yet`.
+
+`ptr_of` on a temporary is `not an lvalue`.
 
 Outside a `macro`, `for` runs as usual.
 
@@ -274,11 +310,15 @@ A `comptime` parameter is comptime.
 
 The copy that still receives it typechecks both arms.
 
-A `var` and a local `const` do not fold.
+A `var` does not fold.
 
-`comptime if` in a `macro` is `not supported yet`.
+A local `const` whose initializer folds to `i32` does.
 
-`comptime for` is `not supported yet`.
+`comptime if` in a `macro` keeps one arm when the condition folds. A condition that does not fold is `not supported yet`.
+
+`comptime for` unrolls when the bounds fold, inside a `macro` and outside one.
+
+A bound that does not fold is `not supported yet`. It emits nothing.
 
 `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds.
 
@@ -288,7 +328,7 @@ A value that is not comptime is `not supported yet`.
 
 A `var` and a local `const` do not fold.
 
-`comptime switch` in a `macro` is `not supported yet`.
+`comptime switch` in a `macro` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`.
 
 A value call of a `macro` is `not supported yet`.
 
@@ -306,7 +346,7 @@ The index in the body is that integer.
 
 Those forms outside a `macro` are `not supported yet`.
 
-A plain `while` or `do` in a `macro` is `not supported yet`.
+A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is `not supported yet`.
 
 An ordinary function may mark a parameter `comptime`.
 
@@ -339,6 +379,10 @@ In that file, `take(scale, n)` for `const scale = 0.5` calls `main.take.spec.d3f
 In that file, `take(other, 38)` for `const other = Integer(4)` calls `main.take.spec.4`.
 
 In that file, `take(add, n)` calls `main.take.spec.fnadd`.
+
+`BinOp(add)` and `(add, 1)` when `add` is a `comptime func` are that argument.
+
+`var f = add` and `const op = add` store the pointer to that function.
 
 A `comptime func` folds those arguments when the body returns a constant `i32`.
 
@@ -632,7 +676,13 @@ A body defines that symbol.
 
 `extern(name="symbol")` on that template is reported as `name requires abi="c"`.
 
-A prototype with no body on that template is reported as `not supported yet`.
+A prototype may be the declaration that says `extern`.
+
+A call of that prototype names the specialization.
+
+A prototype that is not `extern` is reported as `not supported yet`.
+
+A comptime parameter on that prototype is reported as `not supported yet`.
 
 With no receiver the call is `Type.name[i32](...)`.
 
@@ -700,7 +750,13 @@ A body defines that symbol.
 
 `extern(abi="c")` on that template is reported as `extern(abi="c") on a trait or a generic`.
 
-A prototype with no body is reported as `not supported yet`.
+A prototype may be the declaration that says `extern`.
+
+A call of that prototype names the specialization.
+
+A prototype that is not `extern` is reported as `not supported yet`.
+
+A comptime parameter on that prototype is reported as `not supported yet`.
 
 A default method is the same form on a trait name, with a body: `func Shape::twice(self *this) i32 { ... }`.
 
@@ -794,7 +850,13 @@ Each specialization is its own symbol.
 
 A body defines that symbol.
 
-A call of a generic that has no body is reported as `not supported yet`.
+A prototype may be the declaration that says `extern`.
+
+A call of that prototype names the specialization.
+
+A generic prototype that is not `extern` is reported as `not supported yet`.
+
+A comptime parameter on that prototype is reported as `not supported yet`.
 
 `...` on a generic function stays rejected and is reported as `not supported yet`.
 
@@ -898,6 +960,10 @@ Another package reads and assigns `pkg.Box[i32].extra`.
 
 `const Entity::next = 1` and `const Box[T]::limit = 4` are constants on the type, written beside it.
 
+`const next = 1` inside the braces is that constant. `const Entity::next = 1` inside a function is `const on a type is only valid at file scope`.
+
+`var next i32 = 1` inside the braces is `var Entity::next i32 = 1`. `var Entity::next i32 = 1` inside a function is that variable.
+
 See [Variables on a type](methods/variable.md) and [Constants on a type](methods/constant.md).
 
 `var name :=` is an error.
@@ -940,17 +1006,21 @@ A trait parameter is specialized, so the call does not consult a table.
 
 ```ebnf
 type-decl   = "type" identifier [ type-params ] type-body ;
-type-body   = "struct" [ align ] ( "{" { field } "}" [ ";" ] | ";" )
+type-body   = "struct" [ align ] ( "{" { struct-item } "}" [ ";" ] | ";" )
             | "enum" [ "(" underlying ")" ] "{" [ enumerators ] "}" [ ";" ]
             | "trait" "{" { trait-item } "}" [ ";" ]
             | "union" "(" identifier [ "." identifier ] ")" "{" { union-variant } "}" [ ";" ]
             | "union" "{" field { field } "}" [ ";" ]
             | [ "const" ] go-type ";" ;
-union-variant = identifier "struct" "{" { field } "}" ";"
+union-variant = identifier "struct" "{" { struct-item } "}" ";"
               | field ;
 align       = "(" "align" "=" integer-literal ")" ;
+struct-item = field
+            | "const" identifier [ go-type ] "=" expression ";"
+            | "var" identifier "=" expression ";"
+            | "var" identifier go-type [ "=" expression ] ";" ;
 field       = [ "export" ] identifier go-type [ "=" expression ] ";"
-            | [ "export" ] identifier [ "export" ] "struct" "{" { field } "}" ";"
+            | [ "export" ] identifier [ "export" ] "struct" "{" { struct-item } "}" ";"
             | [ "export" ] identifier [ "export" ] "union" "{" { field } "}" ";"
             | [ "export" ] identifier [ "export" ] "union" "(" identifier [ "." identifier ] ")" "{" { union-variant } "}" ";" ;
 declarator  = identifier [ array ]
@@ -1044,9 +1114,11 @@ A value on a trait field, `w i32 = 1`, is reported as `expected ';'`.
 
 `export x i32` publishes that member.
 
-`var` and `const` inside the struct are reported as `not supported yet`.
+`const name = expr` and `var name type` inside the struct are the constant and the variable on that type.
 
-A variable for the type is `var Type::name` beside the struct.
+`export` and `extern` on those are `not supported yet`.
+
+A variable for the type is `var Type::name` beside the struct, or `var name` inside it.
 
 `pkg.Box[i32].name` and `pkg.Buf[4, i32].name` read an exported constant on a generic struct.
 
@@ -1615,9 +1687,15 @@ On a declaration the brackets name parameters: `func id[T type]`, `func Vec[T]::
 
 In a type they build an array or a slice: `[4]i32`, `[N]i32`, and `[]i32`.
 
-`N` is a file-scope `const`.
+`N` is a file-scope `const`, or a `const` inside a function whose initializer folds to a non-negative `i32`.
 
-A `const` inside a function used as that length is `not supported yet`.
+`const n = 4` then `[n]i32` is `[4]i32`.
+
+`const m = n + 2` is that sum.
+
+`const n = 0` is `[0]i32`.
+
+A `var`, `var n const i32`, an initializer that does not fold, and a negative length are `not supported yet`.
 
 After a name in an expression, the token after the matching `]` chooses.
 
@@ -1748,7 +1826,7 @@ A pointer cast that changes the claim is [`unsafe`](expressions/unsafe.md) and i
 
 `sizeof` of a value is `sizeof` followed by a unary expression.
 
-`typeof` has the same shape and produces a `Type`.
+`typeof` has the same shape and produces a `builtin.Type`, which is `*const builtin.CompiledType`.
 
 `typeof(i32)`, `typeof(*i32)`, and `typeof n` are accepted.
 
@@ -1785,6 +1863,10 @@ Mixing a named field and a positional value is reported as `type mismatch`.
 `var value1, value2 = value` and `a, b := value` unpack it.
 
 `value[0]` reads an element.
+
+`const i = 0` then `value[i]` reads that element, and `value[i] = 1` stores it.
+
+A `var` is `index is not a compile-time constant`.
 
 `struct-init` after a name, or after `name.name`, is a struct value: `Point{}`, `Point{.x = 1, .y = 2}`, and `geom.Point{}`.
 

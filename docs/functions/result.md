@@ -78,7 +78,7 @@ retq                             # return
 
 `value[0]` reads one element. The index is a constant, so the element type and size are known while compiling, including when the elements differ, as in `(40, 'a')[1]`.
 
-`value[i]` when `i` is not a constant is `index is not a compile-time constant`. An index past the last element is `type mismatch`.
+`value[i]` when `i` is a `var` is `index is not a compile-time constant`. `const i = 0` then `value[i]` reads that element. An index past the last element is `type mismatch`.
 
 `value[0] = 1` stores into that field of a tuple variable. A temporary, `(40, 2)[0] = 1`, and a `const` tuple are `not an lvalue`.
 

@@ -54,9 +54,11 @@ void CodeGen::ensure_trace() {
     trace_buffer_ = new llvm::GlobalVariable(module_, buffer_type, false, llvm::GlobalValue::InternalLinkage,
                                              llvm::ConstantAggregateZero::get(buffer_type), "tlc.trace.buf");
     // One tlc invocation is one executable. Local-exec is an %fs offset.
-    // A shared library would need another model.
-    for (llvm::GlobalVariable *global : {trace_depth_, trace_stack_, trace_buffer_}) {
-        global->setThreadLocalMode(llvm::GlobalValue::LocalExecTLSModel);
+    // A shared library would need another model. The comptime runner is one process-local global.
+    if (!eval_) {
+        for (llvm::GlobalVariable *global : {trace_depth_, trace_stack_, trace_buffer_}) {
+            global->setThreadLocalMode(llvm::GlobalValue::LocalExecTLSModel);
+        }
     }
 }
 

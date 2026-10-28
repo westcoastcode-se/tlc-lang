@@ -1,0 +1,13 @@
+comptime func add(n i32) i32 {
+    var x = n;
+    if (x > 0) {
+        x = x + 1;
+    } else {
+        x = x + 10;
+    }
+    return x;
+}
+
+func main() i32 {
+    return add(41);
+}

@@ -933,8 +933,9 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         created.tag_package = item->tag_package;
         structs_.push_back(std::move(created));
         tags_[file_id][item->name] = id;
-        // `export type Type union(TypeKind)` in builtin. `typeof` returns this union.
-        if (item->name == "Type" && item->is_union && item->tag_name == "TypeKind" && is_std_builtin_file(file_id)) {
+        // `export type CompiledType union(TypeKind)` in builtin. `typeof` points at this union.
+        if (item->name == "CompiledType" && item->is_union && item->tag_name == "TypeKind" &&
+            is_std_builtin_file(file_id)) {
             type_value_id_ = id;
         }
         if (item->fields.empty()) {
@@ -1773,6 +1774,7 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
                     written.loc);
+    fold_shells(written.shells, written.loc);
     if (item.name.empty()) {
         return;
     }
@@ -1872,7 +1874,7 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
                                     item.fn_results, item.loc, item.ret_optional)
                    : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
                                  item.type_package, item.is_struct, item.is_enum, false, item.optional,
-                                 item.const_pointee, true, item.elem_const, item.elem_slice);
+                                 item.const_pointee, true, item.elem_const, item.elem_slice, written.shells);
     }
     if (type.kind == TypeKind::Invalid) {
         if (reserved_id != 0) {
@@ -1901,6 +1903,13 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
     } else {
         distinct.alias_id = reserved_id;
         typedefs_[file_id_][item.name] = distinct;
+    }
+    // `type Type *const CompiledType`. typeof returns this alias, not a copy of the union.
+    if (is_std_builtin_file(file_id_) && item.name == "Type" && distinct.kind == TypeKind::Pointer &&
+        !distinct.optional && distinct.pointee != nullptr && distinct.pointee->is_const && type_value_id_ >= 0 &&
+        distinct.pointee->kind == TypeKind::Struct && distinct.pointee->struct_id == type_value_id_) {
+        type_pointer_ = distinct;
+        has_type_pointer_ = true;
     }
     if (!item.exported) {
         return;
@@ -2066,11 +2075,11 @@ void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
         if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
             continue;
         }
-        const std::optional<int> value = lookup_const_value(shell.length_name);
-        if (value && *value > 0) {
+        const std::optional<int> value = array_length_value(shell.length_name);
+        if (value && *value >= 0) {
             shell.length = *value;
             shell.length_name.clear();
-        } else if (value && *value <= 0) {
+        } else if (value && *value < 0) {
             error(loc, "not supported yet");
         }
     }
@@ -2145,7 +2154,8 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     // A length that is still a name is a generic parameter. The flat path folds that name.
     bool shells_ready = !shells.empty();
     for (const TypeShell &shell : shells) {
-        if (shell.kind == TypeShell::Kind::Array && shell.length <= 0) {
+        // Length 0 with the name still set is not folded. A folded 0 has an empty name.
+        if (shell.kind == TypeShell::Kind::Array && (shell.length < 0 || !shell.length_name.empty())) {
             shells_ready = false;
         }
     }
@@ -2190,10 +2200,13 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             if (type.length < 0) {
                 return type;
             }
-            Type pointer = type_pointer(*type.element);
-            if (type.length > 0) {
-                pointer.decayed_len = type.length;
+            // `[0]T` would be the same pointer as `*T`. The length is not recorded.
+            if (type.length == 0) {
+                error(loc, "not supported yet");
+                return type_invalid();
             }
+            Type pointer = type_pointer(*type.element);
+            pointer.decayed_len = type.length;
             return pointer;
         }
         return type;
@@ -2203,7 +2216,7 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     }
     // `[]Duo` has no element header. `[2]Duo` stores the tuple.
     if (type.kind == TypeKind::Void || type.kind == TypeKind::Function ||
-        (type.kind == TypeKind::Tuple && array_len <= 0)) {
+        (type.kind == TypeKind::Tuple && array_len < 0)) {
         error(loc, "not supported yet");
         return type_invalid();
     }
@@ -2229,12 +2242,16 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         return type_invalid();
     }
     if (parameter) {
-        Type pointer = type_pointer(std::move(type));
-        if (array_len > 0) {
-            pointer.decayed_len = array_len;
+        // A length of 0 would be the same pointer as `*T`.
+        if (array_len <= 0) {
+            error(loc, "not supported yet");
+            return type_invalid();
         }
+        Type pointer = type_pointer(std::move(type));
+        pointer.decayed_len = array_len;
         return pointer;
     }
+    // Shells that are not ready still hold a name. Zero here is that name, not `[0]T`.
     if (array_len <= 0) {
         error(loc, "not supported yet");
         return type_invalid();
@@ -2245,16 +2262,31 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
 bool Checker::is_lvalue_form(const Expr &expr) const { return lvalue_form(expr); }
 
 Type Checker::type_value() const {
-    if (type_value_id_ >= 0) {
-        return type_struct(type_value_id_);
+    if (has_type_pointer_) {
+        return type_pointer_;
     }
-    return type_meta();
+    if (type_value_id_ >= 0) {
+        Type compiled = type_struct(type_value_id_);
+        compiled.is_const = true;
+        return type_pointer(std::move(compiled));
+    }
+    Type meta = type_meta();
+    meta.is_const = true;
+    return type_pointer(std::move(meta));
 }
 
 bool Checker::is_type_value(const Type &type) const {
-    if (type.kind == TypeKind::Meta) {
+    if (type.kind != TypeKind::Pointer || type.optional || type.pointee == nullptr || !type.pointee->is_const) {
+        return false;
+    }
+    if (type.pointee->kind == TypeKind::Meta) {
         return true;
     }
+    return type_value_id_ >= 0 && type.pointee->kind == TypeKind::Struct &&
+           type.pointee->struct_id == type_value_id_;
+}
+
+bool Checker::is_compiled_type(const Type &type) const {
     return type_value_id_ >= 0 && type.kind == TypeKind::Struct && type.struct_id == type_value_id_;
 }
 
@@ -2281,6 +2313,11 @@ Checker::TypeFacts Checker::classify_type_facts(const Type &type) const {
 std::string Checker::type_desc(const Type &type) const {
     if (type.alias_id > 0 && static_cast<std::size_t>(type.alias_id) < alias_names_.size()) {
         return alias_names_[static_cast<std::size_t>(type.alias_id)];
+    }
+    // `typeof` without `import "builtin"` is still named `Type`.
+    if (type.kind == TypeKind::Pointer && !type.optional && type.pointee != nullptr && type.pointee->is_const &&
+        type.pointee->kind == TypeKind::Meta) {
+        return "Type";
     }
     switch (type.kind) {
     case TypeKind::Invalid:
@@ -2405,9 +2442,8 @@ void Checker::ensure_field_info() {
     StructInfo::Field kind;
     kind.name = "kind";
     kind.exported = true;
-    Type meta = type_meta();
-    meta.is_const = true;
-    kind.type = type_pointer(std::move(meta));
+    // `kind` is `Type`, the same pointer `typeof` returns.
+    kind.type = type_value();
     info.fields.push_back(std::move(name));
     info.fields.push_back(std::move(kind));
     structs_.push_back(std::move(info));
@@ -2426,9 +2462,7 @@ int Checker::builtin_field_struct() const {
         const bool name_bytes = name.exported && name.name == "name" && is_slice(name.type) &&
                                 name.type.element != nullptr && name.type.element->is_const &&
                                 name.type.element->kind == TypeKind::Char && name.type.element->is_unsigned;
-        const bool kind_type = kind.exported && kind.name == "kind" && kind.type.kind == TypeKind::Pointer &&
-                               !kind.type.optional && kind.type.pointee != nullptr && kind.type.pointee->is_const &&
-                               is_type_value(*kind.type.pointee);
+        const bool kind_type = kind.exported && kind.name == "kind" && is_type_value(kind.type);
         if (name_bytes && kind_type) {
             return id;
         }

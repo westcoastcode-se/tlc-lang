@@ -1,0 +1,11 @@
+type Point struct {
+    x i32;
+};
+
+extern(abi="tlc") func Point::add[T type](self *this, n T) i32;
+
+func main() i32 {
+    var p Point;
+    p.x = 20;
+    return p.add[i32](22);
+}

@@ -487,7 +487,7 @@ It may be an index of a constant `[]const u8`, another `comptime const`, or a ca
 
 A suffix whose value fits in `i32`, such as `1u32`, folds too.
 
-> **Warning:** `comptime const N = 4` can be an array length, `[N]i32`. A plain `const` cannot. A `var` cannot.
+> **Warning:** `comptime const N = 4` can be an array length, `[N]i32`. `comptime const N = 0` is the empty array `[0]i32`. A `const` whose initializer folds to a non-negative `i32` is that length, including one inside a function. A negative length is `not supported yet`. A `var` cannot.
 
 An initializer that is not a compile-time constant is `global initializer is not a constant` at file scope.
 
@@ -661,6 +661,10 @@ The length is 2 and does not count the terminating null.
 
 A `[]const u8` converts to that pointer and drops the length.
 
+`const label = "hi"` then `const p *const u8 = label` is that pointer.
+
+`const p *u8 = label` is `type mismatch`.
+
 `const p *i32 = &n` stores that address when `n` is a variable.
 
 `comptime const p = &addr` requires `addr` to be a `comptime const`.
@@ -677,7 +681,7 @@ Assigning it is rejected the same way as any other constant.
 
 A constant without `export` is reported as `name is not exported`.
 
-`const Entity::next = expr` is a constant on that type, written beside the struct.
+`const Entity::next = expr` is a constant on that type, written beside the struct or inside its braces as `const next = expr`. Both are file scope. `const Entity::next` inside a function is `const on a type is only valid at file scope`.
 
 See [Methods](../methods/constant.md).
 
@@ -689,7 +693,11 @@ Inside a function, `const name = expr` is that same runtime binding.
 
 A local `comptime const` whose value folds to `i32` is an array length, a comptime argument, and a `comptime if` condition.
 
-> **Warning:** A runtime `const` is none of those, even when the initializer is a literal.
+A runtime `const` whose initializer folds to `i32` is a comptime argument and a `comptime if` condition.
+
+It is an array length when that value is non-negative.
+
+> **Warning:** That runtime `const` is not a `comptime switch` value, even when the initializer is a literal.
 
 Promote it with `comptime const folded = name`.
 
@@ -704,6 +712,10 @@ A store through `&name` is `type mismatch`.
 The variable has an address, the same as `const name = expr`.
 
 It is not a compiler constant.
+
+`var n const i32 = 4` then `[n]i32` is `not supported yet`.
+
+`comptime if (n == 1)` is `not supported yet`.
 
 Assigning the name is `type mismatch`.
 

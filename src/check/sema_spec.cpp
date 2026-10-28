@@ -6,6 +6,12 @@
 
 namespace tlc {
 
+namespace {
+
+bool same_default_shape(const FunctionDecl &lhs, const FunctionDecl &rhs);
+
+} // namespace
+
 void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
     auto saved_scopes = std::move(scopes_);
     const uint32_t saved_file = file_id_;
@@ -696,14 +702,47 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                     }
                 }
             }
-            // `export` and a static method are registered. A missing body, `...`, and a
-            // trait parameter are not one concrete method.
-            const bool rejected = method.variadic || method.body == nullptr || method.extern_c || shadow;
-            if (!rejected) {
-                held_method_templates_.push_back(OwnedFn{owner, std::move(method)});
-                FunctionDecl *stable = &held_method_templates_.back().fn;
-                method_templates_[owner][spec_name][stable->name].push_back(stable);
+            // `export` and a static method are registered. `...` and a trait parameter are
+            // not one concrete method. An `extern` prototype names the specialization.
+            // A body in this compilation defines that symbol and keeps `extern`.
+            const bool missing_body = method.body == nullptr && !extern_generic_prototype(method);
+            const bool rejected = method.variadic || method.extern_c || shadow || missing_body;
+            if (rejected) {
+                continue;
             }
+            auto &bucket = method_templates_[owner][spec_name][method.name];
+            std::size_t same = bucket.size();
+            for (std::size_t i = 0; i < bucket.size(); ++i) {
+                const FunctionDecl *existing = bucket[i];
+                if (existing != nullptr && existing->static_method == method.static_method &&
+                    same_default_shape(*existing, method)) {
+                    same = i;
+                    break;
+                }
+            }
+            if (same < bucket.size()) {
+                const FunctionDecl *existing = bucket[same];
+                if ((existing->body != nullptr && method.body != nullptr) || existing->unsafe != method.unsafe) {
+                    error(method.loc, "redefinition");
+                    continue;
+                }
+                const bool keep_extern = existing->is_extern || method.is_extern;
+                const bool keep_export = existing->exported || method.exported;
+                if (method.body != nullptr) {
+                    method.is_extern = keep_extern;
+                    method.exported = keep_export;
+                    held_method_templates_.push_back(OwnedFn{owner, std::move(method)});
+                    bucket[same] = &held_method_templates_.back().fn;
+                } else {
+                    FunctionDecl *slot = const_cast<FunctionDecl *>(existing);
+                    slot->is_extern = keep_extern;
+                    slot->exported = keep_export;
+                }
+                continue;
+            }
+            held_method_templates_.push_back(OwnedFn{owner, std::move(method)});
+            FunctionDecl *stable = &held_method_templates_.back().fn;
+            bucket.push_back(stable);
             continue;
         }
         for (Param &param : method.params) {
@@ -1366,10 +1405,24 @@ bool Checker::extern_generic_trait_param(uint32_t file, const FunctionDecl &fn) 
     return false;
 }
 
+bool Checker::extern_generic_prototype(const FunctionDecl &fn) const {
+    // A comptime parameter has no external symbol. The copy that would hold the constant
+    // is local to the compilation that has the body.
+    if (fn.body != nullptr || !fn.is_extern || fn.extern_c) {
+        return false;
+    }
+    for (const Param &param : fn.params) {
+        if (param.is_comptime) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::Call &call,
                                        const std::vector<Type> &arg_types, uint32_t owner) {
-    if (templ.body == nullptr || templ.extern_c || templ.variadic || templ.type_params.empty() ||
-        extern_generic_trait_param(owner, templ)) {
+    if (templ.extern_c || templ.variadic || templ.type_params.empty() ||
+        extern_generic_trait_param(owner, templ) || (templ.body == nullptr && !extern_generic_prototype(templ))) {
         return false;
     }
     const std::optional<std::vector<SpecArg>> bounds = infer_generic_bounds(templ, call, arg_types);
@@ -1821,8 +1874,10 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     if (is_std_builtin_file(owner) && mem_compare_comptime(mem_compare_kind(*templ)) && fold_mem_compare(call)) {
         return mem_compare_bool(mem_compare_kind(*templ)) ? type_bool() : type_int();
     }
-    // A body defines the symbol. A trait parameter is not specialized away with `T`.
-    if (templ->body == nullptr || templ->extern_c || templ->variadic || extern_generic_trait_param(owner, *templ)) {
+    // A body defines the symbol. An `extern` prototype names that same specialization.
+    // A trait parameter is not specialized away with `T`.
+    if (templ->extern_c || templ->variadic || extern_generic_trait_param(owner, *templ) ||
+        (templ->body == nullptr && !extern_generic_prototype(*templ))) {
         error(call.loc, templ->extern_c ? "extern(abi=\"c\") on a trait or a generic" : "not supported yet");
         return type_invalid();
     }
@@ -2002,7 +2057,7 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     symbol.name = spec_name;
     symbol.type = signature;
     symbol.is_function = true;
-    symbol.has_body = true;
+    symbol.has_body = templ->body != nullptr;
     symbol.package_file = owner;
     spec_symbols_[owner][spec_name] = symbol;
     if (templ->is_static) {
@@ -2108,10 +2163,6 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         if (want.kind == TypeKind::Invalid || diags_.size() != mark) {
             return false;
         }
-        // A cast or a tuple element stays `not supported yet`. Only the bare name is this value.
-        const bool fn_value = fn_pointer(want) || want.kind == TypeKind::Function;
-        const bool bare_name = std::holds_alternative<Expr::Name>(call.args[i - skip]->data);
-        AllowComptimeFn allow{allow_comptime_fn_, fn_value && bare_name};
         const Type got = check_expr(*call.args[i - skip], true);
         if (got.kind == TypeKind::Invalid || diags_.size() != mark) {
             return false;
@@ -2599,9 +2650,10 @@ void Checker::register_method_template(const FunctionDecl &fn) {
         error(fn.loc, "extern(abi=\"c\") on a trait or a generic");
         return;
     }
-    // A tlc `extern` is one symbol per specialization. `...`, a missing body, and a trait
-    // parameter are still not one concrete method. `export` and a static template are.
-    if (fn.variadic || fn.body == nullptr || extern_generic_trait_param(file_id_, fn)) {
+    // A tlc `extern` is one symbol per specialization. `...` and a trait parameter are
+    // still not one concrete method. An `extern` prototype names that specialization.
+    if (fn.variadic || extern_generic_trait_param(file_id_, fn) ||
+        (fn.body == nullptr && !extern_generic_prototype(fn))) {
         error(fn.loc, "not supported yet");
         return;
     }
@@ -2623,12 +2675,30 @@ void Checker::register_method_template(const FunctionDecl &fn) {
         return;
     }
     auto &bucket = method_templates_[file_id_][fn.method_struct][fn.name];
-    for (const FunctionDecl *existing : bucket) {
+    for (std::size_t i = 0; i < bucket.size(); ++i) {
+        const FunctionDecl *existing = bucket[i];
         // `id(value T)` and `id(self, value T)` are different functions.
-        if (existing != nullptr && existing->static_method == fn.static_method && same_default_shape(*existing, fn)) {
+        if (existing == nullptr || existing->static_method != fn.static_method || !same_default_shape(*existing, fn)) {
+            continue;
+        }
+        // A later body defines the specialization. `extern` on either declaration names it.
+        if ((existing->body != nullptr && fn.body != nullptr) || existing->unsafe != fn.unsafe) {
             error(fn.loc, "redefinition");
             return;
         }
+        const bool keep_extern = existing->is_extern || fn.is_extern;
+        const bool keep_export = existing->exported || fn.exported;
+        if (fn.body != nullptr) {
+            FunctionDecl &incoming = const_cast<FunctionDecl &>(fn);
+            incoming.is_extern = keep_extern;
+            incoming.exported = keep_export;
+            bucket[i] = &incoming;
+        } else {
+            FunctionDecl *slot = const_cast<FunctionDecl *>(existing);
+            slot->is_extern = keep_extern;
+            slot->exported = keep_export;
+        }
+        return;
     }
     bucket.push_back(&fn);
 }
@@ -2993,7 +3063,8 @@ std::optional<Type> Checker::apply_method_template(Expr &expr, const FunctionDec
             check_expr(*selector->base, true);
         }
     };
-    if (templ.body == nullptr) {
+    // A body defines the symbol. An `extern` prototype names that same specialization.
+    if (templ.body == nullptr && !extern_generic_prototype(templ)) {
         note_base();
         error(call.loc, "not supported yet");
         check_args();
@@ -3428,6 +3499,11 @@ void relocate_stmt(Stmt &stmt, const std::unordered_map<const FunctionDecl *, co
                 }
                 if (node.body) {
                     relocate_stmt(*node.body, moved);
+                }
+                for (const auto &part : node.unrolled) {
+                    if (part) {
+                        relocate_stmt(*part, moved);
+                    }
                 }
             } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
                 if (node.body) {

@@ -1,0 +1,23 @@
+type Color enum {
+    Red,
+    Green,
+    Blue,
+};
+
+macro func pick(slot *i32) void {
+    comptime switch (Color.Blue) {
+    case Color.Green:
+        emit *slot = "no";
+    case Color.Blue:
+        emit *slot = 42;
+        break;
+    default:
+        emit *slot = "no";
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    pick(&n);
+    return n;
+}

@@ -1,0 +1,20 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+comptime const origin = Point{.x = 41, .y = 1};
+
+comptime func move(p Point) Point {
+    var copy = p;
+    copy.x = copy.x + 1;
+    return copy;
+}
+
+func take(p comptime Point, n i32) i32 {
+    return p.x + n;
+}
+
+func main() i32 {
+    return take(move(origin), 0);
+}

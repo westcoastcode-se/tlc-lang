@@ -1,0 +1,17 @@
+macro func add(slot *i32, n i32, kind comptime i32) void {
+    for (var i = 0; i < n; i = i + 1) {
+        if (kind == 1) {
+            emit *slot = *slot + i;
+        } else {
+            emit *slot = *slot + 1;
+        }
+    }
+}
+
+func main() i32 {
+    var a = 0;
+    var b = 0;
+    add(&a, 4, 1);
+    add(&b, 4, 2);
+    return a + b;
+}

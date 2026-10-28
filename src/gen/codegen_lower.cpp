@@ -463,7 +463,8 @@ llvm::Type *CodeGen::shell_type(const std::vector<TypeShell> &shells, int depth,
         if (shell.kind == TypeShell::Kind::Slice) {
             type = slice_type();
         } else if (shell.kind == TypeShell::Kind::Array) {
-            if (shell.length <= 0) {
+            // A name that is still unfolded is not a length. Zero with an empty name is `[0]T`.
+            if (shell.length < 0 || !shell.length_name.empty()) {
                 return i32();
             }
             // `*[2]Node` is stored as a pointer. An array of a struct that is still
@@ -574,7 +575,7 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
         for (int index = static_cast<int>(shells.size()) - 1; index >= 0; --index) {
             const TypeShell &shell = shells[static_cast<std::size_t>(index)];
             if (shell.kind == TypeShell::Kind::Array) {
-                if (shell.length <= 0 || type == nullptr || !type->isSized()) {
+                if (shell.length < 0 || !shell.length_name.empty() || type == nullptr || !type->isSized()) {
                     Lowered bad;
                     bad.type = i32();
                     return bad;
@@ -821,7 +822,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.type = ptr_type();
         return out;
     }
-    if (nest_slice && is_array && array_len > 0) {
+    if (nest_slice && is_array && array_len >= 0 && !parameter) {
         out.is_array = true;
         out.elem_slice = true;
         out.array_len = array_len;
@@ -855,7 +856,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.type = ptr_type();
         return out;
     }
-    if (is_array && array_len > 0) {
+    if (is_array && array_len >= 0) {
         out.is_array = true;
         out.array_len = array_len;
         fill(out, base_depth + indirections);
@@ -863,7 +864,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
                                         static_cast<uint64_t>(array_len));
         return out;
     }
-    if (base_array && base.array_len > 0) {
+    if (base_array && base.array_len >= 0) {
         out.is_array = true;
         out.array_len = base.array_len;
         out.elem_slice = base_headers;
@@ -938,7 +939,7 @@ llvm::Type *CodeGen::tuple_shell_type(const std::vector<ResultSlot> &parts, cons
             return nullptr;
         }
         if (shell.kind == TypeShell::Kind::Array) {
-            if (shell.length <= 0 || !type->isSized()) {
+            if (shell.length < 0 || !shell.length_name.empty() || !type->isSized()) {
                 return nullptr;
             }
             type = llvm::ArrayType::get(type, static_cast<uint64_t>(shell.length));
@@ -1089,7 +1090,7 @@ std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, cons
         return std::nullopt;
     } else if (item.elem_is_array) {
         const bool element_slice = item.elem_array_len_name.empty() && item.elem_array_len < 0;
-        if (!element_slice && item.elem_array_len <= 0) {
+        if (!element_slice && (item.elem_array_len < 0 || !item.elem_array_len_name.empty())) {
             return std::nullopt;
         }
         elem = lower(file, item.type_name, item.type_package, item.is_struct, item.indirections, true,

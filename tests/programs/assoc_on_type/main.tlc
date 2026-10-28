@@ -1,0 +1,25 @@
+type Entity struct {
+    id i32;
+    const spare = 2;
+    var next i32 = 26;
+};
+
+type Box[T type] struct {
+    value T;
+    const extra = 8;
+};
+
+type Buf[N i32, T type] struct {
+    value T;
+    const count = N;
+};
+
+const Entity::mark = 1;
+
+func main() i32 {
+    var Entity::bias = 1;
+    var e Entity;
+    e.id = Entity.mark;
+    Entity.next = Entity.next + Entity.bias;
+    return e.id + Entity.next + Entity.spare + Box[i32].extra + Buf[4, i32].count;
+}

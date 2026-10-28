@@ -8,6 +8,8 @@ A variable may belong to a struct, an enum, or a primitive type alias.
 
 The variable is written beside the type, in the same file.
 
+`var next i32` inside the braces, and `var Entity::next` inside a function, are that same variable.
+
 The variable is not a field.
 
 `sizeof` and the layout stay the same.
@@ -104,17 +106,43 @@ An unknown type is reported as `type mismatch`.
 
 A member is already a variable, so it is written `next i32` and not `var next i32`.
 
-`var` inside the braces is reported as `not supported yet`.
+`var next i32 = 40` inside the braces is `var Entity::next i32 = 40`.
 
-The variable on the type is written beside it.
+`var Entity::bias = 2` inside a function is that same file-scope variable.
 
-`var Entity::next` inside a function is not a declaration.
+`export var` and `extern var` inside the braces are `not supported yet`.
 
-It is reported as `not supported yet`.
-
-`Entity::next := 1` is not a declaration either.
+`Entity::next := 1` is not a declaration.
 
 It is reported as `expected a declaration`.
+
+```c
+type Entity struct {
+    id i32;
+    var next i32 = 40;
+};
+
+func main() i32 {
+    var Entity::bias = 2;
+    var e Entity;
+    e.id = Entity.bias;
+    Entity.next = Entity.next + e.id;
+    return Entity.next;
+}
+```
+
+```asm
+main:
+movl (%rip), %eax                # bias
+movl %eax, -8(%rsp)              # e.id
+movl (%rip), %eax                # next
+addl -8(%rsp), %eax              # next + e.id
+movl %eax, (%rip)                # store next
+movl (%rip), %eax                # reload next
+retq                             # return
+```
+
+The program returns 42.
 
 A member may use the same name: `e.next` is the member and `Entity.next` is the variable.
 

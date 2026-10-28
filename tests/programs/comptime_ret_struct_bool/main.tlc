@@ -1,0 +1,12 @@
+type Box struct {
+    flag bool;
+};
+
+comptime func make() Box {
+    return Box{.flag = true};
+}
+
+func main() i32 {
+    comptime const made = make();
+    return made.flag + 1;
+}

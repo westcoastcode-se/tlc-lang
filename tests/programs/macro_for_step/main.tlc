@@ -1,0 +1,11 @@
+macro func bump(slot *i32) void {
+    for (var i = 0; i < 2; i = i + 0) {
+        emit *slot = 1;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    bump(&n);
+    return n;
+}

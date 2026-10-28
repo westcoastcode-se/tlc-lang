@@ -1,0 +1,7 @@
+func main() i32 {
+    var s = 40;
+    comptime for (var i = 0; i < 0; i = i + 1) {
+        s = 1;
+    }
+    return s;
+}

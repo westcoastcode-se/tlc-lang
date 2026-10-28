@@ -321,7 +321,13 @@ A body defines that symbol.
 
 `extern(name="symbol")` is `name requires abi="c"`.
 
-A prototype with no body is `not supported yet`.
+A prototype may be the declaration that says `extern`.
+
+A call of that prototype names the same specialization.
+
+A prototype that is not `extern` is `not supported yet`.
+
+A comptime parameter on that prototype is `not supported yet`.
 
 ### A trait parameter
 

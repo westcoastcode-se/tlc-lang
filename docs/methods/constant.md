@@ -8,6 +8,8 @@ A compiler constant may belong to a struct, an enum, or a primitive type alias.
 
 It is written beside the type, in the same file: `comptime const Entity::next = 28`.
 
+`const spare = 2` inside the braces is that same constant.
+
 A plain `const Entity::next` is a runtime value that cannot be assigned.
 
 The constant is not a field, so `sizeof` stays the size of the fields.
@@ -20,9 +22,15 @@ Each specialization of a generic struct has its own constant.
 
 The use is `Entity.next`, `Box[i32].extra`, or `Buf[4, i32].count`.
 
-A `const` inside the braces is not a member.
+`const spare = 2` inside the braces is that constant. It is not a member.
 
-It is reported as `not supported yet`.
+`const Entity::next` inside a function is `const on a type is only valid at file scope`.
+
+`comptime const Entity::next` inside a function is that same error.
+
+`export const` and `extern const` inside the braces are `not supported yet`.
+
+`comptime const` inside the braces is `expected an identifier`.
 
 ## Assignment and address
 
@@ -39,12 +47,6 @@ Another package reads `pkg.Entity.next` and `pkg.Box[i32].limit` when the type a
 Without `export`, the name is reported as `next is not exported`.
 
 An unexported type is reported as `Entity is not exported`.
-
-`const Entity::next` inside a function is not a declaration.
-
-The constant is file scope.
-
-That form is reported as `not supported yet`.
 
 `extern const n = 4` and `extern const Entity::next = 28` are file scope.
 
@@ -105,5 +107,33 @@ The program returns 42.
 `Buf[4, i32].count` is `N`, which is 4 for that instantiation.
 
 `Box[i32].extra` and `Box[Point].extra` are two constants.
+
+`const spare = 2` inside the braces and `const Entity::next = 40` beside the struct are the same kind of constant.
+
+```c
+type Entity struct {
+    id i32;
+    const spare = 2;
+};
+
+const Entity::next = 40;
+
+func main() i32 {
+    var e Entity;
+    e.id = Entity.spare;
+    return Entity.next + e.id;
+}
+```
+
+```asm
+main:
+movl (%rip), %eax                # spare
+movl %eax, -8(%rsp)              # e.id
+movl (%rip), %eax                # next
+addl -8(%rsp), %eax              # next + e.id
+retq                             # return
+```
+
+The program returns 42.
 
 [Index](../README.md) · [Previous: Variables on a type](variable.md) · [Next: Traits](trait.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

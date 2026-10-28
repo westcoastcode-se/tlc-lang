@@ -1,0 +1,25 @@
+const early *const u8 = later;
+const later = "hi";
+
+const label = "hi";
+const bytes = [_]u8{104, 105, 0};
+const view []const u8 = bytes;
+const from_text *const u8 = label;
+const from_array *const u8 = view;
+const from_range *const u8 = "hello"[1:4];
+
+func main() i32 {
+    if (early[0] != 'h' || early[1] != 'i' || early[2] != 0) {
+        return 1;
+    }
+    if (from_text[0] != 'h' || from_text[1] != 'i' || from_text[2] != 0) {
+        return 2;
+    }
+    if (from_array[0] != 'h' || from_array[2] != 0) {
+        return 3;
+    }
+    if (from_range[0] != 'e' || from_range[2] != 'l') {
+        return 4;
+    }
+    return 42;
+}

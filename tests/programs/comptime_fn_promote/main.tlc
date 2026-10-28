@@ -1,0 +1,15 @@
+comptime func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+const op = add;
+comptime const folded = op;
+
+func take(g comptime func (i32, i32) i32, n i32) i32 {
+    return g(n, 2);
+}
+
+func main() i32 {
+    var n = 40;
+    return take(folded, n);
+}

@@ -213,6 +213,23 @@ std::vector<const Sym *> member_candidates(const std::vector<Sym> &syms, const S
             found.push_back(&sym);
         }
     }
+    if (!found.empty()) {
+        return found;
+    }
+    // `type Type *const CompiledType`. `t.fields()` uses the methods of `CompiledType`.
+    for (const Sym &alias : syms) {
+        if (alias.role != Role::Alias || alias.name != type || alias.indirections <= 0 || alias.type_name.empty()) {
+            continue;
+        }
+        for (const Sym &sym : syms) {
+            if (sym.owner == alias.type_name && sym.name == name) {
+                found.push_back(&sym);
+            }
+        }
+        if (!found.empty()) {
+            return found;
+        }
+    }
     return found;
 }
 

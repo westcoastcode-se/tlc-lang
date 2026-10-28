@@ -1,0 +1,13 @@
+type Num union {
+    n i32;
+    m i32;
+};
+
+comptime func make() Num {
+    var u = Num{.n = 1};
+    return u;
+}
+
+func main() i32 {
+    return make().n;
+}

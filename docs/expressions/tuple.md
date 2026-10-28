@@ -228,9 +228,37 @@ The index is a constant.
 
 `const i = 0` then `value[i]` reads that same element, and `value[i] = 1` stores it.
 
+`const j = i + 1` and `value[i + 1]` choose the next field.
+
+A file-scope `const` whose initializer folds is that index.
+
+`comptime const pair = (40, 2)` then `return pair[i] + pair[1]` is `movl $42, %eax` and `retq`.
+
 A `var` is `index is not a compile-time constant`.
 
-The local `const` is still not an array length.
+That `const` is an array length when the initializer folds to a non-negative `i32`.
+
+See [Arrays](../types/array.md).
+
+```c
+func main() i32 {
+    var t = (0, 2);
+    const i = 0;
+    t[i] = 40;
+    return t[i] + t[1];
+}
+```
+
+```asm
+main:
+movl $2, -4(%rsp)                # constant
+movl $0, -8(%rsp)                # constant
+movl $40, -8(%rsp)               # constant
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %ecx              # move
+addl %ecx, %eax                  # add
+retq                             # return
+```
 
 `typeof(value)` is that tuple's type.
 

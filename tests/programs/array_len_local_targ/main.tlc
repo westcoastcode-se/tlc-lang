@@ -1,0 +1,10 @@
+func id[T type](value T) T { return value; }
+
+func main() i32 {
+    const n = 2;
+    var row [n]i32;
+    row[0] = 40;
+    row[1] = 2;
+    var copy = id[[n]i32](row);
+    return copy[0] + copy[1];
+}

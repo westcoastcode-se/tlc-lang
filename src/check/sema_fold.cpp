@@ -3,7 +3,9 @@
 #include "check/check_util.hpp"
 
 #include "ast/format.hpp"
+#include "gen/codegen.hpp"
 
+#include <cstdint>
 #include <cstring>
 
 namespace tlc {
@@ -113,14 +115,16 @@ std::unique_ptr<Expr> folded_int(int value, SourceLoc loc) {
     return expr;
 }
 
-// A field of a struct literal, including `literal.inner.x`. A name is not a literal.
-const Expr *const_struct_field(const Expr &object, const std::string &field) {
+// A field of a struct literal, including `literal.inner.x`. A plain name is not a literal.
+// `resolve` yields a kept struct only when the name's initializer is a comptime call.
+template <typename Resolve>
+const Expr *const_struct_field(const Expr &object, const std::string &field, Resolve &&resolve) {
     const Expr *cursor = &object;
     if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
         if (selector->base == nullptr) {
             return nullptr;
         }
-        cursor = const_struct_field(*selector->base, selector->field);
+        cursor = const_struct_field(*selector->base, selector->field, resolve);
         if (cursor == nullptr) {
             return nullptr;
         }
@@ -140,6 +144,19 @@ const Expr *const_struct_field(const Expr &object, const std::string &field) {
             return nullptr;
         }
         cursor = tuple->elements[at].get();
+    }
+    if (const auto *call = std::get_if<Expr::Call>(&cursor->data)) {
+        if (call->comptime_struct == nullptr) {
+            return nullptr;
+        }
+        cursor = call->comptime_struct.get();
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
+        const Expr *kept = resolve(named->text);
+        if (kept == nullptr) {
+            return nullptr;
+        }
+        cursor = kept;
     }
     const auto *init = std::get_if<Expr::Init>(&cursor->data);
     if (init == nullptr || init->is_tuple || !init->elements.empty()) {
@@ -193,13 +210,17 @@ std::unique_ptr<Expr> folded_string(std::string text, SourceLoc loc) {
     return expr;
 }
 
-const Expr *single_i32_return(const FunctionDecl &fn) {
+bool plain_i32_result(const FunctionDecl &fn) {
     if (fn.results.size() != 1 || fn.return_type != "i32" || fn.body == nullptr) {
-        return nullptr;
+        return false;
     }
     const ResultSlot &slot = fn.results.front();
-    if (slot.type_name != "i32" || !slot.type_package.empty() || slot.is_struct || slot.is_enum || slot.indirections != 0 ||
-        slot.optional != 0 || slot.is_array || slot.is_fn_ptr || slot.const_pointee != 0) {
+    return slot.type_name == "i32" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
+           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
+}
+
+const Expr *single_i32_return(const FunctionDecl &fn) {
+    if (!plain_i32_result(fn)) {
         return nullptr;
     }
     const auto *body = std::get_if<Stmt::Block>(&fn.body->data);
@@ -317,6 +338,15 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
                     inner->wide = true;
                 }
                 return inner;
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.base == nullptr) {
+                    return std::nullopt;
+                }
+                const Expr *field = comptime_struct_field(*node.base, node.field);
+                if (field == nullptr) {
+                    return std::nullopt;
+                }
+                return fold_number(*field, seen);
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
                 if (node.lhs == nullptr || node.rhs == nullptr) {
                     return std::nullopt;
@@ -386,7 +416,60 @@ bool Checker::switch_case_matches(const SwitchFrame &frame, const Type &got) con
 }
 
 std::optional<int> Checker::fold_condition(const Expr &expr) {
+    // `const n = 1` then `comptime if (n == 1)`. `fold_int` does not see that name.
+    // `var n const i32` has an initializer and is still not this condition.
+    const auto runtime = [&](const auto &self, const Expr &node, int depth) -> std::optional<int> {
+        if (depth > 32) {
+            return std::nullopt;
+        }
+        if (const std::optional<int> folded = fold_int(node)) {
+            return folded;
+        }
+        return std::visit(
+            [&](const auto &item) -> std::optional<int> {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Expr::Name>) {
+                    const Symbol *symbol = lookup(item.text);
+                    if (symbol == nullptr || !symbol->runtime_const || symbol->promote_init == nullptr ||
+                        !plain_int_constant(symbol->type)) {
+                        return std::nullopt;
+                    }
+                    return self(self, *symbol->promote_init, depth + 1);
+                } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                    if (item.postfix || item.expr == nullptr) {
+                        return std::nullopt;
+                    }
+                    const std::optional<int> inner = self(self, *item.expr, depth + 1);
+                    if (!inner) {
+                        return std::nullopt;
+                    }
+                    switch (item.op) {
+                    case TokenKind::Plus: return *inner;
+                    case TokenKind::Minus:
+                        return static_cast<int>(static_cast<uint32_t>(-static_cast<int64_t>(*inner)));
+                    case TokenKind::Tilde: return static_cast<int>(~static_cast<uint32_t>(*inner));
+                    default: return std::nullopt;
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    if (item.lhs == nullptr || item.rhs == nullptr) {
+                        return std::nullopt;
+                    }
+                    const std::optional<int> lhs = self(self, *item.lhs, depth + 1);
+                    const std::optional<int> rhs = self(self, *item.rhs, depth + 1);
+                    if (!lhs || !rhs) {
+                        return std::nullopt;
+                    }
+                    return eval_int_op(item.op, *lhs, *rhs);
+                } else {
+                    return std::nullopt;
+                }
+            },
+            node.data);
+    };
     if (const std::optional<int> folded = fold_int(expr)) {
+        return folded;
+    }
+    if (const std::optional<int> folded = runtime(runtime, expr, 0)) {
         return folded;
     }
     return std::visit(
@@ -467,6 +550,10 @@ std::optional<int> Checker::fold_switch_case(const Expr &expr) {
     if (selector == nullptr || selector->base == nullptr) {
         return std::nullopt;
     }
+    // `made.ink` is the enumerator that call kept. `Color.Blue` is still the selector.
+    if (const Expr *field = comptime_struct_field(*selector->base, selector->field)) {
+        return fold_switch_case(*field);
+    }
     const int enum_id = enum_designator(*selector->base);
     const EnumInfo::Member *member = enum_id < 0 ? nullptr : find_enum_member(enum_id, selector->field);
     if (member == nullptr || member->value != static_cast<int64_t>(static_cast<int>(member->value))) {
@@ -481,6 +568,13 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
     }
     if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
         return format_call(*call);
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        if (selector->base != nullptr && selector->field != "len") {
+            if (const Expr *field = comptime_struct_field(*selector->base, selector->field)) {
+                return constant_string(*field, seen);
+            }
+        }
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `"hello"[1:4]` is those bytes. The length does not include the terminating null.
@@ -549,7 +643,7 @@ std::optional<int> Checker::known_len(const Expr &base) {
         }
         if (symbol != nullptr && symbol->type.kind == TypeKind::Pointer && !symbol->type.optional &&
             symbol->type.pointee != nullptr && symbol->type.pointee->kind == TypeKind::Array &&
-            symbol->type.pointee->length > 0 && symbol->type.pointee->element != nullptr) {
+            symbol->type.pointee->length >= 0 && symbol->type.pointee->element != nullptr) {
             return symbol->type.pointee->length;
         }
     }
@@ -604,47 +698,62 @@ std::optional<int> Checker::known_len(const Expr &base) {
 }
 
 std::optional<int> Checker::constant_index(const Expr &expr) {
-    if (const std::optional<int> folded = fold_int(expr)) {
-        return folded;
-    }
-    return std::visit(
-        [&](const auto &node) -> std::optional<int> {
-            using T = std::decay_t<decltype(node)>;
-            if constexpr (std::is_same_v<T, Expr::Name>) {
-                const Symbol *symbol = lookup(node.text);
-                if (symbol != nullptr && symbol->folded_local) {
-                    return symbol->const_value;
-                }
-                return std::nullopt;
-            } else if constexpr (std::is_same_v<T, Expr::Unary>) {
-                if (node.postfix || node.expr == nullptr) {
+    // `const j = i + 1` follows `i`. A cycle, or a chain past this depth, is not an index.
+    const auto walk = [&](const auto &self, const Expr &node, int depth) -> std::optional<int> {
+        if (depth > 32) {
+            return std::nullopt;
+        }
+        if (const std::optional<int> folded = fold_int(node)) {
+            return folded;
+        }
+        return std::visit(
+            [&](const auto &item) -> std::optional<int> {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Expr::Name>) {
+                    const Symbol *symbol = lookup(item.text);
+                    if (symbol == nullptr) {
+                        return std::nullopt;
+                    }
+                    if (symbol->folded_local) {
+                        return symbol->const_value;
+                    }
+                    // `const i = 0` then `t[i]`. A `var` has no folded initializer.
+                    if (symbol->promote_init != nullptr && plain_int_constant(symbol->type)) {
+                        return self(self, *symbol->promote_init, depth + 1);
+                    }
+                    return std::nullopt;
+                } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                    if (item.postfix || item.expr == nullptr) {
+                        return std::nullopt;
+                    }
+                    const std::optional<int> inner = self(self, *item.expr, depth + 1);
+                    if (!inner) {
+                        return std::nullopt;
+                    }
+                    switch (item.op) {
+                    case TokenKind::Plus: return *inner;
+                    case TokenKind::Minus:
+                        return static_cast<int>(static_cast<uint32_t>(-static_cast<int64_t>(*inner)));
+                    case TokenKind::Tilde: return static_cast<int>(~static_cast<uint32_t>(*inner));
+                    default: return std::nullopt;
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    if (item.lhs == nullptr || item.rhs == nullptr) {
+                        return std::nullopt;
+                    }
+                    const std::optional<int> lhs = self(self, *item.lhs, depth + 1);
+                    const std::optional<int> rhs = self(self, *item.rhs, depth + 1);
+                    if (!lhs || !rhs) {
+                        return std::nullopt;
+                    }
+                    return eval_int_op(item.op, *lhs, *rhs);
+                } else {
                     return std::nullopt;
                 }
-                const std::optional<int> inner = constant_index(*node.expr);
-                if (!inner) {
-                    return std::nullopt;
-                }
-                switch (node.op) {
-                case TokenKind::Plus: return *inner;
-                case TokenKind::Minus: return static_cast<int>(static_cast<uint32_t>(-static_cast<int64_t>(*inner)));
-                case TokenKind::Tilde: return static_cast<int>(~static_cast<uint32_t>(*inner));
-                default: return std::nullopt;
-                }
-            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
-                if (node.lhs == nullptr || node.rhs == nullptr) {
-                    return std::nullopt;
-                }
-                const std::optional<int> lhs = constant_index(*node.lhs);
-                const std::optional<int> rhs = constant_index(*node.rhs);
-                if (!lhs || !rhs) {
-                    return std::nullopt;
-                }
-                return eval_int_op(node.op, *lhs, *rhs);
-            } else {
-                return std::nullopt;
-            }
-        },
-        expr.data);
+            },
+            node.data);
+    };
+    return walk(walk, expr, 0);
 }
 
 std::optional<int> Checker::fold_int(const Expr &expr) {
@@ -692,7 +801,7 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 }
                 // `Point{.x = 1}.x` is that field. A file-scope name is still loaded. An enumerator is not a field.
                 if (node.base != nullptr) {
-                    if (const Expr *field = const_struct_field(*node.base, node.field)) {
+                    if (const Expr *field = comptime_struct_field(*node.base, node.field)) {
                         return fold_int(*field);
                     }
                 }
@@ -855,7 +964,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (node.is_range || node.base == nullptr || node.index == nullptr) {
                     return std::nullopt;
                 }
-                const std::optional<int> at = fold_int(*node.index);
+                // The tuple slot is chosen while checking. `const i = 0` then `pair[i]` is that field.
+                const std::optional<int> at = node.tuple_index >= 0 ? std::optional<int>(node.tuple_index)
+                                                                    : fold_int(*node.index);
                 if (!at || *at < 0) {
                     return std::nullopt;
                 }
@@ -876,6 +987,16 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                             return nullptr;
                         }
                         return init->elements[static_cast<std::size_t>(index)].get();
+                    }
+                    if (const auto *selector = std::get_if<Expr::Selector>(&value.data)) {
+                        if (selector->base == nullptr) {
+                            return nullptr;
+                        }
+                        const Expr *field = comptime_struct_field(*selector->base, selector->field);
+                        if (field == nullptr) {
+                            return nullptr;
+                        }
+                        return self(self, *field, index, depth + 1, true);
                     }
                     const auto *named = std::get_if<Expr::Name>(&value.data);
                     if (named == nullptr) {
@@ -901,7 +1022,8 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                         if (inner->is_range || inner->base == nullptr || inner->index == nullptr) {
                             return nullptr;
                         }
-                        const std::optional<int> slot = fold_int(*inner->index);
+                        const std::optional<int> slot = inner->tuple_index >= 0 ? std::optional<int>(inner->tuple_index)
+                                                                                : fold_int(*inner->index);
                         if (!slot || *slot < 0) {
                             return nullptr;
                         }
@@ -1013,6 +1135,9 @@ const Expr *Checker::comptime_tuple_element(const Expr &expr) {
 }
 
 bool Checker::comptime_constant(const Expr &expr) {
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        return call->comptime_struct != nullptr;
+    }
     // `pair[0]` is that element. A function does not fold to an integer.
     if (const Expr *element = comptime_tuple_element(expr)) {
         return argument_is_comptime(*element) || fold_switch_case(*element) || comptime_constant(*element);
@@ -1216,6 +1341,13 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
     std::unordered_set<std::string> seen;
     const Expr *cursor = &expr;
     while (cursor != nullptr) {
+        if (const auto *call = std::get_if<Expr::Call>(&cursor->data)) {
+            if (call->comptime_struct == nullptr) {
+                break;
+            }
+            cursor = call->comptime_struct.get();
+            continue;
+        }
         if (const Expr *element = comptime_tuple_element(*cursor)) {
             cursor = element;
             continue;
@@ -1256,6 +1388,12 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
 std::optional<std::string> Checker::comptime_spec_piece(const Expr &expr) {
     std::unordered_set<std::string> seen;
     const auto piece = [&](const auto &self, const Expr &value) -> std::optional<std::string> {
+        if (const auto *call = std::get_if<Expr::Call>(&value.data)) {
+            if (call->comptime_struct == nullptr) {
+                return std::nullopt;
+            }
+            return self(self, *call->comptime_struct);
+        }
         // `pair[0]` spells as that element. `(add, 1)` is `t_fnadd_1`, and `pair[0]` alone is `fnadd`.
         if (const Expr *element = comptime_tuple_element(value)) {
             return self(self, *element);
@@ -1612,6 +1750,9 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
 }
 
 std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
+    if (call.comptime_ran) {
+        return call.comptime_value;
+    }
     const FunctionDecl *fn = comptime_callee(call);
     if (fn == nullptr) {
         fn = baked_callee(call);
@@ -1649,23 +1790,232 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         names.push_back(fn->params[i].name);
         owned.push_back(std::move(literal));
     }
-    const Expr *value = single_i32_return(*fn);
-    if (value == nullptr || !comptime_folding_.insert(fn).second) {
-        return std::nullopt;
-    }
-    struct Leave {
-        std::unordered_set<const FunctionDecl *> &set;
-        const FunctionDecl *fn;
-        ~Leave() { set.erase(fn); }
-    } leave{comptime_folding_, fn};
     std::vector<const Expr *> exprs;
     exprs.reserve(owned.size());
     for (const auto &item : owned) {
         exprs.push_back(item.get());
     }
-    std::unique_ptr<Expr> rewritten = clone_expr(*value);
-    replace_names(rewritten, names, exprs);
-    return fold_int(*rewritten);
+    if (const Expr *value = single_i32_return(*fn)) {
+        if (!comptime_folding_.insert(fn).second) {
+            return std::nullopt;
+        }
+        struct Leave {
+            std::unordered_set<const FunctionDecl *> &set;
+            const FunctionDecl *fn;
+            ~Leave() { set.erase(fn); }
+        } leave{comptime_folding_, fn};
+        std::unique_ptr<Expr> rewritten = clone_expr(*value);
+        replace_names(rewritten, names, exprs);
+        if (const std::optional<int> folded = fold_int(*rewritten)) {
+            return folded;
+        }
+    }
+    // A body with statements is compiled and called. The integer is the constant.
+    if (!fn->is_comptime || !plain_i32_result(*fn) || graph_ == nullptr || !comptime_folding_.insert(fn).second) {
+        return std::nullopt;
+    }
+    struct Leave {
+        std::unordered_set<const FunctionDecl *> &set;
+        const FunctionDecl *kept;
+        ~Leave() { set.erase(kept); }
+    } leave{comptime_folding_, fn};
+    FunctionDecl wrapper = clone_function(*fn);
+    if (wrapper.body == nullptr) {
+        return std::nullopt;
+    }
+    replace_stmt_names(*wrapper.body, names, exprs);
+    wrapper.params.clear();
+    wrapper.captures.clear();
+    wrapper.captured_here.clear();
+    wrapper.is_comptime = false;
+    wrapper.is_macro = false;
+    wrapper.is_extern = false;
+    wrapper.extern_c = false;
+    wrapper.exported = false;
+    wrapper.variadic = false;
+    wrapper.link_name.clear();
+    uint32_t file = file_id_;
+    for (const PackageNode &node : graph_->nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            if (const auto *item = std::get_if<FunctionDecl>(&decl.data); item == fn) {
+                file = node.file_id;
+            }
+        }
+    }
+    const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file);
+    if (!ran) {
+        return std::nullopt;
+    }
+    call.comptime_ran = true;
+    call.comptime_value = *ran;
+    return call.comptime_value;
+}
+
+const Expr *Checker::comptime_struct_field(const Expr &object, const std::string &field) {
+    // A handwritten `comptime const origin = Point{...}` is still loaded. Only a call that kept a literal folds.
+    return const_struct_field(object, field, [&](const std::string &name) -> const Expr * {
+        const Symbol *symbol = lookup(name);
+        const Expr *init = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
+        if (init == nullptr) {
+            if (const VarDecl *var = global_var(name); var != nullptr && var->is_comptime) {
+                init = var->init.get();
+            }
+        }
+        if (init == nullptr) {
+            return nullptr;
+        }
+        const auto *call = std::get_if<Expr::Call>(&init->data);
+        if (call == nullptr || call->comptime_struct == nullptr) {
+            return nullptr;
+        }
+        return call->comptime_struct.get();
+    });
+}
+
+Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
+    KeptStruct kept;
+    if (call.comptime_struct != nullptr) {
+        kept.status = KeptStruct::Status::Value;
+        kept.value = clone_expr(*call.comptime_struct);
+        return kept;
+    }
+    const FunctionDecl *fn = comptime_callee(call);
+    if (fn == nullptr || fn->is_macro || fn->variadic || !fn->type_params.empty() || !fn->method_struct.empty() ||
+        !call.type_args.empty() || call.args.size() != fn->params.size() || graph_ == nullptr ||
+        comptime_folding_.contains(fn)) {
+        return kept;
+    }
+    std::vector<std::unique_ptr<Expr>> owned;
+    std::vector<std::string> names;
+    owned.reserve(fn->params.size());
+    names.reserve(fn->params.size());
+    for (std::size_t i = 0; i < fn->params.size(); ++i) {
+        if (call.args[i] == nullptr || (!fn->is_comptime && !fn->params[i].is_comptime)) {
+            return kept;
+        }
+        const SourceLoc loc = expr_loc(*call.args[i]);
+        std::unique_ptr<Expr> literal;
+        if (const std::optional<int> number = fold_int(*call.args[i])) {
+            literal = folded_int(*number, loc);
+        } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
+            literal = folded_int(*local, loc);
+        } else {
+            std::unordered_set<std::string> seen;
+            if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
+                literal = folded_string(*text, loc);
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+                literal = comptime_substitute(*call.args[i]);
+            }
+        }
+        if (literal == nullptr) {
+            return kept;
+        }
+        names.push_back(fn->params[i].name);
+        owned.push_back(std::move(literal));
+    }
+    std::vector<const Expr *> exprs;
+    exprs.reserve(owned.size());
+    for (const auto &item : owned) {
+        exprs.push_back(item.get());
+    }
+    if (!fn->is_comptime || !comptime_folding_.insert(fn).second) {
+        return kept;
+    }
+    struct Leave {
+        std::unordered_set<const FunctionDecl *> &set;
+        const FunctionDecl *kept_fn;
+        ~Leave() { set.erase(kept_fn); }
+    } leave{comptime_folding_, fn};
+    FunctionDecl wrapper = clone_function(*fn);
+    if (wrapper.body == nullptr) {
+        return kept;
+    }
+    replace_stmt_names(*wrapper.body, names, exprs);
+    wrapper.params.clear();
+    wrapper.captures.clear();
+    wrapper.captured_here.clear();
+    wrapper.is_macro = false;
+    wrapper.is_extern = false;
+    wrapper.extern_c = false;
+    wrapper.exported = false;
+    wrapper.variadic = false;
+    wrapper.link_name.clear();
+    // A file-scope const is bound before the body is checked, so `Point{.x = 10}` has no
+    // `struct_id` yet. This walk stamps the copy. `is_comptime` stays set so a nested call
+    // remains ordinary code. The pointer must not stay in `loop_info_` after the copy dies.
+    {
+        const bool saved_quiet = quiet_;
+        quiet_ = true;
+        check_function(wrapper);
+        quiet_ = saved_quiet;
+        loop_info_.erase(&wrapper);
+        self_loop_.erase(&wrapper);
+        infer_running_.erase(&wrapper);
+        infer_mismatch_.erase(&wrapper);
+    }
+    wrapper.is_comptime = false;
+    uint32_t file = file_id_;
+    for (const PackageNode &node : graph_->nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            if (const auto *item = std::get_if<FunctionDecl>(&decl.data); item == fn) {
+                file = node.file_id;
+            }
+        }
+    }
+    ComptimeStructValue ran = eval_comptime_struct(*graph_, wrapper, file);
+    if (ran.status == ComptimeStructValue::Status::NotConstant) {
+        kept.status = KeptStruct::Status::NotConstant;
+        return kept;
+    }
+    if (ran.status != ComptimeStructValue::Status::Value || ran.value == nullptr) {
+        return kept;
+    }
+    kept.status = KeptStruct::Status::Value;
+    kept.value = std::move(ran.value);
+    return kept;
+}
+
+void Checker::stamp_kept_struct(Expr &expr, const Type &type) {
+    if (type.kind == TypeKind::Array && !is_slice(type) && type.element != nullptr) {
+        auto *init = std::get_if<Expr::Init>(&expr.data);
+        if (init == nullptr || init->is_tuple) {
+            return;
+        }
+        init->array_literal = true;
+        for (const auto &element : init->elements) {
+            if (element != nullptr) {
+                stamp_kept_struct(*element, *type.element);
+            }
+        }
+        return;
+    }
+    if (type.kind != TypeKind::Struct || type.struct_id < 0 ||
+        type.struct_id >= static_cast<int>(structs_.size())) {
+        return;
+    }
+    const StructInfo &info = structs_[static_cast<std::size_t>(type.struct_id)];
+    if (info.is_union) {
+        return;
+    }
+    auto *init = std::get_if<Expr::Init>(&expr.data);
+    if (init == nullptr || init->is_tuple) {
+        return;
+    }
+    init->struct_id = type.struct_id;
+    init->is_struct = true;
+    if (!info.name.empty()) {
+        init->type_name = info.name;
+    }
+    for (Expr::FieldInit &field : init->fields) {
+        if (field.value == nullptr || field.field.empty()) {
+            continue;
+        }
+        Type field_type;
+        if (!lookup_field(type, field.field, field_type)) {
+            continue;
+        }
+        stamp_kept_struct(*field.value, field_type);
+    }
 }
 
 const Expr *Checker::promotable_init(const Expr &expr) {
@@ -1674,7 +2024,8 @@ const Expr *Checker::promotable_init(const Expr &expr) {
         return nullptr;
     }
     const Symbol *symbol = lookup(named->text);
-    if (symbol == nullptr || symbol->is_constant || symbol->promote_init == nullptr) {
+    // `promote_init` without `promotable` is only a tuple index. It is not copied here.
+    if (symbol == nullptr || symbol->is_constant || !symbol->promotable || symbol->promote_init == nullptr) {
         return nullptr;
     }
     return symbol->promote_init;
@@ -1755,12 +2106,21 @@ void Checker::note_promotable(Symbol &symbol, const Expr *init) {
     if (init == nullptr || symbol.is_constant) {
         return;
     }
-    if (!strict_comptime_expr(*init)) {
+    if (strict_comptime_expr(*init)) {
+        symbol.promotable = true;
+        symbol.promote_init = init;
+        if (const std::optional<int> value = fold_int(*init)) {
+            symbol.const_value = *value;
+        }
         return;
     }
-    symbol.promotable = true;
-    symbol.promote_init = init;
-    if (const std::optional<int> value = fold_int(*init)) {
+    // `const j = i + 1` when `i` is a runtime `const`. `t[j]` chooses that field.
+    // `comptime const folded = j` does not promote it.
+    if (!plain_int_constant(symbol.type)) {
+        return;
+    }
+    if (const std::optional<int> value = constant_index(*init)) {
+        symbol.promote_init = init;
         symbol.const_value = *value;
     }
 }

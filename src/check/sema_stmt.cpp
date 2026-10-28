@@ -664,6 +664,71 @@ std::unique_ptr<Expr> string_literal(std::string text, SourceLoc loc) {
     return expr;
 }
 
+// `for (var i = low; i < high; i = i + step)` after parameter substitution.
+// Anything else, including `for (var item : items)`, is empty.
+struct ThreeClause {
+    const Expr *low = nullptr;
+    const Expr *high = nullptr;
+    const Expr *step = nullptr;
+};
+
+std::optional<ThreeClause> three_clause(const Stmt::For &loop) {
+    if (loop.each || loop.body == nullptr) {
+        return std::nullopt;
+    }
+    const std::string index = loop_index_name(loop);
+    const Expr *low_expr = loop.init != nullptr ? bind_value(*loop.init) : nullptr;
+    if (index.empty() || low_expr == nullptr || loop.cond == nullptr || loop.step == nullptr) {
+        return std::nullopt;
+    }
+    const auto *cmp = std::get_if<Expr::Binary>(&loop.cond->data);
+    const auto *step_assign = std::get_if<Expr::Assign>(&loop.step->data);
+    if (cmp == nullptr || cmp->op != TokenKind::Lt || !index_name_expr(cmp->lhs.get(), index) || cmp->rhs == nullptr ||
+        step_assign == nullptr || !index_name_expr(step_assign->lhs.get(), index) || step_assign->rhs == nullptr) {
+        return std::nullopt;
+    }
+    const auto *plus = std::get_if<Expr::Binary>(&step_assign->rhs->data);
+    if (plus == nullptr || plus->op != TokenKind::Plus || !index_name_expr(plus->lhs.get(), index) ||
+        plus->rhs == nullptr) {
+        return std::nullopt;
+    }
+    return ThreeClause{low_expr, cmp->rhs.get(), plus->rhs.get()};
+}
+
+// One iteration. `name` in the body is `replacement`.
+std::unique_ptr<Stmt> iteration_block(const Stmt::Block &body, const std::string &name, const Expr &replacement,
+                                      SourceLoc loc) {
+    auto stmt = std::make_unique<Stmt>();
+    Stmt::Block block;
+    block.loc = loc;
+    const std::vector<std::string> names{name};
+    const std::vector<const Expr *> exprs{&replacement};
+    const std::unordered_set<std::string> skip;
+    for (const auto &child : body.statements) {
+        if (child == nullptr) {
+            continue;
+        }
+        std::unique_ptr<Stmt> piece = clone_stmt(*child);
+        subst_in_stmt(*piece, names, exprs, skip);
+        block.statements.push_back(std::move(piece));
+    }
+    stmt->data = std::move(block);
+    return stmt;
+}
+
+// One expanded arm. Several statements become a block. An empty arm is an empty block.
+std::unique_ptr<Stmt> as_arm(std::vector<std::unique_ptr<Stmt>> parts, SourceLoc loc) {
+    if (parts.size() == 1) {
+        return std::move(parts.front());
+    }
+    auto stmt = std::make_unique<Stmt>();
+    Stmt::Block block;
+    block.loc = loc;
+    block.statements = std::move(parts);
+    stmt->data = std::move(block);
+    return stmt;
+}
+
 } // namespace
 
 std::unique_ptr<Expr> Checker::comptime_argument(const Expr &arg, const Param &param) {
@@ -785,8 +850,9 @@ void Checker::expand_generic_macro(const Expr::Call &call, const FunctionDecl &f
 
 void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &fn,
                                 const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
-                                std::vector<std::unique_ptr<Stmt>> &out, bool substitute) {
-    if (stmt == nullptr) {
+                                std::vector<std::unique_ptr<Stmt>> &out, bool substitute, bool defer,
+                                bool keep_block) {
+    if (stmt == nullptr || folded_switch_stop_) {
         return;
     }
     if (substitute) {
@@ -794,6 +860,18 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         subst_in_stmt(*stmt, names, exprs, skip);
     }
     if (std::holds_alternative<Stmt::Return>(stmt->data)) {
+        // A `return` in a macro is not pasted. Inside a folded `comptime switch` it also ends the path.
+        if (folded_switch_depth_ > 0) {
+            folded_switch_stop_ = true;
+        }
+        return;
+    }
+    if (std::holds_alternative<Stmt::Break>(stmt->data)) {
+        if (folded_switch_depth_ > 0) {
+            folded_switch_stop_ = true;
+            return;
+        }
+        error(std::get<Stmt::Break>(stmt->data).loc, "not supported yet");
         return;
     }
     if (auto *expr = std::get_if<Stmt::Expression>(&stmt->data)) {
@@ -804,34 +882,115 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
                 return;
             }
             expr->emit = false;
-            append_statement(std::move(stmt), out);
+            append_statement(std::move(stmt), out, defer);
             return;
         }
     }
     if (auto *block = std::get_if<Stmt::Block>(&stmt->data)) {
         std::vector<std::unique_ptr<Stmt>> children = std::move(block->statements);
-        for (auto &child : children) {
-            expand_macro_stmt(std::move(child), fn, names, exprs, out, false);
+        if (keep_block) {
+            std::vector<std::unique_ptr<Stmt>> inner;
+            for (auto &child : children) {
+                if (folded_switch_stop_) {
+                    break;
+                }
+                expand_macro_stmt(std::move(child), fn, names, exprs, inner, false, defer, true);
+            }
+            block->statements = std::move(inner);
+            if (defer) {
+                out.push_back(std::move(stmt));
+            } else {
+                append_statement(std::move(stmt), out, false);
+            }
+            return;
         }
+        for (auto &child : children) {
+            if (folded_switch_stop_) {
+                break;
+            }
+            expand_macro_stmt(std::move(child), fn, names, exprs, out, false, defer, false);
+        }
+        return;
+    }
+    if (auto *sw = std::get_if<Stmt::Switch>(&stmt->data)) {
+        // A plain `switch` stays out. `comptime switch` keeps one path when the value folds.
+        if (!sw->comptime_switch || sw->cond == nullptr) {
+            error(sw->loc, "not supported yet");
+            return;
+        }
+        const bool saved_quiet = quiet_;
+        const AssignState saved_assign = assign_;
+        const AssignState saved_true = cond_true_;
+        const AssignState saved_false = cond_false_;
+        quiet_ = true;
+        check_expr(*sw->cond, true);
+        quiet_ = saved_quiet;
+        assign_ = saved_assign;
+        cond_true_ = saved_true;
+        cond_false_ = saved_false;
+        const std::optional<int> folded = fold_switch_case(*sw->cond);
+        if (!folded) {
+            error(sw->loc, "not supported yet");
+            return;
+        }
+        const Stmt::Case *match = nullptr;
+        const Stmt::Case *fallback = nullptr;
+        if (sw->body != nullptr) {
+            find_switch_arm(*sw->body, *folded, match, fallback);
+        }
+        const Stmt::Case *arm = match != nullptr ? match : fallback;
+        if (arm == nullptr || sw->body == nullptr) {
+            return;
+        }
+        const int saved_depth = folded_switch_depth_;
+        const bool saved_stop = folded_switch_stop_;
+        folded_switch_stop_ = false;
+        ++folded_switch_depth_;
+        bool active = false;
+        expand_folded_switch(std::move(sw->body), arm, active, fn, names, exprs, out, defer);
+        folded_switch_depth_ = saved_depth;
+        folded_switch_stop_ = saved_stop;
         return;
     }
     if (auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
         if (loop->emit) {
             loop->emit = false;
-            append_statement(std::move(stmt), out);
+            append_statement(std::move(stmt), out, defer);
             return;
         }
-        unroll_inline_for(*stmt, fn, names, exprs, out);
+        // A `comptime for` does not become a runtime loop. A bound that does not fold stays out.
+        if (loop->comptime_for) {
+            unroll_inline_for(*stmt, fn, names, exprs, out, defer);
+            return;
+        }
+        // A bound that does not fold stays a loop in the caller. The body is expanded first, so `emit`
+        // is an ordinary statement and the index is in scope when that statement is checked.
+        if (!loop->each) {
+            if (const std::optional<ThreeClause> clause = three_clause(*loop)) {
+                const bool folds =
+                    fold_int(*clause->low) && fold_int(*clause->high) && fold_int(*clause->step);
+                if (!folds) {
+                    const std::size_t before = diags_.size();
+                    std::vector<std::unique_ptr<Stmt>> body_parts;
+                    if (loop->body != nullptr) {
+                        expand_macro_stmt(std::move(loop->body), fn, names, exprs, body_parts, false, true, true);
+                    }
+                    if (diags_.size() != before) {
+                        return;
+                    }
+                    loop->body = as_arm(std::move(body_parts), loop->loc);
+                    append_statement(std::move(stmt), out, defer);
+                    return;
+                }
+            }
+        }
+        unroll_inline_for(*stmt, fn, names, exprs, out, defer);
         return;
     }
     if (auto *branch = std::get_if<Stmt::If>(&stmt->data)) {
-        if (branch->comptime_if) {
-            error(branch->loc, "not supported yet");
-            return;
-        }
         if (branch->emit) {
             branch->emit = false;
-            append_statement(std::move(stmt), out);
+            append_statement(std::move(stmt), out, defer);
             return;
         }
         if (branch->cond == nullptr) {
@@ -848,33 +1007,91 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         assign_ = saved_assign;
         cond_true_ = saved_true;
         cond_false_ = saved_false;
-        const std::optional<int> value = fold_int(*branch->cond);
-        if (!value || (got.kind != TypeKind::Bool && got.kind != TypeKind::Int)) {
+        // `comptime if` uses the same fold as outside a macro, including an enumerator compare.
+        const std::optional<int> value =
+            branch->comptime_if ? fold_condition(*branch->cond) : fold_int(*branch->cond);
+        if (value && (got.kind == TypeKind::Bool || got.kind == TypeKind::Int)) {
+            std::unique_ptr<Stmt> arm = *value != 0 ? std::move(branch->then_arm) : std::move(branch->else_arm);
+            if (arm != nullptr) {
+                expand_macro_stmt(std::move(arm), fn, names, exprs, out, false, defer, false);
+            }
+            return;
+        }
+        // A `comptime if` whose condition does not fold stays out. An ordinary `if` runs later.
+        if (branch->comptime_if) {
             error(branch->loc, "not supported yet");
             return;
         }
-        std::unique_ptr<Stmt> arm = *value != 0 ? std::move(branch->then_arm) : std::move(branch->else_arm);
-        if (arm != nullptr) {
-            expand_macro_stmt(std::move(arm), fn, names, exprs, out, false);
+        // A condition that does not fold stays a branch in the caller. Each arm is expanded first.
+        const std::size_t before = diags_.size();
+        std::vector<std::unique_ptr<Stmt>> then_parts;
+        std::vector<std::unique_ptr<Stmt>> else_parts;
+        if (branch->then_arm != nullptr) {
+            expand_macro_stmt(std::move(branch->then_arm), fn, names, exprs, then_parts, false, true, true);
         }
-        return;
-    }
-    if (auto *loop = std::get_if<Stmt::While>(&stmt->data)) {
-        if (!loop->emit) {
-            error(loop->loc, "not supported yet");
+        if (diags_.size() != before) {
             return;
         }
-        loop->emit = false;
-        append_statement(std::move(stmt), out);
+        if (branch->else_arm != nullptr) {
+            expand_macro_stmt(std::move(branch->else_arm), fn, names, exprs, else_parts, false, true, true);
+        }
+        if (diags_.size() != before) {
+            return;
+        }
+        Stmt::If runtime;
+        runtime.loc = branch->loc;
+        runtime.cond = std::move(branch->cond);
+        runtime.then_arm = as_arm(std::move(then_parts), branch->loc);
+        if (!else_parts.empty()) {
+            runtime.else_arm = as_arm(std::move(else_parts), branch->loc);
+        }
+        auto pasted = std::make_unique<Stmt>();
+        pasted->data = std::move(runtime);
+        append_statement(std::move(pasted), out, defer);
+        return;
+    }
+    // A plain `while` or `do` runs in the caller. The body is expanded first, so `emit`
+    // is an ordinary statement. `emit while` and `emit do` paste the loop as it is written.
+    const auto expand_loop_body = [&](std::unique_ptr<Stmt> &body, SourceLoc loc) -> bool {
+        const std::size_t before = diags_.size();
+        std::vector<std::unique_ptr<Stmt>> parts;
+        if (body != nullptr) {
+            expand_macro_stmt(std::move(body), fn, names, exprs, parts, false, true, true);
+        }
+        if (diags_.size() != before) {
+            return false;
+        }
+        body = as_arm(std::move(parts), loc);
+        return true;
+    };
+    if (auto *loop = std::get_if<Stmt::While>(&stmt->data)) {
+        if (loop->emit) {
+            loop->emit = false;
+            append_statement(std::move(stmt), out, defer);
+            return;
+        }
+        if (loop->cond == nullptr || !expand_loop_body(loop->body, loop->loc)) {
+            if (loop->cond == nullptr) {
+                error(loop->loc, "not supported yet");
+            }
+            return;
+        }
+        append_statement(std::move(stmt), out, defer);
         return;
     }
     if (auto *loop = std::get_if<Stmt::DoWhile>(&stmt->data)) {
-        if (!loop->emit) {
-            error(loop->loc, "not supported yet");
+        if (loop->emit) {
+            loop->emit = false;
+            append_statement(std::move(stmt), out, defer);
             return;
         }
-        loop->emit = false;
-        append_statement(std::move(stmt), out);
+        if (loop->cond == nullptr || !expand_loop_body(loop->body, loop->loc)) {
+            if (loop->cond == nullptr) {
+                error(loop->loc, "not supported yet");
+            }
+            return;
+        }
+        append_statement(std::move(stmt), out, defer);
         return;
     }
     const SourceLoc loc = std::visit(
@@ -890,8 +1107,56 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     error(loc, "not supported yet");
 }
 
+bool Checker::expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case *arm, bool &active,
+                                   const FunctionDecl &fn, const std::vector<std::string> &names,
+                                   const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out,
+                                   bool defer) {
+    if (stmt == nullptr || folded_switch_stop_) {
+        return folded_switch_stop_;
+    }
+    if (auto *block = std::get_if<Stmt::Block>(&stmt->data)) {
+        std::vector<std::unique_ptr<Stmt>> children = std::move(block->statements);
+        for (auto &child : children) {
+            if (folded_switch_stop_) {
+                return true;
+            }
+            if (child == nullptr) {
+                continue;
+            }
+            // Statements before the matching case are not expanded.
+            if (!active && !switch_reaches_case(*child, arm)) {
+                continue;
+            }
+            expand_folded_switch(std::move(child), arm, active, fn, names, exprs, out, defer);
+        }
+        return folded_switch_stop_;
+    }
+    if (auto *node = std::get_if<Stmt::Case>(&stmt->data)) {
+        if (!active && node != arm) {
+            if (node->stmt != nullptr && switch_reaches_case(*node->stmt, arm)) {
+                return expand_folded_switch(std::move(node->stmt), arm, active, fn, names, exprs, out, defer);
+            }
+            return false;
+        }
+        if (!active) {
+            active = true;
+        }
+        if (node->stmt != nullptr) {
+            return expand_folded_switch(std::move(node->stmt), arm, active, fn, names, exprs, out, defer);
+        }
+        return folded_switch_stop_;
+    }
+    if (std::holds_alternative<Stmt::Break>(stmt->data) || std::holds_alternative<Stmt::Return>(stmt->data)) {
+        folded_switch_stop_ = true;
+        return true;
+    }
+    expand_macro_stmt(std::move(stmt), fn, names, exprs, out, false, defer, false);
+    return folded_switch_stop_;
+}
+
 void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
-                                const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out) {
+                                const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out,
+                                bool defer) {
     const auto *loop = std::get_if<Stmt::For>(&stmt.data);
     if (loop == nullptr || loop->body == nullptr) {
         error(loop != nullptr ? loop->loc : SourceLoc{}, "not supported yet");
@@ -956,7 +1221,7 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
                 std::unique_ptr<Stmt> piece = clone_stmt(*child);
                 const std::unordered_set<std::string> skip;
                 subst_in_stmt(*piece, item_names, item_exprs, skip);
-                expand_macro_stmt(std::move(piece), fn, names, exprs, out, false);
+                expand_macro_stmt(std::move(piece), fn, names, exprs, out, false, defer, false);
             }
         }
         return;
@@ -1019,9 +1284,153 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
             std::unique_ptr<Stmt> piece = clone_stmt(*child);
             const std::unordered_set<std::string> skip;
             subst_in_stmt(*piece, index_names, index_exprs, skip);
-            expand_macro_stmt(std::move(piece), fn, names, exprs, out, false);
+            expand_macro_stmt(std::move(piece), fn, names, exprs, out, false, defer, false);
         }
     }
+}
+
+bool Checker::unroll_comptime_for(Stmt::For &loop) {
+    if (loop.body == nullptr) {
+        return false;
+    }
+    const auto *body = std::get_if<Stmt::Block>(&loop.body->data);
+    if (body == nullptr) {
+        return false;
+    }
+    std::vector<std::unique_ptr<Expr>> values;
+    std::string name;
+    if (loop.each) {
+        if (loop.each_expr == nullptr || loop.each_name.empty()) {
+            return false;
+        }
+        const Expr *collection = loop.each_expr.get();
+        bool want_ref = false;
+        if (const Expr *inner = ptr_of_collection(*loop.each_expr)) {
+            want_ref = true;
+            collection = inner;
+            const bool lvalue = [&]() {
+                if (const auto *named = std::get_if<Expr::Name>(&collection->data)) {
+                    const Symbol *symbol = lookup(named->text);
+                    return symbol != nullptr && !symbol->is_function && !symbol->is_package && !symbol->is_constant;
+                }
+                if (const auto *index = std::get_if<Expr::Index>(&collection->data)) {
+                    return index->base != nullptr && !index->is_range;
+                }
+                if (const auto *selector = std::get_if<Expr::Selector>(&collection->data)) {
+                    return selector->base != nullptr;
+                }
+                if (const auto *star = std::get_if<Expr::Unary>(&collection->data)) {
+                    return star->op == TokenKind::Star && star->expr != nullptr;
+                }
+                return false;
+            }();
+            if (!lvalue) {
+                error(expr_loc(*collection), "not an lvalue");
+                return true;
+            }
+        }
+        const std::optional<int> count = known_len(*collection);
+        constexpr int kMaxEach = 32;
+        if (!count || *count < 0 || *count > kMaxEach) {
+            return false;
+        }
+        name = loop.each_name;
+        for (int index = 0; index < *count; ++index) {
+            std::unique_ptr<Expr> element =
+                want_ref ? element_ref(*collection, index, loop.loc) : element_at(*collection, index, loop.loc);
+            if (element == nullptr) {
+                return false;
+            }
+            values.push_back(std::move(element));
+        }
+    } else {
+        name = loop_index_name(loop);
+        const Expr *low_expr = loop.init != nullptr ? bind_value(*loop.init) : nullptr;
+        if (name.empty() || low_expr == nullptr || loop.cond == nullptr || loop.step == nullptr) {
+            return false;
+        }
+        const std::optional<int> low = fold_int(*low_expr);
+        const auto *cmp = std::get_if<Expr::Binary>(&loop.cond->data);
+        const auto *step_assign = std::get_if<Expr::Assign>(&loop.step->data);
+        if (!low || cmp == nullptr || cmp->op != TokenKind::Lt || !index_name_expr(cmp->lhs.get(), name) ||
+            cmp->rhs == nullptr || step_assign == nullptr || !index_name_expr(step_assign->lhs.get(), name) ||
+            step_assign->rhs == nullptr) {
+            return false;
+        }
+        const std::optional<int> high = fold_int(*cmp->rhs);
+        const auto *plus = std::get_if<Expr::Binary>(&step_assign->rhs->data);
+        if (!high || plus == nullptr || plus->op != TokenKind::Plus || !index_name_expr(plus->lhs.get(), name) ||
+            plus->rhs == nullptr) {
+            return false;
+        }
+        const std::optional<int> step = fold_int(*plus->rhs);
+        if (!step || *step <= 0) {
+            return false;
+        }
+        constexpr int kMaxInline = 32;
+        int trips = 0;
+        for (int64_t cursor = *low; cursor < static_cast<int64_t>(*high); cursor += *step) {
+            if (trips >= kMaxInline || cursor > static_cast<int64_t>(2147483647) - *step) {
+                return false;
+            }
+            ++trips;
+        }
+        for (int64_t cursor = *low; cursor < static_cast<int64_t>(*high); cursor += *step) {
+            std::unique_ptr<Expr> literal = int_literal(static_cast<int>(cursor), loop.loc);
+            if (literal == nullptr) {
+                return false;
+            }
+            values.push_back(std::move(literal));
+        }
+    }
+    loop.unrolled.clear();
+    for (const auto &value : values) {
+        if (value == nullptr) {
+            loop.unrolled.clear();
+            return false;
+        }
+        loop.unrolled.push_back(iteration_block(*body, name, *value, loop.loc));
+    }
+    loop.folded = true;
+    // Each copy is its own iteration. `break` leaves the loop. `continue` starts the next copy.
+    AssignState exit_state;
+    exit_state.unreachable = true;
+    const AssignState entry = assign_;
+    ++loop_depth_;
+    ++plain_loop_depth_;
+    for (auto &copy : loop.unrolled) {
+        if (copy == nullptr || assign_.unreachable) {
+            break;
+        }
+        FlowFrame frame;
+        frame.kind = FlowFrame::Kind::Loop;
+        flow_frames_.push_back(std::move(frame));
+        check_stmt(*copy);
+        FlowFrame done = std::move(flow_frames_.back());
+        flow_frames_.pop_back();
+        for (const AssignState &stopped : done.breaks) {
+            exit_state = init_merge(exit_state, stopped);
+        }
+        AssignState next;
+        next.unreachable = true;
+        if (!assign_.unreachable) {
+            next = assign_;
+        }
+        for (const AssignState &continued : done.continues) {
+            next = init_merge(next, continued);
+        }
+        assign_ = next;
+    }
+    --plain_loop_depth_;
+    --loop_depth_;
+    if (loop.unrolled.empty()) {
+        assign_ = entry;
+    } else if (!assign_.unreachable) {
+        assign_ = init_merge(exit_state, assign_);
+    } else {
+        assign_ = exit_state;
+    }
+    return true;
 }
 
 void Checker::expand_macro_call(const Expr::Call &call, const FunctionDecl &fn,
@@ -1083,8 +1492,12 @@ void Checker::expand_macro_call(const Expr::Call &call, const FunctionDecl &fn,
     }
 }
 
-void Checker::append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::unique_ptr<Stmt>> &out) {
+void Checker::append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::unique_ptr<Stmt>> &out, bool defer) {
     if (stmt == nullptr) {
+        return;
+    }
+    if (defer) {
+        out.push_back(std::move(stmt));
         return;
     }
     if (comptime_depth_ == 0) {
@@ -1428,8 +1841,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                     return node.emit && node.expr != nullptr;
                 } else if constexpr (std::is_same_v<T, Stmt::For> || std::is_same_v<T, Stmt::If>) {
                     return true;
+                } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                    return node.comptime_switch;
                 } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
-                    return node.emit;
+                    // A plain loop runs at the call. `emit while` and `emit do` paste the statement.
+                    return true;
                 } else {
                     return false;
                 }
@@ -1636,10 +2052,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                     // The body is pasted. Nested `for` and `if` run later.
                     macro_depth_ = 0;
                 } else if (macro_depth_ > 0) {
-                    // `if` in a macro already keeps one arm. `comptime if` is not a second form.
-                    if (node.comptime_if) {
-                        error(node.loc, "not supported yet");
-                    }
                     // The arm is chosen while expanding. The call site checks the arm that remains.
                     return;
                 }
@@ -1761,7 +2173,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                 assign_ = on_true;
                 const std::optional<NullGuard> guard = null_guard(node.cond.get());
                 ++loop_depth_;
-                ++plain_loop_depth_;
+                // A plain `while` in a macro is expanded at the call. `emit` in that body stays legal here.
+                const bool plain = macro_depth_ == 0;
+                if (plain) {
+                    ++plain_loop_depth_;
+                }
                 const bool narrowed = guard && !guard->equal_null && narrow_optional(guard->name);
                 if (node.body) {
                     check_stmt(*node.body);
@@ -1769,7 +2185,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (narrowed) {
                     restore_optional(guard->name);
                 }
-                --plain_loop_depth_;
+                if (plain) {
+                    --plain_loop_depth_;
+                }
                 --loop_depth_;
                 const FlowFrame done = std::move(flow_frames_.back());
                 flow_frames_.pop_back();
@@ -1793,11 +2211,17 @@ void Checker::check_stmt(const Stmt &stmt) {
                 frame.kind = FlowFrame::Kind::Loop;
                 flow_frames_.push_back(std::move(frame));
                 ++loop_depth_;
-                ++plain_loop_depth_;
+                // A plain `do` in a macro is expanded at the call. `emit` in that body stays legal here.
+                const bool plain = macro_depth_ == 0;
+                if (plain) {
+                    ++plain_loop_depth_;
+                }
                 if (node.body) {
                     check_stmt(*node.body);
                 }
-                --plain_loop_depth_;
+                if (plain) {
+                    --plain_loop_depth_;
+                }
                 --loop_depth_;
                 const FlowFrame done = std::move(flow_frames_.back());
                 flow_frames_.pop_back();
@@ -1817,6 +2241,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                 const bool can_fail = reach && node.cond && !cond_false_.unreachable;
                 assign_ = init_loop_exit(done.breaks, node.cond ? cond_false_ : at_cond, node.cond ? can_fail : reach);
             } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                // The path is chosen while expanding. The call site checks the statements that remain.
+                if (macro_depth_ > 0 && node.comptime_switch) {
+                    return;
+                }
                 check_switch(node);
             } else if constexpr (std::is_same_v<T, Stmt::Case>) {
                 if (FlowFrame *sw = init_switch_frame()) {
@@ -1851,6 +2279,16 @@ void Checker::check_stmt(const Stmt &stmt) {
                     int saved;
                     ~RestoreMacro() { slot = saved; }
                 } restore{macro_depth_, saved_macro};
+                // The copies are chosen while expanding. The call site checks the statements that remain.
+                if (macro_depth_ > 0 && node.comptime_for && !node.emit) {
+                    return;
+                }
+                if (!node.emit && node.comptime_for && macro_depth_ == 0) {
+                    if (unroll_comptime_for(const_cast<Stmt::For &>(node))) {
+                        return;
+                    }
+                    error(node.loc, "not supported yet");
+                }
                 // A macro unrolls `for (var item : items)` at the call. The body is checked there.
                 if (macro_depth_ > 0 && node.each) {
                     return;
@@ -2059,10 +2497,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (auto *init = std::get_if<Expr::Init>(&node.value->data); init != nullptr && init->array_literal) {
                         rhs = check_array_literal(*init);
                     } else {
-                        // `comptime const op = add` inside a function. A cast stays rejected.
-                        const bool name_init = node.is_comptime && node.is_const &&
-                                               std::holds_alternative<Expr::Name>(node.value->data);
-                        AllowComptimeFn allow{allow_comptime_fn_, name_init};
                         rhs = check_expr(*node.value, true);
                     }
                 } else {
@@ -2070,6 +2504,13 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 if (rhs.kind == TypeKind::Invalid) {
                     return;
+                }
+                // `var made = move(origin)` keeps the whole struct. A field, `var n = move(origin).x`, folds.
+                if (!node.is_comptime && !node.is_const && node.value != nullptr) {
+                    if (const auto *call = std::get_if<Expr::Call>(&node.value->data);
+                        call != nullptr && call->comptime_struct != nullptr) {
+                        error(node.loc, "not supported yet");
+                    }
                 }
                 // A runtime binding of that tuple has no signature on the loaded field.
                 if (!node.is_comptime && tuple_holds_fn(rhs)) {
@@ -2166,6 +2607,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     symbol.loc = loc;
+                    symbol.runtime_const = node.is_const && !node.is_comptime;
                     if (node.is_comptime && node.is_const && node.value != nullptr) {
                         Stmt::Bind &bind = const_cast<Stmt::Bind &>(node);
                         if (const Expr *src = promotable_init(*bind.value)) {
@@ -2186,6 +2628,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     } else if (node.is_const && !node.is_comptime) {
                         note_promotable(symbol, node.value.get());
+                    } else if (node.names.size() == 1 && node.value != nullptr) {
+                        // `var f = add` when `add` is a `comptime func`. A later `comptime const` names it.
+                        if (const auto *named = std::get_if<Expr::Name>(&node.value->data);
+                            named != nullptr && named->runtime_body) {
+                            note_promotable(symbol, node.value.get());
+                        }
                     }
                     declare(std::move(symbol), loc);
                     if (!node.is_const && node.names.size() == 1 && node.value != nullptr) {
@@ -2214,6 +2662,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.is_auto = true;
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     symbol.loc = loc;
+                    if (node.names.size() == 1 && node.value != nullptr) {
+                        if (const auto *named = std::get_if<Expr::Name>(&node.value->data);
+                            named != nullptr && named->runtime_body) {
+                            note_promotable(symbol, node.value.get());
+                        }
+                    }
                     shadow(std::move(symbol), loc);
                     if (node.names.size() == 1 && node.value != nullptr) {
                         if (Symbol *live = in_current(node.names[index])) {
@@ -2303,6 +2757,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     // `const name = expr` and `var name const Type`. Both have storage.
                     symbol.is_immutable = var.is_const_decl || symbol.type.is_const;
+                    symbol.runtime_const = var.is_const_decl && !var.is_comptime;
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     Symbol *live = nullptr;
                     if (declare(std::move(symbol), var.loc)) {
@@ -2330,10 +2785,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                                     init_new_partial_ = true;
                                 }
                             }
-                            // `comptime const op func (i32, i32) i32 = add`. A cast stays rejected.
-                            const bool name_init = var.is_comptime && var.is_const_decl &&
-                                                   std::holds_alternative<Expr::Name>(var.init->data);
-                            AllowComptimeFn allow{allow_comptime_fn_, name_init};
                             check_against(*var.init, type);
                             init_allow_partial_ = false;
                             init_new_partial_ = saved_new;
@@ -2359,6 +2810,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                                 }
                             } else if ((var.is_const_decl || live->type.is_const) && var.init != nullptr) {
                                 note_promotable(*live, var.init.get());
+                            } else if (var.init != nullptr) {
+                                if (const auto *named = std::get_if<Expr::Name>(&var.init->data);
+                                    named != nullptr && named->runtime_body) {
+                                    note_promotable(*live, var.init.get());
+                                }
                             }
                             init_cover(*live, var.init.get());
                             if (const auto *created = std::get_if<Expr::New>(&var.init->data);
@@ -2373,6 +2829,13 @@ void Checker::check_stmt(const Stmt &stmt) {
                                         target != nullptr && target->init_id != 0) {
                                         live->pointee_id = target->init_id;
                                     }
+                                }
+                            }
+                            // `var made = move(origin)` keeps the whole struct. A field, `var n = move(origin).x`, folds.
+                            if (!var.is_comptime && !var.is_const_decl && var.init != nullptr) {
+                                if (const auto *call = std::get_if<Expr::Call>(&var.init->data);
+                                    call != nullptr && call->comptime_struct != nullptr) {
+                                    error(var.loc, "not supported yet");
                                 }
                             }
                         }
@@ -2478,32 +2941,6 @@ void Checker::check_function(const FunctionDecl &fn) {
     fresh.captured_here.clear();
     if (fn.body) {
         if (const auto *block = std::get_if<Stmt::Block>(&fn.body->data)) {
-            if (fn.is_comptime) {
-                for (const auto &child : block->statements) {
-                    if (child == nullptr) {
-                        continue;
-                    }
-                    if (std::holds_alternative<Stmt::Return>(child->data)) {
-                        continue;
-                    }
-                    if (const auto *expr = std::get_if<Stmt::Expression>(&child->data)) {
-                        if (expr->emit && expr->expr != nullptr) {
-                            continue;
-                        }
-                    }
-                    const SourceLoc loc = std::visit(
-                        [](const auto &node) -> SourceLoc {
-                            using Node = std::decay_t<decltype(node)>;
-                            if constexpr (std::is_same_v<Node, Stmt::Func>) {
-                                return node.decl != nullptr ? node.decl->loc : SourceLoc{};
-                            } else {
-                                return node.loc;
-                            }
-                        },
-                        child->data);
-                    error(loc, "not supported yet");
-                }
-            }
             check_statements(const_cast<Stmt::Block &>(*block).statements);
         } else {
             check_stmt(*fn.body);

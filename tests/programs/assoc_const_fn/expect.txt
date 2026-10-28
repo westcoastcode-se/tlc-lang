@@ -1,0 +1,1 @@
+compile-error: const on a type is only valid at file scope

@@ -215,7 +215,7 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
             rejected = true;
             return type_invalid();
         }
-        if (type.kind == TypeKind::Tuple && shell.length <= 0) {
+        if (type.kind == TypeKind::Tuple && shell.length < 0) {
             rejected = true;
             return type_invalid();
         }
@@ -232,11 +232,16 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
             type = type_array(std::move(type), -1);
             continue;
         }
-        if (shell.length <= 0) {
+        if (shell.length < 0) {
             rejected = true;
             return type_invalid();
         }
         if (index == 0 && parameter) {
+            // A length of 0 would be the same pointer as `*T`. `decayed_len` stays 0 on every other type.
+            if (shell.length == 0) {
+                rejected = true;
+                return type_invalid();
+            }
             // The value is a pointer to the element. The length stays for a range and `.len`.
             const int length = shell.length;
             type = type_pointer(std::move(type));

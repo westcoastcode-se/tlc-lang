@@ -438,6 +438,12 @@ class CodeGen {
     void emit(const PackageGraph &graph);
     void enable_tests() { testing_ = true; }
     void enable_debug() { debug_ = true; }
+    // Emit `fn` as `tlc.comptime.eval` after the package is declared. False when that emission reports a diagnostic.
+    bool define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
+    // Emit `fn` as a struct return and a `void (ptr)` wrapper that stores it. False when emission fails.
+    // `image.not_constant` is set when a field cannot be a constant. The schema has no LLVM types.
+    bool define_comptime_struct(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
+                                ComptimeStructImage &image);
 
   private:
     struct FileSymbols {
@@ -481,6 +487,8 @@ class CodeGen {
     std::unordered_map<const FunctionDecl *, Binding> local_fns_;
     uint32_t entry_file_ = 0;
     bool testing_ = false;
+    // Compiling a fragment to run during checking. Trace storage stays a normal global.
+    bool eval_ = false;
     // `lower` is const. The struct is created the first time a slice is lowered.
     mutable llvm::StructType *slice_ty_ = nullptr;
     // `-g`. Line numbers and variable locations for a debugger.
@@ -570,6 +578,8 @@ class CodeGen {
         int elem_bits = 0;
         bool elem_unsigned = false;
         bool elem_float = false;
+        // The field is an enumerator. The memory type is that integer. Zero means it is not one.
+        int enum_id = -1;
         // `[]T` stored in the field. The slot is the `{ ptr, i32 }` value.
         bool is_slice = false;
         // The element of this slice or array field is one `[]E`.
@@ -723,7 +733,7 @@ class CodeGen {
     // One union constant per spelling and flags. Equal types share it.
     std::unordered_map<std::string, llvm::Constant *> type_values_;
     llvm::StructType *type_desc_ty_ = nullptr;
-    // `fields()` element: `{ name []const u8, kind *const Type }`. Negative until `prepare_structs`.
+    // `fields()` element: `{ name []const u8, kind Type }`. Negative until `prepare_structs`.
     int field_struct_id_ = -1;
     // `builtin.Type` and `builtin.Desc`. Negative until those structs are laid out.
     int type_struct_id_ = -1;
@@ -1408,6 +1418,8 @@ class CodeGen {
     const Expr *comptime_tuple_element(const Expr &expr) const;
     // That constant, with a file-scope name replaced by its initializer.
     std::unique_ptr<Expr> comptime_substitute(const Expr &expr) const;
+    // A field of a struct literal, or of a comptime call that kept one. A plain file-scope name is not one.
+    const Expr *comptime_struct_field(const Expr &object, const std::string &field) const;
     // The `builtin.memeql` or `builtin.memcmp` declaration this call names.
     const FunctionDecl *mem_compare_decl(const Expr::Call &call) const;
     // A constant float or integer. `wide` is an f64 operation. Integers leave `is_float` clear.
@@ -1442,6 +1454,7 @@ class CodeGen {
     void finish_function();
     void emit_stmt(const Stmt &stmt);
     void emit_for_each(const Stmt::For &node);
+    void emit_unrolled_for(const Stmt::For &node);
     void emit_bind(const Stmt::Bind &node);
     // A missing local initializer. One store per leaf, so a later store or an unread leaf can be deleted.
     void zero_slot(llvm::Value *slot, llvm::Type *ty);

@@ -1,0 +1,6 @@
+const label = "hi";
+const p *u8 = label;
+
+func main() i32 {
+    return 0;
+}

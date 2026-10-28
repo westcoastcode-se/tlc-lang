@@ -1,0 +1,13 @@
+comptime const kept = 1;
+
+type Box struct {
+    p *i32;
+};
+
+comptime func make() Box {
+    return Box{.p = &kept};
+}
+
+func main() i32 {
+    return i32(make().p == null);
+}

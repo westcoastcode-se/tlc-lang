@@ -1,0 +1,13 @@
+comptime func inc(n i32) i32 {
+    var x = n;
+    return x + 1;
+}
+
+comptime func add(n i32) i32 {
+    var x = inc(n);
+    return x + 1;
+}
+
+func main() i32 {
+    return add(40);
+}

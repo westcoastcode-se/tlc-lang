@@ -1,0 +1,16 @@
+macro func pick(slot *i32, n i32) void {
+    comptime switch (n) {
+    case 1:
+        emit *slot = 40;
+        break;
+    default:
+        emit *slot = 2;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    var flag = 1;
+    pick(&n, flag);
+    return n;
+}

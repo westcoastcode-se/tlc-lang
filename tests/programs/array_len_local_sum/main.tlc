@@ -1,0 +1,6 @@
+func main() i32 {
+    const n = 2;
+    const m = n + 2;
+    var row [m]i32;
+    return row.len;
+}

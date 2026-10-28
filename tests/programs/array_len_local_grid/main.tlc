@@ -1,0 +1,6 @@
+func main() i32 {
+    const n = 2;
+    const m = 3;
+    var grid [n][m]i32;
+    return grid.len + grid[0].len;
+}

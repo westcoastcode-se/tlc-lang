@@ -654,19 +654,10 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 shape.type = shape_type(shape);
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                // `typeof` is `*const CompiledType`. The union stays in one constant.
                 Shape shape;
-                if (type_struct_id_ >= 0 && type_struct_id_ < static_cast<int>(structs_.size()) &&
-                    structs_[static_cast<std::size_t>(type_struct_id_)].type != nullptr) {
-                    shape.struct_id = type_struct_id_;
-                    shape.type = structs_[static_cast<std::size_t>(type_struct_id_)].type;
-                    return shape;
-                }
-                if (fallback_type_ty_ != nullptr) {
-                    shape.struct_id = synthetic_type_id;
-                    shape.type = fallback_type_ty_;
-                    return shape;
-                }
                 shape.depth = 1;
+                shape.struct_id = type_struct_id_ >= 0 ? type_struct_id_ : synthetic_type_id;
                 shape.type = ptr_type();
                 return shape;
             } else if constexpr (std::is_same_v<T, Expr::Int> || std::is_same_v<T, Expr::Sizeof>) {

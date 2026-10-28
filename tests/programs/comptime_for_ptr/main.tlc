@@ -1,0 +1,10 @@
+func main() i32 {
+    var items [3]i32;
+    items[0] = 1;
+    items[1] = 2;
+    items[2] = 4;
+    comptime for (var slot : ptr_of(items)) {
+        *slot = *slot + 1;
+    }
+    return items[0] + items[1] + items[2];
+}

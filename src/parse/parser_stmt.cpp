@@ -202,7 +202,10 @@ std::unique_ptr<Stmt> Parser::parse_block() {
     expect(TokenKind::LBrace, "expected '{'");
     while (!check(TokenKind::RBrace) && !eof()) {
         const std::size_t before = pos_;
-        block.statements.push_back(parse_statement());
+        // A lifted constant or variable on a type is not a statement in this block.
+        if (std::unique_ptr<Stmt> stmt = parse_statement()) {
+            block.statements.push_back(std::move(stmt));
+        }
         if (pos_ == before) {
             error_here("expected a statement");
             ++pos_;
@@ -302,12 +305,15 @@ std::unique_ptr<Stmt> Parser::parse_for() {
     }
     if (eat(TokenKind::Semicolon)) {
         stmt.init = nullptr;
-    } else if (const_on_type()) {
-        diags_.error(peek().loc, "not supported yet");
+    } else if ((check(TokenKind::KwComptime) && const_on_type(1)) || const_on_type()) {
+        // A constant on a type is file scope. Eat its ';' the way a local const does,
+        // so the condition after it is still the loop condition.
+        diags_.error(peek().loc, "const on a type is only valid at file scope");
         while (!check(TokenKind::Semicolon) && !check(TokenKind::RParen) && !eof()) {
             ++pos_;
         }
-        stmt.init = make_stmt(Stmt::Expression{});
+        eat(TokenKind::Semicolon);
+        stmt.init = nullptr;
     } else if (const_type_var()) {
         Stmt::Decl decl;
         decl.loc = peek().loc;
@@ -411,19 +417,19 @@ bool Parser::var_is_inferred() const {
     return check(TokenKind::KwVar) && peek(1).kind == TokenKind::Identifier && peek(2).kind == TokenKind::Eq;
 }
 
-// `const Entity::next` is file scope. The same spelling inside a function is not a declaration.
-bool Parser::const_on_type() const {
-    if (!check(TokenKind::KwConst) || peek(1).kind != TokenKind::Identifier) {
+// `const Entity::next` is file scope. The same spelling inside a function is rejected.
+bool Parser::const_on_type(std::size_t at) const {
+    if (peek(at).kind != TokenKind::KwConst || peek(at + 1).kind != TokenKind::Identifier) {
         return false;
     }
-    if (peek(2).kind == TokenKind::ColonColon) {
+    if (peek(at + 2).kind == TokenKind::ColonColon) {
         return true;
     }
-    if (peek(2).kind != TokenKind::LBracket) {
+    if (peek(at + 2).kind != TokenKind::LBracket) {
         return false;
     }
     int depth = 0;
-    for (std::size_t ahead = 2; peek(ahead).kind != TokenKind::End; ++ahead) {
+    for (std::size_t ahead = at + 2; peek(ahead).kind != TokenKind::End; ++ahead) {
         const TokenKind kind = peek(ahead).kind;
         if (kind == TokenKind::LBracket) {
             ++depth;
@@ -698,11 +704,19 @@ VarDecl Parser::parse_const_type_var(bool exported, bool is_extern, bool extern_
     return var;
 }
 
+void Parser::lift_assoc(VarDecl var) { lifted_.push_back(std::move(var)); }
+
 std::unique_ptr<Stmt> Parser::parse_var_or_bind() {
     if (check(TokenKind::KwVar) && !var_is_bind()) {
+        VarDecl var = parse_typed_var(false, false, false, false);
+        // `var Entity::next` inside a function is the file-scope variable on that type.
+        if (!var.owner.empty()) {
+            lift_assoc(std::move(var));
+            return nullptr;
+        }
         Stmt::Decl decl;
-        decl.loc = peek().loc;
-        decl.vars.push_back(parse_typed_var(false, false, false, false));
+        decl.loc = var.loc;
+        decl.vars.push_back(std::move(var));
         return make_stmt(std::move(decl));
     }
     return parse_bind(check(TokenKind::KwVar));
@@ -953,12 +967,24 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         }
         return make_stmt(Stmt::Expression{});
     }
+    if ((check(TokenKind::KwComptime) && const_on_type(1)) || const_on_type()) {
+        // `const Entity::next` and `comptime const Entity::next` belong beside the type.
+        diags_.error(peek().loc, "const on a type is only valid at file scope");
+        while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
+            if (check(TokenKind::LBrace)) {
+                break;
+            }
+            ++pos_;
+        }
+        eat(TokenKind::Semicolon);
+        return make_stmt(Stmt::Expression{});
+    }
     if (check(TokenKind::KwComptime) && peek(1).kind == TokenKind::KwConst) {
         ++pos_;
         return parse_const_local(true);
     }
     if (check(TokenKind::KwComptime)) {
-        // `comptime if` and `comptime switch` fold when the value does. `comptime for` and `comptime { ... }` stay out.
+        // `comptime if`, `comptime switch`, and `comptime for` fold when the value does. `comptime { ... }` stays out.
         if (pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == TokenKind::KwIf) {
             const SourceLoc loc = peek().loc;
             ++pos_;
@@ -983,8 +1009,19 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
             }
             return stmt;
         }
+        if (pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == TokenKind::KwFor) {
+            const SourceLoc loc = peek().loc;
+            ++pos_;
+            std::unique_ptr<Stmt> stmt = parse_for();
+            if (stmt != nullptr) {
+                if (auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
+                    loop->comptime_for = true;
+                    loop->loc = loc;
+                }
+            }
+            return stmt;
+        }
         // `comptime { ... }` inside a function is reserved. A local `comptime func` is too.
-        // `for` in a macro is already compile-time, so `comptime for` is not a form.
         diags_.error(peek().loc, "not supported yet");
         ++pos_;
         if (check(TokenKind::KwFunc)) {
@@ -1063,14 +1100,7 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         diags_.error(stmt.loc, "not supported yet");
         return make_stmt(std::move(stmt));
     }
-    if (const_on_type()) {
-        diags_.error(peek().loc, "not supported yet");
-        while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
-            ++pos_;
-        }
-        eat(TokenKind::Semicolon);
-        return make_stmt(Stmt::Expression{});
-    }
+
     if (const_type_var()) {
         Stmt::Decl decl;
         decl.loc = peek().loc;

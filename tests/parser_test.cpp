@@ -456,6 +456,9 @@ int run_parser_tests() {
             "  export var shown = 2;\n"
             "};\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.dump, "(var Entity::next i32 (int 1))\n");
+        EXPECT_HAS(check, parsed.dump, "(var Entity::spare := (int 3))\n");
+        EXPECT(check, parsed.dump.find("(var Entity::shown") == std::string::npos);
     }
 
     {
@@ -519,9 +522,9 @@ int run_parser_tests() {
             "};\n");
         EXPECT_HAS(check, parsed.errors, "not supported yet");
         EXPECT_HAS(check, parsed.dump, "(field id i32)\n");
-        EXPECT(check, parsed.dump.find("(var Entity::next") == std::string::npos);
+        EXPECT_HAS(check, parsed.dump, "(var Entity::next i32 (int 1))\n");
         EXPECT(check, parsed.dump.find("(var Entity::shown") == std::string::npos);
-        EXPECT(check, parsed.dump.find("(var Box[T]::extra") == std::string::npos);
+        EXPECT_HAS(check, parsed.dump, "(var Box[T]::extra i32 (int 1))\n");
     }
 
     {

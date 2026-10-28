@@ -624,10 +624,6 @@ bool Checker::named_type_owner(const std::string &name) const {
     if (name.empty()) {
         return false;
     }
-    // `func Type::name` is written in the compiler package. The union is the owner.
-    if (name == "Type" && is_std_builtin_file(file_id_)) {
-        return true;
-    }
     if (find_tag(file_id_, name) >= 0 || package_has_enum(file_id_, name)) {
         return true;
     }
@@ -813,7 +809,7 @@ Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_in
     if (const int trait = package_trait(file_id_, name); trait >= 0) {
         return type_trait(trait);
     }
-    // `kind *const Type` on `builtin.Field`, before that tag is visible.
+    // `kind Type` on `builtin.Field`, before that alias is visible.
     if (name == "Type" && is_std_builtin_file(file_id_)) {
         return type_value();
     }

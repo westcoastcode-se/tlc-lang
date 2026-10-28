@@ -933,8 +933,7 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
             return;
         }
         if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&
-            peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value > 0 &&
-            peek().int_value <= 2147483647ULL) {
+            peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value <= 2147483647ULL) {
             shell.kind = TypeShell::Kind::Array;
             shell.length = static_cast<int>(peek().int_value);
             ++pos_;
@@ -1524,8 +1523,7 @@ Parser::ArrayMark Parser::parse_array_suffix(bool allow_slice) {
             diags_.error(loc, "not supported yet");
         }
     } else if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&
-               peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value > 0 &&
-               peek().int_value <= 2147483647ULL) {
+               peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value <= 2147483647ULL) {
         mark.length = static_cast<int>(peek().int_value);
         ++pos_;
         expect(TokenKind::RBracket, "expected ']'");

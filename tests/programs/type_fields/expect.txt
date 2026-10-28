@@ -5,4 +5,4 @@ x i32
 y f32
 p label
 value
-*const Type
+Type

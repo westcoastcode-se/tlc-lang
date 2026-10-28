@@ -94,7 +94,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         decayed.shells.clear();
                         decayed.array_len = length;
                         decayed.depth = inner.depth + 1;
-                        if (length > 0) {
+                        if (length >= 0) {
                             const int elem_depth = inner.depth > 0 ? inner.depth - 1 : 0;
                             llvm::Type *elem = leaf_type(elem_depth, inner.elem_char, inner.struct_id, inner.elem_bool,
                                                          inner.elem_bits, inner.elem_float);
@@ -565,6 +565,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return emit_prepared(prepare_call(node));
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                // `move(origin).x` is the field of the literal that call kept. A handwritten name still loads.
+                if (node.base != nullptr) {
+                    if (const Expr *field = comptime_struct_field(*node.base, node.field)) {
+                        if (const auto folded = fold(*field)) {
+                            return {const_i32(*folded), 0};
+                        }
+                    }
+                }
                 if (node.slice_len) {
                     if (node.len_value >= 0) {
                         return {const_i32(node.len_value), 0};
@@ -1051,14 +1059,16 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     error(node.loc, "type mismatch");
                     return {zero(), 0};
                 }
-                llvm::Constant *value = intern_type_value(node.canonical, node.type_arm, node.type_has_this, node.type_generic,
-                                                          node.type_variadic);
+                // One interned `CompiledType`. The expression is that address, not a copy of the union.
+                llvm::Constant *value = type_kind_ptr(node.canonical, node.type_arm, node.type_has_this, node.type_generic,
+                                                      node.type_variadic);
                 if (value == nullptr) {
                     error(node.loc, "type mismatch");
                     return {zero(), 0};
                 }
                 TypedValue out;
                 out.value = value;
+                out.depth = 1;
                 out.struct_id = type_struct_id_ >= 0 ? type_struct_id_ : synthetic_type_id;
                 return out;
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
@@ -1484,13 +1494,15 @@ llvm::Value *CodeGen::type_descriptor(const Expr &expr) {
         }
         return builder_.CreateLoad(ptr_type(), union_addr);
     };
+    auto compiled = [&](int struct_id) {
+        return (type_struct_id_ >= 0 && struct_id == type_struct_id_) || struct_id == synthetic_type_id;
+    };
     if (addressable(expr)) {
         const TypedValue addr = emit_addr(expr);
-        const bool type_value = (type_struct_id_ >= 0 && addr.struct_id == type_struct_id_) ||
-                                addr.struct_id == synthetic_type_id;
-        if (addr.value == nullptr || !type_value) {
+        if (addr.value == nullptr || !compiled(addr.struct_id)) {
             return nullptr;
         }
+        // `depth` counts pointers above the union. The last load is the union address.
         llvm::Value *union_addr = addr.value;
         for (int depth = addr.depth; depth > 0; --depth) {
             union_addr = builder_.CreateLoad(ptr_type(), union_addr);
@@ -1498,7 +1510,17 @@ llvm::Value *CodeGen::type_descriptor(const Expr &expr) {
         return desc_at(union_addr);
     }
     const TypedValue base = emit_rvalue(expr);
-    if (base.value == nullptr || base.depth != 0 || !type_union_value(base.value->getType())) {
+    if (base.value == nullptr) {
+        return nullptr;
+    }
+    if (base.depth > 0 && compiled(base.struct_id)) {
+        llvm::Value *union_addr = base.value;
+        for (int depth = base.depth; depth > 1; --depth) {
+            union_addr = builder_.CreateLoad(ptr_type(), union_addr);
+        }
+        return desc_at(union_addr);
+    }
+    if (base.depth != 0 || !type_union_value(base.value->getType())) {
         return nullptr;
     }
     return builder_.CreateExtractValue(base.value, {1, 0});

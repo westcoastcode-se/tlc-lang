@@ -1258,7 +1258,7 @@ int run_lsp_tests() {
     EXPECT(check, type_at.line >= 0);
     const std::string type_hover = request_at(to_child[1], from_child[0], 122, "textDocument/hover", builtin_uri, type_at);
     EXPECT_HAS(check, type_hover, "type Type");
-    EXPECT_HAS(check, type_hover, "typeof produces it");
+    EXPECT_HAS(check, type_hover, "typeof returns Type");
     LineCol inc_at = at_needle(builtin_source, "return inc", false);
     EXPECT(check, inc_at.line >= 0);
     inc_at.character += static_cast<int>(std::string("return ").size());
@@ -1279,7 +1279,7 @@ int run_lsp_tests() {
     EXPECT(check, fields_at.line >= 0);
     const std::string fields_hover =
         request_at(to_child[1], from_child[0], 125, "textDocument/hover", builtin_uri, fields_at);
-    EXPECT_HAS(check, fields_hover, "func Type.fields");
+    EXPECT_HAS(check, fields_hover, "func CompiledType.fields");
     EXPECT_HAS(check, fields_hover, "[]const Field");
     EXPECT_HAS(check, fields_hover, "named struct");
     LineCol malloc_at = at_needle(builtin_source, "heap.malloc", false);

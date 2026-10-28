@@ -310,6 +310,12 @@ TranslationUnit Parser::parse() {
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));
     }
+    // A constant or variable on a type is file scope wherever it was written.
+    for (VarDecl &var : lifted_) {
+        TopDecl top;
+        top.data = std::move(var);
+        unit.decls.push_back(std::move(top));
+    }
     return unit;
 }
 

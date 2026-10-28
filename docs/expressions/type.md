@@ -8,7 +8,7 @@ This page describes `typeof`, which yields a `builtin.Type` you can compare and 
 
 `typeof(i32)` and `typeof n` have type `builtin.Type`, and `import "builtin"` names that type.
 
-`==` and `!=` compare two `builtin.Type` values and yield `bool`.
+`==` and `!=` compare two `builtin.Type` pointers and yield `bool`.
 
 Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` folds while compiling.
 
@@ -24,9 +24,9 @@ A tuple is that same list, one element per value, and `fields[i].name` is the in
 
 Assigning an element is `type mismatch`.
 
-`fields[i].name` is the field's name, a `[]const u8`, and `fields[i].kind` is `*const builtin.Type`.
+`fields[i].name` is the field's name, a `[]const u8`, and `fields[i].kind` is `builtin.Type`.
 
-`*fields[i].kind` is its type, and storing through `fields[i].kind` is `type mismatch`.
+`fields[i].kind` is that field's type, and storing through `fields[i].kind` is `type mismatch`.
 
 ## Arrays
 
@@ -77,25 +77,22 @@ func main() i32 {
 
 ```asm
 main:
-leaq (%rip), %rax                # address
-movq %rax, -24(%rsp)             # move
-movl $0, -8(%rsp)                # constant
-movb $0, -14(%rsp)               # constant
-movb $0, -15(%rsp)               # constant
-movb $0, -16(%rsp)               # constant
+leaq (%rip), %rax                # typeof(n)
+movq %rax, -8(%rsp)              # t
 xorl %eax, %eax                  # zero the result
-movb $1, %cl                     # constant
+movb $1, %cl                     # same type
 testb $1, %cl                    # test
-movb %al, -25(%rsp)              # move
+movb %al, -9(%rsp)               # move
 jne .L1                          # branch
 jmp .L2                          # jump
 .L1:
-movq -24(%rsp), %rax             # move
-cmpq $0, (%rax)                  # compare
+movq -8(%rsp), %rax              # t
+movq (%rax), %rax                # desc
+cmpq $0, (%rax)                  # name != null
 setne %al                        # flag to byte
-movb %al, -25(%rsp)              # move
+movb %al, -9(%rsp)               # move
 .L2:
-movb -25(%rsp), %al              # move
+movb -9(%rsp), %al               # move
 testb $1, %al                    # test
 jne .L3                          # branch
 jmp .L4                          # jump

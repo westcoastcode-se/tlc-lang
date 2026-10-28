@@ -101,7 +101,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bo
 }
 
 Parser::StructMembers Parser::parse_struct_members(const std::string &owner, bool publish, bool extern_c,
-                                                    bool is_extern) {
+                                                    bool is_extern, const std::vector<std::string> &owner_params) {
     StructMembers body;
     auto skip_member = [&]() {
         while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
@@ -137,14 +137,28 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
     };
     while (!check(TokenKind::RBrace) && !eof()) {
         const std::size_t before = pos_;
-        const bool rejected = check(TokenKind::KwVar) || check(TokenKind::KwConst) || check(TokenKind::KwExtern) ||
+        // `export` and `extern` on a constant or variable stay beside the type.
+        const bool rejected = check(TokenKind::KwExtern) ||
                               (check(TokenKind::KwExport) && (peek(1).kind == TokenKind::KwVar ||
                                                               peek(1).kind == TokenKind::KwConst ||
                                                               peek(1).kind == TokenKind::KwExtern));
-        if (rejected) {
-            // A member is `name type` or `export name type`. It is already a
-            // variable, so `var` is not written here. A constant is
-            // `const Type::name` beside the type. `var Type::name` is beside it too.
+        if (check(TokenKind::KwConst) || check(TokenKind::KwVar)) {
+            // `const spare = 3` and `var next i32 = 1` are the constant and the variable on this type.
+            // A member is still `name type`. `export` and `extern` are not written here.
+            VarDecl var = check(TokenKind::KwConst) ? parse_const_decl(false, false)
+                                                    : parse_typed_var(false, false, false, false, true);
+            if (var.owner.empty()) {
+                if (owner.empty()) {
+                    diags_.error(var.loc, "not supported yet");
+                } else {
+                    var.owner = owner;
+                    var.owner_params = owner_params;
+                }
+            }
+            if (!var.owner.empty()) {
+                lift_assoc(std::move(var));
+            }
+        } else if (rejected) {
             diags_.error(peek().loc, "not supported yet");
             skip_member();
         } else {
@@ -496,7 +510,12 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         variants = parse_union_variants(name);
         fields = std::move(variants.fields);
     } else if (kind == TokenKind::KwStruct) {
-        StructMembers members = parse_struct_members(name, false, extern_c, is_extern);
+        std::vector<std::string> owner_params;
+        owner_params.reserve(type_params.size());
+        for (const TypeParam &param : type_params) {
+            owner_params.push_back(param.name);
+        }
+        StructMembers members = parse_struct_members(name, false, extern_c, is_extern, owner_params);
         fields = std::move(members.fields);
         variants.anonymous = std::move(members.anonymous);
     } else {

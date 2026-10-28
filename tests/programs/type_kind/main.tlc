@@ -38,35 +38,35 @@ func id[T type](value T) T { return value; }
 extern(abi="c") func logf(fmt *const u8, ...) i32;
 
 func main() i32 {
-    if (sizeof(builtin.Type) != 24) {
+    if (sizeof(builtin.Type) != 8) {
         return 1;
     }
-    if (builtin.TypeKind(typeof(i32)) != builtin.TypeKind.Other) {
+    if (builtin.TypeKind(*typeof(i32)) != builtin.TypeKind.Other) {
         return 2;
     }
     var t builtin.Type = typeof(add);
-    if (builtin.TypeKind(t) != builtin.TypeKind.Function || t.Function.has_this || t.Function.generic ||
+    if (builtin.TypeKind(*t) != builtin.TypeKind.Function || t.Function.has_this || t.Function.generic ||
         t.Function.variadic) {
         return 3;
     }
     if (typeof(add) != typeof(sub) || typeof(add).fields().len != 0) {
         return 4;
     }
-    if (builtin.TypeKind(typeof(logf)) != builtin.TypeKind.Function || typeof(logf).Function.variadic == false) {
+    if (builtin.TypeKind(*typeof(logf)) != builtin.TypeKind.Function || typeof(logf).Function.variadic == false) {
         return 5;
     }
     var f = add;
-    if (builtin.TypeKind(typeof(f)) != builtin.TypeKind.Other || typeof(f) == typeof(add)) {
+    if (builtin.TypeKind(*typeof(f)) != builtin.TypeKind.Other || typeof(f) == typeof(add)) {
         return 6;
     }
-    if (builtin.TypeKind(typeof(Point)) != builtin.TypeKind.Struct || typeof(Point).Struct.generic) {
+    if (builtin.TypeKind(*typeof(Point)) != builtin.TypeKind.Struct || typeof(Point).Struct.generic) {
         return 7;
     }
     var box Box[i32];
-    if (builtin.TypeKind(typeof(box)) != builtin.TypeKind.Struct || typeof(box).Struct.generic == false) {
+    if (builtin.TypeKind(*typeof(box)) != builtin.TypeKind.Struct || typeof(box).Struct.generic == false) {
         return 8;
     }
-    if (builtin.TypeKind(typeof(Shape)) != builtin.TypeKind.Other) {
+    if (builtin.TypeKind(*typeof(Shape)) != builtin.TypeKind.Other) {
         return 9;
     }
     if (typeof(Point.get).Function.has_this == false || typeof(Point.ptr).Function.has_this == false ||

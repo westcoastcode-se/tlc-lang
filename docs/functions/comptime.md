@@ -74,6 +74,26 @@ retq                             # return
 
 `comptime const n = 41` then `return add(n)` folds the same way.
 
+A body with statements is compiled and run. The returned `i32` is that constant.
+
+```c
+comptime func add(n i32) i32 {
+    var x = n;
+    x = x + 1;
+    return x;
+}
+
+func main() i32 {
+    return add(41);
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
 A runtime `const` and a `var` are `not supported yet`.
 
 ```c
@@ -95,7 +115,15 @@ retq                             # return
 
 ## When the call folds
 
-The call folds when the body is one `return` of a constant `i32`, with no runtime symbol and no trace frame.
+The call folds when every argument is a comptime value and the result is `i32` or a struct, with no runtime symbol and no trace frame.
+
+A body that is one `return` of a constant `i32` folds.
+
+A body with statements is compiled and run, and that integer is the constant.
+
+A struct result is kept as that literal.
+
+A result that is not `i32` and not a struct is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 
@@ -109,11 +137,47 @@ A call that does not fold is `not supported yet`.
 
 `comptime { ... }` inside an ordinary function is `not supported yet`.
 
-`comptime for` is `not supported yet`.
+`comptime for` unrolls when the bounds fold, inside a [macro](macro.md) and outside one.
+
+A bound that does not fold is `not supported yet`. It emits nothing.
 
 `const for` is not a form.
 
 `comptime if` keeps one arm when the condition folds.
+
+A local `const` whose initializer folds to `i32` is that condition.
+
+`const n = 1` then `comptime if (n == 1)` returns 42.
+
+```c
+func main() i32 {
+    const n = 1;
+    comptime if (n == 1) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
+`const m = n + 1` is that sum.
+
+`const n i32 = 1` is that binding.
+
+`const n = -1` then `comptime if (n == -1)` is those same two instructions.
+
+A local `const` hides a file-scope `const` of the same name.
+
+A `var` does not fold.
+
+`var n const i32` does not fold.
+
+An initializer that does not fold is `not supported yet`.
 
 A condition that is not comptime is `not supported yet`.
 
@@ -133,11 +197,17 @@ A `comptime` parameter leaves every case until a call substitutes it.
 
 An ordinary `switch` typechecks every case.
 
-A `var` and a runtime `const` do not fold.
+A `var` does not fold for `comptime switch` or `comptime for`.
 
-In a [macro](macro.md), `comptime if` and `comptime switch` are `not supported yet`.
+A runtime `const` does not fold for `comptime switch` or `comptime for`.
 
-In a macro, `for` and `if` run while compiling and do not take a `comptime` prefix.
+In a [macro](macro.md), `comptime if` keeps one arm when the condition folds. A condition that does not fold is `not supported yet`. `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`. `comptime for` unrolls when the bounds fold. A bound that does not fold is `not supported yet`.
+
+A local `const` whose initializer folds to `i32` is a `comptime if` condition there.
+
+`comptime switch` and `comptime for` do not fold that `const`.
+
+In a macro, a plain `for` unrolls when the bounds fold and runs at run time when they do not. A plain `if` keeps one arm when the condition folds and runs at run time when it does not.
 
 A `switch` in a macro is `not supported yet`.
 
@@ -324,6 +394,101 @@ That `id` is `comptime func id(n Integer) i32 { return i32(n); }`.
 A `var` passed to a `comptime func` is `not supported yet`.
 
 A `var` of the enum is `not supported yet` on that call.
+
+## A struct returned from a comptime function
+
+The result is the struct literal that call kept.
+
+The body may be one `return` of a literal, or statements that build the value.
+
+`origin` is `Point{.x = 41, .y = 1}`.
+
+`move` returns `Point{.x = 42, .y = 1}`.
+
+```c
+type Point struct {
+    x i32;
+    y i32;
+};
+
+comptime const origin = Point{.x = 41, .y = 1};
+
+comptime func move(p Point) Point {
+    var copy = p;
+    copy.x = copy.x + 1;
+    return copy;
+}
+
+func main() i32 {
+    return move(origin).x;
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
+The call has no runtime symbol and no trace frame.
+
+`return Point{.x = p.x + 1, .y = p.y}` is that same value.
+
+`comptime const made = move(origin)` names that struct.
+
+`made.x` is `42`.
+
+A field may be an integer, a `bool`, an `f32`, an `f64`, an enumerator, a nested struct, an array of those, a `[]const u8`, a function, or `null`.
+
+`made.flag` stays `bool`.
+
+`made.flag + 1` is `type mismatch`.
+
+`made.at.x` is the nested field.
+
+`made.row[0]` is the element.
+
+`made.label[0]` is the byte, and `made.label.len` is the length.
+
+Those bytes are copied out of the run.
+
+`made.op` is that function.
+
+`(made.op)(4, 1)` calls it.
+
+`null` stays `null`.
+
+`width[made.x]()` is `main.width.spec.42` when the file is `main.tlc`.
+
+That copy is `movl $42, %eax` and `retq`.
+
+`comptime if (made.x == 42)` keeps one arm.
+
+`comptime if (made.bias == 0.5)` keeps one arm.
+
+When the file is `main.tlc`, `take(move(origin), n)` on `func take(p comptime Point, n i32)` calls `main.take.spec.p_42_1`.
+
+`p.x` is the immediate `42`.
+
+The struct parameter is not passed.
+
+```asm
+take.spec.p_42_1:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+addl $42, %eax                   # add
+retq                             # return
+```
+
+A `var` of the struct is `not supported yet`.
+
+A value that does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
+
+A data pointer field is `global initializer is not a constant`.
+
+A union result is `global initializer is not a constant`.
+
+A method, `extern`, and `export` on that `comptime func` are `not supported yet`.
 
 ## A tuple on a comptime function
 
@@ -920,6 +1085,8 @@ The copy does not paste the body.
 
 A direct call `add(40, 2)` still folds, with no trace frame.
 
+`BinOp(add)`, `(add, 1)`, `var f = add`, and `const op = add` are values too.
+
 ```c
 comptime func add(a i32, b i32) i32 {
     return a + b;
@@ -982,17 +1149,99 @@ The copy calls `main.add` with `n` and `2`.
 
 The program returns 42.
 
-> **Warning:** These forms emit nothing.
->
-> `var f = add` when `add` is a `comptime func` is `not supported yet`.
->
-> `BinOp(add)` when `add` is a `comptime func` is `not supported yet`.
->
-> `(add, 1)` when `add` is a `comptime func` is `not supported yet`.
->
-> `const op = add` when `add` is a `comptime func` and the `const` is not `comptime` is `not supported yet`.
->
-> `var f = add` then `comptime const op = f` is `not supported yet`.
+`BinOp(add)` and `comptime const wrapped = BinOp(add)` call `main.take.spec.fnadd`.
+
+`(add, 1)` and `comptime const pair = (add, 1)` call `main.take.spec.t_fnadd_1`.
+
+That copy calls `main.add` with `n` and `2`, then adds `1`.
+
+`var f = add` and `const op = add` store the address of `main.add`.
+
+`f(1, 0)` and `op(1, 0)` call through that pointer.
+
+`add(1, 0)` still folds. The call is `addl $1`.
+
+`var f = add` then `comptime const named = f` names `add`.
+
+`named(40, 2)` calls through that pointer.
+
+A file-scope `var held = add` then `comptime const op = held` is that argument.
+
+`take(op, n)` calls `main.take.spec.fnadd`.
+
+`const saved = add` then `comptime const folded = saved` is the same copy.
+
+`var f = scale`, when `scale` has a comptime parameter and a runtime parameter, is `not supported yet`.
+
+An ordinary function stored in a `var`, then `comptime const op = f`, is `not supported yet`.
+
+```c
+comptime func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+type BinOp func (i32, i32) i32;
+
+func take(op comptime func (i32, i32) i32, n i32) i32 {
+    return op(n, 2);
+}
+
+func main() i32 {
+    var n = 40;
+    var f = add;
+    const op = add;
+    return take(BinOp(add), n) + f(1, 0) + op(1, 0) + add(1, 0) - 3;
+}
+```
+
+```asm
+main:
+movl $40, 84(%rsp)               # constant
+leaq main.add(%rip), %rax        # address
+movq %rax, 88(%rsp)              # move
+movq %rax, 96(%rsp)              # move
+movl 84(%rsp), %eax              # move
+movl %eax, 72(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 72(%rsp), %edi              # move
+callq main.take.spec.fnadd       # call take
+movl %eax, %ecx                  # move
+movl %ecx, 68(%rsp)              # move
+movq 88(%rsp), %rax              # move
+movq %rax, 48(%rsp)              # move
+# trace frame for the call, then the matching pop
+movq 48(%rsp), %rax              # move
+movl $1, %edi                    # constant
+xorl %esi, %esi                  # constant
+callq *%rax                      # call f
+movl %eax, %ecx                  # move
+movl %ecx, 44(%rsp)              # move
+movl 68(%rsp), %eax              # move
+addl %ecx, %eax                  # add
+movl %eax, 20(%rsp)              # move
+movq 96(%rsp), %rax              # move
+movq %rax, 24(%rsp)              # move
+# trace frame for the call, then the matching pop
+movq 24(%rsp), %rax              # move
+movl $1, %edi                    # constant
+xorl %esi, %esi                  # constant
+callq *%rax                      # call op
+movl %eax, %ecx                  # move
+movl %ecx, 16(%rsp)              # move
+movl 20(%rsp), %eax              # move
+addl %ecx, %eax                  # add
+addl $1, %eax                    # add
+subl $3, %eax                    # subtract
+retq                             # return
+```
+
+`n` is stored.
+
+`f` and `op` each hold `main.add`.
+
+The direct call is the `addl $1`.
+
+The program returns 42.
 
 ## An enumerator on an ordinary function
 

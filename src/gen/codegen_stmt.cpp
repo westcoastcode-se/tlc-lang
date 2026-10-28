@@ -87,6 +87,10 @@ std::optional<int> CodeGen::folded_case_value(const Expr &expr) const {
         // `Color.Red` is not an integer fold. The case still needs that enumerator's value.
         if (const auto *selector = std::get_if<Expr::Selector>(&expr.data);
             selector != nullptr && selector->base != nullptr) {
+            // `made.ink` is the enumerator that call kept.
+            if (const Expr *field = comptime_struct_field(*selector->base, selector->field)) {
+                return folded_case_value(*field);
+            }
             const int enum_id = enum_type_designator(*selector->base);
             if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size())) {
                 const auto member = enums_[static_cast<std::size_t>(enum_id)].values.find(selector->field);
@@ -938,6 +942,81 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
     }
 }
 
+// True when `break` or `continue` leaves this loop, not a loop or `switch` nested in it.
+bool targets_this_loop(const Stmt &stmt, int loop_depth, int switch_depth) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && targets_this_loop(*child, loop_depth, switch_depth)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::Break>) {
+                return switch_depth == 0 && loop_depth == 0;
+            } else if constexpr (std::is_same_v<T, Stmt::Continue>) {
+                return loop_depth == 0;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                return (node.then_arm != nullptr && targets_this_loop(*node.then_arm, loop_depth, switch_depth)) ||
+                       (node.else_arm != nullptr && targets_this_loop(*node.else_arm, loop_depth, switch_depth));
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                return node.body != nullptr && targets_this_loop(*node.body, loop_depth + 1, switch_depth);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.init != nullptr && targets_this_loop(*node.init, loop_depth, switch_depth)) {
+                    return true;
+                }
+                return node.body != nullptr && targets_this_loop(*node.body, loop_depth + 1, switch_depth);
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                return node.body != nullptr && targets_this_loop(*node.body, loop_depth, switch_depth + 1);
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                return node.stmt != nullptr && targets_this_loop(*node.stmt, loop_depth, switch_depth);
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+void CodeGen::emit_unrolled_for(const Stmt::For &node) {
+    bool exits = false;
+    for (const auto &copy : node.unrolled) {
+        if (copy != nullptr && targets_this_loop(*copy, 0, 0)) {
+            exits = true;
+            break;
+        }
+    }
+    // No `break` or `continue`: the copies are straight-line. A jump would be the loop that was removed.
+    if (!exits) {
+        for (const auto &copy : node.unrolled) {
+            if (copy == nullptr || terminated()) {
+                break;
+            }
+            emit_stmt(*copy);
+        }
+        return;
+    }
+    if (node.unrolled.empty() || terminated()) {
+        return;
+    }
+    llvm::BasicBlock *end_block = llvm::BasicBlock::Create(context_, "for.end", function_);
+    for (std::size_t index = 0; index < node.unrolled.size(); ++index) {
+        llvm::BasicBlock *next = index + 1 == node.unrolled.size()
+                                     ? end_block
+                                     : llvm::BasicBlock::Create(context_, "for.next", function_);
+        loops_.push_back(LoopTargets{next, end_block});
+        if (node.unrolled[index] != nullptr && !terminated()) {
+            emit_stmt(*node.unrolled[index]);
+        }
+        loops_.pop_back();
+        if (!terminated()) {
+            builder_.CreateBr(next);
+        }
+        builder_.SetInsertPoint(next);
+    }
+}
+
 void CodeGen::emit_for_each(const Stmt::For &node) {
     if (node.each_expr == nullptr || terminated()) {
         return;
@@ -1462,6 +1541,10 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
             } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
                 emit_switch(node);
             } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.folded) {
+                    emit_unrolled_for(node);
+                    return;
+                }
                 if (node.each) {
                     emit_for_each(node);
                     return;
@@ -1600,7 +1683,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         continue;
                     }
                     if (!var.ptr_to_array && (var.is_array || low.is_array)) {
-                        if (!low.is_array || low.array_len <= 0) {
+                        if (!low.is_array || low.array_len < 0) {
                             error(var.loc, "not supported yet");
                             continue;
                         }

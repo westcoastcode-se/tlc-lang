@@ -60,11 +60,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             comptime_fn = true;
                         }
                     }
-                    // The specialized copy calls this function. A direct call is still a fold.
-                    if (comptime_fn && !allow_comptime_fn_) {
-                        error(node.loc, "not supported yet");
-                        return type_invalid();
-                    }
+                    // A value use calls this function. A direct call is still a fold.
                     if (comptime_fn) {
                         node.runtime_body = true;
                     }
@@ -733,7 +729,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return mem_compare_bool(mem_compare_kind(*fn)) ? type_bool() : type_int();
                     }
                 }
-                if (const FunctionDecl *fn = node.callee != nullptr ? comptime_callee(node) : nullptr) {
+                // Inside a comptime func the call is ordinary code. The outer call is what runs.
+                if (const FunctionDecl *fn = node.callee != nullptr ? comptime_callee(node) : nullptr;
+                    fn != nullptr && (comptime_depth_ == 0 || macro_depth_ != 0)) {
                     const std::size_t before = diags_.size();
                     if (!node.type_args.empty() || !fn->type_params.empty()) {
                         error(node.loc, "not supported yet");
@@ -755,6 +753,26 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (diags_.size() != before) {
                         return type_invalid();
+                    }
+                    const Type result = function_result(*fn);
+                    if (result.kind == TypeKind::Struct && result.struct_id >= 0 &&
+                        result.struct_id < static_cast<int>(structs_.size())) {
+                        if (structs_[static_cast<std::size_t>(result.struct_id)].is_union) {
+                            error(node.loc, "global initializer is not a constant");
+                            return type_invalid();
+                        }
+                        KeptStruct kept = fold_comptime_struct(node);
+                        if (kept.status == KeptStruct::Status::NotConstant) {
+                            error(node.loc, "global initializer is not a constant");
+                            return type_invalid();
+                        }
+                        if (kept.status != KeptStruct::Status::Value || kept.value == nullptr) {
+                            error(node.loc, "not supported yet");
+                            return type_invalid();
+                        }
+                        stamp_kept_struct(*kept.value, result);
+                        node.comptime_struct = std::move(kept.value);
+                        return result;
                     }
                     if (!fold_int(expr)) {
                         error(node.loc, "not supported yet");
@@ -996,9 +1014,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 return type_invalid();
                             }
                         }
-                        const bool type_value = is_type_value(base);
-                        const bool through_type = base.kind == TypeKind::Pointer && base.pointee &&
-                                                  is_type_value(*base.pointee);
+                        // `t.name()` on `Type`, and on the `CompiledType` it points at.
+                        // `p.name()` on `*Type` uses the pointer `p` points at.
+                        const bool type_value = is_type_value(base) || is_compiled_type(base);
+                        const bool through_type = !type_value && base.kind == TypeKind::Pointer && base.pointee &&
+                                                  (is_type_value(*base.pointee) || is_compiled_type(*base.pointee));
                         if (type_value || through_type) {
                             if (through_type && base.optional) {
                                 error(node.loc, "undeclared identifier");
@@ -1523,7 +1543,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 // `p.len` on `*[N]T` is the written length. `*i32`, `*[]T`, `**[N]T`, and `?*[N]T` have none.
                 if (raw.kind == TypeKind::Pointer && !raw.optional && raw.pointee != nullptr &&
-                    raw.pointee->kind == TypeKind::Array && raw.pointee->length > 0 &&
+                    raw.pointee->kind == TypeKind::Array && raw.pointee->length >= 0 &&
                     raw.pointee->element != nullptr && node.field == "len") {
                     node.slice_len = true;
                     node.len_value = raw.pointee->length;
@@ -1618,7 +1638,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     // `p[0:2]` on `*[4]i32` is `(*p)[0:2]`. The pointee is the array.
                     if (base.kind == TypeKind::Pointer && !base.optional && base.pointee != nullptr &&
-                        base.pointee->kind == TypeKind::Array && base.pointee->length > 0 &&
+                        base.pointee->kind == TypeKind::Array && base.pointee->length >= 0 &&
                         base.pointee->element != nullptr) {
                         Type element = *base.pointee->element;
                         if (base.pointee->is_const) {

@@ -83,21 +83,120 @@ retq                             # return
 
 In a `macro`, `if` keeps the arm whose condition folds and discards the other arm.
 
-`for` unrolls, and neither `for` nor `if` takes a `comptime` prefix.
+`for` unrolls when the bounds fold.
+
+A condition or a bound that does not fold runs at run time.
+
+`comptime if` keeps one arm when the condition folds. The other arm is not typechecked.
+
+`pick(&n, 1)` stores 40.
+
+```c
+macro func pick(slot *i32, n comptime i32) void {
+    comptime if (n == 1) {
+        emit *slot = 40;
+    } else {
+        emit *slot = 2;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    pick(&n, 1);
+    return n;
+}
+```
+
+```asm
+main:
+movl $40, -4(%rsp)               # pick stores 40
+movl -4(%rsp), %eax              # return n
+retq
+```
+
+A local `const` whose initializer folds to `i32` is that condition.
+
+`pick(&n, flag)` stores 40 when `flag` is `const flag = 1`.
+
+```c
+macro func pick(slot *i32, n i32) void {
+    comptime if (n == 1) {
+        emit *slot = 40;
+    } else {
+        emit *slot = 2;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    const flag = 1;
+    pick(&n, flag);
+    return n;
+}
+```
+
+```asm
+main:
+movl $40, -4(%rsp)               # pick stores 40
+movl -4(%rsp), %eax              # return n
+retq
+```
+
+A `comptime if` whose condition does not fold is `not supported yet`. It emits nothing.
 
 `switch` in a `macro` is `not supported yet`.
 
-`comptime if` in a `macro` is `not supported yet`.
+`comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. The other cases are not typechecked and not emitted.
 
-`comptime switch` in a `macro` is `not supported yet`.
+`pick(&x, 1)` stores 2, then adds 40.
 
-`comptime for` is `not supported yet`.
+`main` returns 42.
+
+```c
+macro func pick(slot *i32, n comptime i32) void {
+    comptime switch (n) {
+    case 1:
+        emit *slot = 2;
+    case 2:
+        emit *slot = *slot + 40;
+        break;
+    default:
+        emit *slot = "no";
+    }
+}
+
+func main() i32 {
+    var x = 0;
+    pick(&x, 1);
+    return x;
+}
+```
+
+```asm
+main:
+movl $2, -4(%rsp)                # x = 2
+movl -4(%rsp), %eax              # x
+addl $40, %eax                   # x + 40
+movl %eax, -4(%rsp)              # store x
+movl -4(%rsp), %eax              # return x
+retq
+```
+
+A value that does not fold is `not supported yet`. It emits nothing.
+
+`comptime for` unrolls when the bounds fold.
+
+A bound that does not fold is `not supported yet`. It emits nothing.
 
 `const for` is not a form.
 
 Outside a `macro`, an ordinary `if` and an ordinary `switch` run at run time.
 
 `comptime if` keeps one arm when the condition folds.
+
+A local `const` whose initializer folds to `i32` is that condition.
+
+A `var` does not fold.
 
 The other arm is not typechecked and not emitted.
 
@@ -113,7 +212,7 @@ The other cases are not typechecked and not emitted.
 
 A value that is not comptime is `not supported yet`.
 
-A `var` and a local `const` do not fold.
+A `var` and a local `const` do not fold for `comptime switch`.
 
 `pick(&n, 1)` then `add3(&n)`, from `n` at 0, stores 40 and then adds `1`, `2`, and `3`.
 
@@ -167,17 +266,88 @@ The index in each copy is that integer.
 
 A slice `var` is `not supported yet`.
 
-`ptr_of` on a temporary is `not supported yet`.
+`ptr_of` on a temporary is `not an lvalue`.
 
 A length past 32 is `not supported yet`.
 
-A bound that does not fold is `not supported yet`.
+A bound that does not fold runs at run time. The index is that variable.
+
+`add(&total, n)` with `n` at 4 adds `0`, `1`, `2`, and `3`. It returns 6.
+
+```c
+macro func add(slot *i32, n i32) void {
+    for (var i = 0; i < n; i = i + 1) {
+        emit *slot = *slot + i;
+    }
+}
+
+func main() i32 {
+    var total = 0;
+    var n = 4;
+    add(&total, n);
+    return total;
+}
+```
+
+```asm
+main:
+movl $0, -12(%rsp)               # total = 0
+movl $4, -8(%rsp)                # n = 4
+movl $0, -4(%rsp)                # i = 0
+.L2:
+movl -4(%rsp), %eax              # i
+cmpl -8(%rsp), %eax              # i < n
+jge .L1                          # branch
+movl -12(%rsp), %eax             # total
+addl -4(%rsp), %eax              # total + i
+movl %eax, -12(%rsp)             # store total
+movl -4(%rsp), %eax              # i
+addl $1, %eax                    # i + 1
+movl %eax, -4(%rsp)              # store i
+jmp .L2                          # jump
+.L1:
+movl -12(%rsp), %eax             # return total
+retq
+```
 
 A step that is not positive is `not supported yet`.
 
 Those loops are on [`for`](../statements/for.md).
 
-A condition that does not fold is `not supported yet`.
+A condition that does not fold runs at run time. Both arms are typechecked.
+
+`pick(&n, flag)` with `flag` at 0 stores 2.
+
+```c
+macro func pick(slot *i32, n i32) void {
+    if (n == 1) {
+        emit *slot = 40;
+    } else {
+        emit *slot = 2;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    var flag = 0;
+    pick(&n, flag);
+    return n;
+}
+```
+
+```asm
+main:
+movl $0, -4(%rsp)                # flag = 0
+cmpl $1, -4(%rsp)                # flag == 1
+jne .L1                          # branch
+movl $40, -8(%rsp)               # n = 40
+jmp .L2                          # jump
+.L1:
+movl $2, -8(%rsp)                # n = 2
+.L2:
+movl -8(%rsp), %eax              # return n
+retq
+```
 
 ## Pasting a loop or a branch
 
@@ -191,7 +361,49 @@ The bound of an `emit for` may be a `var`.
 
 Those forms outside a `macro` are `not supported yet`.
 
-A plain `while` or `do` in a `macro` is `not supported yet`.
+A plain `while` or `do` in a `macro` runs at run time.
+
+The body is expanded first, so `emit` there is an ordinary statement.
+
+A statement in that body without `emit` is `not supported yet`.
+
+`until(&n, limit)` with `n` at 0 and `limit` at 3 stores 3.
+
+```c
+macro func until(slot *i32, limit i32) void {
+    while (*slot < limit) {
+        emit *slot = *slot + 1;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    var limit = 3;
+    until(&n, limit);
+    return n;
+}
+```
+
+```asm
+main:
+movl $0, -8(%rsp)                # n = 0
+movl $3, -4(%rsp)                # limit = 3
+.L2:
+movl -8(%rsp), %eax              # n
+cmpl -4(%rsp), %eax              # n < limit
+jge .L1                          # branch
+movl -8(%rsp), %eax              # n
+addl $1, %eax                    # n + 1
+movl %eax, -8(%rsp)              # store n
+jmp .L2                          # jump
+.L1:
+movl -8(%rsp), %eax              # return n
+retq
+```
+
+`do` runs the body before it tests the condition.
+
+`emit` in that body is an ordinary statement.
 
 ## Limits on a macro
 

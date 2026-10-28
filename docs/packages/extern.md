@@ -76,7 +76,19 @@ A body defines that symbol.
 
 A prototype may be the declaration that says `extern`.
 
-A call that specializes a prototype with no body is `not supported yet`.
+A call of a generic function prototype names that specialization, such as `qualifier.id.spec.i32`.
+
+A generic prototype that is not `extern` is `not supported yet`.
+
+A call of a method template prototype names that specialization, such as `qualifier.Point.id.spec.i32`.
+
+On a generic struct that symbol is `qualifier.Vec.spec.i32.get.spec.i32`.
+
+A method template prototype that is not `extern` is `not supported yet`.
+
+A comptime parameter on that prototype is `not supported yet`.
+
+A call that specializes a trait prototype with no body is `not supported yet`.
 
 `...` on that function is `not supported yet`.
 

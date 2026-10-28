@@ -22,7 +22,7 @@ The compiler reports `sizeof(Area)` as `undeclared identifier` when `Area` is a 
 
 The compiler reports `sizeof(add)` as `not supported yet` when `add` is a function.
 
-`sizeof(builtin.Type)` is 24.
+`sizeof(builtin.Type)` is 8. `sizeof(builtin.CompiledType)` is 24.
 
 That `i32` may be a compile-time integer type argument, so `width[sizeof(Point)]()` is `width[8]()`.
 

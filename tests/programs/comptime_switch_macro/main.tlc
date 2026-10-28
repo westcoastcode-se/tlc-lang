@@ -1,11 +1,15 @@
-macro func show(n i32) void {
-    comptime switch (1) {
+macro func pick(slot *i32, n comptime i32) void {
+    comptime switch (n) {
     case 1:
-        emit n;
+        emit *slot = 40;
+        break;
+    default:
+        emit *slot = "no";
     }
 }
 
 func main() i32 {
-    show(1);
-    return 0;
+    var n = 0;
+    pick(&n, 1);
+    return n;
 }

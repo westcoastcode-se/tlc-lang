@@ -1,0 +1,18 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+comptime const origin = Point{.x = 41, .y = 1};
+
+comptime func move(p Point) Point {
+    var copy = p;
+    copy.x = copy.x + 1;
+    return copy;
+}
+
+comptime const made = move(origin);
+
+func main() i32 {
+    return made.x;
+}

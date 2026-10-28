@@ -1,11 +1,19 @@
-macro func show(n i32) void {
+macro func pick(slot *i32, n i32) void {
     if (n == 1) {
-        emit n;
+        emit *slot = 40;
+    } else {
+        emit *slot = 2;
     }
 }
 
 func main() i32 {
-    var n = 1;
-    show(n);
-    return 0;
+    var n = 0;
+    var flag = 0;
+    pick(&n, flag);
+    if (n != 2) {
+        return 1;
+    }
+    flag = 1;
+    pick(&n, flag);
+    return n;
 }

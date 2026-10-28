@@ -1,0 +1,1 @@
+compile-error: index is not a compile-time constant

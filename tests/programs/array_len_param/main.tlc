@@ -1,8 +1,7 @@
-func take(a [3]i32) i32 {
-    return a.len;
+func take(a [0]i32) i32 {
+    return 0;
 }
 
 func main() i32 {
-    var row [3]i32;
-    return take(row);
+    return 0;
 }

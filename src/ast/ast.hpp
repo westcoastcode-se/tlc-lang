@@ -154,6 +154,11 @@ struct Expr {
         mutable bool trait_cast = false;
         // `a.malloc[i32]()` through a trait. The concrete struct's method has this name.
         mutable std::string trait_method;
+        // Set when this comptime call was compiled and run. Codegen reads the value.
+        mutable bool comptime_ran = false;
+        mutable int comptime_value = 0;
+        // A struct result of that run, as a literal. Distinct from `comptime_value`: `fold_int` of the call stays empty.
+        mutable std::unique_ptr<Expr> comptime_struct;
     };
     struct Selector {
         SourceLoc loc{};
@@ -662,6 +667,11 @@ struct Stmt {
         std::unique_ptr<Expr> each_expr;
         // `emit for`. The statement is pasted into the caller.
         bool emit = false;
+        // `comptime for`. The bounds have to fold. Each copy sees the index as that integer.
+        bool comptime_for = false;
+        // Set when `comptime for` folds. Codegen emits `unrolled` and leaves the loop out.
+        bool folded = false;
+        std::vector<std::unique_ptr<Stmt>> unrolled;
     };
     struct DoWhile {
         SourceLoc loc{};
@@ -1089,6 +1099,8 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr);
 // A name listed in `names` becomes a clone of the matching expression. A nested function is left alone.
 void replace_names(std::unique_ptr<Expr> &slot, const std::vector<std::string> &names,
                    const std::vector<const Expr *> &exprs);
+// The same replacement through a statement. A name bound in a block hides the outer name after that binding.
+void replace_stmt_names(Stmt &stmt, std::vector<std::string> names, std::vector<const Expr *> exprs);
 std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt);
 VarDecl clone_var(const VarDecl &var);
 FunctionDecl clone_function(const FunctionDecl &fn);

@@ -72,7 +72,7 @@ A method on those aliases, and `var Ptr::name`, are reported as `type mismatch`.
 
 `type Duo (i32, i32)` is an alias of that tuple. `Duo` is a different type from `(i32, i32)`. `Duo((40, 2))` names it. `var value Duo = (40, 2)` is `type mismatch`.
 
-`value[0]` and `value[0] = 1` use a constant index. `value[i]` when `i` is a `var` is `not supported yet`.
+`value[0]` and `value[0] = 1` use a constant index. `const i = 0` then `value[i]` reads that element. `value[i]` when `i` is a `var` is `index is not a compile-time constant`.
 
 `(i32)` is a tuple of one element. `type One (i32)` names it. `One` is a different type from `(i32)`. `One((42))` names the value. `var n One = (42)` is `type mismatch`.
 

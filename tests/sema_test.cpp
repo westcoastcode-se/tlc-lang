@@ -780,6 +780,71 @@ int run_sema_tests() {
             "  var row [n]i32;\n"
             "  return 0;\n"
             "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  const n = 2;\n"
+            "  const m = n + 2;\n"
+            "  const k i32 = 4;\n"
+            "  var row [m]i32;\n"
+            "  var typed [k]i32;\n"
+            "  var grid [n][m]i32;\n"
+            "  return row.len + typed.len + grid.len;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  const n = 0;\n"
+            "  var row [n]i32;\n"
+            "  return row.len;\n"
+            "}\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  const n = -1;\n"
+            "  var row [n]i32;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var n = 4;\n"
+            "  var row [n]i32;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func main() i32 {\n"
+            "  var n const i32 = 4;\n"
+            "  var row [n]i32;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func give() i32 { return 1; }\n"
+            "func main() i32 {\n"
+            "  const n = give();\n"
+            "  var row [n]i32;\n"
+            "  return 0;\n"
+            "}\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
@@ -7026,7 +7091,44 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "extern func id[T type](value T) T;\n"
             "func main() i32 { return id(1); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"tlc\") func add[T type](left T, right T) T;\n"
+            "func main() i32 { return add[i32](20, 22); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "func id[T type](value T) T;\n"
+            "func main() i32 { return id(1); }\n");
         EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern func scale[T type](n comptime i32, value T) T;\n"
+            "func main() i32 { return scale(1, 2); }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern func id[T type](value T) T;\n"
+            "var f = id;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern func pick[T type](value T) i32;\n"
+            "extern func pick[T type](value T, extra i32) i32;\n"
+            "func main() i32 { return pick(1) + pick(1, 2); }\n");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -7043,6 +7145,47 @@ int run_sema_tests() {
             "extern func Point::id[T type](self this, value T) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "extern func Point::id[T type](self *this, value T) T;\n"
+            "func main() i32 { var p Point; p.x = 1; return p.id[i32](1); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "extern(abi=\"tlc\") func Point::add[T type](self *this, n T) i32;\n"
+            "func main() i32 { var p Point; p.x = 1; return p.add[i32](1); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Vec[T type] struct { n T; };\n"
+            "extern func Vec[T]::get[U type](value U) U;\n"
+            "func main() i32 { return Vec[i32].get[i32](1); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "extern func Point::id[T type](self *this, value T) T;\n"
+            "func Point::id[T type](self *this, value T) T { return value; }\n"
+            "func main() i32 { var p Point; p.x = 1; return p.id[i32](1); }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Point struct { x i32; };\n"
+            "extern func Point::scale[T type](self *this, n comptime i32, value T) T;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -8682,9 +8825,9 @@ int run_sema_tests() {
             "type Entity struct { id i32; };\n"
             "func main() i32 {\n"
             "  var Entity::next i32 = 1;\n"
-            "  return 0;\n"
+            "  return Entity.next;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -8832,8 +8975,8 @@ int run_sema_tests() {
             "  id i32;\n"
             "  var next i32 = 1;\n"
             "};\n"
-            "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+            "func main() i32 { return Entity.next; }\n");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -9066,12 +9209,8 @@ int run_sema_tests() {
             "  id i32;\n"
             "  const next = 1;\n"
             "};\n"
-            "func main() i32 { return 0; }\n");
-        const auto at = errors.find("not supported yet");
-        EXPECT(check, at != std::string::npos);
-        if (at != std::string::npos) {
-            EXPECT(check, errors.find("not supported yet", at + 1) == std::string::npos);
-        }
+            "func main() i32 { return Entity.next; }\n");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -9145,11 +9284,44 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
             "func main() i32 {\n"
             "  const Entity::next = 1;\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "const on a type is only valid at file scope");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "func main() i32 {\n"
+            "  comptime const Entity::next = 1;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "const on a type is only valid at file scope");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Entity struct { id i32; };\n"
+            "func main() i32 {\n"
+            "  for (const Entity::next = 1; false; ) { return 1; }\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "const on a type is only valid at file scope");
+        EXPECT(check, errors.find("expected") == std::string::npos);
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Box[T type] struct { value T; };\n"
+            "func main() i32 {\n"
+            "  const Box[T]::extra = 1;\n"
+            "  return 0;\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "const on a type is only valid at file scope");
+        EXPECT(check, errors.find("expected") == std::string::npos);
     }
 
     {

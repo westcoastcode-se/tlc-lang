@@ -177,9 +177,7 @@ The loop stores 1, 2, 3, and 4, then adds them. It returns 10.
 
 ## Unrolling inside a macro
 
-In a [`macro`](../functions/macro.md), `for` is the same three clauses, unrolled while compiling.
-
-`low`, `high`, and `step` in `for (var i = low; i < high; i = i + step)` are compile-time integers.
+In a [`macro`](../functions/macro.md), `for (var i = low; i < high; i = i + step)` unrolls while compiling when `low`, `high`, and `step` fold to integers.
 
 `step` is positive, and the body runs at most 32 times.
 
@@ -191,15 +189,79 @@ Each copy of the body sees `i` as that integer, so `emit` can use it.
 
 `for (var slot : ptr_of(items))` uses `&items[0]`, `&items[1]`, and so on, when `items` is an lvalue and the length is known.
 
-A slice `var` and `ptr_of` on a temporary are `not supported yet`.
+A slice `var` is `not supported yet`.
 
-A length past 32, a bound that does not fold, and a step that is not positive are `not supported yet`.
+`ptr_of` on a temporary is `not an lvalue`.
+
+A bound that does not fold runs at run time. The index is that variable.
+
+A length past 32 and a step that is not positive are `not supported yet`.
 
 Outside a `macro`, `for` repeats at run time.
 
+## `comptime for`
+
+`comptime for` repeats the body while compiling when the bounds fold.
+
+`for (var i = low; i < high; i = i + step)` unrolls when `low`, `high`, and `step` fold to integers.
+
+`step` is positive, and the body runs at most 32 times.
+
+Each copy sees `i` as that integer.
+
+`break` leaves the loop. `continue` starts the next copy.
+
+`for (var item : items)` unrolls when the length is known, at most 32 elements.
+
+`item` in each copy is `items[0]`, `items[1]`, and so on.
+
+`ptr_of(items)` unrolls to the address of each element when `items` is an lvalue.
+
+`main` adds 1, then 2, then 3. It returns 6.
+
+```c
+func main() i32 {
+    var s = 0;
+    comptime for (var i = 1; i < 4; i = i + 1) {
+        s = s + i;
+    }
+    return s;
+}
+```
+
+```asm
+main:
+movl $0, -4(%rsp)                # s = 0
+movl -4(%rsp), %eax              # s
+addl $1, %eax                    # s + 1
+movl %eax, -4(%rsp)              # store s
+movl -4(%rsp), %eax              # s
+addl $2, %eax                    # s + 2
+movl %eax, -4(%rsp)              # store s
+movl -4(%rsp), %eax              # s
+addl $3, %eax                    # s + 3
+movl %eax, -4(%rsp)              # store s
+movl -4(%rsp), %eax              # return s
+retq
+```
+
+A bound that does not fold is `not supported yet`. It emits nothing.
+
+A `var` and a local `const` do not fold.
+
+A length past 32 and a step that is not positive are `not supported yet`.
+
+A slice `var` is `not supported yet`.
+
+`ptr_of` on a temporary is `not an lvalue`.
+
+In a [`macro`](../functions/macro.md), `comptime for` unrolls the same way.
+
+A bound that does not fold emits nothing.
+
 `emit while` and `emit do` paste those loops the same way.
 
-A plain `while` or `do` in a `macro` is `not supported yet`.
+A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is `not supported yet`.
 
 `emit for` in a `macro` pastes that loop into the caller.
 

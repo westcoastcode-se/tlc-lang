@@ -34,7 +34,7 @@ export type Other struct {
     desc *const Desc;
 }
 
-// Type is the type of a type. typeof produces it.
+// CompiledType is the tagged value stored for one type.
 // TypeKind(value) reads which arm is active. Other is every type that is not a
 // function and not a struct: a union, a pointer, an array, a slice, an enum, a tuple.
 // Function is a function. has_this is true when it has a receiver. generic is true
@@ -42,27 +42,30 @@ export type Other struct {
 // Struct is a struct. generic is true when that struct is a specialization.
 // desc holds the spelling and the fields. Another package cannot name desc.
 // The compiler supplies the bodies of name and fields.
-export type Type union(TypeKind) {
+export type CompiledType union(TypeKind) {
     Other Other;
     Function Function;
     Struct Struct;
 }
 
-// One field returned by Type.fields. name is the field's name. kind is its type.
-// kind points at that type. The type is constant. Storing through kind is rejected.
+// Type is a pointer to that value. typeof returns Type. The union is not copied.
+export type Type *const CompiledType;
+
+// One field returned by fields. name is the field's name. kind is its type.
+// kind is that Type pointer. The type is constant. Storing through kind is rejected.
 export type Field struct {
     export name []const u8;
-    export kind *const Type;
+    export kind Type;
 };
 
 // The spelling of this type, the same text a diagnostic prints.
 // The bytes are constant. A store through the pointer is type mismatch.
-export func Type::name(self this) *const u8;
+export func CompiledType::name(self *const this) *const u8;
 
 // The fields of a named struct, in the order they are written.
 // A tuple lists one field per element. The name is the index, "0", "1", and so on.
 // The element is constant. A type that is neither a named struct nor a tuple has length 0.
-export func Type::fields(self this) []const Field;
+export func CompiledType::fields(self *const this) []const Field;
 
 // `{0}` and `{1}` read elements of a compile-time tuple. `{{` and `}}` are braces.
 // A string element is copied as text. An integer element is decimal. The call is that text.

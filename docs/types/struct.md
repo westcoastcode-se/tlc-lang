@@ -85,9 +85,9 @@ A member is a variable of the value. It is written `name type;` or `name type = 
 
 `export name type;` publishes that member. Another package can read and assign it. A member without `export` is reported as `name is not exported` from another package.
 
-The same package sees every member. `var`, `export var`, and `const` inside the struct are reported as `not supported yet`.
+The same package sees every member. `var next i32` and `const spare = 2` inside the struct are the variable and the constant on the type. `export var` and `export const` inside the struct are `not supported yet`.
 
-A variable for the type is `var Entity::next` written after the struct.
+A variable for the type is `var Entity::next` written after the struct, or `var next` inside it.
 
 `export item Secret` is not visible outside when `Secret` is a struct that is not visible. A struct is not visible when it is not exported, or when one of its members is a struct that is not visible.
 
@@ -120,9 +120,9 @@ The program returns 42. `id` and `shown` are both members. `shown` is the one an
 
 ## Constants on the type
 
-A constant on the struct is written beside it, `const Entity::next = 40`. It is not a field. `sizeof` still counts the fields only.
+A constant on the struct is written beside it, `const Entity::next = 40`, or inside the braces as `const next = 40`. It is not a field. `sizeof` still counts the fields only.
 
-Assigning it, or taking its address, is reported as `not an lvalue`. A `const` declaration inside the braces is not a member. It is reported as `not supported yet`.
+Assigning it, or taking its address, is reported as `not an lvalue`.
 
 A field `x const i32` stores a constant value. Assigning `value.x` is `type mismatch`. `var name const Type` and `const Type name` are that same constant value on a variable. See [Bindings](../statements/binding.md).
 

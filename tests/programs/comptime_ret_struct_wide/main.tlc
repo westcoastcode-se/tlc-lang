@@ -1,0 +1,11 @@
+type Box struct {
+    n u32;
+};
+
+comptime func make() Box {
+    return Box{.n = 3000000000u32};
+}
+
+func main() i32 {
+    return i32(make().n == 0);
+}

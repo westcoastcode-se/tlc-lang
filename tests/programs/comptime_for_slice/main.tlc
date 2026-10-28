@@ -1,0 +1,6 @@
+func main() i32 {
+    var text = "hi";
+    comptime for (var b : text) {
+    }
+    return 0;
+}

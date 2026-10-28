@@ -6,7 +6,9 @@ An array stores a fixed number of elements of one type.
 
 ## Element lists
 
-An array length is a positive decimal `i32` literal.
+An array length is a decimal `i32` literal. `0` is a length.
+
+A `const` binding whose initializer folds to a non-negative `i32` is a length too.
 
 `[_]i32{10, 20, 12}` writes the values. `_` stands for the length, which is the number of values, so the type is `[3]i32`.
 
@@ -116,6 +118,8 @@ A range of `[N]Duo` or `[N][M]Duo` is `type mismatch`. A range of `[_][2]i32` is
 
 The length is a compile-time integer. At file scope, `const N = row.len` can be an array length.
 
+A `const` inside a function whose initializer folds to a non-negative `i32` is that length too.
+
 Assigning `row.len`, or taking its address, is reported as `not an lvalue`.
 
 `sizeof([]T)` is 16.
@@ -131,6 +135,106 @@ A slice parameter stays a slice. `a.len` in `func take(a [3]i32)` is 3, the leng
 `p[:]` is the slice. `p.len` and `(*p).len` on `*[N]T` are that `N`. `(&row).len` is that length.
 
 `p.len` on `*[N][M]T` is `N`, and `p[0].len` is `M`.
+
+## A named length
+
+At file scope, `const N = row.len` is an array length.
+
+Inside a function, `const n = 4` then `var row [n]i32` is `[4]i32`.
+
+```c
+func main() i32 {
+    const n = 4;
+    var row [n]i32;
+    return row.len;
+}
+```
+
+```asm
+main:
+movl $4, %eax                    # row.len
+retq                             # return
+```
+
+`return row.len` is 4.
+
+`const m = n + 2` then `return row.len` is `movl $4, %eax` and `retq`.
+
+`const n i32 = 4` is that same binding.
+
+`return row.len` is those same two instructions.
+
+`const n = 2` and `const m = 3` then `return grid.len + grid[0].len`, when `grid` is `[n][m]i32`, is `movl $5, %eax` and `retq`.
+
+`var row = [_][n]i32{{1, 2}}` then `return row.len + row[0].len` is `movl $3, %eax` and `retq`.
+
+`id[[n]i32](row)` calls `main.id.spec.arr.2.i32` when the file is `main.tlc`.
+
+A local `const` hides a file-scope `const` of the same name.
+
+`return row.len` is `movl $2, %eax` and `retq` when that local value is `2`.
+
+`const n = 0` is `[0]i32`.
+
+`return 42 + row.len` is `movl $42, %eax` and `retq`.
+
+A `var` is `not supported yet`.
+
+`var n const i32 = 4` is `not supported yet`.
+
+An initializer that does not fold, such as `const n = give()`, is `not supported yet`.
+
+A negative length, `const n = -1`, is `not supported yet`.
+
+## Length 0
+
+`var row [0]i32` is an empty array. `sizeof(row)` is 0 and `row.len` is 0.
+
+`comptime const N = 0` then `var again [N]i32` is that array.
+
+`const n = 0` inside a function is that array too.
+
+`comptime const N = empty.len` is too, when `empty` is `[_]i32{}`.
+
+A file-scope array with no initializer is zero. `var file_row [0]i32` is an empty array.
+
+A generic length that folds to 0 is the same array.
+
+```c
+func buf[M i32]() i32 {
+    var local [M]i32;
+    return sizeof(local);
+}
+```
+
+`buf[0]()` is 0. `buf[2]()` is 8.
+
+A negative length, `comptime const N = -1` then `[N]i32`, is `not supported yet`.
+
+`const n = -1` inside a function is that same error.
+
+A parameter `[0]T` is `not supported yet`.
+
+`new [0]i32` is an element count. A constant count that is not positive is `type mismatch`.
+
+```c
+comptime const N = 0;
+var file_row [0]i32;
+
+func main() i32 {
+    var row [0]i32;
+    var again [N]i32;
+    return 42 + row.len + again.len + file_row.len + i32(sizeof(row)) + i32(sizeof(file_row));
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # 42 + the lengths and sizes
+retq                             # return
+```
+
+The program returns 42.
 
 ## Fields
 

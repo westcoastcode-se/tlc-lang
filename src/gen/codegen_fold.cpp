@@ -91,14 +91,16 @@ std::unique_ptr<Expr> folded_int(int32_t value, SourceLoc loc) {
     return expr;
 }
 
-// A field of a struct literal, including `literal.inner.x`. A name is not a literal.
-const Expr *const_struct_field(const Expr &object, const std::string &field) {
+// A field of a struct literal, including `literal.inner.x`. A plain name is not a literal.
+// `resolve` yields a kept struct only when the name's initializer is a comptime call.
+template <typename Resolve>
+const Expr *const_struct_field(const Expr &object, const std::string &field, Resolve &&resolve) {
     const Expr *cursor = &object;
     if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
         if (selector->base == nullptr) {
             return nullptr;
         }
-        cursor = const_struct_field(*selector->base, selector->field);
+        cursor = const_struct_field(*selector->base, selector->field, resolve);
         if (cursor == nullptr) {
             return nullptr;
         }
@@ -118,6 +120,19 @@ const Expr *const_struct_field(const Expr &object, const std::string &field) {
             return nullptr;
         }
         cursor = tuple->elements[at].get();
+    }
+    if (const auto *call = std::get_if<Expr::Call>(&cursor->data)) {
+        if (call->comptime_struct == nullptr) {
+            return nullptr;
+        }
+        cursor = call->comptime_struct.get();
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
+        const Expr *kept = resolve(named->text);
+        if (kept == nullptr) {
+            return nullptr;
+        }
+        cursor = kept;
     }
     const auto *init = std::get_if<Expr::Init>(&cursor->data);
     if (init == nullptr || init->is_tuple || !init->elements.empty()) {
@@ -188,6 +203,30 @@ bool is_float_logic(TokenKind op) {
 }
 
 } // namespace
+
+const Expr *CodeGen::comptime_struct_field(const Expr &object, const std::string &field) const {
+    // A handwritten file-scope struct const is still loaded. Only a call that kept a literal folds.
+    return const_struct_field(object, field, [&](const std::string &name) -> const Expr * {
+        const Expr *init = nullptr;
+        if (const Binding *binding = lookup(name)) {
+            init = binding->const_init;
+        }
+        if (init == nullptr) {
+            if (const VarDecl *var = global_decl(name); var != nullptr && var->is_comptime) {
+                init = var->init.get();
+            }
+        }
+        if (init == nullptr) {
+            return nullptr;
+        }
+        const auto *call = std::get_if<Expr::Call>(&init->data);
+        if (call == nullptr || call->comptime_struct == nullptr) {
+            return nullptr;
+        }
+        return call->comptime_struct.get();
+    });
+}
+
 std::optional<int32_t> CodeGen::fold_global(uint32_t file, const std::string &name, bool allow_local_static) const {
     for (const uint32_t id : package_files(file)) {
         const auto found = files_.find(id);
@@ -275,6 +314,13 @@ std::optional<CodeGen::FoldedNumber> CodeGen::fold_number(const Expr &expr, std:
         }
         return inner;
     }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        if (selector->base != nullptr) {
+            if (const Expr *field = comptime_struct_field(*selector->base, selector->field)) {
+                return fold_number(*field, seen);
+            }
+        }
+    }
     if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
         if (binary->lhs == nullptr || binary->rhs == nullptr) {
             return std::nullopt;
@@ -360,6 +406,13 @@ std::optional<std::string> CodeGen::constant_string(const Expr &expr, std::unord
                 std::unordered_set<std::string> inner;
                 return constant_string(element, inner);
             });
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        if (selector->base != nullptr && selector->field != "len") {
+            if (const Expr *field = comptime_struct_field(*selector->base, selector->field)) {
+                return constant_string(*field, seen);
+            }
+        }
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `"hello"[1:4]` is those bytes. The length does not include the terminating null.
@@ -598,7 +651,7 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 }
                 // `Point{.x = 1}.x` is that field. A file-scope name is still loaded. An enumerator is not a field.
                 if (node.base != nullptr) {
-                    if (const Expr *field = const_struct_field(*node.base, node.field)) {
+                    if (const Expr *field = comptime_struct_field(*node.base, node.field)) {
                         return fold(*field);
                     }
                 }
@@ -744,7 +797,10 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 if (node.is_range || node.base == nullptr || node.index == nullptr) {
                     return std::nullopt;
                 }
-                const std::optional<int32_t> at = fold(*node.index);
+                // The checker stored the tuple slot. `const i = 0` then `pair[i]` is that field.
+                const std::optional<int32_t> at = node.tuple_index >= 0
+                                                      ? std::optional<int32_t>(node.tuple_index)
+                                                      : fold(*node.index);
                 if (!at || *at < 0) {
                     return std::nullopt;
                 }
@@ -765,6 +821,16 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                             return nullptr;
                         }
                         return init->elements[static_cast<std::size_t>(index)].get();
+                    }
+                    if (const auto *selector = std::get_if<Expr::Selector>(&value.data)) {
+                        if (selector->base == nullptr) {
+                            return nullptr;
+                        }
+                        const Expr *field = comptime_struct_field(*selector->base, selector->field);
+                        if (field == nullptr) {
+                            return nullptr;
+                        }
+                        return self(self, *field, index, depth + 1, true);
                     }
                     const auto *named = std::get_if<Expr::Name>(&value.data);
                     if (named == nullptr) {
@@ -792,7 +858,9 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                         if (inner->is_range || inner->base == nullptr || inner->index == nullptr) {
                             return nullptr;
                         }
-                        const std::optional<int32_t> slot = fold(*inner->index);
+                        const std::optional<int32_t> slot = inner->tuple_index >= 0
+                                                                ? std::optional<int32_t>(inner->tuple_index)
+                                                                : fold(*inner->index);
                         if (!slot || *slot < 0) {
                             return nullptr;
                         }
@@ -814,6 +882,9 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 }
                 return static_cast<int32_t>(static_cast<unsigned char>((*bytes)[static_cast<std::size_t>(*at)]));
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (node.comptime_ran) {
+                    return node.comptime_value;
+                }
                 if (const FunctionDecl *fn = node.callee != nullptr ? mem_compare_decl(node) : nullptr) {
                     const MemCompare kind = mem_compare_kind(*fn);
                     if (mem_compare_slice(kind) && node.args.size() == 2 && node.type_args.size() <= 1 &&
@@ -1211,6 +1282,8 @@ bool CodeGen::file_constant_operand(const Expr &expr) const {
                           std::is_same_v<T, Expr::Char> || std::is_same_v<T, Expr::Float> ||
                           std::is_same_v<T, Expr::Nullptr>) {
                 return true;
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                return node.comptime_struct != nullptr;
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 return fold(expr).has_value();
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
@@ -1368,6 +1441,9 @@ const Expr *CodeGen::comptime_tuple_element(const Expr &expr) const {
 bool CodeGen::comptime_constant(const Expr &expr) const {
     std::unordered_set<std::string> seen;
     const auto visit = [&](const auto &self, const Expr &value) -> bool {
+        if (const auto *call = std::get_if<Expr::Call>(&value.data)) {
+            return call->comptime_struct != nullptr;
+        }
         // `pair[0]` is that element. A function does not fold to an integer.
         if (const Expr *element = comptime_tuple_element(value)) {
             if (self(self, *element)) {
@@ -1602,6 +1678,13 @@ std::unique_ptr<Expr> CodeGen::comptime_substitute(const Expr &expr) const {
     std::unordered_set<std::string> seen;
     const Expr *cursor = &expr;
     while (cursor != nullptr) {
+        if (const auto *call = std::get_if<Expr::Call>(&cursor->data)) {
+            if (call->comptime_struct == nullptr) {
+                break;
+            }
+            cursor = call->comptime_struct.get();
+            continue;
+        }
         if (const Expr *element = comptime_tuple_element(*cursor)) {
             cursor = element;
             continue;

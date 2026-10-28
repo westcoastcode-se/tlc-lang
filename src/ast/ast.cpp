@@ -1,5 +1,6 @@
 #include "ast/ast.hpp"
 
+#include <cstddef>
 #include <type_traits>
 
 namespace tlc {
@@ -954,7 +955,12 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.type_args = node.type_args;
                 copy.type_name = node.type_name;
                 copy.type_fields = node.type_fields;
+                copy.selected = node.selected;
+                copy.trait_cast = node.trait_cast;
                 copy.trait_method = node.trait_method;
+                copy.comptime_ran = node.comptime_ran;
+                copy.comptime_value = node.comptime_value;
+                copy.comptime_struct = node.comptime_struct ? clone_expr(*node.comptime_struct) : nullptr;
                 for (const auto &arg : node.args) {
                     copy.args.push_back(arg ? clone_expr(*arg) : nullptr);
                 }
@@ -1184,6 +1190,11 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.each_name_loc = node.each_name_loc;
                 copy.each_expr = node.each_expr ? clone_expr(*node.each_expr) : nullptr;
                 copy.emit = node.emit;
+                copy.comptime_for = node.comptime_for;
+                copy.folded = node.folded;
+                for (const auto &part : node.unrolled) {
+                    copy.unrolled.push_back(part ? clone_stmt(*part) : nullptr);
+                }
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
                 Stmt::DoWhile copy;
@@ -1349,6 +1360,134 @@ void replace_names(std::unique_ptr<Expr> &slot, const std::vector<std::string> &
             }
         },
         slot->data);
+}
+
+namespace {
+
+void hide_name(std::vector<std::string> &names, std::vector<const Expr *> &exprs, const std::string &name) {
+    if (name.empty()) {
+        return;
+    }
+    for (std::size_t i = 0; i < names.size() && i < exprs.size(); ++i) {
+        if (names[i] == name) {
+            names.erase(names.begin() + static_cast<std::ptrdiff_t>(i));
+            exprs.erase(exprs.begin() + static_cast<std::ptrdiff_t>(i));
+            return;
+        }
+    }
+}
+
+void hide_names(std::vector<std::string> &names, std::vector<const Expr *> &exprs, const std::vector<std::string> &bound) {
+    for (const std::string &name : bound) {
+        hide_name(names, exprs, name);
+    }
+}
+
+std::vector<std::string> bound_names(const Stmt &stmt) {
+    if (const auto *decl = std::get_if<Stmt::Decl>(&stmt.data)) {
+        std::vector<std::string> names;
+        names.reserve(decl->vars.size());
+        for (const VarDecl &var : decl->vars) {
+            if (!var.name.empty()) {
+                names.push_back(var.name);
+            }
+        }
+        return names;
+    }
+    if (const auto *bind = std::get_if<Stmt::Bind>(&stmt.data)) {
+        return bind->names;
+    }
+    return {};
+}
+
+} // namespace
+
+void replace_stmt_names(Stmt &stmt, std::vector<std::string> names, std::vector<const Expr *> exprs) {
+    std::visit(
+        [&](auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (auto &child : node.statements) {
+                    if (child == nullptr) {
+                        continue;
+                    }
+                    replace_stmt_names(*child, names, exprs);
+                    hide_names(names, exprs, bound_names(*child));
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                replace_names(node.value, names, exprs);
+                for (auto &extra : node.extra) {
+                    replace_names(extra, names, exprs);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                replace_names(node.expr, names, exprs);
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                replace_names(node.cond, names, exprs);
+                if (node.then_arm != nullptr) {
+                    replace_stmt_names(*node.then_arm, names, exprs);
+                }
+                if (node.else_arm != nullptr) {
+                    replace_stmt_names(*node.else_arm, names, exprs);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::While>) {
+                replace_names(node.cond, names, exprs);
+                if (node.body != nullptr) {
+                    replace_stmt_names(*node.body, names, exprs);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                // The index lives for the loop. A later statement still sees the outer name.
+                std::vector<std::string> inner_names = names;
+                std::vector<const Expr *> inner_exprs = exprs;
+                if (node.init != nullptr) {
+                    replace_stmt_names(*node.init, inner_names, inner_exprs);
+                    hide_names(inner_names, inner_exprs, bound_names(*node.init));
+                }
+                replace_names(node.cond, inner_names, inner_exprs);
+                replace_names(node.step, inner_names, inner_exprs);
+                replace_names(node.each_expr, inner_names, inner_exprs);
+                if (!node.each_name.empty()) {
+                    hide_name(inner_names, inner_exprs, node.each_name);
+                }
+                if (node.body != nullptr) {
+                    replace_stmt_names(*node.body, inner_names, inner_exprs);
+                }
+                for (auto &part : node.unrolled) {
+                    if (part != nullptr) {
+                        replace_stmt_names(*part, names, exprs);
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
+                if (node.body != nullptr) {
+                    replace_stmt_names(*node.body, names, exprs);
+                }
+                replace_names(node.cond, names, exprs);
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                replace_names(node.cond, names, exprs);
+                if (node.body != nullptr) {
+                    replace_stmt_names(*node.body, names, exprs);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                replace_names(node.value, names, exprs);
+                if (node.stmt != nullptr) {
+                    replace_stmt_names(*node.stmt, names, exprs);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                for (VarDecl &var : node.vars) {
+                    replace_names(var.init, names, exprs);
+                    hide_name(names, exprs, var.name);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                replace_names(node.call, names, exprs);
+            } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                replace_names(node.value, names, exprs);
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                replace_names(node.cond, names, exprs);
+            } else {
+                // A nested function keeps its own parameters. `break` and `continue` name nothing.
+                (void)node;
+            }
+        },
+        stmt.data);
 }
 
 TypeArg::TypeArg(const TypeArg &other)

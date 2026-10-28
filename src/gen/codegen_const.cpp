@@ -1263,7 +1263,7 @@ llvm::Constant *CodeGen::type_kind_ptr(const std::string &text, int arm, bool ha
     if (value == nullptr) {
         return nullptr;
     }
-    // `*const Type` points at this union value. One cell is shared by every field of that type.
+    // `Type` points at this union value. One cell is shared by every use of that type.
     auto *cell = new llvm::GlobalVariable(module_, value->getType(), true, llvm::GlobalValue::PrivateLinkage, value,
                                           ".tkind");
     type_kind_ptrs_.emplace(key, cell);
@@ -1313,6 +1313,11 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
             break;
         }
         cursor = cast->expr.get();
+    }
+    if (const auto *call = std::get_if<Expr::Call>(&cursor->data)) {
+        if (call->comptime_struct != nullptr) {
+            return const_initializer(*call->comptime_struct, dest);
+        }
     }
     if (const auto *init = std::get_if<Expr::Init>(&cursor->data)) {
         if (init->is_tuple && init->elements.size() >= 2) {
@@ -1677,14 +1682,33 @@ std::optional<CodeGen::SlicePieces> CodeGen::slice_pieces(const Expr &expr, std:
             array, global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
         pieces->length = binding->array_len > 0 ? binding->array_len : static_cast<int32_t>(array->getNumElements());
     } else if (binding != nullptr && binding->is_slice) {
-        const VarDecl *source = global_decl(name->text);
-        if (source == nullptr || source->init == nullptr) {
+        // `const p *const u8 = label` uses this pointer. The length stays on the slice.
+        llvm::Constant *init = global == nullptr ? nullptr : global->getInitializer();
+        const auto *agg = init == nullptr || llvm::isa<llvm::UndefValue>(init)
+                              ? nullptr
+                              : llvm::dyn_cast<llvm::ConstantStruct>(init);
+        const auto *len = agg == nullptr || agg->getNumOperands() < 2 || binding->elem_bits != 8
+                              ? nullptr
+                              : llvm::dyn_cast<llvm::ConstantInt>(agg->getOperand(1));
+        if (agg != nullptr && len != nullptr) {
             pieces = SlicePieces{};
-            pieces->pointer = null_ptr();
+            pieces->pointer = llvm::dyn_cast<llvm::Constant>(agg->getOperand(0));
             pieces->element = i8();
-            pieces->length = 0;
-        } else {
-            pieces = slice_pieces(*source->init, seen);
+            pieces->length = static_cast<int32_t>(len->getSExtValue());
+            if (pieces->pointer == nullptr) {
+                pieces.reset();
+            }
+        }
+        if (!pieces) {
+            const VarDecl *source = global_decl(name->text);
+            if (source == nullptr || source->init == nullptr) {
+                pieces = SlicePieces{};
+                pieces->pointer = null_ptr();
+                pieces->element = i8();
+                pieces->length = 0;
+            } else {
+                pieces = slice_pieces(*source->init, seen);
+            }
         }
     }
     seen.erase(name->text);
@@ -1751,12 +1775,23 @@ void CodeGen::apply_initializer(const VarDecl &var) {
             return;
         }
         // `const p *i32 = row` stores the address of the first element.
+        // `const p *const u8 = label` drops the length. The address is that slice's bytes.
         if (found != file.globals.end() && found->second.depth > 0 && !found->second.is_array &&
             !found->second.is_slice && var.init != nullptr && global != nullptr) {
             if (llvm::Constant *pointer = element_pointer(*var.init)) {
                 global->setInitializer(pointer);
                 file.folded.insert(key);
                 return;
+            }
+            if (found->second.depth == 1 && found->second.elem_bits == 8) {
+                std::unordered_set<std::string> seen;
+                const std::optional<SlicePieces> pieces = slice_pieces(*var.init, seen);
+                if (pieces && pieces->pointer != nullptr && !llvm::isa<llvm::ConstantPointerNull>(pieces->pointer) &&
+                    pieces->element != nullptr && pieces->element->isIntegerTy(8)) {
+                    global->setInitializer(pieces->pointer);
+                    file.folded.insert(key);
+                    return;
+                }
             }
         }
         // `const frozen [2]i32 = held` copies that array. A list still uses the element path.
@@ -1793,15 +1828,15 @@ void CodeGen::apply_initializer(const VarDecl &var) {
     }
     const auto found_early = file.globals.find(key);
     if (const auto *kind = std::get_if<Expr::Typeof>(&var.init->data)) {
-        const bool type_slot = found_early != file.globals.end() && found_early->second.depth == 0 &&
+        const bool type_slot = found_early != file.globals.end() && found_early->second.depth == 1 &&
                                ((type_struct_id_ >= 0 && found_early->second.struct_id == type_struct_id_) ||
                                 found_early->second.struct_id == synthetic_type_id);
         if (!type_slot || kind->canonical.empty() || found_early->second.value == nullptr) {
             error(var.loc, "type mismatch");
             return;
         }
-        llvm::Constant *value = intern_type_value(kind->canonical, kind->type_arm, kind->type_has_this, kind->type_generic,
-                                                  kind->type_variadic);
+        llvm::Constant *value = type_kind_ptr(kind->canonical, kind->type_arm, kind->type_has_this, kind->type_generic,
+                                              kind->type_variadic);
         auto *global = llvm::dyn_cast<llvm::GlobalVariable>(found_early->second.value);
         if (value == nullptr || global == nullptr || value->getType() != global->getValueType()) {
             error(var.loc, "global initializer is not a constant");

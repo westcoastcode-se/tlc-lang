@@ -1,6 +1,7 @@
 #include "driver/driver.hpp"
 #include "harness.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -138,6 +139,21 @@ int run_program_tests() {
         tlc::Options opt;
         opt.input = main_path.string();
         opt.link_args = expect.link_args;
+        // A sibling C file defines an external symbol the TLC program calls.
+        std::vector<std::filesystem::path> extras;
+        for (const auto &extra : std::filesystem::directory_iterator(entry.path())) {
+            if (!extra.is_regular_file()) {
+                continue;
+            }
+            const auto ext = extra.path().extension();
+            if (ext == ".c" || ext == ".s" || ext == ".S") {
+                extras.push_back(extra.path());
+            }
+        }
+        std::sort(extras.begin(), extras.end());
+        for (const auto &path : extras) {
+            opt.link_args.push_back(path.string());
+        }
         opt.mode = expect.compile_error ? tlc::Mode::Check : (expect.run_tests ? tlc::Mode::Test : tlc::Mode::Run);
         const tlc::CompileOutput output = tlc::compile_source(opt);
         if (expect.link_error) {

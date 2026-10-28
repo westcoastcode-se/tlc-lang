@@ -84,9 +84,14 @@ struct Symbol {
     bool is_immutable = false;
     // The initializer of a local `comptime const` folded to an `i32`.
     bool folded_local = false;
-    // A runtime `const` whose initializer is a compile-time constant.
-    // `comptime const name = this` promotes it. The name is not itself a compiler constant.
+    // `const name = expr` or `const name Type = expr` inside a function.
+    // `var name const Type` is not this binding.
+    bool runtime_const = false;
+    // Set with `promote_init` when `comptime const folded = name` may copy this initializer.
+    // The name is not itself a compiler constant.
     bool promotable = false;
+    // Initializer of a runtime `const` when that initializer folds.
+    // A tuple index reads it. `promotable` is what a later `comptime const` may copy.
     const Expr *promote_init = nullptr;
     // Initializer of a `comptime const`. `*p` reads it when `p` is a comptime pointer.
     const Expr *const_init = nullptr;
@@ -249,11 +254,14 @@ class Checker {
     std::vector<Scope> scopes_;
     int function_seq_ = 0;
     std::vector<StructInfo> structs_;
-    // `fields()` yields `[]const Field`: `name []const u8` and `kind *const Type`.
+    // `fields()` yields `[]const Field`: `name []const u8` and `kind Type`.
     // Negative until `ensure_field_info` runs. `builtin.Field` replaces it when that struct is declared.
     int field_info_id_ = -1;
-    // `builtin.Type`, the tagged union. Negative until that union is declared.
+    // `builtin.CompiledType`, the tagged union. Negative until that union is declared.
     int type_value_id_ = -1;
+    // `builtin.Type`, the alias `*const CompiledType`. Set when that alias is declared.
+    bool has_type_pointer_ = false;
+    Type type_pointer_{};
     std::vector<TraitInfo> traits_;
     // The built-in `Allocator` trait. Negative until the first unit is registered.
     int allocator_trait_id_ = -1;
@@ -346,21 +354,6 @@ class Checker {
     bool variadic_function_ = false;
     // The callee of a call is being checked. That callee is a name, a function expression, or a selector.
     bool direct_callee_ = false;
-    // A bare comptime func may be a comptime function argument or a `comptime const` initializer.
-    // A `var`, a cast, a tuple element, and a macro stay rejected.
-    bool allow_comptime_fn_ = false;
-    struct AllowComptimeFn {
-        bool &flag;
-        bool saved;
-        explicit AllowComptimeFn(bool &slot, bool enable) : flag(slot), saved(slot) {
-            if (enable) {
-                flag = true;
-            }
-        }
-        ~AllowComptimeFn() { flag = saved; }
-        AllowComptimeFn(const AllowComptimeFn &) = delete;
-        AllowComptimeFn &operator=(const AllowComptimeFn &) = delete;
-    };
     // `unsafe` expressions and the body of an `unsafe func`. Nested functions do not inherit it.
     int unsafe_depth_ = 0;
     int loop_depth_ = 0;
@@ -482,10 +475,12 @@ class Checker {
     // `allow_incomplete` is a tuple alias registered before struct bodies exist.
     Type type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete = false);
     std::string type_desc(const Type &type) const;
-    // `builtin.Type`. `type_meta()` until that union is declared.
+    // `builtin.Type`, the pointer `*const CompiledType`. A synthetic pointer until that alias exists.
     Type type_value() const;
-    // The injected pointer, or the `builtin.Type` union.
+    // True when `type` is that pointer.
     bool is_type_value(const Type &type) const;
+    // True when `type` is the `CompiledType` union.
+    bool is_compiled_type(const Type &type) const;
     // Arm of `builtin.Type` for this type. 0 is Other, 1 is Function, 2 is Struct.
     // `has_this` is not a property of the type. `typeof` of an instance method sets it.
     struct TypeFacts {
@@ -501,7 +496,7 @@ class Checker {
     // The slice `Type.fields()` returns. Invalid before `ensure_field_info`.
     Type type_field_slice() const;
     void ensure_field_info();
-    // `builtin.Field` when that struct is `name []const u8` and `kind *const Type`. Otherwise -1.
+    // `builtin.Field` when that struct is `name []const u8` and `kind Type`. Otherwise -1.
     int builtin_field_struct() const;
     // Writes `reflected_fields` on the package graph after every struct is known.
     void publish_reflected_fields();
@@ -545,6 +540,8 @@ class Checker {
                                    uint32_t owner);
     // `extern func use[T type](s Shape, n T)` still takes a trait. `T Shape` does not.
     bool extern_generic_trait_param(uint32_t file, const FunctionDecl &fn) const;
+    // An `extern` prototype names the specialization. A comptime parameter has no external symbol.
+    bool extern_generic_prototype(const FunctionDecl &fn) const;
     // A parameter of a generic function whose type is a trait or `Seq[T]`.
     // `value T` on `[T type]` is not one. That parameter stays `not supported yet`.
     bool generic_trait_parameter(const FunctionDecl &fn) const;
@@ -667,12 +664,20 @@ class Checker {
     void check_stmt(const Stmt &stmt);
     // Checks each statement. A macro call is replaced by the statements it emits.
     void check_statements(std::vector<std::unique_ptr<Stmt>> &statements);
-    void append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::unique_ptr<Stmt>> &out);
+    // `defer` stores the statement without checking it. A runtime `if` or `for` checks the body later,
+    // after `emit` has been cleared, so a name bound by that statement is in scope.
+    void append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::unique_ptr<Stmt>> &out, bool defer = false);
     void expand_macro_call(const Expr::Call &call, const FunctionDecl &fn, std::vector<std::unique_ptr<Stmt>> &out);
+    // `keep_block` leaves a block in place. The statements inside it are still expanded.
     void expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
-                           const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out, bool substitute);
+                           const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out,
+                           bool substitute, bool defer = false, bool keep_block = false);
     void unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
-                           const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out);
+                           const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out,
+                           bool defer = false);
+    // `comptime for` outside a macro. True when the body was unrolled, or a diagnostic was already reported.
+    // False when the bounds do not fold. The caller reports `not supported yet`.
+    bool unroll_comptime_for(Stmt::For &loop);
     // The constant a `comptime` parameter denotes. Null when the argument is not that constant.
     std::unique_ptr<Expr> comptime_argument(const Expr &arg, const Param &param);
     const FunctionDecl *comptime_callee(const Expr::Call &call);
@@ -687,6 +692,15 @@ class Checker {
     // `bound` is the type argument. Null on `fence` and on a specialization.
     bool atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &call, const SpecArg *bound);
     std::optional<int> fold_comptime_call(const Expr::Call &call);
+    // Runs a comptime func that returns a struct. The literal is the result.
+    struct KeptStruct {
+        enum class Status { Unsupported, NotConstant, Value };
+        Status status = Status::Unsupported;
+        std::unique_ptr<Expr> value;
+    };
+    KeptStruct fold_comptime_struct(const Expr::Call &call);
+    // A field of a struct literal, or of a comptime call that kept one. A plain file-scope name is not one.
+    const Expr *comptime_struct_field(const Expr &object, const std::string &field);
     // The comptime slice overload of `builtin.memeql` or `builtin.memcmp` when both arguments are
     // constant `[]const u8`. Null when that overload is not the one to fold.
     const FunctionDecl *mem_compare_callee(const Expr::Call &call);
@@ -716,6 +730,13 @@ class Checker {
     int comptime_depth_ = 0;
     // Nonzero while checking a `macro`. `emit` is legal only then, and not inside a runtime loop.
     int macro_depth_ = 0;
+    // Nonzero while a macro expands a folded `comptime switch`. `break` ends that path.
+    int folded_switch_depth_ = 0;
+    bool folded_switch_stop_ = false;
+    // Expands the taken path. Other cases are left out. True when `break` or `return` ends the path.
+    bool expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case *arm, bool &active, const FunctionDecl &fn,
+                              const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
+                              std::vector<std::unique_ptr<Stmt>> &out, bool defer);
     // `while`, `do`, and a `for` outside a macro. A `for` in a macro is unrolled.
     int plain_loop_depth_ = 0;
     void check_for_each(const Stmt::For &node);
@@ -737,11 +758,13 @@ class Checker {
         bool wide = false;
     };
     std::optional<int> fold_int(const Expr &expr);
-    // A condition whose values are comptime, including an enumerator compare. A `var` does not fold.
+    // A condition whose values are comptime, including an enumerator compare.
+    // A local `const` whose initializer folds to `i32` does too. A `var` does not.
     std::optional<int> fold_condition(const Expr &expr);
     // True when every value is comptime, including a `comptime` parameter that this copy still receives.
     bool comptime_value(const Expr &expr);
-    // `fold_int`, and a local `const` whose initializer folded. A `var` does not.
+    // `fold_int`, a `comptime const`, and a runtime `const` whose initializer folds.
+    // A `var` does not. A tuple index uses this to choose the field while compiling.
     std::optional<int> constant_index(const Expr &expr);
     // `.len` when the number of elements is known before this selector is typechecked.
     std::optional<int> known_len(const Expr &base);
@@ -1026,6 +1049,8 @@ class Checker {
     const Expr *comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen);
     // Literals, `comptime const` names, and expressions built from those. A runtime `const` is not.
     bool strict_comptime_expr(const Expr &expr);
+    // Fills checker struct ids on a literal produced by a comptime struct call.
+    void stamp_kept_struct(Expr &expr, const Type &type);
     void note_promotable(Symbol &symbol, const Expr *init);
     // `var row = [_]i32{1, 2}`, `var row [3]i32 = {1, 2, 3}`, and `const row = [_]i32{1}`.
     // `declared` is the symbol type when it was already stored.
@@ -1050,6 +1075,9 @@ class Checker {
     bool accept_array_copy(VarDecl &var);
     bool constant_operand(const Expr &expr);
     std::optional<int> lookup_const_value(const std::string &name);
+    // A file-scope constant, or a local `const` whose initializer folds.
+    // A `var` and an unfolded `const` hide a file-scope constant.
+    std::optional<int> array_length_value(const std::string &name);
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                          int &indirections, uint32_t &optional, bool &is_array, int &array_len,
                          std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);

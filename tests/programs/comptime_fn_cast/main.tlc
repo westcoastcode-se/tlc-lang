@@ -4,11 +4,13 @@ comptime func add(a i32, b i32) i32 {
 
 type BinOp func (i32, i32) i32;
 
+comptime const wrapped = BinOp(add);
+
 func take(op comptime func (i32, i32) i32, n i32) i32 {
     return op(n, 2);
 }
 
 func main() i32 {
     var n = 40;
-    return take(BinOp(add), n);
+    return take(BinOp(add), n) + take(wrapped, n) - 42;
 }

@@ -1,0 +1,6 @@
+comptime const N = -1;
+
+func main() i32 {
+    var row [N]i32;
+    return 0;
+}

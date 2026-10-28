@@ -150,7 +150,35 @@ A `[]const u8` converts to that pointer by passing its address and dropping the 
 
 `printf("%s", label)` and `var p *const u8 = label` are the C form.
 
-The compiler reports `var p *u8 = "hi"` as `type mismatch`.
+`const label = "hi"` then `const p *const u8 = label` stores that address. `label.len` stays 2.
+
+`p[0]` is `h`, `p[1]` is `i`, and `p[2]` is the terminating null.
+
+A `[]const u8` taken from a `[N]u8` converts the same way. A constant range does too, so `const cut = "hello"[1:4]` then `const p *const u8 = cut` starts at `e`.
+
+The compiler reports `var p *u8 = "hi"` and `const p *u8 = label` as `type mismatch`.
+
+```c
+const label = "hi";
+const p *const u8 = label;
+
+func main() i32 {
+    return i32(p[0]) + i32(p[1]) - 167;
+}
+```
+
+```asm
+main:
+movq p(%rip), %rax               # p
+movzbl (%rax), %eax              # p[0]
+movq p(%rip), %rcx               # p
+movzbl 1(%rcx), %ecx             # p[1]
+addl %ecx, %eax                  # p[0] + p[1]
+subl $167, %eax                  # minus 167
+retq                             # return
+```
+
+The program returns 42.
 
 ## A quoted string, a raw string, and a C pointer
 

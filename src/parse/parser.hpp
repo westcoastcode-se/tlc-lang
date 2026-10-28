@@ -73,6 +73,9 @@ class Parser {
     // `var s struct { ... }` is a struct with no written name. The name is not a type spelling.
     std::vector<StructDecl> anonymous_structs_;
     int anonymous_struct_count_ = 0;
+    // `const` and `var` inside a struct, and `var Type::name` inside a function.
+    // They are file scope. Flushed into the unit after the declarations that contained them.
+    std::vector<VarDecl> lifted_;
 
     bool eof() const;
     const Token &peek(std::size_t ahead = 0) const;
@@ -153,10 +156,12 @@ class Parser {
     };
     // Members are `name type;` or `export name type;`. `name export struct { ... }` and
     // `name export union { ... }` are inline aggregates.
-    // `var` and `const` inside the struct are rejected. `publish` marks every member exported,
+    // `const name` and `var name` inside the braces are the constant and the variable on `owner`.
+    // `export` and `extern` on those stay rejected. `publish` marks every member exported,
     // which is what an exported inline struct does to the members inside it.
+    // `owner_params` are the struct's type parameters, in order, for `type Box[T type]`.
     StructMembers parse_struct_members(const std::string &owner, bool publish = false, bool extern_c = false,
-                                       bool is_extern = false);
+                                       bool is_extern = false, const std::vector<std::string> &owner_params = {});
     struct UnionBody {
         std::vector<FieldDecl> fields;
         std::vector<StructDecl> anonymous;
@@ -246,14 +251,17 @@ class Parser {
     std::unique_ptr<Stmt> parse_const_local(bool is_comptime);
     bool var_is_bind() const;
     bool var_is_inferred() const;
-    // `const Type::name` or `const Type[T]::name`. A local one is rejected.
-    bool const_on_type() const;
+    // `const Type::name` or `const Type[T]::name`, starting at `at`.
+    // Inside a function that constant is rejected. It is file scope.
+    bool const_on_type(std::size_t at = 0) const;
     // `const i32 x` and `const Point p` when `Point` is already a type.
     // `const n = expr`, `const n Type = expr`, `const i32 = 1`, and `const Type::name` stay bindings.
     bool const_type_var() const;
     std::unique_ptr<Stmt> parse_var_or_bind();
     // `var Type::name` and `var Type[T]::name`. The first identifier is the owner.
     void take_var_owner(VarDecl &var);
+    // Keep a file-scope constant or variable that was written inside a struct or a function.
+    void lift_assoc(VarDecl var);
     // `allow_bare_inferred` accepts `var name = expr` before a type is written.
     // A struct body uses that for `var next = 1`, the same variable as `var Type::next = 1`.
     VarDecl parse_typed_var(bool exported, bool is_static, bool is_extern, bool extern_c,

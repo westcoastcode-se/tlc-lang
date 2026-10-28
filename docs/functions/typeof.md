@@ -8,7 +8,7 @@ This page describes why a function result cannot be written with `typeof`.
 
 `typeof` is not a result type. `func id(x i32) typeof(x)` is `expected a type` on `typeof`, and `(typeof(x))` is the same error.
 
-An expression `typeof(x)` still has type `builtin.Type`.
+An expression `typeof(x)` still has type `builtin.Type`, which is `*const builtin.CompiledType`.
 
 ```c
 func id(x i32) typeof(x) {
