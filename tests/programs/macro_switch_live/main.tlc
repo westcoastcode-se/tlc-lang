@@ -1,0 +1,15 @@
+macro func pick(slot *i32, n i32) void {
+    switch (n) {
+    case 1:
+        emit *slot = 1;
+        break;
+    default:
+        emit missing();
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    pick(&n, n);
+    return n;
+}

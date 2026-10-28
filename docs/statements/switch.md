@@ -137,6 +137,8 @@ A `var` does not fold.
 
 An initializer that does not fold is `not supported yet`.
 
+`switch` in a `macro` keeps the matching case and the statements that follow until `break` when the value folds. The other cases are not typechecked and not emitted. A value that does not fold runs at run time, and every case is typechecked.
+
 `comptime switch` in a `macro` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`.
 
 ```c

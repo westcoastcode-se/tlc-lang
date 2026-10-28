@@ -326,6 +326,8 @@ A `var` does not fold.
 
 A local `const` whose initializer folds to `i32` does.
 
+`switch` in a `macro` keeps the matching case and the statements that follow until `break` when the value folds. The other cases are not typechecked and not emitted. A value that does not fold runs at run time, and every case is typechecked.
+
 `comptime switch` in a `macro` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`.
 
 A value call of a `macro` is `not supported yet`.

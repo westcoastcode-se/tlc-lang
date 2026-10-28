@@ -871,6 +871,11 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
             folded_switch_stop_ = true;
             return;
         }
+        // A pasted `switch` runs in the caller. `break` leaves that switch.
+        if (runtime_switch_depth_ > 0) {
+            append_statement(std::move(stmt), out, defer);
+            return;
+        }
         error(std::get<Stmt::Break>(stmt->data).loc, "not supported yet");
         return;
     }
@@ -913,8 +918,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         return;
     }
     if (auto *sw = std::get_if<Stmt::Switch>(&stmt->data)) {
-        // A plain `switch` stays out. `comptime switch` keeps one path when the value folds.
-        if (!sw->comptime_switch || sw->cond == nullptr) {
+        if (sw->cond == nullptr) {
             error(sw->loc, "not supported yet");
             return;
         }
@@ -923,37 +927,69 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         const AssignState saved_true = cond_true_;
         const AssignState saved_false = cond_false_;
         quiet_ = true;
-        check_expr(*sw->cond, true);
+        const Type got = check_expr(*sw->cond, true);
         quiet_ = saved_quiet;
         assign_ = saved_assign;
         cond_true_ = saved_true;
         cond_false_ = saved_false;
         std::optional<int> folded = fold_switch_case(*sw->cond);
-        // A local `const` is this value. `fold_switch_case` stays a case label.
-        if (!folded) {
+        // `comptime switch` also reads a local `const`. An ordinary `switch` does not.
+        if (!folded && sw->comptime_switch) {
             folded = fold_runtime_const(*sw->cond);
         }
-        if (!folded) {
+        const bool scalar = got.kind == TypeKind::Int || got.kind == TypeKind::Enum || got.kind == TypeKind::Char;
+        if (folded && scalar) {
+            const Stmt::Case *match = nullptr;
+            const Stmt::Case *fallback = nullptr;
+            if (sw->body != nullptr) {
+                find_switch_arm(*sw->body, *folded, match, fallback);
+            }
+            const Stmt::Case *arm = match != nullptr ? match : fallback;
+            if (arm == nullptr || sw->body == nullptr) {
+                return;
+            }
+            const int saved_depth = folded_switch_depth_;
+            const bool saved_stop = folded_switch_stop_;
+            folded_switch_stop_ = false;
+            ++folded_switch_depth_;
+            bool active = false;
+            expand_folded_switch(std::move(sw->body), arm, active, fn, names, exprs, out, defer);
+            folded_switch_depth_ = saved_depth;
+            folded_switch_stop_ = saved_stop;
+            return;
+        }
+        // `comptime switch` does not become a runtime switch.
+        if (sw->comptime_switch) {
             error(sw->loc, "not supported yet");
             return;
         }
-        const Stmt::Case *match = nullptr;
-        const Stmt::Case *fallback = nullptr;
+        // A value that does not fold stays a `switch` in the caller. The body is expanded first.
+        const std::size_t before = diags_.size();
+        ++runtime_switch_depth_;
+        std::vector<std::unique_ptr<Stmt>> parts;
         if (sw->body != nullptr) {
-            find_switch_arm(*sw->body, *folded, match, fallback);
+            expand_macro_stmt(std::move(sw->body), fn, names, exprs, parts, false, true, true);
         }
-        const Stmt::Case *arm = match != nullptr ? match : fallback;
-        if (arm == nullptr || sw->body == nullptr) {
+        --runtime_switch_depth_;
+        if (diags_.size() != before) {
             return;
         }
-        const int saved_depth = folded_switch_depth_;
-        const bool saved_stop = folded_switch_stop_;
-        folded_switch_stop_ = false;
-        ++folded_switch_depth_;
-        bool active = false;
-        expand_folded_switch(std::move(sw->body), arm, active, fn, names, exprs, out, defer);
-        folded_switch_depth_ = saved_depth;
-        folded_switch_stop_ = saved_stop;
+        sw->body = as_arm(std::move(parts), sw->loc);
+        append_statement(std::move(stmt), out, defer);
+        return;
+    }
+    if (auto *kase = std::get_if<Stmt::Case>(&stmt->data)) {
+        // A case belongs to the `switch` being pasted. Outside that expansion it is not a statement.
+        if (runtime_switch_depth_ == 0) {
+            error(kase->loc, "not supported yet");
+            return;
+        }
+        if (kase->stmt != nullptr) {
+            std::vector<std::unique_ptr<Stmt>> parts;
+            expand_macro_stmt(std::move(kase->stmt), fn, names, exprs, parts, false, true, true);
+            kase->stmt = as_arm(std::move(parts), kase->loc);
+        }
+        out.push_back(std::move(stmt));
         return;
     }
     if (auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
@@ -1853,7 +1889,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 } else if constexpr (std::is_same_v<T, Stmt::For> || std::is_same_v<T, Stmt::If>) {
                     return true;
                 } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
-                    return node.comptime_switch;
+                    return true;
                 } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
                     // A plain loop runs at the call. `emit while` and `emit do` paste the statement.
                     return true;
@@ -2252,8 +2288,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                 const bool can_fail = reach && node.cond && !cond_false_.unreachable;
                 assign_ = init_loop_exit(done.breaks, node.cond ? cond_false_ : at_cond, node.cond ? can_fail : reach);
             } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
-                // The path is chosen while expanding. The call site checks the statements that remain.
-                if (macro_depth_ > 0 && node.comptime_switch) {
+                // The call expands the switch. The call site checks the statements that remain.
+                if (macro_depth_ > 0) {
                     return;
                 }
                 check_switch(node);

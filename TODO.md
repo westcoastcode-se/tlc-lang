@@ -10,7 +10,7 @@ No open bugs. A new bug is inserted here, before every other section, and fixed 
 
 ## `if` and `for` in a macro
 
-In a `macro`, a condition or a bound that does not fold runs at run time. `comptime if` keeps one arm when the condition folds. A condition that does not fold is `not supported yet`. `switch` in a `macro` is `not supported yet`. `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`. `comptime for` unrolls when the bounds fold. A bound that does not fold is `not supported yet`. `const for` is not a form.
+In a `macro`, a condition or a bound that does not fold runs at run time. `comptime if` keeps one arm when the condition folds. A condition that does not fold is `not supported yet`. `switch` in a `macro` keeps the matching case and the statements that follow until `break` when the value folds. The other cases are not typechecked. A value that does not fold runs at run time, and every case is typechecked. `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`. `comptime for` unrolls when the bounds fold. A bound that does not fold is `not supported yet`. `const for` is not a form.
 
 ## Generics and compile-time
 

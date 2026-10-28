@@ -144,7 +144,81 @@ retq
 
 A `comptime if` whose condition does not fold is `not supported yet`. It emits nothing.
 
-`switch` in a `macro` is `not supported yet`.
+`switch` keeps the matching case and the statements that follow until `break` when the value folds. The other cases are not typechecked and not emitted.
+
+A value that does not fold runs at run time, and every case is typechecked.
+
+`pick(&x, 1)` stores 2, then adds 40. The `default` arm is not typechecked.
+
+`main` returns 42.
+
+```c
+macro func pick(slot *i32, n comptime i32) void {
+    switch (n) {
+    case 1:
+        emit *slot = 2;
+    case 2:
+        emit *slot = *slot + 40;
+        break;
+    default:
+        emit *slot = 0;
+    }
+}
+
+func main() i32 {
+    var x = 0;
+    pick(&x, 1);
+    return x;
+}
+```
+
+```asm
+main:
+movl $2, -4(%rsp)                # x = 2
+movl -4(%rsp), %eax              # x
+addl $40, %eax                   # x + 40
+movl %eax, -4(%rsp)              # store x
+movl -4(%rsp), %eax              # return x
+retq                             # return
+```
+
+`pick(&n, n)` stores 2 when `n` is 0. The `switch` runs at run time.
+
+```c
+macro func pick(slot *i32, n i32) void {
+    switch (n) {
+    case 1:
+        emit *slot = 40;
+        break;
+    default:
+        emit *slot = 2;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    pick(&n, n);
+    return n;
+}
+```
+
+```asm
+main:
+movl $0, -4(%rsp)                # n = 0
+movl -4(%rsp), %eax              # n
+subl $1, %eax                    # n - 1
+je .L1                           # case 1
+jmp .L2                          # default
+.L3:
+movl -4(%rsp), %eax              # return n
+retq                             # return
+.L1:
+movl $40, -4(%rsp)               # *slot = 40
+jmp .L3                          # break
+.L2:
+movl $2, -4(%rsp)                # *slot = 2
+jmp .L3                          # break
+```
 
 `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. The other cases are not typechecked and not emitted.
 

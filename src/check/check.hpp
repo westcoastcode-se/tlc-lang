@@ -736,6 +736,8 @@ class Checker {
     // Nonzero while a macro expands a folded `comptime switch`. `break` ends that path.
     int folded_switch_depth_ = 0;
     bool folded_switch_stop_ = false;
+    // Nonzero while a macro pastes an ordinary `switch` that runs at run time. `break` stays in that switch.
+    int runtime_switch_depth_ = 0;
     // Expands the taken path. Other cases are left out. True when `break` or `return` ends the path.
     bool expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case *arm, bool &active, const FunctionDecl &fn,
                               const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,

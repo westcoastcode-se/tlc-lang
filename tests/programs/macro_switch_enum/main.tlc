@@ -1,0 +1,20 @@
+type Color enum {
+    Red,
+    Blue,
+};
+
+macro func pick(slot *i32, c Color) void {
+    switch (c) {
+    case Color.Red:
+        emit *slot = 42;
+        break;
+    default:
+        emit missing();
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    pick(&n, Color.Red);
+    return n;
+}

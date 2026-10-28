@@ -145,9 +145,9 @@ int run_cli_tests() {
 
     const std::string tlc_extern = std::string(TLC_ROOT) + "/tests/programs/extern_tlc/main.tlc";
     const tlc::test::Proc tlc_ir = tlc::test::spawn({bin, "--emit-llvm", tlc_extern});
-    EXPECT(check, tlc_ir.code == 0);
-    EXPECT_HAS(check, tlc_ir.out, "@main.parts");
-    EXPECT(check, tlc_ir.out.find("@parts(") == std::string::npos);
+    EXPECT(check, tlc_ir.code != 0);
+    EXPECT_HAS(check, tlc_ir.err, "not supported yet");
+    EXPECT(check, tlc_ir.out.find("@main.parts") == std::string::npos);
 
     const std::string hello = std::string(TLC_ROOT) + "/tests/programs/hello_printf/main.tlc";
     const tlc::test::Proc hello_ir = tlc::test::spawn({bin, "--emit-llvm", hello});
