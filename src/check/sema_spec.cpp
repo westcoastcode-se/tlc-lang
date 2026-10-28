@@ -2101,17 +2101,23 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
             return false;
         }
         const std::size_t mark = diags_.size();
-        const Type got = check_expr(*call.args[i - skip], true);
-        if (got.kind == TypeKind::Invalid || diags_.size() != mark) {
-            return false;
-        }
         const uint32_t saved_file = file_id_;
         file_id_ = owner;
         const Type want = type_of_param(param);
         file_id_ = saved_file;
+        if (want.kind == TypeKind::Invalid || diags_.size() != mark) {
+            return false;
+        }
+        // A cast or a tuple element stays `not supported yet`. Only the bare name is this value.
+        const bool fn_value = fn_pointer(want) || want.kind == TypeKind::Function;
+        const bool bare_name = std::holds_alternative<Expr::Name>(call.args[i - skip]->data);
+        AllowComptimeFn allow{allow_comptime_fn_, fn_value && bare_name};
+        const Type got = check_expr(*call.args[i - skip], true);
+        if (got.kind == TypeKind::Invalid || diags_.size() != mark) {
+            return false;
+        }
         // `BinOp(add)` is that function. The alias sits on the pointer. The pointee is the parameter.
-        if (want.kind == TypeKind::Invalid || diags_.size() != mark ||
-            (!same_type(got, want) && !accepts_pointer(got, want))) {
+        if (!same_type(got, want) && !accepts_pointer(got, want)) {
             return false;
         }
         TypeParam slot;

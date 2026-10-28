@@ -20,7 +20,8 @@ void CodeGen::declare_functions(const PackageNode &node) {
     std::unordered_map<std::string, std::unordered_set<std::string>> kinds;
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
-        if (fn == nullptr || fn->name.empty() || fn->is_comptime || fn->is_macro || !fn->type_params.empty() ||
+        // A comptime func is emitted so a specialized copy can call it. A folded direct call does not.
+        if (fn == nullptr || fn->name.empty() || fn->is_macro || !fn->type_params.empty() ||
             (comptime_param_template(*fn) && !comptime_param_kept(*fn))) {
             continue;
         }
@@ -29,7 +30,7 @@ void CodeGen::declare_functions(const PackageNode &node) {
     std::unordered_map<std::string, Acc> functions;
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
-        if (fn == nullptr || fn->name.empty() || fn->is_comptime || fn->is_macro ||
+        if (fn == nullptr || fn->name.empty() || fn->is_macro ||
             (comptime_param_template(*fn) && !comptime_param_kept(*fn))) {
             continue;
         }
@@ -340,7 +341,7 @@ void CodeGen::emit_bodies(const PackageNode &node) {
     std::unordered_set<std::string> emitted;
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
-        if (fn == nullptr || fn->body == nullptr || fn->is_comptime || fn->is_macro ||
+        if (fn == nullptr || fn->body == nullptr || fn->is_macro ||
             (comptime_param_template(*fn) && !comptime_param_kept(*fn)) || function_is_generic(node.file_id, *fn)) {
             continue;
         }

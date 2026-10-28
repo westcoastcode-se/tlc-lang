@@ -1068,6 +1068,10 @@ Type Checker::check_file_const(VarDecl &written) {
         return got;
     }
     Type got = type_invalid();
+    // `comptime const op = add` names that comptime func. A cast stays rejected.
+    const bool name_init = written.is_const_decl && written.is_comptime && written.init != nullptr &&
+                           std::holds_alternative<Expr::Name>(written.init->data);
+    AllowComptimeFn allow{allow_comptime_fn_, name_init};
     if (written.inferred) {
         got = check_expr(*written.init, true);
     } else {
@@ -1634,6 +1638,10 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     continue;
                 }
                 const std::size_t before = diags_.size();
+                // The declaration check already accepted this name. This pass checks it again.
+                const bool name_init = var->is_const_decl && var->is_comptime &&
+                                       std::holds_alternative<Expr::Name>(var->init->data);
+                AllowComptimeFn allow{allow_comptime_fn_, name_init};
                 check_against(*var->init, want);
                 if (diags_.size() == before) {
                     if (!(var->is_const_decl && var->is_comptime) && !var->is_extern &&

@@ -908,6 +908,92 @@ A function is that argument too.
 
 That copy calls `main.add` with `n` and `2`.
 
+## A comptime function as that argument
+
+A `comptime func` is that argument too.
+
+`take(add, n)` and `comptime const op = add` call `main.take.spec.fnadd` when the file is `main.tlc`.
+
+That copy calls `main.add` with `n` and `2`.
+
+The copy does not paste the body.
+
+A direct call `add(40, 2)` still folds, with no trace frame.
+
+```c
+comptime func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+comptime const op = add;
+
+func take(op comptime func (i32, i32) i32, n i32) i32 {
+    return op(n, 2);
+}
+
+func main() i32 {
+    var n = 40;
+    return take(add, n) + take(op, n) - 42;
+}
+```
+
+```asm
+main.add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+
+main.take.spec.fnadd:
+movl %edi, 20(%rsp)              # move
+movl 20(%rsp), %eax              # move
+movl %eax, 8(%rsp)               # move
+# trace frame for the call, then the matching pop
+movl 8(%rsp), %edi               # move
+movl $2, %esi                    # constant
+callq main.add                   # call add
+retq                             # return
+
+main:
+movl $40, 36(%rsp)               # constant
+movl 36(%rsp), %eax              # move
+movl %eax, 24(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 24(%rsp), %edi              # move
+callq main.take.spec.fnadd       # call take
+movl 36(%rsp), %eax              # move
+movl %eax, 8(%rsp)               # move
+# trace frame for the call, then the matching pop
+movl 8(%rsp), %edi               # move
+callq main.take.spec.fnadd       # call take
+movl 4(%rsp), %ecx               # move
+movl 20(%rsp), %eax              # move
+addl %ecx, %eax                  # add
+subl $42, %eax                   # subtract
+retq                             # return
+```
+
+`n` is stored.
+
+Each call passes `n` and does not pass `add`.
+
+The copy calls `main.add` with `n` and `2`.
+
+The program returns 42.
+
+> **Warning:** These forms emit nothing.
+>
+> `var f = add` when `add` is a `comptime func` is `not supported yet`.
+>
+> `BinOp(add)` when `add` is a `comptime func` is `not supported yet`.
+>
+> `(add, 1)` when `add` is a `comptime func` is `not supported yet`.
+>
+> `const op = add` when `add` is a `comptime func` and the `const` is not `comptime` is `not supported yet`.
+>
+> `var f = add` then `comptime const op = f` is `not supported yet`.
+
 ## An enumerator on an ordinary function
 
 An enumerator is a comptime argument of that function.

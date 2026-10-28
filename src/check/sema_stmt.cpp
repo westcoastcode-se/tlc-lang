@@ -374,7 +374,8 @@ const FunctionDecl *Checker::comptime_callee(const Expr::Call &call) {
         return nullptr;
     }
     const auto *named = std::get_if<Expr::Name>(&call.callee->data);
-    if (named == nullptr) {
+    // The specialized copy calls this function. A source-level call still has to fold.
+    if (named == nullptr || named->runtime_body) {
         return nullptr;
     }
     const Symbol *symbol = lookup(named->text);
@@ -2058,6 +2059,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (auto *init = std::get_if<Expr::Init>(&node.value->data); init != nullptr && init->array_literal) {
                         rhs = check_array_literal(*init);
                     } else {
+                        // `comptime const op = add` inside a function. A cast stays rejected.
+                        const bool name_init = node.is_comptime && node.is_const &&
+                                               std::holds_alternative<Expr::Name>(node.value->data);
+                        AllowComptimeFn allow{allow_comptime_fn_, name_init};
                         rhs = check_expr(*node.value, true);
                     }
                 } else {
@@ -2325,6 +2330,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                                     init_new_partial_ = true;
                                 }
                             }
+                            // `comptime const op func (i32, i32) i32 = add`. A cast stays rejected.
+                            const bool name_init = var.is_comptime && var.is_const_decl &&
+                                                   std::holds_alternative<Expr::Name>(var.init->data);
+                            AllowComptimeFn allow{allow_comptime_fn_, name_init};
                             check_against(*var.init, type);
                             init_allow_partial_ = false;
                             init_new_partial_ = saved_new;

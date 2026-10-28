@@ -50,11 +50,23 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 if (symbol->is_function && !direct_callee_) {
+                    bool comptime_fn = false;
                     for (const FnList &list : symbol->lists) {
-                        if (list.decl != nullptr && (list.decl->is_comptime || list.decl->is_macro)) {
+                        if (list.decl != nullptr && list.decl->is_macro) {
                             error(node.loc, "not supported yet");
                             return type_invalid();
                         }
+                        if (list.decl != nullptr && list.decl->is_comptime) {
+                            comptime_fn = true;
+                        }
+                    }
+                    // The specialized copy calls this function. A direct call is still a fold.
+                    if (comptime_fn && !allow_comptime_fn_) {
+                        error(node.loc, "not supported yet");
+                        return type_invalid();
+                    }
+                    if (comptime_fn) {
+                        node.runtime_body = true;
                     }
                 }
                 if (symbol->is_function && !symbol->is_local_function && !direct_callee_) {

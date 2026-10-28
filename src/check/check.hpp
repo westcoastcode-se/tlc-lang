@@ -346,6 +346,21 @@ class Checker {
     bool variadic_function_ = false;
     // The callee of a call is being checked. That callee is a name, a function expression, or a selector.
     bool direct_callee_ = false;
+    // A bare comptime func may be a comptime function argument or a `comptime const` initializer.
+    // A `var`, a cast, a tuple element, and a macro stay rejected.
+    bool allow_comptime_fn_ = false;
+    struct AllowComptimeFn {
+        bool &flag;
+        bool saved;
+        explicit AllowComptimeFn(bool &slot, bool enable) : flag(slot), saved(slot) {
+            if (enable) {
+                flag = true;
+            }
+        }
+        ~AllowComptimeFn() { flag = saved; }
+        AllowComptimeFn(const AllowComptimeFn &) = delete;
+        AllowComptimeFn &operator=(const AllowComptimeFn &) = delete;
+    };
     // `unsafe` expressions and the body of an `unsafe func`. Nested functions do not inherit it.
     int unsafe_depth_ = 0;
     int loop_depth_ = 0;

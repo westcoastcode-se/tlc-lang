@@ -113,6 +113,8 @@ struct Expr {
     struct Name {
         SourceLoc loc{};
         std::string text;
+        // A specialized copy calls this comptime func. A direct call still folds.
+        mutable bool runtime_body = false;
     };
     struct Int {
         SourceLoc loc{};

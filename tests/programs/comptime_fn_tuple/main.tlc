@@ -1,0 +1,12 @@
+comptime func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+func take(p comptime (func (i32, i32) i32, i32), n i32) i32 {
+    return (p[0])(n, 2) + p[1];
+}
+
+func main() i32 {
+    var n = 40;
+    return take((add, 1), n);
+}
