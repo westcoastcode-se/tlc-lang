@@ -415,61 +415,62 @@ bool Checker::switch_case_matches(const SwitchFrame &frame, const Type &got) con
     return frame.c_enum && frame.subject.kind == TypeKind::Enum && same_type(got, frame.subject);
 }
 
-std::optional<int> Checker::fold_condition(const Expr &expr) {
-    // `const n = 1` then `comptime if (n == 1)`. `fold_int` does not see that name.
-    // `var n const i32` has an initializer and is still not this condition.
-    const auto runtime = [&](const auto &self, const Expr &node, int depth) -> std::optional<int> {
-        if (depth > 32) {
-            return std::nullopt;
-        }
-        if (const std::optional<int> folded = fold_int(node)) {
-            return folded;
-        }
-        return std::visit(
-            [&](const auto &item) -> std::optional<int> {
-                using T = std::decay_t<decltype(item)>;
-                if constexpr (std::is_same_v<T, Expr::Name>) {
-                    const Symbol *symbol = lookup(item.text);
-                    if (symbol == nullptr || !symbol->runtime_const || symbol->promote_init == nullptr ||
-                        !plain_int_constant(symbol->type)) {
-                        return std::nullopt;
-                    }
-                    return self(self, *symbol->promote_init, depth + 1);
-                } else if constexpr (std::is_same_v<T, Expr::Unary>) {
-                    if (item.postfix || item.expr == nullptr) {
-                        return std::nullopt;
-                    }
-                    const std::optional<int> inner = self(self, *item.expr, depth + 1);
-                    if (!inner) {
-                        return std::nullopt;
-                    }
-                    switch (item.op) {
-                    case TokenKind::Plus: return *inner;
-                    case TokenKind::Minus:
-                        return static_cast<int>(static_cast<uint32_t>(-static_cast<int64_t>(*inner)));
-                    case TokenKind::Tilde: return static_cast<int>(~static_cast<uint32_t>(*inner));
-                    default: return std::nullopt;
-                    }
-                } else if constexpr (std::is_same_v<T, Expr::Binary>) {
-                    if (item.lhs == nullptr || item.rhs == nullptr) {
-                        return std::nullopt;
-                    }
-                    const std::optional<int> lhs = self(self, *item.lhs, depth + 1);
-                    const std::optional<int> rhs = self(self, *item.rhs, depth + 1);
-                    if (!lhs || !rhs) {
-                        return std::nullopt;
-                    }
-                    return eval_int_op(item.op, *lhs, *rhs);
-                } else {
-                    return std::nullopt;
-                }
-            },
-            node.data);
-    };
+std::optional<int> Checker::fold_runtime_const(const Expr &expr, int depth) {
+    // `const n = 1` then `comptime switch (n)` and `comptime if (n == 1)`.
+    // `var n const i32` has an initializer and is still not this value.
+    if (depth > 32) {
+        return std::nullopt;
+    }
     if (const std::optional<int> folded = fold_int(expr)) {
         return folded;
     }
-    if (const std::optional<int> folded = runtime(runtime, expr, 0)) {
+    return std::visit(
+        [&](const auto &item) -> std::optional<int> {
+            using T = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<T, Expr::Name>) {
+                const Symbol *symbol = lookup(item.text);
+                if (symbol == nullptr || !symbol->runtime_const || symbol->promote_init == nullptr ||
+                    !plain_int_constant(symbol->type)) {
+                    return std::nullopt;
+                }
+                return fold_runtime_const(*symbol->promote_init, depth + 1);
+            } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (item.postfix || item.expr == nullptr) {
+                    return std::nullopt;
+                }
+                const std::optional<int> inner = fold_runtime_const(*item.expr, depth + 1);
+                if (!inner) {
+                    return std::nullopt;
+                }
+                switch (item.op) {
+                case TokenKind::Plus: return *inner;
+                case TokenKind::Minus:
+                    return static_cast<int>(static_cast<uint32_t>(-static_cast<int64_t>(*inner)));
+                case TokenKind::Tilde: return static_cast<int>(~static_cast<uint32_t>(*inner));
+                default: return std::nullopt;
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if (item.lhs == nullptr || item.rhs == nullptr) {
+                    return std::nullopt;
+                }
+                const std::optional<int> lhs = fold_runtime_const(*item.lhs, depth + 1);
+                const std::optional<int> rhs = fold_runtime_const(*item.rhs, depth + 1);
+                if (!lhs || !rhs) {
+                    return std::nullopt;
+                }
+                return eval_int_op(item.op, *lhs, *rhs);
+            } else {
+                return std::nullopt;
+            }
+        },
+        expr.data);
+}
+
+std::optional<int> Checker::fold_condition(const Expr &expr) {
+    if (const std::optional<int> folded = fold_int(expr)) {
+        return folded;
+    }
+    if (const std::optional<int> folded = fold_runtime_const(expr)) {
         return folded;
     }
     return std::visit(

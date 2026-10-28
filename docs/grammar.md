@@ -326,7 +326,9 @@ The other cases are not typechecked and not emitted.
 
 A value that is not comptime is `not supported yet`.
 
-A `var` and a local `const` do not fold.
+A `var` does not fold.
+
+A local `const` whose initializer folds to `i32` does.
 
 `comptime switch` in a `macro` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`.
 

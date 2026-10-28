@@ -1,0 +1,14 @@
+func main() i32 {
+    const n = 1;
+    var x i32 = 0;
+    comptime switch (n) {
+    case 1:
+        x = 2;
+    case 2:
+        x = x + 40;
+        break;
+    default:
+        return missing();
+    }
+    return x;
+}

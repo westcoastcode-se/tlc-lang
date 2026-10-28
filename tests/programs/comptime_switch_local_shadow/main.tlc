@@ -1,0 +1,11 @@
+comptime const n = 0;
+
+func main() i32 {
+    const n = 1;
+    comptime switch (n) {
+    case 1:
+        return 42;
+    default:
+        return 0;
+    }
+}

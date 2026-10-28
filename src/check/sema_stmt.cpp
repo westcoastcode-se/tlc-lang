@@ -928,7 +928,11 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         assign_ = saved_assign;
         cond_true_ = saved_true;
         cond_false_ = saved_false;
-        const std::optional<int> folded = fold_switch_case(*sw->cond);
+        std::optional<int> folded = fold_switch_case(*sw->cond);
+        // A local `const` is this value. `fold_switch_case` stays a case label.
+        if (!folded) {
+            folded = fold_runtime_const(*sw->cond);
+        }
         if (!folded) {
             error(sw->loc, "not supported yet");
             return;
@@ -1784,7 +1788,14 @@ void Checker::check_switch(const Stmt::Switch &node) {
     // An ordinary `switch` typechecks every case. `comptime switch` keeps one path when the value folds.
     // A macro never reaches this.
     if (node.comptime_switch) {
-        const std::optional<int> folded = legal && node.cond != nullptr ? fold_switch_case(*node.cond) : std::nullopt;
+        std::optional<int> folded;
+        if (legal && node.cond != nullptr) {
+            folded = fold_switch_case(*node.cond);
+            // A local `const` is this value. `fold_switch_case` stays a case label.
+            if (!folded) {
+                folded = fold_runtime_const(*node.cond);
+            }
+        }
         if (!folded) {
             // A `comptime` parameter is comptime. This copy still receives it, so every case stays.
             if (node.cond == nullptr || !comptime_value(*node.cond)) {

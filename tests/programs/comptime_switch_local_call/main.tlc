@@ -1,0 +1,11 @@
+func give() i32 { return 1; }
+
+func main() i32 {
+    const n = give();
+    comptime switch (n) {
+    case 1:
+        return 42;
+    default:
+        return 0;
+    }
+}

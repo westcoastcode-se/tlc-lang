@@ -761,6 +761,10 @@ class Checker {
     // A condition whose values are comptime, including an enumerator compare.
     // A local `const` whose initializer folds to `i32` does too. A `var` does not.
     std::optional<int> fold_condition(const Expr &expr);
+    // A local `const` whose initializer folds to `i32`, including `n + 1`.
+    // `fold_int` does not see that name. A `var` does not.
+    // A case label and a comptime argument do not use this.
+    std::optional<int> fold_runtime_const(const Expr &expr, int depth = 0);
     // True when every value is comptime, including a `comptime` parameter that this copy still receives.
     bool comptime_value(const Expr &expr);
     // `fold_int`, a `comptime const`, and a runtime `const` whose initializer folds.

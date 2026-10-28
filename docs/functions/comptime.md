@@ -199,13 +199,15 @@ An ordinary `switch` typechecks every case.
 
 A `var` does not fold for `comptime switch` or `comptime for`.
 
-A runtime `const` does not fold for `comptime switch` or `comptime for`.
+A local `const` whose initializer folds to `i32` is a `comptime switch` value.
+
+A runtime `const` does not fold for `comptime for`.
 
 In a [macro](macro.md), `comptime if` keeps one arm when the condition folds. A condition that does not fold is `not supported yet`. `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`. `comptime for` unrolls when the bounds fold. A bound that does not fold is `not supported yet`.
 
-A local `const` whose initializer folds to `i32` is a `comptime if` condition there.
+A local `const` whose initializer folds to `i32` is a `comptime if` condition and a `comptime switch` value there.
 
-`comptime switch` and `comptime for` do not fold that `const`.
+`comptime for` does not fold that `const`.
 
 In a macro, a plain `for` unrolls when the bounds fold and runs at run time when they do not. A plain `if` keeps one arm when the condition folds and runs at run time when it does not.
 

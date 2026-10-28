@@ -1,0 +1,8 @@
+func main() i32 {
+    const n = 1;
+    comptime switch (n) {
+    case 2:
+        return missing();
+    }
+    return 42;
+}

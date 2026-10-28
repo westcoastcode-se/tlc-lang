@@ -693,11 +693,11 @@ Inside a function, `const name = expr` is that same runtime binding.
 
 A local `comptime const` whose value folds to `i32` is an array length, a comptime argument, and a `comptime if` condition.
 
-A runtime `const` whose initializer folds to `i32` is a comptime argument and a `comptime if` condition.
+A runtime `const` whose initializer folds to `i32` is a comptime argument, a `comptime if` condition, and a `comptime switch` value.
 
 It is an array length when that value is non-negative.
 
-> **Warning:** That runtime `const` is not a `comptime switch` value, even when the initializer is a literal.
+> **Warning:** That runtime `const` is not a `comptime for` bound, even when the initializer is a literal.
 
 Promote it with `comptime const folded = name`.
 
@@ -716,6 +716,8 @@ It is not a compiler constant.
 `var n const i32 = 4` then `[n]i32` is `not supported yet`.
 
 `comptime if (n == 1)` is `not supported yet`.
+
+`comptime switch (n)` is `not supported yet`.
 
 Assigning the name is `type mismatch`.
 

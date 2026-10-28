@@ -101,7 +101,41 @@ A `comptime` parameter is comptime.
 
 The copy that still receives it typechecks every case.
 
-A `var` and a local `const` do not fold.
+A local `const` whose initializer folds to `i32` is that value.
+
+`const n = 1` then `case 1` returns 42.
+
+```c
+func main() i32 {
+    const n = 1;
+    comptime switch (n) {
+    case 1:
+        return 42;
+    default:
+        return 0;
+    }
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
+`const m = n + 1` is that sum.
+
+`const n i32 = 1` is that binding.
+
+`const n = -1` then `case -1` is those same two instructions.
+
+A local `const` hides a file-scope `const` of the same name.
+
+A `var` does not fold.
+
+`var n const i32` does not fold.
+
+An initializer that does not fold is `not supported yet`.
 
 `comptime switch` in a `macro` keeps the matching case and the statements that follow until `break` when the value folds. A value that does not fold is `not supported yet`.
 
@@ -137,6 +171,8 @@ retq                             # return
 The program returns 42.
 
 `default` is not in the function.
+
+A local `const n = 1` is those same instructions.
 
 ```c
 type Color enum {

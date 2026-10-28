@@ -182,6 +182,36 @@ movl -4(%rsp), %eax              # return x
 retq
 ```
 
+A local `const` whose initializer folds to `i32` is that value.
+
+`pick(&n, flag)` stores 40 when `flag` is `const flag = 1`.
+
+```c
+macro func pick(slot *i32, n i32) void {
+    comptime switch (n) {
+    case 1:
+        emit *slot = 40;
+        break;
+    default:
+        emit *slot = 2;
+    }
+}
+
+func main() i32 {
+    var n = 0;
+    const flag = 1;
+    pick(&n, flag);
+    return n;
+}
+```
+
+```asm
+main:
+movl $40, -4(%rsp)               # pick stores 40
+movl -4(%rsp), %eax              # return n
+retq
+```
+
 A value that does not fold is `not supported yet`. It emits nothing.
 
 `comptime for` unrolls when the bounds fold.
@@ -212,7 +242,9 @@ The other cases are not typechecked and not emitted.
 
 A value that is not comptime is `not supported yet`.
 
-A `var` and a local `const` do not fold for `comptime switch`.
+A local `const` whose initializer folds to `i32` is that value.
+
+A `var` does not fold.
 
 `pick(&n, 1)` then `add3(&n)`, from `n` at 0, stores 40 and then adds `1`, `2`, and `3`.
 
