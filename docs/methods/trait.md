@@ -512,15 +512,13 @@ retq                             # return
 
 A default method is a function written on the trait, with a body, outside the braces.
 
-`extern func Shape::twice` names that default in a tlc library.
+A bare `extern` and `extern(abi="tlc")` on that default are `not supported yet`.
 
 The default is copied onto each struct that gains it.
 
 Each copy is its own symbol, the same spelling an exported method on that struct uses, so the copy on `Rect` is `qualifier.Rect.twice`.
 
 A body defines that symbol.
-
-`extern(abi="tlc")` is the same declaration.
 
 `extern(abi="c")` and `extern(abi="c", name="symbol")` on that default are `extern(abi="c") on a trait or a generic`.
 
@@ -645,7 +643,7 @@ Without that `export`, the call is `area is not exported`.
 
 A method in the same package does not need `export`.
 
-`extern` and `extern(abi="tlc")` name that function in a tlc library.
+A bare `extern` and `extern(abi="tlc")` on that function are `not supported yet`.
 
 Each struct is its own symbol.
 
@@ -745,7 +743,7 @@ An integer parameter, a pack, several parameters, and `trait(Parent)` on that li
 
 Another package names `pkg.Seq[i32]`.
 
-`extern` and `extern(abi="tlc")` are accepted.
+A bare `extern` and `extern(abi="tlc")` on that trait are `not supported yet`.
 
 The trait has no size and no symbol.
 

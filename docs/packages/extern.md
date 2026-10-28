@@ -4,37 +4,15 @@
 
 `extern` names a symbol that a library defines.
 
-## A tlc library
+## Only `abi="c"`
 
-`extern` and `extern(abi="tlc")` name a symbol from a tlc library.
+A bare `extern` and `extern(abi="tlc")` are `not supported yet`.
 
-The symbol is `qualifier.name`.
+That includes a function, a method, a generic, a trait, a `const`, and a `type`.
 
-The calling convention is the compiler's own, so the function may return several results.
-
-A method uses that same rule.
-
-The symbol is `qualifier.Type.name`.
-
-The call is `value.name(...)` or `Type.name(...)` when the function has no receiver.
-
-A method on a generic struct is specialized with the struct.
-
-Each specialization is its own symbol.
-
-`extern(abi="c")` and `extern(abi="c", name="symbol")` on that method are `extern(abi="c") on a trait or a generic`.
+The compiler emits nothing for that declaration.
 
 `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`.
-
-A trait default is copied onto each struct that gains it.
-
-`extern func Shape::twice` names that copy.
-
-The call stays `s.twice()` or `r.twice()`.
-
-`extern(abi="c")` and `extern(abi="c", name="symbol")` on that default are `extern(abi="c") on a trait or a generic`.
-
-The rules are on [Methods](../methods/method.md).
 
 ## A C library
 
@@ -56,53 +34,21 @@ That includes a trait default, a generic function, a method template, and a meth
 
 That error is `extern(abi="c") on a trait or a generic`.
 
-`extern` and `extern(abi="tlc")` stay allowed on a trait default, on a method of a generic struct, on a generic function, and on a method template.
+A generic prototype with no body is `not supported yet`.
 
-Each specialization is its own symbol.
-
-The call stays `id(value)` or `id[i32](value)`.
-
-On a method template the call stays `value.id[i32](value)`.
-
-A body defines that symbol.
-
-On a function whose parameter is a trait, `extern` and `extern(abi="tlc")` name that specialization.
-
-The call stays `use(r)` or `value.paint(s)`.
-
-Each struct is its own symbol, such as `qualifier.use.spec.Rect` or `qualifier.Rect.paint.spec.Circle`.
-
-A body defines that symbol.
-
-A prototype may be the declaration that says `extern`.
-
-A call of a generic function prototype names that specialization, such as `qualifier.id.spec.i32`.
-
-A generic prototype that is not `extern` is `not supported yet`.
-
-A call of a method template prototype names that specialization, such as `qualifier.Point.id.spec.i32`.
-
-On a generic struct that symbol is `qualifier.Vec.spec.i32.get.spec.i32`.
-
-A method template prototype that is not `extern` is `not supported yet`.
+A method template prototype with no body is `not supported yet`.
 
 A comptime parameter on that prototype is `not supported yet`.
 
-A call that specializes a trait prototype with no body is `not supported yet`.
+`...` on a function that is not `extern(abi="c")` is `not supported yet`.
 
-`...` on that function is `not supported yet`.
+`export type Seq[T type] trait` publishes that trait.
 
-On a generic struct, and on a trait with no type parameter, `extern` and `extern(abi="tlc")` are `not supported yet`.
-
-`extern type Seq[T type] trait` and `extern(abi="tlc") type Seq[T type] trait` are accepted.
-
-That trait has no size and no symbol.
-
-`export` publishes it.
+It has no size and no symbol.
 
 Another package names `pkg.Seq[i32]`.
 
-The package `std/seq` declares that trait.
+The package `std/seq` declares that trait. The compiler treats `Seq` in that directory as the iteration trait.
 
 `export` publishes a function or an ordinary method whose parameter is a trait when the ABI is not C.
 
@@ -110,7 +56,7 @@ The package `std/seq` declares that trait.
 
 The C union is `extern(abi="c") type Name union { ... }`.
 
-`extern type Name union(Enum)` keeps the tag.
+A bare `extern type Name union(Enum)` is `not supported yet`. A tagged union without `extern` keeps the tag.
 
 Linking a program that uses `extern(abi="c")` requires a C library on the link line, either `-l` or a library file such as `libfoo.a`.
 
@@ -128,15 +74,11 @@ The arguments can be written in either order.
 
 `extern(name="real_add")` and `extern(abi="tlc", name="real_add")` are `name requires abi="c"`.
 
-A tlc library symbol is the compiler's name, `qualifier.name` or `qualifier.Type.name`.
-
 A variable uses the same rule: `extern(abi="c", name="errno")`.
 
 A file-scope constant uses that linkage too.
 
-`extern const n = 4` and `extern const Entity::next = 28` keep the folded value.
-
-The symbol is `qualifier.n` or `qualifier.Entity.next`.
+`extern const n = 4` and `extern(abi="tlc") const step = 3` are `not supported yet`.
 
 `extern(abi="c", name="limit") const n = 4` is the C name `limit`.
 
@@ -171,37 +113,14 @@ A larger struct is passed as a pointer.
 A function that is not `extern(abi="c")` keeps the compiler's own convention for struct values.
 
 ```c
-type Point struct {
-    x i32;
-    y i32;
-};
-
-extern(abi="tlc") func parts(p Point) (i32, i32) {
-    return p.x, p.y;
-}
+extern(abi="tlc") func parts(p Point) (i32, i32);
 
 func main() i32 {
-    var p Point;
-    p.x = 20;
-    p.y = 22;
-    a, b := parts(p);
-    return a + b;
+    return 0;
 }
 ```
 
-```asm
-main:
-# trace frame for the call, then the matching pop
-callq parts                      # call parts
-retq                             # return
-
-parts:
-movl %edi, -8(%rsp)              # move
-movl %esi, -4(%rsp)              # move
-movl -8(%rsp), %eax              # move
-movl -4(%rsp), %edx              # move
-retq                             # return
-```
+`extern(abi="tlc")` emits nothing. The diagnostic is `not supported yet`.
 
 ```c
 extern(abi="c") func printf(fmt *const u8, ...) i32;

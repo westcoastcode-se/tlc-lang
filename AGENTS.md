@@ -4,9 +4,19 @@
 
 The language is the reference in `docs`. `docs/grammar.md` is the syntax. A feature page is the meaning. `TODO.md` is the list of forms the compiler rejects on purpose. A spelling the grammar does not list is not part of the language, even when the parser recognizes a similar C form and then rejects it.
 
+## What the language is for
+
+`tlc` is a modern replacement for C. The syntax mixes Go and Zig, with a little extra care. It should be fast, and it should help the programmer avoid bugs and write efficient code.
+
+Question a language change against that before you implement it. A rule that copies, allocates, or hides a runtime lookup where a compile-time fact is enough works against the language. Say so, and wait. Do not add the mechanism because C, or another language, has it.
+
+`typeof` is one case. A type is a compile-time constant, so the value is a pointer to the type the compiler already built, `*const builtin.CompiledType`. Copying that type does no work the pointer does not do.
+
+There is no vtable. A trait is checked while compiling and then monomorphized. A closed set of cases is a checked enum or a tuple, not a table of function pointers looked up at run time.
+
 ## Before a language change
 
-Read the feature page and the matching section of `TODO.md`. Implement that behavior. Remove a `TODO.md` entry when the form works. Add an entry for a form you parsed and left rejected.
+Read the feature page and the matching section of `TODO.md`. Check the change against the section above. Implement that behavior. Remove a `TODO.md` entry when the form works. Add an entry for a form you parsed and left rejected.
 
 Ask before inventing syntax, a diagnostic, or a runtime rule that the reference and `TODO.md` do not already describe. Leave neighboring unsupported forms as they are.
 

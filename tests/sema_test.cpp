@@ -42,7 +42,7 @@ std::string check_std_seq(const std::string &body, bool iteration) {
     std::filesystem::create_directories(dir, ec);
     {
         std::ofstream out(dir / "seq.tlc");
-        out << "package seq;\n\nexport extern type Seq[T type] trait {\n" << body << "};\n";
+        out << "package seq;\n\nexport type Seq[T type] trait {\n" << body << "};\n";
     }
     {
         std::ofstream out(root / "main.tlc");
@@ -1074,7 +1074,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Point struct { x i32; };\n"
-            "extern func Point::get(self this) i32;\n"
+            "func Point::get(self this) i32;\n"
             "func main() i32 { var p Point; p.x = 1; return p.get(); }\n");
         EXPECT(check, errors.empty());
     }
@@ -1082,10 +1082,10 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Point struct { x i32; y i32; };\n"
-            "extern func Point::read(self this) i32;\n"
-            "extern func Point::read(self this) i32 { return self.x + self.y; }\n"
-            "extern func Point::origin() Point { return Point{.x = 20, .y = 22}; }\n"
-            "extern func Point::bump(self *this, n i32) void { self.x = self.x + n; }\n"
+            "func Point::read(self this) i32;\n"
+            "func Point::read(self this) i32 { return self.x + self.y; }\n"
+            "func Point::origin() Point { return Point{.x = 20, .y = 22}; }\n"
+            "func Point::bump(self *this, n i32) void { self.x = self.x + n; }\n"
             "func main() i32 {\n"
             "  var p = Point.origin();\n"
             "  p.bump(0);\n"
@@ -1141,7 +1141,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Text []const u8;\n"
-            "extern func Text::len(self this) i32 { return self.len; }\n"
+            "func Text::len(self this) i32 { return self.len; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT(check, errors.empty());
     }
@@ -1149,7 +1149,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Color enum { Red, Blue = 40 };\n"
-            "extern func Color::code(self this) i32 { return 2; }\n"
+            "func Color::code(self this) i32 { return 2; }\n"
             "func main() i32 { return Color.Blue.code(); }\n");
         EXPECT(check, errors.empty());
     }
@@ -1157,7 +1157,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Shape trait { func area() i32; };\n"
-            "extern func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
             "type Rect struct { w i32; h i32; };\n"
             "func Rect::area(self *this) i32 { return self.w * self.h; }\n"
             "func use(s *Shape) i32 { return s.twice(); }\n"
@@ -1170,13 +1170,13 @@ int run_sema_tests() {
             "type Shape trait { func area() i32; };\n"
             "extern(abi=\"tlc\") func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string errors = diagnose(
             "type Shape trait { func area() i32; };\n"
-            "export extern func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "export func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
             "func main() i32 { return 0; }\n");
         EXPECT(check, errors.empty());
     }
@@ -1403,7 +1403,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Shape trait { func area() i32; };\n"
-            "extern func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+            "func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
             "type Empty struct { n i32; };\n"
             "func main() i32 { var e Empty; return e.twice(); }\n");
         EXPECT_HAS(check, errors, "undeclared identifier");
@@ -1416,7 +1416,7 @@ int run_sema_tests() {
              "package math;\n"
              "export type Rect struct { export w i32; export h i32; };\n"
              "type Shape trait { func area() i32; };\n"
-             "extern func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
+             "func Shape::twice(self *this) i32 { return self.area() + self.area(); }\n"
              "export func Rect::area(self *this) i32 { return self.w * self.h; }\n"},
             {"main.tlc",
              "import \"math\";\n"
@@ -3405,7 +3405,7 @@ int run_sema_tests() {
             "export extern func take(s Shape) i32 { return 1; }\n"
             "export extern(abi=\"tlc\") func read(s Shape) i32 { return 1; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -4847,7 +4847,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Point struct { x i32; y i32; };\n"
-            "extern func parts(p Point) (i32, i32) { return p.x, p.y; }\n"
+            "func parts(p Point) (i32, i32) { return p.x, p.y; }\n"
             "func main() i32 {\n"
             "  var p Point;\n"
             "  p.x = 20;\n"
@@ -4972,12 +4972,12 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("extern type Handle struct {}\nfunc main() i32 { return sizeof(Handle); }\n");
+        const std::string errors = diagnose("type Handle struct {}\nfunc main() i32 { return sizeof(Handle); }\n");
         EXPECT(check, errors.empty());
     }
 
     {
-        const std::string errors = diagnose("extern type Num union { n i32; }\nfunc main() i32 { return sizeof(Num); }\n");
+        const std::string errors = diagnose("type Num union { n i32; }\nfunc main() i32 { return sizeof(Num); }\n");
         EXPECT(check, errors.empty());
     }
 
@@ -5095,7 +5095,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Kind enum { A }\n"
-            "extern type Plain union(Kind) { A struct { n i32; }; }\n"
+            "type Plain union(Kind) { A struct { n i32; }; }\n"
             "func main() i32 { return sizeof(Plain); }\n");
         EXPECT(check, errors.empty());
     }
@@ -5113,7 +5113,7 @@ int run_sema_tests() {
             "  point struct { inner Shape; };\n"
             "};\n"
             "extern(abi=\"c\") type Word union { item Shape; n i32; }\n"
-            "extern type Tlc struct { value Shape; }\n"
+            "type Tlc struct { value Shape; }\n"
             "type Plain struct { value Shape; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "extern(abi=\"c\") on a tagged union");
@@ -6122,7 +6122,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "extern var slot *i32;\n"
             "func main() i32 { return slot != null; }\n");
-        EXPECT_EQ(check, errors, "");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -7084,21 +7084,21 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "extern func id[T type](value T) T;\n"
             "func main() i32 { return 0; }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string errors = diagnose(
             "extern func id[T type](value T) T;\n"
             "func main() i32 { return id(1); }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string errors = diagnose(
             "extern(abi=\"tlc\") func add[T type](left T, right T) T;\n"
             "func main() i32 { return add[i32](20, 22); }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -7128,7 +7128,7 @@ int run_sema_tests() {
             "extern func pick[T type](value T) i32;\n"
             "extern func pick[T type](value T, extra i32) i32;\n"
             "func main() i32 { return pick(1) + pick(1, 2); }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -7142,7 +7142,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Point struct { x i32; };\n"
-            "extern func Point::id[T type](self this, value T) i32 { return 0; }\n"
+            "func Point::id[T type](self this, value T) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT(check, errors.empty());
     }
@@ -7152,7 +7152,7 @@ int run_sema_tests() {
             "type Point struct { x i32; };\n"
             "extern func Point::id[T type](self *this, value T) T;\n"
             "func main() i32 { var p Point; p.x = 1; return p.id[i32](1); }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -7160,7 +7160,7 @@ int run_sema_tests() {
             "type Point struct { x i32; };\n"
             "extern(abi=\"tlc\") func Point::add[T type](self *this, n T) i32;\n"
             "func main() i32 { var p Point; p.x = 1; return p.add[i32](1); }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -7168,7 +7168,7 @@ int run_sema_tests() {
             "type Vec[T type] struct { n T; };\n"
             "extern func Vec[T]::get[U type](value U) U;\n"
             "func main() i32 { return Vec[i32].get[i32](1); }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -7177,7 +7177,7 @@ int run_sema_tests() {
             "extern func Point::id[T type](self *this, value T) T;\n"
             "func Point::id[T type](self *this, value T) T { return value; }\n"
             "func main() i32 { var p Point; p.x = 1; return p.id[i32](1); }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -7200,7 +7200,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Shape trait { func area() i32; };\n"
-            "extern func measure(s Shape) i32 { return s.area(); }\n"
+            "func measure(s Shape) i32 { return s.area(); }\n"
             "func main() i32 { return 0; }\n");
         EXPECT(check, errors.empty());
     }
@@ -7586,13 +7586,13 @@ int run_sema_tests() {
             "type Vec[T type] struct { n T; };\n"
             "extern func Vec[T]::from() i32;\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_EQ(check, errors, "");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string errors = diagnose(
             "type Vec[T type] struct { n T; };\n"
-            "extern func Vec[T]::get(self this) T { return self.n; }\n"
+            "func Vec[T]::get(self this) T { return self.n; }\n"
             "func main() i32 {\n"
             "  var v Vec[i32];\n"
             "  v.n = 40;\n"
@@ -9121,7 +9121,7 @@ int run_sema_tests() {
             "type Box[T type] struct { value T; };\n"
             "extern const Box[T]::extra = 8;\n"
             "func main() i32 { return limit + Entity.next + step + Box[i32].extra; }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {

@@ -25,7 +25,7 @@ type Hold struct {
     n i32;
 }
 
-extern type Plain struct {}
+type Plain struct {}
 
 func main() i32 {
     var e Empty;

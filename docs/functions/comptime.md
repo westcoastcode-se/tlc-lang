@@ -261,7 +261,7 @@ A function nested in another function does not take an enumerator.
 
 A local `const` whose initializer folds to `i32` is the same specialization as that integer.
 
-A `var` is `type mismatch`, except on `extern` and `extern(abi="tlc")`.
+A `var` is `type mismatch`.
 
 A function nested in another function still passes the constant.
 
@@ -270,8 +270,6 @@ Using the function as a value is `not supported yet`.
 More than 32 nested specializations are `not supported yet`.
 
 A struct, a float, an alias, a function, and a tuple are comptime arguments.
-
-An `extern` function used as a value is the unspecialized function.
 
 ```c
 func add(n comptime i32) i32 {
@@ -1407,25 +1405,9 @@ retq                             # return
 
 The call passes `1` and does not pass `order`.
 
-## Extern keeps the unspecialized function
+## Extern does not keep an unspecialized function
 
-`extern` and `extern(abi="tlc")` keep the unspecialized function.
-
-The comptime parameter is an argument of that symbol.
-
-A dynamic linker can call that symbol.
-
-When the file is `main.tlc`, the symbol is `main.scale`.
-
-A constant argument uses the specialized copy.
-
-A runtime argument uses `main.scale`.
-
-A use of the function as a value uses `main.scale` too.
-
-`extern` is the same declaration as `extern(abi="tlc")`.
-
-`extern(abi="c")` passes the constant.
+A bare `extern` and `extern(abi="tlc")` on that function are `not supported yet`.
 
 ```c
 extern(abi="tlc") func scale(n comptime i32, x i32) i32 {
@@ -1433,29 +1415,13 @@ extern(abi="tlc") func scale(n comptime i32, x i32) i32 {
 }
 
 func main() i32 {
-    var x = 40;
-    return scale(2, x);
+    return 0;
 }
 ```
 
-```asm
-scale.spec.2:
-movl %edi, -4(%rsp)              # move
-movl -4(%rsp), %eax              # move
-addl $2, %eax                    # add
-retq                             # return
+That declaration emits nothing.
 
-scale:
-movl %edi, -8(%rsp)              # move
-movl %esi, -4(%rsp)              # move
-movl -4(%rsp), %eax              # move
-addl -8(%rsp), %eax              # add
-retq                             # return
-```
-
-`return scale(2, x)` calls `main.scale.spec.2` and passes `x`.
-
-`main.scale` adds its two arguments.
+`extern(abi="c")` passes the constant and is not specialized.
 
 ## A compile-time string
 

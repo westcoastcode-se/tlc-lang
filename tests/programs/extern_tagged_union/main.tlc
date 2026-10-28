@@ -3,7 +3,7 @@ type Kind enum {
     B,
 };
 
-extern type Shape union(Kind) {
+type Shape union(Kind) {
     A struct { n i32; };
     B struct { n i32; };
 };

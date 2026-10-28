@@ -981,7 +981,7 @@ bool Checker::as_trait_cast(const std::string &package, const std::string &name,
             }
             return same_type(bound, got);
         };
-        const bool iteration_value = templ->is_extern && package_is_iteration(owner) &&
+        const bool iteration_value = templ->name == "Seq" && package_is_iteration(owner) &&
                                      ((source.kind == TypeKind::Array && source.element != nullptr) ||
                                       (source.kind == TypeKind::Pointer && source.decayed_len > 0 && source.pointee != nullptr));
         if (iteration_value) {

@@ -548,8 +548,8 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "extern func add(a i32, b i32) i32;\n"
             "extern(other) func nope() i32;\n");
-        EXPECT_HAS(check, parsed.dump, "(fn add (params (a i32) (b i32)) i32 extern\n");
-        EXPECT(check, parsed.dump.find("extern(abi=\"c\")") == std::string::npos);
+        EXPECT_HAS(check, parsed.dump, "(fn add (params (a i32) (b i32)) i32\n");
+        EXPECT(check, parsed.dump.find("extern") == std::string::npos);
         EXPECT_HAS(check, parsed.errors, "not supported yet");
     }
 
@@ -559,8 +559,9 @@ int run_parser_tests() {
             "type Pair struct(align=16) { a i32; b i32; }\n"
             "type Bad struct(align=3) { n i32; }\n");
         EXPECT(check, parsed.errors.find("type mismatch") != std::string::npos);
-        EXPECT_HAS(check, parsed.dump, "(fn add (params (a i32) (b i32)) i32 extern\n");
-        EXPECT(check, parsed.dump.find("abi=") == std::string::npos);
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.dump, "(fn add (params (a i32) (b i32)) i32\n");
+        EXPECT(check, parsed.dump.find("extern") == std::string::npos);
         EXPECT_HAS(check, parsed.dump, "(struct Pair align 16\n");
     }
 
@@ -573,7 +574,8 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.errors, "name requires abi=\"c\"");
         EXPECT_HAS(check, parsed.dump, "(fn print (params (fmt const u8*) ...) i32 extern(abi=\"c\", name=\"printf\")\n");
         EXPECT_HAS(check, parsed.dump, "(fn show (params (fmt const u8*) ...) i32 extern(abi=\"c\", name=\"printf\")\n");
-        EXPECT_HAS(check, parsed.dump, "(fn add (params (a i32) (b i32)) i32 extern(name=\"other.add\")\n");
+        EXPECT_HAS(check, parsed.dump, "(fn add (params (a i32) (b i32)) i32\n");
+        EXPECT(check, parsed.dump.find("extern(name=") == std::string::npos);
         EXPECT_HAS(check, parsed.dump, "(var last_error i32 extern(abi=\"c\", name=\"errno\"))\n");
     }
 
@@ -583,11 +585,11 @@ int run_parser_tests() {
             "extern const Entity::next = 15;\n"
             "extern(abi=\"c\", name=\"mark\") const flag = 7;\n"
             "extern(abi=\"tlc\") const step = 3;\n");
-        EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(var limit := (int 4) extern)\n");
-        EXPECT_HAS(check, parsed.dump, "(var Entity::next := (int 15) extern)\n");
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.dump, "(var limit := (int 4))\n");
+        EXPECT_HAS(check, parsed.dump, "(var Entity::next := (int 15))\n");
         EXPECT_HAS(check, parsed.dump, "(var flag := (int 7) extern(abi=\"c\", name=\"mark\"))\n");
-        EXPECT_HAS(check, parsed.dump, "(var step := (int 3) extern)\n");
+        EXPECT_HAS(check, parsed.dump, "(var step := (int 3))\n");
     }
 
     {
@@ -598,7 +600,7 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source("extern(name=\"a\", name=\"b\") func clash() i32;\n");
         EXPECT_HAS(check, parsed.errors, "redefinition");
-        EXPECT_HAS(check, parsed.dump, "extern(name=\"a\")\n");
+        EXPECT(check, parsed.dump.find("extern(name=") == std::string::npos);
     }
 
     {
@@ -609,8 +611,9 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source("extern(name=\"Handle\") type Handle struct { n i32; }\n");
         EXPECT_HAS(check, parsed.errors, "name requires abi=\"c\"");
-        EXPECT_HAS(check, parsed.dump, "(struct Handle extern\n");
-        EXPECT(check, parsed.dump.find("name=") == std::string::npos);
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.dump, "(struct Handle\n");
+        EXPECT(check, parsed.dump.find("extern") == std::string::npos);
     }
 
     {
@@ -735,11 +738,12 @@ int run_parser_tests() {
             "type Plain union { n i32; }\n"
             "extern type Tlc union { n i32; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
         EXPECT_HAS(check, parsed.dump, "(union Num extern(abi=\"c\")\n");
         EXPECT_HAS(check, parsed.dump, "(field n i32)\n");
         EXPECT_HAS(check, parsed.dump, "(union Plain\n");
-        EXPECT_HAS(check, parsed.dump, "(union Tlc extern\n");
+        EXPECT_HAS(check, parsed.dump, "(union Tlc\n");
+        EXPECT(check, parsed.dump.find("(union Tlc extern") == std::string::npos);
     }
 
     {
@@ -757,7 +761,7 @@ int run_parser_tests() {
             "extern type Plain union(ShapeType) { Circle Circle; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "extern(abi=\"c\") on a tagged union");
-        EXPECT(check, parsed.errors.find("not supported yet") == std::string::npos);
+        EXPECT_HAS(check, parsed.errors, "not supported yet");
         EXPECT_HAS(check, parsed.dump, "(union Shape ShapeType\n");
         EXPECT_HAS(check, parsed.dump, "(field Circle struct\n");
         EXPECT_HAS(check, parsed.dump, "(field radius f32)\n");
@@ -770,7 +774,8 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(cast ShapeType (name s))");
         EXPECT(check, parsed.dump.find("(struct Shape.") == std::string::npos);
         EXPECT(check, parsed.dump.find("(union Ext") == std::string::npos);
-        EXPECT_HAS(check, parsed.dump, "(union Plain ShapeType extern\n");
+        EXPECT_HAS(check, parsed.dump, "(union Plain ShapeType\n");
+        EXPECT(check, parsed.dump.find("(union Plain ShapeType extern") == std::string::npos);
     }
 
     {

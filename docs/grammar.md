@@ -96,21 +96,17 @@ Another package reads and assigns `pkg.Entity.next` or `pkg.Box[i32].extra`.
 
 `Entity::name := expr` is `expected a declaration`.
 
-`extern` and `extern(abi="tlc")` on a file-scope `const` or `const Type::name` name `qualifier.name` or `qualifier.Type.name`.
+A bare `extern` and `extern(abi="tlc")` on a file-scope `const` or `const Type::name` are `not supported yet`.
 
 `extern(abi="c")` names the C symbol.
 
-A use still folds.
+A use of an `extern(abi="c")` constant still folds.
 
 `extern` on `var name = expr` or `name := expr` is reported as `not supported yet`.
 
-`extern` may be followed by `(abi="c")` or `(abi="tlc")`.
-
-A bare `extern` means `abi="tlc"`.
+`extern` is `extern(abi="c")`. A bare `extern` and `extern(abi="tlc")` are `not supported yet`.
 
 `extern(abi="c")` names a C library symbol and is linked only together with a C library (`-l` or a library file).
-
-`extern(abi="tlc")` names a tlc library symbol.
 
 `extern(abi="c", name="symbol")` sets the C object symbol and leaves the identifier in the program unchanged.
 
@@ -422,7 +418,7 @@ A function nested in another function does not take an enumerator.
 
 A function nested in another function still passes a folded constant.
 
-`extern` and `extern(abi="tlc")` keep the unspecialized function.
+A bare `extern` and `extern(abi="tlc")` on that function are `not supported yet`. `var f = scale` stays `not supported yet`.
 
 That symbol passes the comptime parameter.
 
@@ -844,7 +840,9 @@ A `var` is `type mismatch`.
 
 `extern(abi="c")` on `type Name[T] struct` is reported as `extern(abi="c") on a trait or a generic`.
 
-`extern` and `extern(abi="tlc")` on a generic function name that function in a tlc library.
+A bare `extern` and `extern(abi="tlc")` on a generic function are `not supported yet`.
+
+A generic function with a body is specialized at the call.
 
 The call stays `id(value)` or `id[i32](value)`.
 
@@ -852,11 +850,7 @@ Each specialization is its own symbol.
 
 A body defines that symbol.
 
-A prototype may be the declaration that says `extern`.
-
-A call of that prototype names the specialization.
-
-A generic prototype that is not `extern` is reported as `not supported yet`.
+A generic prototype with no body is `not supported yet`.
 
 A comptime parameter on that prototype is reported as `not supported yet`.
 
@@ -1256,7 +1250,7 @@ An integer parameter, a pack, several parameters, and `trait(Parent)` on that li
 
 Another package names `pkg.Seq[i32]` after `import`.
 
-`extern` and `extern(abi="tlc")` are accepted on that trait.
+A bare `extern` and `extern(abi="tlc")` on that trait are `not supported yet`.
 
 The trait has no size and no symbol.
 
@@ -1266,7 +1260,7 @@ A result `Seq[i32]`, `var s Seq[i32]`, an array, a slice, and a field of the tra
 
 `import "std/seq"` names the iteration trait in `lib/tlc/std/seq`.
 
-The compiler reads `len` and `at` from the `extern` trait `Seq` in that directory.
+The compiler reads `len` and `at` from the trait `Seq` in that directory.
 
 `seq.Seq[T]` and `*seq.Seq[T]` check those two methods.
 
@@ -1316,15 +1310,15 @@ Otherwise the call is `area is not exported`.
 
 `extern(abi="c")` on that function is `extern(abi="c") on a trait or a generic`.
 
-A tlc `extern` names that specialization.
+A bare `extern` and `extern(abi="tlc")` on that function are `not supported yet`.
+
+A function with a body is specialized at the call.
 
 The call stays `use(r)` or `value.paint(s)`.
 
 Each struct is its own symbol.
 
 A body defines that symbol.
-
-A prototype may be the declaration that says `extern`.
 
 A call that specializes a prototype with no body is `not supported yet`.
 

@@ -1010,8 +1010,7 @@ inline bool comptime_param_template(const FunctionDecl &fn) {
     return compile && runtime;
 }
 
-// `extern` and `extern(abi="tlc")` keep the unspecialized function for a dynamic linker.
-// A comptime argument still uses the specialized copy.
+// A non-C `extern` is not parsed. `extern(abi="c")` is not a template, so this is false.
 inline bool comptime_param_kept(const FunctionDecl &fn) {
     return fn.is_extern && comptime_param_template(fn);
 }
@@ -1029,7 +1028,7 @@ struct TraitDecl {
     std::string name;
     // `export` publishes the template. Another package names `pkg.Seq[i32]`.
     bool exported = false;
-    // `extern` or `extern(abi="tlc")`. The trait has no symbol. `extern(abi="c")` is rejected.
+    // Unused. A trait is not an `extern(abi="c")` type.
     bool is_extern = false;
     // `type Seq[T type] trait`. Empty on `type Shape trait`. One `name type` parameter.
     std::vector<TypeParam> type_params;

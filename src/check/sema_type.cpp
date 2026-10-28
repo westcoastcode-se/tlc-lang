@@ -232,7 +232,7 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
             }
             // The methods mention `T`. They are typed when a use specializes the trait.
             trait_templates_[file_id][item->name] = item;
-            if (item->is_extern && package_is_iteration(file_id)) {
+            if (item->name == "Seq" && package_is_iteration(file_id)) {
                 reject_iteration_extras(*item);
             }
             continue;

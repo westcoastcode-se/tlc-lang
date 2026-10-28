@@ -3,7 +3,7 @@ type Num union {
     m i32;
 };
 
-extern type Wide union {
+type Wide union {
     n i32;
     raw [8]u8;
 };

@@ -255,7 +255,7 @@ std::string Parser::parse_enum_underlying() {
 }
 
 void Parser::reject_tlc_link_name(bool extern_c, const std::string &link_name, SourceLoc name_loc) {
-    // `name=` chooses a C object symbol. A tlc library name belongs to the compiler.
+    // `name=` chooses a C object symbol. It requires `abi="c"`.
     if (link_name.empty() || extern_c) {
         return;
     }
@@ -263,11 +263,16 @@ void Parser::reject_tlc_link_name(bool extern_c, const std::string &link_name, S
 }
 
 bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name, SourceLoc &name_loc) {
-    if (!eat(TokenKind::KwExtern)) {
+    if (!check(TokenKind::KwExtern)) {
         return false;
     }
-    is_extern = true;
+    const SourceLoc extern_loc = peek().loc;
+    ++pos_;
+    is_extern = false;
+    extern_c = false;
+    // A bare `extern` was `abi="tlc"`. Only `extern(abi="c")` is a library declaration.
     if (!eat(TokenKind::LParen)) {
+        diags_.error(extern_loc, "not supported yet");
         return true;
     }
     // A later `extern` in the same specifier list must keep a name already stored.
@@ -313,8 +318,6 @@ bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name
                     if (!duplicate && is_abi) {
                         if (peek().text == "c") {
                             extern_c = true;
-                        } else if (peek().text == "tlc") {
-                            extern_c = false;
                         } else {
                             diags_.error(peek().loc, "not supported yet");
                         }
@@ -346,6 +349,12 @@ bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name
         error_here("expected 'abi'");
     }
     expect(TokenKind::RParen, "expected ')'");
+    // `extern(name=...)` has no abi. `extern(abi="tlc")` was reported on that string.
+    if (extern_c) {
+        is_extern = true;
+    } else if (!saw_abi && any) {
+        diags_.error(extern_loc, "not supported yet");
+    }
     return true;
 }
 

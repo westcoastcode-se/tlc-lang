@@ -48,9 +48,7 @@ Without `export`, the name is reported as `next is not exported`.
 
 An unexported type is reported as `Entity is not exported`.
 
-`extern const n = 4` and `extern const Entity::next = 28` are file scope.
-
-`extern` and `extern(abi="tlc")` name `qualifier.n` or `qualifier.Entity.next`.
+`extern const n = 4` and `extern(abi="tlc") const Entity::next = 28` are `not supported yet`.
 
 `extern(abi="c")` keeps the C name.
 

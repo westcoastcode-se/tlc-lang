@@ -92,113 +92,17 @@ A prototype that is not `extern` is `not supported yet`.
 
 ## extern on a method template
 
-`extern func Point::id[T type]` names that method template in a tlc library.
-
-The call stays `value.id[i32](value)`.
-
-Each specialization is its own symbol, such as `qualifier.Point.id.spec.i32`.
-
-A body defines that symbol.
-
-A prototype may be the declaration that says `extern`.
-
-The body that follows defines it.
-
-A call of that prototype names the same specialization.
+A bare `extern` and `extern(abi="tlc")` on a method template are `not supported yet`.
 
 ```c
-type Point struct {
-    x i32;
-};
-
 extern func Point::id[T type](self *this, value T) T;
 
 func main() i32 {
-    var p Point;
-    return p.id[i32](1);
+    return 0;
 }
 ```
 
-```asm
-main:
-# trace frame for the call, then the matching pop
-leaq 16(%rsp), %rdi              # address
-movl $1, %esi                    # constant
-callq main.Point.id.spec.i32     # call id
-retq                             # return
-```
-
-`p.id[i32](1)` calls `main.Point.id.spec.i32`.
-
-This object does not define that symbol.
-
-Another tlc object does.
-
-`extern(abi="tlc")` uses that same name.
-
-```c
-type Point struct {
-    x i32;
-};
-
-extern(abi="tlc") func Point::add[T type](self *this, n T) i32;
-
-func main() i32 {
-    var p Point;
-    p.x = 20;
-    return p.add[i32](22);
-}
-```
-
-```asm
-main:
-movl $20, 16(%rsp)               # constant
-# trace frame for the call, then the matching pop
-leaq 16(%rsp), %rdi              # address
-movl $22, %esi                   # constant
-callq main.Point.add.spec.i32    # call add
-retq                             # return
-```
-
-`p.add[i32](22)` calls `main.Point.add.spec.i32`.
-
-The address of `p` is the first argument.
-
-On a generic struct, `extern func Vec[T]::get[U type]` is that template.
-
-The call is `Vec[i32].get[i32](value)`.
-
-When the file is `main.tlc`, the symbol is `main.Vec.spec.i32.get.spec.i32`.
-
-```c
-type Vec[T type] struct {
-    n T;
-};
-
-extern func Vec[T]::get[U type](value U) U;
-
-func main() i32 {
-    return Vec[i32].get[i32](1);
-}
-```
-
-```asm
-main:
-# trace frame for the call, then the matching pop
-movl $1, %edi                    # constant
-callq main.Vec.spec.i32.get.spec.i32 # call get
-retq                             # return
-```
-
-`Vec[i32].get[i32](1)` calls `main.Vec.spec.i32.get.spec.i32`.
-
-A static call passes no receiver.
-
-`export extern func Point::id[T type]` in package `math` calls `math.Point.id.spec.i32`.
-
-`extern func Point::measure[T Shape]` is that template when `T` is constrained.
-
-The call is `value.measure[Rect](r)`.
+That declaration emits nothing.
 
 `extern(abi="c")` and `extern(abi="c", name="symbol")` on that template are `extern(abi="c") on a trait or a generic`.
 

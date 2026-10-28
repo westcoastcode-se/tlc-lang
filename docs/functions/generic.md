@@ -717,66 +717,19 @@ The receiver is not one of those parameters.
 
 `extern(abi="c")` on a function whose parameter is a trait is `extern(abi="c") on a trait or a generic`.
 
-`extern` and `extern(abi="tlc")` on a generic function name that function in a tlc library.
-
-The call stays `id(value)` or `id[i32](value)`.
-
-Each specialization is its own symbol.
-
-When the file is `main.tlc` and `T` is `i32`, that symbol is `main.id.spec.i32`.
-
-A body defines the symbol.
-
-A prototype may be the declaration that says `extern`.
-
-The body that follows defines it.
-
-A call of that prototype names the same specialization.
+A bare `extern` and `extern(abi="tlc")` on a generic function are `not supported yet`.
 
 ```c
 extern func id[T type](value T) T;
 
 func main() i32 {
-    return id(1);
+    return 0;
 }
 ```
 
-```asm
-main:
-# trace frame for the call, then the matching pop
-movl $1, %edi                    # constant
-callq main.id.spec.i32           # call id
-retq                             # return
-```
+That declaration emits nothing.
 
-`id(1)` calls `main.id.spec.i32`.
-
-This object does not define that symbol.
-
-Another tlc object does.
-
-`extern(abi="tlc")` uses that same name.
-
-```c
-extern(abi="tlc") func add[T type](left T, right T) T;
-
-func main() i32 {
-    return add[i32](20, 22);
-}
-```
-
-```asm
-main:
-# trace frame for the call, then the matching pop
-movl $20, %edi                   # constant
-movl $22, %esi                   # constant
-callq main.add.spec.i32          # call add
-retq                             # return
-```
-
-`add[i32](20, 22)` calls `main.add.spec.i32`.
-
-A generic prototype that is not `extern` is `not supported yet`.
+A generic prototype with no body is `not supported yet`.
 
 `func id[T type](value T) T` then `id(1)` is that error.
 

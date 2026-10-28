@@ -309,39 +309,25 @@ A prototype with no body is `not supported yet`.
 
 ### A method template
 
-`extern func Point::id[T type]` names a method template.
-
-The call stays `p.id[i32](value)`.
-
-Each specialization is its own symbol, such as `qualifier.Point.id.spec.i32`.
-
-A body defines that symbol.
+A bare `extern` and `extern(abi="tlc")` on a method template are `not supported yet`.
 
 `extern(abi="c")` on that template is `extern(abi="c") on a trait or a generic`.
 
 `extern(name="symbol")` is `name requires abi="c"`.
 
-A prototype may be the declaration that says `extern`.
-
-A call of that prototype names the same specialization.
-
-A prototype that is not `extern` is `not supported yet`.
+A prototype with no body is `not supported yet`.
 
 A comptime parameter on that prototype is `not supported yet`.
 
 ### A trait parameter
 
-`extern func Rect::paint(self *this, s Shape)` names a method whose parameter is a trait.
+A bare `extern` and `extern(abi="tlc")` on `func Rect::paint(self *this, s Shape)` are `not supported yet`.
 
 The call stays `value.paint(s)`.
 
 Each struct is its own symbol, such as `qualifier.Rect.paint.spec.Circle`.
 
 A body defines that symbol.
-
-A prototype may say `extern`.
-
-The body that follows defines it.
 
 A call of a prototype with no body is `not supported yet`.
 
@@ -353,11 +339,11 @@ type Point struct {
     y i32;
 };
 
-extern func Point::read(self this) i32 {
+func Point::read(self this) i32 {
     return self.x + self.y;
 }
 
-extern func Point::origin() Point {
+func Point::origin() Point {
     return Point{.x = 20, .y = 22};
 }
 

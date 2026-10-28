@@ -1,1 +1,1 @@
-exit: 42
+compile-error: not supported yet

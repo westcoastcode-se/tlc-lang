@@ -10,7 +10,7 @@ This page describes the `Seq` trait and how arrays and slices satisfy it.
 
 The package declares `seq.Seq[T]` and `ptr_of[T]`.
 
-The compiler treats the `extern` trait `Seq` in that directory as the iteration trait.
+The compiler treats the trait `Seq` in that directory as the iteration trait.
 
 It reads `len` and `at` from that declaration.
 

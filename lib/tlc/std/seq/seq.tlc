@@ -1,6 +1,6 @@
 package seq;
 
-export extern type Seq[T type] trait {
+export type Seq[T type] trait {
     func len() i32;
     func at(i i32) T;
 };

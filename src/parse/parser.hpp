@@ -135,9 +135,10 @@ class Parser {
     bool is_type_keyword(TokenKind kind) const;
 
     Specifiers parse_specifiers(bool file_scope, bool allow_const = false, bool type_only = false);
-    // `extern` is `abi="tlc"`. `extern(abi="c")` is a C library. `name="symbol"` is a C object symbol.
+    // `extern(abi="c")` is a C library. `name="symbol"` is a C object symbol.
+    // A bare `extern` and `extern(abi="tlc")` are `not supported yet`.
     bool take_extern(bool &is_extern, bool &extern_c, std::string &link_name, SourceLoc &name_loc);
-    // `name=` with `abi="tlc"`, or with no `abi`, is `name requires abi="c"`.
+    // `name=` without `abi="c"` is `name requires abi="c"`.
     void reject_tlc_link_name(bool extern_c, const std::string &link_name, SourceLoc name_loc);
     int parse_struct_align();
     // `enum(i32)`. Empty means `int` when the caller saw no parentheses.

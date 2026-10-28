@@ -12,9 +12,9 @@ Each parameter list of one name is a separate object when there are several list
 
 A name with one list stays `qualifier.name`.
 
-`extern` and `extern(abi="tlc")` use that name and are linked from a tlc library.
+A bare `extern` and `extern(abi="tlc")` are `not supported yet`.
 
-A generic function is specialized per call, so `extern` names that specialization, such as `qualifier.id.spec.i32`.
+`extern(abi="c")` uses the C name, or `name="symbol"`.
 
 ## Comptime arguments
 
@@ -28,13 +28,9 @@ A generic function adds it after the type pieces, such as `qualifier.id.spec.i32
 
 Two comptime parameters follow in parameter order, such as `qualifier.rmw_at.spec.i32.spec.1.0` when the operation is `1` and the order is `0`.
 
-`extern` and `extern(abi="tlc")` also keep `qualifier.scale`.
+A bare `extern` and `extern(abi="tlc")` do not keep an unspecialized `qualifier.scale`.
 
-That symbol passes the comptime parameter.
-
-The compiler calls the copy when the argument is a constant.
-
-It calls `qualifier.scale` when the argument is a runtime value or the function is used as a value.
+That spelling is `not supported yet`.
 
 ## Tuples
 

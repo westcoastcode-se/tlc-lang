@@ -6,7 +6,7 @@ func Point::id[T type](value T) T {
     return value;
 }
 
-extern func Point::add[T type](value T) T {
+func Point::add[T type](value T) T {
     return value;
 }
 
