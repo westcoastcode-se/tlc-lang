@@ -59,6 +59,53 @@ retq                             # return
 
 The program returns 42.
 
+`op func (i32, i32) i32 = add` is that value for a function pointer. `var box Box` stores `add`. `box.op(40, 2)` calls it. Naming the field replaces the pointer. `{0...}` stores null.
+
+`p *i32 = &n` is `global initializer is not a constant`. A call is that same diagnostic.
+
+```c
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+type Box struct {
+    op func (i32, i32) i32 = add;
+};
+
+func main() i32 {
+    var box Box;
+    return box.op(40, 2);
+}
+```
+
+```asm
+main:
+subq $40, %rsp                   # allocate
+leaq 197(%rip), %rax             # address of add
+movq %rax, 32(%rsp)              # op = add
+movq 32(%rsp), %rax              # move
+movq %rax, 16(%rsp)              # move
+# trace frame for the call, then the matching pop
+movq 16(%rsp), %rax              # op
+movl $40, %edi                   # constant
+movl $2, %esi                    # constant
+callq *%rax                      # call box.op
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # move
+addq $40, %rsp                   # release
+retq                             # return
+
+main.add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
+The program returns 42.
+
 A field of an inline union payload uses that same value, as in `n i32 = 1` inside `union(Enum)`. An untagged union field uses it too, as in `n i32 = 4`. A union with no initializer does not choose an arm.
 
 A value on a trait field is reported as `not supported yet`. A field ends with `;`. The semicolon after `}` may be omitted.

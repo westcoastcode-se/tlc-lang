@@ -1301,7 +1301,10 @@ bool Checker::constant_slice_expr(const Expr &expr, std::unordered_set<std::stri
 
 void Checker::check_field_default(const Expr &expr, const Type &type, SourceLoc loc) {
     // `const p *i32 = &n` is not a constant. Null is the pointer this evaluator folds.
-    if (type.kind == TypeKind::Pointer && !std::holds_alternative<Expr::Nullptr>(expr.data)) {
+    // `op func (i32, i32) i32 = add` names a function. That pointer is a constant.
+    const bool function_pointer =
+        type.kind == TypeKind::Pointer && type.pointee != nullptr && type.pointee->kind == TypeKind::Function;
+    if (type.kind == TypeKind::Pointer && !function_pointer && !std::holds_alternative<Expr::Nullptr>(expr.data)) {
         error(loc, "global initializer is not a constant");
         return;
     }

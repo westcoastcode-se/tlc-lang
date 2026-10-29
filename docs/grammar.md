@@ -1116,6 +1116,12 @@ Naming the field replaces the tuple. `{0...}` stores 0.
 
 `pair (T, i32) = (40, 2)` on `type Box[T type] struct` is that value for `Box[i32]`.
 
+`op func (i32, i32) i32 = add` is that value for a function pointer.
+
+`var box Box` stores `add`.
+
+`p *i32 = &n` is reported as `global initializer is not a constant`.
+
 A short list leaves the elements it does not name uninitialized.
 
 `0...` stores 0 in those elements.

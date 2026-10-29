@@ -1,0 +1,9 @@
+var n i32 = 1;
+
+type Box struct {
+    p *i32 = &n;
+};
+
+func main() i32 {
+    return 0;
+}
