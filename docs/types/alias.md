@@ -134,7 +134,34 @@ A cast confirms the type: `Name[i32](42)` and `i32(n)`. `var n Name[i32] = 42` a
 
 `export type MyAlias[T type] Vec[T]` publishes it. Another package names `pkg.MyAlias[i32]`. Without `export` the name is `MyAlias is not exported`.
 
-A trait is `not supported yet`. A value parameter, such as `type MyAlias[N i32] Buf[N]`, is `not supported yet`. A use of the alias as its own target is `not supported yet`.
+A trait is `not supported yet`. A use of the alias as its own target is `not supported yet`.
+
+`type MyAlias[N i32] Buf[N]` is an alias of that specialization. `MyAlias[4]` is a different type from `Buf[4]` and from `MyAlias[8]`. Assigning one to the other is `type mismatch`.
+
+```c
+type Buf[N i32] struct {
+    n i32;
+    raw [N]u8;
+};
+
+type MyAlias[N i32] Buf[N];
+
+func main() i32 {
+    var a MyAlias[4];
+    a.n = 38;
+    return a.n + a.raw.len;
+}
+```
+
+```asm
+main:
+movl $38, -8(%rsp)               # a.n = 38
+movl -8(%rsp), %eax              # move
+addl $4, %eax                    # add raw.len
+retq                             # return
+```
+
+The program returns 42. `raw` is `[4]u8`. `a.n` is the field of `Buf[4]`.
 
 ```c
 type Vec[T type] struct {

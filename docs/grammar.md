@@ -1530,6 +1530,10 @@ A tuple does not convert to a slice, so `row[0:2]` on `[N]Duo` or `[N][M]Duo` is
 
 `MyAlias[i32]` is a different type from `Vec[i32]` and from `MyAlias[u8]`.
 
+`type MyAlias[N i32] Buf[N]` is an alias of that specialization.
+
+`MyAlias[4]` is a different type from `Buf[4]` and from `MyAlias[8]`.
+
 `type MyAlias[T type] pkg.Vec[T]` names an exported type.
 
 `type Name[T type] (i32)` is `unused parameter`.

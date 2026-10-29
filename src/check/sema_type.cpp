@@ -1945,8 +1945,8 @@ void Checker::register_tuple_alias_template(const TypedefDecl &item) {
         error(item.loc, "not supported yet");
         return;
     }
-    // A value parameter or a trait constraint is not this alias.
-    // `type MyAlias[T type] Vec[T]` names another generic type. `type Name[T type] T` names the parameter.
+    // `type MyAlias[T type] Vec[T]` and `type MyAlias[N i32] Buf[N]` name another generic type.
+    // `type Name[T type] T` names the parameter. A trait constraint is not this alias.
     // A pointer and a bare name that is not a parameter are not this alias.
     const bool application = !item.is_tuple && !item.type_args.empty() && !item.type_name.empty() &&
                              item.indirections == 0 && !item.is_array && item.shells.empty() && !item.is_fn_ptr;
@@ -1964,7 +1964,8 @@ void Checker::register_tuple_alias_template(const TypedefDecl &item) {
         return;
     }
     for (const TypeParam &param : item.type_params) {
-        if (!param.is_type || param.is_value || param.is_trait || param.is_pack) {
+        // `N i32` is only a type application, `Buf[N]`. A trait constraint stays rejected.
+        if (param.is_pack || param.is_trait || (!param.is_type && !param.is_value) || (param.is_value && !application)) {
             error(item.loc, "not supported yet");
             return;
         }

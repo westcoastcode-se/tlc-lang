@@ -1,0 +1,13 @@
+type Buf[N i32] struct {
+    n i32;
+    raw [N]u8;
+};
+
+type MyAlias[N i32] Buf[N];
+
+func main() i32 {
+    var a MyAlias[4];
+    var b Buf[4];
+    a = b;
+    return 0;
+}
