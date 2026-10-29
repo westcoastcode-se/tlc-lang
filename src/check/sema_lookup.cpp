@@ -339,7 +339,8 @@ Type Checker::type_of_param(const Param &param) {
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete) {
     if (slot.is_tuple) {
-        Type type = type_of_written_tuple(slot.tuple_parts, slot.indirections, slot.is_array, slot.shells, loc);
+        // The written tuple has no star. `*T` when `T` is a tuple adds the pointer after.
+        Type type = type_of_written_tuple(slot.tuple_parts, 0, slot.is_array, slot.shells, loc);
         if (type.kind == TypeKind::Tuple) {
             for (const Type &part : type.results) {
                 if (part.kind == TypeKind::Void) {
@@ -347,6 +348,9 @@ Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_i
                     break;
                 }
             }
+        }
+        if (slot.indirections != 0 && type.kind == TypeKind::Tuple) {
+            type = with_indirections(std::move(type), slot.indirections, loc, slot.optional, slot.const_pointee);
         }
         return type;
     }

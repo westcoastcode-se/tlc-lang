@@ -846,7 +846,11 @@ The call is `main.id.spec.tuple.i32.i32`.
 
 `(*value)[0]` is 40.
 
-A result `*T`, when `T` is a tuple, is reported as `not supported yet`.
+`func id[T type](value *T) *T` returns that pointer.
+
+`var p = id(&row)` then `(*p)[0]` is 40.
+
+The call is `main.id.spec.tuple.i32.i32`.
 
 The same parameter on `func Point::take[P1 type, P2 type]` and `func Vec[T]::take[P1 type, P2 type]` is that tuple.
 

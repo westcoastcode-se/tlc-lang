@@ -156,7 +156,8 @@ CodeGen::Lowered CodeGen::lower_param(const FunctionDecl &fn, std::size_t index)
 
 llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector<int> &spec) const {
     const bool many = fn.results.size() > 1;
-    const bool one_tuple = !many && fn.results.size() == 1 && fn.results.front().is_tuple;
+    const bool one_tuple = !many && fn.results.size() == 1 && fn.results.front().is_tuple &&
+                           fn.results.front().indirections == 0;
     const bool returns_void =
         !many && fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty();
     const bool result_slice = !many && !one_tuple && fn.results.size() == 1 && fn.results.front().is_array &&

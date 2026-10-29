@@ -1515,7 +1515,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
             return lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
                                slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results);
         }
-        if (fn.results.size() == 1 && fn.results.front().is_tuple) {
+        if (fn.results.size() == 1 && fn.results.front().is_tuple && fn.results.front().indirections == 0) {
             return lower_tuple_parts(file, fn.results.front().tuple_parts);
         }
         if (fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty()) {

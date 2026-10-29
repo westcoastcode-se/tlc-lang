@@ -804,9 +804,18 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         return slot;
     };
     if (inst->getType()->isStructTy() && call.decl != nullptr && call.decl->results.size() == 1 &&
-        call.decl->results.front().is_tuple) {
+        call.decl->results.front().is_tuple && call.decl->results.front().indirections == 0) {
         result.is_tuple = true;
         result.tuple_parts = call.decl->results.front().tuple_parts;
+    }
+    // `id(&row)` returns `*T`. The pointer addresses that tuple.
+    if (call.decl != nullptr && call.decl->results.size() == 1 && result.value != nullptr &&
+        result.value->getType()->isPointerTy()) {
+        const ResultSlot &slot = call.decl->results.front();
+        if (slot.is_tuple && slot.indirections > 0) {
+            result.depth = slot.indirections;
+            result.tuple_parts = slot.tuple_parts;
+        }
     }
     // An indirect call has no declaration. One tuple result is that one entry.
     if (!result.is_tuple && inst->getType()->isStructTy() && call.fn_results.size() == 1 &&

@@ -155,7 +155,7 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
         }
     }
     auto lowered = [&]() {
-        if (fn.results.size() == 1 && fn.results.front().is_tuple) {
+        if (fn.results.size() == 1 && fn.results.front().is_tuple && fn.results.front().indirections == 0) {
             return lower_tuple_parts(file, fn.results.front().tuple_parts);
         }
         if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {

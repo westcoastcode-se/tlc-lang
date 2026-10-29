@@ -708,7 +708,50 @@ The call is `main.id.spec.tuple.i32.i32`.
 
 `(*value)[0][0]` is 40 and `(*value)[1]` is 1.
 
-A result `*T`, when `T` is a tuple, is `not supported yet`.
+`func id[T type](value *T) *T` returns that pointer.
+
+`var p = id(&row)` then `(*p)[0]` is 40 and `(*p)[1]` is 2.
+
+The call is `main.id.spec.tuple.i32.i32`.
+
+```c
+func id[T type](value *T) *T {
+    return value;
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var p = id(&row);
+    return (*p)[0] + (*p)[1];
+}
+```
+
+```asm
+main.id.spec.tuple.i32.i32:
+movq %rdi, -8(%rsp)              # value
+movq -8(%rsp), %rax              # value
+retq                             # return
+
+main:
+subq $40, %rsp                   # allocate
+movl $2, 28(%rsp)                # row[1] = 2
+movl $40, 24(%rsp)               # row[0] = 40
+# trace frame for the call, then the matching pop
+leaq 24(%rsp), %rdi              # &row
+callq main.id.spec.tuple.i32.i32 # call id
+movq %rax, %rcx                  # move
+movq %rcx, 8(%rsp)               # move
+movq 8(%rsp), %rax               # p
+movq %rax, 32(%rsp)              # p
+movq 32(%rsp), %rcx              # p
+movl (%rcx), %eax                # (*p)[0]
+movl 4(%rcx), %ecx               # (*p)[1]
+addl %ecx, %eax                  # add
+addq $40, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
 
 `type Pair (i32, i32)` then a parameter `*Pair` does not accept `&row` when `row` is `(i32, i32)`.
 

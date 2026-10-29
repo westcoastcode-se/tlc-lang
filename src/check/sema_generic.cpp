@@ -1916,7 +1916,9 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
         return;
     }
     // `(T, i32)` when `T` is `(i32, i32)`. The element becomes that tuple.
-    if (slot.type_package.empty() && slot.indirections == 0 && !slot.is_array && slot.type_args.empty()) {
+    // `*T` keeps the star. The result is a pointer to that tuple.
+    if (slot.type_package.empty() && !slot.is_array && slot.type_args.empty() && slot.shells.empty() &&
+        slot.optional == 0 && slot.const_pointee == 0 && (slot.indirections == 0 || slot.indirections == 1)) {
         if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
             if (bound->parts.empty()) {
                 error(loc, "not supported yet");
