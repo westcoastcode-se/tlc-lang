@@ -501,8 +501,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (base.kind == TypeKind::Tuple) {
                         // `t[0] = 1` stores one element. The index is a constant.
-                        // A temporary has no place to store into.
-                        if (index->base == nullptr || !std::holds_alternative<Expr::Name>(index->base->data)) {
+                        // `(*p)[0] = 1` stores through that pointer. A temporary has no place.
+                        if (index->base == nullptr || !lvalue_form(*index->base)) {
                             error(node.loc, "not an lvalue");
                             check_expr(*node.rhs, true);
                             return type_invalid();

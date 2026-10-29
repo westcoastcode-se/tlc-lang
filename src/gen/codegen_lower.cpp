@@ -115,7 +115,14 @@ bool CodeGen::is_struct_value(const Lowered &low) const {
 
 CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) const {
     if (slot.is_tuple) {
-        return lower_tuple_parts(file, slot.tuple_parts);
+        Lowered low = lower_tuple_parts(file, slot.tuple_parts);
+        // `*T` when `T` is a tuple. The slot holds the address, and the parts are the tuple.
+        if (slot.indirections > 0) {
+            low.depth = slot.indirections;
+            low.type = ptr_type();
+            low.is_tuple = false;
+        }
+        return low;
     }
     // A slice is `array_len < 0`. A sized array keeps its length. Zero is not an array.
     const bool array = slot.is_array && !slot.is_fn_ptr && slot.array_len != 0;
@@ -907,7 +914,7 @@ CodeGen::Lowered CodeGen::lower_tuple_parts(uint32_t file, const std::vector<Res
     for (const ResultSlot &slot : parts) {
         // One result of several may itself be a tuple. `lower` has no parts for that slot.
         const Lowered part =
-            slot.is_tuple ? lower_tuple_parts(file, slot.tuple_parts)
+            slot.is_tuple ? lower_result(file, slot)
             : slot.is_fn_ptr
                 ? lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
                               slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,

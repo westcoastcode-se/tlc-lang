@@ -1,0 +1,9 @@
+func take[T type](p (*T, i32)) i32 {
+    var q = p[0];
+    return (*q)[0] + (*p[0])[1] + p[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    return take((&row, 1));
+}

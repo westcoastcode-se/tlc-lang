@@ -226,6 +226,8 @@ The compiler reports a different count as `type mismatch`.
 
 `var row = (40, 2)` then `var p = &row` and `(*p)[0]` reads 40.
 
+`(*p)[0] = 1` stores that element in `row`.
+
 The index is a constant.
 
 `const i = 0` then `value[i]` reads that same element, and `value[i] = 1` stores it.

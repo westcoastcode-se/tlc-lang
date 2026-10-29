@@ -846,6 +846,10 @@ The call is `main.id.spec.tuple.i32.i32`.
 
 `(*value)[0]` is 40.
 
+`func take[T type](p (*T, i32))` of `(&row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+`(*p[0])[0]` is 40.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

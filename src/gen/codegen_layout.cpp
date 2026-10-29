@@ -285,15 +285,23 @@ void CodeGen::prepare_structs() {
             body.reserve(item->fields.size());
             bool union_took_init = false;
             for (const FieldDecl &field : item->fields) {
-                const Lowered low =
-                    field.is_tuple
-                        ? lower_tuple_parts(file, field.tuple_parts)
-                        : field.is_fn_ptr ? lower_fnptr(file, field.type_name, field.type_package, field.is_struct,
-                                                        field.is_enum, field.ret_indirections, field.indirections,
-                                                        field.fn_params, field.fn_variadic, field.fn_results)
-                                         : lower(file, field.type_name, field.type_package, field.is_struct,
-                                                 field.indirections, field.is_array, field.array_len, false,
-                                                 field.elem_slice, field.shells);
+                Lowered low;
+                if (field.is_tuple) {
+                    low = lower_tuple_parts(file, field.tuple_parts);
+                    // `p *T` when `T` is a tuple. The field stores the address.
+                    if (field.indirections > 0) {
+                        low.depth = field.indirections;
+                        low.type = ptr_type();
+                        low.is_tuple = false;
+                    }
+                } else if (field.is_fn_ptr) {
+                    low = lower_fnptr(file, field.type_name, field.type_package, field.is_struct, field.is_enum,
+                                      field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
+                                      field.fn_results);
+                } else {
+                    low = lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
+                                field.is_array, field.array_len, false, field.elem_slice, field.shells);
+                }
                 FieldLayout slot;
                 slot.name = field.name;
                 slot.type = stored_type(low);

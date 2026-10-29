@@ -878,10 +878,18 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             slot = &binding->tuple_parts[index];
                         }
                     }
-                    if (slot != nullptr && slot->is_tuple) {
+                    if (slot != nullptr && slot->is_tuple && slot->indirections == 0) {
                         TypedValue loaded;
                         loaded.value = extracted;
                         loaded.is_tuple = true;
+                        loaded.tuple_parts = slot->tuple_parts;
+                        return loaded;
+                    }
+                    // `p[0]` when the element is `*T` and `T` is a tuple. The bits are that pointer.
+                    if (slot != nullptr && slot->is_tuple && slot->indirections > 0) {
+                        TypedValue loaded;
+                        loaded.value = extracted;
+                        loaded.depth = slot->indirections;
                         loaded.tuple_parts = slot->tuple_parts;
                         return loaded;
                     }

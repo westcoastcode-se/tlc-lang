@@ -55,6 +55,15 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             error(star->loc, "not an lvalue");
             return {};
         }
+        // `(*p)[0] = 1` stores into the tuple. The pointer is that address.
+        if (!pointer_shell && inner.depth == 1 && !inner.tuple_parts.empty() && !inner.ptr_to_array &&
+            inner.value->getType()->isPointerTy()) {
+            TypedValue addr;
+            addr.value = inner.value;
+            addr.is_tuple = true;
+            addr.tuple_parts = inner.tuple_parts;
+            return addr;
+        }
         if (pointer_shell) {
             TypedValue peeled = inner;
             peeled.shells.erase(peeled.shells.begin());
