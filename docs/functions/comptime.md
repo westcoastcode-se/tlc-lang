@@ -656,7 +656,7 @@ The compiler does not pass the parameter, and `p[0][1]` is the immediate `2`.
 
 `null` and an element that is not constant are `type mismatch`.
 
-A type parameter does not match a tuple inside a tuple.
+`func id[T type](value T)` of `((40, 2), 1)` calls `main.id.spec.tuple.tuple.i32.i32.i32.spec.t_t_40_2_1` and does not pass the tuple.
 
 A function nested in another function passes the tuple and does not specialize.
 

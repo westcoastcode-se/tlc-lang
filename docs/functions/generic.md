@@ -696,7 +696,9 @@ An instance method used as a value is `type mismatch`.
 
 That value may be an integer, a struct with several fields, or a tuple of several types.
 
-A tuple inside a tuple does not match `T`.
+`func id[T type](value T) T` of `((40, 2), 1)` binds `T` to that tuple.
+
+`*T`, when `T` is a tuple, is `not supported yet`.
 
 `take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
@@ -745,6 +747,71 @@ movl %eax, %ecx                  # move
 movl %ecx, 8(%rsp)               # move
 movl 8(%rsp), %eax               # move
 addq $40, %rsp                   # release
+retq                             # return
+```
+
+The program returns 41.
+
+`id(row)`, when `row` is `((40, 2), 1)`, calls `main.id.spec.tuple.tuple.i32.i32.i32` and passes the three integers.
+
+`id(((40, 2), 1))` calls `main.id.spec.tuple.tuple.i32.i32.i32.spec.t_t_40_2_1` and does not pass the tuple. That copy returns 41.
+
+```c
+func id[T type](value T) T {
+    return value;
+}
+
+func main() i32 {
+    var row = ((40, 2), 1);
+    var got = id(row);
+    return got[0][0] + got[1];
+}
+```
+
+```asm
+main.id.spec.tuple.tuple.i32.i32.i32:
+movl %edi, -16(%rsp)             # value[0][0]
+movl %esi, -12(%rsp)             # value[0][1]
+movl %edx, -8(%rsp)              # value[1]
+movl -16(%rsp), %eax             # value[0][0]
+movl -12(%rsp), %edx             # value[0][1]
+movl -8(%rsp), %ecx              # value[1]
+retq                             # return
+
+main:
+subq $72, %rsp                   # allocate
+movl $1, 48(%rsp)                # row[1] = 1
+movl $2, 44(%rsp)                # row[0][1] = 2
+movl $40, 40(%rsp)               # row[0][0] = 40
+movl 48(%rsp), %eax              # row[1]
+movl %eax, 20(%rsp)              # move
+movl 40(%rsp), %eax              # row[0][0]
+movl %eax, 24(%rsp)              # move
+movl 44(%rsp), %eax              # row[0][1]
+movl %eax, 28(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 20(%rsp), %edx              # row[1]
+movl 28(%rsp), %esi              # row[0][1]
+movl 24(%rsp), %edi              # row[0][0]
+callq main.id.spec.tuple.tuple.i32.i32.i32 # call id
+movl %eax, %esi                  # move
+movl %esi, 4(%rsp)               # move
+movl %ecx, %esi                  # move
+movl 4(%rsp), %ecx               # move
+movl %esi, 8(%rsp)               # move
+movl %edx, 12(%rsp)              # move
+movl %ecx, 16(%rsp)              # move
+movl 8(%rsp), %eax               # move
+movl 12(%rsp), %ecx              # move
+movl 16(%rsp), %edx              # move
+movl %edx, 56(%rsp)              # got[0][0]
+movl %ecx, 60(%rsp)              # got[0][1]
+movl %eax, 64(%rsp)              # got[1]
+movl 56(%rsp), %eax              # got[0][0]
+movl 60(%rsp), %ecx              # move
+movl 64(%rsp), %ecx              # got[1]
+addl %ecx, %eax                  # add
+addq $72, %rsp                   # release
 retq                             # return
 ```
 

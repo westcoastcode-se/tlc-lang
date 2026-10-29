@@ -1400,7 +1400,7 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
         out.enum_id = cursor->enum_id;
         return true;
     case TypeKind::Tuple: {
-        // `T` is the whole tuple. A pointer to a tuple, or a tuple inside a tuple, stays rejected.
+        // `T` is the whole tuple. A pointer to a tuple stays rejected. An element may itself be a tuple.
         if (depth != 0 || out.is_array || cursor->results.empty()) {
             return false;
         }
@@ -1408,7 +1408,7 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
         parts.reserve(cursor->results.size());
         for (const Type &part : cursor->results) {
             SpecArg spelled;
-            if (part.kind == TypeKind::Tuple || !spell_type(part, spelled) || spelled.is_pack) {
+            if (!spell_type(part, spelled)) {
                 return false;
             }
             parts.push_back(std::move(spelled));

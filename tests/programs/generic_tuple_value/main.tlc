@@ -1,0 +1,14 @@
+func id[T type](value T) T {
+    return value;
+}
+
+func main() i32 {
+    var flat = (40, 2);
+    var row = ((40, 2), 1);
+    var one = id(flat);
+    var got = id(row);
+    if (one[0] + one[1] != 42 || got[0][0] != 40 || got[0][1] != 2 || got[1] != 1) {
+        return 1;
+    }
+    return got[0][0] + got[1];
+}

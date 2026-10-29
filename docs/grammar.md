@@ -836,7 +836,11 @@ The call is `main.take.spec.tuple.i32.i32`.
 
 `p[0][0]` is `40` and `p[1]` is `1`.
 
-A tuple inside a tuple still does not match a bare `T`.
+`func id[T type](value T) T` of `((40, 2), 1)` binds `T` to that tuple.
+
+The call of a `var` is `main.id.spec.tuple.tuple.i32.i32.i32`.
+
+`*T`, when `T` is a tuple, is reported as `not supported yet`.
 
 The same parameter on `func Point::take[P1 type, P2 type]` and `func Vec[T]::take[P1 type, P2 type]` is that tuple.
 
