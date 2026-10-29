@@ -619,14 +619,32 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         const_cast<PackageGraph *>(graph_)->struct_specs.push_back(StructSpecNote{owner, spec_name});
     }
     // `One struct { value T; }` is not a concrete struct until `T` is known.
+    // `data union { n T; m T; }` keeps the union from `Box.data`. The bare name still says `T`.
+    const auto source_decl = [&](const std::string &source) -> const StructDecl * {
+        if (source.empty()) {
+            return nullptr;
+        }
+        const PackageNode *node = find_node(owner);
+        if (node == nullptr) {
+            return nullptr;
+        }
+        for (const TopDecl &decl : node->unit.decls) {
+            const auto *item = std::get_if<StructDecl>(&decl.data);
+            if (item != nullptr && item->name == source) {
+                return item;
+            }
+        }
+        return nullptr;
+    };
     const auto materialize_inline = [&](auto &&self, const std::string &name, std::vector<FieldDecl> fields,
-                                        SourceLoc loc) -> int {
+                                        SourceLoc loc, const std::string &source) -> int {
         if (const int existing = find_tag(file_id_, name); existing >= 0) {
             return existing;
         }
+        const StructDecl *origin = source_decl(source);
         for (FieldDecl &field : fields) {
             if (!field.inline_fields.empty()) {
-                const int child = self(self, name + "." + field.name, field.inline_fields, field.loc);
+                const int child = self(self, name + "." + field.name, field.inline_fields, field.loc, field.type_name);
                 field.type_name = child < 0 ? "invalid" : structs_[static_cast<std::size_t>(child)].name;
                 field.type_package.clear();
                 field.type_args.clear();
@@ -651,6 +669,15 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         inline_info.file_id = owner;
         inline_info.loc = loc;
         inline_info.anonymous = true;
+        if (origin != nullptr) {
+            inline_info.is_union = origin->is_union;
+            inline_info.tag_name = origin->tag_name;
+            inline_info.tag_package = origin->tag_package;
+            inline_info.extern_c = origin->extern_c;
+            inline_info.is_extern = origin->is_extern;
+            inline_info.exported = origin->exported;
+            inline_info.align = origin->align;
+        }
         structs_.push_back(std::move(inline_info));
         tags_[owner][name] = inline_id;
         if (graph_ != nullptr) {
@@ -677,14 +704,72 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                 field_type.is_const = true;
             }
             StructInfo::Field stored{field.name, std::move(field_type), field.loc, field.exported};
+            const bool as_union = origin != nullptr && origin->is_union;
+            const bool tagged = as_union && !origin->tag_name.empty();
+            if (field.init != nullptr && as_union) {
+                // A tagged arm is not a field value. An untagged union keeps one value.
+                bool prior = false;
+                for (const StructInfo::Field &have : structs_[static_cast<std::size_t>(inline_id)].fields) {
+                    if (have.has_init) {
+                        prior = true;
+                        break;
+                    }
+                }
+                if (tagged || prior) {
+                    error(field.loc, "not supported yet");
+                } else {
+                    stored.has_init = true;
+                    stored.init = field.init.get();
+                }
+            }
             structs_[static_cast<std::size_t>(inline_id)].fields.push_back(std::move(stored));
         }
         structs_[static_cast<std::size_t>(inline_id)].complete = true;
+        if (origin != nullptr && origin->is_union) {
+            bind_union_tag(structs_[static_cast<std::size_t>(inline_id)]);
+            if (origin->tag_name.empty()) {
+                std::vector<Scope> saved_scopes = std::move(scopes_);
+                scopes_.clear();
+                push();
+                if (const auto found = statics_.find(owner); found != statics_.end()) {
+                    for (const auto &[static_name, symbol] : found->second) {
+                        scopes_.back().symbols.emplace(static_name, symbol);
+                    }
+                }
+                for (const FieldDecl &field : fields) {
+                    if (field.init == nullptr) {
+                        continue;
+                    }
+                    const StructInfo::Field *slot = nullptr;
+                    for (const StructInfo::Field &have : structs_[static_cast<std::size_t>(inline_id)].fields) {
+                        if (have.name == field.name) {
+                            slot = &have;
+                            break;
+                        }
+                    }
+                    if (slot == nullptr || !slot->has_init || slot->type.kind == TypeKind::Invalid) {
+                        continue;
+                    }
+                    check_field_default(*field.init, slot->type, field.loc);
+                }
+                pop();
+                scopes_ = std::move(saved_scopes);
+            }
+        }
         StructDecl arm;
         arm.loc = loc;
         arm.name = name;
         arm.anonymous = true;
-        arm.union_payload = true;
+        arm.union_payload = origin == nullptr || origin->union_payload;
+        if (origin != nullptr) {
+            arm.is_union = origin->is_union;
+            arm.tag_name = origin->tag_name;
+            arm.tag_package = origin->tag_package;
+            arm.extern_c = origin->extern_c;
+            arm.is_extern = origin->is_extern;
+            arm.exported = origin->exported;
+            arm.align = origin->align;
+        }
         arm.fields = std::move(fields);
         PendingAppend appended;
         appended.file_id = owner;
@@ -697,7 +782,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             continue;
         }
         const int child = materialize_inline(materialize_inline, spec_name + "." + field.name, field.inline_fields,
-                                             field.loc);
+                                             field.loc, field.type_name);
         field.type_name = child < 0 ? "invalid" : structs_[static_cast<std::size_t>(child)].name;
         field.type_package.clear();
         field.type_args.clear();

@@ -1,0 +1,11 @@
+type Box[T type] struct {
+    data union {
+        n T = 4;
+        m T = 5;
+    };
+};
+
+func main() i32 {
+    var box Box[i32];
+    return box.data.n;
+}

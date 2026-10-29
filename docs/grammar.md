@@ -1148,6 +1148,12 @@ It is also `data export union { n i32; m i32; }` or `export data union { n i32; 
 
 `value union(Kind) { A struct { n i32; }; B struct { n i32; }; }` is that field when the union is tagged.
 
+`type Box[T type] struct` may hold `data union { n T; m T; }`.
+
+`n` and `m` share one address.
+
+`data union(Kind)` there is that tagged union.
+
 Exporting the member exports every member inside it.
 
 `n i32 = 4` is the value stored when an initializer does not name that field.

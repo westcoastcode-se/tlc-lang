@@ -1,0 +1,34 @@
+type Box[T type] struct {
+    data union {
+        n T;
+        m T;
+    };
+};
+
+type Wrap[T type] struct {
+    point struct {
+        data union {
+            n T;
+            m T;
+        };
+    };
+};
+
+type Num[T type] struct {
+    data union {
+        n T = 4;
+        m T;
+    };
+};
+
+func main() i32 {
+    var box Box[i32];
+    box.data.n = 20;
+    var wrap Wrap[i32];
+    wrap.point.data.n = 18;
+    var preset Num[i32];
+    if (box.data.m != 20 || wrap.point.data.m != 18 || preset.data.m != 4) {
+        return 1;
+    }
+    return box.data.m + wrap.point.data.m + preset.data.n;
+}

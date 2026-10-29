@@ -1,0 +1,27 @@
+type Kind enum {
+    One,
+    Two,
+};
+
+type Box[T type] struct {
+    data union(Kind) {
+        One struct {
+            value T;
+        };
+        Two struct {
+            n i32;
+        };
+    };
+};
+
+func main() i32 {
+    var box Box[i32] = {.data = {.One = {.value = 40}}};
+    if (Kind(box.data) != Kind.One || box.data.One.value != 40) {
+        return 1;
+    }
+    box.data.Two.n = 2;
+    if (Kind(box.data) != Kind.Two || box.data.Two.n != 2) {
+        return 2;
+    }
+    return 42;
+}

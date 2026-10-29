@@ -239,6 +239,8 @@ retq                             # return
 
 The program returns 4.
 
+`type Box[T type] struct` may hold `data union { n T; m T; }`. Those fields share one address. `data union(Kind)` there is the tagged union, and `Kind(box.data)` reads the tag.
+
 A method is `func Num[T]::get(self *this) T`. The call is `u.get()`.
 
 `type Shape[T type] union(Kind)` is the tagged union. An arm names a struct, including `Arm[T]`.

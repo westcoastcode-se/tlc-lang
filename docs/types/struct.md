@@ -197,6 +197,34 @@ movl -8(%rsp), %eax              # move
 retq                             # return
 ```
 
+`data union { n T; m T; }` inside `type Box[T type] struct` is that union. `n` and `m` share one address. `data union(Kind)` there is the tagged union. `Kind(box.data)` reads the tag.
+
+A value on one field, `n T = 4`, is the value stored when an initializer does not name a field. A second value on that union is `not supported yet`.
+
+```c
+type Box[T type] struct {
+    data union {
+        n T;
+        m T;
+    };
+};
+
+func main() i32 {
+    var box Box[i32];
+    box.data.n = 42;
+    return box.data.m;
+}
+```
+
+```asm
+main:
+movl $42, -8(%rsp)               # n = 42
+movl -8(%rsp), %eax              # move
+retq                             # return
+```
+
+The program returns 42.
+
 ## Layout
 
 A struct may contain a pointer to itself. It may also contain a slice of itself.
