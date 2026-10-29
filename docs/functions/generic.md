@@ -698,7 +698,57 @@ That value may be an integer, a struct with several fields, or a tuple of severa
 
 `func id[T type](value T) T` of `((40, 2), 1)` binds `T` to that tuple.
 
-`*T`, when `T` is a tuple, is `not supported yet`.
+`func id[T type](value *T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+The call is `main.id.spec.tuple.i32.i32`.
+
+`(*value)[0]` is 40 and `(*value)[1]` is 2.
+
+`id(&deep)`, when `deep` is `((40, 2), 1)`, calls `main.id.spec.tuple.tuple.i32.i32.i32`.
+
+`(*value)[0][0]` is 40 and `(*value)[1]` is 1.
+
+A result `*T`, when `T` is a tuple, is `not supported yet`.
+
+`type Pair (i32, i32)` then a parameter `*Pair` does not accept `&row` when `row` is `(i32, i32)`.
+
+The compiler reports `type mismatch: expected *Pair, found *(i32, i32)`.
+
+```c
+func id[T type](value *T) i32 {
+    return (*value)[0] + (*value)[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    return id(&row);
+}
+```
+
+```asm
+main.id.spec.tuple.i32.i32:
+movq %rdi, -8(%rsp)              # value
+movq -8(%rsp), %rcx              # value
+movl (%rcx), %eax                # (*value)[0]
+movl 4(%rcx), %ecx               # (*value)[1]
+addl %ecx, %eax                  # add
+retq                             # return
+
+main:
+subq $24, %rsp                   # allocate
+movl $2, 20(%rsp)                # row[1] = 2
+movl $40, 16(%rsp)               # row[0] = 40
+# trace frame for the call, then the matching pop
+leaq 16(%rsp), %rdi              # &row
+callq main.id.spec.tuple.i32.i32 # call id
+movl %eax, %ecx                  # move
+movl %ecx, 4(%rsp)               # move
+movl 4(%rsp), %eax               # move
+addq $24, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
 
 `take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 

@@ -1,0 +1,5 @@
+func main() i32 {
+    var row = (40, 2);
+    var p = &row;
+    return (*p)[0] + (*p)[1];
+}

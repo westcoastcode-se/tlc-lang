@@ -661,6 +661,8 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.fn_ret_bool = got.fn_ret_bool;
             binding.fn_ret_struct = got.fn_ret_struct;
             binding.fn_results = got.fn_results;
+            // `var p = &row` addresses that tuple. The slot holds the pointer.
+            binding.tuple_parts = got.tuple_parts;
         } else if (got.struct_id >= 0 && got.struct_id < static_cast<int>(structs_.size()) &&
                    structs_[static_cast<std::size_t>(got.struct_id)].type != nullptr) {
             ty = structs_[static_cast<std::size_t>(got.struct_id)].type;

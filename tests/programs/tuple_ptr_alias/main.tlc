@@ -1,0 +1,10 @@
+type Pair (i32, i32);
+
+func id(value *Pair) i32 {
+    return (*value)[0];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    return id(&row);
+}

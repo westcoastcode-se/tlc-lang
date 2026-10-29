@@ -310,6 +310,10 @@ Type Checker::type_of_param(const Param &param) {
             parts.push_back(type_of_result(slot, param.loc));
         }
         type = type_tuple(std::move(parts));
+        // `value *T` when `T` is a tuple. The stars stay around that tuple.
+        if (param.indirections != 0) {
+            type = with_indirections(std::move(type), param.indirections, param.loc, param.optional, param.const_pointee);
+        }
     } else {
         Param &written = const_cast<Param &>(param);
         prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,

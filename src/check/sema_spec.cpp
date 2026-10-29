@@ -1690,9 +1690,22 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
     }
     const auto matches = [&](const Param &param, const Type &got) {
         if (param.is_tuple) {
-            if (got.kind != TypeKind::Tuple || got.alias_id != 0 || got.results.size() != param.tuple_parts.size()) {
+            // `value *T` is a pointer to the tuple. The argument is that pointer.
+            const Type *core = &got;
+            for (int star = 0; star < param.indirections; ++star) {
+                if (core->kind != TypeKind::Pointer || core->pointee == nullptr) {
+                    return false;
+                }
+                const bool want_optional = (param.optional & (1u << star)) != 0;
+                if (!want_optional && core->optional) {
+                    return false;
+                }
+                core = core->pointee.get();
+            }
+            if (core->kind != TypeKind::Tuple || core->alias_id != 0 || core->results.size() != param.tuple_parts.size()) {
                 return false;
             }
+            const Type &tuple = *core;
             const auto part_matches = [&](auto &&self, const ResultSlot &slot, const Type &part) -> bool {
                 if (slot.is_fn_ptr) {
                     return false;
@@ -1724,7 +1737,7 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
                 return true;
             };
             for (std::size_t part_i = 0; part_i < param.tuple_parts.size(); ++part_i) {
-                if (!part_matches(part_matches, param.tuple_parts[part_i], got.results[part_i])) {
+                if (!part_matches(part_matches, param.tuple_parts[part_i], tuple.results[part_i])) {
                     return false;
                 }
             }

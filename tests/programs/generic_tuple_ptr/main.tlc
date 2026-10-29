@@ -1,0 +1,16 @@
+func id[T type](value *T) i32 {
+    return (*value)[0] + (*value)[1];
+}
+
+func wide[T type](value *T) i32 {
+    return (*value)[0][0] + (*value)[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var deep = ((40, 2), 1);
+    if (wide(&deep) != 41) {
+        return 1;
+    }
+    return id(&row);
+}

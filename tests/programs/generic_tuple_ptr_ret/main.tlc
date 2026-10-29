@@ -1,0 +1,9 @@
+func id[T type](value T) *T {
+    return &value;
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var p = id(row);
+    return (*p)[0];
+}

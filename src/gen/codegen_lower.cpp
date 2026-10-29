@@ -1056,7 +1056,14 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
 
 CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) const {
     if (param.is_tuple) {
-        return lower_tuple_parts(file, param.tuple_parts);
+        Lowered low = lower_tuple_parts(file, param.tuple_parts);
+        // `value *T` stores the address. The parts are the tuple it addresses.
+        if (param.indirections > 0) {
+            low.depth = param.indirections;
+            low.type = ptr_type();
+            low.is_tuple = false;
+        }
+        return low;
     }
     if (param.is_fn_ptr) {
         return lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,

@@ -840,7 +840,13 @@ The call is `main.take.spec.tuple.i32.i32`.
 
 The call of a `var` is `main.id.spec.tuple.tuple.i32.i32.i32`.
 
-`*T`, when `T` is a tuple, is reported as `not supported yet`.
+`func id[T type](value *T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+The call is `main.id.spec.tuple.i32.i32`.
+
+`(*value)[0]` is 40.
+
+A result `*T`, when `T` is a tuple, is reported as `not supported yet`.
 
 The same parameter on `func Point::take[P1 type, P2 type]` and `func Vec[T]::take[P1 type, P2 type]` is that tuple.
 

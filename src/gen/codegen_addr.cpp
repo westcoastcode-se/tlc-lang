@@ -36,6 +36,10 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
         slot.is_slice = binding->is_slice;
         slot.elem_slice = binding->elem_slice;
         slot.shells = binding->shells;
+        if (binding->is_tuple) {
+            slot.is_tuple = true;
+            slot.tuple_parts = binding->tuple_parts;
+        }
         return slot;
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {

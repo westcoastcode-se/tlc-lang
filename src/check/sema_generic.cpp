@@ -2767,6 +2767,26 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
             kept.push_back(std::move(param));
             continue;
         }
+        // `*T` when `T` is a tuple. The parameter is a pointer to that tuple.
+        if (param.indirections == 1 && param.optional == 0 && param.const_pointee == 0 && !param.is_array &&
+            !param.is_fn_ptr && !param.is_tuple && param.type_package.empty() && param.type_args.empty()) {
+            if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
+                pack != nullptr && pack->is_pack) {
+                if (pack->parts.empty()) {
+                    error(param.loc, "not supported yet");
+                    param.type_name = "invalid";
+                } else {
+                    param.is_tuple = true;
+                    param.type_name.clear();
+                    param.tuple_parts.clear();
+                    for (const SpecArg &part : pack->parts) {
+                        param.tuple_parts.push_back(slot_from_spec(part));
+                    }
+                }
+                kept.push_back(std::move(param));
+                continue;
+            }
+        }
         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
                         param.indirections, param.optional, param.is_array, param.array_len, param.array_len_name,
                         param.type_args, param.loc, &param.shells, &param.elem_const, &param.const_pointee);

@@ -120,6 +120,24 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         loaded.enum_id = inner.enum_id;
                         return loaded;
                     }
+                    // `*p` on a pointer to a tuple loads that tuple. The index then reads one element.
+                    if (inner.depth == 1 && !inner.tuple_parts.empty() && !inner.ptr_to_array &&
+                        inner.value->getType()->isPointerTy()) {
+                        std::vector<llvm::Type *> fields;
+                        fields.reserve(inner.tuple_parts.size());
+                        for (const ResultSlot &slot : inner.tuple_parts) {
+                            llvm::Type *field = stored_type(lower_result(current_file_, slot));
+                            fields.push_back(field == nullptr ? i32() : field);
+                        }
+                        if (!fields.empty()) {
+                            llvm::StructType *type = llvm::StructType::get(context_, fields);
+                            TypedValue loaded;
+                            loaded.value = builder_.CreateLoad(type, inner.value);
+                            loaded.is_tuple = true;
+                            loaded.tuple_parts = inner.tuple_parts;
+                            return loaded;
+                        }
+                    }
                     if (pointer_shell) {
                         TypedValue peeled = inner;
                         peeled.shells.erase(peeled.shells.begin());
@@ -201,8 +219,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         pointer.shells.insert(pointer.shells.begin(), shell);
                         return pointer;
                     }
-                    return {addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
-                            addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.trait_id, addr.elem_float};
+                    TypedValue pointer{addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
+                                       addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.trait_id, addr.elem_float};
+                    // `&row` keeps the tuple so `*p` can load it.
+                    if (addr.is_tuple) {
+                        pointer.tuple_parts = addr.tuple_parts;
+                    }
+                    return pointer;
                 }
                 const TypedValue inner_value = emit_rvalue(*node.expr);
                 if (node.op == TokenKind::Bang && node.postfix) {
