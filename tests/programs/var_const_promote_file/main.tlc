@@ -1,0 +1,7 @@
+var n const i32 = 2;
+
+comptime const folded = n;
+
+func main() i32 {
+    return folded;
+}

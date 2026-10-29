@@ -730,7 +730,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (var->is_const_decl && symbol.type.kind != TypeKind::Invalid) {
                 symbol.type.is_const = true;
             }
-            if ((var->is_const_decl || var->is_const) && !var->is_comptime) {
+            // `const name = expr` can be copied by a later `comptime const`. A `var` cannot,
+            // including `var name const Type`.
+            if (var->is_const_decl && !var->is_comptime) {
                 note_promotable(symbol, var->init.get());
             }
             symbol.link_name = var->link_name;

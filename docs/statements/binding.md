@@ -571,6 +571,8 @@ A runtime `const` whose initializer is a compile-time constant can be promoted: 
 
 That is the explicit `comptime`.
 
+A `var` is not promoted. `var n = 2` then `comptime const folded = n` is `not supported yet`.
+
 `comptime const sum = name + other` is `global initializer is not a constant` when `name` is only `const` and `other` is `comptime const`.
 
 Promote `name` first.
@@ -714,6 +716,10 @@ A store through `&name` is `type mismatch`.
 The variable has an address, the same as `const name = expr`.
 
 It is not a compiler constant.
+
+`var n const i32 = 2` then `comptime const folded = n` is `not supported yet`.
+
+A file-scope `var n const i32 = 2` or `const i32 n = 2` then `comptime const folded = n` is `global initializer is not a constant`.
 
 `var n const i32 = 4` then `[n]i32` is `not supported yet`.
 

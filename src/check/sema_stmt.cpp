@@ -2843,7 +2843,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                                     live->is_constant = true;
                                     live->const_init = written.init.get();
                                 }
-                            } else if ((var.is_const_decl || live->type.is_const) && var.init != nullptr) {
+                            } else if (var.is_const_decl && var.init != nullptr) {
                                 note_promotable(*live, var.init.get());
                             }
                             init_cover(*live, var.init.get());

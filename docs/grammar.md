@@ -436,6 +436,16 @@ That overload is chosen when every `comptime` argument is a comptime value, and 
 
 A `var` does not choose it.
 
+`func id[T type](value T)` drops `value` when the argument is comptime.
+
+When the file is `main.tlc`, `id(2)` calls `main.id.spec.i32.spec.2` and does not pass `2`.
+
+`id(n)` when `n` is a `var` calls `main.id.spec.i32` and passes `n`.
+
+`func only[T type](value comptime T)` requires that argument.
+
+A `var` is `type mismatch`.
+
 When only the `comptime` overload matches the types and an argument is not a comptime value, the call is `type mismatch`.
 
 `builtin.memeql[u8]` and `builtin.memcmp[u8]` fold two constant `[]const u8` values through the `comptime` slice overload.
@@ -909,6 +919,10 @@ It has an address.
 The expression has to be a compile-time constant.
 
 A runtime `const` whose initializer is a compile-time constant can be promoted with `comptime const folded = name`.
+
+A `var` is not promoted. `var n = 2` and `var n const i32 = 2` then `comptime const folded = n` are `not supported yet`.
+
+A file-scope `var` or `const i32 n` then `comptime const folded = n` is `global initializer is not a constant`.
 
 Using that runtime `const` in the same expression as a `comptime const` is `global initializer is not a constant` until it is written `comptime`.
 

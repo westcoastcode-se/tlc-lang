@@ -1,0 +1,11 @@
+func id[T type](value T) i32 {
+    comptime if (value == 2) {
+        return 40;
+    }
+    return value + 1;
+}
+
+func main() i32 {
+    const n = 2;
+    return id(n);
+}

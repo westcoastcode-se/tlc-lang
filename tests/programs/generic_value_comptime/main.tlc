@@ -1,0 +1,35 @@
+func id[T type](value T) i32 {
+    comptime if (value == 2) {
+        return 40;
+    }
+    return value + 1;
+}
+
+func plain[T type](value T) i32 {
+    return value;
+}
+
+func only[T type](value comptime T) i32 {
+    return value;
+}
+
+func main() i32 {
+    var n = 7;
+    if (plain(n) != 7) {
+        return 1;
+    }
+    if (plain(2) != 2) {
+        return 2;
+    }
+    if (id(2) != 40) {
+        return 3;
+    }
+    if (only(2) != 2) {
+        return 4;
+    }
+    comptime const folded = 2;
+    if (id(folded) != 40) {
+        return 5;
+    }
+    return 42;
+}

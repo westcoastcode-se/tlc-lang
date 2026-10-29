@@ -1100,6 +1100,11 @@ class Checker {
     // when the decl is a clone that `comptime_decl_file` cannot see.
     bool apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several, std::size_t skip = 0,
                                  std::optional<uint32_t> owner_file = std::nullopt);
+    // `func id[T type](value T)`. A comptime argument drops `value`. A `var` still passes it.
+    bool expand_generic_comptime_value(Expr::Call &call, const FunctionDecl &templ, const std::vector<SpecArg> &bounds,
+                                       const std::string &spec_name, uint32_t owner);
+    // The substituted parameter can be dropped the way `n comptime i32` is.
+    bool comptime_arg_specializes(const Param &param, const Expr &arg);
     // Specialize when every comptime argument is a constant. A forwarded name leaves the call.
     std::optional<Type> call_comptime_spec(Expr &expr, const FunctionDecl *fn, std::size_t skip, uint32_t owner,
                                            bool used);

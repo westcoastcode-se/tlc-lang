@@ -41,22 +41,103 @@ func repeat[N i32, T type](value T) [N]T {
 }
 
 func main() i32 {
-    return id(40) + id[i32](0) + repeat[4](2)[0];
+    return id(40) + id[i32](0);
 }
 ```
 
 ```asm
-id:
+main.id.spec.i32.spec.0:
+xorl %eax, %eax                  # constant
+retq                             # return
+
+main:
+subq $40, %rsp                   # allocate
+# trace frame for the call, then the matching pop
+callq main.id.spec.i32.spec.40   # call id(40)
+movl %eax, %ecx                  # move
+movl %ecx, 28(%rsp)              # move
+# trace frame for the call, then the matching pop
+callq main.id.spec.i32.spec.0    # call id(0)
+movl %eax, %ecx                  # move
+movl %ecx, 16(%rsp)              # move
+movl 16(%rsp), %ecx              # move
+movl 28(%rsp), %eax              # move
+addl %ecx, %eax                  # add
+addq $40, %rsp                   # release
+retq                             # return
+
+main.id.spec.i32.spec.40:
+movl $40, %eax                   # constant
+retq                             # return
+```
+
+`id(40)` does not pass `40`.
+
+`id[i32](0)` does not pass `0`.
+
+The program returns 40.
+
+A `var` is still passed.
+
+```c
+func plain[T type](value T) i32 {
+    return value;
+}
+
+func main() i32 {
+    var n = 7;
+    return plain(2) + plain(n);
+}
+```
+
+```asm
+main.plain.spec.i32:
 movl %edi, -4(%rsp)              # move
 movl -4(%rsp), %eax              # move
 retq                             # return
 
+main.plain.spec.i32.spec.2:
+movl $2, %eax                    # constant
+retq                             # return
+
 main:
+subq $40, %rsp                   # allocate
+movl $7, 36(%rsp)                # n = 7
 # trace frame for the call, then the matching pop
-movl $40, %edi                   # constant
-callq id                         # call id
+callq main.plain.spec.i32.spec.2 # call plain(2)
+movl %eax, %ecx                  # move
+movl %ecx, 24(%rsp)              # move
+movl 36(%rsp), %eax              # n
+movl %eax, 12(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 12(%rsp), %edi              # n
+callq main.plain.spec.i32        # call plain(n)
+movl %eax, %ecx                  # move
+movl %ecx, 8(%rsp)               # move
+movl 8(%rsp), %ecx               # move
+movl 24(%rsp), %eax              # move
+addl %ecx, %eax                  # add
+addq $40, %rsp                   # release
 retq                             # return
 ```
+
+`plain(2)` calls `main.plain.spec.i32.spec.2` and does not pass `2`.
+
+`plain(n)` calls `main.plain.spec.i32` and passes `n`.
+
+The program returns 9.
+
+`comptime if (value == 2)` keeps that arm when the argument is `2`.
+
+A `var` in that call is `not supported yet`. The condition does not fold.
+
+A runtime `const` is that same error.
+
+`comptime const n = 2` is the comptime argument.
+
+`func only[T type](value comptime T)` requires a comptime argument.
+
+A `var` is `type mismatch`.
 
 ## A pointer when the type argument is an array
 

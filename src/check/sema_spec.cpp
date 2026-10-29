@@ -1981,6 +1981,16 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         call.type_args.clear();
     };
     if (spec_ready_.contains(key) || spec_checking_.contains(key)) {
+        const bool keep_atomic = is_std_builtin_file(owner) && atomic_builtin(templ->name) != AtomicBuiltin::None;
+        if (!keep_atomic) {
+            const std::size_t mark = diags_.size();
+            if (expand_generic_comptime_value(call, *templ, bounds, spec_name, owner)) {
+                return check_raw(expr, used);
+            }
+            if (diags_.size() != mark) {
+                return type_invalid();
+            }
+        }
         rewrite();
         return check_raw(expr, used);
     }
@@ -2045,6 +2055,12 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     if (!(is_std_builtin_file(owner) && atomic_builtin(spec.name) != AtomicBuiltin::None)) {
         spec_checking_.erase(key);
         const std::size_t spec_mark = diags_.size();
+        if (expand_generic_comptime_value(call, *templ, bounds, spec_name, owner)) {
+            return check_raw(expr, used);
+        }
+        if (diags_.size() != spec_mark) {
+            return type_invalid();
+        }
         if (apply_comptime_template(call, spec, false, 0, owner)) {
             return check_raw(expr, used);
         }
@@ -2367,6 +2383,102 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
     queue_spec(owner, std::move(spec));
     rewrite();
     return true;
+}
+
+bool Checker::comptime_arg_specializes(const Param &param, const Expr &arg) {
+    if (comptime_i32_param(param)) {
+        return fold_int(arg).has_value() || folded_local_int(arg).has_value();
+    }
+    if (comptime_text_param(param)) {
+        std::unordered_set<std::string> seen;
+        return constant_string(arg, seen).has_value();
+    }
+    const bool saved_quiet = quiet_;
+    quiet_ = true;
+    const std::size_t before = diags_.size();
+    const Type want = type_of_param(param);
+    quiet_ = saved_quiet;
+    if (diags_.size() != before || want.kind == TypeKind::Invalid) {
+        return false;
+    }
+    if (want.kind == TypeKind::Enum && comptime_enum_arg(param)) {
+        const auto *selector = std::get_if<Expr::Selector>(&arg.data);
+        if (selector == nullptr || selector->base == nullptr || enum_designator(*selector->base) != want.enum_id) {
+            return false;
+        }
+        const EnumInfo::Member *member = find_enum_member(want.enum_id, selector->field);
+        return member != nullptr && member->value == static_cast<int64_t>(static_cast<int>(member->value));
+    }
+    if (!comptime_constant(arg)) {
+        return false;
+    }
+    const std::unique_ptr<Expr> subst = comptime_substitute(arg);
+    if (subst == nullptr) {
+        return false;
+    }
+    return comptime_spec_piece(*subst).has_value();
+}
+
+bool Checker::expand_generic_comptime_value(Expr::Call &call, const FunctionDecl &templ,
+                                            const std::vector<SpecArg> &bounds, const std::string &spec_name,
+                                            uint32_t owner) {
+    const std::size_t skip = !templ.params.empty() && templ.params.front().is_receiver ? 1 : 0;
+    if (call.args.size() + skip != templ.params.size()) {
+        return false;
+    }
+    std::vector<std::size_t> slots;
+    for (std::size_t i = skip; i < templ.params.size(); ++i) {
+        const Param &orig = templ.params[i];
+        if (orig.is_comptime || orig.is_receiver || orig.indirections != 0 || orig.optional != 0 || orig.is_array ||
+            orig.is_tuple || orig.is_fn_ptr || orig.is_struct || orig.is_enum || orig.const_pointee != 0 ||
+            orig.elem_const || orig.elem_slice || !orig.type_args.empty() || !orig.shells.empty() ||
+            !orig.type_package.empty() || call.args[i - skip] == nullptr) {
+            continue;
+        }
+        bool type_param = false;
+        for (const TypeParam &item : templ.type_params) {
+            if (item.is_type && !item.is_value && !item.is_pack && item.name == orig.type_name) {
+                type_param = true;
+                break;
+            }
+        }
+        if (type_param) {
+            slots.push_back(i);
+        }
+    }
+    if (slots.empty()) {
+        return false;
+    }
+    FunctionDecl spec = clone_function(templ);
+    spec.name = spec_name;
+    spec.type_params.clear();
+    spec.generic_instance = true;
+    spec.exported = false;
+    const uint32_t saved_file = file_id_;
+    file_id_ = owner;
+    substitute_function(spec, templ.type_params, bounds);
+    expose_bounds(owner, bounds);
+    for (Param &param : spec.params) {
+        prepare_written(param.type_name, param.type_package, param.is_struct, param.is_enum, param.indirections,
+                        param.optional, param.is_array, param.array_len, param.array_len_name, param.type_args, param.loc);
+    }
+    bool marked = false;
+    for (const std::size_t index : slots) {
+        if (index >= spec.params.size()) {
+            continue;
+        }
+        Expr &arg = *call.args[index - skip];
+        if (!comptime_arg_specializes(spec.params[index], arg)) {
+            continue;
+        }
+        spec.params[index].is_comptime = true;
+        marked = true;
+    }
+    file_id_ = saved_file;
+    if (!marked) {
+        return false;
+    }
+    return apply_comptime_template(call, spec, false, skip, owner);
 }
 
 std::optional<Type> Checker::call_comptime_spec(Expr &expr, const FunctionDecl *fn, std::size_t skip, uint32_t owner,
