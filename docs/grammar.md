@@ -1108,6 +1108,14 @@ A call is reported as `global initializer is not a constant`.
 
 `raw [2]i32 = {1, 2}` is that value for a sized array.
 
+`pair (i32, i32) = (40, 2)` is that value for a tuple.
+
+`var box Box` reads 40 and 2.
+
+Naming the field replaces the tuple. `{0...}` stores 0.
+
+`pair (T, i32) = (40, 2)` on `type Box[T type] struct` is that value for `Box[i32]`.
+
 A short list leaves the elements it does not name uninitialized.
 
 `0...` stores 0 in those elements.

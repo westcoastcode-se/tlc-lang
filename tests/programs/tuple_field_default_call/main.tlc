@@ -1,0 +1,11 @@
+func give() i32 {
+    return 1;
+}
+
+type Box struct {
+    pair (i32, i32) = (give(), 2);
+};
+
+func main() i32 {
+    return 0;
+}

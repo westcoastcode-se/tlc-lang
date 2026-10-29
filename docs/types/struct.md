@@ -32,6 +32,33 @@ A field is a name, then its type, in the same order as `var`: `x i32`, `next ?*N
 
 A file-scope variable stores 0 in an element the list does not name. Naming the field replaces the list.
 
+`pair (i32, i32) = (40, 2)` is that value for a tuple. `var box Box` reads 40 from `pair[0]` and 2 from `pair[1]`. Naming the field replaces the tuple. `{0...}` stores 0.
+
+`pair (T, i32) = (40, 2)` on `type Box[T type] struct` is that value for `Box[i32]`.
+
+```c
+type Box struct {
+    pair (i32, i32) = (40, 2);
+};
+
+func main() i32 {
+    var box Box;
+    return box.pair[0] + box.pair[1];
+}
+```
+
+```asm
+main:
+movl $2, -4(%rsp)                # pair[1] = 2
+movl $40, -8(%rsp)               # pair[0] = 40
+movl -8(%rsp), %eax              # move
+movl -4(%rsp), %ecx              # move
+addl %ecx, %eax                  # add
+retq                             # return
+```
+
+The program returns 42.
+
 A field of an inline union payload uses that same value, as in `n i32 = 1` inside `union(Enum)`. An untagged union field uses it too, as in `n i32 = 4`. A union with no initializer does not choose an arm.
 
 A value on a trait field is reported as `not supported yet`. A field ends with `;`. The semicolon after `}` may be omitted.

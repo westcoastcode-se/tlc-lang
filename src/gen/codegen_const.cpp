@@ -86,6 +86,44 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
     if (slot.type == nullptr) {
         return nullptr;
     }
+    // `(i32, i32) = (40, 2)` is that tuple. A narrower integer fills the element it is stored in.
+    if (slot.is_tuple) {
+        Binding dest;
+        dest.is_tuple = true;
+        dest.tuple_parts = slot.tuple_parts;
+        llvm::Constant *value = const_initializer(expr, dest);
+        if (value == nullptr) {
+            return nullptr;
+        }
+        const auto fit = [&](auto &&self, llvm::Constant *got, llvm::Type *want) -> llvm::Constant * {
+            if (got == nullptr || want == nullptr) {
+                return nullptr;
+            }
+            if (got->getType() == want) {
+                return got;
+            }
+            if (const auto *integer = llvm::dyn_cast<llvm::ConstantInt>(got); integer != nullptr && want->isIntegerTy()) {
+                return llvm::ConstantInt::get(want, integer->getZExtValue(), false, true);
+            }
+            const auto *got_struct = llvm::dyn_cast<llvm::ConstantStruct>(got);
+            auto *want_struct = llvm::dyn_cast<llvm::StructType>(want);
+            if (got_struct == nullptr || want_struct == nullptr ||
+                got_struct->getNumOperands() != want_struct->getNumElements()) {
+                return nullptr;
+            }
+            std::vector<llvm::Constant *> fields;
+            fields.reserve(want_struct->getNumElements());
+            for (unsigned index = 0; index < want_struct->getNumElements(); ++index) {
+                llvm::Constant *field = self(self, got_struct->getOperand(index), want_struct->getElementType(index));
+                if (field == nullptr) {
+                    return nullptr;
+                }
+                fields.push_back(field);
+            }
+            return llvm::ConstantStruct::get(want_struct, fields);
+        };
+        return fit(fit, value, slot.type);
+    }
     if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
         if (slot.depth != 0 || slot.struct_id < 0) {
             return nullptr;
