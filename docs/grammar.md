@@ -850,6 +850,12 @@ The call is `main.id.spec.tuple.i32.i32`.
 
 `(*p[0])[0]` is 40.
 
+`type Box[T type] struct { n T; }` of `make(row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+The call is `main.make.spec.tuple.i32.i32`.
+
+`box.n[0]` is 40 and `box.n[1]` is 2.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

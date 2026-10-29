@@ -78,6 +78,30 @@ ResultSlot slot_from_spec(const SpecArg &arg) {
     return slot;
 }
 
+TypeArg type_arg_from_spec(const SpecArg &arg) {
+    TypeArg out;
+    if (arg.is_pack) {
+        out.is_tuple = true;
+        out.tuple_parts.reserve(arg.parts.size());
+        for (const SpecArg &part : arg.parts) {
+            out.tuple_parts.push_back(type_arg_from_spec(part));
+        }
+        return out;
+    }
+    out.type_name = arg.type_name;
+    out.type_package = arg.type_package;
+    out.is_struct = arg.is_struct;
+    out.is_enum = arg.is_enum;
+    out.indirections = arg.indirections;
+    out.optional = arg.optional;
+    out.const_pointee = arg.const_pointee;
+    out.is_array = arg.is_array;
+    out.elem_const = arg.elem_const;
+    out.array_len = arg.array_len;
+    out.shells = arg.shells;
+    return out;
+}
+
 SpecArg pack_bound(std::vector<SpecArg> parts) {
     if (parts.size() == 1) {
         return std::move(parts[0]);
@@ -132,6 +156,17 @@ void append_type_arg_shape(std::string &out, const TypeArg &arg, const std::vect
     }
     if (arg.has_value || arg.is_value) {
         out += std::to_string(arg.value);
+        return;
+    }
+    if (arg.is_tuple) {
+        out.push_back('(');
+        for (std::size_t i = 0; i < arg.tuple_parts.size(); ++i) {
+            if (i != 0) {
+                out.push_back(',');
+            }
+            append_type_arg_shape(out, arg.tuple_parts[i], params);
+        }
+        out.push_back(')');
         return;
     }
     if (arg.is_array) {
@@ -1843,6 +1878,26 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
         error(arg.loc, "type mismatch");
         return false;
     }
+    // `Box[T]` when `T` is a tuple. The argument is that tuple.
+    if (arg.is_tuple) {
+        if (arg.tuple_parts.empty()) {
+            error(arg.loc, "not supported yet");
+            return false;
+        }
+        TypeParam as_type;
+        as_type.is_type = true;
+        std::vector<SpecArg> parts;
+        parts.reserve(arg.tuple_parts.size());
+        for (const TypeArg &part : arg.tuple_parts) {
+            SpecArg one;
+            if (!bind_type_arg(as_type, part, one, part.loc.valid() ? part.loc : loc)) {
+                return false;
+            }
+            parts.push_back(std::move(one));
+        }
+        out = pack_bound(std::move(parts));
+        return true;
+    }
     TypeArg concrete = arg;
     if (!concrete.array_len_name.empty()) {
         const std::optional<int> len = array_length_value(concrete.array_len_name);
@@ -1945,6 +2000,58 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
     }
 }
 
+void Checker::substitute_field(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, FieldDecl &field) {
+    // The field uses the same substitution as a result. `n T` becomes that tuple.
+    ResultSlot slot;
+    slot.type_name = std::move(field.type_name);
+    slot.type_package = std::move(field.type_package);
+    slot.is_struct = field.is_struct;
+    slot.is_enum = field.is_enum;
+    slot.indirections = field.indirections;
+    slot.optional = field.optional;
+    slot.const_pointee = field.const_pointee;
+    slot.is_array = field.is_array;
+    slot.elem_const = field.elem_const;
+    slot.elem_slice = field.elem_slice;
+    slot.shells = std::move(field.shells);
+    slot.array_len = field.array_len;
+    slot.array_len_name = std::move(field.array_len_name);
+    slot.type_args = std::move(field.type_args);
+    slot.is_fn_ptr = field.is_fn_ptr;
+    slot.ret_indirections = field.ret_indirections;
+    slot.ret_optional = field.ret_optional;
+    slot.ret_const_pointee = field.ret_const_pointee;
+    slot.fn_params = std::move(field.fn_params);
+    slot.fn_variadic = field.fn_variadic;
+    slot.fn_results = std::move(field.fn_results);
+    slot.is_tuple = field.is_tuple;
+    slot.tuple_parts = std::move(field.tuple_parts);
+    substitute_slot(params, bounds, slot, field.loc);
+    field.type_name = std::move(slot.type_name);
+    field.type_package = std::move(slot.type_package);
+    field.is_struct = slot.is_struct;
+    field.is_enum = slot.is_enum;
+    field.indirections = slot.indirections;
+    field.optional = slot.optional;
+    field.const_pointee = slot.const_pointee;
+    field.is_array = slot.is_array;
+    field.elem_const = slot.elem_const;
+    field.elem_slice = slot.elem_slice;
+    field.shells = std::move(slot.shells);
+    field.array_len = slot.array_len;
+    field.array_len_name = std::move(slot.array_len_name);
+    field.type_args = std::move(slot.type_args);
+    field.is_fn_ptr = slot.is_fn_ptr;
+    field.ret_indirections = slot.ret_indirections;
+    field.ret_optional = slot.ret_optional;
+    field.ret_const_pointee = slot.ret_const_pointee;
+    field.fn_params = std::move(slot.fn_params);
+    field.fn_variadic = slot.fn_variadic;
+    field.fn_results = std::move(slot.fn_results);
+    field.is_tuple = slot.is_tuple;
+    field.tuple_parts = std::move(slot.tuple_parts);
+}
+
 void Checker::substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds,
                               std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                               int &indirections, uint32_t &optional, bool &is_array, int &array_len,
@@ -2004,7 +2111,20 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
             return;
         }
         if (bound->is_pack) {
-            error(arg.loc, "not supported yet");
+            // `Box[T]` when `T` is a tuple. A star or an array around that argument stays rejected.
+            if (arg.indirections != 0 || arg.optional != 0 || arg.const_pointee != 0 || arg.is_array || !arg.args.empty() ||
+                !arg.shells.empty() || arg.is_tuple || bound->parts.empty()) {
+                error(arg.loc, "not supported yet");
+                return;
+            }
+            TypeArg tuple;
+            tuple.loc = arg.loc;
+            tuple.is_tuple = true;
+            tuple.tuple_parts.reserve(bound->parts.size());
+            for (const SpecArg &part : bound->parts) {
+                tuple.tuple_parts.push_back(type_arg_from_spec(part));
+            }
+            arg = std::move(tuple);
             return;
         }
         if (bound->is_value) {

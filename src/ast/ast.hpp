@@ -65,6 +65,9 @@ struct TypeArg {
     // Constructors outside the leaf, outermost first. Empty when the argument is only a name and pointers.
     std::vector<TypeShell> shells;
     std::vector<TypeArg> args;
+    // `Box[T]` when `T` is a tuple. The argument is that tuple, not a name.
+    bool is_tuple = false;
+    std::vector<TypeArg> tuple_parts;
     // `sizeof(...)` or `sizeof n`. Null on a literal, a name, or a type.
     std::shared_ptr<Expr> value_expr;
 

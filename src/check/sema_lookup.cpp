@@ -216,8 +216,9 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
 
 Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
                                     const std::vector<TypeShell> &shells, SourceLoc loc) {
-    // A shell or a star around `(i32, i32)` is not this form. `[2]Duo` wraps the name.
-    if (indirections != 0 || is_array || !shells.empty()) {
+    // A shell around `(i32, i32)` is not this form. `[2]Duo` wraps the name.
+    // A star is `*T` when `T` is that tuple.
+    if (is_array || !shells.empty()) {
         error(loc, "not supported yet");
         return type_invalid();
     }
@@ -226,7 +227,11 @@ Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int in
     for (const ResultSlot &slot : parts) {
         typed.push_back(type_of_result(slot, loc));
     }
-    return type_tuple(std::move(typed));
+    Type type = type_tuple(std::move(typed));
+    if (indirections != 0) {
+        type = with_indirections(std::move(type), indirections, loc);
+    }
+    return type;
 }
 
 Type Checker::type_of_var(const VarDecl &var) {

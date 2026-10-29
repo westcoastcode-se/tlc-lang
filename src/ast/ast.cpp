@@ -1495,7 +1495,8 @@ TypeArg::TypeArg(const TypeArg &other)
       type_name(other.type_name), type_package(other.type_package), is_struct(other.is_struct),
       is_enum(other.is_enum), indirections(other.indirections), optional(other.optional),
       const_pointee(other.const_pointee), is_array(other.is_array), elem_const(other.elem_const),
-      array_len(other.array_len), array_len_name(other.array_len_name), shells(other.shells), args(other.args) {
+      array_len(other.array_len), array_len_name(other.array_len_name), shells(other.shells), args(other.args),
+      is_tuple(other.is_tuple), tuple_parts(other.tuple_parts) {
     if (other.value_expr != nullptr) {
         value_expr = std::shared_ptr<Expr>(clone_expr(*other.value_expr));
     }

@@ -1154,6 +1154,7 @@ class Checker {
     // is spelled `Name.file.N` so both checker and codegen resolve that struct.
     void disambiguate_bounds(uint32_t owner, std::vector<SpecArg> &bounds);
     // `(T, i32)` on a generic field. Each element is substituted, including a nested tuple.
+    void substitute_field(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, FieldDecl &field);
     void substitute_slot(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, ResultSlot &slot,
                          SourceLoc loc);
     // `func (T, T) T` on a generic field. Each parameter and result is substituted.

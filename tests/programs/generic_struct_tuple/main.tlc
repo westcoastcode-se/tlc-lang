@@ -1,0 +1,18 @@
+type Box[T type] struct { n T; }
+
+func make[T type](value T) Box[T] {
+    var box Box[T];
+    box.n = value;
+    return box;
+}
+
+func main() i32 {
+    var flat = (40, 2);
+    var deep = ((40, 2), 1);
+    var box = make(flat);
+    var wide = make(deep);
+    if (wide.n[0][0] + wide.n[1] != 41) {
+        return 1;
+    }
+    return box.n[0] + box.n[1];
+}

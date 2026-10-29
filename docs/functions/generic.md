@@ -712,6 +712,72 @@ The call is `main.id.spec.tuple.i32.i32`.
 
 `(*p[0])[0]` is 40 and `p[1]` is 1.
 
+`type Box[T type] struct { n T; }` of `make(row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+The call is `main.make.spec.tuple.i32.i32`.
+
+`box.n[0]` is 40 and `box.n[1]` is 2.
+
+`make(deep)`, when `deep` is `((40, 2), 1)`, calls `main.make.spec.tuple.tuple.i32.i32.i32`.
+
+`box.n[0][0]` is 40 and `box.n[1]` is 1.
+
+```c
+type Box[T type] struct { n T; }
+
+func make[T type](value T) Box[T] {
+    var box Box[T];
+    box.n = value;
+    return box;
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var box = make(row);
+    return box.n[0] + box.n[1];
+}
+```
+
+```asm
+main.make.spec.tuple.i32.i32:
+movl %edi, -16(%rsp)             # value[0]
+movl %esi, -12(%rsp)             # value[1]
+movl -16(%rsp), %eax             # value[0]
+movl -12(%rsp), %ecx             # value[1]
+movl %ecx, -4(%rsp)              # box.n[1]
+movl %eax, -8(%rsp)              # box.n[0]
+movl -8(%rsp), %eax              # box.n[0]
+movl -4(%rsp), %edx              # box.n[1]
+retq                             # return
+
+main:
+subq $56, %rsp                   # allocate
+movl $2, 44(%rsp)                # row[1] = 2
+movl $40, 40(%rsp)               # row[0] = 40
+movl 40(%rsp), %eax              # row[0]
+movl %eax, 24(%rsp)              # move
+movl 44(%rsp), %eax              # row[1]
+movl %eax, 28(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 28(%rsp), %esi              # row[1]
+movl 24(%rsp), %edi              # row[0]
+callq main.make.spec.tuple.i32.i32 # call make
+movl %eax, %ecx                  # move
+movl %edx, 16(%rsp)              # box.n[1]
+movl %ecx, 20(%rsp)              # box.n[0]
+movl 16(%rsp), %eax              # box.n[1]
+movl 20(%rsp), %ecx              # box.n[0]
+movl %ecx, 48(%rsp)              # box.n[0]
+movl %eax, 52(%rsp)              # box.n[1]
+movl 48(%rsp), %eax              # box.n[0]
+movl 52(%rsp), %ecx              # box.n[1]
+addl %ecx, %eax                  # add
+addq $56, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40 and `(*p)[1]` is 2.

@@ -200,18 +200,7 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
             error(source.loc, "not supported yet");
         }
         FieldDecl field = source;
-        substitute_type(templ.type_params, bounds, field.type_name, field.type_package, field.is_struct, field.is_enum,
-                        field.indirections, field.optional, field.is_array, field.array_len, field.array_len_name,
-                        field.type_args, field.loc, &field.shells, &field.elem_const, &field.const_pointee);
-        for (ResultSlot &part : field.tuple_parts) {
-            substitute_slot(templ.type_params, bounds, part, field.loc);
-        }
-        for (FnParam &param : field.fn_params) {
-            substitute_fn_param(templ.type_params, bounds, param, field.loc);
-        }
-        for (FnParam &param : field.fn_results) {
-            substitute_fn_param(templ.type_params, bounds, param, field.loc);
-        }
+        substitute_field(templ.type_params, bounds, field);
         prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                         field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args, field.loc);
         fold_shells(field.shells, field.loc);
@@ -593,18 +582,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     spec.name = spec_name;
     spec.type_params.clear();
     for (FieldDecl &field : spec.fields) {
-        substitute_type(templ->type_params, bounds, field.type_name, field.type_package, field.is_struct, field.is_enum,
-                        field.indirections, field.optional, field.is_array, field.array_len, field.array_len_name,
-                        field.type_args, field.loc, &field.shells, &field.elem_const, &field.const_pointee);
-        for (ResultSlot &part : field.tuple_parts) {
-            substitute_slot(templ->type_params, bounds, part, field.loc);
-        }
-        for (FnParam &param : field.fn_params) {
-            substitute_fn_param(templ->type_params, bounds, param, field.loc);
-        }
-        for (FnParam &param : field.fn_results) {
-            substitute_fn_param(templ->type_params, bounds, param, field.loc);
-        }
+        substitute_field(templ->type_params, bounds, field);
         if (field.init != nullptr) {
             substitute_expr(templ->type_params, bounds, *field.init);
         }
@@ -664,19 +642,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                 field.is_struct = false;
                 field.indirections = 0;
             }
-            substitute_type(templ->type_params, bounds, field.type_name, field.type_package, field.is_struct,
-                            field.is_enum, field.indirections, field.optional, field.is_array, field.array_len,
-                            field.array_len_name, field.type_args, field.loc, &field.shells, &field.elem_const,
-                            &field.const_pointee);
-            for (ResultSlot &part : field.tuple_parts) {
-                substitute_slot(templ->type_params, bounds, part, field.loc);
-            }
-            for (FnParam &param : field.fn_params) {
-                substitute_fn_param(templ->type_params, bounds, param, field.loc);
-            }
-            for (FnParam &param : field.fn_results) {
-                substitute_fn_param(templ->type_params, bounds, param, field.loc);
-            }
+            substitute_field(templ->type_params, bounds, field);
             if (field.init != nullptr) {
                 substitute_expr(templ->type_params, bounds, *field.init);
             }
