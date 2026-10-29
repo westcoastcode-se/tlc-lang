@@ -698,7 +698,57 @@ That value may be an integer, a struct with several fields, or a tuple of severa
 
 A tuple inside a tuple does not match `T`.
 
-`take[T type](p (T, i32))` of `((40, 2), 1)` is `not supported yet`.
+`take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+The call is `main.take.spec.tuple.i32.i32`.
+
+`p[0][0]` is 40 and `p[1]` is 1.
+
+```c
+func take[T type](p (T, i32)) i32 {
+    return p[0][0] + p[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    return take((row, 1));
+}
+```
+
+```asm
+main.take.spec.tuple.i32.i32:
+movl %edi, -16(%rsp)             # p[0][0]
+movl %esi, -12(%rsp)             # p[0][1]
+movl %edx, -8(%rsp)              # p[1]
+movl -16(%rsp), %eax             # p[0][0]
+movl -12(%rsp), %ecx             # move
+movl -8(%rsp), %ecx              # p[1]
+addl %ecx, %eax                  # add
+retq                             # return
+
+main:
+subq $40, %rsp                   # allocate
+movl $2, 36(%rsp)                # row[1] = 2
+movl $40, 32(%rsp)               # row[0] = 40
+movl 32(%rsp), %eax              # row[0]
+movl %eax, 12(%rsp)              # move
+movl 36(%rsp), %eax              # row[1]
+movl %eax, 16(%rsp)              # move
+movl $1, %eax                    # constant
+movl %eax, 20(%rsp)              # 1
+# trace frame for the call, then the matching pop
+movl 20(%rsp), %edx              # 1
+movl 16(%rsp), %esi              # row[1]
+movl 12(%rsp), %edi              # row[0]
+callq main.take.spec.tuple.i32.i32 # call take
+movl %eax, %ecx                  # move
+movl %ecx, 8(%rsp)               # move
+movl 8(%rsp), %eax               # move
+addq $40, %rsp                   # release
+retq                             # return
+```
+
+The program returns 41.
 
 `func take(other (i32, f32))` is a tuple parameter.
 

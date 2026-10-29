@@ -1,0 +1,15 @@
+func take[T type](p (T, i32)) i32 {
+    return p[0][0] + p[1];
+}
+
+func flat[T type](p (T, i32)) i32 {
+    return p[0] + p[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    if (take((row, 1)) != 41 || take(((40, 2), 1)) != 41 || flat[i32]((40, 2)) != 42) {
+        return 1;
+    }
+    return take((row, 1));
+}

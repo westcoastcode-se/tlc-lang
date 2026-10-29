@@ -66,6 +66,14 @@ void apply_spec(ResultSlot &slot, const SpecArg &arg) {
 
 ResultSlot slot_from_spec(const SpecArg &arg) {
     ResultSlot slot;
+    if (arg.is_pack) {
+        slot.is_tuple = true;
+        slot.tuple_parts.reserve(arg.parts.size());
+        for (const SpecArg &part : arg.parts) {
+            slot.tuple_parts.push_back(slot_from_spec(part));
+        }
+        return slot;
+    }
     apply_spec(slot, arg);
     return slot;
 }
@@ -1907,6 +1915,23 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
         }
         return;
     }
+    // `(T, i32)` when `T` is `(i32, i32)`. The element becomes that tuple.
+    if (slot.type_package.empty() && slot.indirections == 0 && !slot.is_array && slot.type_args.empty()) {
+        if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
+            if (bound->parts.empty()) {
+                error(loc, "not supported yet");
+                slot.type_name = "invalid";
+                return;
+            }
+            slot.is_tuple = true;
+            slot.type_name.clear();
+            slot.tuple_parts.clear();
+            for (const SpecArg &part : bound->parts) {
+                slot.tuple_parts.push_back(slot_from_spec(part));
+            }
+            return;
+        }
+    }
     substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
                     slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, loc, &slot.shells,
                     &slot.elem_const, &slot.const_pointee);
@@ -2717,22 +2742,8 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         param.type_args, loc);
     };
     // `(P1, P2)` is one parameter. Each element is substituted the same way as a result.
-    auto subst_slot = [&](auto &&self, ResultSlot &slot, SourceLoc loc) -> void {
-        if (slot.is_tuple) {
-            for (ResultSlot &part : slot.tuple_parts) {
-                self(self, part, loc);
-            }
-            return;
-        }
-        substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
-                        slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, loc,
-                        &slot.shells, &slot.elem_const, &slot.const_pointee);
-        for (FnParam &inner : slot.fn_params) {
-            subst_fn_param(subst_fn_param, inner, loc);
-        }
-        for (FnParam &inner : slot.fn_results) {
-            subst_fn_param(subst_fn_param, inner, loc);
-        }
+    auto subst_slot = [&](ResultSlot &slot, SourceLoc loc) {
+        substitute_slot(params, bounds, slot, loc);
     };
     std::vector<Param> kept;
     std::vector<std::string> erased;
@@ -2760,7 +2771,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         param.indirections, param.optional, param.is_array, param.array_len, param.array_len_name,
                         param.type_args, param.loc, &param.shells, &param.elem_const, &param.const_pointee);
         for (ResultSlot &part : param.tuple_parts) {
-            subst_slot(subst_slot, part, param.loc);
+            subst_slot(part, param.loc);
         }
         for (FnParam &inner : param.fn_params) {
             subst_fn_param(subst_fn_param, inner, param.loc);
@@ -2800,7 +2811,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         }
     }
     for (ResultSlot &slot : fn.results) {
-        subst_slot(subst_slot, slot, fn.loc);
+        subst_slot(slot, fn.loc);
     }
     if (!fn.results.empty()) {
         const ResultSlot &first = fn.results.front();

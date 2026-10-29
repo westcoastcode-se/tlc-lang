@@ -830,6 +830,14 @@ With `[P1 type, P2 type]`, `other (P1, P2)` is that tuple.
 
 `SomeFunc(0, (40, 2))` infers them.
 
+`func take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to that tuple.
+
+The call is `main.take.spec.tuple.i32.i32`.
+
+`p[0][0]` is `40` and `p[1]` is `1`.
+
+A tuple inside a tuple still does not match a bare `T`.
+
 The same parameter on `func Point::take[P1 type, P2 type]` and `func Vec[T]::take[P1 type, P2 type]` is that tuple.
 
 The call is `p.take[i32, i32]((40, 2))`.

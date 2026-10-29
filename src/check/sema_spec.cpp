@@ -1693,13 +1693,24 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
             if (got.kind != TypeKind::Tuple || got.alias_id != 0 || got.results.size() != param.tuple_parts.size()) {
                 return false;
             }
-            for (std::size_t part_i = 0; part_i < param.tuple_parts.size(); ++part_i) {
-                const ResultSlot &slot = param.tuple_parts[part_i];
-                if (slot.is_tuple || slot.is_fn_ptr) {
+            const auto part_matches = [&](auto &&self, const ResultSlot &slot, const Type &part) -> bool {
+                if (slot.is_fn_ptr) {
                     return false;
                 }
+                if (slot.is_tuple) {
+                    if (part.kind != TypeKind::Tuple || part.alias_id != 0 ||
+                        part.results.size() != slot.tuple_parts.size()) {
+                        return false;
+                    }
+                    for (std::size_t inner = 0; inner < slot.tuple_parts.size(); ++inner) {
+                        if (!self(self, slot.tuple_parts[inner], part.results[inner])) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
                 SpecArg spelled;
-                if (!spell_type(got.results[part_i], spelled)) {
+                if (!spell_type(part, spelled)) {
                     return false;
                 }
                 const bool added_elem_const = slot.elem_const && !spelled.elem_const;
@@ -1708,6 +1719,12 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
                     (spelled.elem_const != slot.elem_const && !added_elem_const) ||
                     (slot.is_array && spelled.array_len != slot.array_len) || spelled.type_name != slot.type_name ||
                     spelled.type_package != slot.type_package) {
+                    return false;
+                }
+                return true;
+            };
+            for (std::size_t part_i = 0; part_i < param.tuple_parts.size(); ++part_i) {
+                if (!part_matches(part_matches, param.tuple_parts[part_i], got.results[part_i])) {
                     return false;
                 }
             }
