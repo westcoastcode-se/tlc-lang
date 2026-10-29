@@ -1870,6 +1870,35 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
     return true;
 }
 
+void Checker::substitute_fn_param(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds,
+                                  FnParam &param, SourceLoc loc) {
+    if (param.is_tuple) {
+        for (FnParam &inner : param.results) {
+            substitute_fn_param(params, bounds, inner, loc);
+        }
+        return;
+    }
+    if (param.is_fn_ptr) {
+        bool is_array = false;
+        int array_len = 0;
+        std::string array_len_name;
+        substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
+                        param.ret_indirections, param.ret_optional, is_array, array_len, array_len_name, param.type_args,
+                        loc, &param.shells, &param.elem_const, &param.ret_const_pointee);
+        for (FnParam &inner : param.params) {
+            substitute_fn_param(params, bounds, inner, loc);
+        }
+        for (FnParam &inner : param.results) {
+            substitute_fn_param(params, bounds, inner, loc);
+        }
+        return;
+    }
+    std::string array_len_name;
+    substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
+                    param.indirections, param.optional, param.is_array, param.array_len, array_len_name, param.type_args,
+                    loc, &param.shells, &param.elem_const, &param.const_pointee);
+}
+
 void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, ResultSlot &slot,
                               SourceLoc loc) {
     if (slot.is_tuple) {
@@ -1881,6 +1910,12 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
     substitute_type(params, bounds, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections,
                     slot.optional, slot.is_array, slot.array_len, slot.array_len_name, slot.type_args, loc, &slot.shells,
                     &slot.elem_const, &slot.const_pointee);
+    for (FnParam &param : slot.fn_params) {
+        substitute_fn_param(params, bounds, param, loc);
+    }
+    for (FnParam &param : slot.fn_results) {
+        substitute_fn_param(params, bounds, param, loc);
+    }
 }
 
 void Checker::substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds,

@@ -1120,6 +1120,10 @@ Naming the field replaces the tuple. `{0...}` stores 0.
 
 `var box Box` stores `add`.
 
+`op func (T, T) T = add` on `type Box[T type] struct` is that value for `Box[i32]`.
+
+`var box Box[i32]` stores `add`. `box.op(40, 2)` calls it.
+
 `p *i32 = &n` is reported as `global initializer is not a constant`.
 
 A short list leaves the elements it does not name uninitialized.

@@ -206,6 +206,12 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
         for (ResultSlot &part : field.tuple_parts) {
             substitute_slot(templ.type_params, bounds, part, field.loc);
         }
+        for (FnParam &param : field.fn_params) {
+            substitute_fn_param(templ.type_params, bounds, param, field.loc);
+        }
+        for (FnParam &param : field.fn_results) {
+            substitute_fn_param(templ.type_params, bounds, param, field.loc);
+        }
         prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                         field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args, field.loc);
         fold_shells(field.shells, field.loc);
@@ -593,6 +599,12 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         for (ResultSlot &part : field.tuple_parts) {
             substitute_slot(templ->type_params, bounds, part, field.loc);
         }
+        for (FnParam &param : field.fn_params) {
+            substitute_fn_param(templ->type_params, bounds, param, field.loc);
+        }
+        for (FnParam &param : field.fn_results) {
+            substitute_fn_param(templ->type_params, bounds, param, field.loc);
+        }
         if (field.init != nullptr) {
             substitute_expr(templ->type_params, bounds, *field.init);
         }
@@ -658,6 +670,12 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                             &field.const_pointee);
             for (ResultSlot &part : field.tuple_parts) {
                 substitute_slot(templ->type_params, bounds, part, field.loc);
+            }
+            for (FnParam &param : field.fn_params) {
+                substitute_fn_param(templ->type_params, bounds, param, field.loc);
+            }
+            for (FnParam &param : field.fn_results) {
+                substitute_fn_param(templ->type_params, bounds, param, field.loc);
             }
             if (field.init != nullptr) {
                 substitute_expr(templ->type_params, bounds, *field.init);

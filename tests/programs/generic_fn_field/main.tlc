@@ -1,0 +1,31 @@
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+func sub(a i32, b i32) i32 {
+    return a - b;
+}
+
+func id(n i32) i32 {
+    return n;
+}
+
+type Box[T type] struct {
+    op func (T, T) T = add;
+};
+
+type Id[T type] struct {
+    op func (T) T = id;
+};
+
+var global Box[i32];
+
+func main() i32 {
+    var bare Box[i32];
+    var named = Box[i32]{.op = sub};
+    var one Id[i32];
+    if (bare.op(40, 2) != 42 || named.op(40, 2) != 38 || global.op(20, 22) != 42 || one.op(42) != 42) {
+        return 1;
+    }
+    return bare.op(40, 2);
+}

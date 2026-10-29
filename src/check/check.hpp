@@ -1156,6 +1156,9 @@ class Checker {
     // `(T, i32)` on a generic field. Each element is substituted, including a nested tuple.
     void substitute_slot(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, ResultSlot &slot,
                          SourceLoc loc);
+    // `func (T, T) T` on a generic field. Each parameter and result is substituted.
+    void substitute_fn_param(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, FnParam &param,
+                             SourceLoc loc);
     void substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, std::string &type_name,
                          std::string &type_package, bool &is_struct, bool &is_enum, int &indirections, uint32_t &optional,
                          bool &is_array, int &array_len, std::string &array_len_name, std::vector<TypeArg> &type_args,

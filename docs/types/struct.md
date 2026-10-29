@@ -326,6 +326,51 @@ retq                             # return
 
 The program returns 42.
 
+`op func (T, T) T = add` on `type Box[T type] struct` is that function pointer for `Box[i32]`. `var box Box[i32]` stores `add`. `box.op(40, 2)` calls it. Naming the field replaces the pointer. A call is `global initializer is not a constant`.
+
+```c
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+type Box[T type] struct {
+    op func (T, T) T = add;
+};
+
+func main() i32 {
+    var box Box[i32];
+    return box.op(40, 2);
+}
+```
+
+```asm
+main:
+subq $40, %rsp                   # allocate
+leaq 197(%rip), %rax             # address of add
+movq %rax, 32(%rsp)              # op = add
+movq 32(%rsp), %rax              # move
+movq %rax, 16(%rsp)              # move
+# trace frame for the call, then the matching pop
+movq 16(%rsp), %rax              # op
+movl $40, %edi                   # constant
+movl $2, %esi                    # constant
+callq *%rax                      # call box.op
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # move
+addq $40, %rsp                   # release
+retq                             # return
+
+main.add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
+The program returns 42.
+
 ## Layout
 
 A struct may contain a pointer to itself. It may also contain a slice of itself.
