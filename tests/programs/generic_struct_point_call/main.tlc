@@ -1,0 +1,14 @@
+func give() i32 {
+    return 1;
+}
+
+type Box[T type] struct {
+    point struct {
+        x T = give();
+    };
+};
+
+func main() i32 {
+    var box Box[i32];
+    return box.point.x;
+}

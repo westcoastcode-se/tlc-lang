@@ -706,16 +706,19 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             StructInfo::Field stored{field.name, std::move(field_type), field.loc, field.exported};
             const bool as_union = origin != nullptr && origin->is_union;
             const bool tagged = as_union && !origin->tag_name.empty();
-            if (field.init != nullptr && as_union) {
+            if (field.init != nullptr) {
                 // A tagged arm is not a field value. An untagged union keeps one value.
+                // A struct field keeps its own value, including `x T = 40` inside `point struct`.
                 bool prior = false;
-                for (const StructInfo::Field &have : structs_[static_cast<std::size_t>(inline_id)].fields) {
-                    if (have.has_init) {
-                        prior = true;
-                        break;
+                if (as_union) {
+                    for (const StructInfo::Field &have : structs_[static_cast<std::size_t>(inline_id)].fields) {
+                        if (have.has_init) {
+                            prior = true;
+                            break;
+                        }
                     }
                 }
-                if (tagged || prior) {
+                if (as_union && (tagged || prior)) {
                     error(field.loc, "not supported yet");
                 } else {
                     stored.has_init = true;
@@ -727,34 +730,34 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         structs_[static_cast<std::size_t>(inline_id)].complete = true;
         if (origin != nullptr && origin->is_union) {
             bind_union_tag(structs_[static_cast<std::size_t>(inline_id)]);
-            if (origin->tag_name.empty()) {
-                std::vector<Scope> saved_scopes = std::move(scopes_);
-                scopes_.clear();
-                push();
-                if (const auto found = statics_.find(owner); found != statics_.end()) {
-                    for (const auto &[static_name, symbol] : found->second) {
-                        scopes_.back().symbols.emplace(static_name, symbol);
-                    }
+        }
+        if (origin == nullptr || !origin->is_union || origin->tag_name.empty()) {
+            std::vector<Scope> saved_scopes = std::move(scopes_);
+            scopes_.clear();
+            push();
+            if (const auto found = statics_.find(owner); found != statics_.end()) {
+                for (const auto &[static_name, symbol] : found->second) {
+                    scopes_.back().symbols.emplace(static_name, symbol);
                 }
-                for (const FieldDecl &field : fields) {
-                    if (field.init == nullptr) {
-                        continue;
-                    }
-                    const StructInfo::Field *slot = nullptr;
-                    for (const StructInfo::Field &have : structs_[static_cast<std::size_t>(inline_id)].fields) {
-                        if (have.name == field.name) {
-                            slot = &have;
-                            break;
-                        }
-                    }
-                    if (slot == nullptr || !slot->has_init || slot->type.kind == TypeKind::Invalid) {
-                        continue;
-                    }
-                    check_field_default(*field.init, slot->type, field.loc);
-                }
-                pop();
-                scopes_ = std::move(saved_scopes);
             }
+            for (const FieldDecl &field : fields) {
+                if (field.init == nullptr) {
+                    continue;
+                }
+                const StructInfo::Field *slot = nullptr;
+                for (const StructInfo::Field &have : structs_[static_cast<std::size_t>(inline_id)].fields) {
+                    if (have.name == field.name) {
+                        slot = &have;
+                        break;
+                    }
+                }
+                if (slot == nullptr || !slot->has_init || slot->type.kind == TypeKind::Invalid) {
+                    continue;
+                }
+                check_field_default(*field.init, slot->type, field.loc);
+            }
+            pop();
+            scopes_ = std::move(saved_scopes);
         }
         StructDecl arm;
         arm.loc = loc;

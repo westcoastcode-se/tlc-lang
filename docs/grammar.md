@@ -1142,6 +1142,12 @@ An inline struct is `body struct { k i32; }`.
 
 It is also `body export struct { k i32; }` or `export body struct { k i32; }`.
 
+`type Box[T type] struct` may hold `point struct { x T = 40; y T = 2; }`.
+
+`var box Box[i32]` reads 40 from `x` and 2 from `y`.
+
+Naming the field replaces that value. `{0...}` stores 0.
+
 An inline union is `data union { n i32; m i32; }`.
 
 It is also `data export union { n i32; m i32; }` or `export data union { n i32; m i32; }`.

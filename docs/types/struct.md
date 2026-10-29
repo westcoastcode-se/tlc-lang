@@ -225,6 +225,33 @@ retq                             # return
 
 The program returns 42.
 
+`point struct { x T = 40; y T = 2; }` inside that struct stores those values when an initializer does not name the field. `var box Box[i32]` reads 40 from `x` and 2 from `y`. `Box[i32]{.point = {.x = 1}}` replaces `x` and leaves `y` as 2. `Box[i32]{.point = {0...}}` stores 0. A call is `global initializer is not a constant`.
+
+```c
+type Box[T type] struct {
+    point struct {
+        x T = 40;
+        y T = 2;
+    };
+};
+
+func main() i32 {
+    var box Box[i32];
+    return box.point.x + box.point.y;
+}
+```
+
+```asm
+main:
+movl $40, -8(%rsp)               # x = 40
+movl $2, -4(%rsp)                # y = 2
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
+The program returns 42.
+
 ## Layout
 
 A struct may contain a pointer to itself. It may also contain a slice of itself.
