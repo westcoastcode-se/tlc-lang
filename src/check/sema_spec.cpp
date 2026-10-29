@@ -618,6 +618,93 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     if (graph_ != nullptr) {
         const_cast<PackageGraph *>(graph_)->struct_specs.push_back(StructSpecNote{owner, spec_name});
     }
+    // `One struct { value T; }` is not a concrete struct until `T` is known.
+    const auto materialize_inline = [&](auto &&self, const std::string &name, std::vector<FieldDecl> fields,
+                                        SourceLoc loc) -> int {
+        if (const int existing = find_tag(file_id_, name); existing >= 0) {
+            return existing;
+        }
+        for (FieldDecl &field : fields) {
+            if (!field.inline_fields.empty()) {
+                const int child = self(self, name + "." + field.name, field.inline_fields, field.loc);
+                field.type_name = child < 0 ? "invalid" : structs_[static_cast<std::size_t>(child)].name;
+                field.type_package.clear();
+                field.type_args.clear();
+                field.inline_fields.clear();
+                field.is_struct = false;
+                field.indirections = 0;
+            }
+            substitute_type(templ->type_params, bounds, field.type_name, field.type_package, field.is_struct,
+                            field.is_enum, field.indirections, field.optional, field.is_array, field.array_len,
+                            field.array_len_name, field.type_args, field.loc, &field.shells, &field.elem_const,
+                            &field.const_pointee);
+            for (ResultSlot &part : field.tuple_parts) {
+                substitute_slot(templ->type_params, bounds, part, field.loc);
+            }
+            if (field.init != nullptr) {
+                substitute_expr(templ->type_params, bounds, *field.init);
+            }
+        }
+        const int inline_id = static_cast<int>(structs_.size());
+        StructInfo inline_info;
+        inline_info.name = name;
+        inline_info.file_id = owner;
+        inline_info.loc = loc;
+        inline_info.anonymous = true;
+        structs_.push_back(std::move(inline_info));
+        tags_[owner][name] = inline_id;
+        if (graph_ != nullptr) {
+            const_cast<PackageGraph *>(graph_)->struct_specs.push_back(StructSpecNote{owner, name});
+        }
+        for (FieldDecl &field : fields) {
+            prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
+                            field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args,
+                            field.loc);
+            fold_shells(field.shells, field.loc);
+            Type field_type = field.is_tuple
+                                  ? type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array,
+                                                          field.shells, field.loc)
+                                  : field.is_fn_ptr
+                                  ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                                                   field.ret_indirections, field.indirections, field.fn_params,
+                                                   field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
+                                                   field.ret_const_pointee)
+                                  : object_type(field.type_name, field.indirections, field.is_array, field.array_len,
+                                                field.loc, false, field.type_package, field.is_struct, field.is_enum,
+                                                false, field.optional, field.const_pointee, false, field.elem_const,
+                                                field.elem_slice, field.shells);
+            if (field.is_const) {
+                field_type.is_const = true;
+            }
+            StructInfo::Field stored{field.name, std::move(field_type), field.loc, field.exported};
+            structs_[static_cast<std::size_t>(inline_id)].fields.push_back(std::move(stored));
+        }
+        structs_[static_cast<std::size_t>(inline_id)].complete = true;
+        StructDecl arm;
+        arm.loc = loc;
+        arm.name = name;
+        arm.anonymous = true;
+        arm.union_payload = true;
+        arm.fields = std::move(fields);
+        PendingAppend appended;
+        appended.file_id = owner;
+        appended.decl.data = std::move(arm);
+        pending_appends_.push_back(std::move(appended));
+        return inline_id;
+    };
+    for (FieldDecl &field : spec.fields) {
+        if (field.inline_fields.empty()) {
+            continue;
+        }
+        const int child = materialize_inline(materialize_inline, spec_name + "." + field.name, field.inline_fields,
+                                             field.loc);
+        field.type_name = child < 0 ? "invalid" : structs_[static_cast<std::size_t>(child)].name;
+        field.type_package.clear();
+        field.type_args.clear();
+        field.inline_fields.clear();
+        field.is_struct = false;
+        field.indirections = 0;
+    }
     for (FieldDecl &field : spec.fields) {
         prepare_written(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
                         field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args, field.loc);

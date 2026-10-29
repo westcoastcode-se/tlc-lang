@@ -104,13 +104,29 @@ void CodeGen::prepare_structs() {
         structs_.push_back(std::move(layout));
         tags_[file][item.name] = id;
     };
+    std::unordered_set<std::string> generic_names;
+    for (const PackageNode &node : graph_->nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            const auto *item = std::get_if<StructDecl>(&decl.data);
+            if (item != nullptr && !item->anonymous && !item->name.empty() && !item->type_params.empty()) {
+                generic_names.insert(item->name);
+            }
+        }
+    }
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
             const auto *item = std::get_if<StructDecl>(&decl.data);
             // A specialization is numbered after every concrete struct. The decl sits
             // on the defining file, so registering it here would take an earlier id.
+            // `Shape.One` of a generic union is created with the specialization, not here.
             if (item == nullptr || item->name.find(".spec") != std::string::npos) {
                 continue;
+            }
+            if (item->anonymous) {
+                const auto dot = item->name.find('.');
+                if (dot != std::string::npos && generic_names.contains(item->name.substr(0, dot))) {
+                    continue;
+                }
             }
             add_struct(node.file_id, node.qualifier, *item);
         }

@@ -1218,7 +1218,7 @@ Reading a field does not check the tag.
 
 An arm may name `Arm[T]`.
 
-`One struct { value T; }` is `not supported yet`.
+`One struct { value T; }` is that arm. `value` is `T` for that specialization.
 
 `type Num[T type] union` does not name an enum.
 

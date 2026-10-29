@@ -875,10 +875,24 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         symbol.type = type_struct(id);
         exports_[file_id_].emplace(item.name, std::move(symbol));
     };
+    std::unordered_set<std::string> generic_names;
+    for (const TopDecl &decl : unit.decls) {
+        const auto *item = std::get_if<StructDecl>(&decl.data);
+        if (item != nullptr && !item->anonymous && !item->name.empty() && !item->type_params.empty()) {
+            generic_names.insert(item->name);
+        }
+    }
     for (const TopDecl &decl : unit.decls) {
         const auto *item = std::get_if<StructDecl>(&decl.data);
         if (item == nullptr || item->name.empty()) {
             continue;
+        }
+        // `One struct { value T; }` is specialized with `Shape[T]`. The bare arm still names `T`.
+        if (item->anonymous) {
+            const auto dot = item->name.find('.');
+            if (dot != std::string::npos && generic_names.contains(item->name.substr(0, dot))) {
+                continue;
+            }
         }
         if (!item->type_params.empty()) {
             // `...` in the list is already `expected an identifier`.

@@ -13,5 +13,13 @@ type Shape[T type] union(Kind) {
 };
 
 func main() i32 {
-    return 0;
+    var shape Shape[i32] = {.One = {.value = 42}};
+    if (shape.One.value != 42) {
+        return 1;
+    }
+    shape.Two.n = 7;
+    if (Kind(shape) != Kind.Two || shape.Two.n != 7) {
+        return 2;
+    }
+    return 42;
 }

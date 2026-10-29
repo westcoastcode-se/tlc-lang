@@ -191,7 +191,41 @@ An empty `type Num[T type] union {}` is `not supported yet`. A value on a field,
 
 A method is `func Num[T]::get(self *this) T`. The call is `u.get()`.
 
-`type Shape[T type] union(Kind)` is the tagged union. An arm names a struct, including `Arm[T]`. `One struct { value T; }` is `not supported yet`.
+`type Shape[T type] union(Kind)` is the tagged union. An arm names a struct, including `Arm[T]`.
+
+`One struct { value T; }` is that arm. `value` is `T` for that specialization.
+
+```c
+type Kind enum {
+    One,
+    Two,
+};
+
+type Shape[T type] union(Kind) {
+    One struct {
+        value T;
+    };
+    Two struct {
+        n i32;
+    };
+};
+
+func main() i32 {
+    var shape Shape[i32] = {.One = {.value = 42}};
+    return shape.One.value;
+}
+```
+
+```asm
+main:
+movl $42, -8(%rsp)               # value = 42
+movl -8(%rsp), %eax              # move
+movl %eax, -16(%rsp)             # shape.One.value
+movl -16(%rsp), %eax             # move
+retq                             # return
+```
+
+The program returns 42.
 
 ```c
 type Num[T type] union {
