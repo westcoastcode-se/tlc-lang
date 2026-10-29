@@ -1366,6 +1366,8 @@ class CodeGen {
                                       std::unordered_set<int> &stack);
     llvm::Constant *default_struct_into(int struct_id, std::unordered_set<int> &stack);
     llvm::Constant *default_struct(int struct_id);
+    // One untagged field value, stored at offset 0. Null when that union has no value.
+    llvm::Constant *untagged_default(int struct_id);
     llvm::Constant *init_image(int struct_id, const Expr::Init *named);
     llvm::Constant *default_array(llvm::Type *type, int struct_id, std::unordered_set<int> &stack);
     llvm::Constant *omitted_field(const FieldLayout &slot, std::unordered_set<int> &stack);

@@ -173,7 +173,32 @@ retq                             # return
 
 `Num` is 4 bytes. `u.n` and `u.m` are the same memory, so `main` returns 4.
 
-A value on one of those fields, `n i32 = 4`, is reported as `not supported yet`. The same value inside an anonymous union field is that error too.
+`n i32 = 4` is the value stored when an initializer does not name a field. `var u Num` reads 4 from `u.n` and from `u.m`. Naming a field replaces that value. `Num{0...}` stores 0.
+
+`var u Num`, `var u = Num{}`, `new Num`, and a file-scope `var u Num` store that value. A second value on the same union is `not supported yet`. The fields share one address.
+
+A value on a tagged arm is `not supported yet`. A call is `global initializer is not a constant`. An anonymous union field, `data union { n i32 = 4; m i32; }`, uses that same value.
+
+```c
+type Num union {
+    n i32 = 4;
+    m i32;
+};
+
+func main() i32 {
+    var u Num;
+    return u.m;
+}
+```
+
+```asm
+main:
+movl $4, -8(%rsp)                # n = 4
+movl -8(%rsp), %eax              # move
+retq                             # return
+```
+
+The program returns 4.
 
 ### A generic union
 
@@ -187,7 +212,32 @@ A value on one of those fields, `n i32 = 4`, is reported as `not supported yet`.
 
 `extern type Num[T type] union` is `not supported yet`. `extern(abi="c") type Num[T type] union` is `extern(abi="c") on a trait or a generic`.
 
-An empty `type Num[T type] union {}` is `not supported yet`. A value on a field, `n T = 4`, is `not supported yet`.
+An empty `type Num[T type] union {}` is `not supported yet`.
+
+`n T = 4` is the value stored when an initializer does not name a field. `var u Num[i32]` reads 4 from `u.n` and from `u.m`. Naming a field replaces that value. `Num[i32]{0...}` stores 0.
+
+`var u Num[i32]`, `var u = Num[i32]{}`, `new Num[i32]`, and a file-scope `var u Num[i32]` store that value. A second value on that union is `not supported yet`. A value on a tagged arm is `not supported yet`. A call is `global initializer is not a constant`.
+
+```c
+type Num[T type] union {
+    n T = 4;
+    m T;
+};
+
+func main() i32 {
+    var u Num[i32];
+    return u.n;
+}
+```
+
+```asm
+main:
+movl $4, -8(%rsp)                # n = 4
+movl -8(%rsp), %eax              # move
+retq                             # return
+```
+
+The program returns 4.
 
 A method is `func Num[T]::get(self *this) T`. The call is `u.get()`.
 

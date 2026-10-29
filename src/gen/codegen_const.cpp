@@ -289,6 +289,55 @@ llvm::Constant *CodeGen::default_struct(int struct_id) {
     return default_struct_into(struct_id, stack);
 }
 
+llvm::Constant *CodeGen::untagged_default(int struct_id) {
+    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+        return nullptr;
+    }
+    const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
+    if (!layout.is_union || layout.tag_enum >= 0 || layout.type == nullptr || !layout.type->isSized() ||
+        layout.type->getNumElements() == 0) {
+        return nullptr;
+    }
+    const FieldLayout *chosen = nullptr;
+    for (const FieldLayout &field : layout.fields) {
+        if (field.init != nullptr) {
+            chosen = &field;
+            break;
+        }
+    }
+    if (chosen == nullptr || chosen->type == nullptr || chosen->init == nullptr) {
+        return nullptr;
+    }
+    const uint32_t saved_file = current_file_;
+    current_file_ = layout.file_id;
+    llvm::Constant *value = const_field(*chosen->init, *chosen);
+    current_file_ = saved_file;
+    if (value == nullptr) {
+        return nullptr;
+    }
+    // The largest field is the prefix. A shorter integer is the low bits of that prefix.
+    llvm::Type *prefix = layout.type->getElementType(0);
+    llvm::Constant *stored = nullptr;
+    if (value->getType() == prefix) {
+        stored = value;
+    } else if (const auto *narrow = llvm::dyn_cast<llvm::ConstantInt>(value)) {
+        auto *wide = llvm::dyn_cast<llvm::IntegerType>(prefix);
+        if (wide != nullptr && narrow->getType()->getIntegerBitWidth() < wide->getBitWidth()) {
+            stored = llvm::ConstantInt::get(wide, narrow->getValue().zext(wide->getBitWidth()));
+        }
+    }
+    if (stored == nullptr) {
+        return nullptr;
+    }
+    std::vector<llvm::Constant *> elements;
+    elements.reserve(layout.type->getNumElements());
+    elements.push_back(stored);
+    for (unsigned index = 1; index < layout.type->getNumElements(); ++index) {
+        elements.push_back(llvm::Constant::getNullValue(layout.type->getElementType(index)));
+    }
+    return llvm::ConstantStruct::get(layout.type, elements);
+}
+
 llvm::Constant *CodeGen::init_image(int struct_id, const Expr::Init *named) {
     std::unordered_set<int> stack;
     return const_struct_into(named, struct_id, false, stack);
@@ -358,6 +407,11 @@ llvm::Constant *CodeGen::const_struct_into(const Expr::Init *overlay, int struct
         return nullptr;
     }
     if (layout.is_union) {
+        if (layout.tag_enum < 0 && overlay == nullptr) {
+            if (llvm::Constant *value = untagged_default(struct_id)) {
+                return value;
+            }
+        }
         return strict ? nullptr : llvm::ConstantAggregateZero::get(layout.type);
     }
     // A by-value cycle is already rejected. The guard keeps a nested field of this struct at zero.
@@ -457,6 +511,14 @@ bool CodeGen::struct_has_default(int struct_id, std::unordered_set<int> &seen) c
     }
     const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
     if (layout.is_union) {
+        if (layout.tag_enum >= 0) {
+            return false;
+        }
+        for (const FieldLayout &field : layout.fields) {
+            if (field.init != nullptr) {
+                return true;
+            }
+        }
         return false;
     }
     for (const FieldLayout &field : layout.fields) {
@@ -477,9 +539,11 @@ llvm::Constant *CodeGen::bare_initializer(const Lowered &low, llvm::Type *ty) {
     if (ty == nullptr) {
         return nullptr;
     }
-    const bool plain = low.struct_id >= 0 && low.depth == 0 && !low.is_slice && !low.elem_slice &&
-                       low.struct_id < static_cast<int>(structs_.size()) &&
-                       !structs_[static_cast<std::size_t>(low.struct_id)].is_union;
+    const bool object = low.struct_id >= 0 && low.depth == 0 && !low.is_slice && !low.elem_slice &&
+                        low.struct_id < static_cast<int>(structs_.size());
+    const bool untagged = object && structs_[static_cast<std::size_t>(low.struct_id)].is_union &&
+                          structs_[static_cast<std::size_t>(low.struct_id)].tag_enum < 0;
+    const bool plain = object && (!structs_[static_cast<std::size_t>(low.struct_id)].is_union || untagged);
     if (plain) {
         std::unordered_set<int> seen;
         if (struct_has_default(low.struct_id, seen)) {
@@ -507,8 +571,56 @@ void CodeGen::store_struct_defaults(llvm::Value *slot, int struct_id, std::unord
         return;
     }
     const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
-    if (layout.is_union || layout.type == nullptr) {
+    if (layout.type == nullptr) {
         seen.erase(struct_id);
+        return;
+    }
+    if (layout.is_union) {
+        // A tagged arm is not a field value. Untagged fields share offset 0.
+        seen.erase(struct_id);
+        if (layout.tag_enum >= 0) {
+            return;
+        }
+        const bool zeroed = overlay != nullptr && overlay->zero_rest;
+        bool named = false;
+        if (overlay != nullptr && !zeroed) {
+            for (const Expr::FieldInit &item : overlay->fields) {
+                if (item.value != nullptr && !item.field.empty()) {
+                    named = true;
+                    break;
+                }
+            }
+        }
+        if (zeroed || named) {
+            return;
+        }
+        const FieldLayout *chosen = nullptr;
+        for (const FieldLayout &field : layout.fields) {
+            if (field.init != nullptr) {
+                chosen = &field;
+                break;
+            }
+        }
+        if (chosen == nullptr || chosen->type == nullptr || chosen->init == nullptr) {
+            return;
+        }
+        const uint32_t saved_file = current_file_;
+        current_file_ = layout.file_id;
+        llvm::Constant *value = const_field(*chosen->init, *chosen);
+        current_file_ = saved_file;
+        if (value == nullptr || value->getType() != chosen->type) {
+            return;
+        }
+        if (layout.type->isSized() && chosen->type->isSized()) {
+            const llvm::DataLayout &data_layout = module_.getDataLayout();
+            const uint64_t union_size = data_layout.getTypeAllocSize(layout.type).getFixedValue();
+            const uint64_t field_size = data_layout.getTypeAllocSize(chosen->type).getFixedValue();
+            // A shorter field leaves the rest of the shared storage zero.
+            if (field_size < union_size) {
+                builder_.CreateStore(llvm::ConstantAggregateZero::get(layout.type), slot);
+            }
+        }
+        builder_.CreateStore(value, slot);
         return;
     }
     const uint32_t saved_file = current_file_;
@@ -1039,9 +1151,24 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
     }
     // Named fields and `0...` are stored. A field with a value is stored when the list does not zero it.
     llvm::AllocaInst *slot = alloca_typed(layout.type, "init");
-    if (init.zero_rest || layout.is_union) {
+    if (init.zero_rest || (layout.is_union && layout.tag_enum >= 0)) {
         builder_.CreateStore(llvm::ConstantAggregateZero::get(layout.type), slot);
-    } else if (!layout.is_union) {
+    } else if (layout.is_union) {
+        bool named = false;
+        for (const Expr::FieldInit &field : init.fields) {
+            if (field.value != nullptr && !field.field.empty()) {
+                named = true;
+                break;
+            }
+        }
+        std::unordered_set<int> seen;
+        if (named || !struct_has_default(init.struct_id, seen)) {
+            builder_.CreateStore(llvm::ConstantAggregateZero::get(layout.type), slot);
+        } else {
+            std::unordered_set<int> fresh;
+            store_struct_defaults(slot, init.struct_id, fresh, &init);
+        }
+    } else {
         std::unordered_set<int> seen;
         store_struct_defaults(slot, init.struct_id, seen, &init);
     }

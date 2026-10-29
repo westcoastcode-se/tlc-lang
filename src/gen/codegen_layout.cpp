@@ -283,6 +283,7 @@ void CodeGen::prepare_structs() {
             std::vector<llvm::Type *> body;
             std::vector<FieldLayout> fields;
             body.reserve(item->fields.size());
+            bool union_took_init = false;
             for (const FieldDecl &field : item->fields) {
                 const Lowered low =
                     field.is_tuple
@@ -321,9 +322,12 @@ void CodeGen::prepare_structs() {
                 slot.fn_results = low.fn_results;
                 slot.is_tuple = low.is_tuple;
                 slot.tuple_parts = low.tuple_parts;
-                // A union arm is not a field value. The inline payload keeps the values on its fields.
+                // A tagged arm is not a field value. An untagged union keeps one value at offset 0.
                 if (field.init != nullptr && !item->is_union) {
                     slot.init = field.init.get();
+                } else if (field.init != nullptr && item->is_union && item->tag_name.empty() && !union_took_init) {
+                    slot.init = field.init.get();
+                    union_took_init = true;
                 }
                 // C _Bool is one byte. An extern(abi="c") struct keeps that layout.
                 if (item->extern_c && low.elem_bool && low.depth == 0) {

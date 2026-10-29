@@ -32,7 +32,7 @@ A field is a name, then its type, in the same order as `var`: `x i32`, `next ?*N
 
 A file-scope variable stores 0 in an element the list does not name. Naming the field replaces the list.
 
-A field of an inline union payload uses that same value, as in `n i32 = 1` inside `union(Enum)`. A union with no initializer does not choose an arm.
+A field of an inline union payload uses that same value, as in `n i32 = 1` inside `union(Enum)`. An untagged union field uses it too, as in `n i32 = 4`. A union with no initializer does not choose an arm.
 
 A value on a trait field is reported as `not supported yet`. A field ends with `;`. The semicolon after `}` may be omitted.
 

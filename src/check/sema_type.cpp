@@ -916,11 +916,23 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
             if (item->is_union && item->fields.empty() && item->tag_name.empty()) {
                 error(item->loc, "not supported yet");
             }
-            if (item->is_union) {
+            // A tagged arm is not a field value. An untagged union stores one value at offset 0.
+            if (item->is_union && !item->tag_name.empty()) {
                 for (const FieldDecl &field : item->fields) {
                     if (field.init != nullptr) {
                         error(field.loc, "not supported yet");
                     }
+                }
+            } else if (item->is_union) {
+                int inits = 0;
+                for (const FieldDecl &field : item->fields) {
+                    if (field.init == nullptr) {
+                        continue;
+                    }
+                    if (inits > 0) {
+                        error(field.loc, "not supported yet");
+                    }
+                    ++inits;
                 }
             }
             owned_structs_.push_back(*item);
@@ -1412,9 +1424,24 @@ void Checker::define_struct_fields() {
             }
             info.fields.push_back(StructInfo::Field{field.name, std::move(field_type), field.loc, field.exported});
             if (field.init != nullptr) {
-                // A union arm is not a field value. The inline payload is an ordinary struct.
-                if (info.is_union) {
+                // A tagged arm is not a field value. The inline payload is an ordinary struct.
+                // An untagged union stores one value. The fields share that address.
+                if (info.is_union && !info.tag_name.empty()) {
                     error(field.loc, "not supported yet");
+                } else if (info.is_union) {
+                    bool prior = false;
+                    for (const StructInfo::Field &have : info.fields) {
+                        if (have.has_init) {
+                            prior = true;
+                            break;
+                        }
+                    }
+                    if (prior) {
+                        error(field.loc, "not supported yet");
+                    } else {
+                        info.fields.back().has_init = true;
+                        info.fields.back().init = field.init.get();
+                    }
                 } else {
                     info.fields.back().has_init = true;
                     info.fields.back().init = field.init.get();

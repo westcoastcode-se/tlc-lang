@@ -1150,7 +1150,13 @@ It is also `data export union { n i32; m i32; }` or `export data union { n i32; 
 
 Exporting the member exports every member inside it.
 
-A value on an untagged union field, `n i32 = 4`, is reported as `not supported yet`.
+`n i32 = 4` is the value stored when an initializer does not name that field.
+
+Naming a field replaces that value. `{0...}` stores 0.
+
+A second value on the same union is reported as `not supported yet`.
+
+A value on a tagged arm is reported as `not supported yet`.
 
 `export k i32` there is allowed and changes nothing.
 
@@ -1223,6 +1229,12 @@ An arm may name `Arm[T]`.
 `type Num[T type] union` does not name an enum.
 
 `Num[i32]` and `Num[u8]` are different types.
+
+`n T = 4` is the value stored when an initializer does not name a field.
+
+A second value on that union is reported as `not supported yet`.
+
+A value on a tagged arm is reported as `not supported yet`.
 
 `extern type Num[T type] union` is `not supported yet`.
 

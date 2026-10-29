@@ -850,6 +850,14 @@ void Checker::init_fill_brace(const Type &type, const Expr::Init *brace, std::ve
         if (info.is_union) {
             if (brace != nullptr) {
                 init_set_span(bits, offset, leaves);
+            } else if (info.tag_name.empty()) {
+                // No initializer still stores the one field value.
+                for (const StructInfo::Field &field : info.fields) {
+                    if (field.has_init) {
+                        init_set_span(bits, offset, leaves);
+                        break;
+                    }
+                }
             }
             return;
         }

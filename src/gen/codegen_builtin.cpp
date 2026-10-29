@@ -558,9 +558,17 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     builder_.SetInsertPoint(ok);
     // A struct stores named fields, `0...`, and fields that have a value. Other fields stay unset.
     // `new i32` stores nothing.
+    bool union_default = false;
+    if (low.struct_id >= 0 && low.struct_id < static_cast<int>(structs_.size())) {
+        const StructLayout &object = structs_[static_cast<std::size_t>(low.struct_id)];
+        if (object.is_union && object.tag_enum < 0) {
+            std::unordered_set<int> seen;
+            union_default = struct_has_default(low.struct_id, seen);
+        }
+    }
     const bool struct_object = low.struct_id >= 0 && low.depth == 0 && !low.is_array && !low.is_slice &&
                                low.struct_id < static_cast<int>(structs_.size()) &&
-                               !structs_[static_cast<std::size_t>(low.struct_id)].is_union;
+                               (!structs_[static_cast<std::size_t>(low.struct_id)].is_union || union_default);
     if (buffer && node.init != nullptr) {
         if (const auto *list = std::get_if<Expr::Init>(&node.init->data)) {
             if (list->zero_rest && size != 0) {

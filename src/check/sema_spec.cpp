@@ -724,17 +724,29 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             field_type.is_const = true;
         }
         StructInfo::Field stored{field.name, std::move(field_type), field.loc, field.exported};
-        // A union arm is not a field value. The template already reports that initializer.
-        if (field.init != nullptr && !spec.is_union) {
-            stored.has_init = true;
-            stored.init = field.init.get();
+        // A tagged arm is not a field value. An untagged union keeps one value.
+        if (field.init != nullptr && !(spec.is_union && !spec.tag_name.empty())) {
+            bool prior = false;
+            if (spec.is_union) {
+                for (const StructInfo::Field &have : structs_[static_cast<std::size_t>(id)].fields) {
+                    if (have.has_init) {
+                        prior = true;
+                        break;
+                    }
+                }
+            }
+            if (!prior) {
+                stored.has_init = true;
+                stored.init = field.init.get();
+            }
         }
         structs_[static_cast<std::size_t>(id)].fields.push_back(std::move(stored));
     }
     structs_[static_cast<std::size_t>(id)].complete = true;
     if (spec.is_union) {
         bind_union_tag(structs_[static_cast<std::size_t>(id)]);
-    } else {
+    }
+    if (!spec.is_union || spec.tag_name.empty()) {
         // The value is checked in the struct's file, not in the call that instantiates it.
         std::vector<Scope> saved_scopes = std::move(scopes_);
         scopes_.clear();

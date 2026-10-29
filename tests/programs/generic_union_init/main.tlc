@@ -1,7 +1,47 @@
 type Num[T type] union {
     n T = 4;
+    m T;
 };
 
+type Word union {
+    n i32 = 4;
+    m i32;
+};
+
+type Wide union {
+    n i8 = 4;
+    m i32;
+};
+
+type Holder struct {
+    data union {
+        n i32 = 4;
+        m i32;
+    };
+};
+
+var global Num[i32];
+var wide Wide;
+
 func main() i32 {
-    return 0;
+    var bare Num[i32];
+    var empty = Num[i32]{};
+    var named Num[i32] = {.m = 7};
+    var zero Num[i32] = {0...};
+    var word Word;
+    var holder Holder;
+    var heap *Num[i32] = new Num[i32];
+    var made *Num[i32] = new Num[i32]{};
+    if (bare.n != 4 || bare.m != 4 || empty.n != 4 || global.n != 4 || word.n != 4 || holder.data.n != 4) {
+        return 1;
+    }
+    if (named.n != 7 || named.m != 7 || zero.n != 0 || wide.m != 4) {
+        return 2;
+    }
+    if (heap.n != 4 || made.n != 4) {
+        return 3;
+    }
+    delete heap;
+    delete made;
+    return 42;
 }

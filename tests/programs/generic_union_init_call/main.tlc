@@ -1,0 +1,12 @@
+func give() i32 {
+    return 1;
+}
+
+type Num[T type] union {
+    n T = give();
+};
+
+func main() i32 {
+    var u Num[i32];
+    return u.n;
+}

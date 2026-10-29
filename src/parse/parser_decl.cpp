@@ -86,7 +86,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bo
             field.fn_results = type.fn_results;
             field.is_tuple = type.is_tuple;
             field.tuple_parts = std::move(type.tuple_parts);
-            // `n i32 = 4` is the same field form as in a struct. A union field rejects the value in sema.
+            // `n i32 = 4` is the same field form as in a struct. An untagged union keeps one value.
             if (eat(TokenKind::Eq)) {
                 field.init = parse_expr();
             }

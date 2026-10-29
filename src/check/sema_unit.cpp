@@ -1339,9 +1339,6 @@ void Checker::check_field_defaults(const TranslationUnit &unit) {
             continue;
         }
         const StructInfo &info = structs_[static_cast<std::size_t>(id)];
-        if (info.is_union) {
-            continue;
-        }
         for (const FieldDecl &field : item->fields) {
             if (field.init == nullptr) {
                 continue;

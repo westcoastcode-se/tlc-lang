@@ -5283,6 +5283,15 @@ int run_sema_tests() {
             "  data union { n i32 = 4; m i32; };\n"
             "};\n"
             "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "type Holder struct {\n"
+            "  data union { n i32 = 4; m i32 = 5; };\n"
+            "};\n"
+            "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
         EXPECT(check, errors.find("expected ';'") == std::string::npos);
     }
