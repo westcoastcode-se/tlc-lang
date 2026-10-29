@@ -139,6 +139,84 @@ A runtime `const` is that same error.
 
 A `var` is `type mismatch`.
 
+`func apply[T type](op func (T, T) T, a T, b T) T` takes that function pointer. `T` is the argument type and the result type.
+
+`apply[i32](add, a, b)` calls `main.apply.spec.i32` and passes `add`.
+
+`apply(add, a, b)` infers `i32` when `a` and `b` are `i32`.
+
+`apply[i32](add, 40, 2)` calls `main.apply.spec.i32.spec.40.2` and does not pass `40` or `2`.
+
+A function of the wrong signature is `type mismatch`.
+
+```c
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+func apply[T type](op func (T, T) T, a T, b T) T {
+    return op(a, b);
+}
+
+func main() i32 {
+    var a = 40;
+    var b = 2;
+    return apply[i32](add, a, b);
+}
+```
+
+```asm
+main.apply.spec.i32:
+subq $56, %rsp                   # allocate
+movq %rdi, 40(%rsp)              # op
+movl %esi, 48(%rsp)              # a
+movl %edx, 52(%rsp)              # b
+movq 40(%rsp), %rax              # op
+movq %rax, 16(%rsp)              # move
+movl 48(%rsp), %eax              # a
+movl %eax, 24(%rsp)              # move
+movl 52(%rsp), %eax              # b
+movl %eax, 28(%rsp)              # move
+# trace frame for the call, then the matching pop
+movq 16(%rsp), %rax              # op
+movl 28(%rsp), %esi              # b
+movl 24(%rsp), %edi              # a
+callq *%rax                      # call op
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # move
+addq $56, %rsp                   # release
+retq                             # return
+
+main:
+subq $40, %rsp                   # allocate
+movl $40, 32(%rsp)               # a = 40
+movl $2, 36(%rsp)                # b = 2
+movl 32(%rsp), %eax              # a
+movl %eax, 16(%rsp)              # move
+movl 36(%rsp), %eax              # b
+movl %eax, 20(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 20(%rsp), %edx              # b
+movl 16(%rsp), %esi              # a
+leaq 59(%rip), %rdi              # address of add
+callq main.apply.spec.i32        # call apply
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # move
+addq $40, %rsp                   # release
+retq                             # return
+
+main.add:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
+The program returns 42.
+
 ## A pointer when the type argument is an array
 
 `*T`, when `T` is `[4]i32`, is a pointer to that array.

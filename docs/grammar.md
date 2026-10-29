@@ -442,6 +442,14 @@ When the file is `main.tlc`, `id(2)` calls `main.id.spec.i32.spec.2` and does no
 
 `id(n)` when `n` is a `var` calls `main.id.spec.i32` and passes `n`.
 
+`func apply[T type](op func (T, T) T, a T, b T) T` takes that function pointer.
+
+`apply[i32](add, a, b)` calls `main.apply.spec.i32` and passes `add`.
+
+`apply(add, a, b)` infers `i32` when `a` and `b` are `i32`.
+
+A function of the wrong signature is reported as `type mismatch`.
+
 `func only[T type](value comptime T)` requires that argument.
 
 A `var` is `type mismatch`.

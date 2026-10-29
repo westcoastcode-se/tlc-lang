@@ -1346,6 +1346,55 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         if (got.kind == TypeKind::Invalid) {
             continue;
         }
+        // `op func (T, T) T` binds `T` from that function. The pointer itself is not `T`.
+        if (param.is_fn_ptr) {
+            const Type *sig = nullptr;
+            if (got.kind == TypeKind::Pointer && got.pointee != nullptr && got.pointee->kind == TypeKind::Function) {
+                sig = got.pointee.get();
+            } else if (got.kind == TypeKind::Function) {
+                sig = &got;
+            }
+            const auto bind_name = [&](const std::string &type_name, const std::string &type_package, int indirections,
+                                       const Type &have) -> bool {
+                if (!type_package.empty()) {
+                    return true;
+                }
+                const int slot = param_index(templ.type_params, type_name);
+                if (slot < 0 || templ.type_params[static_cast<std::size_t>(slot)].is_value ||
+                    templ.type_params[static_cast<std::size_t>(slot)].is_pack) {
+                    return true;
+                }
+                const Type *cursor = &have;
+                for (int star = 0; star < indirections; ++star) {
+                    if (cursor->kind != TypeKind::Pointer || cursor->pointee == nullptr) {
+                        return true;
+                    }
+                    cursor = cursor->pointee.get();
+                }
+                if (!constrain(slot, *cursor)) {
+                    error(call.loc, "type mismatch");
+                    return false;
+                }
+                return true;
+            };
+            if (sig != nullptr && sig->result != nullptr && sig->variadic == param.fn_variadic &&
+                sig->params.size() == param.fn_params.size()) {
+                for (std::size_t part_i = 0; part_i < param.fn_params.size(); ++part_i) {
+                    const FnParam &slot = param.fn_params[part_i];
+                    if (slot.is_fn_ptr || slot.is_tuple || slot.is_array) {
+                        continue;
+                    }
+                    if (!bind_name(slot.type_name, slot.type_package, slot.indirections, sig->params[part_i])) {
+                        return std::nullopt;
+                    }
+                }
+                if (param.fn_results.empty() &&
+                    !bind_name(param.type_name, param.type_package, param.ret_indirections, *sig->result)) {
+                    return std::nullopt;
+                }
+            }
+            continue;
+        }
         // `(P1, P2)` binds each element. A concrete element is checked after substitution.
         if (param.is_tuple) {
             if (got.kind != TypeKind::Tuple || got.alias_id != 0 || got.results.size() != param.tuple_parts.size()) {
@@ -1664,8 +1713,19 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
             }
             return true;
         }
-        if (param.is_fn_ptr || got.kind == TypeKind::Invalid) {
+        if (got.kind == TypeKind::Invalid) {
             return false;
+        }
+        // `op func (T, T) T` is that pointer after `T` is substituted.
+        if (param.is_fn_ptr) {
+            const bool saved = quiet_;
+            quiet_ = true;
+            const Type want =
+                type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
+                               param.indirections, param.fn_params, param.fn_variadic, param.fn_results, param.loc,
+                               param.ret_optional, param.ret_const_pointee);
+            quiet_ = saved;
+            return want.kind != TypeKind::Invalid && same_type(want, got);
         }
         SpecArg spelled;
         if (!spell_type(got, spelled)) {
