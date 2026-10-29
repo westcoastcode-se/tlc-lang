@@ -2675,12 +2675,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     } else if (node.is_const && !node.is_comptime) {
                         note_promotable(symbol, node.value.get());
-                    } else if (node.names.size() == 1 && node.value != nullptr) {
-                        // `var f = add` when `add` is a `comptime func`. A later `comptime const` names it.
-                        if (const auto *named = std::get_if<Expr::Name>(&node.value->data);
-                            named != nullptr && named->runtime_body) {
-                            note_promotable(symbol, node.value.get());
-                        }
                     }
                     declare(std::move(symbol), loc);
                     if (!node.is_const && node.names.size() == 1 && node.value != nullptr) {
@@ -2709,12 +2703,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.is_auto = true;
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     symbol.loc = loc;
-                    if (node.names.size() == 1 && node.value != nullptr) {
-                        if (const auto *named = std::get_if<Expr::Name>(&node.value->data);
-                            named != nullptr && named->runtime_body) {
-                            note_promotable(symbol, node.value.get());
-                        }
-                    }
                     shadow(std::move(symbol), loc);
                     if (node.names.size() == 1 && node.value != nullptr) {
                         if (Symbol *live = in_current(node.names[index])) {
@@ -2857,11 +2845,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                                 }
                             } else if ((var.is_const_decl || live->type.is_const) && var.init != nullptr) {
                                 note_promotable(*live, var.init.get());
-                            } else if (var.init != nullptr) {
-                                if (const auto *named = std::get_if<Expr::Name>(&var.init->data);
-                                    named != nullptr && named->runtime_body) {
-                                    note_promotable(*live, var.init.get());
-                                }
                             }
                             init_cover(*live, var.init.get());
                             if (const auto *created = std::get_if<Expr::New>(&var.init->data);

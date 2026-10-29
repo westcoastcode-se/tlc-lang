@@ -732,12 +732,6 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             }
             if ((var->is_const_decl || var->is_const) && !var->is_comptime) {
                 note_promotable(symbol, var->init.get());
-            } else if (!var->is_comptime && var->init != nullptr) {
-                // `var f = add` when `add` is a `comptime func`. A later `comptime const` names it.
-                if (const auto *named = std::get_if<Expr::Name>(&var->init->data);
-                    named != nullptr && named->runtime_body) {
-                    note_promotable(symbol, var->init.get());
-                }
             }
             symbol.link_name = var->link_name;
             bool defined = false;

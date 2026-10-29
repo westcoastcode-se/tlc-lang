@@ -726,6 +726,8 @@ A parameter that is not `comptime` is `type mismatch`.
 
 `var f = add` then `comptime const ops = (f, 1)` is `not supported yet`.
 
+A `comptime func` in that `var` is that error.
+
 A function element is called through that pointer.
 
 `(p[0])(n, 2)` is the call, and `p[0](n, 2)` is a generic call of `p`.
@@ -1161,13 +1163,11 @@ That copy calls `main.add` with `n` and `2`, then adds `1`.
 
 `add(1, 0)` still folds. The call is `addl $1`.
 
-`var f = add` then `comptime const named = f` names `add`.
+`var f = add` then `comptime const named = f` is `not supported yet`.
 
-`named(40, 2)` calls through that pointer.
+`f` stays a `var`. Write `comptime const f = add`.
 
-A file-scope `var held = add` then `comptime const op = held` is that argument.
-
-`take(op, n)` calls `main.take.spec.fnadd`.
+A file-scope `var held = add` then `comptime const op = held` is `global initializer is not a constant`.
 
 `const saved = add` then `comptime const folded = saved` is the same copy.
 

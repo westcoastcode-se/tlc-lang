@@ -539,6 +539,8 @@ A runtime `var` of a tuple that holds a function is `type mismatch`.
 
 `var f = add` then `comptime const ops = (f, 1)` is `not supported yet`.
 
+A `comptime func` in that `var` is that error. Write `comptime const f = add`.
+
 `comptime const pair = (&addr, 2)` names a pointer element.
 
 `addr` is a `comptime const`.
