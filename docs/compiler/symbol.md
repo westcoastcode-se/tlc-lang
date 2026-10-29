@@ -28,9 +28,11 @@ A generic function adds it after the type pieces, such as `qualifier.id.spec.i32
 
 Two comptime parameters follow in parameter order, such as `qualifier.rmw_at.spec.i32.spec.1.0` when the operation is `1` and the order is `0`.
 
-A bare `extern` and `extern(abi="tlc")` do not keep an unspecialized `qualifier.scale`.
+A value use emits `qualifier.scale`. The comptime parameter is still an argument of that symbol.
 
-That spelling is `not supported yet`.
+A constant call is `qualifier.scale.spec.2`.
+
+A bare `extern` and `extern(abi="tlc")` are `not supported yet`.
 
 ## Tuples
 

@@ -420,13 +420,11 @@ A function nested in another function does not take an enumerator.
 
 A function nested in another function still passes a folded constant.
 
-A bare `extern` and `extern(abi="tlc")` on that function are `not supported yet`. `var f = scale` stays `not supported yet`.
+A bare `extern` and `extern(abi="tlc")` on that function are `not supported yet`.
 
-That symbol passes the comptime parameter.
+`var f = scale` stores `scale`. That function still takes the comptime parameter. `f(2, x)` passes both arguments. `scale(2, x)` still calls the specialized copy.
 
-A constant argument uses the specialized copy.
-
-A runtime argument uses that symbol.
+`scale(n, x)` when `n` is a `var` is `type mismatch`.
 
 `extern(abi="c")` passes the constant.
 

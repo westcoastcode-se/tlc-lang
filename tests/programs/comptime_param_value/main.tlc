@@ -2,7 +2,21 @@ func scale(n comptime i32, x i32) i32 {
     return x + n;
 }
 
+func call(op func (i32, i32) i32, x i32) i32 {
+    return op(3, x);
+}
+
 func main() i32 {
+    var x = 40;
     var f = scale;
-    return 0;
+    if (scale(2, x) != 42) {
+        return 1;
+    }
+    if (f(2, x) != 42) {
+        return 2;
+    }
+    if (f(3, x) != 43) {
+        return 3;
+    }
+    return call(scale, x);
 }

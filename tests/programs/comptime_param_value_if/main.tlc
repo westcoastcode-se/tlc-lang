@@ -1,0 +1,17 @@
+func pick(n comptime i32, x i32) i32 {
+    comptime if (n == 2) {
+        return x + 2;
+    }
+    return x + 1;
+}
+
+func main() i32 {
+    var f = pick;
+    if (pick(2, 40) != 42) {
+        return 1;
+    }
+    if (f(2, 40) != 42) {
+        return 2;
+    }
+    return f(3, 40);
+}

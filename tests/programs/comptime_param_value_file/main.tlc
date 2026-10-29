@@ -1,0 +1,9 @@
+func scale(n comptime i32, x i32) i32 {
+    return x + n;
+}
+
+var f = scale;
+
+func main() i32 {
+    return f(2, 40);
+}

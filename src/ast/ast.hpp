@@ -837,6 +837,10 @@ struct FunctionDecl {
     int iteration_kind = 0;
     // A copy of a generic function. A comptime parameter stays an argument of that copy.
     bool generic_instance = false;
+    // `var f = scale` uses this function. The comptime parameter is still passed.
+    bool value_kept = false;
+    // The value use was tried. A body that is only valid after specialization stays unused.
+    bool value_tried = false;
 };
 
 // `builtin.memeql` and `builtin.memcmp`. The slice form compares `[]const T`.

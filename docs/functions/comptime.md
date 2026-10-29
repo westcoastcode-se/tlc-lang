@@ -265,7 +265,7 @@ A `var` is `type mismatch`.
 
 A function nested in another function still passes the constant.
 
-Using the function as a value is `not supported yet`.
+`var f = scale` stores the address of `scale`. `f(2, x)` passes `2` and `x`. `scale(2, x)` still calls the specialized copy and does not pass `2`. `scale(n, x)` when `n` is a `var` is `type mismatch`. A body that does not typecheck while `n` is still a parameter is `not supported yet` at that value.
 
 More than 32 nested specializations are `not supported yet`.
 
@@ -1171,7 +1171,99 @@ A file-scope `var held = add` then `comptime const op = held` is that argument.
 
 `const saved = add` then `comptime const folded = saved` is the same copy.
 
-`var f = scale`, when `scale` has a comptime parameter and a runtime parameter, is `not supported yet`.
+`var f = scale`, when `scale` has a comptime parameter and a runtime parameter, stores the address of `scale`.
+
+`f(2, x)` calls through that pointer and passes both arguments.
+
+`scale(2, x)` still calls `main.scale.spec.2` and does not pass `2`.
+
+`scale(n, x)` when `n` is a `var` is `type mismatch`.
+
+```c
+func scale(n comptime i32, x i32) i32 {
+    return x + n;
+}
+
+func main() i32 {
+    var x = 40;
+    var f = scale;
+    return scale(2, x) + f(2, x);
+}
+```
+
+```asm
+main.scale.spec.2:
+movl %edi, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+addl $2, %eax                    # add
+retq                             # return
+
+main:
+subq $56, %rsp                   # allocate
+movl $40, 44(%rsp)               # x = 40
+leaq main.scale(%rip), %rax      # address of scale
+movq %rax, 48(%rsp)              # f = scale
+movl 44(%rsp), %eax              # x
+movl %eax, 32(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 32(%rsp), %edi              # x
+callq main.scale.spec.2          # call scale(2, x)
+movl %eax, %ecx                  # move
+movl %ecx, 28(%rsp)              # move
+movq 48(%rsp), %rax              # f
+movq %rax, 8(%rsp)               # move
+movl 44(%rsp), %eax              # x
+movl %eax, 16(%rsp)              # move
+# trace frame for the call, then the matching pop
+movq 8(%rsp), %rax               # f
+movl 16(%rsp), %esi              # x
+movl $2, %edi                    # constant
+callq *%rax                      # call f
+movl %eax, %ecx                  # move
+movl %ecx, 4(%rsp)               # move
+movl 4(%rsp), %ecx               # move
+movl 28(%rsp), %eax              # move
+addl %ecx, %eax                  # add
+addq $56, %rsp                   # release
+retq                             # return
+
+main.scale:
+movl %edi, -8(%rsp)              # n
+movl %esi, -4(%rsp)              # x
+movl -4(%rsp), %eax              # x
+addl -8(%rsp), %eax              # add n
+retq                             # return
+```
+
+`scale(2, x)` adds `2`.
+
+`f(2, x)` adds the two arguments of `scale`.
+
+The program returns 84.
+
+`const f = scale` stores that same address.
+
+A file-scope `var f = scale` stores it in `main.f` when the file is `main.tlc`.
+
+`comptime if` on `n` stays in that function. Both arms are typechecked, and the condition runs at run time. `scale(2, x)` still keeps one arm and leaves the other unchecked.
+
+A body that does not typecheck while `n` is still a parameter is `not supported yet` at the value use.
+
+```c
+func fill(n comptime i32, value i32) i32 {
+    var out [n]i32;
+    return out.len + value;
+}
+
+func main() i32 {
+    var f = fill;
+    return f(4, 38);
+}
+```
+
+That program is `not supported yet`.
+
+`fill(4, value)` still calls the specialized copy.
 
 An ordinary function stored in a `var`, then `comptime const op = f`, is `not supported yet`.
 

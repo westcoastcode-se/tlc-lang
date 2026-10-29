@@ -65,10 +65,25 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         node.runtime_body = true;
                     }
                 }
-                if (symbol->is_function && !symbol->is_local_function && !direct_callee_) {
+                // A quiet walk must not decide this. The real use checks the body.
+                if (symbol->is_function && !symbol->is_local_function && !direct_callee_ && !quiet_) {
                     for (const FnList &list : symbol->lists) {
-                        if (list.decl != nullptr && comptime_param_template(*list.decl) &&
-                            !comptime_param_kept(*list.decl)) {
+                        if (list.decl == nullptr || !comptime_param_template(*list.decl) ||
+                            comptime_param_kept(*list.decl)) {
+                            continue;
+                        }
+                        // The specialized copies stay for a constant call. This body still takes `n`.
+                        FunctionDecl &fn = const_cast<FunctionDecl &>(*list.decl);
+                        if (!fn.value_tried) {
+                            fn.value_tried = true;
+                            const bool saved_direct = direct_callee_;
+                            direct_callee_ = false;
+                            const std::size_t before = diags_.size();
+                            check_function(fn);
+                            direct_callee_ = saved_direct;
+                            fn.value_kept = diags_.size() == before;
+                        }
+                        if (!fn.value_kept) {
                             error(node.loc, "not supported yet");
                             return type_invalid();
                         }

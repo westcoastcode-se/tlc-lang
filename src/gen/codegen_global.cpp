@@ -22,7 +22,7 @@ void CodeGen::declare_functions(const PackageNode &node) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
         // A comptime func is emitted so a specialized copy can call it. A folded direct call does not.
         if (fn == nullptr || fn->name.empty() || fn->is_macro || !fn->type_params.empty() ||
-            (comptime_param_template(*fn) && !comptime_param_kept(*fn))) {
+            (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept)) {
             continue;
         }
         kinds[function_key(*fn)].insert(param_list_key(*fn));
@@ -31,7 +31,7 @@ void CodeGen::declare_functions(const PackageNode &node) {
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
         if (fn == nullptr || fn->name.empty() || fn->is_macro ||
-            (comptime_param_template(*fn) && !comptime_param_kept(*fn))) {
+            (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept)) {
             continue;
         }
         const std::string plain = function_key(*fn);
@@ -342,7 +342,8 @@ void CodeGen::emit_bodies(const PackageNode &node) {
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
         if (fn == nullptr || fn->body == nullptr || fn->is_macro ||
-            (comptime_param_template(*fn) && !comptime_param_kept(*fn)) || function_is_generic(node.file_id, *fn)) {
+            (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept) ||
+            function_is_generic(node.file_id, *fn)) {
             continue;
         }
         std::string key = function_key(*fn);
