@@ -700,11 +700,13 @@ That value may be an integer, a struct with several fields, or a tuple of severa
 
 `func id[T type](value *T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The call is `main.id.spec.tuple.i32.i32`.
+The call is `main.id.spec.tuple.2.i32.i32`.
+
+`tuple.2` is the number of elements. `((40, 2), 1)` is `tuple.2.tuple.2.i32.i32.i32`.
 
 `(*value)[0]` is 40 and `(*value)[1]` is 2.
 
-`id(&deep)`, when `deep` is `((40, 2), 1)`, calls `main.id.spec.tuple.tuple.i32.i32.i32`.
+`id(&deep)`, when `deep` is `((40, 2), 1)`, calls `main.id.spec.tuple.2.tuple.2.i32.i32.i32`.
 
 `(*value)[0][0]` is 40 and `(*value)[1]` is 1.
 
@@ -714,11 +716,11 @@ The call is `main.id.spec.tuple.i32.i32`.
 
 `type Box[T type] struct { n T; }` of `make(row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The call is `main.make.spec.tuple.i32.i32`.
+The call is `main.make.spec.tuple.2.i32.i32`.
 
 `box.n[0]` is 40 and `box.n[1]` is 2.
 
-`make(deep)`, when `deep` is `((40, 2), 1)`, calls `main.make.spec.tuple.tuple.i32.i32.i32`.
+`make(deep)`, when `deep` is `((40, 2), 1)`, calls `main.make.spec.tuple.2.tuple.2.i32.i32.i32`.
 
 `box.n[0][0]` is 40 and `box.n[1]` is 1.
 
@@ -739,7 +741,7 @@ func main() i32 {
 ```
 
 ```asm
-main.make.spec.tuple.i32.i32:
+main.make.spec.tuple.2.i32.i32:
 movl %edi, -16(%rsp)             # value[0]
 movl %esi, -12(%rsp)             # value[1]
 movl -16(%rsp), %eax             # value[0]
@@ -761,7 +763,7 @@ movl %eax, 28(%rsp)              # move
 # trace frame for the call, then the matching pop
 movl 28(%rsp), %esi              # row[1]
 movl 24(%rsp), %edi              # row[0]
-callq main.make.spec.tuple.i32.i32 # call make
+callq main.make.spec.tuple.2.i32.i32 # call make
 movl %eax, %ecx                  # move
 movl %edx, 16(%rsp)              # box.n[1]
 movl %ecx, 20(%rsp)              # box.n[0]
@@ -780,7 +782,7 @@ The program returns 42.
 
 `row [2]T` on that struct, when `T` is `(i32, i32)`, is an array of that tuple.
 
-The call `make(one, two)` is `main.make.spec.tuple.i32.i32`.
+The call `make(one, two)` is `main.make.spec.tuple.2.i32.i32`.
 
 `box.row[0][0]` is 40 and `box.row[1][1]` is 3.
 
@@ -805,7 +807,7 @@ func main() i32 {
 ```
 
 ```asm
-main.make.spec.tuple.i32.i32:
+main.make.spec.tuple.2.i32.i32:
 movq %rdi, %rax                  # box
 movl %esi, -32(%rsp)             # a[0]
 movl %edx, -28(%rsp)             # a[1]
@@ -849,7 +851,7 @@ movl 40(%rsp), %ecx              # two[0]
 movl 36(%rsp), %edx              # one[1]
 movl 32(%rsp), %esi              # one[0]
 leaq 56(%rsp), %rdi              # box
-callq main.make.spec.tuple.i32.i32 # call make
+callq main.make.spec.tuple.2.i32.i32 # call make
 movl 68(%rsp), %ecx              # row[1][1]
 movl %ecx, 16(%rsp)              # move
 movl 64(%rsp), %ecx              # row[1][0]
@@ -878,7 +880,7 @@ The program returns 43.
 
 `func pair[T type](a T, b T) [2]T`, when `T` is `(i32, i32)`, returns an array of that tuple.
 
-The call `pair(one, two)` is `main.pair.spec.tuple.i32.i32`.
+The call `pair(one, two)` is `main.pair.spec.tuple.2.i32.i32`.
 
 `got[0][0]` is 40 and `got[1][1]` is 3.
 
@@ -903,7 +905,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32:
+main.pair.spec.tuple.2.i32.i32:
 movq %rdi, %rax                  # row
 movl %esi, -32(%rsp)             # a[0]
 movl %edx, -28(%rsp)             # a[1]
@@ -947,7 +949,7 @@ movl 40(%rsp), %ecx              # two[0]
 movl 36(%rsp), %edx              # one[1]
 movl 32(%rsp), %esi              # one[0]
 leaq 56(%rsp), %rdi              # got
-callq main.pair.spec.tuple.i32.i32 # call pair
+callq main.pair.spec.tuple.2.i32.i32 # call pair
 movl 68(%rsp), %ecx              # got[1][1]
 movl %ecx, 16(%rsp)              # move
 movl 64(%rsp), %ecx              # got[1][0]
@@ -984,7 +986,7 @@ The program returns 43.
 
 `func take[T type](row [2]T)`, when `T` is `(i32, i32)`, takes an array of that tuple.
 
-The call `take(row)` is `main.take.spec.tuple.i32.i32`.
+The call `take(row)` is `main.take.spec.tuple.2.i32.i32`.
 
 `row[0][0]` is 40 and `row[1][1]` is 3.
 
@@ -1011,7 +1013,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32:
+main.pair.spec.tuple.2.i32.i32:
 movq %rdi, %rax                  # row
 movl %esi, -32(%rsp)             # a[0]
 movl %edx, -28(%rsp)             # a[1]
@@ -1035,7 +1037,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.take.spec.tuple.i32.i32:
+main.take.spec.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # row
 movq -8(%rsp), %rcx              # row
 movl (%rcx), %eax                # row[0][0]
@@ -1064,7 +1066,7 @@ movl 40(%rsp), %ecx              # two[0]
 movl 36(%rsp), %edx              # one[1]
 movl 32(%rsp), %esi              # one[0]
 leaq 56(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32 # call pair
+callq main.pair.spec.tuple.2.i32.i32 # call pair
 movl 68(%rsp), %ecx              # row[1][1]
 movl %ecx, 16(%rsp)              # move
 movl 64(%rsp), %ecx              # row[1][0]
@@ -1091,7 +1093,7 @@ movl %ecx, 108(%rsp)             # row[0][1]
 movl %eax, 104(%rsp)             # row[0][0]
 # trace frame for the call, then the matching pop
 leaq 104(%rsp), %rdi             # row
-callq main.take.spec.tuple.i32.i32 # call take
+callq main.take.spec.tuple.2.i32.i32 # call take
 movl %eax, %ecx                  # move
 movl %ecx, 4(%rsp)               # move
 movl 4(%rsp), %eax               # take(row)
@@ -1107,7 +1109,7 @@ Each `[n]` is one shell around that tuple.
 
 A further `[2]` is another shell.
 
-The call `fill(one, two, three, four)` is `main.fill.spec.tuple.i32.i32`.
+The call `fill(one, two, three, four)` is `main.fill.spec.tuple.2.i32.i32`.
 
 `g[0][0][0]` is 40 and `g[1][1][1]` is 7.
 
@@ -1139,7 +1141,7 @@ func main() i32 {
 ```
 
 ```asm
-main.fill.spec.tuple.i32.i32:
+main.fill.spec.tuple.2.i32.i32:
 movl 16(%rsp), %ecx              # d[1]
 movl 8(%rsp), %eax               # d[0]
 movl %edi, -48(%rsp)             # a[0]
@@ -1198,7 +1200,7 @@ movl 60(%rsp), %r11d             # four[1]
 movq %rsp, %rax                  # d
 movl %r11d, 8(%rax)              # d[1]
 movl %r10d, (%rax)               # d[0]
-callq main.fill.spec.tuple.i32.i32 # call fill
+callq main.fill.spec.tuple.2.i32.i32 # call fill
 movl %eax, %ecx                  # move
 movl %ecx, 28(%rsp)              # move
 movl 28(%rsp), %eax              # fill
@@ -1210,13 +1212,13 @@ The program returns 47.
 
 `func id[T type](value *T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(*value)[0][0]` is 40 and `(*value)[1][1]` is 3.
 
 `id(&nums)`, when `nums` is `[2]i32`, is `spec.arr.2.i32`.
 
-`&g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`&g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
 func pair[T type](a T, b T) [2]T {
@@ -1237,7 +1239,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -1253,7 +1255,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.id.spec.arr.2.tuple.i32.i32:
+main.id.spec.arr.2.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # value
 movq -8(%rsp), %rcx              # value
 movl (%rcx), %eax                # (*value)[0][0]
@@ -1266,7 +1268,7 @@ main:
 subq $88, %rsp                   # allocate
 # trace frame for the call, then the matching pop
 leaq 40(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 52(%rsp), %ecx              # row[1][1]
 movl %ecx, 16(%rsp)              # move
 movl 48(%rsp), %ecx              # row[1][0]
@@ -1293,7 +1295,7 @@ movl %ecx, 76(%rsp)              # row[0][1]
 movl %eax, 72(%rsp)              # row[0][0]
 # trace frame for the call, then the matching pop
 leaq 72(%rsp), %rdi              # &row
-callq main.id.spec.arr.2.tuple.i32.i32 # call id
+callq main.id.spec.arr.2.tuple.2.i32.i32 # call id
 movl %eax, %ecx                  # move
 movl %ecx, 4(%rsp)               # move
 movl 4(%rsp), %eax               # id(&row)
@@ -1305,13 +1307,13 @@ The program returns 43.
 
 `func id[T type](value T)` of `row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 The parameter is a pointer to that array.
 
 `value[0][0]` is 40 and `value[1][1]` is 3.
 
-`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 The outer array decays. The inner array stays.
 
@@ -1340,7 +1342,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -1356,7 +1358,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.id.spec.arr.2.tuple.i32.i32:
+main.id.spec.arr.2.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # value
 movq -8(%rsp), %rcx              # value
 movl (%rcx), %eax                # value[0][0]
@@ -1369,7 +1371,7 @@ main:
 subq $88, %rsp                   # allocate
 # trace frame for the call, then the matching pop
 leaq 40(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 52(%rsp), %ecx              # row[1][1]
 movl %ecx, 16(%rsp)              # move
 movl 48(%rsp), %ecx              # row[1][0]
@@ -1396,7 +1398,7 @@ movl %ecx, 76(%rsp)              # row[0][1]
 movl %eax, 72(%rsp)              # row[0][0]
 # trace frame for the call, then the matching pop
 leaq 72(%rsp), %rdi              # row
-callq main.id.spec.arr.2.tuple.i32.i32 # call id
+callq main.id.spec.arr.2.tuple.2.i32.i32 # call id
 movl %eax, %ecx                  # move
 movl %ecx, 4(%rsp)               # move
 movl 4(%rsp), %eax               # id(row)
@@ -1408,11 +1410,11 @@ The program returns 43.
 
 `func take[T type](p (T, i32))` of `(row, 1)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.take.spec.arr.2.tuple.i32.i32`.
+The call is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
 `p[0][0][0]` is 40, `p[0][1][1]` is 3, and `p[1]` is 1.
 
-`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 `p[0][0][0][0] + p[0][1][1][1] + p[1]` is 48.
 
@@ -1441,7 +1443,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -1457,7 +1459,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.take.spec.arr.2.tuple.i32.i32:
+main.take.spec.arr.2.tuple.2.i32.i32:
 movl %edi, -24(%rsp)             # p[0][0][0]
 movl %esi, -20(%rsp)             # p[0][0][1]
 movl %edx, -16(%rsp)             # p[0][1][0]
@@ -1476,7 +1478,7 @@ main:
 subq $120, %rsp                  # allocate
 # trace frame for the call, then the matching pop
 leaq 72(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 84(%rsp), %ecx              # row[1][1]
 movl %ecx, 48(%rsp)              # move
 movl 80(%rsp), %ecx              # row[1][0]
@@ -1517,7 +1519,7 @@ movl 20(%rsp), %ecx              # p[0][1][1]
 movl 24(%rsp), %edx              # p[0][1][0]
 movl 32(%rsp), %esi              # p[0][0][1]
 movl 28(%rsp), %edi              # p[0][0][0]
-callq main.take.spec.arr.2.tuple.i32.i32 # call take
+callq main.take.spec.arr.2.tuple.2.i32.i32 # call take
 movl %eax, %ecx                  # move
 movl %ecx, 16(%rsp)              # move
 movl 16(%rsp), %eax              # take((row, 1))
@@ -1529,9 +1531,9 @@ The program returns 44.
 
 `type Box[T type] struct { n T; }` of `make(row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The struct is `Box.spec.arr.2.tuple.i32.i32`.
+The struct is `Box.spec.arr.2.tuple.2.i32.i32`.
 
-The call is `main.make.spec.arr.2.tuple.i32.i32`.
+The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 
 `box.n` is that array. `box.n[0][0]` is 40 and `box.n[1][1]` is 3.
 
@@ -1565,7 +1567,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -1581,7 +1583,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.make.spec.arr.2.tuple.i32.i32:
+main.make.spec.arr.2.tuple.2.i32.i32:
 movq %rdi, %rax                  # box
 movq %rsi, -24(%rsp)             # value
 movq -24(%rsp), %r8              # value
@@ -1607,7 +1609,7 @@ main:
 subq $136, %rsp                  # allocate
 # trace frame for the call, then the matching pop
 leaq 72(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 84(%rsp), %ecx              # row[1][1]
 movl %ecx, 32(%rsp)              # move
 movl 80(%rsp), %ecx              # row[1][0]
@@ -1635,7 +1637,7 @@ movl %eax, 104(%rsp)             # row[0][0]
 # trace frame for the call, then the matching pop
 leaq 56(%rsp), %rdi              # box
 leaq 104(%rsp), %rsi             # row
-callq main.make.spec.arr.2.tuple.i32.i32 # call make
+callq main.make.spec.arr.2.tuple.2.i32.i32 # call make
 movl 68(%rsp), %ecx              # box.n[1][1]
 movl %ecx, 8(%rsp)               # move
 movl 64(%rsp), %ecx              # box.n[1][0]
@@ -1664,13 +1666,13 @@ The program returns 43.
 
 `func id[T type](value *T) *T` of `&row`, when `row` is `[2](i32, i32)`, returns that pointer.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(*p)[0][0]` is 40 and `(*p)[1][1]` is 3.
 
-`id(&one)`, when `one` is `(40, 2)`, is `spec.tuple.i32.i32`.
+`id(&one)`, when `one` is `(40, 2)`, is `spec.tuple.2.i32.i32`.
 
-`id(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`id(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 `?*T`, `*const T`, and `**T` are `not supported yet`.
 
@@ -1694,7 +1696,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -1710,7 +1712,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.id.spec.arr.2.tuple.i32.i32:
+main.id.spec.arr.2.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # value
 movq -8(%rsp), %rax              # value
 retq                             # return
@@ -1719,7 +1721,7 @@ main:
 subq $104, %rsp                  # allocate
 # trace frame for the call, then the matching pop
 leaq 48(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 60(%rsp), %eax              # row[1][1]
 movl %eax, 24(%rsp)              # move
 movl 56(%rsp), %ecx              # row[1][0]
@@ -1746,7 +1748,7 @@ movl %ecx, 84(%rsp)              # row[0][1]
 movl %eax, 80(%rsp)              # row[0][0]
 # trace frame for the call, then the matching pop
 leaq 80(%rsp), %rdi              # &row
-callq main.id.spec.arr.2.tuple.i32.i32 # call id
+callq main.id.spec.arr.2.tuple.2.i32.i32 # call id
 movq %rax, %rcx                  # move
 movq %rcx, 8(%rsp)               # move
 movq 8(%rsp), %rax               # move
@@ -1764,13 +1766,13 @@ The program returns 43.
 
 `take[T type](p (*T, i32))` of `(&row, 1)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.take.spec.arr.2.tuple.i32.i32`.
+The call is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
 `(*p[0])[0][0]` is 40, `(*p[0])[1][1]` is 3, and `p[1]` is 1.
 
-`plain((&one, 1))`, when `one` is `(40, 2)`, is `spec.tuple.i32.i32`.
+`plain((&one, 1))`, when `one` is `(40, 2)`, is `spec.tuple.2.i32.i32`.
 
-`wide((&g, 1))`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`wide((&g, 1))`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
 func pair[T type](a T, b T) [2]T {
@@ -1791,7 +1793,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -1807,7 +1809,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.take.spec.arr.2.tuple.i32.i32:
+main.take.spec.arr.2.tuple.2.i32.i32:
 movq %rdi, -16(%rsp)             # p[0]
 movl %esi, -8(%rsp)              # p[1]
 movl -8(%rsp), %ecx              # p[1]
@@ -1822,7 +1824,7 @@ main:
 subq $104, %rsp                  # allocate
 # trace frame for the call, then the matching pop
 leaq 56(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 68(%rsp), %ecx              # row[1][1]
 movl %ecx, 32(%rsp)              # move
 movl 64(%rsp), %ecx              # row[1][0]
@@ -1854,7 +1856,7 @@ movq %rax, 16(%rsp)              # p[0]
 # trace frame for the call, then the matching pop
 movl 12(%rsp), %esi              # p[1]
 movq 16(%rsp), %rdi              # p[0]
-callq main.take.spec.arr.2.tuple.i32.i32 # call take
+callq main.take.spec.arr.2.tuple.2.i32.i32 # call take
 movl %eax, %ecx                  # move
 movl %ecx, 8(%rsp)               # move
 movl 8(%rsp), %eax               # take((&row, 1))
@@ -1866,13 +1868,13 @@ The program returns 44.
 
 `type Box[T type] struct { p *T; }` of `make(&row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The struct is `Box.spec.tuple.i32.i32`.
+The struct is `Box.spec.tuple.2.i32.i32`.
 
-The call is `main.make.spec.tuple.i32.i32`.
+The call is `main.make.spec.tuple.2.i32.i32`.
 
 `(*box.p)[0]` is 40 and `(*box.p)[1]` is 2.
 
-`make(&deep)`, when `deep` is `((40, 2), 1)`, is `spec.tuple.tuple.i32.i32.i32`.
+`make(&deep)`, when `deep` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 `make(&n)`, when `n` is `i32`, is `spec.i32`.
 
@@ -1898,7 +1900,7 @@ func main() i32 {
 ```
 
 ```asm
-main.make.spec.tuple.i32.i32:
+main.make.spec.tuple.2.i32.i32:
 movq %rdi, -16(%rsp)             # value
 movq -16(%rsp), %rax             # value
 movq %rax, -8(%rsp)              # box.p = value
@@ -1911,7 +1913,7 @@ movl $2, 28(%rsp)                # row[1] = 2
 movl $40, 24(%rsp)               # row[0] = 40
 # trace frame for the call, then the matching pop
 leaq 24(%rsp), %rdi              # &row
-callq main.make.spec.tuple.i32.i32 # call make
+callq main.make.spec.tuple.2.i32.i32 # call make
 movq %rax, %rcx                  # move
 movq %rcx, 8(%rsp)               # move
 movq 8(%rsp), %rax               # move
@@ -1928,13 +1930,13 @@ The program returns 42.
 
 `type Box[T type] struct { p *T; }` of `make(&row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The struct is `Box.spec.arr.2.tuple.i32.i32`.
+The struct is `Box.spec.arr.2.tuple.2.i32.i32`.
 
-The call is `main.make.spec.arr.2.tuple.i32.i32`.
+The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 
 `(*box.p)[0][0]` is 40 and `(*box.p)[1][1]` is 3.
 
-`make(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`make(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 `var box Box[T]` with no initializer is `type mismatch`. `p` is not optional.
 
@@ -1965,7 +1967,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -1981,7 +1983,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.make.spec.arr.2.tuple.i32.i32:
+main.make.spec.arr.2.tuple.2.i32.i32:
 movq %rdi, -16(%rsp)             # value
 movq -16(%rsp), %rax             # value
 movq %rax, -8(%rsp)              # box.p = value
@@ -1992,7 +1994,7 @@ main:
 subq $104, %rsp                  # allocate
 # trace frame for the call, then the matching pop
 leaq 48(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 60(%rsp), %ecx              # row[1][1]
 movl %ecx, 24(%rsp)              # move
 movl 56(%rsp), %ecx              # row[1][0]
@@ -2019,7 +2021,7 @@ movl %ecx, 84(%rsp)              # row[0][1]
 movl %eax, 80(%rsp)              # row[0][0]
 # trace frame for the call, then the matching pop
 leaq 80(%rsp), %rdi              # &row
-callq main.make.spec.arr.2.tuple.i32.i32 # call make
+callq main.make.spec.arr.2.tuple.2.i32.i32 # call make
 movq %rax, %rcx                  # move
 movq %rcx, 8(%rsp)               # move
 movq 8(%rsp), %rax               # move
@@ -2037,15 +2039,15 @@ The program returns 43.
 
 `row [2]T` on `Box[T]`, when `T` is `[2](i32, i32)`, keeps that array inside the written length.
 
-The struct is `Box.spec.arr.2.tuple.i32.i32`.
+The struct is `Box.spec.arr.2.tuple.2.i32.i32`.
 
-The call is `main.hold.spec.arr.2.tuple.i32.i32`.
+The call is `main.hold.spec.arr.2.tuple.2.i32.i32`.
 
 `box.row[0][0][0]` is 40 and `box.row[1][1][1]` is 7.
 
 `func take[T type](row [2]T)`, `func rows[T type](a T, b T) [2]T`, and `var g [2]T` use the same arrays.
 
-`take(box.row)` is `main.take.spec.arr.2.tuple.i32.i32`.
+`take(box.row)` is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
 `var g [2][2]T` of that `T` is one more written length. `g[0][1][0][0]` is 40.
 
@@ -2079,7 +2081,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -2095,7 +2097,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.pair.spec.tuple.i32.i32.spec.t_4_5.t_6_7:
+main.pair.spec.tuple.2.i32.i32.spec.t_4_5.t_6_7:
 movq %rdi, %rax                  # row
 movl $5, -12(%rsp)               # a[1] = 5
 movl $4, -16(%rsp)               # a[0] = 4
@@ -2111,7 +2113,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.hold.spec.arr.2.tuple.i32.i32:
+main.hold.spec.arr.2.tuple.2.i32.i32:
 pushq %rbx                       # save
 movq %rdi, %rax                  # box
 movq %rsi, -48(%rsp)             # a
@@ -2157,7 +2159,7 @@ main:
 subq $264, %rsp                  # allocate
 # trace frame for the call, then the matching pop
 leaq 152(%rsp), %rdi             # a
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 164(%rsp), %ecx             # a[1][1]
 movl %ecx, 80(%rsp)              # move
 movl 160(%rsp), %ecx             # a[1][0]
@@ -2184,7 +2186,7 @@ movl %ecx, 188(%rsp)             # a[0][1]
 movl %eax, 184(%rsp)             # a[0][0]
 # trace frame for the call, then the matching pop
 leaq 136(%rsp), %rdi             # b
-callq main.pair.spec.tuple.i32.i32.spec.t_4_5.t_6_7 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_4_5.t_6_7 # call pair
 movl 148(%rsp), %ecx             # b[1][1]
 movl %ecx, 56(%rsp)              # move
 movl 144(%rsp), %ecx             # b[1][0]
@@ -2213,7 +2215,7 @@ movl %eax, 216(%rsp)             # b[0][0]
 leaq 104(%rsp), %rdi             # box
 leaq 184(%rsp), %rsi             # a
 leaq 216(%rsp), %rdx             # b
-callq main.hold.spec.arr.2.tuple.i32.i32 # call hold
+callq main.hold.spec.arr.2.tuple.2.i32.i32 # call hold
 movl 132(%rsp), %ecx             # box.row[1][1][1]
 movl %ecx, 16(%rsp)              # move
 movl 128(%rsp), %ecx             # box.row[1][1][0]
@@ -2258,11 +2260,11 @@ The program returns 47.
 
 `func id[T type](value **T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The call is `main.id.spec.tuple.i32.i32`.
+The call is `main.id.spec.tuple.2.i32.i32`.
 
 `(**value)[0]` is 40 and `(**value)[1]` is 2.
 
-`deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.tuple.i32.i32.i32`.
+`deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 `**T` when `T` is `[2](i32, i32)` is `not supported yet`.
 
@@ -2281,7 +2283,7 @@ func main() i32 {
 ```
 
 ```asm
-main.id.spec.tuple.i32.i32:
+main.id.spec.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # value
 movq -8(%rsp), %rax              # value
 movq (%rax), %rcx                # *value
@@ -2298,7 +2300,7 @@ leaq 24(%rsp), %rax              # &row
 movq %rax, 32(%rsp)              # p
 # trace frame for the call, then the matching pop
 leaq 32(%rsp), %rdi              # &p
-callq main.id.spec.tuple.i32.i32 # call id
+callq main.id.spec.tuple.2.i32.i32 # call id
 movl %eax, %ecx                  # move
 movl %ecx, 12(%rsp)              # move
 movl 12(%rsp), %eax              # id(&p)
@@ -2312,7 +2314,7 @@ The program returns 42.
 
 `var p = id(&row)` then `(*p)[0]` is 40 and `(*p)[1]` is 2.
 
-The call is `main.id.spec.tuple.i32.i32`.
+The call is `main.id.spec.tuple.2.i32.i32`.
 
 ```c
 func id[T type](value *T) *T {
@@ -2327,7 +2329,7 @@ func main() i32 {
 ```
 
 ```asm
-main.id.spec.tuple.i32.i32:
+main.id.spec.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # value
 movq -8(%rsp), %rax              # value
 retq                             # return
@@ -2338,7 +2340,7 @@ movl $2, 28(%rsp)                # row[1] = 2
 movl $40, 24(%rsp)               # row[0] = 40
 # trace frame for the call, then the matching pop
 leaq 24(%rsp), %rdi              # &row
-callq main.id.spec.tuple.i32.i32 # call id
+callq main.id.spec.tuple.2.i32.i32 # call id
 movq %rax, %rcx                  # move
 movq %rcx, 8(%rsp)               # move
 movq 8(%rsp), %rax               # p
@@ -2369,7 +2371,7 @@ func main() i32 {
 ```
 
 ```asm
-main.id.spec.tuple.i32.i32:
+main.id.spec.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # value
 movq -8(%rsp), %rcx              # value
 movl (%rcx), %eax                # (*value)[0]
@@ -2383,7 +2385,7 @@ movl $2, 20(%rsp)                # row[1] = 2
 movl $40, 16(%rsp)               # row[0] = 40
 # trace frame for the call, then the matching pop
 leaq 16(%rsp), %rdi              # &row
-callq main.id.spec.tuple.i32.i32 # call id
+callq main.id.spec.tuple.2.i32.i32 # call id
 movl %eax, %ecx                  # move
 movl %ecx, 4(%rsp)               # move
 movl 4(%rsp), %eax               # move
@@ -2395,11 +2397,11 @@ The program returns 42.
 
 `func id[T type](value **T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(**value)[0][0]` is 40 and `(**value)[1][1]` is 3.
 
-`wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 `?*T` and `*const T` are `not supported yet`.
 
@@ -2423,7 +2425,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -2439,7 +2441,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.id.spec.arr.2.tuple.i32.i32:
+main.id.spec.arr.2.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # value
 movq -8(%rsp), %rax              # value
 movq (%rax), %rcx                # *value
@@ -2453,7 +2455,7 @@ main:
 subq $104, %rsp                  # allocate
 # trace frame for the call, then the matching pop
 leaq 48(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 60(%rsp), %ecx              # row[1][1]
 movl %ecx, 24(%rsp)              # move
 movl 56(%rsp), %ecx              # row[1][0]
@@ -2482,7 +2484,7 @@ leaq 80(%rsp), %rax              # &row
 movq %rax, 96(%rsp)              # p
 # trace frame for the call, then the matching pop
 leaq 96(%rsp), %rdi              # &p
-callq main.id.spec.arr.2.tuple.i32.i32 # call id
+callq main.id.spec.arr.2.tuple.2.i32.i32 # call id
 movl %eax, %ecx                  # move
 movl %ecx, 12(%rsp)              # move
 movl 12(%rsp), %eax              # id(&p)
@@ -2494,11 +2496,11 @@ The program returns 43.
 
 `func id[T type](value *const T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The call is `main.id.spec.tuple.i32.i32`.
+The call is `main.id.spec.tuple.2.i32.i32`.
 
 `(*value)[0]` is 40 and `(*value)[1]` is 2.
 
-`deep(&wide)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.tuple.i32.i32.i32`.
+`deep(&wide)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 `(*value)[0] = 1` is `type mismatch`.
 
@@ -2518,7 +2520,7 @@ func main() i32 {
 ```
 
 ```asm
-main.id.spec.tuple.i32.i32:
+main.id.spec.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # value
 movq -8(%rsp), %rcx              # value
 movl (%rcx), %eax                # (*value)[0]
@@ -2532,7 +2534,7 @@ movl $2, 20(%rsp)                # row[1] = 2
 movl $40, 16(%rsp)               # row[0] = 40
 # trace frame for the call, then the matching pop
 leaq 16(%rsp), %rdi              # &row
-callq main.id.spec.tuple.i32.i32 # call id
+callq main.id.spec.tuple.2.i32.i32 # call id
 movl %eax, %ecx                  # move
 movl %ecx, 4(%rsp)               # move
 movl 4(%rsp), %eax               # id(&row)
@@ -2544,11 +2546,11 @@ The program returns 42.
 
 `func id[T type](value *const T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(*value)[0][0]` is 40 and `(*value)[1][1]` is 3.
 
-`wide(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`wide(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 `(*value)[0][0] = 1` is `type mismatch`.
 
@@ -2573,7 +2575,7 @@ func main() i32 {
 ```
 
 ```asm
-main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
 movq %rdi, %rax                  # row
 movl $2, -12(%rsp)               # a[1] = 2
 movl $40, -16(%rsp)              # a[0] = 40
@@ -2589,7 +2591,7 @@ movl %edx, 4(%rdi)               # row[0][1]
 movl %ecx, (%rdi)                # row[0][0]
 retq                             # return
 
-main.id.spec.arr.2.tuple.i32.i32:
+main.id.spec.arr.2.tuple.2.i32.i32:
 movq %rdi, -8(%rsp)              # value
 movq -8(%rsp), %rcx              # value
 movl (%rcx), %eax                # (*value)[0][0]
@@ -2602,7 +2604,7 @@ main:
 subq $88, %rsp                   # allocate
 # trace frame for the call, then the matching pop
 leaq 40(%rsp), %rdi              # row
-callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
 movl 52(%rsp), %ecx              # row[1][1]
 movl %ecx, 16(%rsp)              # move
 movl 48(%rsp), %ecx              # row[1][0]
@@ -2629,7 +2631,7 @@ movl %ecx, 76(%rsp)              # row[0][1]
 movl %eax, 72(%rsp)              # row[0][0]
 # trace frame for the call, then the matching pop
 leaq 72(%rsp), %rdi              # &row
-callq main.id.spec.arr.2.tuple.i32.i32 # call id
+callq main.id.spec.arr.2.tuple.2.i32.i32 # call id
 movl %eax, %ecx                  # move
 movl %ecx, 4(%rsp)               # move
 movl 4(%rsp), %eax               # id(&row)
@@ -2641,7 +2643,7 @@ The program returns 43.
 
 `take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The call is `main.take.spec.tuple.i32.i32`.
+The call is `main.take.spec.tuple.2.i32.i32`.
 
 `p[0][0]` is 40 and `p[1]` is 1.
 
@@ -2657,7 +2659,7 @@ func main() i32 {
 ```
 
 ```asm
-main.take.spec.tuple.i32.i32:
+main.take.spec.tuple.2.i32.i32:
 movl %edi, -16(%rsp)             # p[0][0]
 movl %esi, -12(%rsp)             # p[0][1]
 movl %edx, -8(%rsp)              # p[1]
@@ -2681,7 +2683,7 @@ movl %eax, 20(%rsp)              # 1
 movl 20(%rsp), %edx              # 1
 movl 16(%rsp), %esi              # row[1]
 movl 12(%rsp), %edi              # row[0]
-callq main.take.spec.tuple.i32.i32 # call take
+callq main.take.spec.tuple.2.i32.i32 # call take
 movl %eax, %ecx                  # move
 movl %ecx, 8(%rsp)               # move
 movl 8(%rsp), %eax               # move
@@ -2691,9 +2693,9 @@ retq                             # return
 
 The program returns 41.
 
-`id(row)`, when `row` is `((40, 2), 1)`, calls `main.id.spec.tuple.tuple.i32.i32.i32` and passes the three integers.
+`id(row)`, when `row` is `((40, 2), 1)`, calls `main.id.spec.tuple.2.tuple.2.i32.i32.i32` and passes the three integers.
 
-`id(((40, 2), 1))` calls `main.id.spec.tuple.tuple.i32.i32.i32.spec.t_t_40_2_1` and does not pass the tuple. That copy returns 41.
+`id(((40, 2), 1))` calls `main.id.spec.tuple.2.tuple.2.i32.i32.i32.spec.t_t_40_2_1` and does not pass the tuple. That copy returns 41.
 
 ```c
 func id[T type](value T) T {
@@ -2708,7 +2710,7 @@ func main() i32 {
 ```
 
 ```asm
-main.id.spec.tuple.tuple.i32.i32.i32:
+main.id.spec.tuple.2.tuple.2.i32.i32.i32:
 movl %edi, -16(%rsp)             # value[0][0]
 movl %esi, -12(%rsp)             # value[0][1]
 movl %edx, -8(%rsp)              # value[1]
@@ -2732,7 +2734,7 @@ movl %eax, 28(%rsp)              # move
 movl 20(%rsp), %edx              # row[1]
 movl 28(%rsp), %esi              # row[0][1]
 movl 24(%rsp), %edi              # row[0][0]
-callq main.id.spec.tuple.tuple.i32.i32.i32 # call id
+callq main.id.spec.tuple.2.tuple.2.i32.i32.i32 # call id
 movl %eax, %esi                  # move
 movl %esi, 4(%rsp)               # move
 movl %ecx, %esi                  # move

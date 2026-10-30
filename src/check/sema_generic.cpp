@@ -1654,7 +1654,7 @@ std::string Checker::mangle_spec(const std::string &base, const std::vector<Spec
     auto append = [&](auto &&self, const SpecArg &arg) -> void {
         name += '.';
         if (arg.is_pack) {
-            // `[2](i32, i32)` is `arr.2` and then the tuple. A bare tuple has no shell.
+            // `[2](i32, i32)` is `arr.2.tuple.2.i32.i32`. The number is the element count.
             if (!arg.shells.empty()) {
                 for (const TypeShell &shell : arg.shells) {
                     if (shell.kind == TypeShell::Kind::Slice) {
@@ -1670,7 +1670,8 @@ std::string Checker::mangle_spec(const std::string &base, const std::vector<Spec
                 name += std::to_string(arg.array_len);
                 name += '.';
             }
-            name += "tuple";
+            name += "tuple.";
+            name += std::to_string(arg.parts.size());
             for (const SpecArg &part : arg.parts) {
                 self(self, part);
             }

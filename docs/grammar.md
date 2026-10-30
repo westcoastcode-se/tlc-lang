@@ -832,17 +832,19 @@ With `[P1 type, P2 type]`, `other (P1, P2)` is that tuple.
 
 `func take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to that tuple.
 
-The call is `main.take.spec.tuple.i32.i32`.
+The call is `main.take.spec.tuple.2.i32.i32`.
+
+`tuple.2` is the number of elements.
 
 `p[0][0]` is `40` and `p[1]` is `1`.
 
 `func id[T type](value T) T` of `((40, 2), 1)` binds `T` to that tuple.
 
-The call of a `var` is `main.id.spec.tuple.tuple.i32.i32.i32`.
+The call of a `var` is `main.id.spec.tuple.2.tuple.2.i32.i32.i32`.
 
 `func id[T type](value *T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The call is `main.id.spec.tuple.i32.i32`.
+The call is `main.id.spec.tuple.2.i32.i32`.
 
 `(*value)[0]` is 40.
 
@@ -852,19 +854,19 @@ The call is `main.id.spec.tuple.i32.i32`.
 
 `type Box[T type] struct { n T; }` of `make(row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The call is `main.make.spec.tuple.i32.i32`.
+The call is `main.make.spec.tuple.2.i32.i32`.
 
 `box.n[0]` is 40 and `box.n[1]` is 2.
 
 `row [2]T` on that struct, when `T` is `(i32, i32)`, is an array of that tuple.
 
-`make(one, two)` is `main.make.spec.tuple.i32.i32`.
+`make(one, two)` is `main.make.spec.tuple.2.i32.i32`.
 
 `box.row[0][0]` is 40 and `box.row[1][1]` is 3.
 
 `func pair[T type](a T, b T) [2]T`, when `T` is `(i32, i32)`, returns an array of that tuple.
 
-`pair(one, two)` is `main.pair.spec.tuple.i32.i32`.
+`pair(one, two)` is `main.pair.spec.tuple.2.i32.i32`.
 
 `got[0][0]` is 40 and `got[1][1]` is 3.
 
@@ -872,7 +874,7 @@ The call is `main.make.spec.tuple.i32.i32`.
 
 `func take[T type](row [2]T)`, when `T` is `(i32, i32)`, takes an array of that tuple.
 
-`take(row)` is `main.take.spec.tuple.i32.i32`.
+`take(row)` is `main.take.spec.tuple.2.i32.i32`.
 
 `row[0][0]` is 40 and `row[1][1]` is 3.
 
@@ -882,25 +884,25 @@ Each `[n]` is one shell around that tuple.
 
 `g[0][0][0]` is 40 and `g[1][1][1]` is 7.
 
-`fill(one, two, three, four)` is `main.fill.spec.tuple.i32.i32`.
+`fill(one, two, three, four)` is `main.fill.spec.tuple.2.i32.i32`.
 
 `func id[T type](value *T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(*value)[0][0]` is 40 and `(*value)[1][1]` is 3.
 
-`&g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`&g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 `func id[T type](value T)` of `row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 The parameter is a pointer to that array.
 
 `value[0][0]` is 40 and `value[1][1]` is 3.
 
-`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 The outer array decays. The inner array stays.
 
@@ -910,19 +912,19 @@ The outer array decays. The inner array stays.
 
 `func take[T type](p (T, i32))` of `(row, 1)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.take.spec.arr.2.tuple.i32.i32`.
+The call is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
 `p[0][0][0]` is 40, `p[0][1][1]` is 3, and `p[1]` is 1.
 
-`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 `func make[T type](value T) (T, i32)` returns that tuple.
 
 `type Box[T type] struct { n T; }` of `make(row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The struct is `Box.spec.arr.2.tuple.i32.i32`.
+The struct is `Box.spec.arr.2.tuple.2.i32.i32`.
 
-The call is `main.make.spec.arr.2.tuple.i32.i32`.
+The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 
 `box.n[0][0]` is 40 and `box.n[1][1]` is 3.
 
@@ -930,7 +932,7 @@ The call is `main.make.spec.arr.2.tuple.i32.i32`.
 
 `func id[T type](value *T) *T` of `&row`, when `row` is `[2](i32, i32)`, returns that pointer.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(*p)[0][0]` is 40 and `(*p)[1][1]` is 3.
 
@@ -938,15 +940,15 @@ The call is `main.id.spec.arr.2.tuple.i32.i32`.
 
 `take[T type](p (*T, i32))` of `(&row, 1)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.take.spec.arr.2.tuple.i32.i32`.
+The call is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
 `(*p[0])[0][0]` is 40, `(*p[0])[1][1]` is 3, and `p[1]` is 1.
 
 `type Box[T type] struct { p *T; }` of `make(&row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The struct is `Box.spec.tuple.i32.i32`.
+The struct is `Box.spec.tuple.2.i32.i32`.
 
-The call is `main.make.spec.tuple.i32.i32`.
+The call is `main.make.spec.tuple.2.i32.i32`.
 
 `(*box.p)[0]` is 40 and `(*box.p)[1]` is 2.
 
@@ -954,17 +956,17 @@ The call is `main.make.spec.tuple.i32.i32`.
 
 `type Box[T type] struct { p *T; }` of `make(&row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The struct is `Box.spec.arr.2.tuple.i32.i32`.
+The struct is `Box.spec.arr.2.tuple.2.i32.i32`.
 
-The call is `main.make.spec.arr.2.tuple.i32.i32`.
+The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 
 `(*box.p)[0][0]` is 40 and `(*box.p)[1][1]` is 3.
 
 `row [2]T` on `Box[T]`, when `T` is `[2](i32, i32)`, keeps that array inside the written length.
 
-The struct is `Box.spec.arr.2.tuple.i32.i32`.
+The struct is `Box.spec.arr.2.tuple.2.i32.i32`.
 
-The call `hold(a, b)` is `main.hold.spec.arr.2.tuple.i32.i32`.
+The call `hold(a, b)` is `main.hold.spec.arr.2.tuple.2.i32.i32`.
 
 `box.row[0][0][0]` is 40 and `box.row[1][1][1]` is 7.
 
@@ -978,19 +980,19 @@ A written `[2](i32, i32)` is `expected a type`.
 
 `func id[T type](value **T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The call is `main.id.spec.tuple.i32.i32`.
+The call is `main.id.spec.tuple.2.i32.i32`.
 
 `(**value)[0]` is 40 and `(**value)[1]` is 2.
 
 `func id[T type](value **T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(**value)[0][0]` is 40 and `(**value)[1][1]` is 3.
 
 `func id[T type](value *const T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
-The call is `main.id.spec.tuple.i32.i32`.
+The call is `main.id.spec.tuple.2.i32.i32`.
 
 `(*value)[0]` is 40 and `(*value)[1]` is 2.
 
@@ -998,7 +1000,7 @@ The call is `main.id.spec.tuple.i32.i32`.
 
 `func id[T type](value *const T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
-The call is `main.id.spec.arr.2.tuple.i32.i32`.
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(*value)[0][0]` is 40 and `(*value)[1][1]` is 3.
 
@@ -1010,7 +1012,7 @@ The call is `main.id.spec.arr.2.tuple.i32.i32`.
 
 `var p = id(&row)` then `(*p)[0]` is 40.
 
-The call is `main.id.spec.tuple.i32.i32`.
+The call is `main.id.spec.tuple.2.i32.i32`.
 
 The same parameter on `func Point::take[P1 type, P2 type]` and `func Vec[T]::take[P1 type, P2 type]` is that tuple.
 
