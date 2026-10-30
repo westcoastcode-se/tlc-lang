@@ -952,7 +952,13 @@ The call is `main.make.spec.tuple.i32.i32`.
 
 `var box Box[T]` with no initializer is `type mismatch`.
 
-`{.p = value}`, when `value` is `*[2](i32, i32)`, is `type mismatch: expected *(i32, i32), found *[2](i32, i32)`.
+`type Box[T type] struct { p *T; }` of `make(&row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The struct is `Box.spec.arr.2.tuple.i32.i32`.
+
+The call is `main.make.spec.arr.2.tuple.i32.i32`.
+
+`(*box.p)[0][0]` is 40 and `(*box.p)[1][1]` is 3.
 
 `func id[T type](value *T) *T` returns that pointer.
 

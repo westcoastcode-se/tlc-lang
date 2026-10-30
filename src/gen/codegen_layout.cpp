@@ -303,6 +303,14 @@ void CodeGen::prepare_structs() {
                     if (low.type == nullptr) {
                         low.type = i32();
                     }
+                } else if (field.is_tuple && field.indirections == 0 && !field.shells.empty() &&
+                           field.shells.front().kind == TypeShell::Kind::Pointer) {
+                    // `p *T` when `T` is `[2](i32, i32)`. The field stores that pointer.
+                    ResultSlot slot;
+                    slot.is_tuple = true;
+                    slot.tuple_parts = field.tuple_parts;
+                    slot.shells = field.shells;
+                    low = lower_result(file, slot);
                 } else if (field.is_tuple) {
                     low = lower_tuple_parts(file, field.tuple_parts);
                     // `p *T` when `T` is a tuple. The field stores the address.

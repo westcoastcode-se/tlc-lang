@@ -980,6 +980,8 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         loaded.ptr_array_len = addr.ptr_array_len;
         loaded.elem_slice = addr.elem_slice;
         loaded.inner_array_len = addr.inner_array_len;
+        // `box.p` when the field is `*T` and `T` is `[2](i32, i32)`. The pointer keeps that array.
+        loaded.tuple_parts = addr.tuple_parts;
         return loaded;
     }
     if (addr.is_tuple && !addr.tuple_parts.empty()) {

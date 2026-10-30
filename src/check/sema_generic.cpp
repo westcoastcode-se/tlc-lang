@@ -2183,6 +2183,12 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
                 slot.shells = std::move(stamped.shells);
                 return;
             }
+            // `p *T` when `T` is `[2](i32, i32)`. The field stores a pointer to that array.
+            // `?*T` and `*const T` do not reach this branch.
+            if (slot.indirections == 1 && tuple_array_pack(*bound)) {
+                stamp_star_tuple_array(slot, *bound);
+                return;
+            }
             slot.is_tuple = true;
             slot.type_name.clear();
             slot.tuple_parts.clear();
@@ -3232,7 +3238,6 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         param.type_args, param.loc, &param.shells, &param.elem_const, &param.const_pointee);
         for (ResultSlot &part : param.tuple_parts) {
             // `p (*T, i32)` when `T` is `[2](i32, i32)`. The element keeps every array.
-            // A field `p *T` stays on `substitute_slot`.
             if (part.indirections == 1 && part.optional == 0 && part.const_pointee == 0 && !part.is_array &&
                 !part.is_fn_ptr && !part.is_tuple && part.type_package.empty() && part.type_args.empty() &&
                 part.shells.empty()) {
@@ -3284,7 +3289,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
     }
     for (ResultSlot &slot : fn.results) {
         // `func id[T type](value *T) *T` when `T` is `[2](i32, i32)`. The result keeps every array.
-        // A field `p *T` stays on `substitute_slot` and does not take this stamp.
+        // A field `p *T` is stamped in `substitute_slot`.
         if (slot.indirections == 1 && slot.optional == 0 && slot.const_pointee == 0 && !slot.is_array &&
             !slot.is_fn_ptr && !slot.is_tuple && slot.type_package.empty() && slot.type_args.empty() &&
             slot.shells.empty()) {

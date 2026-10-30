@@ -245,6 +245,15 @@ Type Checker::type_of_tuple_arrays(const std::vector<ResultSlot> &parts, int arr
 }
 
 Type Checker::type_of_tuple_field(const FieldDecl &field) {
+    if (field.is_tuple && field.indirections == 0 && !field.shells.empty() &&
+        field.shells.front().kind == TypeShell::Kind::Pointer) {
+        // `p *T` when `T` is `[2](i32, i32)`. The field is a pointer to that array.
+        ResultSlot slot;
+        slot.is_tuple = true;
+        slot.tuple_parts = field.tuple_parts;
+        slot.shells = field.shells;
+        return type_of_result(slot, field.loc);
+    }
     // `[2]T` when `T` is a tuple. The field is an array of that tuple.
     if (field.is_tuple && field.is_array && field.array_len > 0 && field.indirections == 0) {
         return type_of_tuple_arrays(field.tuple_parts, field.array_len, field.shells, false, field.loc);
