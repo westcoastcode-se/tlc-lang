@@ -976,6 +976,14 @@ The call `hold(a, b)` is `main.hold.spec.arr.2.tuple.i32.i32`.
 
 A written `[2](i32, i32)` is `expected a type`.
 
+`func id[T type](value **T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+The call is `main.id.spec.tuple.i32.i32`.
+
+`(**value)[0]` is 40 and `(**value)[1]` is 2.
+
+`**T` when `T` is `[2](i32, i32)` is `not supported yet`.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

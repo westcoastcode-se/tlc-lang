@@ -120,6 +120,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         loaded.enum_id = inner.enum_id;
                         return loaded;
                     }
+                    // `*p` on `**T` when `T` is a tuple. The load is the pointer to that tuple.
+                    if (inner.depth > 1 && !inner.tuple_parts.empty() && !inner.ptr_to_array &&
+                        inner.value->getType()->isPointerTy()) {
+                        TypedValue loaded;
+                        loaded.value = builder_.CreateLoad(ptr_type(), inner.value);
+                        loaded.depth = inner.depth - 1;
+                        loaded.tuple_parts = inner.tuple_parts;
+                        return loaded;
+                    }
                     // `*p` on a pointer to a tuple loads that tuple. The index then reads one element.
                     if (inner.depth == 1 && !inner.tuple_parts.empty() && !inner.ptr_to_array &&
                         inner.value->getType()->isPointerTy()) {

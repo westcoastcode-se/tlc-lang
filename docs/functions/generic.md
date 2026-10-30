@@ -2256,6 +2256,58 @@ retq                             # return
 
 The program returns 47.
 
+`func id[T type](value **T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+The call is `main.id.spec.tuple.i32.i32`.
+
+`(**value)[0]` is 40 and `(**value)[1]` is 2.
+
+`deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.tuple.i32.i32.i32`.
+
+`**T` when `T` is `[2](i32, i32)` is `not supported yet`.
+
+`?*T` and `*const T` are `not supported yet`.
+
+```c
+func id[T type](value **T) i32 {
+    return (**value)[0] + (**value)[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var p = &row;
+    return id(&p);
+}
+```
+
+```asm
+main.id.spec.tuple.i32.i32:
+movq %rdi, -8(%rsp)              # value
+movq -8(%rsp), %rax              # value
+movq (%rax), %rcx                # *value
+movl (%rcx), %eax                # (**value)[0]
+movl 4(%rcx), %ecx               # (**value)[1]
+addl %ecx, %eax                  # add
+retq                             # return
+
+main:
+subq $40, %rsp                   # allocate
+movl $2, 28(%rsp)                # row[1] = 2
+movl $40, 24(%rsp)               # row[0] = 40
+leaq 24(%rsp), %rax              # &row
+movq %rax, 32(%rsp)              # p
+# trace frame for the call, then the matching pop
+leaq 32(%rsp), %rdi              # &p
+callq main.id.spec.tuple.i32.i32 # call id
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # id(&p)
+addq $40, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40 and `(*p)[1]` is 2.
