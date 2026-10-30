@@ -3233,8 +3233,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
             }
         }
         // `*T` when `T` is a tuple. `**T` is a pointer to that pointer. `*const T` keeps the star const.
-        // `*T` and `**T` when `T` is `[2](i32, i32)` keep every array after the stars.
-        // `*const T` of that array stays rejected.
+        // `*T`, `**T`, and `*const T` when `T` is `[2](i32, i32)` keep every array after the stars.
         const bool bare_const = param.indirections == 1 && param.const_pointee != 0;
         const bool plain_star = param.const_pointee == 0 && (param.indirections == 1 || param.indirections == 2);
         if ((bare_const || plain_star) && param.optional == 0 && !param.is_array && !param.is_fn_ptr &&
@@ -3251,7 +3250,8 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                             slice = true;
                         }
                     }
-                    if (param.const_pointee != 0 || slice || (pack->shells.empty() && pack->array_len <= 0)) {
+                    if ((param.const_pointee != 0 && param.indirections != 1) || slice ||
+                        (pack->shells.empty() && pack->array_len <= 0)) {
                         error(param.loc, "not supported yet");
                         param.type_name = "invalid";
                     } else {
@@ -3267,9 +3267,12 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         for (int star = 0; star < param.indirections; ++star) {
                             TypeShell shell;
                             shell.kind = TypeShell::Kind::Pointer;
+                            // `*const T` marks the array. `**T` leaves both stars mutable.
+                            shell.const_pointee = star == 0 && (param.const_pointee & 1u) != 0;
                             param.shells.push_back(shell);
                         }
                         param.indirections = 0;
+                        param.const_pointee = 0;
                         if (!pack->shells.empty()) {
                             param.shells.insert(param.shells.end(), pack->shells.begin(), pack->shells.end());
                         } else {

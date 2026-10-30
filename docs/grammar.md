@@ -996,7 +996,13 @@ The call is `main.id.spec.tuple.i32.i32`.
 
 `(*value)[0] = 1` is `type mismatch`.
 
-`*const T` when `T` is `[2](i32, i32)` is `not supported yet`.
+`func id[T type](value *const T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The call is `main.id.spec.arr.2.tuple.i32.i32`.
+
+`(*value)[0][0]` is 40 and `(*value)[1][1]` is 3.
+
+`(*value)[0][0] = 1` is `type mismatch`.
 
 `?*T` is `not supported yet`.
 
