@@ -3594,6 +3594,22 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                 continue;
             }
         }
+        // `func id[T type](value **T) **T` when `T` is a tuple. `***T` is that same depth.
+        // An array of tuples stays rejected.
+        if (slot.indirections >= 2 && slot.optional == 0 && slot.const_pointee == 0 && !slot.is_array &&
+            !slot.is_fn_ptr && !slot.is_tuple && slot.type_package.empty() && slot.type_args.empty() &&
+            slot.shells.empty()) {
+            if (const SpecArg *pack = find_arg(params, bounds, slot.type_name);
+                pack != nullptr && pack->is_pack && !pack->parts.empty() && !pack->is_array && pack->shells.empty()) {
+                slot.is_tuple = true;
+                slot.type_name.clear();
+                slot.tuple_parts.clear();
+                for (const SpecArg &part : pack->parts) {
+                    slot.tuple_parts.push_back(slot_from_spec(part));
+                }
+                continue;
+            }
+        }
         subst_slot(slot, fn.loc);
     }
     if (!fn.results.empty()) {

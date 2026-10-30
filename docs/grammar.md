@@ -1130,7 +1130,13 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(**q)[0][0]` is 40 and `(**q)[1][1]` is 3.
 
-A result `**T` is `not supported yet`.
+`func id[T type](value **T) **T` of `&p`, when `row` is `(40, 2)`, returns that pointer.
+
+The call is `main.id.spec.tuple.2.i32.i32`.
+
+`(**q)[0]` is 40 and `(**q)[1]` is 2.
+
+A result `**T` when `T` is `[2](i32, i32)` is `not supported yet`.
 
 `var box Box[T]` with no initializer is `type mismatch`.
 
