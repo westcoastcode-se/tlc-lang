@@ -3595,19 +3595,48 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
             }
         }
         // `func id[T type](value **T) **T` when `T` is a tuple. `***T` is that same depth.
-        // An array of tuples stays rejected.
+        // An array of tuples keeps every array after those stars.
         if (slot.indirections >= 2 && slot.optional == 0 && slot.const_pointee == 0 && !slot.is_array &&
             !slot.is_fn_ptr && !slot.is_tuple && slot.type_package.empty() && slot.type_args.empty() &&
             slot.shells.empty()) {
             if (const SpecArg *pack = find_arg(params, bounds, slot.type_name);
-                pack != nullptr && pack->is_pack && !pack->parts.empty() && !pack->is_array && pack->shells.empty()) {
-                slot.is_tuple = true;
-                slot.type_name.clear();
-                slot.tuple_parts.clear();
-                for (const SpecArg &part : pack->parts) {
-                    slot.tuple_parts.push_back(slot_from_spec(part));
+                pack != nullptr && pack->is_pack && !pack->parts.empty()) {
+                if (!pack->is_array && pack->shells.empty()) {
+                    slot.is_tuple = true;
+                    slot.type_name.clear();
+                    slot.tuple_parts.clear();
+                    for (const SpecArg &part : pack->parts) {
+                        slot.tuple_parts.push_back(slot_from_spec(part));
+                    }
+                    continue;
                 }
-                continue;
+                if (tuple_array_pack(*pack)) {
+                    slot.is_tuple = true;
+                    slot.type_name.clear();
+                    slot.is_array = false;
+                    slot.array_len = 0;
+                    slot.tuple_parts.clear();
+                    for (const SpecArg &part : pack->parts) {
+                        slot.tuple_parts.push_back(slot_from_spec(part));
+                    }
+                    const int stars = slot.indirections;
+                    slot.indirections = 0;
+                    slot.shells.clear();
+                    for (int star = 0; star < stars; ++star) {
+                        TypeShell shell;
+                        shell.kind = TypeShell::Kind::Pointer;
+                        slot.shells.push_back(shell);
+                    }
+                    if (!pack->shells.empty()) {
+                        slot.shells.insert(slot.shells.end(), pack->shells.begin(), pack->shells.end());
+                    } else {
+                        TypeShell shell;
+                        shell.kind = TypeShell::Kind::Array;
+                        shell.length = pack->array_len;
+                        slot.shells.push_back(shell);
+                    }
+                    continue;
+                }
             }
         }
         subst_slot(slot, fn.loc);
