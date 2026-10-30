@@ -1142,6 +1142,16 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Nullptr>) {
                 return {null_ptr(), 1, false, -1, false, true};
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                // `?*T(value)` when `T` is `[2](i32, i32)`. The bits are already that pointer.
+                if (node.is_tuple && !node.shells.empty() && node.shells.front().kind == TypeShell::Kind::Pointer &&
+                    node.expr != nullptr) {
+                    TypedValue source = emit_rvalue(*node.expr);
+                    if (source.shells.empty()) {
+                        source.shells = node.shells;
+                    }
+                    source.is_tuple = false;
+                    return source;
+                }
                 // `?*T(value)` when `T` is a tuple. The bits stay that pointer.
                 if (node.is_tuple && node.indirections > 0 && node.expr != nullptr) {
                     TypedValue source = emit_rvalue(*node.expr);

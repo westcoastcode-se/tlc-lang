@@ -1003,6 +1003,15 @@ CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) cons
     if (var.is_tuple && var.is_array && var.array_len > 0 && var.indirections == 0) {
         return lower_tuple_array(var.tuple_parts, var.array_len, var.shells);
     }
+    if (var.is_tuple && var.indirections == 0 && !var.shells.empty() &&
+        var.shells.front().kind == TypeShell::Kind::Pointer) {
+        // `var q ?*T` when `T` is `[2](i32, i32)`. The slot holds that pointer.
+        ResultSlot slot;
+        slot.is_tuple = true;
+        slot.tuple_parts = var.tuple_parts;
+        slot.shells = var.shells;
+        return lower_result(file, slot);
+    }
     if (var.is_tuple) {
         Lowered low = lower_tuple_parts(file, var.tuple_parts);
         // `var q ?*T` when `T` is a tuple. The slot holds that pointer.

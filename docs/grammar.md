@@ -1012,7 +1012,13 @@ The call is `main.read.spec.tuple.2.i32.i32`.
 
 `(*q)[0] + (*q)[1]` is 42.
 
-`?*T` when `T` is `[2](i32, i32)` is `not supported yet`.
+`var q ?*T = ?*T(value)`, when `T` is `[2](i32, i32)`, keeps that array after the optional star.
+
+The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
+
+`(*q)[0][0]` is 40 and `(*q)[1][1]` is 3.
+
+`q = value` is `type mismatch: expected ?*[2](i32, i32), found *[2](i32, i32)`.
 
 `q = p`, when `p` is `*i32`, is `type mismatch: expected ?*i32, found *i32`.
 

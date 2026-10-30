@@ -1875,6 +1875,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                             node.ret_indirections, node.indirections < 1 ? 1 : node.indirections,
                                             node.fn_params, node.fn_variadic, node.fn_results, node.loc, node.ret_optional,
                                             node.ret_const_pointee);
+                } else if (node.is_tuple && !node.shells.empty() &&
+                           node.shells.front().kind == TypeShell::Kind::Pointer) {
+                    // `?*T(value)` when `T` is `[2](i32, i32)`. The star is optional. Each array follows.
+                    FnParam tuple;
+                    tuple.is_tuple = true;
+                    tuple.results = node.tuple_parts;
+                    Type element = type_of_fn_param(tuple, node.loc, false);
+                    bool rejected = false;
+                    target = apply_shells(std::move(element), node.shells, false, rejected);
+                    if (rejected || target.kind == TypeKind::Invalid) {
+                        error(node.loc, "not supported yet");
+                        target = type_invalid();
+                    }
                 } else if (node.is_tuple) {
                     // `?*T(value)` when `T` is a tuple. The target is that optional pointer.
                     FnParam tuple;

@@ -267,8 +267,10 @@ struct Expr {
         // `Getter[i32](value)`. Empty when the cast writes `Getter(value)` and the type is inferred.
         std::vector<TypeArg> type_args;
         // `?*T(value)` when `T` is a tuple. The elements are `tuple_parts`.
+        // `?*T(value)` when `T` is `[2](i32, i32)` keeps the star and then each array in `shells`.
         bool is_tuple = false;
         std::vector<FnParam> tuple_parts;
+        std::vector<TypeShell> shells;
         std::unique_ptr<Expr> expr;
         // The cast names a trait. Codegen passes the value through.
         mutable bool trait_value = false;

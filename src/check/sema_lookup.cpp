@@ -286,6 +286,16 @@ Type Checker::type_of_var(const VarDecl &var) {
     Type type = type_invalid();
     if (var.is_tuple && var.is_array && var.array_len > 0 && var.indirections == 0) {
         type = type_of_tuple_arrays(var.tuple_parts, var.array_len, var.shells, false, var.loc);
+    } else if (var.is_tuple && var.indirections == 0 && !var.shells.empty() &&
+               var.shells.front().kind == TypeShell::Kind::Pointer) {
+        // `var q ?*T` when `T` is `[2](i32, i32)`. The star is optional. Each array follows.
+        type = type_of_written_tuple(var.tuple_parts, 0, false, {}, var.loc);
+        bool rejected = false;
+        type = apply_shells(std::move(type), var.shells, false, rejected);
+        if (rejected || type.kind == TypeKind::Invalid) {
+            error(var.loc, "not supported yet");
+            type = type_invalid();
+        }
     } else if (var.is_tuple) {
         type = type_of_written_tuple(var.tuple_parts, var.indirections, var.is_array, var.shells, var.loc, var.optional,
                                      var.const_pointee);

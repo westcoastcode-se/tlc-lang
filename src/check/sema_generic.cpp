@@ -2235,12 +2235,25 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
             return;
         }
     }
-    // `var q ?*T` when `T` is a tuple. The slot is that optional pointer.
-    // `?*T` when `T` is `[2](i32, i32)` stays rejected.
+    // `var q ?*T` when `T` is a tuple. An array of tuples keeps every array after the star.
     if (slot.indirections == 1 && slot.optional != 0 && slot.const_pointee == 0 && !slot.is_array && slot.shells.empty() &&
         slot.type_package.empty() && slot.type_args.empty() && !slot.is_fn_ptr && !slot.is_tuple) {
         if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
-            if (bound->parts.empty() || bound->is_array || !bound->shells.empty()) {
+            if (bound->parts.empty()) {
+                error(loc, "not supported yet");
+                slot.type_name = "invalid";
+                return;
+            }
+            if (tuple_array_pack(*bound)) {
+                if (!stamp_star_tuple_array(slot, *bound)) {
+                    error(loc, "not supported yet");
+                    slot.type_name = "invalid";
+                    return;
+                }
+                slot.shells.front().optional = true;
+                return;
+            }
+            if (bound->is_array || !bound->shells.empty()) {
                 error(loc, "not supported yet");
                 slot.type_name = "invalid";
                 return;
@@ -2983,21 +2996,36 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         subst_param(subst_param, part);
                     }
                 } else {
-                    // `?*T(value)` when `T` is a tuple. The cast is that optional pointer.
-                    // `?*T` when `T` is `[2](i32, i32)` stays on `substitute_type` and is rejected.
+                    // `?*T(value)` when `T` is a tuple. An array of tuples keeps every array after the star.
                     bool stamped = false;
                     if (node.indirections == 1 && node.optional != 0 && node.const_pointee == 0 &&
                         node.type_package.empty() && node.type_args.empty()) {
                         if (const SpecArg *pack = find_arg(params, bounds, node.type_name);
-                            pack != nullptr && pack->is_pack && !pack->parts.empty() && !pack->is_array &&
-                            pack->shells.empty()) {
-                            node.is_tuple = true;
-                            node.type_name.clear();
-                            node.tuple_parts.clear();
-                            for (const SpecArg &part : pack->parts) {
-                                node.tuple_parts.push_back(fn_from_slot(slot_from_spec(part)));
+                            pack != nullptr && pack->is_pack && !pack->parts.empty()) {
+                            if (tuple_array_pack(*pack)) {
+                                ResultSlot shaped;
+                                if (stamp_star_tuple_array(shaped, *pack)) {
+                                    shaped.shells.front().optional = true;
+                                    node.is_tuple = true;
+                                    node.type_name.clear();
+                                    node.indirections = 0;
+                                    node.optional = 0;
+                                    node.shells = shaped.shells;
+                                    node.tuple_parts.clear();
+                                    for (const ResultSlot &part : shaped.tuple_parts) {
+                                        node.tuple_parts.push_back(fn_from_slot(part));
+                                    }
+                                    stamped = true;
+                                }
+                            } else if (!pack->is_array && pack->shells.empty()) {
+                                node.is_tuple = true;
+                                node.type_name.clear();
+                                node.tuple_parts.clear();
+                                for (const SpecArg &part : pack->parts) {
+                                    node.tuple_parts.push_back(fn_from_slot(slot_from_spec(part)));
+                                }
+                                stamped = true;
                             }
-                            stamped = true;
                         }
                     }
                     if (!stamped) {

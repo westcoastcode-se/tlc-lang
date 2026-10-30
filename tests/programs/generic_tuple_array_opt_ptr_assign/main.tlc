@@ -1,0 +1,17 @@
+func pair[T type](a T, b T) [2]T {
+    var row [2]T;
+    row[0] = a;
+    row[1] = b;
+    return row;
+}
+
+func read[T type](value *T) i32 {
+    var q ?*T = null;
+    q = value;
+    return 0;
+}
+
+func main() i32 {
+    var row = pair((40, 2), (1, 3));
+    return read(&row);
+}
