@@ -114,6 +114,10 @@ bool CodeGen::is_struct_value(const Lowered &low) const {
 }
 
 CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) const {
+    // `(T, i32)` when `T` is `[2](i32, i32)`. The element is that array. `[2][2]` keeps both shells.
+    if (slot.is_tuple && slot.is_array && slot.array_len > 0 && slot.indirections == 0) {
+        return lower_tuple_array(slot.tuple_parts, slot.array_len, slot.shells);
+    }
     if (slot.is_tuple) {
         Lowered low = lower_tuple_parts(file, slot.tuple_parts);
         // `*T` when `T` is a tuple. The slot holds the address, and the parts are the tuple.

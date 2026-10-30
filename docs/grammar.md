@@ -908,6 +908,16 @@ The outer array decays. The inner array stays.
 
 `func give[T type](value T) T` returns that array.
 
+`func take[T type](p (T, i32))` of `(row, 1)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The call is `main.take.spec.arr.2.tuple.i32.i32`.
+
+`p[0][0][0]` is 40, `p[0][1][1]` is 3, and `p[1]` is 1.
+
+`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+
+`func make[T type](value T) (T, i32)` returns that tuple.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

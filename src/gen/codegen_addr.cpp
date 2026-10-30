@@ -127,9 +127,12 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             out.inner_array_len = low.inner_array_len;
             out.elem_slice = low.elem_slice;
             out.shells = low.shells;
+            // An array of tuples is not itself a tuple. `tuple_parts` is one element.
+            if (!low.tuple_parts.empty()) {
+                out.tuple_parts = low.tuple_parts;
+            }
             if (low.is_tuple) {
                 out.is_tuple = true;
-                out.tuple_parts = low.tuple_parts;
             }
             if (low.type != nullptr && low.type->isArrayTy()) {
                 out.array_type = low.type;

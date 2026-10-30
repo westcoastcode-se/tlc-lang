@@ -878,7 +878,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             slot = &binding->tuple_parts[index];
                         }
                     }
-                    if (slot != nullptr && slot->is_tuple && slot->indirections == 0) {
+                    // A bare tuple element. An array of tuples is the array branch below.
+                    if (slot != nullptr && slot->is_tuple && slot->indirections == 0 &&
+                        !(slot->is_array && slot->array_len > 0)) {
                         TypedValue loaded;
                         loaded.value = extracted;
                         loaded.is_tuple = true;
@@ -894,9 +896,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return loaded;
                     }
                     if (slot != nullptr) {
-                        const Lowered part = lower(current_file_, slot->type_name, slot->type_package, slot->is_struct,
-                                                   slot->indirections, slot->is_array, slot->array_len, false,
-                                                   slot->elem_slice, slot->shells);
+                        // `p[0]` when the element is `[2](i32, i32)`. The field is that array.
+                        const bool tuple_array =
+                            slot->is_tuple && slot->is_array && slot->array_len > 0 && slot->indirections == 0;
+                        const Lowered part =
+                            tuple_array ? lower_tuple_array(slot->tuple_parts, slot->array_len, slot->shells)
+                                        : lower(current_file_, slot->type_name, slot->type_package, slot->is_struct,
+                                                slot->indirections, slot->is_array, slot->array_len, false,
+                                                slot->elem_slice, slot->shells);
                         // An array name is the address of the array. The element keeps that address
                         // when the tuple is stored, including `nested[0][0]`. A temporary is copied.
                         if (part.is_array && !part.is_slice && part.array_len > 0) {
@@ -959,6 +966,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             if (!addr.shells.empty() && addr.shells.front().kind == TypeShell::Kind::Array) {
                                 value.shells.assign(addr.shells.begin() + 1, addr.shells.end());
                             }
+                            // `[2](i32, i32)` steps by one tuple. `[2][2](i32, i32)` still has the inner shell.
+                            value.tuple_parts = part.tuple_parts;
                             return value;
                         }
                         if (part.is_slice) {
