@@ -3232,11 +3232,13 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                 continue;
             }
         }
-        // `*T` when `T` is a tuple. `**T` is a pointer to that pointer.
+        // `*T` when `T` is a tuple. `**T` is a pointer to that pointer. `*const T` keeps the star const.
         // `*T` and `**T` when `T` is `[2](i32, i32)` keep every array after the stars.
-        if ((param.indirections == 1 || param.indirections == 2) && param.optional == 0 && param.const_pointee == 0 &&
-            !param.is_array && !param.is_fn_ptr && !param.is_tuple && param.type_package.empty() &&
-            param.type_args.empty()) {
+        // `*const T` of that array stays rejected.
+        const bool bare_const = param.indirections == 1 && param.const_pointee != 0;
+        const bool plain_star = param.const_pointee == 0 && (param.indirections == 1 || param.indirections == 2);
+        if ((bare_const || plain_star) && param.optional == 0 && !param.is_array && !param.is_fn_ptr &&
+            !param.is_tuple && param.type_package.empty() && param.type_args.empty()) {
             if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
                 pack != nullptr && pack->is_pack) {
                 if (pack->parts.empty()) {
@@ -3249,7 +3251,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                             slice = true;
                         }
                     }
-                    if (slice || (pack->shells.empty() && pack->array_len <= 0)) {
+                    if (param.const_pointee != 0 || slice || (pack->shells.empty() && pack->array_len <= 0)) {
                         error(param.loc, "not supported yet");
                         param.type_name = "invalid";
                     } else {
