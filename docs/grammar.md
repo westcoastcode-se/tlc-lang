@@ -1026,7 +1026,11 @@ The call is `main.read.spec.tuple.2.i32.i32`.
 
 `(*value)[0]` is 40 and `(*value)[1]` is 2.
 
-`value ?*T` when `T` is `[2](i32, i32)` is `not supported yet`.
+`func read[T type](value ?*T)` of `?*T(value)`, when `T` is `[2](i32, i32)`, keeps that array after the optional star.
+
+The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
+
+`(*value)[0][0]` is 40 and `(*value)[1][1]` is 3.
 
 `q = p`, when `p` is `*i32`, is `type mismatch: expected ?*i32, found *i32`.
 

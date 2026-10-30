@@ -3322,14 +3322,32 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                 continue;
             }
         }
-        // `value ?*T` when `T` is a tuple. The parameter is that optional pointer.
-        // `?*T` when `T` is `[2](i32, i32)` stays rejected.
+        // `value ?*T` when `T` is a tuple. An array of tuples keeps every array after the star.
         if (param.indirections == 1 && param.optional != 0 && param.const_pointee == 0 && !param.is_array &&
             !param.is_fn_ptr && !param.is_tuple && param.type_package.empty() && param.type_args.empty() &&
             param.shells.empty()) {
             if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
                 pack != nullptr && pack->is_pack) {
-                if (pack->parts.empty() || pack->is_array || !pack->shells.empty()) {
+                if (pack->parts.empty()) {
+                    error(param.loc, "not supported yet");
+                    param.type_name = "invalid";
+                } else if (tuple_array_pack(*pack)) {
+                    ResultSlot shaped;
+                    if (!stamp_star_tuple_array(shaped, *pack)) {
+                        error(param.loc, "not supported yet");
+                        param.type_name = "invalid";
+                    } else {
+                        shaped.shells.front().optional = true;
+                        param.is_tuple = true;
+                        param.type_name.clear();
+                        param.indirections = 0;
+                        param.optional = 0;
+                        param.is_array = false;
+                        param.array_len = 0;
+                        param.tuple_parts = std::move(shaped.tuple_parts);
+                        param.shells = std::move(shaped.shells);
+                    }
+                } else if (pack->is_array || !pack->shells.empty()) {
                     error(param.loc, "not supported yet");
                     param.type_name = "invalid";
                 } else {
