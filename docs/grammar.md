@@ -870,6 +870,12 @@ The call is `main.make.spec.tuple.i32.i32`.
 
 `var row [2]T` in that function is an array of that tuple.
 
+`func take[T type](row [2]T)`, when `T` is `(i32, i32)`, takes an array of that tuple.
+
+`take(row)` is `main.take.spec.tuple.i32.i32`.
+
+`row[0][0]` is 40 and `row[1][1]` is 3.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

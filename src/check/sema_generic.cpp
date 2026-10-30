@@ -385,6 +385,16 @@ void append_param_shape(std::string &out, const Param &param, const std::vector<
         out += "comptime.";
     }
     if (param.is_tuple) {
+        // `[2]T` when `T` is a tuple. The key keeps the array around that tuple.
+        if (param.is_array) {
+            out.push_back('[');
+            if (!param.array_len_name.empty()) {
+                append_shaped_name(out, "", param.array_len_name, params);
+            } else if (param.array_len >= 0) {
+                out += std::to_string(param.array_len);
+            }
+            out.push_back(']');
+        }
         out.push_back('(');
         for (std::size_t i = 0; i < param.tuple_parts.size(); ++i) {
             if (i != 0) {
@@ -2956,6 +2966,27 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
             param.type_name.clear();
             kept.push_back(std::move(param));
             continue;
+        }
+        // `[2]T` when `T` is a tuple. The array stays. One element is that tuple.
+        if (param.is_array && param.array_len > 0 && param.indirections == 0 && param.optional == 0 &&
+            param.const_pointee == 0 && param.type_package.empty() && param.type_args.empty() && !param.is_fn_ptr &&
+            !param.is_tuple) {
+            if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
+                pack != nullptr && pack->is_pack) {
+                if (pack->parts.empty()) {
+                    error(param.loc, "not supported yet");
+                    param.type_name = "invalid";
+                } else {
+                    param.is_tuple = true;
+                    param.type_name.clear();
+                    param.tuple_parts.clear();
+                    for (const SpecArg &part : pack->parts) {
+                        param.tuple_parts.push_back(slot_from_spec(part));
+                    }
+                }
+                kept.push_back(std::move(param));
+                continue;
+            }
         }
         // `*T` when `T` is a tuple. The parameter is a pointer to that tuple.
         if (param.indirections == 1 && param.optional == 0 && param.const_pointee == 0 && !param.is_array &&

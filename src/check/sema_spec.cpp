@@ -1654,7 +1654,18 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
     const auto matches = [&](const Param &param, const Type &got) {
         if (param.is_tuple) {
             // `value *T` is a pointer to the tuple. The argument is that pointer.
+            // `[2]T` is a pointer that still records the length. The argument is that array.
             const Type *core = &got;
+            if (param.is_array && param.array_len > 0 && param.indirections == 0) {
+                if (core->kind == TypeKind::Array && core->length == param.array_len && core->element != nullptr) {
+                    core = core->element.get();
+                } else if (core->kind == TypeKind::Pointer && !core->optional && core->decayed_len == param.array_len &&
+                           core->pointee != nullptr) {
+                    core = core->pointee.get();
+                } else {
+                    return false;
+                }
+            }
             for (int star = 0; star < param.indirections; ++star) {
                 if (core->kind != TypeKind::Pointer || core->pointee == nullptr) {
                     return false;

@@ -323,7 +323,14 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
 
 Type Checker::type_of_param(const Param &param) {
     Type type = type_invalid();
-    if (param.is_tuple) {
+    if (param.is_tuple && param.is_array && param.array_len > 0 && param.indirections == 0) {
+        // `[2]T` when `T` is a tuple. A parameter is a pointer to one element, and the length stays.
+        Type element = type_of_written_tuple(param.tuple_parts, 0, false, {}, param.loc);
+        if (element.kind == TypeKind::Tuple) {
+            type = type_pointer(std::move(element));
+            type.decayed_len = param.array_len;
+        }
+    } else if (param.is_tuple) {
         std::vector<Type> parts;
         parts.reserve(param.tuple_parts.size());
         for (const ResultSlot &slot : param.tuple_parts) {
