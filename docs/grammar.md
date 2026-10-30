@@ -856,6 +856,12 @@ The call is `main.make.spec.tuple.i32.i32`.
 
 `box.n[0]` is 40 and `box.n[1]` is 2.
 
+`row [2]T` on that struct, when `T` is `(i32, i32)`, is an array of that tuple.
+
+`make(one, two)` is `main.make.spec.tuple.i32.i32`.
+
+`box.row[0][0]` is 40 and `box.row[1][1]` is 3.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

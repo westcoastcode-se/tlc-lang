@@ -472,6 +472,7 @@ class Checker {
     Type type_of_param(const Param &param);
     Type type_of_var(const VarDecl &var);
     // `(i32, i32)` written on a variable or a field. A shell around that spelling stays rejected.
+    Type type_of_tuple_field(const FieldDecl &field);
     Type type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
                                const std::vector<TypeShell> &shells, SourceLoc loc);
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;

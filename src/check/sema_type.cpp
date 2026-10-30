@@ -653,7 +653,7 @@ void Checker::define_trait_fields() {
             fold_shells(field.shells, field.loc);
             Type field_type =
                 field.is_tuple
-                    ? type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, field.shells, field.loc)
+                    ? type_of_tuple_field(field)
                     : field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                        field.ret_indirections, field.indirections, field.fn_params,
                                                        field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
@@ -1394,8 +1394,7 @@ void Checker::define_struct_fields() {
             }
             Type field_type =
                 field.is_tuple
-                    ? type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, written.shells,
-                                            field.loc)
+                    ? type_of_tuple_field(field)
                     : field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                        field.ret_indirections, field.indirections, field.fn_params,
                                                        field.fn_variadic, field.fn_results, field.loc, field.ret_optional,

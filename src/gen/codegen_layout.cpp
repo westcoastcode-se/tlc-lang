@@ -286,7 +286,24 @@ void CodeGen::prepare_structs() {
             bool union_took_init = false;
             for (const FieldDecl &field : item->fields) {
                 Lowered low;
-                if (field.is_tuple) {
+                if (field.is_tuple && field.is_array && field.array_len > 0 && field.indirections == 0) {
+                    // `[2]T` when `T` is a tuple. One element is that tuple.
+                    std::vector<TypeShell> shells = field.shells;
+                    if (shells.empty()) {
+                        TypeShell shell;
+                        shell.kind = TypeShell::Kind::Array;
+                        shell.length = field.array_len;
+                        shells.push_back(shell);
+                    }
+                    low.tuple_parts = field.tuple_parts;
+                    low.shells = std::move(shells);
+                    low.is_array = true;
+                    low.array_len = field.array_len;
+                    low.type = tuple_shell_type(field.tuple_parts, low.shells);
+                    if (low.type == nullptr) {
+                        low.type = i32();
+                    }
+                } else if (field.is_tuple) {
                     low = lower_tuple_parts(file, field.tuple_parts);
                     // `p *T` when `T` is a tuple. The field stores the address.
                     if (field.indirections > 0) {

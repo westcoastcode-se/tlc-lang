@@ -214,6 +214,18 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
     return pointer;
 }
 
+Type Checker::type_of_tuple_field(const FieldDecl &field) {
+    // `[2]T` when `T` is a tuple. The field is an array of that tuple.
+    if (field.is_tuple && field.is_array && field.array_len > 0 && field.indirections == 0) {
+        Type element = type_of_written_tuple(field.tuple_parts, 0, false, {}, field.loc);
+        if (element.kind != TypeKind::Tuple) {
+            return type_invalid();
+        }
+        return type_array(std::move(element), field.array_len);
+    }
+    return type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, field.shells, field.loc);
+}
+
 Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
                                     const std::vector<TypeShell> &shells, SourceLoc loc) {
     // A shell around `(i32, i32)` is not this form. `[2]Duo` wraps the name.

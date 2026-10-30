@@ -1970,6 +1970,24 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
         }
         return;
     }
+    // `[2]T` when `T` is a tuple. The array stays, and one element is that tuple.
+    if (slot.is_array && slot.array_len > 0 && slot.indirections == 0 && slot.optional == 0 && slot.const_pointee == 0 &&
+        slot.type_package.empty() && slot.type_args.empty() && !slot.is_fn_ptr && !slot.is_tuple) {
+        if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
+            if (bound->parts.empty()) {
+                error(loc, "not supported yet");
+                slot.type_name = "invalid";
+                return;
+            }
+            slot.is_tuple = true;
+            slot.type_name.clear();
+            slot.tuple_parts.clear();
+            for (const SpecArg &part : bound->parts) {
+                slot.tuple_parts.push_back(slot_from_spec(part));
+            }
+            return;
+        }
+    }
     // `(T, i32)` when `T` is `(i32, i32)`. The element becomes that tuple.
     // `*T` keeps the star. The result is a pointer to that tuple.
     if (slot.type_package.empty() && !slot.is_array && slot.type_args.empty() && slot.shells.empty() &&

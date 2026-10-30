@@ -205,8 +205,7 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
                         field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args, field.loc);
         fold_shells(field.shells, field.loc);
         Type field_type = field.is_tuple
-                              ? type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, field.shells,
-                                                      field.loc)
+                              ? type_of_tuple_field(field)
                               : field.is_fn_ptr
                               ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
@@ -673,8 +672,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                             field.loc);
             fold_shells(field.shells, field.loc);
             Type field_type = field.is_tuple
-                                  ? type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array,
-                                                          field.shells, field.loc)
+                                  ? type_of_tuple_field(field)
                                   : field.is_fn_ptr
                                   ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                    field.ret_indirections, field.indirections, field.fn_params,
@@ -782,8 +780,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                         field.optional, field.is_array, field.array_len, field.array_len_name, field.type_args, field.loc);
         fold_shells(field.shells, field.loc);
         Type field_type = field.is_tuple
-                              ? type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, field.shells,
-                                                      field.loc)
+                              ? type_of_tuple_field(field)
                               : field.is_fn_ptr
                               ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
