@@ -892,6 +892,22 @@ The call is `main.id.spec.arr.2.tuple.i32.i32`.
 
 `&g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
 
+`func id[T type](value T)` of `row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The call is `main.id.spec.arr.2.tuple.i32.i32`.
+
+The parameter is a pointer to that array.
+
+`value[0][0]` is 40 and `value[1][1]` is 3.
+
+`g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+
+The outer array decays. The inner array stays.
+
+`var g T = value` is that array.
+
+`func give[T type](value T) T` returns that array.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

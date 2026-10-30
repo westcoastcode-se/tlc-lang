@@ -75,6 +75,23 @@ void apply_spec(ResultSlot &slot, const SpecArg &arg) {
     slot.array_len = arg.array_len;
 }
 
+// `T` bound to `[2](i32, i32)` or `[2][2](i32, i32)`. Every shell is one array.
+// A pointer shell is `*T`. A slice stays out of this form.
+bool tuple_array_pack(const SpecArg &pack) {
+    if (!pack.is_pack || pack.parts.empty()) {
+        return false;
+    }
+    if (pack.shells.empty()) {
+        return pack.is_array && pack.array_len > 0;
+    }
+    for (const TypeShell &shell : pack.shells) {
+        if (shell.kind != TypeShell::Kind::Array || shell.length <= 0 || !shell.length_name.empty()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 ResultSlot slot_from_spec(const SpecArg &arg) {
     ResultSlot slot;
     if (arg.is_pack) {
@@ -82,6 +99,27 @@ ResultSlot slot_from_spec(const SpecArg &arg) {
         slot.tuple_parts.reserve(arg.parts.size());
         for (const SpecArg &part : arg.parts) {
             slot.tuple_parts.push_back(slot_from_spec(part));
+        }
+        // The leaf is the tuple. `[2]T` and `[2][2]T` keep every array shell around it.
+        if (tuple_array_pack(arg)) {
+            slot.is_array = true;
+            slot.array_len = arg.array_len;
+            if (!arg.shells.empty()) {
+                slot.shells = arg.shells;
+            } else {
+                TypeShell shell;
+                shell.kind = TypeShell::Kind::Array;
+                shell.length = arg.array_len;
+                slot.shells.push_back(shell);
+            }
+            if (slot.array_len <= 0) {
+                for (const TypeShell &shell : slot.shells) {
+                    if (shell.kind == TypeShell::Kind::Array && shell.length > 0) {
+                        slot.array_len = shell.length;
+                        break;
+                    }
+                }
+            }
         }
         return slot;
     }
@@ -2053,13 +2091,23 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
         }
     }
     // `(T, i32)` when `T` is `(i32, i32)`. The element becomes that tuple.
-    // `*T` keeps the star. The result is a pointer to that tuple.
+    // `T` when `T` is `[2](i32, i32)` keeps every array shell. `*T` keeps the star.
     if (slot.type_package.empty() && !slot.is_array && slot.type_args.empty() && slot.shells.empty() &&
         slot.optional == 0 && slot.const_pointee == 0 && (slot.indirections == 0 || slot.indirections == 1)) {
         if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
             if (bound->parts.empty()) {
                 error(loc, "not supported yet");
                 slot.type_name = "invalid";
+                return;
+            }
+            if (slot.indirections == 0 && tuple_array_pack(*bound)) {
+                ResultSlot stamped = slot_from_spec(*bound);
+                slot.is_tuple = true;
+                slot.type_name.clear();
+                slot.tuple_parts = std::move(stamped.tuple_parts);
+                slot.is_array = stamped.is_array;
+                slot.array_len = stamped.array_len;
+                slot.shells = std::move(stamped.shells);
                 return;
             }
             slot.is_tuple = true;
@@ -3012,6 +3060,20 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                 }
                 continue;
             }
+            // `value T` when `T` is `[2](i32, i32)`. The parameter decays that outer array later.
+            // `[2][2](i32, i32)` keeps both shells. A pointer shell is `*T`, not this parameter.
+            if (tuple_array_pack(*pack)) {
+                ResultSlot stamped = slot_from_spec(*pack);
+                param.is_tuple = true;
+                param.type_name.clear();
+                param.indirections = 0;
+                param.is_array = stamped.is_array;
+                param.array_len = stamped.array_len;
+                param.tuple_parts = std::move(stamped.tuple_parts);
+                param.shells = std::move(stamped.shells);
+                kept.push_back(std::move(param));
+                continue;
+            }
             param.is_tuple = true;
             param.tuple_parts.clear();
             for (const SpecArg &part : pack->parts) {
@@ -3128,7 +3190,8 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                 fn.indirections = 0;
                 fn.optional = 0;
                 fn.const_pointee = 0;
-            } else {
+            } else if (!tuple_array_pack(*pack)) {
+                // A bare tuple is one result per element. An array of that tuple stays the single `T`.
                 std::vector<ResultSlot> expanded;
                 expanded.reserve(pack->parts.size());
                 for (const SpecArg &part : pack->parts) {
