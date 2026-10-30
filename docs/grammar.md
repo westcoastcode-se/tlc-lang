@@ -1006,7 +1006,15 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(*value)[0][0] = 1` is `type mismatch`.
 
-`?*T` is `not supported yet`.
+`var q ?*T = ?*T(value)`, when `T` is `(i32, i32)`, is that optional pointer.
+
+The call is `main.read.spec.tuple.2.i32.i32`.
+
+`(*q)[0] + (*q)[1]` is 42.
+
+`?*T` when `T` is `[2](i32, i32)` is `not supported yet`.
+
+`q = p`, when `p` is `*i32`, is `type mismatch: expected ?*i32, found *i32`.
 
 `func id[T type](value *T) *T` returns that pointer.
 

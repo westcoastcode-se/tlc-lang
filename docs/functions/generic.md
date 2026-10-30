@@ -2641,6 +2641,65 @@ retq                             # return
 
 The program returns 43.
 
+`var q ?*T = ?*T(value)`, when `T` is `(i32, i32)`, is that optional pointer.
+
+The call is `main.read.spec.tuple.2.i32.i32`.
+
+`q` is null on one path and returns 0. `?*T(value)` stores `&row`, and `(*q)[0] + (*q)[1]` is 42.
+
+`deep(&wide)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
+
+`?*T` when `T` is `[2](i32, i32)` is `not supported yet`.
+
+`q = p`, when `p` is `*i32`, is `type mismatch: expected ?*i32, found *i32`.
+
+```c
+func read[T type](value *T) i32 {
+    var q ?*T = ?*T(value);
+    if (q == null) {
+        return 0;
+    }
+    return (*q)[0] + (*q)[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    return read(&row);
+}
+```
+
+```asm
+main.read.spec.tuple.2.i32.i32:
+movq %rdi, -16(%rsp)             # value
+movq -16(%rsp), %rax             # value
+movq %rax, -8(%rsp)              # q = ?*T(value)
+cmpq $0, -8(%rsp)                # q == null
+jne .Lq
+xorl %eax, %eax                  # 0
+retq                             # return
+.Lq:
+movq -8(%rsp), %rcx              # q
+movl (%rcx), %eax                # (*q)[0]
+movl 4(%rcx), %ecx               # (*q)[1]
+addl %ecx, %eax                  # add
+retq                             # return
+
+main:
+subq $24, %rsp                   # allocate
+movl $2, 20(%rsp)                # row[1] = 2
+movl $40, 16(%rsp)               # row[0] = 40
+# trace frame for the call, then the matching pop
+leaq 16(%rsp), %rdi              # &row
+callq main.read.spec.tuple.2.i32.i32 # call read
+movl %eax, %ecx                  # move
+movl %ecx, 4(%rsp)               # move
+movl 4(%rsp), %eax               # read(&row)
+addq $24, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
+
 `take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.take.spec.tuple.2.i32.i32`.

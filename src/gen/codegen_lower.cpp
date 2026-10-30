@@ -1004,7 +1004,14 @@ CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) cons
         return lower_tuple_array(var.tuple_parts, var.array_len, var.shells);
     }
     if (var.is_tuple) {
-        return lower_tuple_parts(file, var.tuple_parts);
+        Lowered low = lower_tuple_parts(file, var.tuple_parts);
+        // `var q ?*T` when `T` is a tuple. The slot holds that pointer.
+        if (var.indirections > 0) {
+            low.depth = var.indirections;
+            low.type = ptr_type();
+            low.is_tuple = false;
+        }
+        return low;
     }
     if (var.is_fn_ptr) {
         return lower_fnptr(file, var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,

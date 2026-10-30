@@ -262,7 +262,8 @@ Type Checker::type_of_tuple_field(const FieldDecl &field) {
 }
 
 Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
-                                    const std::vector<TypeShell> &shells, SourceLoc loc) {
+                                    const std::vector<TypeShell> &shells, SourceLoc loc, uint32_t optional,
+                                    uint32_t const_pointee) {
     // A shell around `(i32, i32)` is not this form. `[2]Duo` wraps the name.
     // A star is `*T` when `T` is that tuple.
     if (is_array || !shells.empty()) {
@@ -276,7 +277,7 @@ Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int in
     }
     Type type = type_tuple(std::move(typed));
     if (indirections != 0) {
-        type = with_indirections(std::move(type), indirections, loc);
+        type = with_indirections(std::move(type), indirections, loc, optional, const_pointee);
     }
     return type;
 }
@@ -286,7 +287,8 @@ Type Checker::type_of_var(const VarDecl &var) {
     if (var.is_tuple && var.is_array && var.array_len > 0 && var.indirections == 0) {
         type = type_of_tuple_arrays(var.tuple_parts, var.array_len, var.shells, false, var.loc);
     } else if (var.is_tuple) {
-        type = type_of_written_tuple(var.tuple_parts, var.indirections, var.is_array, var.shells, var.loc);
+        type = type_of_written_tuple(var.tuple_parts, var.indirections, var.is_array, var.shells, var.loc, var.optional,
+                                     var.const_pointee);
     } else {
         VarDecl &written = const_cast<VarDecl &>(var);
         prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,

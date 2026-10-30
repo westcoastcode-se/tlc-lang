@@ -1869,14 +1869,24 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     return type_invalid();
                 }
-                const Type target =
-                    node.is_fn_ptr
-                        ? type_of_fn_ptr(node.type_name, node.type_package, node.is_struct, node.is_enum,
-                                         node.ret_indirections, node.indirections < 1 ? 1 : node.indirections,
-                                         node.fn_params, node.fn_variadic, node.fn_results, node.loc, node.ret_optional,
-                                         node.ret_const_pointee)
-                        : spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
-                                       node.loc, node.optional, node.const_pointee);
+                Type target = type_invalid();
+                if (node.is_fn_ptr) {
+                    target = type_of_fn_ptr(node.type_name, node.type_package, node.is_struct, node.is_enum,
+                                            node.ret_indirections, node.indirections < 1 ? 1 : node.indirections,
+                                            node.fn_params, node.fn_variadic, node.fn_results, node.loc, node.ret_optional,
+                                            node.ret_const_pointee);
+                } else if (node.is_tuple) {
+                    // `?*T(value)` when `T` is a tuple. The target is that optional pointer.
+                    FnParam tuple;
+                    tuple.is_tuple = true;
+                    tuple.results = node.tuple_parts;
+                    Type element = type_of_fn_param(tuple, node.loc, false);
+                    target = with_indirections(std::move(element), node.indirections, node.loc, node.optional,
+                                               node.const_pointee);
+                } else {
+                    target = spelled_type(node.type_name, node.type_package, node.is_struct, node.is_enum,
+                                          node.indirections, node.loc, node.optional, node.const_pointee);
+                }
                 if (node.expr != nullptr && target.kind == TypeKind::Tuple && target.results.size() == 1) {
                     Type bare = target;
                     bare.alias_id = 0;

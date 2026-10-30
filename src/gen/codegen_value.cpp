@@ -1142,6 +1142,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Nullptr>) {
                 return {null_ptr(), 1, false, -1, false, true};
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                // `?*T(value)` when `T` is a tuple. The bits stay that pointer.
+                if (node.is_tuple && node.indirections > 0 && node.expr != nullptr) {
+                    TypedValue source = emit_rvalue(*node.expr);
+                    source.depth = node.indirections;
+                    source.is_tuple = false;
+                    return source;
+                }
                 const TypedValue source = node.expr ? emit_rvalue(*node.expr) : TypedValue{};
                 // `Drawable(value)` is the value. The trait has no representation.
                 if (node.trait_value) {

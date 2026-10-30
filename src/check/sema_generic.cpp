@@ -213,6 +213,30 @@ bool stamp_star_tuple_array(ResultSlot &slot, const SpecArg &pack) {
     return true;
 }
 
+FnParam fn_from_slot(const ResultSlot &slot) {
+    FnParam out;
+    out.type_name = slot.type_name;
+    out.type_package = slot.type_package;
+    out.is_struct = slot.is_struct;
+    out.is_enum = slot.is_enum;
+    out.indirections = slot.indirections;
+    out.optional = slot.optional;
+    out.const_pointee = slot.const_pointee;
+    out.is_array = slot.is_array;
+    out.array_len = slot.array_len;
+    out.elem_slice = slot.elem_slice;
+    out.elem_const = slot.elem_const;
+    out.shells = slot.shells;
+    out.is_tuple = slot.is_tuple;
+    if (slot.is_tuple) {
+        out.results.reserve(slot.tuple_parts.size());
+        for (const ResultSlot &part : slot.tuple_parts) {
+            out.results.push_back(fn_from_slot(part));
+        }
+    }
+    return out;
+}
+
 TypeArg type_arg_from_spec(const SpecArg &arg) {
     TypeArg out;
     if (arg.is_pack) {
@@ -2211,6 +2235,25 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
             return;
         }
     }
+    // `var q ?*T` when `T` is a tuple. The slot is that optional pointer.
+    // `?*T` when `T` is `[2](i32, i32)` stays rejected.
+    if (slot.indirections == 1 && slot.optional != 0 && slot.const_pointee == 0 && !slot.is_array && slot.shells.empty() &&
+        slot.type_package.empty() && slot.type_args.empty() && !slot.is_fn_ptr && !slot.is_tuple) {
+        if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
+            if (bound->parts.empty() || bound->is_array || !bound->shells.empty()) {
+                error(loc, "not supported yet");
+                slot.type_name = "invalid";
+                return;
+            }
+            slot.is_tuple = true;
+            slot.type_name.clear();
+            slot.tuple_parts.clear();
+            for (const SpecArg &part : bound->parts) {
+                slot.tuple_parts.push_back(slot_from_spec(part));
+            }
+            return;
+        }
+    }
     // `(T, i32)` when `T` is `(i32, i32)`. The element becomes that tuple.
     // `T` when `T` is `[2](i32, i32)` keeps every array shell. `*T` keeps the star.
     if (slot.type_package.empty() && !slot.is_array && slot.type_args.empty() && slot.shells.empty() &&
@@ -2940,15 +2983,33 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         subst_param(subst_param, part);
                     }
                 } else {
-                    // `?*T(value)`. A function-pointer cast is handled above.
-                    bool is_array = false;
-                    int array_len = 0;
-                    std::string array_len_name;
-                    uint32_t const_pointee = node.const_pointee;
-                    substitute_type(params, bounds, node.type_name, node.type_package, node.is_struct, node.is_enum,
-                                    node.indirections, node.optional, is_array, array_len, array_len_name,
-                                    node.type_args, node.loc, nullptr, nullptr, &const_pointee);
-                    node.const_pointee = const_pointee;
+                    // `?*T(value)` when `T` is a tuple. The cast is that optional pointer.
+                    // `?*T` when `T` is `[2](i32, i32)` stays on `substitute_type` and is rejected.
+                    bool stamped = false;
+                    if (node.indirections == 1 && node.optional != 0 && node.const_pointee == 0 &&
+                        node.type_package.empty() && node.type_args.empty()) {
+                        if (const SpecArg *pack = find_arg(params, bounds, node.type_name);
+                            pack != nullptr && pack->is_pack && !pack->parts.empty() && !pack->is_array &&
+                            pack->shells.empty()) {
+                            node.is_tuple = true;
+                            node.type_name.clear();
+                            node.tuple_parts.clear();
+                            for (const SpecArg &part : pack->parts) {
+                                node.tuple_parts.push_back(fn_from_slot(slot_from_spec(part)));
+                            }
+                            stamped = true;
+                        }
+                    }
+                    if (!stamped) {
+                        bool is_array = false;
+                        int array_len = 0;
+                        std::string array_len_name;
+                        uint32_t const_pointee = node.const_pointee;
+                        substitute_type(params, bounds, node.type_name, node.type_package, node.is_struct, node.is_enum,
+                                        node.indirections, node.optional, is_array, array_len, array_len_name,
+                                        node.type_args, node.loc, nullptr, nullptr, &const_pointee);
+                        node.const_pointee = const_pointee;
+                    }
                 }
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
                 if (node.array_literal) {

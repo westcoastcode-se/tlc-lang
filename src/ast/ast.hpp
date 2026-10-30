@@ -266,6 +266,9 @@ struct Expr {
         std::vector<FnParam> fn_results;
         // `Getter[i32](value)`. Empty when the cast writes `Getter(value)` and the type is inferred.
         std::vector<TypeArg> type_args;
+        // `?*T(value)` when `T` is a tuple. The elements are `tuple_parts`.
+        bool is_tuple = false;
+        std::vector<FnParam> tuple_parts;
         std::unique_ptr<Expr> expr;
         // The cast names a trait. Codegen passes the value through.
         mutable bool trait_value = false;
