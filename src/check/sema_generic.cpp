@@ -3367,9 +3367,12 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         const bool bare_const = param.indirections == 1 && param.const_pointee != 0;
         const bool plain_star = param.const_pointee == 0 && (param.indirections == 1 || param.indirections == 2);
         // `**const T` marks the tuple. `*const *T` marks the inner pointer.
+        // `*const *const T` marks both. An array of tuples keeps that spelling rejected.
         const bool const_tuple = param.indirections == 2 && param.const_pointee == (1u << 1);
         const bool const_pointer = param.indirections == 2 && param.const_pointee == 1u;
-        if ((bare_const || plain_star || const_tuple || const_pointer) && param.optional == 0 && !param.is_array &&
+        const bool const_both = param.indirections == 2 && param.const_pointee == ((1u << 1) | 1u);
+        if ((bare_const || plain_star || const_tuple || const_pointer || const_both) && param.optional == 0 &&
+            !param.is_array &&
             !param.is_fn_ptr &&
             !param.is_tuple && param.type_package.empty() && param.type_args.empty()) {
             if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
