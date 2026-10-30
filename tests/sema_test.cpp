@@ -6164,18 +6164,22 @@ int run_sema_tests() {
             "  var q ?*Point = &p;\n"
             "  return p.read() + q.read();\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch: expected ?*Point, found *Point");
+        EXPECT_EQ(check, errors, "");
     }
 
     {
         const std::string errors = diagnose(
-            "func take(p ?*i32) i32 { return 0; }\n"
+            "func take(p ?*i32) i32 {\n"
+            "  if (p == null) { return 0; }\n"
+            "  return *p;\n"
+            "}\n"
             "func main() i32 {\n"
             "  var n i32 = 1;\n"
             "  var p ?*i32 = &n;\n"
-            "  return take(&n) + p;\n"
+            "  if (p == null) { return 0; }\n"
+            "  return take(&n) + *p;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch: expected ?*i32, found *i32");
+        EXPECT_EQ(check, errors, "");
     }
 
     {

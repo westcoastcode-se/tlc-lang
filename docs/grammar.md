@@ -1032,7 +1032,11 @@ The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
 
 `(*value)[0][0]` is 40 and `(*value)[1][1]` is 3.
 
-`q = p`, when `p` is `*i32`, is `type mismatch: expected ?*i32, found *i32`.
+`q = p`, when `p` is `*i32`, stores that pointer.
+
+`?*T` passed where `*T` is required is `type mismatch`.
+
+`var q ?*i32 = row`, when `row` is `[2]i32`, is `type mismatch: expected ?*i32, found [2]i32`.
 
 `func id[T type](value *T) *T` returns that pointer.
 

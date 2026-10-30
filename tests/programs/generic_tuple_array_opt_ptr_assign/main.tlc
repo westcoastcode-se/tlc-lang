@@ -8,7 +8,10 @@ func pair[T type](a T, b T) [2]T {
 func read[T type](value *T) i32 {
     var q ?*T = null;
     q = value;
-    return 0;
+    if (q == null) {
+        return 0;
+    }
+    return (*q)[0][0] + (*q)[1][1];
 }
 
 func main() i32 {

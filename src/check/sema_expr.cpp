@@ -1342,7 +1342,9 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
     // that argument is `&array`. The cast `*T(array)` is the same address.
     if (want.kind == TypeKind::Pointer && want.pointee != nullptr) {
         const bool decayed_param = !want.optional && want.decayed_len > 0;
-        const bool element_pointer = want.decayed_len == 0 && want.pointee->kind != TypeKind::Array;
+        // `var q ?*i32 = row` stays rejected. `row` is an array, not `*i32`.
+        const bool element_pointer =
+            !want.optional && want.decayed_len == 0 && want.pointee->kind != TypeKind::Array;
         if (decayed_param || element_pointer) {
             Type got = check_raw(expr, true);
             if (got.kind == TypeKind::Array && got.length >= 0 && got.element != nullptr && !is_slice(got)) {

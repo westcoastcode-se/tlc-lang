@@ -1,0 +1,51 @@
+type Box[T type] struct {
+    p ?*T;
+}
+
+func make[T type](value *T) i32 {
+    var box Box[T] = {.p = value};
+    var q = box.p;
+    if (q == null) {
+        return 0;
+    }
+    return (*q)[0] + (*q)[1];
+}
+
+func wide[T type](value *T) i32 {
+    var box Box[T] = {.p = value};
+    var q = box.p;
+    if (q == null) {
+        return 0;
+    }
+    return (*q)[0][0] + (*q)[1];
+}
+
+func num[T type](value *T) i32 {
+    var box Box[T] = {.p = value};
+    var q = box.p;
+    if (q == null) {
+        return 0;
+    }
+    return *q;
+}
+
+func main() i32 {
+    var n = 40;
+    var p *i32 = &n;
+    var stored ?*i32 = p;
+    if (stored == null) {
+        return 1;
+    }
+    if (*stored != 40) {
+        return 1;
+    }
+    if (num(&n) != 40) {
+        return 2;
+    }
+    var deep = ((40, 2), 1);
+    if (wide(&deep) != 41) {
+        return 3;
+    }
+    var row = (40, 2);
+    return make(&row);
+}

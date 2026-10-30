@@ -258,7 +258,8 @@ Type Checker::type_of_tuple_field(const FieldDecl &field) {
     if (field.is_tuple && field.is_array && field.array_len > 0 && field.indirections == 0) {
         return type_of_tuple_arrays(field.tuple_parts, field.array_len, field.shells, false, field.loc);
     }
-    return type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, field.shells, field.loc);
+    return type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, field.shells, field.loc,
+                                 field.optional, field.const_pointee);
 }
 
 Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
@@ -1087,9 +1088,9 @@ bool Checker::accepts_pointer(const Type &got, const Type &want) const {
         want.pointee == nullptr) {
         return false;
     }
-    // `*T` stays non-null. It is not stored in `?*T`, and `?*T` is not stored in `*T`.
+    // `*T` may be stored in `?*T`. `?*T` is not stored in `*T`.
     // `*T` may be stored in `*const T`. Dropping `const` is rejected.
-    if (got.optional != want.optional) {
+    if (got.optional && !want.optional) {
         return false;
     }
     if (got.pointee->is_const && !want.pointee->is_const) {

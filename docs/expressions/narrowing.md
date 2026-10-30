@@ -36,9 +36,9 @@ Postfix `!` asserts a `?*T` at that use.
 
 `!` on a value that is already `*T`, or on a non-pointer, is reported as `type mismatch`.
 
-`&n` is `*i32`.
+`&n` is `*i32`. `var p ?*i32 = &n` stores that pointer.
 
-The compiler reports `var p ?*i32 = &n` as `type mismatch: expected ?*i32, found *i32`.
+Passing `?*T` where `*T` is required is `type mismatch`.
 
 A null `p!` calls `builtin.panic("null pointer")` and does not return.
 

@@ -24,9 +24,9 @@ The compiler reports `p == 0` as `type mismatch`.
 
 `null` may be assigned or returned only to `?*T`.
 
-`&x` has type `*T` and may be stored in `*T`.
+`&x` has type `*T` and may be stored in `*T` or `?*T`.
 
-The compiler reports `var p ?*i32 = &x` as `type mismatch: expected ?*i32, found *i32`.
+`var p ?*i32 = &x` stores that pointer. `?*T` passed where `*T` is required is `type mismatch`.
 
 `var p = null` has no pointer type to take and is reported as `type mismatch`.
 
