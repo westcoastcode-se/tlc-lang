@@ -3540,7 +3540,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `deep(&wpp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
-`?**T`, `***const T`, and a field `p **T` are `not supported yet`.
+`?**T` and `***const T` are `not supported yet`.
 
 ```c
 func id[T type](value ***T) i32 {
@@ -3686,6 +3686,68 @@ retq                             # return
 ```
 
 The program returns 43.
+
+`type Box[T type] struct { p **T; }` of `{.p = value}`, when `value` is `**T` and `T` is `(i32, i32)`, stores that pointer.
+
+The call is `main.make.spec.tuple.2.i32.i32`.
+
+`(**box.p)[0]` is 40 and `(**box.p)[1]` is 2.
+
+`p ***T` is that same depth. `(***box.p)[0]` reads that element. The call is `main.make_deep.spec.tuple.2.i32.i32`.
+
+`p **T` when `T` is `[2](i32, i32)` is `not supported yet`. A local `var q **T` and a result `**T` are `not supported yet`.
+
+`var box Box[T]` with no initializer is `type mismatch`.
+
+```c
+type Box[T type] struct {
+    p **T;
+}
+
+func make[T type](value **T) Box[T] {
+    var box Box[T] = {.p = value};
+    return box;
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var p = &row;
+    var box = make(&p);
+    return (**box.p)[0] + (**box.p)[1];
+}
+```
+
+```asm
+main.make.spec.tuple.2.i32.i32:
+movq %rdi, -16(%rsp)             # value
+movq -16(%rsp), %rax             # value
+movq %rax, -8(%rsp)              # box.p = value
+movq -8(%rsp), %rax              # box.p
+retq                             # return
+
+main:
+subq $56, %rsp                   # allocate
+movl $2, 36(%rsp)                # row[1] = 2
+movl $40, 32(%rsp)               # row[0] = 40
+leaq 32(%rsp), %rax              # &row
+movq %rax, 40(%rsp)              # p
+# trace frame for the call, then the matching pop
+leaq 40(%rsp), %rdi              # &p
+callq main.make.spec.tuple.2.i32.i32 # call make
+movq %rax, %rcx                  # move
+movq %rcx, 16(%rsp)              # move
+movq 16(%rsp), %rax              # make(&p)
+movq %rax, 48(%rsp)              # box
+movq 48(%rsp), %rax              # box.p
+movq (%rax), %rcx                # *box.p
+movl (%rcx), %eax                # (**box.p)[0]
+movl 4(%rcx), %ecx               # (**box.p)[1]
+addl %ecx, %eax                  # add
+addq $56, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
 
 `take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 

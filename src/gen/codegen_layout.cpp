@@ -313,7 +313,7 @@ void CodeGen::prepare_structs() {
                     low = lower_result(file, slot);
                 } else if (field.is_tuple) {
                     low = lower_tuple_parts(file, field.tuple_parts);
-                    // `p *T` when `T` is a tuple. The field stores the address.
+                    // `p *T`, `p **T`, and `p ***T` when `T` is a tuple. The field stores that pointer.
                     if (field.indirections > 0) {
                         low.depth = field.indirections;
                         low.type = ptr_type();

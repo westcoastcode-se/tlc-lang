@@ -1,0 +1,41 @@
+type Box[T type] struct {
+    p **T;
+}
+
+type Deep[T type] struct {
+    p ***T;
+}
+
+func make[T type](value **T) Box[T] {
+    var box Box[T] = {.p = value};
+    return box;
+}
+
+func make_deep[T type](value ***T) Deep[T] {
+    var box Deep[T] = {.p = value};
+    return box;
+}
+
+func main() i32 {
+    var n = 40;
+    var np = &n;
+    var num = make(&np);
+    if (**num.p != 40) {
+        return 1;
+    }
+    var wide = ((40, 2), 1);
+    var wp = &wide;
+    var nested = make(&wp);
+    if ((**nested.p)[0][0] + (**nested.p)[1] != 41) {
+        return 2;
+    }
+    var row = (40, 2);
+    var p = &row;
+    var pp = &p;
+    var tri = make_deep(&pp);
+    if ((***tri.p)[0] + (***tri.p)[1] != 42) {
+        return 3;
+    }
+    var box = make(&p);
+    return (**box.p)[0] + (**box.p)[1];
+}

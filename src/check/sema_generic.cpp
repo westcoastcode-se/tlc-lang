@@ -2314,6 +2314,22 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
 }
 
 void Checker::substitute_field(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, FieldDecl &field) {
+    // `p **T` and `p ***T` when `T` is a tuple. Each star stays on the field.
+    // An array of tuples, a local, and a result do not use this path.
+    if (field.indirections >= 2 && field.optional == 0 && field.const_pointee == 0 && !field.is_array &&
+        field.shells.empty() && field.type_package.empty() && field.type_args.empty() && !field.is_fn_ptr &&
+        !field.is_tuple) {
+        if (const SpecArg *pack = find_arg(params, bounds, field.type_name);
+            pack != nullptr && pack->is_pack && !pack->parts.empty() && !pack->is_array && pack->shells.empty()) {
+            field.is_tuple = true;
+            field.type_name.clear();
+            field.tuple_parts.clear();
+            for (const SpecArg &part : pack->parts) {
+                field.tuple_parts.push_back(slot_from_spec(part));
+            }
+            return;
+        }
+    }
     // The field uses the same substitution as a result. `n T` becomes that tuple.
     ResultSlot slot;
     slot.type_name = std::move(field.type_name);

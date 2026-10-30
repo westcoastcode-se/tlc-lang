@@ -1104,7 +1104,17 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(***value)[0][0]` is 40 and `(***value)[1][1]` is 3.
 
-`?**T`, `***const T`, and a field `p **T` are `not supported yet`.
+`?**T` and `***const T` are `not supported yet`.
+
+`type Box[T type] struct { p **T; }` of `{.p = value}`, when `T` is `(i32, i32)`, stores that pointer.
+
+The call is `main.make.spec.tuple.2.i32.i32`.
+
+`(**box.p)[0]` is 40 and `(**box.p)[1]` is 2.
+
+`p **T` when `T` is `[2](i32, i32)` is `not supported yet`. A local `var q **T` and a result `**T` are `not supported yet`.
+
+`var box Box[T]` with no initializer is `type mismatch`.
 
 `func id[T type](value *T) *T` returns that pointer.
 
