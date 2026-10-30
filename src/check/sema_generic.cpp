@@ -2315,19 +2315,48 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
 
 void Checker::substitute_field(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, FieldDecl &field) {
     // `p **T` and `p ***T` when `T` is a tuple. Each star stays on the field.
-    // An array of tuples, a local, and a result do not use this path.
+    // An array of tuples keeps every array after those stars. A local and a result do not use this path.
     if (field.indirections >= 2 && field.optional == 0 && field.const_pointee == 0 && !field.is_array &&
         field.shells.empty() && field.type_package.empty() && field.type_args.empty() && !field.is_fn_ptr &&
         !field.is_tuple) {
         if (const SpecArg *pack = find_arg(params, bounds, field.type_name);
-            pack != nullptr && pack->is_pack && !pack->parts.empty() && !pack->is_array && pack->shells.empty()) {
-            field.is_tuple = true;
-            field.type_name.clear();
-            field.tuple_parts.clear();
-            for (const SpecArg &part : pack->parts) {
-                field.tuple_parts.push_back(slot_from_spec(part));
+            pack != nullptr && pack->is_pack && !pack->parts.empty()) {
+            if (!pack->is_array && pack->shells.empty()) {
+                field.is_tuple = true;
+                field.type_name.clear();
+                field.tuple_parts.clear();
+                for (const SpecArg &part : pack->parts) {
+                    field.tuple_parts.push_back(slot_from_spec(part));
+                }
+                return;
             }
-            return;
+            if (tuple_array_pack(*pack)) {
+                field.is_tuple = true;
+                field.type_name.clear();
+                field.is_array = false;
+                field.array_len = 0;
+                field.tuple_parts.clear();
+                for (const SpecArg &part : pack->parts) {
+                    field.tuple_parts.push_back(slot_from_spec(part));
+                }
+                const int stars = field.indirections;
+                field.indirections = 0;
+                field.shells.clear();
+                for (int star = 0; star < stars; ++star) {
+                    TypeShell shell;
+                    shell.kind = TypeShell::Kind::Pointer;
+                    field.shells.push_back(shell);
+                }
+                if (!pack->shells.empty()) {
+                    field.shells.insert(field.shells.end(), pack->shells.begin(), pack->shells.end());
+                } else {
+                    TypeShell shell;
+                    shell.kind = TypeShell::Kind::Array;
+                    shell.length = pack->array_len;
+                    field.shells.push_back(shell);
+                }
+                return;
+            }
         }
     }
     // The field uses the same substitution as a result. `n T` becomes that tuple.

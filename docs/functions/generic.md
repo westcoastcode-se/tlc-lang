@@ -3695,7 +3695,7 @@ The call is `main.make.spec.tuple.2.i32.i32`.
 
 `p ***T` is that same depth. `(***box.p)[0]` reads that element. The call is `main.make_deep.spec.tuple.2.i32.i32`.
 
-`p **T` when `T` is `[2](i32, i32)` is `not supported yet`. A local `var q **T` and a result `**T` are `not supported yet`.
+A local `var q **T` and a result `**T` are `not supported yet`.
 
 `var box Box[T]` with no initializer is `type mismatch`.
 
@@ -3748,6 +3748,115 @@ retq                             # return
 ```
 
 The program returns 42.
+
+`type Box[T type] struct { p **T; }` of `{.p = value}`, when `value` is `**T` and `T` is `[2](i32, i32)`, stores that pointer.
+
+The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
+
+`(**box.p)[0][0]` is 40 and `(**box.p)[1][1]` is 3.
+
+`p ***T` is that same depth. The call is `main.make_deep.spec.arr.2.tuple.2.i32.i32`.
+
+`make(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
+
+```c
+type Box[T type] struct {
+    p **T;
+}
+
+func pair[T type](a T, b T) [2]T {
+    var row [2]T;
+    row[0] = a;
+    row[1] = b;
+    return row;
+}
+
+func make[T type](value **T) Box[T] {
+    var box Box[T] = {.p = value};
+    return box;
+}
+
+func main() i32 {
+    var row = pair((40, 2), (1, 3));
+    var p = &row;
+    var box = make(&p);
+    return (**box.p)[0][0] + (**box.p)[1][1];
+}
+```
+
+```asm
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
+movq %rdi, %rax                  # row
+movl $2, -12(%rsp)               # a[1] = 2
+movl $40, -16(%rsp)              # a[0] = 40
+movl $3, -4(%rsp)                # b[1] = 3
+movl $1, -8(%rsp)                # b[0] = 1
+movl -16(%rsp), %ecx             # a[0]
+movl -12(%rsp), %edx             # a[1]
+movl -8(%rsp), %esi              # b[0]
+movl -4(%rsp), %r8d              # b[1]
+movl %r8d, 12(%rdi)              # row[1][1]
+movl %esi, 8(%rdi)               # row[1][0]
+movl %edx, 4(%rdi)               # row[0][1]
+movl %ecx, (%rdi)                # row[0][0]
+retq                             # return
+
+main.make.spec.arr.2.tuple.2.i32.i32:
+movq %rdi, -16(%rsp)             # value
+movq -16(%rsp), %rax             # value
+movq %rax, -8(%rsp)              # box.p = value
+movq -8(%rsp), %rax              # box.p
+retq                             # return
+
+main:
+subq $120, %rsp                  # allocate
+# trace frame for the call, then the matching pop
+leaq 56(%rsp), %rdi              # row
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
+movl 68(%rsp), %ecx              # row[1][1]
+movl %ecx, 32(%rsp)              # move
+movl 64(%rsp), %ecx              # row[1][0]
+movl %ecx, 36(%rsp)              # move
+movl 56(%rsp), %ecx              # row[0][0]
+movl %ecx, 40(%rsp)              # move
+movl 60(%rsp), %ecx              # row[0][1]
+movl %ecx, 44(%rsp)              # move
+movl 32(%rsp), %eax              # row[1][1]
+movl 36(%rsp), %ecx              # row[1][0]
+movl 44(%rsp), %edx              # row[0][1]
+movl 40(%rsp), %esi              # row[0][0]
+movl %esi, 72(%rsp)              # row[0][0]
+movl %edx, 76(%rsp)              # row[0][1]
+movl %ecx, 80(%rsp)              # row[1][0]
+movl %eax, 84(%rsp)              # row[1][1]
+movl 72(%rsp), %eax              # row[0][0]
+movl 76(%rsp), %ecx              # move
+movl 80(%rsp), %edx              # move
+movl 84(%rsp), %esi              # row[1][1]
+movl %esi, 100(%rsp)             # row[1][1]
+movl %edx, 96(%rsp)              # row[1][0]
+movl %ecx, 92(%rsp)              # row[0][1]
+movl %eax, 88(%rsp)              # row[0][0]
+leaq 88(%rsp), %rax              # &row
+movq %rax, 104(%rsp)             # p
+# trace frame for the call, then the matching pop
+leaq 104(%rsp), %rdi             # &p
+callq main.make.spec.arr.2.tuple.2.i32.i32 # call make
+movq %rax, %rcx                  # move
+movq %rcx, 16(%rsp)              # move
+movq 16(%rsp), %rax              # make(&p)
+movq %rax, 112(%rsp)             # box
+movq 112(%rsp), %rax             # box.p
+movq (%rax), %rcx                # *box.p
+movl (%rcx), %eax                # (**box.p)[0][0]
+movl 8(%rcx), %edx               # move
+movl 12(%rcx), %ecx              # (**box.p)[1][1]
+addl %ecx, %eax                  # add
+addq $120, %rsp                  # release
+retq                             # return
+```
+
+The program returns 43.
 
 `take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
