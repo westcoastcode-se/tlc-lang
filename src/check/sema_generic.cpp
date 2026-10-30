@@ -3367,7 +3367,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         const bool bare_const = param.indirections == 1 && param.const_pointee != 0;
         const bool plain_star = param.const_pointee == 0 && (param.indirections == 1 || param.indirections == 2);
         // `**const T` marks the tuple. `*const *T` marks the inner pointer.
-        // `*const *const T` marks both. An array of tuples keeps that spelling rejected.
+        // `*const *const T` marks both, including when `T` is an array of tuples.
         const bool const_tuple = param.indirections == 2 && param.const_pointee == (1u << 1);
         const bool const_pointer = param.indirections == 2 && param.const_pointee == 1u;
         const bool const_both = param.indirections == 2 && param.const_pointee == ((1u << 1) | 1u);
@@ -3388,9 +3388,12 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         }
                     }
                     // `*const T` and `**const T` mark the array. `*const *T` marks the inner pointer.
+                    // `*const *const T` marks both.
                     const bool const_on_tuple = param.indirections == 2 && param.const_pointee == (1u << 1);
                     const bool const_on_pointer = param.indirections == 2 && param.const_pointee == 1u;
-                    if ((param.const_pointee != 0 && param.indirections != 1 && !const_on_tuple && !const_on_pointer) ||
+                    const bool const_on_both = param.indirections == 2 && param.const_pointee == ((1u << 1) | 1u);
+                    if ((param.const_pointee != 0 && param.indirections != 1 && !const_on_tuple && !const_on_pointer &&
+                         !const_on_both) ||
                         slice || (pack->shells.empty() && pack->array_len <= 0)) {
                         error(param.loc, "not supported yet");
                         param.type_name = "invalid";
@@ -3408,7 +3411,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                             TypeShell shell;
                             shell.kind = TypeShell::Kind::Pointer;
                             // Bit 0 of `*const T` marks the array. Bit 0 of `*const *T` marks the inner pointer.
-                            // Bit 1 of `**const T` marks the array.
+                            // Bit 1 of `**const T` marks the array. `*const *const T` sets both bits.
                             shell.const_pointee = (param.const_pointee & (1u << star)) != 0;
                             param.shells.push_back(shell);
                         }
