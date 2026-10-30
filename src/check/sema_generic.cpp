@@ -385,8 +385,21 @@ void append_param_shape(std::string &out, const Param &param, const std::vector<
         out += "comptime.";
     }
     if (param.is_tuple) {
-        // `[2]T` when `T` is a tuple. The key keeps the array around that tuple.
-        if (param.is_array) {
+        // `[2]T` and `[2][2]T` when `T` is a tuple. Every array shell stays in the key.
+        if (!param.shells.empty()) {
+            for (const TypeShell &shell : param.shells) {
+                if (shell.kind != TypeShell::Kind::Array) {
+                    continue;
+                }
+                out.push_back('[');
+                if (!shell.length_name.empty()) {
+                    append_shaped_name(out, "", shell.length_name, params);
+                } else if (shell.length >= 0) {
+                    out += std::to_string(shell.length);
+                }
+                out.push_back(']');
+            }
+        } else if (param.is_array) {
             out.push_back('[');
             if (!param.array_len_name.empty()) {
                 append_shaped_name(out, "", param.array_len_name, params);

@@ -1101,6 +1101,113 @@ retq                             # return
 
 The program returns 43.
 
+`var g [2][2]T`, when `T` is `(i32, i32)`, is an array of arrays of that tuple.
+
+Each `[n]` is one shell around that tuple.
+
+A further `[2]` is another shell.
+
+The call `fill(one, two, three, four)` is `main.fill.spec.tuple.i32.i32`.
+
+`g[0][0][0]` is 40 and `g[1][1][1]` is 7.
+
+`g[0][1]` and `g[1][0]` are not read.
+
+The callee does not store them.
+
+A `[2][2]i32` local reads `g[0][0]` and `g[1][1]`.
+
+That program returns 43.
+
+```c
+func fill[T type](a T, b T, c T, d T) i32 {
+    var g [2][2]T;
+    g[0][0] = a;
+    g[0][1] = b;
+    g[1][0] = c;
+    g[1][1] = d;
+    return g[0][0][0] + g[1][1][1];
+}
+
+func main() i32 {
+    var one = (40, 2);
+    var two = (1, 3);
+    var three = (4, 5);
+    var four = (6, 7);
+    return fill(one, two, three, four);
+}
+```
+
+```asm
+main.fill.spec.tuple.i32.i32:
+movl 16(%rsp), %ecx              # d[1]
+movl 8(%rsp), %eax               # d[0]
+movl %edi, -48(%rsp)             # a[0]
+movl %esi, -44(%rsp)             # a[1]
+movl %ecx, -36(%rsp)             # d[1]
+movl %eax, -40(%rsp)             # d[0]
+movl -48(%rsp), %eax             # a[0]
+movl -44(%rsp), %ecx             # a[1]
+movl %ecx, -28(%rsp)             # g[0][0][1]
+movl %eax, -32(%rsp)             # g[0][0][0]
+movl -40(%rsp), %eax             # d[0]
+movl -36(%rsp), %ecx             # d[1]
+movl %ecx, -4(%rsp)              # g[1][1][1]
+movl %eax, -8(%rsp)              # g[1][1][0]
+movl -32(%rsp), %eax             # g[0][0][0]
+movl -8(%rsp), %ecx              # move
+movl -4(%rsp), %ecx              # g[1][1][1]
+addl %ecx, %eax                  # add
+retq                             # return
+
+main:
+subq $104, %rsp                  # allocate
+movl $2, 76(%rsp)                # one[1] = 2
+movl $40, 72(%rsp)               # one[0] = 40
+movl $3, 84(%rsp)                # two[1] = 3
+movl $1, 80(%rsp)                # two[0] = 1
+movl $5, 92(%rsp)                # three[1] = 5
+movl $4, 88(%rsp)                # three[0] = 4
+movl $7, 100(%rsp)               # four[1] = 7
+movl $6, 96(%rsp)                # four[0] = 6
+movl 72(%rsp), %eax              # one[0]
+movl %eax, 32(%rsp)              # move
+movl 76(%rsp), %eax              # one[1]
+movl %eax, 36(%rsp)              # move
+movl 80(%rsp), %eax              # two[0]
+movl %eax, 40(%rsp)              # move
+movl 84(%rsp), %eax              # two[1]
+movl %eax, 44(%rsp)              # move
+movl 88(%rsp), %eax              # three[0]
+movl %eax, 48(%rsp)              # move
+movl 92(%rsp), %eax              # three[1]
+movl %eax, 52(%rsp)              # move
+movl 96(%rsp), %eax              # four[0]
+movl %eax, 56(%rsp)              # move
+movl 100(%rsp), %eax             # four[1]
+movl %eax, 60(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 52(%rsp), %r9d              # three[1]
+movl 48(%rsp), %r8d              # three[0]
+movl 44(%rsp), %ecx              # two[1]
+movl 40(%rsp), %edx              # two[0]
+movl 36(%rsp), %esi              # one[1]
+movl 32(%rsp), %edi              # one[0]
+movl 56(%rsp), %r10d             # four[0]
+movl 60(%rsp), %r11d             # four[1]
+movq %rsp, %rax                  # d
+movl %r11d, 8(%rax)              # d[1]
+movl %r10d, (%rax)               # d[0]
+callq main.fill.spec.tuple.i32.i32 # call fill
+movl %eax, %ecx                  # move
+movl %ecx, 28(%rsp)              # move
+movl 28(%rsp), %eax              # fill
+addq $104, %rsp                  # release
+retq                             # return
+```
+
+The program returns 47.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40 and `(*p)[1]` is 2.

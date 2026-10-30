@@ -475,6 +475,10 @@ class Checker {
     Type type_of_tuple_field(const FieldDecl &field);
     Type type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
                                const std::vector<TypeShell> &shells, SourceLoc loc);
+    // `[2]T` and `[2][2]T` when `T` is a tuple. Every array shell stays around that tuple.
+    // A parameter decays the outermost array to a pointer and keeps the length.
+    Type type_of_tuple_arrays(const std::vector<ResultSlot> &parts, int array_len, const std::vector<TypeShell> &shells,
+                              bool parameter, SourceLoc loc);
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
     // `allow_incomplete` is a tuple alias registered before struct bodies exist.
     Type type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete = false);

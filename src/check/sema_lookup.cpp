@@ -214,14 +214,40 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
     return pointer;
 }
 
+Type Checker::type_of_tuple_arrays(const std::vector<ResultSlot> &parts, int array_len,
+                                   const std::vector<TypeShell> &shells, bool parameter, SourceLoc loc) {
+    // The tuple is the leaf. `[2]T` is one shell. `[2][3]T` is two. A slice or a star stays rejected.
+    Type element = type_of_written_tuple(parts, 0, false, {}, loc);
+    if (element.kind != TypeKind::Tuple) {
+        return type_invalid();
+    }
+    std::vector<TypeShell> layers = shells;
+    fold_shells(layers, loc);
+    if (layers.empty() && array_len > 0) {
+        TypeShell shell;
+        shell.kind = TypeShell::Kind::Array;
+        shell.length = array_len;
+        layers.push_back(shell);
+    }
+    for (const TypeShell &shell : layers) {
+        if (shell.kind != TypeShell::Kind::Array || shell.length <= 0 || !shell.length_name.empty()) {
+            error(loc, "not supported yet");
+            return type_invalid();
+        }
+    }
+    bool rejected = false;
+    Type type = apply_shells(std::move(element), layers, parameter, rejected);
+    if (rejected || type.kind == TypeKind::Invalid) {
+        error(loc, "not supported yet");
+        return type_invalid();
+    }
+    return type;
+}
+
 Type Checker::type_of_tuple_field(const FieldDecl &field) {
     // `[2]T` when `T` is a tuple. The field is an array of that tuple.
     if (field.is_tuple && field.is_array && field.array_len > 0 && field.indirections == 0) {
-        Type element = type_of_written_tuple(field.tuple_parts, 0, false, {}, field.loc);
-        if (element.kind != TypeKind::Tuple) {
-            return type_invalid();
-        }
-        return type_array(std::move(element), field.array_len);
+        return type_of_tuple_arrays(field.tuple_parts, field.array_len, field.shells, false, field.loc);
     }
     return type_of_written_tuple(field.tuple_parts, field.indirections, field.is_array, field.shells, field.loc);
 }
@@ -249,8 +275,7 @@ Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int in
 Type Checker::type_of_var(const VarDecl &var) {
     Type type = type_invalid();
     if (var.is_tuple && var.is_array && var.array_len > 0 && var.indirections == 0) {
-        Type element = type_of_written_tuple(var.tuple_parts, 0, false, {}, var.loc);
-        type = element.kind == TypeKind::Tuple ? type_array(std::move(element), var.array_len) : type_invalid();
+        type = type_of_tuple_arrays(var.tuple_parts, var.array_len, var.shells, false, var.loc);
     } else if (var.is_tuple) {
         type = type_of_written_tuple(var.tuple_parts, var.indirections, var.is_array, var.shells, var.loc);
     } else {
@@ -325,11 +350,8 @@ Type Checker::type_of_param(const Param &param) {
     Type type = type_invalid();
     if (param.is_tuple && param.is_array && param.array_len > 0 && param.indirections == 0) {
         // `[2]T` when `T` is a tuple. A parameter is a pointer to one element, and the length stays.
-        Type element = type_of_written_tuple(param.tuple_parts, 0, false, {}, param.loc);
-        if (element.kind == TypeKind::Tuple) {
-            type = type_pointer(std::move(element));
-            type.decayed_len = param.array_len;
-        }
+        // `[2][2]T` decays only the outer array. The inner array stays.
+        type = type_of_tuple_arrays(param.tuple_parts, param.array_len, param.shells, true, param.loc);
     } else if (param.is_tuple) {
         std::vector<Type> parts;
         parts.reserve(param.tuple_parts.size());
@@ -366,12 +388,8 @@ Type Checker::type_of_param(const Param &param) {
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete) {
     if (slot.is_tuple && slot.is_array && slot.array_len > 0 && slot.indirections == 0) {
-        // `[2]T` when `T` is a tuple. The result is that array.
-        Type element = type_of_written_tuple(slot.tuple_parts, 0, false, {}, loc);
-        if (element.kind != TypeKind::Tuple) {
-            return type_invalid();
-        }
-        return type_array(std::move(element), slot.array_len);
+        // `[2]T` when `T` is a tuple. The result is that array. `[2][2]T` keeps both.
+        return type_of_tuple_arrays(slot.tuple_parts, slot.array_len, slot.shells, false, loc);
     }
     if (slot.is_tuple) {
         // The written tuple has no star. `*T` when `T` is a tuple adds the pointer after.

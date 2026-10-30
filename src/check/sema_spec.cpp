@@ -1496,23 +1496,47 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
             continue;
         }
         if (param.is_array) {
-            if (cursor->kind != TypeKind::Array || cursor->element == nullptr) {
-                continue;
-            }
-            if (!param.array_len_name.empty()) {
-                const int len_index = param_index(templ.type_params, param.array_len_name);
-                if (len_index >= 0 && templ.type_params[static_cast<std::size_t>(len_index)].is_value) {
-                    if (set[static_cast<std::size_t>(len_index)] &&
-                        bounds[static_cast<std::size_t>(len_index)].value != cursor->length) {
-                        error(call.loc, "type mismatch");
-                        return std::nullopt;
-                    }
-                    bounds[static_cast<std::size_t>(len_index)].is_value = true;
-                    bounds[static_cast<std::size_t>(len_index)].value = cursor->length;
-                    set[static_cast<std::size_t>(len_index)] = 1;
+            // `[2]T` peels one array. `[2][2]T` peels every array shell, then binds the leaf.
+            const Type *leaf = cursor;
+            int layers = 0;
+            for (const TypeShell &shell : param.shells) {
+                if (shell.kind == TypeShell::Kind::Array) {
+                    ++layers;
                 }
             }
-            if (!constrain(index, *cursor->element)) {
+            if (layers == 0) {
+                layers = 1;
+            }
+            for (int layer = 0; layer < layers; ++layer) {
+                if (leaf->kind == TypeKind::Array && leaf->element != nullptr) {
+                    if (layer == 0 && !param.array_len_name.empty()) {
+                        const int len_index = param_index(templ.type_params, param.array_len_name);
+                        if (len_index >= 0 && templ.type_params[static_cast<std::size_t>(len_index)].is_value) {
+                            if (set[static_cast<std::size_t>(len_index)] &&
+                                bounds[static_cast<std::size_t>(len_index)].value != leaf->length) {
+                                error(call.loc, "type mismatch");
+                                return std::nullopt;
+                            }
+                            bounds[static_cast<std::size_t>(len_index)].is_value = true;
+                            bounds[static_cast<std::size_t>(len_index)].value = leaf->length;
+                            set[static_cast<std::size_t>(len_index)] = 1;
+                        }
+                    }
+                    leaf = leaf->element.get();
+                    continue;
+                }
+                if (leaf->kind == TypeKind::Pointer && !leaf->optional && leaf->decayed_len > 0 &&
+                    leaf->pointee != nullptr) {
+                    leaf = leaf->pointee.get();
+                    continue;
+                }
+                leaf = nullptr;
+                break;
+            }
+            if (leaf == nullptr) {
+                continue;
+            }
+            if (!constrain(index, *leaf)) {
                 error(call.loc, "type mismatch");
                 return std::nullopt;
             }
@@ -1657,13 +1681,29 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
             // `[2]T` is a pointer that still records the length. The argument is that array.
             const Type *core = &got;
             if (param.is_array && param.array_len > 0 && param.indirections == 0) {
-                if (core->kind == TypeKind::Array && core->length == param.array_len && core->element != nullptr) {
-                    core = core->element.get();
-                } else if (core->kind == TypeKind::Pointer && !core->optional && core->decayed_len == param.array_len &&
-                           core->pointee != nullptr) {
-                    core = core->pointee.get();
-                } else {
+                // `[2][2]T` peels every array. A parameter may already be the decayed outer pointer.
+                const auto peel = [&](int length) -> bool {
+                    if (core->kind == TypeKind::Array && core->length == length && core->element != nullptr) {
+                        core = core->element.get();
+                        return true;
+                    }
+                    if (core->kind == TypeKind::Pointer && !core->optional && core->decayed_len == length &&
+                        core->pointee != nullptr) {
+                        core = core->pointee.get();
+                        return true;
+                    }
                     return false;
+                };
+                if (param.shells.empty()) {
+                    if (!peel(param.array_len)) {
+                        return false;
+                    }
+                } else {
+                    for (const TypeShell &shell : param.shells) {
+                        if (shell.kind != TypeShell::Kind::Array || !peel(shell.length)) {
+                            return false;
+                        }
+                    }
                 }
             }
             for (int star = 0; star < param.indirections; ++star) {

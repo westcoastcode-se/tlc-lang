@@ -1021,14 +1021,13 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
                 value.inner_array_len = addr.shells[1].length;
             }
             value.shells.assign(addr.shells.begin() + 1, addr.shells.end());
-            if (addr.shells.size() >= 2) {
+            if (addr.shells.size() >= 2 && addr.tuple_parts.empty()) {
                 value.array_type = shell_type(addr.shells, addr.depth, addr.elem_char, addr.struct_id, addr.elem_bool,
                                               addr.elem_bits, addr.elem_float);
             }
         }
-        if (value.shells.empty()) {
-            value.tuple_parts = addr.tuple_parts;
-        }
+        // The leaf stays when an inner `[M]` remains. `[2][2]T` indexes that tuple.
+        value.tuple_parts = addr.tuple_parts;
         return value;
     }
     TypedValue loaded = load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,

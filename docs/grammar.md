@@ -876,6 +876,14 @@ The call is `main.make.spec.tuple.i32.i32`.
 
 `row[0][0]` is 40 and `row[1][1]` is 3.
 
+`var g [2][2]T`, when `T` is `(i32, i32)`, is an array of arrays of that tuple.
+
+Each `[n]` is one shell around that tuple.
+
+`g[0][0][0]` is 40 and `g[1][1][1]` is 7.
+
+`fill(one, two, three, four)` is `main.fill.spec.tuple.i32.i32`.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

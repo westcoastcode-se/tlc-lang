@@ -896,6 +896,8 @@ VarDecl clone_var(const VarDecl &var) {
     copy.array_len = var.array_len;
     copy.array_len_name = var.array_len_name;
     copy.type_args = var.type_args;
+    copy.is_tuple = var.is_tuple;
+    copy.tuple_parts = var.tuple_parts;
     copy.ptr_to_array = var.ptr_to_array;
     copy.is_fn_ptr = var.is_fn_ptr;
     copy.ret_indirections = var.ret_indirections;

@@ -744,6 +744,10 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
             result.array_len = tuple_row->array_len;
             result.array_type = array_ty;
             result.enum_id = call.enum_id;
+            // `[2][2]T` keeps the inner array. `[2]T` has no shell left.
+            if (!tuple_row->shells.empty() && tuple_row->shells.front().kind == TypeShell::Kind::Array) {
+                result.shells.assign(tuple_row->shells.begin() + 1, tuple_row->shells.end());
+            }
             return result;
         }
         llvm::Value *first = builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(0)});
