@@ -3384,10 +3384,11 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                             slice = true;
                         }
                     }
-                    // `*const T` and `**const T` mark the array. `*const *T` stays rejected.
+                    // `*const T` and `**const T` mark the array. `*const *T` marks the inner pointer.
                     const bool const_on_tuple = param.indirections == 2 && param.const_pointee == (1u << 1);
-                    if ((param.const_pointee != 0 && param.indirections != 1 && !const_on_tuple) || slice ||
-                        (pack->shells.empty() && pack->array_len <= 0)) {
+                    const bool const_on_pointer = param.indirections == 2 && param.const_pointee == 1u;
+                    if ((param.const_pointee != 0 && param.indirections != 1 && !const_on_tuple && !const_on_pointer) ||
+                        slice || (pack->shells.empty() && pack->array_len <= 0)) {
                         error(param.loc, "not supported yet");
                         param.type_name = "invalid";
                     } else {
@@ -3403,7 +3404,8 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         for (int star = 0; star < param.indirections; ++star) {
                             TypeShell shell;
                             shell.kind = TypeShell::Kind::Pointer;
-                            // Bit 0 is `*const T`. Bit 1 of `**const T` marks the array.
+                            // Bit 0 of `*const T` marks the array. Bit 0 of `*const *T` marks the inner pointer.
+                            // Bit 1 of `**const T` marks the array.
                             shell.const_pointee = (param.const_pointee & (1u << star)) != 0;
                             param.shells.push_back(shell);
                         }
