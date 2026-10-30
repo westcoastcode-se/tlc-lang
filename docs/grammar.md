@@ -1038,6 +1038,18 @@ The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
 
 `var q ?*i32 = row`, when `row` is `[2]i32`, is `type mismatch: expected ?*i32, found [2]i32`.
 
+`func id[T type](value **const T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+The call is `main.id.spec.tuple.2.i32.i32`.
+
+`(**value)[0]` is 40 and `(**value)[1]` is 2.
+
+`(**value)[0] = 1` is `type mismatch`.
+
+`**const T` when `T` is `[2](i32, i32)` is `not supported yet`.
+
+`*const *T` when `T` is a tuple is `not supported yet`.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

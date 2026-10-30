@@ -1,0 +1,10 @@
+func id[T type](value **const T) i32 {
+    (**value)[0] = 1;
+    return (**value)[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var p = &row;
+    return id(&p);
+}
