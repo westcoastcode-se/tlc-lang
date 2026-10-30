@@ -1,0 +1,74 @@
+func num[T type](value ***T) i32 {
+    return ***value;
+}
+
+func quad[T type](value ****T) i32 {
+    return (****value)[0] + (****value)[1];
+}
+
+func id[T type](value ***T) i32 {
+    return (***value)[0] + (***value)[1];
+}
+
+func deep[T type](value ***T) i32 {
+    return (***value)[0][0] + (***value)[1];
+}
+
+func pair[T type](a T, b T) [2]T {
+    var row [2]T;
+    row[0] = a;
+    row[1] = b;
+    return row;
+}
+
+func fill[T type](a T, b T, c T, d T) [2][2]T {
+    var g [2][2]T;
+    g[0][0] = a;
+    g[0][1] = b;
+    g[1][0] = c;
+    g[1][1] = d;
+    return g;
+}
+
+func row[T type](value ***T) i32 {
+    return (***value)[0][0] + (***value)[1][1];
+}
+
+func wide[T type](value ***T) i32 {
+    return (***value)[0][0][0] + (***value)[1][1][1];
+}
+
+func main() i32 {
+    var n = 40;
+    var np = &n;
+    var npp = &np;
+    if (num(&npp) != 40) {
+        return 1;
+    }
+    var wide_row = ((40, 2), 1);
+    var wp = &wide_row;
+    var wpp = &wp;
+    if (deep(&wpp) != 41) {
+        return 2;
+    }
+    var g = fill((40, 2), (1, 3), (4, 5), (6, 7));
+    var gp = &g;
+    var gpp = &gp;
+    if (wide(&gpp) != 47) {
+        return 3;
+    }
+    var grid = pair((40, 2), (1, 3));
+    var rp = &grid;
+    var rpp = &rp;
+    if (row(&rpp) != 43) {
+        return 4;
+    }
+    var row = (40, 2);
+    var p = &row;
+    var pp = &p;
+    var ppp = &pp;
+    if (quad(&ppp) != 42) {
+        return 5;
+    }
+    return id(&pp);
+}

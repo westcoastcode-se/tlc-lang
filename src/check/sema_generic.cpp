@@ -3362,10 +3362,10 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                 continue;
             }
         }
-        // `*T` when `T` is a tuple. `**T` is a pointer to that pointer. `*const T` keeps the star const.
-        // `*T`, `**T`, and `*const T` when `T` is `[2](i32, i32)` keep every array after the stars.
+        // Each star is one more pointer. `*T`, `**T`, and `***T` share that depth.
+        // `*const T` keeps the star const. An array of tuples keeps every array after the stars.
         const bool bare_const = param.indirections == 1 && param.const_pointee != 0;
-        const bool plain_star = param.const_pointee == 0 && (param.indirections == 1 || param.indirections == 2);
+        const bool plain_star = param.const_pointee == 0 && param.indirections >= 1;
         // `**const T` marks the tuple. `*const *T` marks the inner pointer.
         // `*const *const T` marks both, including when `T` is an array of tuples.
         const bool const_tuple = param.indirections == 2 && param.const_pointee == (1u << 1);
@@ -3407,6 +3407,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                             param.tuple_parts.push_back(slot_from_spec(part));
                         }
                         param.shells.clear();
+                        // One shell per star. `**T` and `***T` are the same loop.
                         for (int star = 0; star < param.indirections; ++star) {
                             TypeShell shell;
                             shell.kind = TypeShell::Kind::Pointer;

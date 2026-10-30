@@ -1090,6 +1090,22 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(**value)[0][0] = 1` is `type mismatch`. `*value = &other` is `type mismatch`.
 
+`func id[T type](value ***T)` of `&pp`, when `pp` is `&p` and `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+Each star is one more pointer. `**T` and `***T` are that same depth.
+
+The call is `main.id.spec.tuple.2.i32.i32`.
+
+`(***value)[0]` is 40 and `(***value)[1]` is 2.
+
+`func id[T type](value ***T)` of `&pp`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
+
+`(***value)[0][0]` is 40 and `(***value)[1][1]` is 3.
+
+`?**T`, `***const T`, and a field `p **T` are `not supported yet`.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.
