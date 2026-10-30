@@ -114,6 +114,12 @@ bool CodeGen::is_struct_value(const Lowered &low) const {
 }
 
 CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) const {
+    if (slot.is_tuple && slot.indirections == 0 && !slot.shells.empty() &&
+        slot.shells.front().kind == TypeShell::Kind::Pointer) {
+        // `*T` when `T` is `[2](i32, i32)`. The result is a pointer to that array.
+        Lowered leaf = lower_tuple_parts(file, slot.tuple_parts);
+        return compose_shells(std::move(leaf), slot.shells, false);
+    }
     // `(T, i32)` when `T` is `[2](i32, i32)`. The element is that array. `[2][2]` keeps both shells.
     if (slot.is_tuple && slot.is_array && slot.array_len > 0 && slot.indirections == 0) {
         return lower_tuple_array(slot.tuple_parts, slot.array_len, slot.shells);
@@ -173,6 +179,11 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
         }
         if (fn.results.size() == 1 && fn.results.front().is_tuple && !fn.results.front().is_array &&
             fn.results.front().indirections == 0) {
+            // `*T` when `T` is `[2](i32, i32)` returns that pointer. A bare tuple is the value.
+            if (!fn.results.front().shells.empty() &&
+                fn.results.front().shells.front().kind == TypeShell::Kind::Pointer) {
+                return lower_result(file, fn.results.front());
+            }
             return lower_tuple_parts(file, fn.results.front().tuple_parts);
         }
         if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {

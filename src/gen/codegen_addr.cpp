@@ -870,7 +870,9 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 // Several results, and one tuple result, are one aggregate. `sizeof` of the call is that aggregate.
                 const bool one_tuple = binding->decl != nullptr && binding->decl->results.size() == 1 &&
                                        binding->decl->results.front().is_tuple &&
-                                       binding->decl->results.front().indirections == 0;
+                                       binding->decl->results.front().indirections == 0 &&
+                                       (binding->decl->results.front().shells.empty() ||
+                                        binding->decl->results.front().shells.front().kind != TypeShell::Kind::Pointer);
                 if (binding->decl != nullptr && (binding->decl->results.size() > 1 || one_tuple)) {
                     llvm::Type *ret = nullptr;
                     if (const auto *function = llvm::dyn_cast_or_null<llvm::Function>(binding->value)) {

@@ -928,6 +928,14 @@ The call is `main.make.spec.arr.2.tuple.i32.i32`.
 
 `box.n = value`, when `value` is `[2][2]i32`, is `type mismatch: expected [2]i32, found *[2]i32`.
 
+`func id[T type](value *T) *T` of `&row`, when `row` is `[2](i32, i32)`, returns that pointer.
+
+The call is `main.id.spec.arr.2.tuple.i32.i32`.
+
+`(*p)[0][0]` is 40 and `(*p)[1][1]` is 3.
+
+`?*T`, `*const T`, and `**T` are `not supported yet`.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

@@ -612,6 +612,26 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             note(name, binding);
             return;
         }
+        // `var p = id(&row)` when the result is `*[2](i32, i32)`. The slot holds that pointer.
+        if (!got.shells.empty() && got.shells.front().kind == TypeShell::Kind::Pointer && got.value != nullptr &&
+            got.value->getType()->isPointerTy()) {
+            llvm::AllocaInst *slot = alloca_typed(ptr_type(), name);
+            builder_.CreateStore(got.value, slot);
+            Binding binding;
+            binding.value = slot;
+            binding.depth = got.depth;
+            binding.shells = got.shells;
+            binding.tuple_parts = got.tuple_parts;
+            binding.ptr_to_array = got.ptr_to_array;
+            binding.ptr_array_len = got.ptr_array_len;
+            binding.inner_array_len = got.inner_array_len;
+            binding.array_len = got.array_len;
+            binding.elem_slice = got.elem_slice;
+            scopes_.back()[name] = binding;
+            alias_capture(name, binding);
+            note(name, binding);
+            return;
+        }
         if (auto *function = llvm::dyn_cast_or_null<llvm::Function>(got.value)) {
             llvm::AllocaInst *slot = alloca_typed(ptr_type(), name);
             builder_.CreateStore(function, slot);

@@ -159,15 +159,19 @@ llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector
     const bool tuple_array = !many && fn.results.size() == 1 && fn.results.front().is_tuple &&
                              fn.results.front().is_array && fn.results.front().array_len > 0 &&
                              fn.results.front().indirections == 0;
-    const bool one_tuple = !many && !tuple_array && fn.results.size() == 1 && fn.results.front().is_tuple &&
-                           fn.results.front().indirections == 0;
+    const bool pointer_tuple = !many && fn.results.size() == 1 && fn.results.front().is_tuple &&
+                               fn.results.front().indirections == 0 && !fn.results.front().shells.empty() &&
+                               fn.results.front().shells.front().kind == TypeShell::Kind::Pointer;
+    const bool one_tuple = !many && !tuple_array && !pointer_tuple && fn.results.size() == 1 &&
+                           fn.results.front().is_tuple && fn.results.front().indirections == 0;
     const bool returns_void =
         !many && fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty();
     const bool result_slice = !many && !one_tuple && fn.results.size() == 1 && fn.results.front().is_array &&
                              fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
     llvm::Type *ret = many ? aggregate_return(fn, current_file_)
                            : (returns_void ? llvm::Type::getVoidTy(context_)
-                                           : (tuple_array ? stored_type(lower_tuple_array(fn.results.front().tuple_parts,
+                                           : (pointer_tuple ? stored_type(lower_result(current_file_, fn.results.front()))
+                                              : tuple_array ? stored_type(lower_tuple_array(fn.results.front().tuple_parts,
                                                                                          fn.results.front().array_len,
                                                                                          fn.results.front().shells))
                                               : one_tuple ? stored_type(lower_tuple_parts(current_file_,

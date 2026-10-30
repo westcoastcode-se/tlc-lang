@@ -127,6 +127,38 @@ ResultSlot slot_from_spec(const SpecArg &arg) {
     return slot;
 }
 
+// `*T` when `T` is `[2](i32, i32)`. The star is the first shell. Each array of `T` follows.
+// A slice stays out. `?*T`, `*const T`, and `**T` are not this form.
+bool stamp_star_tuple_array(ResultSlot &slot, const SpecArg &pack) {
+    if (!tuple_array_pack(pack)) {
+        return false;
+    }
+    slot.is_tuple = true;
+    slot.type_name.clear();
+    slot.indirections = 0;
+    slot.optional = 0;
+    slot.const_pointee = 0;
+    slot.is_array = false;
+    slot.array_len = 0;
+    slot.tuple_parts.clear();
+    for (const SpecArg &part : pack.parts) {
+        slot.tuple_parts.push_back(slot_from_spec(part));
+    }
+    slot.shells.clear();
+    TypeShell star;
+    star.kind = TypeShell::Kind::Pointer;
+    slot.shells.push_back(star);
+    if (!pack.shells.empty()) {
+        slot.shells.insert(slot.shells.end(), pack.shells.begin(), pack.shells.end());
+    } else {
+        TypeShell shell;
+        shell.kind = TypeShell::Kind::Array;
+        shell.length = pack.array_len;
+        slot.shells.push_back(shell);
+    }
+    return true;
+}
+
 TypeArg type_arg_from_spec(const SpecArg &arg) {
     TypeArg out;
     if (arg.is_pack) {
@@ -3240,6 +3272,17 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         }
     }
     for (ResultSlot &slot : fn.results) {
+        // `func id[T type](value *T) *T` when `T` is `[2](i32, i32)`. The result keeps every array.
+        // A field `p *T` stays on `substitute_slot` and does not take this stamp.
+        if (slot.indirections == 1 && slot.optional == 0 && slot.const_pointee == 0 && !slot.is_array &&
+            !slot.is_fn_ptr && !slot.is_tuple && slot.type_package.empty() && slot.type_args.empty() &&
+            slot.shells.empty()) {
+            if (const SpecArg *pack = find_arg(params, bounds, slot.type_name);
+                pack != nullptr && tuple_array_pack(*pack)) {
+                stamp_star_tuple_array(slot, *pack);
+                continue;
+            }
+        }
         subst_slot(slot, fn.loc);
     }
     if (!fn.results.empty()) {

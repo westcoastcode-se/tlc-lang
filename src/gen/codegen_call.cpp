@@ -792,8 +792,20 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
     };
     if (call.decl != nullptr && call.decl->results.size() == 1) {
         const ResultSlot &slot = call.decl->results.front();
-        stamp_array_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
-                        slot.array_len, slot.elem_slice, slot.shells);
+        // `id(&row)` returns `*T` when `T` is `[2](i32, i32)`. The pointer keeps each array.
+        if (slot.is_tuple && slot.indirections == 0 && !slot.shells.empty() &&
+            slot.shells.front().kind == TypeShell::Kind::Pointer) {
+            const Lowered low = lower_result(current_file_, slot);
+            result.shells = low.shells;
+            result.tuple_parts = low.tuple_parts;
+            result.ptr_to_array = low.ptr_to_array;
+            result.ptr_array_len = low.ptr_array_len;
+            result.inner_array_len = low.inner_array_len;
+            result.array_len = low.array_len;
+        } else {
+            stamp_array_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
+                            slot.array_len, slot.elem_slice, slot.shells);
+        }
     } else if (call.fn_results.size() == 1 && !call.fn_results.front().is_fn_ptr) {
         const FnParam &slot = call.fn_results.front();
         stamp_array_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,

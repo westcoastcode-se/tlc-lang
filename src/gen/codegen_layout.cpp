@@ -1541,6 +1541,11 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                                slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results);
         }
         if (fn.results.size() == 1 && fn.results.front().is_tuple && fn.results.front().indirections == 0) {
+            // `*T` when `T` is `[2](i32, i32)` is that pointer. A bare tuple is the value.
+            if (!fn.results.front().shells.empty() &&
+                fn.results.front().shells.front().kind == TypeShell::Kind::Pointer) {
+                return lower_result(file, fn.results.front());
+            }
             return lower_tuple_parts(file, fn.results.front().tuple_parts);
         }
         if (fn.return_type == "void" && fn.indirections == 0 && !fn.is_struct && fn.type_package.empty()) {

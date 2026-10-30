@@ -399,6 +399,21 @@ Type Checker::type_of_param(const Param &param) {
 }
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete) {
+    if (slot.is_tuple && slot.indirections == 0 && !slot.shells.empty() &&
+        slot.shells.front().kind == TypeShell::Kind::Pointer) {
+        // `*T` when `T` is `[2](i32, i32)`. The shells are the star and then each array.
+        Type element = type_of_written_tuple(slot.tuple_parts, 0, false, {}, loc);
+        if (element.kind != TypeKind::Tuple) {
+            return type_invalid();
+        }
+        bool rejected = false;
+        Type type = apply_shells(std::move(element), slot.shells, false, rejected);
+        if (rejected || type.kind == TypeKind::Invalid) {
+            error(loc, "not supported yet");
+            return type_invalid();
+        }
+        return type;
+    }
     if (slot.is_tuple && slot.is_array && slot.array_len > 0 && slot.indirections == 0) {
         // `[2]T` when `T` is a tuple. The result is that array. `[2][2]T` keeps both.
         return type_of_tuple_arrays(slot.tuple_parts, slot.array_len, slot.shells, false, loc);
