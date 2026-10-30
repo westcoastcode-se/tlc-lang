@@ -3695,7 +3695,7 @@ The call is `main.make.spec.tuple.2.i32.i32`.
 
 `p ***T` is that same depth. `(***box.p)[0]` reads that element. The call is `main.make_deep.spec.tuple.2.i32.i32`.
 
-A local `var q **T` and a result `**T` are `not supported yet`.
+A result `**T` is `not supported yet`.
 
 `var box Box[T]` with no initializer is `type mismatch`.
 
@@ -3857,6 +3857,61 @@ retq                             # return
 ```
 
 The program returns 43.
+
+`var q **T = value`, when `value` is `**T` and `T` is `(i32, i32)`, stores that pointer.
+
+The call is `main.id.spec.tuple.2.i32.i32`.
+
+`(**q)[0]` is 40 and `(**q)[1]` is 2.
+
+`var q ***T` is that same depth. `(***q)[0]` reads that element. The call is `main.tri.spec.tuple.2.i32.i32`.
+
+`deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
+
+`var q **T` when `T` is `[2](i32, i32)` is `not supported yet`. A result `**T` is `not supported yet`.
+
+```c
+func id[T type](value **T) i32 {
+    var q **T = value;
+    return (**q)[0] + (**q)[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var p = &row;
+    return id(&p);
+}
+```
+
+```asm
+main.id.spec.tuple.2.i32.i32:
+movq %rdi, -16(%rsp)             # value
+movq -16(%rsp), %rax             # value
+movq %rax, -8(%rsp)              # q = value
+movq -8(%rsp), %rax              # q
+movq (%rax), %rcx                # *q
+movl (%rcx), %eax                # (**q)[0]
+movl 4(%rcx), %ecx               # (**q)[1]
+addl %ecx, %eax                  # add
+retq                             # return
+
+main:
+subq $40, %rsp                   # allocate
+movl $2, 28(%rsp)                # row[1] = 2
+movl $40, 24(%rsp)               # row[0] = 40
+leaq 24(%rsp), %rax              # &row
+movq %rax, 32(%rsp)              # p
+# trace frame for the call, then the matching pop
+leaq 32(%rsp), %rdi              # &p
+callq main.id.spec.tuple.2.i32.i32 # call id
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # id(&p)
+addq $40, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
 
 `take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 

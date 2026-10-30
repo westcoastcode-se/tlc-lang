@@ -1118,7 +1118,13 @@ The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 
 `(**box.p)[0][0]` is 40 and `(**box.p)[1][1]` is 3.
 
-A local `var q **T` and a result `**T` are `not supported yet`.
+`var q **T = value`, when `T` is `(i32, i32)`, stores that pointer.
+
+The call is `main.id.spec.tuple.2.i32.i32`.
+
+`(**q)[0]` is 40 and `(**q)[1]` is 2.
+
+`var q **T` when `T` is `[2](i32, i32)` is `not supported yet`. A result `**T` is `not supported yet`.
 
 `var box Box[T]` with no initializer is `type mismatch`.
 

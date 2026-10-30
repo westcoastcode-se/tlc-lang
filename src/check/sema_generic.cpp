@@ -2411,6 +2411,21 @@ void Checker::substitute_field(const std::vector<TypeParam> &params, const std::
 }
 
 void Checker::substitute_var(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, VarDecl &var) {
+    // `var q **T` and `var q ***T` when `T` is a tuple. Each star stays on the local.
+    // An array of tuples and a result do not use this path.
+    if (var.indirections >= 2 && var.optional == 0 && var.const_pointee == 0 && !var.is_array && var.shells.empty() &&
+        var.type_package.empty() && var.type_args.empty() && !var.is_fn_ptr && !var.is_tuple) {
+        if (const SpecArg *pack = find_arg(params, bounds, var.type_name);
+            pack != nullptr && pack->is_pack && !pack->parts.empty() && !pack->is_array && pack->shells.empty()) {
+            var.is_tuple = true;
+            var.type_name.clear();
+            var.tuple_parts.clear();
+            for (const SpecArg &part : pack->parts) {
+                var.tuple_parts.push_back(slot_from_spec(part));
+            }
+            return;
+        }
+    }
     // `var row [2]T` uses the same substitution as a field of that array.
     ResultSlot slot;
     slot.type_name = std::move(var.type_name);
