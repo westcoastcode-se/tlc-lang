@@ -3233,7 +3233,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
             }
         }
         // `*T` when `T` is a tuple. `**T` is a pointer to that pointer.
-        // `*T` when `T` is `[2](i32, i32)` is a pointer to that array. `**T` of that array stays rejected.
+        // `*T` and `**T` when `T` is `[2](i32, i32)` keep every array after the stars.
         if ((param.indirections == 1 || param.indirections == 2) && param.optional == 0 && param.const_pointee == 0 &&
             !param.is_array && !param.is_fn_ptr && !param.is_tuple && param.type_package.empty() &&
             param.type_args.empty()) {
@@ -3249,13 +3249,12 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                             slice = true;
                         }
                     }
-                    if (param.indirections != 1 || slice || (pack->shells.empty() && pack->array_len <= 0)) {
+                    if (slice || (pack->shells.empty() && pack->array_len <= 0)) {
                         error(param.loc, "not supported yet");
                         param.type_name = "invalid";
                     } else {
                         param.is_tuple = true;
                         param.type_name.clear();
-                        param.indirections = 0;
                         param.is_array = false;
                         param.array_len = 0;
                         param.tuple_parts.clear();
@@ -3263,9 +3262,12 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                             param.tuple_parts.push_back(slot_from_spec(part));
                         }
                         param.shells.clear();
-                        TypeShell star;
-                        star.kind = TypeShell::Kind::Pointer;
-                        param.shells.push_back(star);
+                        for (int star = 0; star < param.indirections; ++star) {
+                            TypeShell shell;
+                            shell.kind = TypeShell::Kind::Pointer;
+                            param.shells.push_back(shell);
+                        }
+                        param.indirections = 0;
                         if (!pack->shells.empty()) {
                             param.shells.insert(param.shells.end(), pack->shells.begin(), pack->shells.end());
                         } else {
