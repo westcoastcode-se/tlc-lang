@@ -1864,6 +1864,68 @@ retq                             # return
 
 The program returns 44.
 
+`type Box[T type] struct { p *T; }` of `make(&row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+
+The struct is `Box.spec.tuple.i32.i32`.
+
+The call is `main.make.spec.tuple.i32.i32`.
+
+`(*box.p)[0]` is 40 and `(*box.p)[1]` is 2.
+
+`make(&deep)`, when `deep` is `((40, 2), 1)`, is `spec.tuple.tuple.i32.i32.i32`.
+
+`make(&n)`, when `n` is `i32`, is `spec.i32`.
+
+`var box Box[T]` with no initializer is `type mismatch`. `p` is not optional.
+
+`{.p = value}`, when `value` is `*[2](i32, i32)`, is `type mismatch: expected *(i32, i32), found *[2](i32, i32)`.
+
+```c
+type Box[T type] struct {
+    p *T;
+}
+
+func make[T type](value *T) Box[T] {
+    var box Box[T] = {.p = value};
+    return box;
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var box = make(&row);
+    return (*box.p)[0] + (*box.p)[1];
+}
+```
+
+```asm
+main.make.spec.tuple.i32.i32:
+movq %rdi, -16(%rsp)             # value
+movq -16(%rsp), %rax             # value
+movq %rax, -8(%rsp)              # box.p = value
+movq -8(%rsp), %rax              # box.p
+retq                             # return
+
+main:
+subq $40, %rsp                   # allocate
+movl $2, 28(%rsp)                # row[1] = 2
+movl $40, 24(%rsp)               # row[0] = 40
+# trace frame for the call, then the matching pop
+leaq 24(%rsp), %rdi              # &row
+callq main.make.spec.tuple.i32.i32 # call make
+movq %rax, %rcx                  # move
+movq %rcx, 8(%rsp)               # move
+movq 8(%rsp), %rax               # move
+movq %rax, 32(%rsp)              # box.p
+movq 32(%rsp), %rcx              # box.p
+movl (%rcx), %eax                # (*box.p)[0]
+movl 4(%rcx), %ecx               # (*box.p)[1]
+addl %ecx, %eax                  # add
+addq $40, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40 and `(*p)[1]` is 2.

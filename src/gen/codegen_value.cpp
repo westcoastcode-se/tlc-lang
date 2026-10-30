@@ -752,6 +752,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 TypedValue loaded{extracted, field->depth, field->elem_char, field->struct_id, false, field->elem_void,
                                   field->elem_bool, field->elem_bits, field->elem_unsigned, -1, field->elem_float};
+                // `box.p` when the field is `*T` and `T` is a tuple. The pointer keeps those elements.
+                loaded.tuple_parts = field->tuple_parts;
                 copy_fn_sig(loaded, *field);
                 return loaded;
             } else if constexpr (std::is_same_v<T, Expr::String>) {

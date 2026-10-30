@@ -1037,6 +1037,8 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
     }
     TypedValue loaded = load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,
                                     addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.elem_float);
+    // `box.p` when the field is `*T` and `T` is a tuple. The pointer keeps those elements.
+    loaded.tuple_parts = addr.tuple_parts;
     copy_fn_sig(loaded, addr);
     return loaded;
 }
