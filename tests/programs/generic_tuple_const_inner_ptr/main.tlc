@@ -1,0 +1,35 @@
+func num[T type](value *const *T) i32 {
+    return **value;
+}
+
+func id[T type](value *const *T) i32 {
+    return (**value)[0] + (**value)[1];
+}
+
+func deep[T type](value *const *T) i32 {
+    return (**value)[0][0] + (**value)[1];
+}
+
+func store[T type](value *const *T) i32 {
+    (**value)[0] = 7;
+    return (**value)[0] + (**value)[1];
+}
+
+func main() i32 {
+    var n = 40;
+    var np = &n;
+    if (num(&np) != 40) {
+        return 1;
+    }
+    var wide = ((40, 2), 1);
+    var wp = &wide;
+    if (deep(&wp) != 41) {
+        return 2;
+    }
+    var row = (40, 2);
+    var p = &row;
+    if (store(&p) != 9) {
+        return 3;
+    }
+    return id(&p);
+}
