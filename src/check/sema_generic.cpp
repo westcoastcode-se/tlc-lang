@@ -3231,6 +3231,17 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         param.indirections, param.optional, param.is_array, param.array_len, param.array_len_name,
                         param.type_args, param.loc, &param.shells, &param.elem_const, &param.const_pointee);
         for (ResultSlot &part : param.tuple_parts) {
+            // `p (*T, i32)` when `T` is `[2](i32, i32)`. The element keeps every array.
+            // A field `p *T` stays on `substitute_slot`.
+            if (part.indirections == 1 && part.optional == 0 && part.const_pointee == 0 && !part.is_array &&
+                !part.is_fn_ptr && !part.is_tuple && part.type_package.empty() && part.type_args.empty() &&
+                part.shells.empty()) {
+                if (const SpecArg *pack = find_arg(params, bounds, part.type_name);
+                    pack != nullptr && tuple_array_pack(*pack)) {
+                    stamp_star_tuple_array(part, *pack);
+                    continue;
+                }
+            }
             subst_slot(part, param.loc);
         }
         for (FnParam &inner : param.fn_params) {

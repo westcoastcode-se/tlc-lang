@@ -878,6 +878,21 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             slot = &binding->tuple_parts[index];
                         }
                     }
+                    // `p[0]` when the element is `*T` and `T` is `[2](i32, i32)`. The bits are that pointer.
+                    if (slot != nullptr && slot->is_tuple && slot->indirections == 0 && !slot->shells.empty() &&
+                        slot->shells.front().kind == TypeShell::Kind::Pointer) {
+                        const Lowered low = lower_result(current_file_, *slot);
+                        TypedValue loaded;
+                        loaded.value = extracted;
+                        loaded.shells = low.shells;
+                        loaded.tuple_parts = low.tuple_parts;
+                        loaded.ptr_to_array = low.ptr_to_array;
+                        loaded.ptr_array_len = low.ptr_array_len;
+                        loaded.inner_array_len = low.inner_array_len;
+                        loaded.array_len = low.array_len;
+                        loaded.depth = low.depth;
+                        return loaded;
+                    }
                     // A bare tuple element. An array of tuples is the array branch below.
                     if (slot != nullptr && slot->is_tuple && slot->indirections == 0 &&
                         !(slot->is_array && slot->array_len > 0)) {
