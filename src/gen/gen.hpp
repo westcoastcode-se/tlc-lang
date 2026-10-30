@@ -1245,6 +1245,7 @@ class CodeGen {
     Lowered compose_shells(Lowered leaf, std::vector<TypeShell> shells, bool parameter) const;
     // Anonymous struct for a written tuple. Fewer than two parts is not a tuple.
     Lowered lower_tuple_parts(uint32_t file, const std::vector<ResultSlot> &parts) const;
+    Lowered lower_tuple_array(const std::vector<ResultSlot> &parts, int length, const std::vector<TypeShell> &shells) const;
     // `shells` wrapped around that struct. A slice returns null.
     llvm::Type *tuple_shell_type(const std::vector<ResultSlot> &parts, const std::vector<TypeShell> &shells) const;
     // Index one shell. The base is an rvalue: a slice header, or a pointer whose shells start with `Pointer`.

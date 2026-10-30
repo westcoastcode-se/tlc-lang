@@ -248,7 +248,10 @@ Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int in
 
 Type Checker::type_of_var(const VarDecl &var) {
     Type type = type_invalid();
-    if (var.is_tuple) {
+    if (var.is_tuple && var.is_array && var.array_len > 0 && var.indirections == 0) {
+        Type element = type_of_written_tuple(var.tuple_parts, 0, false, {}, var.loc);
+        type = element.kind == TypeKind::Tuple ? type_array(std::move(element), var.array_len) : type_invalid();
+    } else if (var.is_tuple) {
         type = type_of_written_tuple(var.tuple_parts, var.indirections, var.is_array, var.shells, var.loc);
     } else {
         VarDecl &written = const_cast<VarDecl &>(var);
@@ -355,6 +358,14 @@ Type Checker::type_of_param(const Param &param) {
 }
 
 Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete) {
+    if (slot.is_tuple && slot.is_array && slot.array_len > 0 && slot.indirections == 0) {
+        // `[2]T` when `T` is a tuple. The result is that array.
+        Type element = type_of_written_tuple(slot.tuple_parts, 0, false, {}, loc);
+        if (element.kind != TypeKind::Tuple) {
+            return type_invalid();
+        }
+        return type_array(std::move(element), slot.array_len);
+    }
     if (slot.is_tuple) {
         // The written tuple has no star. `*T` when `T` is a tuple adds the pointer after.
         Type type = type_of_written_tuple(slot.tuple_parts, 0, slot.is_array, slot.shells, loc);

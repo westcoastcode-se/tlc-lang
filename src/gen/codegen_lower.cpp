@@ -162,7 +162,13 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
         }
     }
     auto lowered = [&]() {
-        if (fn.results.size() == 1 && fn.results.front().is_tuple && fn.results.front().indirections == 0) {
+        if (fn.results.size() == 1 && fn.results.front().is_tuple && fn.results.front().is_array &&
+            fn.results.front().array_len > 0 && fn.results.front().indirections == 0) {
+            const ResultSlot &slot = fn.results.front();
+            return lower_tuple_array(slot.tuple_parts, slot.array_len, slot.shells);
+        }
+        if (fn.results.size() == 1 && fn.results.front().is_tuple && !fn.results.front().is_array &&
+            fn.results.front().indirections == 0) {
             return lower_tuple_parts(file, fn.results.front().tuple_parts);
         }
         if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
@@ -957,7 +963,31 @@ llvm::Type *CodeGen::tuple_shell_type(const std::vector<ResultSlot> &parts, cons
     return type;
 }
 
+CodeGen::Lowered CodeGen::lower_tuple_array(const std::vector<ResultSlot> &parts, int length,
+                                             const std::vector<TypeShell> &written) const {
+    std::vector<TypeShell> shells = written;
+    if (shells.empty() && length > 0) {
+        TypeShell shell;
+        shell.kind = TypeShell::Kind::Array;
+        shell.length = length;
+        shells.push_back(shell);
+    }
+    Lowered low;
+    low.tuple_parts = parts;
+    low.shells = std::move(shells);
+    low.is_array = true;
+    low.array_len = length;
+    low.type = tuple_shell_type(parts, low.shells);
+    if (low.type == nullptr) {
+        low.type = i32();
+    }
+    return low;
+}
+
 CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) const {
+    if (var.is_tuple && var.is_array && var.array_len > 0 && var.indirections == 0) {
+        return lower_tuple_array(var.tuple_parts, var.array_len, var.shells);
+    }
     if (var.is_tuple) {
         return lower_tuple_parts(file, var.tuple_parts);
     }

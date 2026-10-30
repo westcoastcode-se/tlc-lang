@@ -23,6 +23,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             slot.inner_array_len = binding->inner_array_len;
             slot.elem_slice = binding->elem_slice;
             slot.shells = binding->shells;
+            slot.tuple_parts = binding->tuple_parts;
             if (llvm::Type *object = object_type(binding->value); object != nullptr && object->isArrayTy()) {
                 slot.array_type = object;
             }

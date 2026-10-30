@@ -598,6 +598,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             outer.length = binding.array_len;
             binding.shells.push_back(outer);
             binding.shells.insert(binding.shells.end(), got.shells.begin(), got.shells.end());
+            // `var got = pair(...)` when the result is `[2]T` and `T` is a tuple.
+            // The copy is that array. Each element stays the tuple.
+            binding.tuple_parts = got.tuple_parts;
             if (binding.shells.size() >= 2 && binding.shells[1].kind == TypeShell::Kind::Array) {
                 binding.inner_array_len = binding.shells[1].length;
             }

@@ -2070,6 +2070,58 @@ void Checker::substitute_field(const std::vector<TypeParam> &params, const std::
     field.tuple_parts = std::move(slot.tuple_parts);
 }
 
+void Checker::substitute_var(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, VarDecl &var) {
+    // `var row [2]T` uses the same substitution as a field of that array.
+    ResultSlot slot;
+    slot.type_name = std::move(var.type_name);
+    slot.type_package = std::move(var.type_package);
+    slot.is_struct = var.is_struct;
+    slot.is_enum = var.is_enum;
+    slot.indirections = var.indirections;
+    slot.optional = var.optional;
+    slot.const_pointee = var.const_pointee;
+    slot.is_array = var.is_array;
+    slot.elem_const = var.elem_const;
+    slot.elem_slice = var.elem_slice;
+    slot.shells = std::move(var.shells);
+    slot.array_len = var.array_len;
+    slot.array_len_name = std::move(var.array_len_name);
+    slot.type_args = std::move(var.type_args);
+    slot.is_fn_ptr = var.is_fn_ptr;
+    slot.ret_indirections = var.ret_indirections;
+    slot.ret_optional = var.ret_optional;
+    slot.ret_const_pointee = var.ret_const_pointee;
+    slot.fn_params = std::move(var.fn_params);
+    slot.fn_variadic = var.fn_variadic;
+    slot.fn_results = std::move(var.fn_results);
+    slot.is_tuple = var.is_tuple;
+    slot.tuple_parts = std::move(var.tuple_parts);
+    substitute_slot(params, bounds, slot, var.loc);
+    var.type_name = std::move(slot.type_name);
+    var.type_package = std::move(slot.type_package);
+    var.is_struct = slot.is_struct;
+    var.is_enum = slot.is_enum;
+    var.indirections = slot.indirections;
+    var.optional = slot.optional;
+    var.const_pointee = slot.const_pointee;
+    var.is_array = slot.is_array;
+    var.elem_const = slot.elem_const;
+    var.elem_slice = slot.elem_slice;
+    var.shells = std::move(slot.shells);
+    var.array_len = slot.array_len;
+    var.array_len_name = std::move(slot.array_len_name);
+    var.type_args = std::move(slot.type_args);
+    var.is_fn_ptr = slot.is_fn_ptr;
+    var.ret_indirections = slot.ret_indirections;
+    var.ret_optional = slot.ret_optional;
+    var.ret_const_pointee = slot.ret_const_pointee;
+    var.fn_params = std::move(slot.fn_params);
+    var.fn_variadic = slot.fn_variadic;
+    var.fn_results = std::move(slot.fn_results);
+    var.is_tuple = slot.is_tuple;
+    var.tuple_parts = std::move(slot.tuple_parts);
+}
+
 void Checker::substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds,
                               std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                               int &indirections, uint32_t &optional, bool &is_array, int &array_len,
@@ -2768,9 +2820,7 @@ void Checker::substitute_stmt(const std::vector<TypeParam> &params, const std::v
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 for (VarDecl &var : node.vars) {
-                    substitute_type(params, bounds, var.type_name, var.type_package, var.is_struct, var.is_enum,
-                                    var.indirections, var.optional, var.is_array, var.array_len, var.array_len_name,
-                                    var.type_args, var.loc, &var.shells, &var.elem_const, &var.const_pointee);
+                    substitute_var(params, bounds, var);
                     if (var.init) {
                         substitute_expr(params, bounds, *var.init);
                     }

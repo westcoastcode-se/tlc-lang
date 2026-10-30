@@ -730,6 +730,22 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         stamp_builder(allocas);
         llvm::AllocaInst *slot = allocas.CreateAlloca(array_ty, nullptr, "arr.ret");
         builder_.CreateStore(inst, slot);
+        const ResultSlot *tuple_row = call.decl != nullptr && call.decl->results.size() == 1 &&
+                                              call.decl->results.front().is_tuple && call.decl->results.front().is_array
+                                          ? &call.decl->results.front()
+                                          : nullptr;
+        if (tuple_row != nullptr) {
+            // The pointer addresses one tuple, not its first field.
+            llvm::Value *first = builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0)});
+            TypedValue result;
+            result.value = first;
+            result.depth = 1;
+            result.tuple_parts = tuple_row->tuple_parts;
+            result.array_len = tuple_row->array_len;
+            result.array_type = array_ty;
+            result.enum_id = call.enum_id;
+            return result;
+        }
         llvm::Value *first = builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(0)});
         TypedValue result = tagged({first, call.depth + 1, call.elem_char, call.struct_id, false, call.elem_void,
                                     call.elem_bool, call.elem_bits, call.elem_unsigned});

@@ -862,6 +862,14 @@ The call is `main.make.spec.tuple.i32.i32`.
 
 `box.row[0][0]` is 40 and `box.row[1][1]` is 3.
 
+`func pair[T type](a T, b T) [2]T`, when `T` is `(i32, i32)`, returns an array of that tuple.
+
+`pair(one, two)` is `main.pair.spec.tuple.i32.i32`.
+
+`got[0][0]` is 40 and `got[1][1]` is 3.
+
+`var row [2]T` in that function is an array of that tuple.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.
