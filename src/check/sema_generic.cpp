@@ -38,6 +38,17 @@ bool same_spec(const SpecArg &lhs, const SpecArg &rhs) {
         if (!lhs.is_pack || !rhs.is_pack || lhs.parts.size() != rhs.parts.size()) {
             return false;
         }
+        if (lhs.is_array != rhs.is_array || lhs.array_len != rhs.array_len || lhs.shells.size() != rhs.shells.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < lhs.shells.size(); ++i) {
+            const TypeShell &left = lhs.shells[i];
+            const TypeShell &right = rhs.shells[i];
+            if (left.kind != right.kind || left.length != right.length || left.optional != right.optional ||
+                left.const_pointee != right.const_pointee) {
+                return false;
+            }
+        }
         for (std::size_t i = 0; i < lhs.parts.size(); ++i) {
             if (!same_spec(lhs.parts[i], rhs.parts[i])) {
                 return false;
@@ -1459,8 +1470,14 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
         return true;
     case TypeKind::Tuple: {
         // `T` is the whole tuple. A pointer to a tuple stays rejected. An element may itself be a tuple.
-        if (depth != 0 || out.is_array || cursor->results.empty()) {
+        // `[2](i32, i32)` keeps the array shells. The leaf is that tuple. A slice stays rejected.
+        if (depth != 0 || cursor->results.empty()) {
             return false;
+        }
+        for (const TypeShell &shell : out.shells) {
+            if (shell.kind == TypeShell::Kind::Slice) {
+                return false;
+            }
         }
         std::vector<SpecArg> parts;
         parts.reserve(cursor->results.size());
@@ -1471,8 +1488,16 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
             }
             parts.push_back(std::move(spelled));
         }
-        out = pack_bound(std::move(parts));
-        return out.is_pack;
+        SpecArg packed = pack_bound(std::move(parts));
+        if (out.is_array) {
+            packed.is_array = true;
+            packed.array_len = out.array_len;
+            packed.elem_const = out.elem_const;
+            packed.elem_slice = out.elem_slice;
+            packed.shells = std::move(out.shells);
+        }
+        out = std::move(packed);
+        return out.is_pack || !out.type_name.empty();
     }
     default:
         return false;
@@ -1484,6 +1509,22 @@ std::string Checker::mangle_spec(const std::string &base, const std::vector<Spec
     auto append = [&](auto &&self, const SpecArg &arg) -> void {
         name += '.';
         if (arg.is_pack) {
+            // `[2](i32, i32)` is `arr.2` and then the tuple. A bare tuple has no shell.
+            if (!arg.shells.empty()) {
+                for (const TypeShell &shell : arg.shells) {
+                    if (shell.kind == TypeShell::Kind::Slice) {
+                        name += "slice.";
+                    } else if (shell.kind == TypeShell::Kind::Array) {
+                        name += "arr.";
+                        name += std::to_string(shell.length);
+                        name += '.';
+                    }
+                }
+            } else if (arg.is_array) {
+                name += "arr.";
+                name += std::to_string(arg.array_len);
+                name += '.';
+            }
             name += "tuple";
             for (const SpecArg &part : arg.parts) {
                 self(self, part);
@@ -3002,6 +3043,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
             }
         }
         // `*T` when `T` is a tuple. The parameter is a pointer to that tuple.
+        // `*T` when `T` is `[2](i32, i32)` is a pointer to that array. Each shell stays.
         if (param.indirections == 1 && param.optional == 0 && param.const_pointee == 0 && !param.is_array &&
             !param.is_fn_ptr && !param.is_tuple && param.type_package.empty() && param.type_args.empty()) {
             if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
@@ -3009,6 +3051,39 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                 if (pack->parts.empty()) {
                     error(param.loc, "not supported yet");
                     param.type_name = "invalid";
+                } else if (pack->is_array || !pack->shells.empty()) {
+                    bool slice = false;
+                    for (const TypeShell &shell : pack->shells) {
+                        if (shell.kind == TypeShell::Kind::Slice) {
+                            slice = true;
+                        }
+                    }
+                    if (slice || (pack->shells.empty() && pack->array_len <= 0)) {
+                        error(param.loc, "not supported yet");
+                        param.type_name = "invalid";
+                    } else {
+                        param.is_tuple = true;
+                        param.type_name.clear();
+                        param.indirections = 0;
+                        param.is_array = false;
+                        param.array_len = 0;
+                        param.tuple_parts.clear();
+                        for (const SpecArg &part : pack->parts) {
+                            param.tuple_parts.push_back(slot_from_spec(part));
+                        }
+                        param.shells.clear();
+                        TypeShell star;
+                        star.kind = TypeShell::Kind::Pointer;
+                        param.shells.push_back(star);
+                        if (!pack->shells.empty()) {
+                            param.shells.insert(param.shells.end(), pack->shells.begin(), pack->shells.end());
+                        } else {
+                            TypeShell shell;
+                            shell.kind = TypeShell::Kind::Array;
+                            shell.length = pack->array_len;
+                            param.shells.push_back(shell);
+                        }
+                    }
                 } else {
                     param.is_tuple = true;
                     param.type_name.clear();

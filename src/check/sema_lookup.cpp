@@ -348,7 +348,19 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
 
 Type Checker::type_of_param(const Param &param) {
     Type type = type_invalid();
-    if (param.is_tuple && param.is_array && param.array_len > 0 && param.indirections == 0) {
+    if (param.is_tuple && param.indirections == 0 && !param.shells.empty() &&
+        param.shells.front().kind == TypeShell::Kind::Pointer) {
+        // `*T` when `T` is `[2](i32, i32)`. The shells are the star and then each array.
+        Type element = type_of_written_tuple(param.tuple_parts, 0, false, {}, param.loc);
+        if (element.kind == TypeKind::Tuple) {
+            bool rejected = false;
+            type = apply_shells(std::move(element), param.shells, false, rejected);
+            if (rejected || type.kind == TypeKind::Invalid) {
+                error(param.loc, "not supported yet");
+                type = type_invalid();
+            }
+        }
+    } else if (param.is_tuple && param.is_array && param.array_len > 0 && param.indirections == 0) {
         // `[2]T` when `T` is a tuple. A parameter is a pointer to one element, and the length stays.
         // `[2][2]T` decays only the outer array. The inner array stays.
         type = type_of_tuple_arrays(param.tuple_parts, param.array_len, param.shells, true, param.loc);

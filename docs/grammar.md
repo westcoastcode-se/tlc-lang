@@ -884,6 +884,14 @@ Each `[n]` is one shell around that tuple.
 
 `fill(one, two, three, four)` is `main.fill.spec.tuple.i32.i32`.
 
+`func id[T type](value *T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The call is `main.id.spec.arr.2.tuple.i32.i32`.
+
+`(*value)[0][0]` is 40 and `(*value)[1][1]` is 3.
+
+`&g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.i32.i32`.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

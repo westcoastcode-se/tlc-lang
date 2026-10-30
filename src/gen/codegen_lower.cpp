@@ -1092,6 +1092,12 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
 }
 
 CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) const {
+    if (param.is_tuple && param.indirections == 0 && !param.shells.empty() &&
+        param.shells.front().kind == TypeShell::Kind::Pointer) {
+        // `*T` when `T` is an array of tuples. The shells are the star and then each array.
+        Lowered leaf = lower_tuple_parts(file, param.tuple_parts);
+        return compose_shells(std::move(leaf), param.shells, false);
+    }
     if (param.is_tuple && param.is_array && param.array_len > 0 && param.indirections == 0) {
         // `[2]T` when `T` is a tuple. The parameter decays to a pointer to one element.
         // `[2][2]T` decays only the outer array. The inner shells stay.

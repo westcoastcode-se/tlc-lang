@@ -1679,8 +1679,32 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
         if (param.is_tuple) {
             // `value *T` is a pointer to the tuple. The argument is that pointer.
             // `[2]T` is a pointer that still records the length. The argument is that array.
+            // `*T` when `T` is `[2](i32, i32)` peels the star and then each array.
             const Type *core = &got;
-            if (param.is_array && param.array_len > 0 && param.indirections == 0) {
+            if (!param.shells.empty() && param.shells.front().kind == TypeShell::Kind::Pointer) {
+                for (const TypeShell &shell : param.shells) {
+                    if (shell.kind == TypeShell::Kind::Pointer) {
+                        if (core->kind != TypeKind::Pointer || core->pointee == nullptr) {
+                            return false;
+                        }
+                        core = core->pointee.get();
+                        continue;
+                    }
+                    if (shell.kind != TypeShell::Kind::Array) {
+                        return false;
+                    }
+                    if (core->kind == TypeKind::Array && core->length == shell.length && core->element != nullptr) {
+                        core = core->element.get();
+                        continue;
+                    }
+                    if (core->kind == TypeKind::Pointer && !core->optional && core->decayed_len == shell.length &&
+                        core->pointee != nullptr) {
+                        core = core->pointee.get();
+                        continue;
+                    }
+                    return false;
+                }
+            } else if (param.is_array && param.array_len > 0 && param.indirections == 0) {
                 // `[2][2]T` peels every array. A parameter may already be the decayed outer pointer.
                 const auto peel = [&](int length) -> bool {
                     if (core->kind == TypeKind::Array && core->length == length && core->element != nullptr) {
