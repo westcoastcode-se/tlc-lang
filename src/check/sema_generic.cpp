@@ -2412,18 +2412,47 @@ void Checker::substitute_field(const std::vector<TypeParam> &params, const std::
 
 void Checker::substitute_var(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, VarDecl &var) {
     // `var q **T` and `var q ***T` when `T` is a tuple. Each star stays on the local.
-    // An array of tuples and a result do not use this path.
+    // An array of tuples keeps every array after those stars. A result does not use this path.
     if (var.indirections >= 2 && var.optional == 0 && var.const_pointee == 0 && !var.is_array && var.shells.empty() &&
         var.type_package.empty() && var.type_args.empty() && !var.is_fn_ptr && !var.is_tuple) {
         if (const SpecArg *pack = find_arg(params, bounds, var.type_name);
-            pack != nullptr && pack->is_pack && !pack->parts.empty() && !pack->is_array && pack->shells.empty()) {
-            var.is_tuple = true;
-            var.type_name.clear();
-            var.tuple_parts.clear();
-            for (const SpecArg &part : pack->parts) {
-                var.tuple_parts.push_back(slot_from_spec(part));
+            pack != nullptr && pack->is_pack && !pack->parts.empty()) {
+            if (!pack->is_array && pack->shells.empty()) {
+                var.is_tuple = true;
+                var.type_name.clear();
+                var.tuple_parts.clear();
+                for (const SpecArg &part : pack->parts) {
+                    var.tuple_parts.push_back(slot_from_spec(part));
+                }
+                return;
             }
-            return;
+            if (tuple_array_pack(*pack)) {
+                var.is_tuple = true;
+                var.type_name.clear();
+                var.is_array = false;
+                var.array_len = 0;
+                var.tuple_parts.clear();
+                for (const SpecArg &part : pack->parts) {
+                    var.tuple_parts.push_back(slot_from_spec(part));
+                }
+                const int stars = var.indirections;
+                var.indirections = 0;
+                var.shells.clear();
+                for (int star = 0; star < stars; ++star) {
+                    TypeShell shell;
+                    shell.kind = TypeShell::Kind::Pointer;
+                    var.shells.push_back(shell);
+                }
+                if (!pack->shells.empty()) {
+                    var.shells.insert(var.shells.end(), pack->shells.begin(), pack->shells.end());
+                } else {
+                    TypeShell shell;
+                    shell.kind = TypeShell::Kind::Array;
+                    shell.length = pack->array_len;
+                    var.shells.push_back(shell);
+                }
+                return;
+            }
         }
     }
     // `var row [2]T` uses the same substitution as a field of that array.

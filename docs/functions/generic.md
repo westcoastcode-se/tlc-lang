@@ -3868,7 +3868,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
-`var q **T` when `T` is `[2](i32, i32)` is `not supported yet`. A result `**T` is `not supported yet`.
+A result `**T` is `not supported yet`.
 
 ```c
 func id[T type](value **T) i32 {
@@ -3912,6 +3912,108 @@ retq                             # return
 ```
 
 The program returns 42.
+
+`var q **T = value`, when `value` is `**T` and `T` is `[2](i32, i32)`, stores that pointer.
+
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
+
+`(**q)[0][0]` is 40 and `(**q)[1][1]` is 3.
+
+`var q ***T` is that same depth. The call is `main.tri.spec.arr.2.tuple.2.i32.i32`.
+
+`wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
+
+```c
+func pair[T type](a T, b T) [2]T {
+    var row [2]T;
+    row[0] = a;
+    row[1] = b;
+    return row;
+}
+
+func id[T type](value **T) i32 {
+    var q **T = value;
+    return (**q)[0][0] + (**q)[1][1];
+}
+
+func main() i32 {
+    var row = pair((40, 2), (1, 3));
+    var p = &row;
+    return id(&p);
+}
+```
+
+```asm
+main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3:
+movq %rdi, %rax                  # row
+movl $2, -12(%rsp)               # a[1] = 2
+movl $40, -16(%rsp)              # a[0] = 40
+movl $3, -4(%rsp)                # b[1] = 3
+movl $1, -8(%rsp)                # b[0] = 1
+movl -16(%rsp), %ecx             # a[0]
+movl -12(%rsp), %edx             # a[1]
+movl -8(%rsp), %esi              # b[0]
+movl -4(%rsp), %r8d              # b[1]
+movl %r8d, 12(%rdi)              # row[1][1]
+movl %esi, 8(%rdi)               # row[1][0]
+movl %edx, 4(%rdi)               # row[0][1]
+movl %ecx, (%rdi)                # row[0][0]
+retq                             # return
+
+main.id.spec.arr.2.tuple.2.i32.i32:
+movq %rdi, -16(%rsp)             # value
+movq -16(%rsp), %rax             # value
+movq %rax, -8(%rsp)              # q = value
+movq -8(%rsp), %rax              # q
+movq (%rax), %rcx                # *q
+movl (%rcx), %eax                # (**q)[0][0]
+movl 8(%rcx), %edx               # move
+movl 12(%rcx), %ecx              # (**q)[1][1]
+addl %ecx, %eax                  # add
+retq                             # return
+
+main:
+subq $104, %rsp                  # allocate
+# trace frame for the call, then the matching pop
+leaq 48(%rsp), %rdi              # row
+callq main.pair.spec.tuple.2.i32.i32.spec.t_40_2.t_1_3 # call pair
+movl 60(%rsp), %ecx              # row[1][1]
+movl %ecx, 24(%rsp)              # move
+movl 56(%rsp), %ecx              # row[1][0]
+movl %ecx, 28(%rsp)              # move
+movl 48(%rsp), %ecx              # row[0][0]
+movl %ecx, 32(%rsp)              # move
+movl 52(%rsp), %ecx              # row[0][1]
+movl %ecx, 36(%rsp)              # move
+movl 24(%rsp), %eax              # row[1][1]
+movl 28(%rsp), %ecx              # row[1][0]
+movl 36(%rsp), %edx              # row[0][1]
+movl 32(%rsp), %esi              # row[0][0]
+movl %esi, 64(%rsp)              # row[0][0]
+movl %edx, 68(%rsp)              # row[0][1]
+movl %ecx, 72(%rsp)              # row[1][0]
+movl %eax, 76(%rsp)              # row[1][1]
+movl 64(%rsp), %eax              # row[0][0]
+movl 68(%rsp), %ecx              # move
+movl 72(%rsp), %edx              # move
+movl 76(%rsp), %esi              # row[1][1]
+movl %esi, 92(%rsp)              # row[1][1]
+movl %edx, 88(%rsp)              # row[1][0]
+movl %ecx, 84(%rsp)              # row[0][1]
+movl %eax, 80(%rsp)              # row[0][0]
+leaq 80(%rsp), %rax              # &row
+movq %rax, 96(%rsp)              # p
+# trace frame for the call, then the matching pop
+leaq 96(%rsp), %rdi              # &p
+callq main.id.spec.arr.2.tuple.2.i32.i32 # call id
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # id(&p)
+addq $104, %rsp                  # release
+retq                             # return
+```
+
+The program returns 43.
 
 `take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
