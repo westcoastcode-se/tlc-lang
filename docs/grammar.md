@@ -1050,6 +1050,14 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `*const *T` when `T` is a tuple is `not supported yet`.
 
+`func id[T type](value **const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
+
+`(**value)[0][0]` is 40 and `(**value)[1][1]` is 3.
+
+`(**value)[0][0] = 1` is `type mismatch`.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.
