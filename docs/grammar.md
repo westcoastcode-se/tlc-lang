@@ -918,6 +918,16 @@ The call is `main.take.spec.arr.2.tuple.i32.i32`.
 
 `func make[T type](value T) (T, i32)` returns that tuple.
 
+`type Box[T type] struct { n T; }` of `make(row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The struct is `Box.spec.arr.2.tuple.i32.i32`.
+
+The call is `main.make.spec.arr.2.tuple.i32.i32`.
+
+`box.n[0][0]` is 40 and `box.n[1][1]` is 3.
+
+`box.n = value`, when `value` is `[2][2]i32`, is `type mismatch: expected [2]i32, found *[2]i32`.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

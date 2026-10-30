@@ -1,0 +1,29 @@
+type Box[T type] struct {
+    n T;
+}
+
+func pair[T type](a T, b T) [2]T {
+    var row [2]T;
+    row[0] = a;
+    row[1] = b;
+    return row;
+}
+
+func make[T type](value T) Box[T] {
+    var box Box[T];
+    box.n = value;
+    return box;
+}
+
+func main() i32 {
+    var nums [2]i32;
+    nums[0] = 40;
+    nums[1] = 2;
+    var plain = make(nums);
+    if (plain.n[0] + plain.n[1] != 42) {
+        return 1;
+    }
+    var row = pair((40, 2), (1, 3));
+    var box = make(row);
+    return box.n[0][0] + box.n[1][1];
+}

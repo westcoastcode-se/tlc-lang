@@ -1527,6 +1527,141 @@ retq                             # return
 
 The program returns 44.
 
+`type Box[T type] struct { n T; }` of `make(row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The struct is `Box.spec.arr.2.tuple.i32.i32`.
+
+The call is `main.make.spec.arr.2.tuple.i32.i32`.
+
+`box.n` is that array. `box.n[0][0]` is 40 and `box.n[1][1]` is 3.
+
+`make(nums)`, when `nums` is `[2]i32`, is `make.spec.arr.2.i32`.
+
+`box.n = value`, when `value` is `[2][2]i32`, is `type mismatch: expected [2]i32, found *[2]i32`.
+
+```c
+type Box[T type] struct {
+    n T;
+}
+
+func pair[T type](a T, b T) [2]T {
+    var row [2]T;
+    row[0] = a;
+    row[1] = b;
+    return row;
+}
+
+func make[T type](value T) Box[T] {
+    var box Box[T];
+    box.n = value;
+    return box;
+}
+
+func main() i32 {
+    var row = pair((40, 2), (1, 3));
+    var box = make(row);
+    return box.n[0][0] + box.n[1][1];
+}
+```
+
+```asm
+main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+movq %rdi, %rax                  # row
+movl $2, -12(%rsp)               # a[1] = 2
+movl $40, -16(%rsp)              # a[0] = 40
+movl $3, -4(%rsp)                # b[1] = 3
+movl $1, -8(%rsp)                # b[0] = 1
+movl -16(%rsp), %ecx             # a[0]
+movl -12(%rsp), %edx             # a[1]
+movl -8(%rsp), %esi              # b[0]
+movl -4(%rsp), %r8d              # b[1]
+movl %r8d, 12(%rdi)              # row[1][1]
+movl %esi, 8(%rdi)               # row[1][0]
+movl %edx, 4(%rdi)               # row[0][1]
+movl %ecx, (%rdi)                # row[0][0]
+retq                             # return
+
+main.make.spec.arr.2.tuple.i32.i32:
+movq %rdi, %rax                  # box
+movq %rsi, -24(%rsp)             # value
+movq -24(%rsp), %r8              # value
+movl (%r8), %ecx                 # value[0][0]
+movl 4(%r8), %edx                # value[0][1]
+movl 8(%r8), %esi                # value[1][0]
+movl 12(%r8), %r8d               # value[1][1]
+movl %r8d, -4(%rsp)              # move
+movl %esi, -8(%rsp)              # move
+movl %edx, -12(%rsp)             # move
+movl %ecx, -16(%rsp)             # move
+movl -16(%rsp), %ecx             # value[0][0]
+movl -12(%rsp), %edx             # value[0][1]
+movl -8(%rsp), %esi              # value[1][0]
+movl -4(%rsp), %r8d              # value[1][1]
+movl %r8d, 12(%rdi)              # box.n[1][1]
+movl %esi, 8(%rdi)               # box.n[1][0]
+movl %edx, 4(%rdi)               # box.n[0][1]
+movl %ecx, (%rdi)                # box.n[0][0]
+retq                             # return
+
+main:
+subq $136, %rsp                  # allocate
+# trace frame for the call, then the matching pop
+leaq 72(%rsp), %rdi              # row
+callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+movl 84(%rsp), %ecx              # row[1][1]
+movl %ecx, 32(%rsp)              # move
+movl 80(%rsp), %ecx              # row[1][0]
+movl %ecx, 36(%rsp)              # move
+movl 72(%rsp), %ecx              # row[0][0]
+movl %ecx, 40(%rsp)              # move
+movl 76(%rsp), %ecx              # row[0][1]
+movl %ecx, 44(%rsp)              # move
+movl 32(%rsp), %eax              # row[1][1]
+movl 36(%rsp), %ecx              # row[1][0]
+movl 44(%rsp), %edx              # row[0][1]
+movl 40(%rsp), %esi              # row[0][0]
+movl %esi, 88(%rsp)              # row[0][0]
+movl %edx, 92(%rsp)              # row[0][1]
+movl %ecx, 96(%rsp)              # row[1][0]
+movl %eax, 100(%rsp)             # row[1][1]
+movl 88(%rsp), %eax              # row[0][0]
+movl 92(%rsp), %ecx              # move
+movl 96(%rsp), %edx              # move
+movl 100(%rsp), %esi             # row[1][1]
+movl %esi, 116(%rsp)             # row[1][1]
+movl %edx, 112(%rsp)             # row[1][0]
+movl %ecx, 108(%rsp)             # row[0][1]
+movl %eax, 104(%rsp)             # row[0][0]
+# trace frame for the call, then the matching pop
+leaq 56(%rsp), %rdi              # box
+leaq 104(%rsp), %rsi             # row
+callq main.make.spec.arr.2.tuple.i32.i32 # call make
+movl 68(%rsp), %ecx              # box.n[1][1]
+movl %ecx, 8(%rsp)               # move
+movl 64(%rsp), %ecx              # box.n[1][0]
+movl %ecx, 12(%rsp)              # move
+movl 56(%rsp), %ecx              # box.n[0][0]
+movl %ecx, 16(%rsp)              # move
+movl 60(%rsp), %ecx              # box.n[0][1]
+movl %ecx, 20(%rsp)              # move
+movl 8(%rsp), %eax               # box.n[1][1]
+movl 12(%rsp), %ecx              # box.n[1][0]
+movl 20(%rsp), %edx              # box.n[0][1]
+movl 16(%rsp), %esi              # box.n[0][0]
+movl %esi, 120(%rsp)             # box.n[0][0]
+movl %edx, 124(%rsp)             # box.n[0][1]
+movl %ecx, 128(%rsp)             # box.n[1][0]
+movl %eax, 132(%rsp)             # box.n[1][1]
+movl 120(%rsp), %eax             # box.n[0][0]
+movl 128(%rsp), %ecx             # move
+movl 132(%rsp), %ecx             # box.n[1][1]
+addl %ecx, %eax                  # add
+addq $136, %rsp                  # release
+retq                             # return
+```
+
+The program returns 43.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40 and `(*p)[1]` is 2.

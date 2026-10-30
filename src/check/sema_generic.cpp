@@ -135,6 +135,27 @@ TypeArg type_arg_from_spec(const SpecArg &arg) {
         for (const SpecArg &part : arg.parts) {
             out.tuple_parts.push_back(type_arg_from_spec(part));
         }
+        // `Box[T]` when `T` is `[2](i32, i32)`. The field keeps every array shell.
+        if (tuple_array_pack(arg)) {
+            out.is_array = true;
+            out.array_len = arg.array_len;
+            if (!arg.shells.empty()) {
+                out.shells = arg.shells;
+            } else {
+                TypeShell shell;
+                shell.kind = TypeShell::Kind::Array;
+                shell.length = arg.array_len;
+                out.shells.push_back(shell);
+            }
+            if (out.array_len <= 0) {
+                for (const TypeShell &shell : out.shells) {
+                    if (shell.kind == TypeShell::Kind::Array && shell.length > 0) {
+                        out.array_len = shell.length;
+                        break;
+                    }
+                }
+            }
+        }
         return out;
     }
     out.type_name = arg.type_name;
@@ -1998,6 +2019,26 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
             parts.push_back(std::move(one));
         }
         out = pack_bound(std::move(parts));
+        // `Box[T]` when `T` is `[2](i32, i32)`. The pack keeps the array around that tuple.
+        if (out.is_pack && arg.is_array && (arg.array_len > 0 || !arg.shells.empty())) {
+            out.is_array = true;
+            out.array_len = arg.array_len;
+            out.shells = arg.shells;
+            if (out.shells.empty() && out.array_len > 0) {
+                TypeShell shell;
+                shell.kind = TypeShell::Kind::Array;
+                shell.length = out.array_len;
+                out.shells.push_back(shell);
+            }
+            if (out.array_len <= 0) {
+                for (const TypeShell &shell : out.shells) {
+                    if (shell.kind == TypeShell::Kind::Array && shell.length > 0) {
+                        out.array_len = shell.length;
+                        break;
+                    }
+                }
+            }
+        }
         return true;
     }
     TypeArg concrete = arg;
@@ -2294,18 +2335,14 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         }
         if (bound->is_pack) {
             // `Box[T]` when `T` is a tuple. A star or an array around that argument stays rejected.
+            // `T` bound to `[2](i32, i32)` keeps those shells on the argument.
             if (arg.indirections != 0 || arg.optional != 0 || arg.const_pointee != 0 || arg.is_array || !arg.args.empty() ||
                 !arg.shells.empty() || arg.is_tuple || bound->parts.empty()) {
                 error(arg.loc, "not supported yet");
                 return;
             }
-            TypeArg tuple;
+            TypeArg tuple = type_arg_from_spec(*bound);
             tuple.loc = arg.loc;
-            tuple.is_tuple = true;
-            tuple.tuple_parts.reserve(bound->parts.size());
-            for (const SpecArg &part : bound->parts) {
-                tuple.tuple_parts.push_back(type_arg_from_spec(part));
-            }
             arg = std::move(tuple);
             return;
         }
