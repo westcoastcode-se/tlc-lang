@@ -127,6 +127,60 @@ ResultSlot slot_from_spec(const SpecArg &arg) {
     return slot;
 }
 
+// `[2]T` when `T` is a tuple. The written arrays stay, and one element is that tuple.
+// `[2]T` when `T` is `[2](i32, i32)` keeps that array inside the written ones.
+// `[2][2]T` of the same `T` is the same merge. A slice stays out.
+bool stamp_outer_tuple_arrays(ResultSlot &slot, const SpecArg &pack) {
+    if (!pack.is_pack || pack.parts.empty()) {
+        return false;
+    }
+    if (!tuple_array_pack(pack)) {
+        slot.is_tuple = true;
+        slot.type_name.clear();
+        slot.tuple_parts.clear();
+        for (const SpecArg &part : pack.parts) {
+            slot.tuple_parts.push_back(slot_from_spec(part));
+        }
+        return true;
+    }
+    std::vector<TypeShell> shells = slot.shells;
+    if (shells.empty()) {
+        if (slot.array_len <= 0) {
+            return false;
+        }
+        TypeShell outer;
+        outer.kind = TypeShell::Kind::Array;
+        outer.length = slot.array_len;
+        shells.push_back(outer);
+    }
+    if (!pack.shells.empty()) {
+        shells.insert(shells.end(), pack.shells.begin(), pack.shells.end());
+    } else {
+        TypeShell inner;
+        inner.kind = TypeShell::Kind::Array;
+        inner.length = pack.array_len;
+        shells.push_back(inner);
+    }
+    for (const TypeShell &shell : shells) {
+        if (shell.kind != TypeShell::Kind::Array || shell.length <= 0 || !shell.length_name.empty()) {
+            return false;
+        }
+    }
+    slot.is_tuple = true;
+    slot.type_name.clear();
+    slot.indirections = 0;
+    slot.optional = 0;
+    slot.const_pointee = 0;
+    slot.is_array = true;
+    slot.array_len = shells.front().length;
+    slot.tuple_parts.clear();
+    for (const SpecArg &part : pack.parts) {
+        slot.tuple_parts.push_back(slot_from_spec(part));
+    }
+    slot.shells = std::move(shells);
+    return true;
+}
+
 // `*T` when `T` is `[2](i32, i32)`. The star is the first shell. Each array of `T` follows.
 // A slice stays out. `?*T`, `*const T`, and `**T` are not this form.
 bool stamp_star_tuple_array(ResultSlot &slot, const SpecArg &pack) {
@@ -2145,20 +2199,13 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
         }
         return;
     }
-    // `[2]T` when `T` is a tuple. The array stays, and one element is that tuple.
+    // `[2]T` when `T` is a tuple. `[2]T` when `T` is `[2](i32, i32)` keeps both arrays.
     if (slot.is_array && slot.array_len > 0 && slot.indirections == 0 && slot.optional == 0 && slot.const_pointee == 0 &&
         slot.type_package.empty() && slot.type_args.empty() && !slot.is_fn_ptr && !slot.is_tuple) {
         if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
-            if (bound->parts.empty()) {
+            if (bound->parts.empty() || !stamp_outer_tuple_arrays(slot, *bound)) {
                 error(loc, "not supported yet");
                 slot.type_name = "invalid";
-                return;
-            }
-            slot.is_tuple = true;
-            slot.type_name.clear();
-            slot.tuple_parts.clear();
-            for (const SpecArg &part : bound->parts) {
-                slot.tuple_parts.push_back(slot_from_spec(part));
             }
             return;
         }
@@ -3158,22 +3205,28 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
             kept.push_back(std::move(param));
             continue;
         }
-        // `[2]T` when `T` is a tuple. The array stays. One element is that tuple.
+        // `[2]T` when `T` is a tuple. `[2]T` when `T` is `[2](i32, i32)` keeps both arrays.
         if (param.is_array && param.array_len > 0 && param.indirections == 0 && param.optional == 0 &&
             param.const_pointee == 0 && param.type_package.empty() && param.type_args.empty() && !param.is_fn_ptr &&
             !param.is_tuple) {
             if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
                 pack != nullptr && pack->is_pack) {
-                if (pack->parts.empty()) {
+                ResultSlot shaped;
+                shaped.is_array = param.is_array;
+                shaped.array_len = param.array_len;
+                shaped.shells = param.shells;
+                shaped.indirections = param.indirections;
+                if (pack->parts.empty() || !stamp_outer_tuple_arrays(shaped, *pack)) {
                     error(param.loc, "not supported yet");
                     param.type_name = "invalid";
                 } else {
                     param.is_tuple = true;
                     param.type_name.clear();
-                    param.tuple_parts.clear();
-                    for (const SpecArg &part : pack->parts) {
-                        param.tuple_parts.push_back(slot_from_spec(part));
-                    }
+                    param.tuple_parts = std::move(shaped.tuple_parts);
+                    param.shells = std::move(shaped.shells);
+                    param.is_array = shaped.is_array;
+                    param.array_len = shaped.array_len;
+                    param.indirections = shaped.indirections;
                 }
                 kept.push_back(std::move(param));
                 continue;

@@ -960,6 +960,22 @@ The call is `main.make.spec.arr.2.tuple.i32.i32`.
 
 `(*box.p)[0][0]` is 40 and `(*box.p)[1][1]` is 3.
 
+`row [2]T` on `Box[T]`, when `T` is `[2](i32, i32)`, keeps that array inside the written length.
+
+The struct is `Box.spec.arr.2.tuple.i32.i32`.
+
+The call `hold(a, b)` is `main.hold.spec.arr.2.tuple.i32.i32`.
+
+`box.row[0][0][0]` is 40 and `box.row[1][1][1]` is 7.
+
+`func take[T type](row [2]T)`, a result `[2]T`, and `var g [2]T` keep those same arrays.
+
+`var g [2][2]T` of that `T` adds one written length.
+
+`?*T` and `*const T` are `not supported yet`.
+
+A written `[2](i32, i32)` is `expected a type`.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40.

@@ -2035,6 +2035,227 @@ retq                             # return
 
 The program returns 43.
 
+`row [2]T` on `Box[T]`, when `T` is `[2](i32, i32)`, keeps that array inside the written length.
+
+The struct is `Box.spec.arr.2.tuple.i32.i32`.
+
+The call is `main.hold.spec.arr.2.tuple.i32.i32`.
+
+`box.row[0][0][0]` is 40 and `box.row[1][1][1]` is 7.
+
+`func take[T type](row [2]T)`, `func rows[T type](a T, b T) [2]T`, and `var g [2]T` use the same arrays.
+
+`take(box.row)` is `main.take.spec.arr.2.tuple.i32.i32`.
+
+`var g [2][2]T` of that `T` is one more written length. `g[0][1][0][0]` is 40.
+
+`?*T` and `*const T` are `not supported yet`.
+
+A written `[2](i32, i32)` is `expected a type`.
+
+```c
+type Box[T type] struct { row [2]T; }
+
+func pair[T type](a T, b T) [2]T {
+    var row [2]T;
+    row[0] = a;
+    row[1] = b;
+    return row;
+}
+
+func hold[T type](a T, b T) Box[T] {
+    var box Box[T];
+    box.row[0] = a;
+    box.row[1] = b;
+    return box;
+}
+
+func main() i32 {
+    var a = pair((40, 2), (1, 3));
+    var b = pair((4, 5), (6, 7));
+    var box = hold(a, b);
+    return box.row[0][0][0] + box.row[1][1][1];
+}
+```
+
+```asm
+main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3:
+movq %rdi, %rax                  # row
+movl $2, -12(%rsp)               # a[1] = 2
+movl $40, -16(%rsp)              # a[0] = 40
+movl $3, -4(%rsp)                # b[1] = 3
+movl $1, -8(%rsp)                # b[0] = 1
+movl -16(%rsp), %ecx             # a[0]
+movl -12(%rsp), %edx             # a[1]
+movl -8(%rsp), %esi              # b[0]
+movl -4(%rsp), %r8d              # b[1]
+movl %r8d, 12(%rdi)              # row[1][1]
+movl %esi, 8(%rdi)               # row[1][0]
+movl %edx, 4(%rdi)               # row[0][1]
+movl %ecx, (%rdi)                # row[0][0]
+retq                             # return
+
+main.pair.spec.tuple.i32.i32.spec.t_4_5.t_6_7:
+movq %rdi, %rax                  # row
+movl $5, -12(%rsp)               # a[1] = 5
+movl $4, -16(%rsp)               # a[0] = 4
+movl $7, -4(%rsp)                # b[1] = 7
+movl $6, -8(%rsp)                # b[0] = 6
+movl -16(%rsp), %ecx             # a[0]
+movl -12(%rsp), %edx             # a[1]
+movl -8(%rsp), %esi              # b[0]
+movl -4(%rsp), %r8d              # b[1]
+movl %r8d, 12(%rdi)              # row[1][1]
+movl %esi, 8(%rdi)               # row[1][0]
+movl %edx, 4(%rdi)               # row[0][1]
+movl %ecx, (%rdi)                # row[0][0]
+retq                             # return
+
+main.hold.spec.arr.2.tuple.i32.i32:
+pushq %rbx                       # save
+movq %rdi, %rax                  # box
+movq %rsi, -48(%rsp)             # a
+movq %rdx, -40(%rsp)             # b
+movq -48(%rsp), %r8              # a
+movl (%r8), %ecx                 # a[0][0]
+movl 4(%r8), %edx                # a[0][1]
+movl 8(%r8), %esi                # a[1][0]
+movl 12(%r8), %r8d               # a[1][1]
+movl %r8d, -20(%rsp)             # move
+movl %esi, -24(%rsp)             # move
+movl %edx, -28(%rsp)             # move
+movl %ecx, -32(%rsp)             # move
+movq -40(%rsp), %r8              # b
+movl (%r8), %ecx                 # b[0][0]
+movl 4(%r8), %edx                # b[0][1]
+movl 8(%r8), %esi                # b[1][0]
+movl 12(%r8), %r8d               # b[1][1]
+movl %r8d, -4(%rsp)              # move
+movl %esi, -8(%rsp)              # move
+movl %edx, -12(%rsp)             # move
+movl %ecx, -16(%rsp)             # move
+movl -32(%rsp), %ecx             # a[0][0]
+movl -28(%rsp), %edx             # a[0][1]
+movl -24(%rsp), %esi             # a[1][0]
+movl -20(%rsp), %r8d             # a[1][1]
+movl -16(%rsp), %r9d             # b[0][0]
+movl -12(%rsp), %r10d            # b[0][1]
+movl -8(%rsp), %r11d             # b[1][0]
+movl -4(%rsp), %ebx              # b[1][1]
+movl %ebx, 28(%rdi)              # box.row[1][1][1]
+movl %r11d, 24(%rdi)             # box.row[1][1][0]
+movl %r10d, 20(%rdi)             # box.row[1][0][1]
+movl %r9d, 16(%rdi)              # box.row[1][0][0]
+movl %r8d, 12(%rdi)              # box.row[0][1][1]
+movl %esi, 8(%rdi)               # box.row[0][1][0]
+movl %edx, 4(%rdi)               # box.row[0][0][1]
+movl %ecx, (%rdi)                # box.row[0][0][0]
+popq %rbx                        # restore
+retq                             # return
+
+main:
+subq $264, %rsp                  # allocate
+# trace frame for the call, then the matching pop
+leaq 152(%rsp), %rdi             # a
+callq main.pair.spec.tuple.i32.i32.spec.t_40_2.t_1_3 # call pair
+movl 164(%rsp), %ecx             # a[1][1]
+movl %ecx, 80(%rsp)              # move
+movl 160(%rsp), %ecx             # a[1][0]
+movl %ecx, 84(%rsp)              # move
+movl 152(%rsp), %ecx             # a[0][0]
+movl %ecx, 88(%rsp)              # move
+movl 156(%rsp), %ecx             # a[0][1]
+movl %ecx, 92(%rsp)              # move
+movl 80(%rsp), %eax              # a[1][1]
+movl 84(%rsp), %ecx              # a[1][0]
+movl 92(%rsp), %edx              # a[0][1]
+movl 88(%rsp), %esi              # a[0][0]
+movl %esi, 168(%rsp)             # a[0][0]
+movl %edx, 172(%rsp)             # a[0][1]
+movl %ecx, 176(%rsp)             # a[1][0]
+movl %eax, 180(%rsp)             # a[1][1]
+movl 168(%rsp), %eax             # a[0][0]
+movl 172(%rsp), %ecx             # move
+movl 176(%rsp), %edx             # move
+movl 180(%rsp), %esi             # a[1][1]
+movl %esi, 196(%rsp)             # a[1][1]
+movl %edx, 192(%rsp)             # a[1][0]
+movl %ecx, 188(%rsp)             # a[0][1]
+movl %eax, 184(%rsp)             # a[0][0]
+# trace frame for the call, then the matching pop
+leaq 136(%rsp), %rdi             # b
+callq main.pair.spec.tuple.i32.i32.spec.t_4_5.t_6_7 # call pair
+movl 148(%rsp), %ecx             # b[1][1]
+movl %ecx, 56(%rsp)              # move
+movl 144(%rsp), %ecx             # b[1][0]
+movl %ecx, 60(%rsp)              # move
+movl 136(%rsp), %ecx             # b[0][0]
+movl %ecx, 64(%rsp)              # move
+movl 140(%rsp), %ecx             # b[0][1]
+movl %ecx, 68(%rsp)              # move
+movl 56(%rsp), %eax              # b[1][1]
+movl 60(%rsp), %ecx              # b[1][0]
+movl 68(%rsp), %edx              # b[0][1]
+movl 64(%rsp), %esi              # b[0][0]
+movl %esi, 200(%rsp)             # b[0][0]
+movl %edx, 204(%rsp)             # b[0][1]
+movl %ecx, 208(%rsp)             # b[1][0]
+movl %eax, 212(%rsp)             # b[1][1]
+movl 200(%rsp), %eax             # b[0][0]
+movl 204(%rsp), %ecx             # move
+movl 208(%rsp), %edx             # move
+movl 212(%rsp), %esi             # b[1][1]
+movl %esi, 228(%rsp)             # b[1][1]
+movl %edx, 224(%rsp)             # b[1][0]
+movl %ecx, 220(%rsp)             # b[0][1]
+movl %eax, 216(%rsp)             # b[0][0]
+# trace frame for the call, then the matching pop
+leaq 104(%rsp), %rdi             # box
+leaq 184(%rsp), %rsi             # a
+leaq 216(%rsp), %rdx             # b
+callq main.hold.spec.arr.2.tuple.i32.i32 # call hold
+movl 132(%rsp), %ecx             # box.row[1][1][1]
+movl %ecx, 16(%rsp)              # move
+movl 128(%rsp), %ecx             # box.row[1][1][0]
+movl %ecx, 20(%rsp)              # move
+movl 124(%rsp), %ecx             # move
+movl %ecx, 24(%rsp)              # move
+movl 120(%rsp), %ecx             # move
+movl %ecx, 28(%rsp)              # move
+movl 116(%rsp), %ecx             # move
+movl %ecx, 32(%rsp)              # move
+movl 112(%rsp), %ecx             # move
+movl %ecx, 36(%rsp)              # move
+movl 104(%rsp), %ecx             # box.row[0][0][0]
+movl %ecx, 40(%rsp)              # move
+movl 108(%rsp), %ecx             # move
+movl %ecx, 44(%rsp)              # move
+movl 16(%rsp), %eax              # box.row[1][1][1]
+movl 20(%rsp), %ecx              # move
+movl 24(%rsp), %edx              # move
+movl 28(%rsp), %esi              # move
+movl 32(%rsp), %edi              # move
+movl 36(%rsp), %r8d              # move
+movl 44(%rsp), %r9d              # move
+movl 40(%rsp), %r10d             # box.row[0][0][0]
+movl %r10d, 232(%rsp)            # box.row[0][0][0]
+movl %r9d, 236(%rsp)             # move
+movl %r8d, 240(%rsp)             # move
+movl %edi, 244(%rsp)             # move
+movl %esi, 248(%rsp)             # move
+movl %edx, 252(%rsp)             # move
+movl %ecx, 256(%rsp)             # move
+movl %eax, 260(%rsp)             # box.row[1][1][1]
+movl 232(%rsp), %eax             # box.row[0][0][0]
+movl 256(%rsp), %ecx             # move
+movl 260(%rsp), %ecx             # box.row[1][1][1]
+addl %ecx, %eax                  # add
+addq $264, %rsp                  # release
+retq                             # return
+```
+
+The program returns 47.
+
 `func id[T type](value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40 and `(*p)[1]` is 2.
