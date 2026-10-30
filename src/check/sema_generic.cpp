@@ -3322,6 +3322,28 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                 continue;
             }
         }
+        // `value ?*T` when `T` is a tuple. The parameter is that optional pointer.
+        // `?*T` when `T` is `[2](i32, i32)` stays rejected.
+        if (param.indirections == 1 && param.optional != 0 && param.const_pointee == 0 && !param.is_array &&
+            !param.is_fn_ptr && !param.is_tuple && param.type_package.empty() && param.type_args.empty() &&
+            param.shells.empty()) {
+            if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
+                pack != nullptr && pack->is_pack) {
+                if (pack->parts.empty() || pack->is_array || !pack->shells.empty()) {
+                    error(param.loc, "not supported yet");
+                    param.type_name = "invalid";
+                } else {
+                    param.is_tuple = true;
+                    param.type_name.clear();
+                    param.tuple_parts.clear();
+                    for (const SpecArg &part : pack->parts) {
+                        param.tuple_parts.push_back(slot_from_spec(part));
+                    }
+                }
+                kept.push_back(std::move(param));
+                continue;
+            }
+        }
         // `*T` when `T` is a tuple. `**T` is a pointer to that pointer. `*const T` keeps the star const.
         // `*T`, `**T`, and `*const T` when `T` is `[2](i32, i32)` keep every array after the stars.
         const bool bare_const = param.indirections == 1 && param.const_pointee != 0;

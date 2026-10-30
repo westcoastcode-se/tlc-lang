@@ -2806,6 +2806,80 @@ retq                             # return
 
 The program returns 43.
 
+`func read[T type](value ?*T)` of `?*T(value)`, when `T` is `(i32, i32)`, is that optional pointer.
+
+The call is `main.read.spec.tuple.2.i32.i32`.
+
+`(*value)[0]` is 40 and `(*value)[1]` is 2.
+
+`read(q)`, when `q` is null, returns 0.
+
+`pass_deep(&wide)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
+
+`value ?*T` when `T` is `[2](i32, i32)` is `not supported yet`.
+
+```c
+func read[T type](value ?*T) i32 {
+    if (value == null) {
+        return 0;
+    }
+    return (*value)[0] + (*value)[1];
+}
+
+func pass[T type](value *T) i32 {
+    return read(?*T(value));
+}
+
+func main() i32 {
+    var row = (40, 2);
+    return pass(&row);
+}
+```
+
+```asm
+main.read.spec.tuple.2.i32.i32:
+movq %rdi, -8(%rsp)              # value
+cmpq $0, -8(%rsp)                # value == null
+jne .Lv
+xorl %eax, %eax                  # 0
+retq                             # return
+.Lv:
+movq -8(%rsp), %rcx              # value
+movl (%rcx), %eax                # (*value)[0]
+movl 4(%rcx), %ecx               # (*value)[1]
+addl %ecx, %eax                  # add
+retq                             # return
+
+main.pass.spec.tuple.2.i32.i32:
+subq $40, %rsp                   # allocate
+movq %rdi, 32(%rsp)              # value
+movq 32(%rsp), %rax              # value
+movq %rax, 16(%rsp)              # ?*T(value)
+# trace frame for the call, then the matching pop
+movq 16(%rsp), %rdi              # value
+callq main.read.spec.tuple.2.i32.i32 # call read
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # read(?*T(value))
+addq $40, %rsp                   # release
+retq                             # return
+
+main:
+subq $24, %rsp                   # allocate
+movl $2, 20(%rsp)                # row[1] = 2
+movl $40, 16(%rsp)               # row[0] = 40
+# trace frame for the call, then the matching pop
+leaq 16(%rsp), %rdi              # &row
+callq main.pass.spec.tuple.2.i32.i32 # call pass
+movl %eax, %ecx                  # move
+movl %ecx, 4(%rsp)               # move
+movl 4(%rsp), %eax               # pass(&row)
+addq $24, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
+
 `take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.take.spec.tuple.2.i32.i32`.

@@ -1,0 +1,51 @@
+func read[T type](value ?*T) i32 {
+    if (value == null) {
+        return 0;
+    }
+    return (*value)[0] + (*value)[1];
+}
+
+func pass[T type](value *T, present bool) i32 {
+    if (!present) {
+        var q ?*T = null;
+        return read(q);
+    }
+    return read(?*T(value));
+}
+
+func deep[T type](value ?*T) i32 {
+    if (value == null) {
+        return 0;
+    }
+    return (*value)[0][0] + (*value)[1];
+}
+
+func pass_deep[T type](value *T) i32 {
+    return deep(?*T(value));
+}
+
+func num[T type](value ?*T) i32 {
+    if (value == null) {
+        return 0;
+    }
+    return *value;
+}
+
+func main() i32 {
+    var n = 40;
+    if (num(?*i32(&n)) != 40) {
+        return 1;
+    }
+    if (num[i32](null) != 0) {
+        return 2;
+    }
+    var wide = ((40, 2), 1);
+    if (pass_deep(&wide) != 41) {
+        return 3;
+    }
+    var row = (40, 2);
+    if (pass(&row, false) != 0) {
+        return 4;
+    }
+    return pass(&row, true);
+}
