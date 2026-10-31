@@ -1152,7 +1152,15 @@ The call is `main.read.spec.tuple.2.i32.i32`.
 
 `(**value)[0]` before `value == null` is `type mismatch`. `read(null)` is `type mismatch`.
 
-`?**T` when `T` is `[2](i32, i32)` is `not supported yet`.
+`func read[T type](value ?**T)` of `&p`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+
+The outer pointer is optional.
+
+The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
+
+`(**value)[0][0]` is 40 and `(**value)[1][1]` is 3.
+
+`(**value)[0][0]` before `value == null` is `type mismatch`. A local `var q ?**T` is `not supported yet`.
 
 `var box Box[T]` with no initializer is `type mismatch`.
 

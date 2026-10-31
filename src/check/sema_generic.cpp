@@ -3452,13 +3452,43 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
             }
         }
         // `value ?**T` when `T` is a tuple. The outer pointer is optional.
-        // An array of tuples stays rejected.
+        // An array of tuples keeps every array after those stars.
         if (param.indirections == 2 && param.optional == 1u && param.const_pointee == 0 && !param.is_array &&
             !param.is_fn_ptr && !param.is_tuple && param.type_package.empty() && param.type_args.empty() &&
             param.shells.empty()) {
             if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
                 pack != nullptr && pack->is_pack) {
-                if (pack->parts.empty() || pack->is_array || !pack->shells.empty()) {
+                if (pack->parts.empty()) {
+                    error(param.loc, "not supported yet");
+                    param.type_name = "invalid";
+                } else if (tuple_array_pack(*pack)) {
+                    param.is_tuple = true;
+                    param.type_name.clear();
+                    param.is_array = false;
+                    param.array_len = 0;
+                    param.tuple_parts.clear();
+                    for (const SpecArg &part : pack->parts) {
+                        param.tuple_parts.push_back(slot_from_spec(part));
+                    }
+                    const uint32_t optional = param.optional;
+                    param.indirections = 0;
+                    param.optional = 0;
+                    param.shells.clear();
+                    for (int star = 0; star < 2; ++star) {
+                        TypeShell shell;
+                        shell.kind = TypeShell::Kind::Pointer;
+                        shell.optional = (optional & (1u << star)) != 0;
+                        param.shells.push_back(shell);
+                    }
+                    if (!pack->shells.empty()) {
+                        param.shells.insert(param.shells.end(), pack->shells.begin(), pack->shells.end());
+                    } else {
+                        TypeShell shell;
+                        shell.kind = TypeShell::Kind::Array;
+                        shell.length = pack->array_len;
+                        param.shells.push_back(shell);
+                    }
+                } else if (pack->is_array || !pack->shells.empty()) {
                     error(param.loc, "not supported yet");
                     param.type_name = "invalid";
                 } else {
