@@ -2347,16 +2347,42 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 const auto resolve_allocator = [&](Expr *allocator, bool &builtin_alloc, uint32_t &alloc_file,
-                                                   std::string &alloc_name, bool &alloc_is_pointer) {
+                                                   std::string &alloc_name, bool &alloc_is_pointer, bool &alloc_is_trait) {
                     builtin_alloc = allocator == nullptr;
                     alloc_file = 0;
                     alloc_name.clear();
                     alloc_is_pointer = false;
+                    alloc_is_trait = false;
                     if (allocator == nullptr) {
                         return;
                     }
                     const Type got = check_expr(*allocator, true);
                     int struct_id = -1;
+                    // `*Allocator` is specialized with the call. The struct is not known in this body.
+                    if (got.kind == TypeKind::Pointer && got.pointee != nullptr &&
+                        got.pointee->kind == TypeKind::Trait) {
+                        ensure_allocator_trait();
+                        if (allocator_trait_id_ < 0 || got.pointee->trait_id != allocator_trait_id_) {
+                            error(node.loc, "type mismatch");
+                            return;
+                        }
+                        if (got.optional || got.pointee->is_const) {
+                            mismatch(expr_loc(*allocator), type_pointer(type_trait(allocator_trait_id_)), got);
+                            return;
+                        }
+                        alloc_is_pointer = true;
+                        alloc_is_trait = true;
+                        return;
+                    }
+                    if (got.kind == TypeKind::Trait) {
+                        ensure_allocator_trait();
+                        if (got.trait_id == allocator_trait_id_) {
+                            mismatch(expr_loc(*allocator), type_pointer(got), got);
+                            return;
+                        }
+                        error(node.loc, "type mismatch");
+                        return;
+                    }
                     // The argument is `*T` where `T` has `Allocator`'s methods. `T` is the pointee.
                     if (got.kind == TypeKind::Pointer && got.pointee != nullptr &&
                         got.pointee->kind == TypeKind::Struct) {
@@ -2425,7 +2451,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 };
                 if constexpr (std::is_same_v<T, Expr::Delete>) {
                     resolve_allocator(node.allocator.get(), node.builtin_alloc, node.alloc_file, node.alloc_name,
-                                      node.alloc_is_pointer);
+                                      node.alloc_is_pointer, node.alloc_is_trait);
                     if (node.expr == nullptr) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
@@ -2437,7 +2463,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_void();
                 } else {
                     resolve_allocator(node.allocator.get(), node.builtin_alloc, node.alloc_file, node.alloc_name,
-                                      node.alloc_is_pointer);
+                                      node.alloc_is_pointer, node.alloc_is_trait);
                     if (node.type_name.empty()) {
                         error(node.loc, "expected a type");
                         return type_invalid();

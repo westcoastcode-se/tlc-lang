@@ -1,0 +1,72 @@
+package unicode;
+
+import "builtin";
+
+// 22 bytes inline, the same short capacity libc++ uses for a 64-bit string.
+// A longer value is stored behind a pointer from `new`.
+const short_cap i32 = 22;
+
+export type Storage enum {
+    Short,
+    Long,
+};
+
+export type string union(Storage) {
+    Short struct {
+        len i32;
+        bytes [22]u8;
+    };
+    Long struct {
+        len i32;
+        bytes *u8;
+    };
+};
+
+export func from(text []const u8) string {
+    return from(text, &builtin.allocator);
+}
+
+export func from(text []const u8, alloc *Allocator) string {
+    if (text.len() <= short_cap) {
+        var raw [22]u8 = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        var s string = {.Short = {.len = 0, .bytes = raw}};
+        s.Short.len = text.len();
+        var i i32 = 0;
+        while (i < text.len()) {
+            s.Short.bytes[i] = text[i];
+            i = i + 1;
+        }
+        return s;
+    }
+    var buf *u8 = new(alloc) [text.len()]u8;
+    var i i32 = 0;
+    while (i < text.len()) {
+        buf[i] = text[i];
+        i = i + 1;
+    }
+    return string{.Long = {.len = text.len(), .bytes = buf}};
+}
+
+export func string::len(self this) i32 {
+    if (Storage(self) == Storage.Short) {
+        return self.Short.len;
+    }
+    return self.Long.len;
+}
+
+export func string::at(self this, i i32) u8 {
+    if (Storage(self) == Storage.Short) {
+        return self.Short.bytes[i];
+    }
+    return self.Long.bytes[i];
+}
+
+export func string::release(self *this) void {
+    self.release(&builtin.allocator);
+}
+
+export func string::release(self *this, alloc *Allocator) void {
+    if (Storage(*self) == Storage.Long) {
+        delete(alloc) self.Long.bytes;
+    }
+}

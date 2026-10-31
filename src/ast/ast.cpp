@@ -1118,6 +1118,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.alloc_file = node.alloc_file;
                 copy.alloc_name = node.alloc_name;
                 copy.alloc_is_pointer = node.alloc_is_pointer;
+                copy.alloc_is_trait = node.alloc_is_trait;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Delete>) {
                 Expr::Delete copy;
@@ -1128,6 +1129,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.alloc_file = node.alloc_file;
                 copy.alloc_name = node.alloc_name;
                 copy.alloc_is_pointer = node.alloc_is_pointer;
+                copy.alloc_is_trait = node.alloc_is_trait;
                 out->data = std::move(copy);
             } else {
                 out->data = node;

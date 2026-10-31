@@ -1481,6 +1481,8 @@ class CodeGen {
     void emit_delete(const Expr::Delete &node);
     llvm::Value *allocator_receiver(const Expr &allocator, bool is_pointer);
     llvm::Function *allocator_method(uint32_t file, const std::string &type_name, const std::string &name);
+    // `*Allocator` names its struct only inside the specialized body. Fills the three result slots.
+    bool bind_trait_allocator(const Expr &allocator, bool &builtin_alloc, uint32_t &alloc_file, std::string &alloc_name);
     llvm::Value *call_malloc(const Expr::New &node, uint64_t size, uint64_t align);
     // `bytes` is an i64. `receiver` is null for `builtin.allocator`.
     llvm::Value *heap_alloc(const Expr::New &node, llvm::Value *receiver, llvm::Value *bytes, uint64_t align);

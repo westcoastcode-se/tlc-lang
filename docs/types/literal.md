@@ -15,9 +15,9 @@ This page lists each literal spelling and the type that spelling has.
 | `42i64`, `42u64` | `i64` and `u64`, when the value fits |
 | `'A'` | a Unicode code point, `i32` |
 | `'A'b` | `u8` |
-| `"hi"` | `string.string_view` when `std/string` is imported |
+| `"hi"` | `[]const u8` |
 | `"hi"b` | `[]const u8` |
-| `` `hi` `` | `string.string_view` when `std/string` is imported; the text may span lines |
+| `` `hi` `` | `[]const u8`; the text may span lines |
 | `` `hi`b `` | `[]const u8`; the text may span lines |
 | `true`, `false` | `bool` |
 | `null` | null pointer, stored only in `?*T` |

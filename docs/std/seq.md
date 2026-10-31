@@ -1,6 +1,6 @@
 # seq
 
-[Index](../README.md) · [Previous: string](string.md) · [Next: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: ascii](ascii.md) · [Next: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 This page describes the `Seq` trait and how arrays and slices satisfy it.
 
@@ -178,4 +178,4 @@ The trait has no size and no symbol.
 
 `var s seq.Seq[i32]`, a result, an array, a slice, and a field of the trait are reported as `trait has no size`.
 
-[Index](../README.md) · [Previous: string](string.md) · [Next: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: ascii](ascii.md) · [Next: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

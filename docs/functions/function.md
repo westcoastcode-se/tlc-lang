@@ -160,6 +160,8 @@ The receiver is not one of those parameters. `func Point::draw(self *this)` and 
 
 The compiler reports `type mismatch` or `argument count` when a call matches none or more than one list.
 
+When only one list has the call's argument count, a trait parameter matches a struct that satisfies it. `&builtin.allocator` matches `*Allocator`. Two lists of that count stay an exact match, and `Drawable(value)` names the trait.
+
 Using the name as a value when several lists exist is `not supported yet`.
 
 [`unsafe func`](../expressions/unsafe.md) makes the body an unsafe context. The caller writes `unsafe name(...)`.

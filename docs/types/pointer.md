@@ -10,6 +10,8 @@ This page describes `*T`, optional pointers, const pointers, and pointers to arr
 
 `*?*T` and `?**T` are different types, because `?` is written immediately before `*`.
 
+`?` applies only to a pointer. `?i32`, `?bool`, and `?Point` are `not supported yet`.
+
 ## A pointer to a constant
 
 `*const T` is a pointer to constant `T`, and the variable may be reseated.

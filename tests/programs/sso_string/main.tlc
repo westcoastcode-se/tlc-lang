@@ -1,0 +1,69 @@
+import "std/unicode";
+import "std/ascii";
+import "builtin";
+
+type Arena struct {
+    hits i32;
+    freed i32;
+    slot [32]u8;
+};
+
+export unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    self.hits = size;
+    return ?*u8(&self.slot);
+}
+
+export func Arena::free(self *this, ptr *u8) void {
+    self.freed = 1;
+}
+
+export unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return null;
+}
+
+func main() i32 {
+    var hi = unicode.from("hi"b);
+    if (hi.len() != 2 || hi.at(0) != 104) {
+        return 1;
+    }
+    if (unicode.Storage(hi) != unicode.Storage.Short) {
+        return 2;
+    }
+    var arena Arena;
+    var long = unicode.from("01234567890123456789012"b, &arena);
+    if (arena.hits != 23) {
+        return 3;
+    }
+    if (long.len() != 23 || long.at(22) != 50) {
+        return 4;
+    }
+    if (unicode.Storage(long) != unicode.Storage.Long) {
+        return 5;
+    }
+    long.release(&arena);
+    if (arena.freed != 1) {
+        return 6;
+    }
+    var owned = unicode.from("01234567890123456789012"b);
+    if (owned.len() != 23 || unicode.Storage(owned) != unicode.Storage.Long) {
+        return 7;
+    }
+    owned.release();
+    var ok = ascii.from("Hi"b, &builtin.allocator);
+    if (ok.len() != 2 || ok.at(1) != 105) {
+        return 8;
+    }
+    if (ascii.Storage(ok) != ascii.Storage.Short) {
+        return 9;
+    }
+    var arena2 Arena;
+    var wide = ascii.from("01234567890123456789012"b, &arena2);
+    if (arena2.hits != 23 || wide.len() != 23) {
+        return 10;
+    }
+    wide.release(&arena2);
+    if (arena2.freed != 1) {
+        return 11;
+    }
+    return 0;
+}

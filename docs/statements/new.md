@@ -32,6 +32,8 @@ The compiler reports a `*const` pointer as `type mismatch: expected *Arena, foun
 
 `new(&builtin.allocator)` is `Malloc` and calls `malloc` directly.
 
+`new(alloc) T` and `delete(alloc) p` are allowed when `alloc` has type `*Allocator`. The call that passes `alloc` names the struct, and that struct is used the same way as `new(&arena)`. Passing `&builtin.allocator` still calls `malloc` directly.
+
 ## Fields written after the block is reserved
 
 `new Point{.x = 40, .y = 2}` writes those fields after the block is reserved.

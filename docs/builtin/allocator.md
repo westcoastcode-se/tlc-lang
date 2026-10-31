@@ -85,6 +85,8 @@ The call is `unsafe arena.malloc[i32]()`.
 
 The same call through a trait parameter is `unsafe a.malloc[i32]()` when `a` is `*Allocator`.
 
+`new(alloc) T` and `delete(alloc) p` take that same `*Allocator`. The call that passes `alloc` names the struct. `Malloc` still calls `malloc` and `free` directly.
+
 The result is `?*T`, and the caller handles `null`.
 
 A struct method `unsafe func Arena::malloc[T type](self *this) ?*T` wins over that default.
@@ -98,6 +100,8 @@ A struct method `unsafe func Arena::malloc[T type](self *this) ?*T` wins over th
 `new T` uses that allocator, and so does `delete p`.
 
 `new(&builtin.allocator) T` and `delete(&builtin.allocator) p` name it.
+
+`&builtin.allocator` matches a parameter `*Allocator`.
 
 The argument is a pointer, and the pointee type is taken from that pointer.
 

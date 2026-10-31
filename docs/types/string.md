@@ -4,7 +4,7 @@
 
 This page describes string literals, constant bytes, and the pointer a C library takes.
 
-A literal without a suffix is Unicode `string.string_view` when the program imports `std/string`. Without that import it stays `[]const u8`. The suffix `b` is always the C-compatible byte form: `"hi"b` and `` `hi`b `` are `[]const u8`, and `'A'b` is `u8`.
+`"hi"` and `"hi"b` are both `[]const u8`. The suffix `b` marks the literal as bytes. `'A'` is a Unicode code point, `i32`. `'A'b` is `u8`. A Unicode string value is [`unicode.string`](../std/unicode.md). An ASCII string value is [`ascii.string`](../std/ascii.md).
 
 ## Quoted strings and raw strings
 

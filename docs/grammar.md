@@ -1792,6 +1792,8 @@ Each empty pair is one slice header.
 
 Each length is one array of the inner type.
 
+`?` is only the optional mark on a pointer. `?i32` is `not supported yet`.
+
 ```ebnf
 pointer     = [ "?" ] "*" [ "const" ] ;
 go-type     = func-type
@@ -2301,6 +2303,8 @@ A `{` after a call, an index, or `value.field` is not this form.
 `new Point{.x = 1}` and `new(&arena) Point{.x = 1}` reserve a `Point` and write those fields.
 
 The allocator argument is a pointer, and the pointee type is taken from that pointer.
+
+`new(alloc) T` also accepts `*Allocator`. The struct is the one passed for that parameter.
 
 `new(arena)` is reported as `type mismatch: expected *Arena, found Arena`.
 

@@ -1825,6 +1825,35 @@ bool Checker::package_static_call(Expr &expr, const Expr::Selector &selector, bo
     return true;
 }
 
+bool Checker::overload_arg_matches(const Type &got, const Type &want) {
+    if (got.kind == TypeKind::Invalid || want.kind == TypeKind::Invalid) {
+        return false;
+    }
+    if (same_type(got, want)) {
+        return true;
+    }
+    int struct_id = -1;
+    int trait_id = -1;
+    bool through_pointer = false;
+    if (want.kind == TypeKind::Pointer && want.pointee != nullptr && want.pointee->kind == TypeKind::Trait &&
+        got.kind == TypeKind::Pointer && !got.optional && !want.optional && got.pointee != nullptr &&
+        got.pointee->kind == TypeKind::Struct && !got.pointee->is_const) {
+        struct_id = got.pointee->struct_id;
+        trait_id = want.pointee->trait_id;
+        through_pointer = true;
+    } else if (want.kind == TypeKind::Trait && got.kind == TypeKind::Struct) {
+        struct_id = got.struct_id;
+        trait_id = want.trait_id;
+    } else {
+        return false;
+    }
+    const bool saved = quiet_;
+    quiet_ = true;
+    const bool ok = require_satisfies(struct_id, trait_id, through_pointer, {}, 0);
+    quiet_ = saved;
+    return ok;
+}
+
 const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const MethodInfo &head, bool want_static,
                                                   bool foreign, const std::string &name) {
     std::vector<const MethodInfo *> forms;
@@ -1882,14 +1911,18 @@ const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const 
         const std::size_t fixed = fixed_count(signature, !want_static);
         return signature.variadic ? args.size() >= fixed : args.size() == fixed;
     };
-    const auto exact = [&](const Type &signature) {
+    const auto args_match = [&](const Type &signature, bool trait_ok) {
         if (!count_ok(signature)) {
             return false;
         }
         const std::size_t skip = !want_static && !signature.params.empty() ? 1 : 0;
         const std::size_t fixed = signature.params.size() - skip;
         for (std::size_t i = 0; i < fixed && i < args.size(); ++i) {
-            if (!same_type(args[i], signature.params[skip + i])) {
+            const Type &want = signature.params[skip + i];
+            if (same_type(args[i], want)) {
+                continue;
+            }
+            if (!trait_ok || !overload_arg_matches(args[i], want)) {
                 return false;
             }
         }
@@ -1903,7 +1936,7 @@ const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const 
             continue;
         }
         ++visible_counts;
-        if (exact(form->type)) {
+        if (args_match(form->type, false)) {
             ++matches;
             winner = form;
         }
@@ -1921,6 +1954,15 @@ const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const 
         hidden_count(head);
         for (const MethodInfo &extra : head.more) {
             hidden_count(extra);
+        }
+    }
+    if (matches == 0 && visible_counts == 1) {
+        for (const MethodInfo *form : forms) {
+            if (args_match(form->type, true)) {
+                winner = form;
+                matches = 1;
+                break;
+            }
         }
     }
     if (matches == 1 && winner != nullptr) {
@@ -1982,6 +2024,31 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
         if (same) {
             ++matches;
             winner = &list;
+        }
+    }
+    // Two lists of one count stay an exact match. One list may satisfy a trait parameter.
+    if (matches == 0 && counts == 1) {
+        for (const FnList &list : symbol.lists) {
+            if (list.type.kind != TypeKind::Function || list.type.result == nullptr) {
+                continue;
+            }
+            const bool count_ok = list.type.variadic ? args.size() >= list.type.params.size()
+                                                     : args.size() == list.type.params.size();
+            if (!count_ok) {
+                continue;
+            }
+            bool ok = true;
+            for (std::size_t i = 0; i < list.type.params.size() && i < args.size(); ++i) {
+                if (!overload_arg_matches(args[i], list.type.params[i])) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) {
+                winner = &list;
+                matches = 1;
+            }
+            break;
         }
     }
     if (matches != 1 || winner == nullptr || winner->type.result == nullptr) {

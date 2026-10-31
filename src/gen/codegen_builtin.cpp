@@ -248,6 +248,41 @@ void CodeGen::emit_builtin_trace() {
     builder_.restoreIP(saved);
 }
 
+bool CodeGen::bind_trait_allocator(const Expr &allocator, bool &builtin_alloc, uint32_t &alloc_file,
+                                   std::string &alloc_name) {
+    // `new(&name)` still names the parameter. The address is taken when the call is emitted.
+    const Expr *cursor = &allocator;
+    if (const auto *unary = std::get_if<Expr::Unary>(&cursor->data)) {
+        if (unary->op == TokenKind::Amp && !unary->postfix && unary->expr != nullptr) {
+            cursor = unary->expr.get();
+        }
+    }
+    const auto *named = std::get_if<Expr::Name>(&cursor->data);
+    if (named == nullptr) {
+        error(expr_loc(allocator), "type mismatch");
+        return false;
+    }
+    for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
+        const auto found = scope->find(named->text);
+        if (found == scope->end()) {
+            continue;
+        }
+        const int sid = found->second.struct_id;
+        if (sid < 0 || sid >= static_cast<int>(structs_.size())) {
+            error(expr_loc(allocator), "type mismatch");
+            return false;
+        }
+        const StructLayout &layout = structs_[static_cast<std::size_t>(sid)];
+        alloc_file = layout.file_id;
+        alloc_name = layout.name;
+        const PackageNode *home = find_node(layout.file_id);
+        builtin_alloc = layout.name == "Malloc" && home != nullptr && home->compiler_builtin;
+        return true;
+    }
+    error(expr_loc(allocator), "undeclared identifier");
+    return false;
+}
+
 llvm::Value *CodeGen::allocator_receiver(const Expr &allocator, bool is_pointer) {
     if (is_pointer) {
         const TypedValue value = emit_rvalue(allocator);
@@ -469,6 +504,19 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         error(node.loc, "global initializer is not a constant");
         return {zero(), 0};
     }
+    // The same `new(alloc)` node is emitted once per struct passed for `*Allocator`.
+    if (node.alloc_is_trait) {
+        node.builtin_alloc = false;
+        node.alloc_file = 0;
+        node.alloc_name.clear();
+        if (node.allocator == nullptr ||
+            !bind_trait_allocator(*node.allocator, node.builtin_alloc, node.alloc_file, node.alloc_name)) {
+            if (node.allocator == nullptr) {
+                error(node.loc, "type mismatch");
+            }
+            return {zero(), 0};
+        }
+    }
     const Lowered low = lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections, false,
                               0, false);
     if (low.type == nullptr || low.elem_void || low.type->isFunctionTy()) {
@@ -632,6 +680,19 @@ void CodeGen::emit_delete(const Expr::Delete &node) {
     if (node.expr == nullptr || function_ == nullptr) {
         error(node.loc, "type mismatch");
         return;
+    }
+    // The same `delete(alloc)` node is emitted once per struct passed for `*Allocator`.
+    if (node.alloc_is_trait) {
+        node.builtin_alloc = false;
+        node.alloc_file = 0;
+        node.alloc_name.clear();
+        if (node.allocator == nullptr ||
+            !bind_trait_allocator(*node.allocator, node.builtin_alloc, node.alloc_file, node.alloc_name)) {
+            if (node.allocator == nullptr) {
+                error(node.loc, "type mismatch");
+            }
+            return;
+        }
     }
     // The allocator is written first, so its side effects run before the pointer.
     llvm::Value *receiver = nullptr;

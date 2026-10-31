@@ -1,8 +1,8 @@
 # string
 
-[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: seq](seq.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: unicode](unicode.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-This page describes Unicode `string` and `string_view`, and the C-compatible `byte_string` and `byte_string_view`.
+This page describes the C-compatible byte view `byte_string_view` and the owned `byte_string`. Unicode text is [`unicode.string`](unicode.md). ASCII text is [`ascii.string`](ascii.md).
 
 ## The package
 
@@ -12,19 +12,11 @@ The package is ordinary tlc source.
 
 The compiler does not implement these functions.
 
-## What the string types are
-
-`string.string_view` is a struct. Its field `bytes` is UTF-8 `[]const u8`. `len()` counts Unicode scalar values.
-
-`string.string` is the owned struct. `view()` returns a `string_view`.
-
-A literal `"hello"` in a program that imports this package has type `string_view`.
+## What a `byte_string_view` is
 
 `string.byte_string_view` is `[]const u8`. `"hello"b` has that type. `string.byte_string` owns those bytes.
 
 `byte_string_view` does not convert back from the alias by itself. A cast is that conversion.
-
-`string.string_view` is not `[]const u8`.
 
 `byte_string_view` converts to `*const u8` by passing the address and dropping the length.
 
@@ -40,9 +32,9 @@ The parameter of a byte method is the name `byte_string_view`.
 import "std/string";
 
 func main() i32 {
-    var text string.string_view = "hello";
-    if (text.equals("hello") && text.find_first_of("ol") == 2) {
-        return text.find("lo");
+    var text string.byte_string_view = "hello"b;
+    if (text.equals("hello"b) && text.find_first_of("ol"b) == 2) {
+        return text.find("lo"b);
     }
     return 0;
 }
@@ -135,4 +127,4 @@ An empty needle returns `0`, including on an empty view.
 
 The header is the same slice as `const label = "hello"`.
 
-[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: seq](seq.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: unicode](unicode.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

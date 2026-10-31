@@ -578,6 +578,8 @@ class Checker {
     // `body_home` is the package that will compile the specialized body. Zero keeps the caller's view.
     // A method counts only when that body can call it, and when the caller can see it.
     bool require_satisfies(int struct_id, int trait_id, bool through_pointer, SourceLoc loc, uint32_t body_home = 0);
+    // Overload lists use `same_type`, plus a trait parameter's usual match.
+    bool overload_arg_matches(const Type &got, const Type &want);
     // `Drawable(value)` selects that trait. A generic trait takes its type argument from the value.
     // False when `name` is not a trait. `out` is invalid when the value does not satisfy it.
     bool as_trait_cast(const std::string &package, const std::string &name, const std::vector<TypeArg> &written, Expr *value,

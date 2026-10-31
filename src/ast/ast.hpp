@@ -394,6 +394,8 @@ struct Expr {
         mutable std::string alloc_name;
         // The allocator expression is a pointer. A struct value is rejected.
         mutable bool alloc_is_pointer = false;
+        // `alloc` has type `*Allocator`. The struct is filled when that function is specialized.
+        mutable bool alloc_is_trait = false;
     };
     // `delete p` and `delete(allocator) p`.
     struct Delete {
@@ -404,6 +406,8 @@ struct Expr {
         mutable uint32_t alloc_file = 0;
         mutable std::string alloc_name;
         mutable bool alloc_is_pointer = false;
+        // `alloc` has type `*Allocator`. The struct is filled when that function is specialized.
+        mutable bool alloc_is_trait = false;
     };
 
     using Data = std::variant<Name, Int, Unary, Binary, Assign, Call, Selector, String, Index, Sizeof, Typeof, Cast, Bool,

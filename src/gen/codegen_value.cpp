@@ -704,6 +704,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
                                 const auto package = packages_.find(base->text);
                                 if (package != packages_.end()) {
+                                    // Two lists store neither under the plain name. `selected` is the list sema chose.
+                                    if (node.selected != nullptr && node.selected->type_params.empty() &&
+                                        function_is_generic(node.selected->loc.file, *node.selected)) {
+                                        Binding meta;
+                                        if (const Binding *chosen = binding_for_decl(node.selected)) {
+                                            meta = *chosen;
+                                        }
+                                        meta.decl = node.selected;
+                                        meta.is_generic = true;
+                                        return emit_generic_call(meta, node);
+                                    }
                                     if (const Binding *binding = visible(package->second, selector->field, true);
                                         binding != nullptr && binding->is_generic && binding->decl != nullptr &&
                                         binding->decl->type_params.empty()) {

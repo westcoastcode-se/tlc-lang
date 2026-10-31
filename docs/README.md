@@ -137,6 +137,8 @@ A listing is for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
 ### Standard library
 
 - [`string`](std/string.md)
+- [`unicode`](std/unicode.md)
+- [`ascii`](std/ascii.md)
 - [`seq`](std/seq.md)
 - [`thread`](std/thread.md)
 - [`atomic`](std/atomic.md)

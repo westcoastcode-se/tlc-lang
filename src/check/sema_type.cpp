@@ -466,8 +466,11 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
             ok = false;
             continue;
         }
+        // `Malloc.malloc` is a prototype. Codegen supplies the body, so it still satisfies `Allocator`.
+        const bool supplied = info != nullptr && info->name == "Malloc" && is_std_builtin_file(info->file_id) &&
+                              (method.name == "malloc" || method.name == "free" || method.name == "realloc");
         const auto signature_ok = [&](const MethodInfo &candidate) {
-            if (!candidate.has_body || candidate.is_static || candidate.unsafe_fn != method.unsafe_fn ||
+            if ((!candidate.has_body && !supplied) || candidate.is_static || candidate.unsafe_fn != method.unsafe_fn ||
                 !trait_method_matches(method.type, candidate.type)) {
                 return false;
             }
@@ -479,7 +482,7 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
         bool hidden = false;
         bool mismatched = false;
         auto consider = [&](const MethodInfo &candidate) {
-            if (!candidate.has_body) {
+            if (!candidate.has_body && !supplied) {
                 return;
             }
             mismatched = true;
