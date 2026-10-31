@@ -10,19 +10,20 @@ std::unique_ptr<Expr> Parser::parse_expr() { return parse_assignment(); }
 
 std::unique_ptr<Expr> Parser::parse_assignment() {
     auto lhs = parse_conditional();
-    if (eat(TokenKind::Eq)) {
+    const TokenKind kind = peek().kind;
+    if (kind == TokenKind::Eq || kind == TokenKind::PlusEq || kind == TokenKind::MinusEq ||
+        kind == TokenKind::StarEq || kind == TokenKind::SlashEq) {
+        ++pos_;
         auto rhs = parse_assignment();
         Expr::Assign node;
         node.loc = expr_loc(*lhs);
+        node.op = kind;
         node.lhs = std::move(lhs);
         node.rhs = std::move(rhs);
         return make_expr(std::move(node));
     }
-    const TokenKind kind = peek().kind;
-    if (kind == TokenKind::PlusEq || kind == TokenKind::MinusEq || kind == TokenKind::StarEq ||
-        kind == TokenKind::SlashEq || kind == TokenKind::PercentEq || kind == TokenKind::AmpEq ||
-        kind == TokenKind::PipeEq || kind == TokenKind::CaretEq || kind == TokenKind::LtLtEq ||
-        kind == TokenKind::GtGtEq) {
+    if (kind == TokenKind::PercentEq || kind == TokenKind::AmpEq || kind == TokenKind::PipeEq ||
+        kind == TokenKind::CaretEq || kind == TokenKind::LtLtEq || kind == TokenKind::GtGtEq) {
         error_here("not supported yet");
         ++pos_;
         parse_assignment();

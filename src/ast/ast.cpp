@@ -577,7 +577,8 @@ std::string dump_expr(const Expr &expr) {
                        (node.lhs ? dump_expr(*node.lhs) : "(unsupported)") + " " +
                        (node.rhs ? dump_expr(*node.rhs) : "(unsupported)") + ")";
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
-                return "(= " + (node.lhs ? dump_expr(*node.lhs) : "(unsupported)") + " " +
+                const std::string op = node.op == TokenKind::Eq ? "=" : token_kind_name(node.op);
+                return "(" + op + " " + (node.lhs ? dump_expr(*node.lhs) : "(unsupported)") + " " +
                        (node.rhs ? dump_expr(*node.rhs) : "(unsupported)") + ")";
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
                 std::string text = "(call ";
@@ -947,6 +948,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
                 Expr::Assign copy;
                 copy.loc = node.loc;
+                copy.op = node.op;
                 copy.lhs = node.lhs ? clone_expr(*node.lhs) : nullptr;
                 copy.rhs = node.rhs ? clone_expr(*node.rhs) : nullptr;
                 out->data = std::move(copy);

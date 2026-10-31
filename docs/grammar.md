@@ -2052,7 +2052,7 @@ Assignment is right-associative.
 The others are left-associative.
 
 ```ebnf
-expression  = or [ "=" expression ] ;
+expression  = or [ ( "=" | "+=" | "-=" | "*=" | "/=" ) expression ] ;
 or          = and { "||" and } ;
 and         = bit-or { "&&" bit-or } ;
 bit-or      = bit-xor { "|" bit-xor } ;

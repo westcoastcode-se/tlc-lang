@@ -599,6 +599,27 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return common;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                if (node.op != TokenKind::Eq) {
+                    if (node.lhs == nullptr || node.rhs == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    // `i += n` stores the sum back into `i`. The place is read once.
+                    const Type place = increment_operand(*node.lhs);
+                    const Type rhs = check_expr(*node.rhs, true);
+                    if (place.kind == TypeKind::Invalid || rhs.kind == TypeKind::Invalid) {
+                        return type_invalid();
+                    }
+                    expect_integer(rhs, expr_loc(*node.rhs));
+                    if (!is_integer(rhs)) {
+                        return type_invalid();
+                    }
+                    if (!same_type(usual(place, rhs), place)) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    return place;
+                }
                 struct CoverRhs {
                     const Expr *&slot;
                     const Expr *saved;

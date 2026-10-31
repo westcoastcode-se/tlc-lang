@@ -18,6 +18,8 @@ Unary `+` and `-` are operators, and so is assignment `=`.
 
 The operand is an integer lvalue. A `const` binding is `type mismatch`. A value that is not a place is `not an lvalue`. The result is not a place.
 
+`n += m`, `n -= m`, `n *= m`, and `n /= m` apply that operation and store the result in `n`. The value is the new `n`. The place is read once.
+
 Calls, indexing, `.`, address-of `&`, and dereference `*` are operators too.
 
 ## Binding and associativity

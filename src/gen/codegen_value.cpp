@@ -458,6 +458,61 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 default: return {zero(), 0};
                 }
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                if (node.op != TokenKind::Eq) {
+                    if (node.lhs == nullptr || node.rhs == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    const TypedValue slot = emit_addr(*node.lhs);
+                    llvm::Type *mem = nullptr;
+                    if (slot.value != nullptr && slot.depth == 0 && slot.struct_id < 0 && !slot.elem_float &&
+                        !slot.elem_bool) {
+                        mem = leaf_type(0, slot.elem_char, -1, false, slot.elem_bits, false);
+                    }
+                    const TypedValue right = node.rhs != nullptr ? emit_rvalue(*node.rhs) : TypedValue{};
+                    if (mem == nullptr || !mem->isIntegerTy() || right.value == nullptr || terminated() ||
+                        !right.value->getType()->isIntegerTy()) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    llvm::Value *left_mem = builder_.CreateLoad(mem, slot.value);
+                    const int left_bits = slot.elem_bits == 0 ? 32 : slot.elem_bits;
+                    const int right_bits = value_bits(right);
+                    const int common_bits = left_bits > right_bits ? left_bits : right_bits;
+                    // The checker keeps the operation in the place's type.
+                    const bool common_unsigned = slot.elem_unsigned;
+                    llvm::Type *common = bits_type(common_bits);
+                    llvm::Value *lhs = resize_int(left_mem, common, slot.elem_unsigned);
+                    llvm::Value *rhs = resize_int(right.value, common, right.elem_unsigned);
+                    llvm::Value *combined = nullptr;
+                    if (node.op == TokenKind::PlusEq) {
+                        combined = builder_.CreateAdd(lhs, rhs);
+                    } else if (node.op == TokenKind::MinusEq) {
+                        combined = builder_.CreateSub(lhs, rhs);
+                    } else if (node.op == TokenKind::StarEq) {
+                        combined = builder_.CreateMul(lhs, rhs);
+                    } else if (common_unsigned) {
+                        combined = builder_.CreateUDiv(lhs, rhs);
+                    } else if (const auto *divisor = llvm::dyn_cast<llvm::ConstantInt>(rhs);
+                               divisor != nullptr && divisor->isAllOnesValue()) {
+                        // `sdiv` of the minimum signed value and -1 is poison. The quotient wraps.
+                        combined = builder_.CreateNeg(lhs);
+                    } else if (llvm::isa<llvm::ConstantInt>(rhs)) {
+                        combined = builder_.CreateSDiv(lhs, rhs);
+                    } else {
+                        llvm::Constant *neg_one = llvm::ConstantInt::get(common, static_cast<uint64_t>(-1), true);
+                        llvm::Value *by_neg_one = builder_.CreateICmpEQ(rhs, neg_one);
+                        llvm::Value *safe = builder_.CreateSelect(by_neg_one, llvm::ConstantInt::get(common, 1), rhs);
+                        llvm::Value *divided = builder_.CreateSDiv(lhs, safe);
+                        llvm::Value *wrapped = builder_.CreateNeg(lhs);
+                        combined = builder_.CreateSelect(by_neg_one, wrapped, divided);
+                    }
+                    if (!terminated() && combined != nullptr) {
+                        builder_.CreateStore(resize_int(combined, mem, common_unsigned), slot.value);
+                    }
+                    return load_object(slot.value, slot.depth, slot.elem_char, -1, slot.elem_void, slot.elem_bool,
+                                       slot.elem_bits, slot.elem_unsigned, false);
+                }
                 arm_union_tag_ = true;
                 TypedValue slot = emit_addr(*node.lhs);
                 arm_union_tag_ = false;

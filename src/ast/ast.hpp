@@ -139,6 +139,8 @@ struct Expr {
     };
     struct Assign {
         SourceLoc loc{};
+        // `=` , or one of `+=`, `-=`, `*=`, `/=`.
+        TokenKind op = TokenKind::Eq;
         std::unique_ptr<Expr> lhs;
         std::unique_ptr<Expr> rhs;
     };
