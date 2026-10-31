@@ -664,6 +664,8 @@ class Checker {
     void expect_condition(const Type &got, SourceLoc loc);
     bool is_lvalue_form(const Expr &expr) const;
     Type check_raw(const Expr &expr, bool used);
+    // The integer stored by `++place`. Invalid when `place` is not that lvalue.
+    Type increment_operand(const Expr &expr);
     // The type of a loaded value. A sized array becomes a pointer. A slice stays a slice.
     Type value_type(Type type);
     Type check_expr(const Expr &expr, bool used);

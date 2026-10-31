@@ -193,6 +193,39 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return load_object(inner.value, inner.depth - 1, inner.elem_char, inner.struct_id, inner.elem_void,
                                        inner.elem_bool, inner.elem_bits, inner.elem_unsigned, inner.elem_float);
                 }
+                if (node.op == TokenKind::PlusPlus) {
+                    if (node.expr == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    // One address. Prefix yields the stored sum. Postfix yields the loaded value.
+                    const TypedValue slot = emit_addr(*node.expr);
+                    // A plain `i32` keeps `elem_bits` at 0. `leaf_type` still yields `i32`.
+                    llvm::Type *mem = nullptr;
+                    if (slot.value != nullptr && slot.depth == 0 && slot.struct_id < 0 && !slot.elem_float &&
+                        !slot.elem_bool) {
+                        mem = leaf_type(0, slot.elem_char, -1, false, slot.elem_bits, false);
+                    }
+                    if (mem == nullptr || !mem->isIntegerTy() || terminated()) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    llvm::Value *old_mem = builder_.CreateLoad(mem, slot.value);
+                    llvm::Value *next_mem = builder_.CreateAdd(old_mem, llvm::ConstantInt::get(mem, 1));
+                    if (node.postfix) {
+                        TypedValue old_value = load_object(slot.value, slot.depth, slot.elem_char, -1, slot.elem_void,
+                                                           slot.elem_bool, slot.elem_bits, slot.elem_unsigned, false);
+                        if (!terminated()) {
+                            builder_.CreateStore(next_mem, slot.value);
+                        }
+                        return old_value;
+                    }
+                    if (!terminated()) {
+                        builder_.CreateStore(next_mem, slot.value);
+                    }
+                    return load_object(slot.value, slot.depth, slot.elem_char, -1, slot.elem_void, slot.elem_bool,
+                                       slot.elem_bits, slot.elem_unsigned, false);
+                }
                 if (node.op == TokenKind::Amp) {
                     if (const auto *named = std::get_if<Expr::Name>(&node.expr->data)) {
                         if (const Binding *binding = lookup(named->text); binding != nullptr && binding->is_array) {

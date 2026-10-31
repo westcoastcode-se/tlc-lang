@@ -6,6 +6,168 @@
 
 namespace tlc {
 
+Type Checker::increment_operand(const Expr &expr) {
+    if (!is_lvalue_form(expr)) {
+        error(expr_loc(expr), "not an lvalue");
+        check_expr(expr, true);
+        return type_invalid();
+    }
+    auto accept = [&](Type type) -> Type {
+        if (type.kind == TypeKind::Invalid) {
+            return type;
+        }
+        if (type.is_const) {
+            error(expr_loc(expr), "type mismatch");
+            return type_invalid();
+        }
+        if (!is_integer(type)) {
+            expect_integer(type, expr_loc(expr));
+            return type_invalid();
+        }
+        const std::size_t before = diags_.size();
+        init_store_if(expr, before);
+        return type;
+    };
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        const Symbol *symbol = lookup(named->text);
+        if (symbol == nullptr) {
+            error(named->loc, "undeclared identifier");
+            return type_invalid();
+        }
+        if (captured(*symbol)) {
+            error(named->loc, "not supported yet");
+            return type_invalid();
+        }
+        if (symbol->is_function || symbol->is_package || symbol->is_constant) {
+            error(expr_loc(expr), "not an lvalue");
+            return type_invalid();
+        }
+        if (symbol->is_immutable || symbol->fixed_receiver) {
+            error(expr_loc(expr), "type mismatch");
+            return type_invalid();
+        }
+        const std::size_t before = diags_.size();
+        check_raw(expr, true);
+        if (diags_.size() != before || !is_integer(symbol->type) || symbol->type.is_const) {
+            if (diags_.size() == before) {
+                if (symbol->type.is_const) {
+                    error(expr_loc(expr), "type mismatch");
+                } else {
+                    expect_integer(symbol->type, expr_loc(expr));
+                }
+            }
+            return type_invalid();
+        }
+        init_store_if(expr, before);
+        return symbol->type;
+    }
+    if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {
+        if (star->expr == nullptr) {
+            error(expr_loc(expr), "type mismatch");
+            return type_invalid();
+        }
+        const Type pointer = check_expr(*star->expr, true);
+        if (pointer.kind == TypeKind::Invalid) {
+            return pointer;
+        }
+        if (pointer.kind != TypeKind::Pointer || pointer.pointee == nullptr || pointer.optional ||
+            pointer.pointee->kind == TypeKind::Void || pointer.pointee->is_const) {
+            error(expr_loc(expr), "type mismatch");
+            return type_invalid();
+        }
+        return accept(*pointer.pointee);
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        if (index->is_range || index->base == nullptr || index->index == nullptr) {
+            error(expr_loc(expr), "not an lvalue");
+            return type_invalid();
+        }
+        Type subscript;
+        {
+            InitUseGuard read(*this, InitUse::Read);
+            subscript = check_expr(*index->index, true);
+        }
+        expect(subscript, type_int(), expr_loc(*index->index));
+        InitStep step;
+        step.kind = InitStep::Kind::Index;
+        if (const std::optional<int> folded = constant_index(*index->index)) {
+            step.known = true;
+            step.index = *folded;
+        }
+        Type base;
+        {
+            InitUseGuard address(*this, InitUse::Address);
+            InitPush push(*this, std::move(step));
+            base = check_raw(*index->base, true);
+        }
+        if (base.kind == TypeKind::Invalid) {
+            return base;
+        }
+        Type element;
+        if (is_slice(base) || (base.kind == TypeKind::Array && base.length >= 0 && !is_slice(base))) {
+            if (base.element == nullptr) {
+                error(expr_loc(expr), "type mismatch");
+                return type_invalid();
+            }
+            element = *base.element;
+            if (base.is_const) {
+                element.is_const = true;
+            }
+        } else {
+            bool pointee_void = false;
+            if (!indexed_type(base, element, pointee_void)) {
+                error(expr_loc(expr), pointee_void ? "type mismatch" : "not an lvalue");
+                return type_invalid();
+            }
+        }
+        return accept(std::move(element));
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        if (selector->base == nullptr) {
+            error(expr_loc(expr), "not an lvalue");
+            return type_invalid();
+        }
+        Type base;
+        {
+            InitUseGuard address(*this, InitUse::Address);
+            InitStep step;
+            step.kind = InitStep::Kind::Field;
+            step.field = selector->field;
+            InitPush push(*this, std::move(step));
+            base = check_expr(*selector->base, true);
+        }
+        if (base.kind == TypeKind::Invalid) {
+            return base;
+        }
+        if (base.kind == TypeKind::Pointer && base.optional) {
+            error(expr_loc(expr), "type mismatch");
+            return type_invalid();
+        }
+        Type object;
+        bool through_pointer = false;
+        if (!dot_object(base, object, through_pointer)) {
+            error(expr_loc(expr), "not an lvalue");
+            return type_invalid();
+        }
+        if (!through_pointer && !is_lvalue_form(*selector->base)) {
+            error(expr_loc(expr), "not an lvalue");
+            return type_invalid();
+        }
+        Type field;
+        if (!lookup_field(object, selector->field, field)) {
+            error(expr_loc(expr), "undeclared identifier");
+            return type_invalid();
+        }
+        if (field.is_const || (through_pointer && base.pointee != nullptr && base.pointee->is_const)) {
+            error(expr_loc(expr), "type mismatch");
+            return type_invalid();
+        }
+        return accept(std::move(field));
+    }
+    error(expr_loc(expr), "not an lvalue");
+    return type_invalid();
+}
+
 Type Checker::check_raw(const Expr &expr, bool used) {
     return std::visit(
         [&](const auto &node) -> Type {
@@ -160,6 +322,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     const Type inner = check_raw(*node.expr, used);
                     --unsafe_depth_;
                     return inner;
+                }
+                if (node.op == TokenKind::PlusPlus) {
+                    if (node.expr == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    return increment_operand(*node.expr);
                 }
                 if (node.op == TokenKind::Bang && node.postfix) {
                     const Type inner = check_expr(*node.expr, true);

@@ -651,7 +651,17 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         node.expr = std::move(expr);
         return make_expr(std::move(node));
     }
-    if (kind == TokenKind::PlusPlus || kind == TokenKind::MinusMinus) {
+    if (kind == TokenKind::PlusPlus) {
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto expr = parse_unary();
+        Expr::Unary node;
+        node.loc = loc;
+        node.op = TokenKind::PlusPlus;
+        node.expr = std::move(expr);
+        return make_expr(std::move(node));
+    }
+    if (kind == TokenKind::MinusMinus) {
         const SourceLoc loc = peek().loc;
         error_here("not supported yet");
         ++pos_;
@@ -793,7 +803,16 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             expr = make_expr(std::move(node));
             continue;
         }
-        if (check(TokenKind::Arrow) || check(TokenKind::PlusPlus) || check(TokenKind::MinusMinus)) {
+        if (eat(TokenKind::PlusPlus)) {
+            Expr::Unary node;
+            node.loc = expr_loc(*expr);
+            node.op = TokenKind::PlusPlus;
+            node.postfix = true;
+            node.expr = std::move(expr);
+            expr = make_expr(std::move(node));
+            continue;
+        }
+        if (check(TokenKind::Arrow) || check(TokenKind::MinusMinus)) {
             error_here("not supported yet");
             ++pos_;
             expr = unsupported_expr(expr_loc(*expr));
