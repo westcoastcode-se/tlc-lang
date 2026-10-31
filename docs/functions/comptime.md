@@ -271,6 +271,8 @@ More than 32 nested specializations are `not supported yet`.
 
 A struct, a float, an alias, a function, and a tuple are comptime arguments.
 
+`comptime` is a keyword and sits directly after the argument name. `func add(comptime n i32)` is `expected an identifier`.
+
 ```c
 func add(n comptime i32) i32 {
     return n;

@@ -348,6 +348,8 @@ Those forms outside a `macro` are `not supported yet`.
 
 A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is `not supported yet`.
 
+`comptime` sits directly after the parameter name. `func add(comptime n i32)` is `expected an identifier`.
+
 An ordinary function may mark a parameter `comptime`.
 
 That argument has to be a comptime value, or the call is `type mismatch`.
