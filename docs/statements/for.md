@@ -118,6 +118,8 @@ A file does not import a package to write the loop.
 
 `for (var item : ptr_of(items))` binds `*E`.
 
+`ptr_of` outside that loop is not a pointer. `var p = ptr_of(items)` is `undeclared identifier`. `ptr_of[T]` is the trait.
+
 A const element binds `*const E`, and a store through it is `type mismatch`.
 
 `item = &other` reseats the pointer.

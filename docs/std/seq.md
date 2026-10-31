@@ -22,6 +22,8 @@ A copy of the source outside that directory is an ordinary trait.
 
 `for (var item : ptr_of(items))` selects it without an import.
 
+`ptr_of(items)` outside that loop is `undeclared identifier`. It does not turn a slice or an array into `*E`.
+
 A missing `ref` on that value is `type mismatch`.
 
 ## The methods `len` and `at`
