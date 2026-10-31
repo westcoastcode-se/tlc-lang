@@ -26,6 +26,8 @@ A pointer is written `*Point` and `*i32`, in a parameter, a result, and every ot
 
 A field is a name, then its type, in the same order as `var`: `x i32`, `next ?*Node`, `home *Address`, `raw [8]u8`.
 
+A method of that name is `redefinition`. `func Point::len(self this)` cannot sit beside a field `len`. A static function may use the name. The call is `Point.len()`.
+
 `x i32 = 1` is the value used when an initializer does not name that field. The value is a constant. A call is reported as `global initializer is not a constant`.
 
 `raw [2]i32 = {1, 2}` is that value for a sized array. A short list leaves the elements it does not name uninitialized. `0...` stores 0 in those elements.

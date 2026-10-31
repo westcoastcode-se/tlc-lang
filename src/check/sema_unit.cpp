@@ -438,6 +438,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                         error(fn->loc, "not supported yet");
                     }
                     trait_result_name(*fn);
+                    if (!fn->static_method && struct_has_field(fn->method_struct, fn->name)) {
+                        error(fn->loc, "redefinition");
+                    }
                     if (fn->static_method) {
                         for (const OwnedVar &owned : owned_assoc_) {
                             if (owned.file_id == file_id_ && owned.var.owner == fn->method_struct &&
@@ -531,6 +534,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 // Other files in the package can still call it.
                 if (defined_in(fn->method_struct) != file_id_) {
                     error(fn->loc, "method in another file");
+                    continue;
+                }
+                // `p.len` is the field. `p.len()` cannot be a method of that name.
+                if (!fn->static_method && receiver_ok && struct_has_field(fn->method_struct, fn->name)) {
+                    error(fn->loc, "redefinition");
                     continue;
                 }
                 auto &table = methods_[file_id_][fn->method_struct];

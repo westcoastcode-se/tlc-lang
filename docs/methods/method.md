@@ -229,6 +229,8 @@ The program returns 0.
 
 The same method name may exist on different structs and as a free function.
 
+A field of that struct and a method of the same name are `redefinition`. `func Point::len(self this)` and `func Point::len(self *this)` cannot sit beside a field `len`. A static function may use the name. The call is `Point.len()`.
+
 The call `p.sum(...)` selects the struct's method.
 
 A free call `sum(...)` selects the function.

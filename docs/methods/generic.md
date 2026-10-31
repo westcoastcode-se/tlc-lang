@@ -10,6 +10,8 @@ A parameter after the method name that the method does not use is `unused parame
 
 `func Vec[T]::get(self *this, i i32) T` is the method on `type Vec[T type] struct`.
 
+A field and a method of the same name are `redefinition`.
+
 The result may be omitted: `func Vec[T]::get(self this) { return self.n; }` is `T`.
 
 A body with no `return` is `void`, and so is a body that only writes `return;` or returns a `void` value.

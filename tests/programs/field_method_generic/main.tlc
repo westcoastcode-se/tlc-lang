@@ -1,0 +1,19 @@
+type Box[T type] struct {
+    len T;
+}
+
+func Box[T]::len(self this) T {
+    return self.len;
+}
+
+type Point struct {
+    len i32;
+}
+
+func Point::len[T type](self this, value T) T {
+    return value;
+}
+
+func main() i32 {
+    return 0;
+}

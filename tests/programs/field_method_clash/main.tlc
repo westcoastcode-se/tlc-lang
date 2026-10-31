@@ -1,0 +1,19 @@
+type Point struct {
+    len i32;
+}
+
+func Point::len(self this) i32 {
+    return self.len;
+}
+
+func Hold::read(self *this) i32 {
+    return self.read;
+}
+
+type Hold struct {
+    read i32;
+}
+
+func main() i32 {
+    return 0;
+}

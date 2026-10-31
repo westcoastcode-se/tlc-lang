@@ -439,6 +439,8 @@ class Checker {
     std::optional<int> type_size(const Type &type) const;
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);
     void define_struct_fields();
+    // A field of this struct or union. A method of that name is `redefinition`.
+    bool struct_has_field(const std::string &type_name, const std::string &field) const;
     void check_field_defaults(const TranslationUnit &unit);
     void check_field_default(const Expr &expr, const Type &type, SourceLoc loc);
     void prepare_unit(const TranslationUnit &unit, uint32_t file_id, const PackageNode *node);

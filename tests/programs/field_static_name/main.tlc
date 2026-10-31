@@ -1,0 +1,17 @@
+type Point struct {
+    len i32;
+}
+
+func Point::len() i32 {
+    return 4;
+}
+
+func Point::read(self this) i32 {
+    return self.len;
+}
+
+func main() i32 {
+    var p Point;
+    p.len = 3;
+    return p.read() + Point.len();
+}

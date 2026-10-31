@@ -1206,6 +1206,31 @@ std::optional<int> Checker::type_size(const Type &type) const {
     return walk(walk, type);
 }
 
+bool Checker::struct_has_field(const std::string &type_name, const std::string &field) const {
+    if (type_name.empty() || field.empty()) {
+        return false;
+    }
+    const int id = find_tag(file_id_, type_name);
+    if (id >= 0 && id < static_cast<int>(structs_.size())) {
+        for (const StructInfo::Field &item : structs_[static_cast<std::size_t>(id)].fields) {
+            if (item.name == field) {
+                return true;
+            }
+        }
+    }
+    uint32_t owner = file_id_;
+    const StructDecl *templ = find_struct_template(type_name, owner);
+    if (templ == nullptr || owner != file_id_) {
+        return false;
+    }
+    for (const FieldDecl &item : templ->fields) {
+        if (item.name == field) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void Checker::define_struct_fields() {
     // A slice header does not store the element. The element struct may still be incomplete,
     // including the struct being defined. A sized array of that struct still needs its size.

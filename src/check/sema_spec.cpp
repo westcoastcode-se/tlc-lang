@@ -3119,6 +3119,10 @@ void Checker::register_method_template(const FunctionDecl &fn) {
         error(fn.loc, "redefinition");
         return;
     }
+    if (!fn.static_method && struct_has_field(fn.method_struct, fn.name)) {
+        error(fn.loc, "redefinition");
+        return;
+    }
     auto &bucket = method_templates_[file_id_][fn.method_struct][fn.name];
     for (std::size_t i = 0; i < bucket.size(); ++i) {
         const FunctionDecl *existing = bucket[i];
