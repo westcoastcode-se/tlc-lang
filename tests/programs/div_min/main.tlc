@@ -1,0 +1,49 @@
+const quot = (-2147483647 - 1) / -1;
+const rem = (-2147483647 - 1) % -1;
+
+func main() i32 {
+    var n = -2147483647 - 1;
+    var neg = -1;
+    if (quot != n) {
+        return 1;
+    }
+    if (rem != 0) {
+        return 2;
+    }
+    if (n / -1 != quot) {
+        return 3;
+    }
+    if (n % -1 != 0) {
+        return 4;
+    }
+    if (n / neg != quot) {
+        return 5;
+    }
+    if (n % neg != 0) {
+        return 6;
+    }
+    if ((-2147483647 - 1) / -1 != quot) {
+        return 7;
+    }
+    if ((-2147483647 - 1) % -1 != 0) {
+        return 8;
+    }
+    if ((-10) / -1 != 10) {
+        return 9;
+    }
+    if (10 % -1 != 0) {
+        return 10;
+    }
+    if (n / 2 != -1073741824) {
+        return 11;
+    }
+    var wide i64 = -9223372036854775807i64 - 1;
+    var minus i64 = -1;
+    if (wide / -1 != wide) {
+        return 12;
+    }
+    if (wide % minus != 0) {
+        return 13;
+    }
+    return 0;
+}

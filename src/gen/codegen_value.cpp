@@ -381,12 +381,33 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return {builder_.CreateICmp(pred, lhs, rhs), 0, false, -1, false, false, true};
                 };
                 const bool uns = common_unsigned;
+                // `sdiv` and `srem` of the minimum signed value and -1 are poison.
+                // The quotient is the wrapping negation, and the remainder is 0.
+                // A file-scope const already folds to those bits.
+                auto signed_div = [&](bool remainder) -> llvm::Value * {
+                    llvm::Type *ty = lhs->getType();
+                    llvm::Constant *neg_one = llvm::ConstantInt::get(ty, static_cast<uint64_t>(-1), true);
+                    if (const auto *divisor = llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+                        if (divisor->isAllOnesValue()) {
+                            if (remainder) {
+                                return llvm::ConstantInt::get(ty, 0);
+                            }
+                            return builder_.CreateNeg(lhs);
+                        }
+                        return remainder ? builder_.CreateSRem(lhs, rhs) : builder_.CreateSDiv(lhs, rhs);
+                    }
+                    llvm::Value *by_neg_one = builder_.CreateICmpEQ(rhs, neg_one);
+                    llvm::Value *safe = builder_.CreateSelect(by_neg_one, llvm::ConstantInt::get(ty, 1), rhs);
+                    llvm::Value *divided = remainder ? builder_.CreateSRem(lhs, safe) : builder_.CreateSDiv(lhs, safe);
+                    llvm::Value *wrapped = remainder ? llvm::ConstantInt::get(ty, 0) : builder_.CreateNeg(lhs);
+                    return builder_.CreateSelect(by_neg_one, wrapped, divided);
+                };
                 switch (node.op) {
                 case TokenKind::Plus: return widened(builder_.CreateAdd(lhs, rhs));
                 case TokenKind::Minus: return widened(builder_.CreateSub(lhs, rhs));
                 case TokenKind::Star: return widened(builder_.CreateMul(lhs, rhs));
-                case TokenKind::Slash: return widened(uns ? builder_.CreateUDiv(lhs, rhs) : builder_.CreateSDiv(lhs, rhs));
-                case TokenKind::Percent: return widened(uns ? builder_.CreateURem(lhs, rhs) : builder_.CreateSRem(lhs, rhs));
+                case TokenKind::Slash: return widened(uns ? builder_.CreateUDiv(lhs, rhs) : signed_div(false));
+                case TokenKind::Percent: return widened(uns ? builder_.CreateURem(lhs, rhs) : signed_div(true));
                 case TokenKind::Amp: return widened(builder_.CreateAnd(lhs, rhs));
                 case TokenKind::Pipe: return widened(builder_.CreateOr(lhs, rhs));
                 case TokenKind::Caret: return widened(builder_.CreateXor(lhs, rhs));

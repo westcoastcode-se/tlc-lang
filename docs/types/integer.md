@@ -103,6 +103,8 @@ Unsigned arithmetic wraps.
 
 A `u32` that is 0 and then decreased by 1 becomes `4294967295`, so `n < 1` is false.
 
+A signed quotient wraps in its width. `(-2147483647 - 1) / -1` is `-2147483648`, and `(-2147483647 - 1) % -1` is `0`.
+
 > **Warning:** A mixed comparison converts the signed operand. `1u32 < -1` is true, because `-1` becomes the largest unsigned value.
 
 ## Stores
