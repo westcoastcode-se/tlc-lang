@@ -323,7 +323,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     --unsafe_depth_;
                     return inner;
                 }
-                if (node.op == TokenKind::PlusPlus) {
+                if (node.op == TokenKind::PlusPlus || node.op == TokenKind::MinusMinus) {
                     if (node.expr == nullptr) {
                         error(node.loc, "type mismatch");
                         return type_invalid();

@@ -2066,7 +2066,7 @@ multiplicative = unary { ( "*" | "/" | "%" ) unary } ;
 unary       = "unsafe" unary
             | new-expr
             | delete-expr
-            | ( "+" | "-" | "!" | "~" | "&" | "*" | "++" | "sizeof" | "typeof" ) unary
+            | ( "+" | "-" | "!" | "~" | "&" | "*" | "++" | "--" | "sizeof" | "typeof" ) unary
             | postfix ;
 postfix     = primary { postfix-op } ;
 postfix-op  = "(" [ argument-list ] ")"
@@ -2076,6 +2076,7 @@ postfix-op  = "(" [ argument-list ] ")"
             | "[" [ expression ] ":" [ expression ] "]"
             | "!"
             | "++"
+            | "--"
             | struct-init ;
 argument-list = expression { "," expression } ;
 new-expr    = "new" [ "(" expression ")" ] [ new-count ] { pointer } [ identifier "." ] ( integer-name | float-name | identifier ) [ type-args ] [ new-init ] ;

@@ -1,4 +1,31 @@
+type Box struct {
+    x i32;
+}
+
 func main() i32 {
-    var n = 1;
-    return --n;
+    var n = 3;
+    var a = --n;
+    var b = n--;
+    if (a != 2 || b != 2 || n != 1) {
+        return 1;
+    }
+    var row [2]i32;
+    row[0] = 5;
+    if (row[0]-- != 5 || row[0] != 4) {
+        return 2;
+    }
+    var p = &n;
+    if (--*p != 0) {
+        return 3;
+    }
+    var box Box;
+    box.x = 7;
+    if (--box.x != 6) {
+        return 4;
+    }
+    var bottom = -2147483647 - 1;
+    if (--bottom != 2147483647) {
+        return 5;
+    }
+    return 0;
 }

@@ -14,7 +14,9 @@ Unary `+` and `-` are operators, and so is assignment `=`.
 
 `++n` adds 1 and yields the new value. `n++` yields the value `n` had, then adds 1.
 
-The operand is an integer lvalue. A `const` binding is `type mismatch`. A value that is not a place is `not an lvalue`. The result is not a place. `--` is `not supported yet`.
+`--n` subtracts 1 and yields the new value. `n--` yields the value `n` had, then subtracts 1.
+
+The operand is an integer lvalue. A `const` binding is `type mismatch`. A value that is not a place is `not an lvalue`. The result is not a place.
 
 Calls, indexing, `.`, address-of `&`, and dereference `*` are operators too.
 

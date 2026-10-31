@@ -51,7 +51,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 - Using `builtin.fence` as a value, and `defer builtin.fence(order)`. Both are `not supported yet`. A direct call is replaced with a fence.
 - An atomic value wider than 64 bits.
 - A generic `Atomic[T]` for a struct whose size is 1, 2, 4, or 8 bytes.
-- `--`, compound assignment (`+=` and the rest), `?:`, and `->`.
+- Compound assignment (`+=` and the rest), `?:`, and `->`.
 - `??`. `value!.value2!.value3 ?? default_value` yields `default_value` when a pointer in that `!` chain is null, and that `!` does not call `builtin.panic("null pointer")`. `??` is not a form.
 - `goto`.
 

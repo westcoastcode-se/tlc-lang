@@ -193,12 +193,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return load_object(inner.value, inner.depth - 1, inner.elem_char, inner.struct_id, inner.elem_void,
                                        inner.elem_bool, inner.elem_bits, inner.elem_unsigned, inner.elem_float);
                 }
-                if (node.op == TokenKind::PlusPlus) {
+                if (node.op == TokenKind::PlusPlus || node.op == TokenKind::MinusMinus) {
                     if (node.expr == nullptr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
                     }
-                    // One address. Prefix yields the stored sum. Postfix yields the loaded value.
+                    // One address. Prefix yields the stored result. Postfix yields the loaded value.
                     const TypedValue slot = emit_addr(*node.expr);
                     // A plain `i32` keeps `elem_bits` at 0. `leaf_type` still yields `i32`.
                     llvm::Type *mem = nullptr;
@@ -211,7 +211,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return {zero(), 0};
                     }
                     llvm::Value *old_mem = builder_.CreateLoad(mem, slot.value);
-                    llvm::Value *next_mem = builder_.CreateAdd(old_mem, llvm::ConstantInt::get(mem, 1));
+                    llvm::Value *one = llvm::ConstantInt::get(mem, 1);
+                    llvm::Value *next_mem = node.op == TokenKind::PlusPlus ? builder_.CreateAdd(old_mem, one)
+                                                                           : builder_.CreateSub(old_mem, one);
                     if (node.postfix) {
                         TypedValue old_value = load_object(slot.value, slot.depth, slot.elem_char, -1, slot.elem_void,
                                                            slot.elem_bool, slot.elem_bits, slot.elem_unsigned, false);
