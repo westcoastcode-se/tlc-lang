@@ -949,12 +949,12 @@ inline MemCompare mem_compare_kind(const FunctionDecl &fn) {
         mem_slice_param(fn.params[0], type_name, false) && mem_slice_param(fn.params[1], type_name, false)) {
         return MemCompare::CmpSlice;
     }
-    if (fn.params.size() == 4 && mem_plain_result(fn, "i32") && mem_ptr_param(fn.params[0], type_name) &&
-        mem_i32_param(fn.params[1]) && mem_ptr_param(fn.params[2], type_name) && mem_i32_param(fn.params[3])) {
-        if (fn.name == "memeql") {
+    if (fn.params.size() == 4 && mem_ptr_param(fn.params[0], type_name) && mem_i32_param(fn.params[1]) &&
+        mem_ptr_param(fn.params[2], type_name) && mem_i32_param(fn.params[3])) {
+        if (fn.name == "memeql" && mem_plain_result(fn, "bool")) {
             return MemCompare::EqlPtr;
         }
-        if (fn.name == "memcmp") {
+        if (fn.name == "memcmp" && mem_plain_result(fn, "i32")) {
             return MemCompare::CmpPtr;
         }
     }
@@ -970,9 +970,9 @@ inline bool mem_compare_comptime(MemCompare kind) {
     return kind == MemCompare::EqlSliceComptime || kind == MemCompare::CmpSliceComptime;
 }
 
-// The slice form of `memeql` is a bool. `memcmp` and the pointer form of `memeql` are `i32`.
+// `memeql` is a bool. `memcmp` is an `i32`.
 inline bool mem_compare_bool(MemCompare kind) {
-    return kind == MemCompare::EqlSlice || kind == MemCompare::EqlSliceComptime;
+    return kind == MemCompare::EqlSlice || kind == MemCompare::EqlSliceComptime || kind == MemCompare::EqlPtr;
 }
 
 // Element order of two `[]const u8` values. `memeql` is 1 or 0. `memcmp` is -1, 0, or 1.

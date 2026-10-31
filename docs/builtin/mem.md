@@ -50,7 +50,7 @@ The lengths in the pointer form are element counts.
 ```c
 export func memeql[T type](lhs comptime []const T, rhs comptime []const T) bool;
 export func memeql[T type](lhs []const T, rhs []const T) bool;
-export func memeql[T type](lhs *const T, lhslen i32, rhs *const T, rhslen i32) i32;
+export func memeql[T type](lhs *const T, lhslen i32, rhs *const T, rhslen i32) bool;
 export func memcmp[T type](lhs comptime []const T, rhs comptime []const T) i32;
 export func memcmp[T type](lhs []const T, rhs []const T) i32;
 export func memcmp[T type](lhs *const T, lhslen i32, rhs *const T, rhslen i32) i32;
@@ -64,9 +64,7 @@ retq                             # return
 
 ## What the comparison returns
 
-The slice form of `memeql` is true when the lengths match and every element matches.
-
-The pointer form returns `1` in that case and `0` otherwise.
+`memeql` is true when the lengths match and every element matches.
 
 `memcmp` returns `-1` when the left side is less, `1` when it is greater, and `0` when the sequences match.
 
@@ -124,7 +122,7 @@ A false comparison fails the assert, and the diagnostic is the message.
 
 The pointer form runs the body, including when both pointers are string literals and both lengths are constant integers.
 
-`builtin.memeql[u8]("", 0, "", 0)` is `1`.
+`builtin.memeql[u8]("", 0, "", 0)` is true.
 
 `builtin.memcmp[u8]("a", 1, "ab", 2)` is `-1`.
 
