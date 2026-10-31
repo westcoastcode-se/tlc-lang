@@ -54,6 +54,8 @@ The index may be another folded integer, so `const i = 1` then `"hi"[i]` is 105.
 
 An escape is the decoded byte, so `"\n"[0]` is 10 and `"\xFF"[0]` is 255.
 
+An escape above 255 does not fit in that byte. `"\x100"` is `hex escape out of range`. `"\400"` is `octal escape out of range`.
+
 A raw string is the same index.
 
 An index below 0 or past the last byte does not fold.

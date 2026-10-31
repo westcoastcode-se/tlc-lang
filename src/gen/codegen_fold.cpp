@@ -630,7 +630,11 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
             if constexpr (std::is_same_v<T, Expr::Int>) {
                 return static_cast<int32_t>(node.value);
             } else if constexpr (std::is_same_v<T, Expr::Char>) {
-                return static_cast<int32_t>(node.value & 0xFFULL);
+                // Same limit as the checker. A code point is the whole value, not its low byte.
+                if (node.byte_form ? node.value > 255ULL : node.value > 0x10FFFFULL) {
+                    return std::nullopt;
+                }
+                return static_cast<int32_t>(node.value);
             } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                 return node.value ? 1 : 0;
             } else if constexpr (std::is_same_v<T, Expr::Nullptr>) {

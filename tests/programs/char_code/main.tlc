@@ -1,0 +1,20 @@
+const file_n = '\x100';
+
+func main() i32 {
+    if ('\x100' != 256 || '\400' != 256 || '\x101' != 257) {
+        return 1;
+    }
+    if ('\xFF' != 255 || 'A' != 65 || 'A'b != 65) {
+        return 2;
+    }
+    const n = '\x100';
+    comptime const folded = '\400';
+    if (n != 256 || file_n != 256 || folded != 256) {
+        return 3;
+    }
+    assert('\x100' == 256, "code"b);
+    if ("\377"b[0] != 255 || "a\000b"b[1] != 0) {
+        return 4;
+    }
+    return 0;
+}

@@ -799,7 +799,8 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 }
                 return static_cast<int>(node.value);
             } else if constexpr (std::is_same_v<T, Expr::Char>) {
-                if (node.value > 255ULL) {
+                // `'A'b` is a byte. `'A'` is a code point and fits in the compile-time `i32`.
+                if (node.byte_form ? node.value > 255ULL : node.value > 0x10FFFFULL) {
                     return std::nullopt;
                 }
                 return static_cast<int>(node.value);

@@ -36,6 +36,8 @@ The compiler reports a value that does not fit in the suffix as `type mismatch`.
 
 A character literal is a Unicode code point stored as `i32`, so `'A'` is 65. `'A'b` and `'\n'b` are `u8`.
 
+`'\x100'` and `'\400'` are the code point 256.
+
 The compiler reports a byte character above 255 as `type mismatch`.
 
 The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.

@@ -1,0 +1,4 @@
+func main() i32 {
+    var s = "\400"b;
+    return s[0];
+}

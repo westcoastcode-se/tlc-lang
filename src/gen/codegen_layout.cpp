@@ -1592,7 +1592,8 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     }
                     return as_int(32, false);
                 } else if constexpr (std::is_same_v<T, Expr::Char>) {
-                    return as_int(8, true);
+                    // `'A'b` is `u8`. A code point is `i32`.
+                    return item.byte_form ? as_int(8, true) : as_int(32, false);
                 } else if constexpr (std::is_same_v<T, Expr::Bool>) {
                     Lowered low;
                     low.elem_bool = true;

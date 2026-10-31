@@ -10,6 +10,8 @@ A string of at most 22 bytes is the `Short` arm. A longer string is the `Long` a
 
 `from(text)` and `text.release()` use `builtin.allocator`. `from(text, alloc)` and `text.release(alloc)` pass that `*Allocator` to `new` and `delete`. The struct exports `malloc`, `free`, and `realloc`.
 
+`release` of a `Long` string switches the value to an empty `Short` arm and then calls `delete`. A later `release` does not call `delete`.
+
 ```c
 import "std/ascii";
 

@@ -49,7 +49,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 // A narrower suffix promotes to int when it is used as a value.
                 return {const_i32(static_cast<int32_t>(node.value)), 0};
             } else if constexpr (std::is_same_v<T, Expr::Char>) {
-                return {const_i32(static_cast<int32_t>(node.value & 0xFFULL)), 0};
+                // `'A'` is the code point. `'A'b` still promotes to int; a tuple narrows it back to `u8`.
+                return {const_i32(static_cast<int32_t>(node.value)), 0};
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 if (node.op == TokenKind::KwUnsafe) {
                     if (node.expr == nullptr) {
@@ -1550,7 +1551,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             value.depth = 0;
                             value.struct_id = -1;
                         };
-                        if (element != nullptr && std::holds_alternative<Expr::Char>(element->data)) {
+                        if (element != nullptr && std::holds_alternative<Expr::Char>(element->data) &&
+                            std::get<Expr::Char>(element->data).byte_form) {
                             restore(i8(), false, false, 8, true);
                         } else if (element != nullptr && std::holds_alternative<Expr::Bool>(element->data)) {
                             restore(i1(), false, true, 0, false);

@@ -41,13 +41,15 @@ func main() i32 {
         return 5;
     }
     long.release(&arena);
-    if (arena.freed != 1) {
+    long.release(&arena);
+    if (arena.freed != 1 || long.len() != 0 || unicode.Storage(long) != unicode.Storage.Short) {
         return 6;
     }
     var owned = unicode.from("01234567890123456789012"b);
     if (owned.len() != 23 || unicode.Storage(owned) != unicode.Storage.Long) {
         return 7;
     }
+    owned.release();
     owned.release();
     var ok = ascii.from("Hi"b, &builtin.allocator);
     if (ok.len() != 2 || ok.at(1) != 105) {
@@ -62,7 +64,8 @@ func main() i32 {
         return 10;
     }
     wide.release(&arena2);
-    if (arena2.freed != 1) {
+    wide.release(&arena2);
+    if (arena2.freed != 1 || wide.len() != 0) {
         return 11;
     }
     return 0;

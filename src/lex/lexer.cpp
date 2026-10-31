@@ -657,6 +657,10 @@ Token Lexer::lex_string(uint32_t start) {
                         }
                         value = (value << 3) | static_cast<uint32_t>(get() - '0');
                     }
+                    if (value > 0xFF) {
+                        error_at(esc, "octal escape out of range");
+                        value &= 0xFF;
+                    }
                     decoded.push_back(static_cast<char>(value));
                 } else {
                     error_at(esc, "unknown escape");

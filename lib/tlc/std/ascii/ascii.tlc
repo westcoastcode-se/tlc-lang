@@ -73,7 +73,11 @@ export func string::release(self *this) void {
 }
 
 export func string::release(self *this, alloc *Allocator) void {
-    if (Storage(*self) == Storage.Long) {
-        delete(alloc) self.Long.bytes;
+    if (Storage(*self) != Storage.Long) {
+        return;
     }
+    // Drop the arm before `delete`, so a second `release` does not free the same block.
+    var ptr *u8 = self.Long.bytes;
+    self.Short.len = 0;
+    delete(alloc) ptr;
 }
