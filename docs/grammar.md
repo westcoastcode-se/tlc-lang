@@ -1993,7 +1993,7 @@ block       = "{" { statement } "}" ;
 statement   = block
             | if-statement
             | "while" "(" expression ")" block
-            | "do" statement "while" "(" expression ")" ";"
+            | "do" block "while" "(" expression ")" ";"
             | "for" "(" for-init [ expression ] ";" [ expression ] ")" block
             | "for" "(" ( "var" | "const" ) identifier ":" expression ")" block
             | "switch" "(" expression ")" statement
@@ -2008,7 +2008,7 @@ statement   = block
             | "emit" "for" "(" ( "var" | "const" ) identifier ":" expression ")" block
             | "emit" "if" "(" expression ")" block [ "else" ( if-statement | block ) ]
             | "emit" "while" "(" expression ")" block
-            | "emit" "do" statement "while" "(" expression ")" ";"
+            | "emit" "do" block "while" "(" expression ")" ";"
             | assert-stmt
             | var-decl
             | binding

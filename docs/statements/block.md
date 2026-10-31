@@ -16,7 +16,7 @@ The compiler reports a body without `{` as `expected '{'`.
 
 ## Statements that are not blocks
 
-`do` and `switch` take a statement, so their body need not be a block.
+`switch` takes a statement, so its body need not be a block. `do` takes a block, the same as `while`.
 
 An empty statement is `;`.
 
@@ -33,7 +33,9 @@ func main() i32 {
     while (n < 42) {
         n = n + 1;
     }
-    do n = n + 1; while (false);
+    do {
+        n = n + 1;
+    } while (false);
     ;
     return n;
 }

@@ -260,7 +260,7 @@ std::unique_ptr<Stmt> Parser::parse_do() {
     Stmt::DoWhile stmt;
     stmt.loc = peek().loc;
     eat(TokenKind::KwDo);
-    stmt.body = parse_statement();
+    stmt.body = parse_required_block();
     expect(TokenKind::KwWhile, "expected 'while'");
     expect(TokenKind::LParen, "expected '('");
     stmt.cond = parse_expr();

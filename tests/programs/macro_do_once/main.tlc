@@ -1,5 +1,7 @@
 macro func once(slot *i32) void {
-    do emit *slot = *slot + 40; while (false);
+    do {
+        emit *slot = *slot + 40;
+    } while (false);
 }
 
 func main() i32 {
