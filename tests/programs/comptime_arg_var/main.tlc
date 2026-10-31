@@ -3,7 +3,7 @@ macro func hello(name comptime []const u8) void {
 }
 
 func main() i32 {
-    var name = "Ada";
+    var name = "Ada"b;
     hello(name);
     return 0;
 }

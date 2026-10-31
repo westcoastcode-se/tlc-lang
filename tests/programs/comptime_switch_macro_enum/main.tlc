@@ -7,12 +7,12 @@ type Color enum {
 macro func pick(slot *i32) void {
     comptime switch (Color.Blue) {
     case Color.Green:
-        emit *slot = "no";
+        emit *slot = "no"b;
     case Color.Blue:
         emit *slot = 42;
         break;
     default:
-        emit *slot = "no";
+        emit *slot = "no"b;
     }
 }
 

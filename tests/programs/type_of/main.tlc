@@ -1,6 +1,6 @@
 import "builtin";
 
-extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 
 var kind builtin.Type = typeof(i32);
 
@@ -55,15 +55,15 @@ func main() i32 {
     if (through.name() != t.name()) {
         return 8;
     }
-    printf("%s\n", t.name());
-    printf("%s\n", typeof(*i32).name());
-    printf("%s\n", typeof(p).name());
-    printf("%s\n", typeof(a).name());
-    printf("%s\n", typeof(box).name());
-    printf("%s\n", typeof(point).name());
-    printf("%s\n", typeof("hi").name());
-    printf("%s\n", typeof(builtin.Type).name());
-    printf("%s\n", typeof(f32).name());
-    printf("%s\n", typeof(f32).name());
+    printf("%s\n"b, t.name());
+    printf("%s\n"b, typeof(*i32).name());
+    printf("%s\n"b, typeof(p).name());
+    printf("%s\n"b, typeof(a).name());
+    printf("%s\n"b, typeof(box).name());
+    printf("%s\n"b, typeof(point).name());
+    printf("%s\n"b, typeof("hi"b).name());
+    printf("%s\n"b, typeof(builtin.Type).name());
+    printf("%s\n"b, typeof(f32).name());
+    printf("%s\n"b, typeof(f32).name());
     return 0;
 }

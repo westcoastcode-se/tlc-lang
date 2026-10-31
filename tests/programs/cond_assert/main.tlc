@@ -1,4 +1,4 @@
-assert(1, "no");
+assert(1, "no"b);
 
 func main() i32 {
     return 0;

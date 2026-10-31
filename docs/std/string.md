@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Strings](../types/string.md) · [Next: seq](seq.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-This page describes `string_view` and the methods in `std/string`.
+This page describes Unicode `string` and `string_view`, and the C-compatible `byte_string` and `byte_string_view`.
 
 ## The package
 
@@ -12,21 +12,27 @@ The package is ordinary tlc source.
 
 The compiler does not implement these functions.
 
-## What a `string_view` is
+## What the string types are
 
-`string.string_view` is `[]const u8`.
+`string.string_view` is a struct. Its field `bytes` is UTF-8 `[]const u8`. `len()` counts Unicode scalar values.
 
-A string literal and a plain `[]const u8` convert to it.
+`string.string` is the owned struct. `view()` returns a `string_view`.
 
-`string_view` does not convert back to `[]const u8`.
+A literal `"hello"` in a program that imports this package has type `string_view`.
 
-It still converts to `*const u8` by passing the address and dropping the length.
+`string.byte_string_view` is `[]const u8`. `"hello"b` has that type. `string.byte_string` owns those bytes.
+
+`byte_string_view` does not convert back from the alias by itself. A cast is that conversion.
+
+`string.string_view` is not `[]const u8`.
+
+`byte_string_view` converts to `*const u8` by passing the address and dropping the length.
 
 Any other `[]const u8` converts to `*const u8` the same way.
 
-`string.from` is that conversion as a function.
+`string.from` returns a `byte_string_view`.
 
-The parameter of a method is the name `string_view`.
+The parameter of a byte method is the name `byte_string_view`.
 
 `this` is only the receiver.
 

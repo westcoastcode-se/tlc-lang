@@ -32,7 +32,7 @@ func load_at[T type](p *T, order comptime Order) T {
     comptime if (order == Order.seq_cst) {
         return builtin.atomic_load[T](p, 4);
     }
-    builtin.panic("type mismatch");
+    builtin.panic("type mismatch"b);
     return *p;
 }
 
@@ -49,7 +49,7 @@ func store_at[T type](p *T, value T, order comptime Order) void {
         builtin.atomic_store[T](p, value, 4);
         return;
     }
-    builtin.panic("type mismatch");
+    builtin.panic("type mismatch"b);
 }
 
 func xchg_at[T type](p *T, value T, order comptime Order) T {
@@ -68,7 +68,7 @@ func xchg_at[T type](p *T, value T, order comptime Order) T {
     comptime if (order == Order.seq_cst) {
         return builtin.atomic_rmw[T](p, 0, value, 4);
     }
-    builtin.panic("type mismatch");
+    builtin.panic("type mismatch"b);
     return *p;
 }
 
@@ -161,7 +161,7 @@ func rmw_at[T type](p *T, value T, op comptime Op, order comptime Order) T {
             return builtin.atomic_rmw[T](p, 5, value, 4);
         }
     }
-    builtin.panic("type mismatch");
+    builtin.panic("type mismatch"b);
     return *p;
 }
 

@@ -4,11 +4,13 @@
 
 This page describes string literals, constant bytes, and the pointer a C library takes.
 
+A literal without a suffix is Unicode `string.string_view` when the program imports `std/string`. Without that import it stays `[]const u8`. The suffix `b` is always the C-compatible byte form: `"hi"b` and `` `hi`b `` are `[]const u8`, and `'A'b` is `u8`.
+
 ## Quoted strings and raw strings
 
 A string between double quotes cannot cross a line, but a string between backticks may span lines.
 
-Both are `[]const u8`: a pointer to the bytes and an `i32` length.
+The byte form is `[]const u8`: a pointer to the bytes and an `i32` length.
 
 The length is the number of bytes and does not count the terminating null.
 
@@ -18,7 +20,7 @@ In a raw string the characters are copied as written, and a backslash is not an 
 
 A newline in the source is a newline in the string, and the next backtick ends the string.
 
-`var text = "hi"` has type `[]const u8`, `text.len` is 2, and `text[0]` reads a byte.
+`var text = "hi"b` has type `[]const u8`, `text.len` is 2, and `text[0]` reads a byte.
 
 The compiler reports `text[0] = 1` and `var bytes []u8 = "hi"` as `type mismatch`.
 

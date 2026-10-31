@@ -15,7 +15,7 @@ func is(text *const u8, want *const u8) i32 {
 }
 
 func main() i32 {
-    if (is(consts.family, "unix") == 1 || is(consts.family, "windows") == 1) {
+    if (is(consts.family, "unix"b) == 1 || is(consts.family, "windows"b) == 1) {
         return 0;
     }
     return 1;

@@ -7,19 +7,19 @@ func pass() (i32, i32) { return id((3, 4)); }
 func main() i32 {
     var n = id(40);
     a, b := id((40, 2));
-    x, y := id((40, 'a'));
+    x, y := id((40, 'a'b));
     var row [3]i32 = {10, 20, 12};
     var one = id((5));
     var p = id[i32](1);
-    c, d := id((3, 'b'));
+    c, d := id((3, 'b'b));
     var point = id(Point{.x = 9, .y = 1});
     if (n != 40) { return 1; }
     if (a != 40 || b != 2) { return 2; }
-    if (x != 40 || y != 'a') { return 3; }
+    if (x != 40 || y != 'a'b) { return 3; }
     if (row[0] != 10 || row[1] != 20 || row[2] != 12) { return 4; }
     if (one != 5) { return 6; }
     if (p != 1) { return 7; }
-    if (c != 3 || d != 'b') { return 8; }
+    if (c != 3 || d != 'b'b) { return 8; }
     if (sizeof(y) != 1) { return 9; }
     e, f := pass();
     if (e != 3 || f != 4) { return 10; }

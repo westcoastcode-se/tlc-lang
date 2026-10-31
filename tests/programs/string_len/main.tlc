@@ -1,10 +1,10 @@
-comptime const n = "hi".len;
-comptime const cut = "hello"[1:4].len;
+comptime const n = "hi"b.len;
+comptime const cut = "hello"b[1:4].len;
 
 func main() i32 {
     if (n != 2 || cut != 3) {
         return 1;
     }
-    var text = "hi";
+    var text = "hi"b;
     return text.len;
 }

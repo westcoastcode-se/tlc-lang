@@ -2,15 +2,15 @@ func add(a i32, b i32) i32 {
     return a + b;
 }
 
-test "add joins its arguments" {
+test "add joins its arguments"b {
     if (add(2, 2) != 4) {
         return 1;
     }
 }
 
-test "empty passes" {
+test "empty passes"b {
 }
 
-test "bad" {
+test "bad"b {
     return 1;
 }

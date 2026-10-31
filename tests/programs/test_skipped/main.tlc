@@ -2,6 +2,6 @@ func main() i32 {
     return 7;
 }
 
-test "not run" {
+test "not run"b {
     return 1;
 }

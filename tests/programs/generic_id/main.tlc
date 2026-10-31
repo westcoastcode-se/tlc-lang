@@ -1,5 +1,5 @@
 func id[T type](value T) T {
-    assert(sizeof(T) == 4, "size");
+    assert(sizeof(T) == 4, "size"b);
     return value;
 }
 

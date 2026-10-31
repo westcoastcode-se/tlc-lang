@@ -3,7 +3,7 @@ comptime const n = 3;
 func main() i32 {
     comptime switch (n) {
     case 1:
-        return "no";
+        return "no"b;
     }
     return 42;
 }

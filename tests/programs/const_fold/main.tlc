@@ -1,7 +1,7 @@
-assert(typeof(i32) == typeof(i32), "same type");
-assert(typeof(i32) != typeof(i64), "different type");
-assert(1.5f + 0.5f == 2.0f, "add");
-assert(1.5f < 2.0f, "less");
+assert(typeof(i32) == typeof(i32), "same type"b);
+assert(typeof(i32) != typeof(i64), "different type"b);
+assert(1.5f + 0.5f == 2.0f, "add"b);
+assert(1.5f < 2.0f, "less"b);
 
 comptime const bias = 0.5f;
 comptime const sum = bias + 1.5f;

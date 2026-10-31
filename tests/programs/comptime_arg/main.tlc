@@ -1,13 +1,13 @@
-extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 
-comptime const label = "Per";
+comptime const label = "Per"b;
 
 macro func hello(name comptime []const u8, tail []const u8, n comptime i32) void {
-    emit printf("Hello %s %s %d\n", name, tail, n);
+    emit printf("Hello %s %s %d\n"b, name, tail, n);
 }
 
 func main() i32 {
-    var tail = "Ada";
+    var tail = "Ada"b;
     hello(label, tail, 40 + 2);
     return 0;
 }

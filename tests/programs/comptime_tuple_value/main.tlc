@@ -7,7 +7,7 @@ comptime const bias = 0.5;
 comptime const wide = (bias, 20);
 comptime const narrow = (0.5f, 1);
 comptime const origin = (Point{.x = 40, .y = 2}, 1);
-comptime const label = ("hi", 2);
+comptime const label = ("hi"b, 2);
 
 comptime func take_wide(p (f64, i32)) i32 {
     return p[1];

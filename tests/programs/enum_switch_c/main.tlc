@@ -1,4 +1,4 @@
-extern(abi="c") type Flag enum {
+extern(abi="c"b) type Flag enum {
     Off,
     On = 1,
     Both = 3,

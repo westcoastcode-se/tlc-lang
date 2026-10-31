@@ -1,7 +1,7 @@
-extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 
 macro func hello() void {
-    emit printf("Hello\n");
+    emit printf("Hello\n"b);
 }
 
 func main() i32 {

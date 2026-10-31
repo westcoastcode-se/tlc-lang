@@ -5,7 +5,7 @@ type Order enum {
 
 func main() i32 {
     if (Order.acquire == Order.relaxed) {
-        return "no";
+        return "no"b;
     }
     return 42;
 }

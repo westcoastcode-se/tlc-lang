@@ -1,4 +1,4 @@
-extern(name="id_i32") func id[T type](value T) T {
+extern(name="id_i32"b) func id[T type](value T) T {
     return value;
 }
 

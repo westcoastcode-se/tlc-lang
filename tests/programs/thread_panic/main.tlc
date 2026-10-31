@@ -2,7 +2,7 @@ import "builtin";
 import "std/thread";
 
 func leaf(arg *void) *void {
-    builtin.panic("thread");
+    builtin.panic("thread"b);
     return arg;
 }
 

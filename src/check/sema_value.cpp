@@ -303,11 +303,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_invalid();
             } else if constexpr (std::is_same_v<T, Expr::Char>) {
                 (void)used;
-                if (node.value > 255ULL) {
+                if (node.byte_form) {
+                    if (node.value > 255ULL) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    return type_rank(1, true);
+                }
+                // A Unicode scalar value. One source byte stands for that code point.
+                if (node.value > 0x10FFFFULL) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
-                return type_rank(1, true);
+                return type_int();
             } else if constexpr (std::is_same_v<T, Expr::Float>) {
                 (void)used;
                 return type_float(node.is_f32 ? 32 : 64);
@@ -1851,8 +1859,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return field;
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 (void)used;
-                // `"Hello"` and a raw string are `[]const u8`. The bytes still end with a null.
-                return string_slice();
+                // `"Hello"b` is `[]const u8`. The bytes still end with a null.
+                // `"Hello"` is `string.string_view` when `std/string` is part of the program.
+                // Without that struct the literal stays the byte slice.
+                if (node.byte_form || text_view_id_ < 0) {
+                    return string_slice();
+                }
+                node.view_struct = text_view_id_;
+                return type_struct(text_view_id_);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 (void)used;
                 // `a[i:j]` is a slice of the elements from i up to, but not including, j.

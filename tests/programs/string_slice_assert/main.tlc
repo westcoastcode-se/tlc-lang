@@ -1,4 +1,4 @@
 func main() i32 {
-    assert("hello"[1:4][3] == 108, "past");
+    assert("hello"b[1:4][3] == 108, "past"b);
     return 0;
 }

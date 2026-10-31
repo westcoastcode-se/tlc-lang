@@ -2,27 +2,27 @@ package thread;
 
 import "builtin";
 
-extern(abi="c") func pthread_create(thread *u64, attr ?*void, start func (*void) *void, arg *void) i32;
-extern(abi="c") func pthread_join(thread u64, value **void) i32;
-extern(abi="c") func pthread_detach(thread u64) i32;
-extern(abi="c") func pthread_mutex_init(mutex *void, attr ?*void) i32;
-extern(abi="c") func pthread_mutex_destroy(mutex *void) i32;
-extern(abi="c") func pthread_mutex_lock(mutex *void) i32;
-extern(abi="c") func pthread_mutex_unlock(mutex *void) i32;
-extern(abi="c") func sched_yield() i32;
-extern(abi="c") func pthread_self() u64;
-extern(abi="c") func pthread_cond_init(cond *void, attr ?*void) i32;
-extern(abi="c") func pthread_cond_destroy(cond *void) i32;
-extern(abi="c") func pthread_cond_wait(cond *void, mutex *void) i32;
-extern(abi="c") func pthread_cond_signal(cond *void) i32;
-extern(abi="c") func pthread_cond_broadcast(cond *void) i32;
-extern(abi="c") func pthread_rwlock_init(lock *void, attr ?*void) i32;
-extern(abi="c") func pthread_rwlock_destroy(lock *void) i32;
-extern(abi="c") func pthread_rwlock_rdlock(lock *void) i32;
-extern(abi="c") func pthread_rwlock_wrlock(lock *void) i32;
-extern(abi="c") func pthread_rwlock_unlock(lock *void) i32;
-extern(abi="c") func malloc(size i64) ?*u8;
-extern(abi="c") func free(ptr *void) void;
+extern(abi="c"b) func pthread_create(thread *u64, attr ?*void, start func (*void) *void, arg *void) i32;
+extern(abi="c"b) func pthread_join(thread u64, value **void) i32;
+extern(abi="c"b) func pthread_detach(thread u64) i32;
+extern(abi="c"b) func pthread_mutex_init(mutex *void, attr ?*void) i32;
+extern(abi="c"b) func pthread_mutex_destroy(mutex *void) i32;
+extern(abi="c"b) func pthread_mutex_lock(mutex *void) i32;
+extern(abi="c"b) func pthread_mutex_unlock(mutex *void) i32;
+extern(abi="c"b) func sched_yield() i32;
+extern(abi="c"b) func pthread_self() u64;
+extern(abi="c"b) func pthread_cond_init(cond *void, attr ?*void) i32;
+extern(abi="c"b) func pthread_cond_destroy(cond *void) i32;
+extern(abi="c"b) func pthread_cond_wait(cond *void, mutex *void) i32;
+extern(abi="c"b) func pthread_cond_signal(cond *void) i32;
+extern(abi="c"b) func pthread_cond_broadcast(cond *void) i32;
+extern(abi="c"b) func pthread_rwlock_init(lock *void, attr ?*void) i32;
+extern(abi="c"b) func pthread_rwlock_destroy(lock *void) i32;
+extern(abi="c"b) func pthread_rwlock_rdlock(lock *void) i32;
+extern(abi="c"b) func pthread_rwlock_wrlock(lock *void) i32;
+extern(abi="c"b) func pthread_rwlock_unlock(lock *void) i32;
+extern(abi="c"b) func malloc(size i64) ?*u8;
+extern(abi="c"b) func free(ptr *void) void;
 
 // 128 bytes covers glibc, musl, and macOS pthread_mutex_t and pthread_cond_t.
 // malloc aligns to 16.
@@ -32,7 +32,7 @@ comptime const mutex_bytes i64 = 128;
 comptime const rwlock_bytes i64 = 256;
 
 func fail() {
-    builtin.panic("thread");
+    builtin.panic("thread"b);
 }
 
 func os_spawn(entry func (*void) *void, arg *void) Thread {

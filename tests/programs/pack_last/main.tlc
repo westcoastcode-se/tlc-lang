@@ -21,8 +21,8 @@ func main() i32 {
     if (rest_of(5, 9) != 9) {
         return 3;
     }
-    x, y := rest_of(3, (4, 'b'));
-    if (x != 4 || y != 'b' || sizeof(y) != 1) {
+    x, y := rest_of(3, (4, 'b'b));
+    if (x != 4 || y != 'b'b || sizeof(y) != 1) {
         return 4;
     }
     if (width[4](1) != 4) {

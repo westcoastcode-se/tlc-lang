@@ -13,7 +13,7 @@ func paren(v []i32) ([]i32, i32) {
 }
 
 func text() ([]const u8, i32) {
-    return "ab", 2;
+    return "ab"b, 2;
 }
 
 func take(v []i32) i32 {
@@ -89,7 +89,7 @@ func main() i32 {
         return 12;
     }
     var bytes, blen = text();
-    if (bytes.len != 2 || bytes[0] != 'a' || bytes[1] != 'b' || blen != 2) {
+    if (bytes.len != 2 || bytes[0] != 'a'b || bytes[1] != 'b'b || blen != 2) {
         return 13;
     }
     var pts = [_]Point{Point{.x = 6}, Point{.x = 1}};

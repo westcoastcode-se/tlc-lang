@@ -18,7 +18,7 @@ import {
     SdlEventKind,
     SdlGlAttr,
     SdlScancode,
-} from "vendor/sdl3";
+} from "vendor/sdl3"b;
 
 import {
     GLenum,
@@ -46,9 +46,9 @@ import {
     GetProgramInfoLog,
     DeleteShader,
     DrawArrays,
-} from "vendor/gl";
+} from "vendor/gl"b;
 
-extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 
 comptime const window_w = 480;
 comptime const window_h = 640;
@@ -174,7 +174,7 @@ func spawn() void {
     if (!fits(kind, rot, px, py)) {
         alive = false;
         if (!told) {
-            printf("game over  lines %d  score %d\n", lines, score);
+            printf("game over  lines %d  score %d\n"b, lines, score);
             told = true;
         }
         return;
@@ -195,7 +195,7 @@ func settle() void {
     if (buried) {
         alive = false;
         if (!told) {
-            printf("game over  lines %d  score %d\n", lines, score);
+            printf("game over  lines %d  score %d\n"b, lines, score);
             told = true;
         }
         return;
@@ -204,7 +204,7 @@ func settle() void {
     if (cleared != 0) {
         lines = lines + cleared;
         score = score + cleared * cleared * 100;
-        printf("lines %d  score %d\n", lines, score);
+        printf("lines %d  score %d\n"b, lines, score);
     }
     spawn();
 }
@@ -308,7 +308,7 @@ func shader_status(object u32, pname u32, linked bool) bool {
         } else {
             GetShaderInfoLog(object, 512, null, log);
         }
-        printf("%s\n", *u8(log));
+        printf("%s\n"b, *u8(log));
         return false;
     }
     return true;
@@ -337,14 +337,14 @@ void main() {
     gl_Position = vec4(pos, 0.0, 1.0);
     v_color = color;
 }
-`;
+`b;
     var fragment_source *const u8 = `#version 330 core
 in vec3 v_color;
 out vec4 frag;
 void main() {
     frag = vec4(v_color, 1.0);
 }
-`;
+`b;
     var vertex = make_shader(GLenum.VERTEX_SHADER, vertex_source);
     var fragment = make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
     if (vertex == 0 || fragment == 0) {
@@ -534,7 +534,7 @@ func draw() void {
 
 func main() i32 {
     if (!SDL_Init(SdlInit.SDL_INIT_VIDEO)) {
-        printf("SDL_Init failed: %s\n", SDL_GetError());
+        printf("SDL_Init failed: %s\n"b, SDL_GetError());
         return 1;
     }
     defer SDL_Quit();
@@ -543,21 +543,21 @@ func main() i32 {
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_PROFILE_MASK, SdlGlAttr.SDL_GL_CONTEXT_PROFILE_CORE);
 
-    var window = SDL_CreateWindow("Tetris", window_w, window_h, SdlWindow.SDL_WINDOW_OPENGL);
+    var window = SDL_CreateWindow("Tetris"b, window_w, window_h, SdlWindow.SDL_WINDOW_OPENGL);
     if (window == null) {
-        printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
+        printf("SDL_CreateWindow failed: %s\n"b, SDL_GetError());
         return 1;
     }
     defer SDL_DestroyWindow(window);
 
     var context = SDL_GL_CreateContext(window);
     if (context == null) {
-        printf("SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+        printf("SDL_GL_CreateContext failed: %s\n"b, SDL_GetError());
         return 1;
     }
     SDL_GL_MakeCurrent(window, context);
     if (!load_gl()) {
-        printf("OpenGL failed\n");
+        printf("OpenGL failed\n"b);
         return 1;
     }
     Viewport(0, 0, window_w, window_h);
@@ -567,7 +567,7 @@ func main() i32 {
     spawn();
     last = SDL_GetTicks();
     running = true;
-    printf("left right down move, up and z rotate, space drops, r restarts\n");
+    printf("left right down move, up and z rotate, space drops, r restarts\n"b);
 
     while (running) {
         var event = SDL_Event{};

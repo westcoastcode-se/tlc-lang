@@ -2,12 +2,12 @@ package testing;
 
 import "builtin";
 
-extern(abi="c") func printf(fmt *const u8, ...) i32;
-extern(abi="c") func vprintf(fmt *const u8, ap *u8) i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func vprintf(fmt *const u8, ap *u8) i32;
 
 export func error(fmt *const u8, ...) i32 {
-    printf("%s: ", *u8(builtin.trace()));
+    printf("%s: "b, *u8(builtin.trace()));
     vprintf(fmt, builtin.va());
-    printf("\n");
+    printf("\n"b);
     return 1;
 }

@@ -1,4 +1,4 @@
-assert(1 != 0, "one");
+assert(1 != 0, "one"b);
 
 func main() i32 {
     var n i32 = 3;

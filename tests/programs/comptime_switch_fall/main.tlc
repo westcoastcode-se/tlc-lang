@@ -9,7 +9,7 @@ func main() i32 {
         x = x + 40;
         break;
     default:
-        return "no";
+        return "no"b;
     }
     return x;
 }

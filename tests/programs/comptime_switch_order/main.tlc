@@ -8,7 +8,7 @@ func take(n i32, order comptime Order) i32 {
     case Order.acquire:
         return n + 2;
     default:
-        return "no";
+        return "no"b;
     }
 }
 

@@ -36,6 +36,8 @@ class Lexer {
     Token lex_string(uint32_t start);
     Token lex_raw_string(uint32_t start);
     Token lex_char(uint32_t start);
+    // `"hi"b` and `'A'b`. A following identifier character keeps `b` as a name.
+    bool take_byte_suffix();
     bool looks_like_float(uint32_t start) const;
 };
 

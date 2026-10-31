@@ -1,6 +1,6 @@
 import "builtin";
 
-extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 
 type Point struct {
     x i32;
@@ -35,7 +35,7 @@ func Point::make(x i32) Point {
 
 func id[T type](value T) T { return value; }
 
-extern(abi="c") func logf(fmt *const u8, ...) i32;
+extern(abi="c"b) func logf(fmt *const u8, ...) i32;
 
 func main() i32 {
     if (sizeof(builtin.Type) != 8) {
@@ -79,13 +79,13 @@ func main() i32 {
     if (typeof(id).Function.generic == false) {
         return 12;
     }
-    printf("%s\n", t.name());
-    printf("%s\n", typeof(logf).name());
-    printf("%s\n", typeof(f).name());
-    printf("%s\n", typeof(box).name());
-    printf("%s\n", typeof(Point.get).name());
-    printf("%s\n", typeof(Point.ptr).name());
-    printf("%s\n", typeof(Point.make).name());
-    printf("%s\n", typeof(id).name());
+    printf("%s\n"b, t.name());
+    printf("%s\n"b, typeof(logf).name());
+    printf("%s\n"b, typeof(f).name());
+    printf("%s\n"b, typeof(box).name());
+    printf("%s\n"b, typeof(Point.get).name());
+    printf("%s\n"b, typeof(Point.ptr).name());
+    printf("%s\n"b, typeof(Point.make).name());
+    printf("%s\n"b, typeof(id).name());
     return 0;
 }

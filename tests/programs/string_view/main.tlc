@@ -1,98 +1,98 @@
 import "std/string";
 
-comptime const greeting string.string_view = "hello";
+comptime const greeting string.byte_string_view = "hello"b;
 
 func main() i32 {
-    var text string.string_view = "hello";
-    if (!text.equals("hello")) {
+    var text string.byte_string_view = "hello"b;
+    if (!text.equals("hello"b)) {
         return 1;
     }
-    if (text.equals("hell")) {
+    if (text.equals("hell"b)) {
         return 2;
     }
-    if (text.equals("")) {
+    if (text.equals(""b)) {
         return 3;
     }
-    var empty string.string_view = "";
-    if (!empty.equals("")) {
+    var empty string.byte_string_view = ""b;
+    if (!empty.equals(""b)) {
         return 4;
     }
-    if (text.compare("hello") != 0) {
+    if (text.compare("hello"b) != 0) {
         return 5;
     }
-    if (text.compare("world") >= 0) {
+    if (text.compare("world"b) >= 0) {
         return 6;
     }
-    if (text.compare("a") <= 0) {
+    if (text.compare("a"b) <= 0) {
         return 7;
     }
-    if (empty.compare("") != 0) {
+    if (empty.compare(""b) != 0) {
         return 8;
     }
-    if (empty.compare("a") >= 0) {
+    if (empty.compare("a"b) >= 0) {
         return 9;
     }
-    if (text.compare("") <= 0) {
+    if (text.compare(""b) <= 0) {
         return 10;
     }
-    if (text.find_first_of("ol") != 2) {
+    if (text.find_first_of("ol"b) != 2) {
         return 11;
     }
-    if (text.find_first_of("xyz") != -1) {
+    if (text.find_first_of("xyz"b) != -1) {
         return 12;
     }
-    if (text.find_first_of("") != -1) {
+    if (text.find_first_of(""b) != -1) {
         return 13;
     }
-    if (empty.find_first_of("h") != -1) {
+    if (empty.find_first_of("h"b) != -1) {
         return 14;
     }
-    if (text.find("ll") != 2) {
+    if (text.find("ll"b) != 2) {
         return 15;
     }
-    if (text.find("hello") != 0) {
+    if (text.find("hello"b) != 0) {
         return 16;
     }
-    if (text.find("") != 0) {
+    if (text.find(""b) != 0) {
         return 17;
     }
-    if (text.find("hello!") != -1) {
+    if (text.find("hello!"b) != -1) {
         return 18;
     }
-    if (empty.find("") != 0) {
+    if (empty.find(""b) != 0) {
         return 19;
     }
-    if (empty.find("a") != -1) {
+    if (empty.find("a"b) != -1) {
         return 20;
     }
-    if (!text.starts_with("he")) {
+    if (!text.starts_with("he"b)) {
         return 21;
     }
-    if (text.starts_with("hello!")) {
+    if (text.starts_with("hello!"b)) {
         return 22;
     }
-    if (!text.starts_with("")) {
+    if (!text.starts_with(""b)) {
         return 23;
     }
-    if (!empty.starts_with("")) {
+    if (!empty.starts_with(""b)) {
         return 24;
     }
-    if (!text.ends_with("lo")) {
+    if (!text.ends_with("lo"b)) {
         return 25;
     }
-    if (text.ends_with("hello!")) {
+    if (text.ends_with("hello!"b)) {
         return 26;
     }
-    if (!text.ends_with("")) {
+    if (!text.ends_with(""b)) {
         return 27;
     }
-    if (!greeting.equals("hello")) {
+    if (!greeting.equals("hello"b)) {
         return 28;
     }
-    if (!string.from("world").equals("world")) {
+    if (!string.from("world"b).equals("world"b)) {
         return 29;
     }
-    if (text.find("lo") != 3) {
+    if (text.find("lo"b) != 3) {
         return 30;
     }
     return 0;

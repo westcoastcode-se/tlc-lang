@@ -3,7 +3,7 @@ func add(x i32, y i32) (i32, i32) {
 }
 
 func tagged() (i32, u8) {
-    return 3, 'b';
+    return 3, 'b'b;
 }
 
 func pick(p *i32) (*i32, i32) {
@@ -50,7 +50,7 @@ func main() i32 {
     }
     var letters = tagged();
     var n, ch = letters;
-    if (n != 3 || ch != 'b' || sizeof(ch) != 1) {
+    if (n != 3 || ch != 'b'b || sizeof(ch) != 1) {
         return 5;
     }
     var cell i32 = 11;
@@ -75,14 +75,14 @@ func main() i32 {
     if (value1 != 5 || value2 != 6) {
         return 9;
     }
-    var lit_n, lit_ch = (40, 'a');
-    if (lit_n != 40 || lit_ch != 'a' || sizeof(lit_ch) != 1) {
+    var lit_n, lit_ch = (40, 'a'b);
+    if (lit_n != 40 || lit_ch != 'a'b || sizeof(lit_ch) != 1) {
         return 10;
     }
-    var src u8 = 'c';
+    var src u8 = 'c'b;
     var wrapped = (src, 2);
     var out_ch, out_n = wrapped;
-    if (out_ch != 'c' || out_n != 2 || sizeof(out_ch) != 1) {
+    if (out_ch != 'c'b || out_n != 2 || sizeof(out_ch) != 1) {
         return 11;
     }
     var flag, count = (true, 1);

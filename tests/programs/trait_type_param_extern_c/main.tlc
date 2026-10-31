@@ -1,4 +1,4 @@
-extern(abi="c") type Seq[T type] trait {
+extern(abi="c"b) type Seq[T type] trait {
     func at(i i32) T;
 };
 

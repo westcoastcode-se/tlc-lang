@@ -1,6 +1,6 @@
 import "builtin";
 
 func main() i32 {
-    assert(builtin.memeql[bool]("hi", "hi"), "type");
+    assert(builtin.memeql[bool]("hi"b, "hi"b), "type"b);
     return 0;
 }

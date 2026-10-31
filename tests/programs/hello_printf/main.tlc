@@ -1,7 +1,7 @@
-extern(abi="c") func printf(fmt *const u8, ...) i32;
-extern(abi="c") var slot i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) var slot i32;
 
 func main() i32 {
-    printf("hi\n");
+    printf("hi\n"b);
     return 0;
 }

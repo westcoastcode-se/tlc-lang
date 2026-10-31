@@ -51,14 +51,14 @@ func main() i32 {
     if (take_row(part) != 32 || take_row(named[:]) != 14) {
         return 4;
     }
-    var text = "hello";
+    var text = "hello"b;
     var tail_text = text[1:];
     var lead_text = text[:4];
     var same = text[:];
-    if (tail_text.len != 4 || tail_text[0] != 'e' || lead_text.len != 4 || lead_text[3] != 'l') {
+    if (tail_text.len != 4 || tail_text[0] != 'e'b || lead_text.len != 4 || lead_text[3] != 'l'b) {
         return 5;
     }
-    if (same.len != 5 || same[0] != 'h' || same[4] != 'o') {
+    if (same.len != 5 || same[0] != 'h'b || same[4] != 'o'b) {
         return 6;
     }
     var cut = source()[1:];

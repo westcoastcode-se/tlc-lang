@@ -10,7 +10,7 @@ extern func use(s Shape, ...) i32 {
     return 1;
 }
 
-extern(abi="tlc") func Rect::paint(self *this, s Shape, ...) i32 {
+extern(abi="tlc"b) func Rect::paint(self *this, s Shape, ...) i32 {
     return 1;
 }
 

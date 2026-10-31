@@ -2,7 +2,7 @@ type Vec[T type] struct {
     n T;
 }
 
-extern(abi="c", name="get_n") func Vec[T]::code() i32 {
+extern(abi="c"b, name="get_n"b) func Vec[T]::code() i32 {
     return 1;
 }
 

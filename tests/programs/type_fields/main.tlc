@@ -1,6 +1,6 @@
 import "builtin";
 
-extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 
 type Point struct {
     x i32;
@@ -74,14 +74,14 @@ func main() i32 {
     if (fields[0].name.len != 1 || fields[1].name.len != 1 || fields[0].kind.name() == null) {
         return 11;
     }
-    printf("%s %s\n", fields[0].name, fields[0].kind.name());
-    printf("%s %s\n", fields[1].name, fields[1].kind.name());
-    printf("%s %s\n", held[0].name, held[1].name);
-    printf("%s\n", typeof(box).fields()[0].name);
+    printf("%s %s\n"b, fields[0].name, fields[0].kind.name());
+    printf("%s %s\n"b, fields[1].name, fields[1].kind.name());
+    printf("%s %s\n"b, held[0].name, held[1].name);
+    printf("%s\n"b, typeof(box).fields()[0].name);
     var described = typeof(builtin.Field).fields();
     if (described.len != 2 || described[1].kind != typeof(builtin.Type)) {
         return 12;
     }
-    printf("%s\n", described[1].kind.name());
+    printf("%s\n"b, described[1].kind.name());
     return 0;
 }

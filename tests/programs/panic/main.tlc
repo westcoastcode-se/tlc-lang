@@ -1,7 +1,7 @@
 import "builtin";
 
 func leaf() void {
-    builtin.panic("out of memory");
+    builtin.panic("out of memory"b);
 }
 
 func mid() void {

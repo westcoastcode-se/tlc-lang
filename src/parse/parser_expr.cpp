@@ -862,6 +862,7 @@ std::unique_ptr<Expr> Parser::parse_primary() {
         Expr::String literal;
         literal.loc = peek().loc;
         literal.text = peek().text;
+        literal.byte_form = peek().byte_form;
         ++pos_;
         return make_expr(std::move(literal));
     }
@@ -882,6 +883,7 @@ std::unique_ptr<Expr> Parser::parse_primary() {
         Expr::Char literal;
         literal.loc = peek().loc;
         literal.value = peek().int_value;
+        literal.byte_form = peek().byte_form;
         ++pos_;
         return make_expr(std::move(literal));
     }

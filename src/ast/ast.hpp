@@ -183,6 +183,10 @@ struct Expr {
     struct String {
         SourceLoc loc{};
         std::string text;
+        // `"hi"b` is a byte string. Without the suffix the literal is Unicode.
+        bool byte_form = false;
+        // Struct id of `string.string_view` when this literal is Unicode.
+        mutable int view_struct = -1;
     };
     struct Index {
         SourceLoc loc{};
@@ -287,6 +291,8 @@ struct Expr {
     struct Char {
         SourceLoc loc{};
         uint64_t value = 0;
+        // `'A'b` is `u8`. Without the suffix the literal is a Unicode code point.
+        bool byte_form = false;
     };
     struct Float {
         SourceLoc loc{};

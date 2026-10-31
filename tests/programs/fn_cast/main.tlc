@@ -15,7 +15,7 @@ func get_raw(name *const u8) *void {
 }
 
 func main() i32 {
-    var named = Op(get("add"));
-    var raw = func (i32) i32(get_raw("add"));
-    return named(10) + raw(10) + Op(get("add"))(19);
+    var named = Op(get("add"b));
+    var raw = func (i32) i32(get_raw("add"b));
+    return named(10) + raw(10) + Op(get("add"b))(19);
 }

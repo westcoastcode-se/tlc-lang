@@ -1,5 +1,5 @@
 var i = 1;
-comptime const n = "hi"[i];
+comptime const n = "hi"b[i];
 
 func main() i32 {
     return n;

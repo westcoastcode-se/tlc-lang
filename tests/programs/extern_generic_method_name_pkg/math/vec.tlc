@@ -4,6 +4,6 @@ export type Vec[T type] struct {
     n T;
 }
 
-export extern(abi="c", name="vec_code") func Vec[T]::code(value T) i32 {
+export extern(abi="c"b, name="vec_code"b) func Vec[T]::code(value T) i32 {
     return value;
 }

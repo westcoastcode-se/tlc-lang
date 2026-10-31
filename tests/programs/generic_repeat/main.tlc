@@ -1,5 +1,5 @@
 func repeat[N i32, T type](value T) [N]T {
-    assert(N > 0, "empty");
+    assert(N > 0, "empty"b);
     var out [N]T;
     // A runtime index assigns no element. Each constant index is stored on its own.
     out[0] = value;

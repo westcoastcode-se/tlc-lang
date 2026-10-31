@@ -2783,6 +2783,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         Expr::String text;
                         text.loc = loc;
                         text.text = bound->text;
+                        text.byte_form = true;
                         expr.data = std::move(text);
                         return;
                     }

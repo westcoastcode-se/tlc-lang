@@ -9,6 +9,6 @@ func main() i32 {
     var n i32 = 1;
     var t = thread.spawn(work, *void(&n));
     thread.join(t);
-    builtin.panic("after join");
+    builtin.panic("after join"b);
     return 0;
 }

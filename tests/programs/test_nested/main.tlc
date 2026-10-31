@@ -1,12 +1,12 @@
 func work() i32 {
-    test "inside" {
+    test "inside"b {
         return 0;
     }
     return 1;
 }
 
-test "outer" {
-    test "nested" {
+test "outer"b {
+    test "nested"b {
         return 0;
     }
 }

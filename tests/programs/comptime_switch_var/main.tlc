@@ -10,6 +10,6 @@ func main() i32 {
     case Color.Blue:
         return 42;
     default:
-        return "no";
+        return "no"b;
     }
 }

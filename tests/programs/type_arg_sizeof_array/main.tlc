@@ -9,7 +9,7 @@ func Buf[N]::span() i32 { return N; }
 func width[N i32]() i32 { return N; }
 
 func use[T type]() i32 {
-    assert(sizeof(T) > 0, "size");
+    assert(sizeof(T) > 0, "size"b);
     return width[sizeof(T)]();
 }
 

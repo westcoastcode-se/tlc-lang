@@ -1,5 +1,5 @@
 import "testing";
 
 func main() i32 {
-    return testing.error("x");
+    return testing.error("x"b);
 }

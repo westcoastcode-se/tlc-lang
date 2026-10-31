@@ -13,7 +13,7 @@ func use[T type]() i32 { return width[sizeof(T)](); }
 func plain[T type]() i32 { return sizeof(T); }
 
 func repeat[N i32, T type](value T) [N]T {
-    assert(N > 0, "empty");
+    assert(N > 0, "empty"b);
     var out [N]T;
     out[0] = value;
     comptime if (N > 1) { out[1] = value; }

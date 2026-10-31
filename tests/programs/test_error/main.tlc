@@ -4,14 +4,14 @@ func add(a i32, b i32) i32 {
     return a + b;
 }
 
-test "add joins its arguments" {
+test "add joins its arguments"b {
     var value = add(2, 2);
     if (value != 4) {
-        return testing.error("Expected 4 but was %d", value);
+        return testing.error("Expected 4 but was %d"b, value);
     }
 }
 
-test "bad" {
+test "bad"b {
     var value = add(2, 3);
-    return testing.error("Expected 4 but was %d", value);
+    return testing.error("Expected 4 but was %d"b, value);
 }

@@ -12,7 +12,7 @@ var rows = [_][]i32{a[:], b[:]};
 var top = rows[0:1];
 var grid = [_][2]i32{{1, 2}, {3, 4}};
 var band = grid[1:];
-var text = "hi"[1:];
+var text = "hi"b[1:];
 
 type Hold struct {
     items []i32;
@@ -48,7 +48,7 @@ func main() i32 {
     if (band.len != 1 || band[0][0] != 3 || band[0][1] != 4) {
         return 9;
     }
-    if (text.len != 1 || text[0] != "i"[0]) {
+    if (text.len != 1 || text[0] != "i"b[0]) {
         return 10;
     }
     if (held.items.len != 2 || held.items[0] != 10 || held.items[1] != 20) {

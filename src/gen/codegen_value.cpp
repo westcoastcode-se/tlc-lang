@@ -898,6 +898,19 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 out.elem_char = true;
                 out.is_slice = true;
                 out.array_len = static_cast<int>(node.text.size());
+                // A Unicode literal is `string_view`: one field, the UTF-8 slice.
+                if (!node.byte_form && node.view_struct >= 0 &&
+                    node.view_struct < static_cast<int>(structs_.size()) &&
+                    structs_[static_cast<std::size_t>(node.view_struct)].type != nullptr) {
+                    llvm::StructType *type = structs_[static_cast<std::size_t>(node.view_struct)].type;
+                    llvm::Value *header = as_slice_value(out, node.loc);
+                    llvm::Value *object = llvm::UndefValue::get(type);
+                    object = builder_.CreateInsertValue(object, header, 0);
+                    TypedValue text;
+                    text.value = object;
+                    text.struct_id = node.view_struct;
+                    return text;
+                }
                 return out;
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
                 if (const auto folded = fold(expr)) {

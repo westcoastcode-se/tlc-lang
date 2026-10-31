@@ -5,7 +5,7 @@ macro func walk(text []const u8) void {
 }
 
 func main() i32 {
-    var text = "hi";
+    var text = "hi"b;
     walk(text);
     return 0;
 }

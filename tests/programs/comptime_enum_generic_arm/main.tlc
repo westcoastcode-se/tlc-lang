@@ -7,7 +7,7 @@ func id[T type](value T, order comptime Order) T {
     comptime if (order == Order.acquire) {
         return value + 41;
     } else {
-        return "no";
+        return "no"b;
     }
 }
 

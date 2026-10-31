@@ -153,6 +153,8 @@ struct Token {
     std::string text;
     uint64_t int_value = 0;
     IntSuffix suffix{};
+    // `"hi"b` and `'A'b`. A string or character without this flag is Unicode.
+    bool byte_form = false;
 };
 
 const char *token_kind_name(TokenKind kind);

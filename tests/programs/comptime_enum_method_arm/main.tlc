@@ -11,7 +11,7 @@ func Point::id(self *this, order comptime Order) i32 {
     comptime if (order == Order.acquire) {
         return self.x + 41;
     } else {
-        return "no";
+        return "no"b;
     }
 }
 

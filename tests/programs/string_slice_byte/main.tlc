@@ -1,43 +1,43 @@
-comptime const label = "hello";
+comptime const label = "hello"b;
 comptime const cut = label[1:4];
 comptime const again = cut[0:2];
 comptime const i = 0;
-comptime const n = "hello"[1:4][i];
+comptime const n = "hello"b[1:4][i];
 comptime const named = cut[0];
 comptime const deep = again[1];
-comptime const open = "hello"[1:][0];
-comptime const low = "hello"[:2][1];
-comptime const whole = "hello"[:][1];
-comptime const tail = "hello"[4:][0];
-comptime const nl = "\n"[0:1][0];
-comptime const raw = `hello`[1:4][0];
-comptime const hex = "\xFF"[0:1][0];
-comptime const nul = "a\000b"[1:2][0];
-comptime const N = "\xFF\x01"[1:2][0];
-comptime const row = [_]i32{"hello"[1:4][0], 1};
-var live = "hello"[1:4][0];
+comptime const open = "hello"b[1:][0];
+comptime const low = "hello"b[:2][1];
+comptime const whole = "hello"b[:][1];
+comptime const tail = "hello"b[4:][0];
+comptime const nl = "\n"b[0:1][0];
+comptime const raw = `hello`b[1:4][0];
+comptime const hex = "\xFF"b[0:1][0];
+comptime const nul = "a\000b"b[1:2][0];
+comptime const N = "\xFF\x01"b[1:2][0];
+comptime const row = [_]i32{"hello"b[1:4][0], 1};
+var live = "hello"b[1:4][0];
 
-assert(n == 101, "byte");
-assert(named == 101, "name");
-assert(deep == 108, "deep");
-assert(open == 101, "open");
-assert(low == 101, "low");
-assert(whole == 101, "whole");
-assert(tail == 111, "tail");
-assert(nl == 10, "nl");
-assert(raw == 101, "raw");
-assert(hex == 255, "hex");
-assert(nul == 0, "nul");
-assert(sizeof([N]i32) == 4, "len");
+assert(n == 101, "byte"b);
+assert(named == 101, "name"b);
+assert(deep == 108, "deep"b);
+assert(open == 101, "open"b);
+assert(low == 101, "low"b);
+assert(whole == 101, "whole"b);
+assert(tail == 111, "tail"b);
+assert(nl == 10, "nl"b);
+assert(raw == 101, "raw"b);
+assert(hex == 255, "hex"b);
+assert(nul == 0, "nul"b);
+assert(sizeof([N]i32) == 4, "len"b);
 
 comptime func byte() i32 {
     return label[1:4][0];
 }
 
 func main() i32 {
-    const text = "hello";
+    const text = "hello"b;
     var k = 0;
-    if (text[1:4][0] != n || "hello"[1:4][k] != byte() || live != n || row[0] != 101) {
+    if (text[1:4][0] != n || "hello"b[1:4][k] != byte() || live != n || row[0] != 101) {
         return 0;
     }
     if (cut.len != 3 || cut[1] != deep || again.len != 2 || again[0] != n) {

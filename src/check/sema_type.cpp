@@ -1482,6 +1482,16 @@ void Checker::define_struct_fields() {
             }
         }
         info.complete = true;
+        // `std/string`'s `string_view` is the Unicode literal. One field, `bytes []const u8`.
+        if (info.name == "string_view" && info.fields.size() == 1 && info.fields[0].name == "bytes" &&
+            is_slice(info.fields[0].type) && info.fields[0].type.element != nullptr &&
+            info.fields[0].type.element->is_const && info.fields[0].type.element->kind == TypeKind::Char &&
+            info.fields[0].type.element->is_unsigned) {
+            const PackageNode *node = find_node(info.file_id);
+            if (node != nullptr && node->path.find("std/string/") != std::string::npos) {
+                text_view_id_ = pending.id;
+            }
+        }
     };
     bool progress = true;
     while (progress) {

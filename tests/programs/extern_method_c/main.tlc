@@ -1,13 +1,13 @@
-extern(abi="c") type Point struct {
+extern(abi="c"b) type Point struct {
     x i32;
     y i32;
 }
 
-extern(abi="c") func Point::read(self this) i32 {
+extern(abi="c"b) func Point::read(self this) i32 {
     return self.x + self.y;
 }
 
-extern(abi="c", name="point_origin") func Point::origin() Point {
+extern(abi="c"b, name="point_origin"b) func Point::origin() Point {
     var p Point;
     p.x = 20;
     p.y = 22;

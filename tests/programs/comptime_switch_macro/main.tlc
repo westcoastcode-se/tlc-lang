@@ -4,7 +4,7 @@ macro func pick(slot *i32, n comptime i32) void {
         emit *slot = 40;
         break;
     default:
-        emit *slot = "no";
+        emit *slot = "no"b;
     }
 }
 

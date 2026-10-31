@@ -1,30 +1,30 @@
-comptime const label = "hi";
+comptime const label = "hi"b;
 comptime const again = label;
 comptime const i = 1;
-comptime const n = "hi"[i];
+comptime const n = "hi"b[i];
 comptime const named = again[1];
-comptime const nl = "\n"[0];
-comptime const raw = `i`[0];
-comptime const hex = "\xFF"[0];
-comptime const N = "\x01"[0];
-comptime const row = [_]i32{"hi"[0], 1};
-var live = "hi"[1];
+comptime const nl = "\n"b[0];
+comptime const raw = `i`b[0];
+comptime const hex = "\xFF"b[0];
+comptime const N = "\x01"b[0];
+comptime const row = [_]i32{"hi"b[0], 1};
+var live = "hi"b[1];
 
-assert(n == 105, "byte");
-assert(named == 105, "name");
-assert(nl == 10, "nl");
-assert(raw == 105, "raw");
-assert(hex == 255, "hex");
-assert(sizeof([N]i32) == 4, "len");
+assert(n == 105, "byte"b);
+assert(named == 105, "name"b);
+assert(nl == 10, "nl"b);
+assert(raw == 105, "raw"b);
+assert(hex == 255, "hex"b);
+assert(sizeof([N]i32) == 4, "len"b);
 
 comptime func byte() i32 {
-    return "hi"[1];
+    return "hi"b[1];
 }
 
 func main() i32 {
-    const text = "hi";
+    const text = "hi"b;
     var k = 1;
-    if (text[1] != n || "hi"[k] != byte() || live != n || row[0] != 104) {
+    if (text[1] != n || "hi"b[k] != byte() || live != n || row[0] != 104) {
         return 0;
     }
     return n - 63;

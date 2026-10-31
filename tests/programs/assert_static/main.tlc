@@ -1,14 +1,14 @@
-assert(sizeof(i32) == 4, "i32 must be 4 bytes");
+assert(sizeof(i32) == 4, "i32 must be 4 bytes"b);
 
 type Pair struct {
     a u8;
     b i32;
 };
 
-assert(sizeof(Pair) == 8, "pair");
+assert(sizeof(Pair) == 8, "pair"b);
 
 func main() i32 {
-    assert(sizeof(i32) == 4, "i32 must be 4 bytes");
-    assert(sizeof(*i32) == 8, "pointer");
+    assert(sizeof(i32) == 4, "i32 must be 4 bytes"b);
+    assert(sizeof(*i32) == 8, "pointer"b);
     return sizeof(i32);
 }

@@ -9,9 +9,9 @@ func main() i32 {
     got[0] = 5;
     if (got[0] + got[1] != 9) { return 3; }
     if ((8, 1)[0] != 8) { return 4; }
-    var mixed = (40, 'a');
-    mixed[1] = 'b';
-    if (mixed[0] != 40 || mixed[1] != 'b') { return 5; }
+    var mixed = (40, 'a'b);
+    mixed[1] = 'b'b;
+    if (mixed[0] != 40 || mixed[1] != 'b'b) { return 5; }
     if (t.len != 2 || mixed.len != 2 || (8, 1).len != 2 || got.len != 2) { return 6; }
     const n = t.len;
     if (n != 2) { return 7; }

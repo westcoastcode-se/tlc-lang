@@ -74,9 +74,9 @@ func main() i32 {
     if (view[1].len != 2 || view[1][0] != 10 || back[1][1] != 20 || box.items[1][0] != 10) {
         return 8;
     }
-    var lines = [_][]const u8{"ab", "c"};
+    var lines = [_][]const u8{"ab"b, "c"b};
     var text [][]const u8 = lines;
-    if (text.len != 2 || text[0].len != 2 || text[0][1] != 'b' || text[1][0] != 'c') {
+    if (text.len != 2 || text[0].len != 2 || text[0][1] != 'b'b || text[1][0] != 'c'b) {
         return 9;
     }
     var n i32 = 7;

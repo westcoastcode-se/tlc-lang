@@ -1,9 +1,9 @@
-extern(abi="c") type Num union {
+extern(abi="c"b) type Num union {
     n i32;
     m i32;
 }
 
-extern(abi="c") type Word union {
+extern(abi="c"b) type Word union {
     n i32;
     raw [8]u8;
 }

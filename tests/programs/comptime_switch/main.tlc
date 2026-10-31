@@ -7,10 +7,10 @@ type Color enum {
 func main() i32 {
     switch (Color.Blue) {
     case Color.Green:
-        return "no";
+        return "no"b;
     case Color.Blue:
         return 42;
     default:
-        return "no";
+        return "no"b;
     }
 }

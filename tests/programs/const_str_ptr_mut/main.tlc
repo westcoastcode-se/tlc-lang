@@ -1,4 +1,4 @@
-const label = "hi";
+const label = "hi"b;
 const p *u8 = label;
 
 func main() i32 {

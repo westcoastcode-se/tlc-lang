@@ -39,7 +39,7 @@ func main() i32 {
     var row [4]i32;
     var slice []i32 = row;
     var ptr *[4]i32 = &row;
-    var text []const u8 = "hi";
+    var text []const u8 = "hi"b;
     if (!same(n)) { return 1; }
     if (!bare[[4]i32]()) { return 2; }
     if (!row_type[[4]i32]()) { return 3; }

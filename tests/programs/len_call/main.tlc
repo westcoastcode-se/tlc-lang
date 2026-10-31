@@ -29,7 +29,7 @@ func main() i32 {
     if (text.len() != 2) {
         return 4;
     }
-    if ("hi".len() != 2) {
+    if ("hi"b.len() != 2) {
         return 5;
     }
     var bare Bare = nums;

@@ -1,6 +1,6 @@
 import "builtin";
 
-extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 
 type Point struct {
     x i32;
@@ -9,13 +9,13 @@ type Point struct {
 
 macro func names() void {
     for (var i = 0; i < typeof(Point).fields().len; i = i + 1) {
-        emit printf("%s\n", typeof(Point).fields()[i].name);
+        emit printf("%s\n"b, typeof(Point).fields()[i].name);
     }
 }
 
 macro func bytes() void {
-    for (var i = 0; i < "hi".len; i = i + 1) {
-        emit printf("%d\n", "hi"[i]);
+    for (var i = 0; i < "hi"b.len; i = i + 1) {
+        emit printf("%d\n"b, "hi"b[i]);
     }
 }
 

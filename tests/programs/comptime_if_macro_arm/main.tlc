@@ -2,7 +2,7 @@ macro func pick(slot *i32, n comptime i32) void {
     comptime if (n == 1) {
         emit *slot = 40;
     } else {
-        emit *slot = "no";
+        emit *slot = "no"b;
     }
 }
 

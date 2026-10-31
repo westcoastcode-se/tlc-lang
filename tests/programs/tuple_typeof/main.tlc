@@ -1,9 +1,9 @@
 import "builtin";
 
-extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 
 func main() i32 {
-    var row = ("hi", 26);
+    var row = ("hi"b, 26);
     if (typeof(row).fields().len != 2) {
         return 1;
     }
@@ -13,9 +13,9 @@ func main() i32 {
     if (typeof(row).fields()[1].kind != typeof(i32)) {
         return 3;
     }
-    if (typeof(row) != typeof(("hi", 26))) {
+    if (typeof(row) != typeof(("hi"b, 26))) {
         return 4;
     }
-    printf("%s\n", typeof(row).name());
+    printf("%s\n"b, typeof(row).name());
     return 0;
 }

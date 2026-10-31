@@ -13,9 +13,12 @@ This page lists each literal spelling and the type that spelling has.
 | `42i16`, `42u16` | `i16` and `u16`, when the value fits |
 | `42i32`, `42u32` | `i32` and `u32`, when the value fits |
 | `42i64`, `42u64` | `i64` and `u64`, when the value fits |
-| `'A'` | `u8` |
-| `"hi"` | `[]const u8` |
-| `` `hi` `` | `[]const u8`; the text may span lines |
+| `'A'` | a Unicode code point, `i32` |
+| `'A'b` | `u8` |
+| `"hi"` | `string.string_view` when `std/string` is imported |
+| `"hi"b` | `[]const u8` |
+| `` `hi` `` | `string.string_view` when `std/string` is imported; the text may span lines |
+| `` `hi`b `` | `[]const u8`; the text may span lines |
 | `true`, `false` | `bool` |
 | `null` | null pointer, stored only in `?*T` |
 
@@ -31,9 +34,9 @@ The compiler reports a value that does not fit in the suffix as `type mismatch`.
 
 ## Character literals
 
-A character literal has type `u8`, so `'A'` is 65 and `'\n'` is 10.
+A character literal is a Unicode code point stored as `i32`, so `'A'` is 65. `'A'b` and `'\n'b` are `u8`.
 
-The compiler reports a value above 255 as `type mismatch`.
+The compiler reports a byte character above 255 as `type mismatch`.
 
 The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.
 

@@ -28,7 +28,7 @@ comptime func make() Box {
     var box = Box{
         .at = Point{.x = 10},
         .row = [_]i32{20, 1},
-        .label = "hi",
+        .label = "hi"b,
         .op = add,
         .p = null,
         .ink = Color.Blue,

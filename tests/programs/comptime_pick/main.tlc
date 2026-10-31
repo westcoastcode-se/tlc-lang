@@ -22,7 +22,7 @@ func side[T type](value []const T) i32 {
     return 2;
 }
 
-comptime const label = "hi";
+comptime const label = "hi"b;
 
 func main() i32 {
     var n = 7;
@@ -44,14 +44,14 @@ func main() i32 {
     if (both[i32](1, 2) != 1) {
         return 6;
     }
-    if (side[u8]("hi") != 1) {
+    if (side[u8]("hi"b) != 1) {
         return 7;
     }
     if (side[u8](label) != 1) {
         return 8;
     }
-    var text = "hi";
-    const local = "hi";
+    var text = "hi"b;
+    const local = "hi"b;
     if (side[u8](text) != 2) {
         return 9;
     }

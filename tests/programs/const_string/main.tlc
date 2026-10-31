@@ -1,7 +1,7 @@
-comptime const label *const u8 = "hi";
+comptime const label *const u8 = "hi"b;
 
 func main() i32 {
-    if (label[0] == 'h' && label[1] == 'i' && label[2] == 0) {
+    if (label[0] == 'h'b && label[1] == 'i'b && label[2] == 0) {
         return 42;
     }
     return 1;

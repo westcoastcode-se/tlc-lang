@@ -2,7 +2,7 @@ type Shape trait {
     func area() i32;
 };
 
-extern(name="shape_twice") func Shape::twice(self *this) i32 {
+extern(name="shape_twice"b) func Shape::twice(self *this) i32 {
     return self.area() + self.area();
 }
 

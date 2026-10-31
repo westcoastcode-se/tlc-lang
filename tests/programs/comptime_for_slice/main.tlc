@@ -1,5 +1,5 @@
 func main() i32 {
-    var text = "hi";
+    var text = "hi"b;
     comptime for (var b : text) {
     }
     return 0;

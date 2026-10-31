@@ -91,7 +91,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 An accepted form whose rule does not match its page is inserted here. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there.
 
 - Postfix `!` on a `?*T` is `*T`. A null `p!` calls `builtin.panic("null pointer")` (`docs/expressions/narrowing.md`, `docs/builtin/panic.md`, `docs/grammar.md`). That call runs in a debug build and is left out of a release build. The compiler has no debug or release mode yet.
-- A string literal is `[]const u8`. `string.string_view` does not convert to `[]const u8`. `builtin.panic` takes `*const u8` and drops the length. `fields()[i].name` is `[]const u8` (`docs/types/string.md`, `docs/std/string.md`, `docs/builtin/panic.md`, `docs/types/type.md`).
+- A string literal without `b` is `[]const u8` unless `std/string` is imported, in which case it is `string.string_view`. `string.byte_string_view` does not convert to `[]const u8`. `builtin.panic` takes `*const u8` and drops the length. `fields()[i].name` is `[]const u8` (`docs/types/string.md`, `docs/std/string.md`, `docs/builtin/panic.md`, `docs/types/type.md`).
 - `func add(comptime n i32) i32 { return n; }` is `expected an identifier`. The parameter is written `n comptime i32` (`docs/grammar.md`, `docs/functions/comptime.md`).
 - `while (n < 3) n = n + 1;` is `expected '{'`. `do n = n + 1; while (n < 3);` is a statement (`docs/grammar.md`, `docs/statements/block.md`).
 - A method is declared `func Point::sum(self this, extra i32) i32`. The call is `value.sum(extra)`. In that parameter list `this` is the type (`docs/methods/method.md`, `docs/grammar.md`).

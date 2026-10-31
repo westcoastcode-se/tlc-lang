@@ -673,6 +673,7 @@ Token Lexer::lex_string(uint32_t start) {
     }
     Token token = finish(TokenKind::StringLiteral, start);
     token.text = std::move(decoded);
+    token.byte_form = take_byte_suffix();
     return token;
 }
 
@@ -697,6 +698,7 @@ Token Lexer::lex_raw_string(uint32_t start) {
     }
     Token token = finish(TokenKind::StringLiteral, start);
     token.text = std::move(decoded);
+    token.byte_form = take_byte_suffix();
     return token;
 }
 
@@ -766,7 +768,20 @@ Token Lexer::lex_char(uint32_t start) {
     }
     Token token = finish(TokenKind::CharLiteral, start);
     token.int_value = value;
+    token.byte_form = take_byte_suffix();
     return token;
+}
+
+bool Lexer::take_byte_suffix() {
+    if (eof_at() || peek() != 'b') {
+        return false;
+    }
+    const char next = eof_at(1) ? '\0' : peek(1);
+    if (is_ident_continue(next)) {
+        return false;
+    }
+    get();
+    return true;
 }
 
 Token Lexer::lex_identifier(uint32_t start) {
