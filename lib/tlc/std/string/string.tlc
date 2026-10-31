@@ -7,11 +7,11 @@ export func from(text []const u8) string_view {
 }
 
 export func string_view::equals(self this, other string_view) bool {
-    if (self.len != other.len) {
+    if (self.len() != other.len()) {
         return false;
     }
     var i i32 = 0;
-    while (i < self.len) {
+    while (i < self.len()) {
         if (self[i] != other[i]) {
             return false;
         }
@@ -21,9 +21,9 @@ export func string_view::equals(self this, other string_view) bool {
 }
 
 export func string_view::compare(self this, other string_view) i32 {
-    var n i32 = self.len;
-    if (other.len < n) {
-        n = other.len;
+    var n i32 = self.len();
+    if (other.len() < n) {
+        n = other.len();
     }
     var i i32 = 0;
     while (i < n) {
@@ -35,10 +35,10 @@ export func string_view::compare(self this, other string_view) i32 {
         }
         i = i + 1;
     }
-    if (self.len < other.len) {
+    if (self.len() < other.len()) {
         return -1;
     }
-    if (other.len < self.len) {
+    if (other.len() < self.len()) {
         return 1;
     }
     return 0;
@@ -46,9 +46,9 @@ export func string_view::compare(self this, other string_view) i32 {
 
 export func string_view::find_first_of(self this, chars string_view) i32 {
     var i i32 = 0;
-    while (i < self.len) {
+    while (i < self.len()) {
         var j i32 = 0;
-        while (j < chars.len) {
+        while (j < chars.len()) {
             if (self[i] == chars[j]) {
                 return i;
             }
@@ -60,16 +60,16 @@ export func string_view::find_first_of(self this, chars string_view) i32 {
 }
 
 export func string_view::find(self this, needle string_view) i32 {
-    if (needle.len == 0) {
+    if (needle.len() == 0) {
         return 0;
     }
-    if (self.len < needle.len) {
+    if (self.len() < needle.len()) {
         return -1;
     }
-    var last i32 = self.len - needle.len;
+    var last i32 = self.len() - needle.len();
     var i i32 = 0;
     while (i <= last) {
-        if (self[i:i + needle.len].equals(needle)) {
+        if (self[i:i + needle.len()].equals(needle)) {
             return i;
         }
         i = i + 1;
@@ -78,16 +78,16 @@ export func string_view::find(self this, needle string_view) i32 {
 }
 
 export func string_view::starts_with(self this, prefix string_view) bool {
-    if (self.len < prefix.len) {
+    if (self.len() < prefix.len()) {
         return false;
     }
-    return self[:prefix.len].equals(prefix);
+    return self[:prefix.len()].equals(prefix);
 }
 
 export func string_view::ends_with(self this, suffix string_view) bool {
-    if (self.len < suffix.len) {
+    if (self.len() < suffix.len()) {
         return false;
     }
-    var start i32 = self.len - suffix.len;
+    var start i32 = self.len() - suffix.len();
     return self[start:].equals(suffix);
 }
