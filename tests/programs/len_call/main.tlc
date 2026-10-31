@@ -1,0 +1,48 @@
+type Bare []i32;
+
+type Count []i32;
+
+func Count::len(self this) i32 {
+    return 40;
+}
+
+func take(a [3]i32) i32 {
+    return a.len();
+}
+
+func main() i32 {
+    var row [4]i32;
+    const n = row.len();
+    if (n != 4) {
+        return 1;
+    }
+    var grid [n]i32;
+    if (grid.len() != 4) {
+        return 2;
+    }
+    var wide [2][3]i32;
+    if (wide.len() + wide[0].len() != 5) {
+        return 3;
+    }
+    var nums = [_]i32{40, 2};
+    var text = nums[:];
+    if (text.len() != 2) {
+        return 4;
+    }
+    if ("hi".len() != 2) {
+        return 5;
+    }
+    var bare Bare = nums;
+    if (bare.len() != 2) {
+        return 6;
+    }
+    var counted Count = nums;
+    if (counted.len() != 40) {
+        return 7;
+    }
+    var three [3]i32;
+    if (take(three) != 3) {
+        return 8;
+    }
+    return 0;
+}

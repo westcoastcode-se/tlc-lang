@@ -993,6 +993,16 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 default: return std::nullopt;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                // `row.len()` is the field `row.len`.
+                if (node.args.empty() && node.callee != nullptr) {
+                    if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
+                        if (selector->slice_len || selector->field == "len") {
+                            if (const std::optional<int> length = fold_int(*node.callee)) {
+                                return length;
+                            }
+                        }
+                    }
+                }
                 if (const std::optional<int> compared = fold_mem_compare(node)) {
                     return compared;
                 }

@@ -44,7 +44,7 @@ On a `[]i32` parameter, `v[0] = 8` then `return v[0]` is 8 instructions. Those a
 
 When the element is `*T`, `*v[i] = 1` writes through the pointer.
 
-`v.len` is `i32` and is the number of elements.
+`v.len` is `i32` and is the number of elements. `v.len()` is that same length.
 
 A local `var empty []i32` is a zero header, the same as a file-scope slice. `return empty.len` is 6 instructions: `movq` of 0 for the pointer, `movl` of 0 for the length, `movl` of 0 for the header padding, a reload of the length, a reload of the pointer, and `retq`.
 

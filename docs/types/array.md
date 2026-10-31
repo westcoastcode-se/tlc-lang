@@ -114,7 +114,7 @@ A range of `[N]Duo` or `[N][M]Duo` is `type mismatch`. A range of `[_][2]i32` is
 
 `v[i]` reads an element. `v.len` is `i32`.
 
-`row.len` on a sized array is `i32`, the number of elements, with the same spelling. An empty array has length 0.
+`row.len` on a sized array is `i32`, the number of elements, with the same spelling. `row.len()` is that same length. An empty array has length 0.
 
 The length is a compile-time integer. At file scope, `const N = row.len` can be an array length.
 
@@ -124,7 +124,7 @@ Assigning `row.len`, or taking its address, is reported as `not an lvalue`.
 
 `sizeof([]T)` is 16.
 
-A slice parameter stays a slice. `a.len` in `func take(a [3]i32)` is 3, the length that was written. The parameter is still a pointer.
+A slice parameter stays a slice. `a.len` and `a.len()` in `func take(a [3]i32)` are 3, the length that was written. The parameter is still a pointer.
 
 `return a` where `[]T` is expected builds the slice header that `a[:]` builds. `var s []i32 = a` is that slice. `var copy = a` stays `*i32`.
 

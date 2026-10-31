@@ -922,6 +922,16 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 }
                 return static_cast<int32_t>(static_cast<unsigned char>((*bytes)[static_cast<std::size_t>(*at)]));
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                // `row.len()` is the field `row.len`.
+                if (node.args.empty() && node.callee != nullptr) {
+                    if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
+                        if (selector->slice_len || selector->field == "len") {
+                            if (const std::optional<int32_t> length = fold(*node.callee)) {
+                                return length;
+                            }
+                        }
+                    }
+                }
                 if (node.comptime_ran) {
                     return node.comptime_value;
                 }

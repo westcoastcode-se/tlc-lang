@@ -471,6 +471,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (const auto folded = fold(expr)) {
                     return {const_i32(*folded), 0};
                 }
+                // `text.len()` reads the slice header. The selector already lowers `.len`.
+                if (node.args.empty() && node.callee != nullptr) {
+                    if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
+                        if (selector->slice_len) {
+                            return emit_rvalue(*node.callee);
+                        }
+                    }
+                }
                 {
                     std::unordered_set<std::string> seen;
                     if (const std::optional<std::string> text = constant_string(expr, seen)) {

@@ -1001,6 +1001,59 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                             return type_invalid();
                         }
+                        // `text.len()` on a slice or a sized array is the field `.len`.
+                        // A slice alias that defines `len` keeps that method.
+                        if (selector->field == "len" && node.args.empty()) {
+                            bool alias_method = false;
+                            bool through_slice = false;
+                            if (const Type *alias = slice_alias(base, through_slice)) {
+                                if (through_slice) {
+                                    alias_method = true;
+                                } else if (alias->alias_id > 0 &&
+                                           static_cast<std::size_t>(alias->alias_id) < alias_file_.size()) {
+                                    bool hidden = false;
+                                    const uint32_t home = alias_file_[static_cast<std::size_t>(alias->alias_id)];
+                                    if (find_visible_method(home, type_desc(*alias), selector->field, hidden) != nullptr ||
+                                        hidden) {
+                                        alias_method = true;
+                                    }
+                                }
+                            }
+                            const bool sized = base.kind == TypeKind::Array && base.element != nullptr && base.length >= 0;
+                            const bool slice = is_slice(base);
+                            // `check_expr` drops `decayed_len`. The parameter `[N]T` still stores `N`.
+                            int decayed = 0;
+                            if (!base.optional && base.kind == TypeKind::Pointer && selector->base != nullptr) {
+                                if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
+                                    if (const Symbol *symbol = lookup(named->text)) {
+                                        if (symbol->type.kind == TypeKind::Pointer && !symbol->type.optional &&
+                                            symbol->type.decayed_len > 0) {
+                                            decayed = symbol->type.decayed_len;
+                                        }
+                                    }
+                                }
+                            }
+                            if (!alias_method && (sized || slice || decayed > 0)) {
+                                selector->slice_len = true;
+                                if (sized) {
+                                    selector->len_value = base.length;
+                                } else if (decayed > 0) {
+                                    selector->len_value = decayed;
+                                } else if (const std::optional<int> known = known_len(*selector->base)) {
+                                    selector->len_value = *known;
+                                }
+                                // `.len` reads the slice header. The method use above does not.
+                                if (slice) {
+                                    InitUseGuard read(*this, InitUse::Read);
+                                    InitStep step;
+                                    step.kind = InitStep::Kind::Field;
+                                    step.field = "len";
+                                    InitPush push(*this, std::move(step));
+                                    (void)check_raw(*selector->base, true);
+                                }
+                                return type_int();
+                            }
+                        }
                         // `p.make(...)` on a static function is `type mismatch`. The call is `Type.make(...)`.
                         const Type *alias_type = &base;
                         if (base.alias_id == 0 && base.kind == TypeKind::Pointer && base.pointee != nullptr) {

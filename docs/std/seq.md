@@ -111,7 +111,7 @@ That includes a parameter written `[N]T`, a string `[]const u8`, `[N][M]T`, and 
 
 The element of `[N][M]T` is `[M]T`.
 
-`items.len()` is `.len`.
+`items.len()` is `.len`. On the array or the slice itself, `text.len()` is that same field.
 
 `items.at(i)` is the index.
 

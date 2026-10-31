@@ -279,7 +279,7 @@ The body is ordinary code, so a nested `for` also runs later.
 
 `[N]T` and `[]T` satisfy `seq.Seq[E]`, where `E` is the element an index reads.
 
-`len` is `.len` and `at` is the index.
+`len` is `.len`, and `items.len()` on an array or a slice is that field. `at` is the index.
 
 `for (var item : ptr_of(items))` binds the address of that element.
 
