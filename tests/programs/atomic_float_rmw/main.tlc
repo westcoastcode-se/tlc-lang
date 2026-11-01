@@ -1,0 +1,6 @@
+import "builtin";
+
+func main() i32 {
+    var n f32 = 0.0f;
+    return i32(builtin.atomic_rmw[f32](&n, 0, 1.0f, 0) == 0.0f);
+}

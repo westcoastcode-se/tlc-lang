@@ -1906,6 +1906,15 @@ bool atomic_integer(const std::string &name) {
            name == "u32" || name == "u64";
 }
 
+bool atomic_plain(const SpecArg &bound) {
+    if (bound.is_value || bound.is_text || bound.is_struct || bound.is_enum || bound.is_pack || bound.is_array ||
+        bound.elem_slice || bound.array_len != 0 || bound.indirections > 0 || !bound.shells.empty() ||
+        !bound.type_package.empty()) {
+        return false;
+    }
+    return true;
+}
+
 bool atomic_type_ok(const SpecArg &bound) {
     if (bound.is_value || bound.is_text || bound.is_struct || bound.is_enum || bound.is_pack || bound.is_array ||
         bound.elem_slice || bound.array_len != 0) {
@@ -1920,6 +1929,12 @@ bool atomic_type_ok(const SpecArg &bound) {
         return true;
     }
     return bound.type_package.empty() && atomic_integer(bound.type_name);
+}
+
+// `atomic_load` and `atomic_store` also take `f32`, `f64`, and `bool`.
+bool atomic_load_store_type(const SpecArg &bound) {
+    return atomic_plain(bound) &&
+           (bound.type_name == "f32" || bound.type_name == "f64" || bound.type_name == "bool");
 }
 
 bool atomic_pointer(const SpecArg &bound) {
@@ -1976,8 +1991,11 @@ bool Checker::atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &
         return false;
     }
     if (bound != nullptr && !atomic_type_ok(*bound)) {
-        error(call.loc, "not supported yet");
-        return true;
+        const bool load_store = kind == AtomicBuiltin::Load || kind == AtomicBuiltin::Store;
+        if (!(load_store && atomic_load_store_type(*bound))) {
+            error(call.loc, "not supported yet");
+            return true;
+        }
     }
     const auto folded = [&](std::size_t index, int &out) {
         if (index >= call.args.size() || call.args[index] == nullptr) {

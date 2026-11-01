@@ -1040,17 +1040,29 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
         if (type->isPointerTy()) {
             return true;
         }
+        if (type->isFloatingPointTy()) {
+            const unsigned bits = type->getPrimitiveSizeInBits();
+            return bits == 32 || bits == 64;
+        }
         if (!type->isIntegerTy()) {
             return false;
         }
         const unsigned bits = type->getIntegerBitWidth();
-        return bits == 8 || bits == 16 || bits == 32 || bits == 64;
+        // `bool` is `i1` in a register and one byte in memory.
+        return bits == 1 || bits == 8 || bits == 16 || bits == 32 || bits == 64;
     };
     if (!supported(ty) || prepared.args.empty() || prepared.args[0] == nullptr) {
-        fail(ty != nullptr && (ty->isFloatingPointTy() || ty->isStructTy()) ? "not supported yet" : "type mismatch");
+        fail(ty != nullptr && ty->isStructTy() ? "not supported yet" : "type mismatch");
         return;
     }
-    const uint64_t bytes = module_.getDataLayout().getTypeStoreSize(ty).getFixedValue();
+    // An atomic `i1` is not a byte. `bool` occupies one byte, so the access is `i8`.
+    const bool bool_byte = ty->isIntegerTy(1);
+    if (kind != AtomicBuiltin::Load && kind != AtomicBuiltin::Store && (bool_byte || ty->isFloatingPointTy())) {
+        fail("not supported yet");
+        return;
+    }
+    llvm::Type *access = bool_byte ? i8() : ty;
+    const uint64_t bytes = module_.getDataLayout().getTypeStoreSize(access).getFixedValue();
     const llvm::Align align(bytes == 0 ? 1 : bytes);
     llvm::Value *pointer = prepared.args[0];
     const auto scalar = [&](llvm::Value *inst) {
@@ -1077,10 +1089,14 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
             fail("type mismatch");
             return;
         }
-        llvm::LoadInst *load = builder_.CreateAlignedLoad(ty, pointer, align);
+        llvm::LoadInst *load = builder_.CreateAlignedLoad(access, pointer, align);
         load->setAtomic(*mapped);
+        llvm::Value *result = load;
+        if (bool_byte) {
+            result = builder_.CreateTrunc(load, i1());
+        }
         prepared.yielded = true;
-        scalar(load);
+        scalar(result);
         return;
     }
     if (kind == AtomicBuiltin::Store) {
@@ -1090,7 +1106,14 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
             fail("type mismatch");
             return;
         }
-        llvm::StoreInst *store = builder_.CreateAlignedStore(prepared.args[1], pointer, align);
+        llvm::Value *stored = prepared.args[1];
+        if (bool_byte && stored->getType() != i8()) {
+            if (!stored->getType()->isIntegerTy(1)) {
+                stored = builder_.CreateTrunc(stored, i1());
+            }
+            stored = builder_.CreateZExt(stored, i8());
+        }
+        llvm::StoreInst *store = builder_.CreateAlignedStore(stored, pointer, align);
         store->setAtomic(*mapped);
         prepared.yielded = true;
         prepared.yield = {zero(), 0};

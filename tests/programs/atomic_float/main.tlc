@@ -1,7 +1,21 @@
 import "builtin";
 
+var f f32;
+var d f64;
+var flag bool;
+
 func main() i32 {
-    var n f32 = 0.0f;
-    builtin.atomic_load[f32](&n, 4);
-    return 0;
+    builtin.atomic_store[f32](&f, 1.5f, 0);
+    builtin.atomic_store[f64](&d, 2.5, 4);
+    builtin.atomic_store[bool](&flag, true, 2);
+    if (builtin.atomic_load[f32](&f, 1) != 1.5f) {
+        return 1;
+    }
+    if (builtin.atomic_load[f64](&d, 4) != 2.5) {
+        return 2;
+    }
+    if (!builtin.atomic_load[bool](&flag, 0)) {
+        return 3;
+    }
+    return 42;
 }

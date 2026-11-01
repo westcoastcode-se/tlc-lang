@@ -47,7 +47,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 - A slice is not a C type. A parameter, a result, or a field of `extern(abi="c")` is `extern(abi="c") cannot use a slice`. `*T(items)` is the data pointer and `items.len` is the length.
 - A file-scope slice whose initializer is not the name of an array, a slice of one of those constants, a string, a constant range of one of those, or a call. A bound that does not fold is `global initializer is not a constant`. An array literal is `global initializer is not a constant`. A range, a literal, or a call used as the initializer of a `const` slice is `global initializer is not a constant` when it is not one of those constant ranges.
 - A cast to `void`.
-- An atomic `f32`, `f64`, or `bool`. `builtin.atomic_load` of those types is `not supported yet`. `atomic.Bool` stores a `u8`.
+- `atomic_rmw` and `atomic_cmpxchg` of `f32`, `f64`, or `bool` are `not supported yet`. `atomic_load` and `atomic_store` of those types are replaced. `atomic.Bool` stores a `u8`.
 - Using `builtin.fence` as a value, and `defer builtin.fence(order)`. Both are `not supported yet`. A direct call is replaced with a fence.
 - An atomic value wider than 64 bits.
 - A generic `Atomic[T]` for a struct whose size is 1, 2, 4, or 8 bytes.

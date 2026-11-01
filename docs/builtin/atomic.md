@@ -22,7 +22,11 @@ The call does not record a trace frame.
 
 `T` is `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, or a pointer.
 
-`f32`, `f64`, `bool`, and a struct are `not supported yet`.
+`atomic_load` and `atomic_store` also take `f32`, `f64`, and `bool`.
+
+`atomic_rmw` and `atomic_cmpxchg` of those three types are `not supported yet`.
+
+A struct is `not supported yet`.
 
 A value wider than 64 bits is `not supported yet`.
 
@@ -97,6 +101,10 @@ The program returns 42, the value `n` held before the add.
 On this machine a `seq_cst` store is `xchgl` and a relaxed add is `lock xaddl`.
 
 A relaxed store is `movl`.
+
+A `seq_cst` store of an `f32` is `xchgl` of those bits. A relaxed load of an `f32` is `movl`.
+
+A relaxed store of a `bool` is `movb`. A `seq_cst` load of a `bool` is `movb`. The value is one byte.
 
 `builtin.fence(4)` is `lock orl $0, -64(%rsp)`.
 
