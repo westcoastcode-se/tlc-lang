@@ -1,0 +1,6 @@
+func give() void {}
+
+func main() i32 {
+    _ = give();
+    return 0;
+}

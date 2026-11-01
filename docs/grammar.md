@@ -1358,6 +1358,8 @@ See [Variables on a type](methods/variable.md) and [Constants on a type](methods
 
 Inside a function, several names unpack one tuple.
 
+`_ = expr` discards that value when `_` is not already a binding. A later read of that `_` is `undeclared identifier`. `var _ = expr` still declares a name. A `void` result is `type mismatch`.
+
 A call that returns several results is that tuple:
 
 ```ebnf

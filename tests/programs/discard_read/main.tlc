@@ -1,0 +1,8 @@
+func close(fd i32) i32 {
+    return fd;
+}
+
+func main() i32 {
+    _ = close(1);
+    return _;
+}

@@ -22,6 +22,48 @@ One `var` names one variable.
 
 A variable with no initializer keeps the type: `var value i32;`.
 
+## Discarding a result
+
+`_ = expr` evaluates `expr` and does not store it, when `_` is not already a binding.
+
+`_ = close(fd)` calls `close` and drops the `i32`.
+
+A later read of that `_` is `undeclared identifier`.
+
+`var _ = expr` still declares a name. A later `_ = expr` writes that binding, and a later `_` reads it.
+
+A `void` result is `type mismatch`.
+
+```c
+var hits = 0;
+
+func close(fd i32) i32 {
+    hits = hits + fd;
+    return fd;
+}
+
+func main() i32 {
+    _ = close(40);
+    return hits;
+}
+```
+
+```asm
+close:
+movl %edi, -4(%rsp)              # fd
+movl hits(%rip), %eax            # hits
+addl -4(%rsp), %eax              # add
+movl %eax, hits(%rip)            # store
+movl -4(%rsp), %eax              # return
+retq                             # return
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # constant
+callq close                      # call close
+movl hits(%rip), %eax            # hits
+retq                             # return
+```
+
 ## Storage that starts unset
 
 A local with no initializer is uninitialized.

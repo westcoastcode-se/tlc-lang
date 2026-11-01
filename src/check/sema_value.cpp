@@ -647,6 +647,25 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     init_cover_rhs_ = node.rhs.get();
                     init_allow_partial_ = true;
                 }
+                // `_ = close(fd)` evaluates the call and does not store it. `_` is not declared.
+                if (node.lhs != nullptr) {
+                    if (const auto *named = std::get_if<Expr::Name>(&node.lhs->data);
+                        named != nullptr && named->text == "_" && lookup(named->text) == nullptr) {
+                        if (node.rhs == nullptr) {
+                            error(node.loc, "type mismatch");
+                            return type_invalid();
+                        }
+                        const Type rhs = check_expr(*node.rhs, true);
+                        if (rhs.kind == TypeKind::Invalid) {
+                            return rhs;
+                        }
+                        if (rhs.kind == TypeKind::Void) {
+                            error(expr_loc(*node.rhs), "type mismatch");
+                            return type_invalid();
+                        }
+                        return rhs;
+                    }
+                }
                 if (const auto *star = std::get_if<Expr::Unary>(&node.lhs->data); star != nullptr && star->op == TokenKind::Star) {
                     const Type pointer = check_expr(*star->expr, true);
                     if (pointer.kind != TypeKind::Pointer || !pointer.pointee) {

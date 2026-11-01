@@ -459,6 +459,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 default: return {zero(), 0};
                 }
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                // `_ = close(fd)` evaluates the call and drops the value. No binding is written.
+                if (node.op == TokenKind::Eq && node.lhs != nullptr) {
+                    if (const auto *named = std::get_if<Expr::Name>(&node.lhs->data);
+                        named != nullptr && named->text == "_" && lookup(named->text) == nullptr) {
+                        return node.rhs != nullptr ? emit_rvalue(*node.rhs) : TypedValue{zero(), 0};
+                    }
+                }
                 if (node.op != TokenKind::Eq) {
                     if (node.lhs == nullptr || node.rhs == nullptr) {
                         error(node.loc, "type mismatch");

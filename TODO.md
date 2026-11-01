@@ -57,7 +57,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ## Declarations
 
-- A variable named `_` is a hint that the value may be ignored, and the compiler may use that hint when optimizing. `var _ = give()` is the spelling. `_` is already a name: that declaration typechecks, and a later `_` reads the binding. The hint is not implemented.
+- `var _ = give()` still declares a name. A later `_` reads that binding. The hint that the value may be ignored is not implemented. `_ = give()` discards the result and does not declare `_`.
 - `var a, b =` at file scope. Inside a function, several names unpack one tuple.
 - `extern` on an inferred variable, `var name = expr` or `name := expr`. `export var name = expr` and `export name := expr` are accepted.
 - A local `type`, including a local struct or enum.
