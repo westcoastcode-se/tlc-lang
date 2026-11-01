@@ -1,0 +1,10 @@
+link: -lc
+exit: 0
+stdout:
+Hello John Doe! Today is Friday
+Friday has 6 letters on Friday
+b a
+100% done
+{ok}
+Hello Ann! Today is Monday
+-12 true

@@ -1,0 +1,217 @@
+import "builtin";
+
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
+extern(abi="c"b) func putchar(c i32) i32;
+
+// kind is 1, 2, 3, or 4. The other two numbers fit in 14 bits.
+// 1 is a slice of the format, 2 is `{`, 3 is `}`, 4 is a hole.
+comptime func pack(kind i32, a i32, b i32) i32 {
+    if (a < 0 || b < 0 || a >= 16384 || b >= 16384 || kind < 1) {
+        return -2;
+    }
+    return kind * 268435456 + a * 16384 + b;
+}
+
+comptime func op_at(text []const u8, n i32) i32 {
+    var start = 0;
+    var i = 0;
+    var seen = 0;
+    var next = 0;
+    while (i <= text.len()) {
+        var boundary = i == text.len();
+        var open = false;
+        var close = false;
+        var hole = false;
+        if (!boundary && text[i] == '{'b && i + 1 < text.len() && text[i + 1] == '{'b) {
+            open = true;
+        } else if (!boundary && text[i] == '}'b && i + 1 < text.len() && text[i + 1] == '}'b) {
+            close = true;
+        } else if (!boundary && text[i] == '{'b) {
+            hole = true;
+        }
+        if (boundary || open || close || hole) {
+            if (start < i) {
+                if (seen == n) {
+                    return pack(1, start, i);
+                }
+                seen = seen + 1;
+            }
+            if (boundary) {
+                return -1;
+            }
+            if (open || close) {
+                if (seen == n) {
+                    if (open) {
+                        return pack(2, 0, 0);
+                    }
+                    return pack(3, 0, 0);
+                }
+                seen = seen + 1;
+                i = i + 2;
+                start = i;
+            } else {
+                var index = next;
+                var cursor = i + 1;
+                if (cursor < text.len() && text[cursor] == '}'b) {
+                    cursor = cursor + 1;
+                } else {
+                    index = 0;
+                    if (cursor >= text.len() || text[cursor] < '0'b || text[cursor] > '9'b) {
+                        return -2;
+                    }
+                    while (cursor < text.len() && text[cursor] >= '0'b && text[cursor] <= '9'b) {
+                        var digit = i32(text[cursor] - '0'b);
+                        if (index > (2147483647 - digit) / 10) {
+                            return -2;
+                        }
+                        index = index * 10 + digit;
+                        cursor = cursor + 1;
+                    }
+                    if (cursor >= text.len() || text[cursor] != '}'b) {
+                        return -2;
+                    }
+                    cursor = cursor + 1;
+                }
+                if (seen == n) {
+                    return pack(4, index, 0);
+                }
+                seen = seen + 1;
+                if (index == 2147483647) {
+                    return -2;
+                }
+                next = index + 1;
+                i = cursor;
+                start = i;
+            }
+        } else {
+            i = i + 1;
+        }
+    }
+    return -1;
+}
+
+comptime func op_count(text []const u8) i32 {
+    var n = 0;
+    while (n < 32) {
+        var word = op_at(text, n);
+        if (word == -2) {
+            return -1;
+        }
+        if (word < 0) {
+            return n;
+        }
+        n = n + 1;
+    }
+    return -1;
+}
+
+comptime func op_kind(word i32) i32 {
+    return word / 268435456;
+}
+
+comptime func op_a(word i32) i32 {
+    return (word % 268435456) / 16384;
+}
+
+comptime func op_b(word i32) i32 {
+    return word % 16384;
+}
+
+func print_text(text []const u8) void {
+    var i = 0;
+    while (i < text.len()) {
+        putchar(i32(text[i]));
+        i = i + 1;
+    }
+}
+
+func print_u64(n u64) void {
+    var raw [32]u8 = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    var tmp [32]u8 = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    var nlen = 0;
+    var value = n;
+    if (value == 0) {
+        tmp[0] = '0'b;
+        nlen = 1;
+    }
+    while (value > 0) {
+        tmp[nlen] = u8(i32('0'b) + i32(value % 10u64));
+        nlen = nlen + 1;
+        value = value / 10u64;
+    }
+    var i = 0;
+    while (i < nlen) {
+        raw[i] = tmp[nlen - 1 - i];
+        i = i + 1;
+    }
+    var view []const u8 = raw[0:nlen];
+    printf("%s"b, view);
+}
+
+func print_i64(n i64) void {
+    if (n < 0) {
+        putchar('-');
+        if (n == 0 - 9223372036854775807i64 - 1) {
+            print_text("9223372036854775808"b);
+            return;
+        }
+        print_u64(u64(0 - n));
+        return;
+    }
+    print_u64(u64(n));
+}
+
+macro func print[T type](text comptime []const u8, values T) void {
+    comptime if (op_count(text) >= 0) {
+        comptime for (var n = 0; n < op_count(text); n = n + 1) {
+            comptime if (op_kind(op_at(text, n)) == 1) {
+                emit printf("%s"b, builtin.fmt("{0}{1}"b, (text[op_a(op_at(text, n)):op_b(op_at(text, n))], ""b)));
+            } else if (op_kind(op_at(text, n)) == 2) {
+                emit printf("{"b);
+            } else if (op_kind(op_at(text, n)) == 3) {
+                emit printf("}"b);
+            } else if (op_kind(op_at(text, n)) == 4) {
+                comptime if (op_a(op_at(text, n)) >= 0 && op_a(op_at(text, n)) < values.len) {
+                    if (typeof(values[op_a(op_at(text, n))]) == typeof(i32)) {
+                        emit print_i64(i64(values[op_a(op_at(text, n))]));
+                    } else if (typeof(values[op_a(op_at(text, n))]) == typeof(i64)) {
+                        emit print_i64(values[op_a(op_at(text, n))]);
+                    } else if (typeof(values[op_a(op_at(text, n))]) == typeof(i16)) {
+                        emit print_i64(i64(values[op_a(op_at(text, n))]));
+                    } else if (typeof(values[op_a(op_at(text, n))]) == typeof(i8)) {
+                        emit print_i64(i64(values[op_a(op_at(text, n))]));
+                    } else if (typeof(values[op_a(op_at(text, n))]) == typeof(u64)) {
+                        emit print_u64(values[op_a(op_at(text, n))]);
+                    } else if (typeof(values[op_a(op_at(text, n))]) == typeof(u32)) {
+                        emit print_u64(u64(values[op_a(op_at(text, n))]));
+                    } else if (typeof(values[op_a(op_at(text, n))]) == typeof(u16)) {
+                        emit print_u64(u64(values[op_a(op_at(text, n))]));
+                    } else if (typeof(values[op_a(op_at(text, n))]) == typeof(u8)) {
+                        emit print_u64(u64(values[op_a(op_at(text, n))]));
+                    } else if (typeof(values[op_a(op_at(text, n))]) == typeof(bool)) {
+                        if (values[op_a(op_at(text, n))]) {
+                            emit printf("true"b);
+                        } else {
+                            emit printf("false"b);
+                        }
+                    } else if (typeof(values[op_a(op_at(text, n))]) == typeof(""b)) {
+                        emit print_text(values[op_a(op_at(text, n))]);
+                    } else {
+                        var unsupported i32;
+                    }
+                } else {
+                    var unsupported i32;
+                }
+            } else {
+                var unsupported i32;
+            }
+        }
+    } else {
+        var unsupported i32;
+    }
+}
+
+func main() i32 {
+    print("{2}\n"b, ("a"b, "b"b));
+    return 0;
+}
