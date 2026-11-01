@@ -50,10 +50,21 @@ extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 comptime const width = 960;
 comptime const height = 540;
 
-var gpu_array = 0u32;
-var gpu_buffer = 0u32;
+// One vertex is position, then color. The five floats are the attribute stride.
+type Vertex struct {
+    x f32;
+    y f32;
+    r f32;
+    g f32;
+    b f32;
+}
 
-func shader_status(object u32, pname u32, linked bool) bool {
+type Gpu struct {
+    array u32;
+    buffer u32;
+}
+
+func Gpu::status(object u32, pname u32, linked bool) bool {
     var ok i32 = 0;
     if (linked) {
         GetProgramiv(object, pname, &ok);
@@ -73,17 +84,17 @@ func shader_status(object u32, pname u32, linked bool) bool {
     return true;
 }
 
-func make_shader(kind u32, source *const u8) u32 {
+func Gpu::make_shader(kind u32, source *const u8) u32 {
     var shader = CreateShader(kind);
     ShaderSource(shader, 1, &source, null);
     CompileShader(shader);
-    if (!shader_status(shader, GLenum.COMPILE_STATUS, false)) {
+    if (!Gpu.status(shader, GLenum.COMPILE_STATUS, false)) {
         return 0;
     }
     return shader;
 }
 
-func load_gl() bool {
+func Gpu::load(self *this) bool {
     if (!load()) {
         return false;
     }
@@ -106,8 +117,8 @@ void main() {
     frag = vec4(v_color, 1.0);
 }
 `b;
-    var vertex = make_shader(GLenum.VERTEX_SHADER, vertex_source);
-    var fragment = make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
+    var vertex = Gpu.make_shader(GLenum.VERTEX_SHADER, vertex_source);
+    var fragment = Gpu.make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
     if (vertex == 0 || fragment == 0) {
         return false;
     }
@@ -115,37 +126,37 @@ void main() {
     AttachShader(program, vertex);
     AttachShader(program, fragment);
     LinkProgram(program);
-    if (!shader_status(program, GLenum.LINK_STATUS, true)) {
+    if (!Gpu.status(program, GLenum.LINK_STATUS, true)) {
         return false;
     }
     DeleteShader(vertex);
     DeleteShader(fragment);
 
-    GenVertexArrays(1, &gpu_array);
-    BindVertexArray(gpu_array);
-    GenBuffers(1, &gpu_buffer);
-    BindBuffer(GLenum.ARRAY_BUFFER, gpu_buffer);
+    GenVertexArrays(1, &self.array);
+    BindVertexArray(self.array);
+    GenBuffers(1, &self.buffer);
+    BindBuffer(GLenum.ARRAY_BUFFER, self.buffer);
     EnableVertexAttribArray(0);
-    VertexAttribPointer(0, 2, GLenum.FLOAT, 0, 20, *void(0));
+    VertexAttribPointer(0, 2, GLenum.FLOAT, 0, sizeof(Vertex), *void(0));
     EnableVertexAttribArray(1);
-    VertexAttribPointer(1, 3, GLenum.FLOAT, 0, 20, *void(8));
+    VertexAttribPointer(1, 3, GLenum.FLOAT, 0, sizeof(Vertex), *void(sizeof(f32) * 2));
     UseProgram(program);
     return true;
 }
 
-func draw(verts *f32, count i32) void {
-    BufferData(GLenum.ARRAY_BUFFER, i64(count * 20), *void(verts), GLenum.DYNAMIC_DRAW);
+func Gpu::draw(self *this, verts *Vertex, count i32) void {
+    BufferData(GLenum.ARRAY_BUFFER, i64(count * sizeof(Vertex)), *void(verts), GLenum.DYNAMIC_DRAW);
     DrawArrays(GLenum.TRIANGLES, 0, count);
 }
 
-func draw_triangle() void {
+func Gpu::triangle(self *this) void {
     Clear(GLenum.COLOR_BUFFER_BIT);
-    var verts = [_]f32{
-        -0.6f, -0.5f, 0.95f, 0.35f, 0.30f,
-        0.6f, -0.5f, 0.30f, 0.85f, 0.45f,
-        0.0f, 0.6f, 0.30f, 0.55f, 0.95f,
+    var verts = [_]Vertex{
+        Vertex{.x = -0.6f, .y = -0.5f, .r = 0.95f, .g = 0.35f, .b = 0.30f},
+        Vertex{.x = 0.6f, .y = -0.5f, .r = 0.30f, .g = 0.85f, .b = 0.45f},
+        Vertex{.x = 0.0f, .y = 0.6f, .r = 0.30f, .g = 0.55f, .b = 0.95f},
     };
-    draw(verts, 3);
+    self.draw(verts, verts.len);
 }
 
 func main() i32 {
@@ -172,7 +183,8 @@ func main() i32 {
         return 1;
     }
     SDL_GL_MakeCurrent(window, context);
-    if (!load_gl()) {
+    var gpu Gpu;
+    if (!gpu.load()) {
         printf("OpenGL failed\n"b);
         return 1;
     }
@@ -188,7 +200,7 @@ func main() i32 {
                 running = false;
             }
         }
-        draw_triangle();
+        gpu.triangle();
         SDL_GL_SwapWindow(window);
         SDL_Delay(16);
     }

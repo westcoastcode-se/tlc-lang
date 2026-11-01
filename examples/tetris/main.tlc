@@ -13,6 +13,7 @@ import {
     SDL_GetTicks,
     SDL_rand,
     SDL_Event,
+    SDL_Window,
     SdlInit,
     SdlWindow,
     SdlEventKind,
@@ -52,103 +53,209 @@ extern(abi="c"b) func printf(fmt *const u8, ...) i32;
 
 comptime const window_w = 480;
 comptime const window_h = 640;
+comptime const columns = 10;
+comptime const rows = 20;
+comptime const cell = 28;
+comptime const origin_x = 48;
+comptime const origin_y = 32;
+comptime const preview_x = 360;
 
-// 10 columns by 20 rows. A cell is 0 when empty, or 1..7 for a piece color.
-var board [200]i32;
+type Spot struct {
+    x i32;
+    y i32;
+}
 
-// Seven pieces, four cells each.
-comptime const shape_x = [_]i32{
-    0, 1, 2, 3,
-    1, 2, 1, 2,
-    1, 0, 1, 2,
-    1, 2, 0, 1,
-    0, 1, 1, 2,
-    0, 0, 1, 2,
-    2, 0, 1, 2,
+type Cell enum {
+    Empty,
+    I,
+    O,
+    T,
+    S,
+    Z,
+    J,
+    L,
+}
+
+type Rgb struct {
+    r f32;
+    g f32;
+    b f32;
+}
+
+type Vertex struct {
+    x f32;
+    y f32;
+    r f32;
+    g f32;
+    b f32;
+}
+
+type Gpu struct {
+    array u32;
+    buffer u32;
+}
+
+// Seven pieces, four cells each. I is the first row and O is the second.
+comptime const shapes = [_][4]Spot{
+    {{.x = 0, .y = 1}, {.x = 1, .y = 1}, {.x = 2, .y = 1}, {.x = 3, .y = 1}},
+    {{.x = 1, .y = 0}, {.x = 2, .y = 0}, {.x = 1, .y = 1}, {.x = 2, .y = 1}},
+    {{.x = 1, .y = 0}, {.x = 0, .y = 1}, {.x = 1, .y = 1}, {.x = 2, .y = 1}},
+    {{.x = 1, .y = 0}, {.x = 2, .y = 0}, {.x = 0, .y = 1}, {.x = 1, .y = 1}},
+    {{.x = 0, .y = 0}, {.x = 1, .y = 0}, {.x = 1, .y = 1}, {.x = 2, .y = 1}},
+    {{.x = 0, .y = 0}, {.x = 0, .y = 1}, {.x = 1, .y = 1}, {.x = 2, .y = 1}},
+    {{.x = 2, .y = 0}, {.x = 0, .y = 1}, {.x = 1, .y = 1}, {.x = 2, .y = 1}},
 };
-comptime const shape_y = [_]i32{
-    1, 1, 1, 1,
-    0, 0, 1, 1,
-    0, 1, 1, 1,
-    0, 0, 1, 1,
-    0, 0, 1, 1,
-    0, 1, 1, 1,
-    0, 1, 1, 1,
-};
 
-var kind = 0;
-var rot = 0;
-var px = 0;
-var py = 0;
-var next_kind = 0;
-var alive = false;
-var lines = 0;
-var score = 0;
-var running = false;
-var told = false;
-var last = 0u64;
-
-func spin(x i32, y i32, turn i32) (i32, i32) {
-    for (var i = 0; i < turn; i = i + 1) {
-        var nx = 3 - y;
-        var ny = x;
+func Spot::turn(self this, times i32) Spot {
+    var x = self.x;
+    var y = self.y;
+    for (var i = 0; i < times; i = i + 1) {
+        nx := 3 - y;
+        ny := x;
         x = nx;
         y = ny;
     }
-    return x, y;
+    return Spot{.x = x, .y = y};
 }
 
-func cell_at(piece i32, index i32, ox i32, oy i32, turn i32) (i32, i32) {
-    var start = piece * 4;
-    var xs = shape_x[start:start + 4];
-    var ys = shape_y[start:start + 4];
-    var x = xs[index];
-    var y = ys[index];
-    // The square is already in its box. Rotating it would walk around that box.
-    if (piece == 1) {
-        return ox + x, oy + y;
+func Cell::shape(self this) [4]Spot {
+    var slot = 0;
+    switch (self) {
+    case Cell.I:
+        slot = 0;
+        break;
+    case Cell.O:
+        slot = 1;
+        break;
+    case Cell.T:
+        slot = 2;
+        break;
+    case Cell.S:
+        slot = 3;
+        break;
+    case Cell.Z:
+        slot = 4;
+        break;
+    case Cell.J:
+        slot = 5;
+        break;
+    case Cell.L:
+        slot = 6;
+        break;
+    default:
+        slot = 0;
+        break;
     }
-    sx, sy := spin(x, y, turn);
-    return ox + sx, oy + sy;
+    // The table is const. The copy is the array this function returns.
+    var copy = shapes[slot];
+    return copy;
 }
 
-func fits(piece i32, turn i32, ox i32, oy i32) bool {
-    for (var i = 0; i < 4; i = i + 1) {
-        x, y := cell_at(piece, i, ox, oy, turn);
-        if (x < 0 || x >= 10 || y >= 20) {
+func Cell::roll(n i32) Cell {
+    switch (n) {
+    case 0:
+        return Cell.I;
+    case 1:
+        return Cell.O;
+    case 2:
+        return Cell.T;
+    case 3:
+        return Cell.S;
+    case 4:
+        return Cell.Z;
+    case 5:
+        return Cell.J;
+    default:
+        return Cell.L;
+    }
+}
+
+func Cell::rgb(self this) Rgb {
+    switch (self) {
+    case Cell.I:
+        return Rgb{.r = 0.35f, .g = 0.90f, .b = 0.95f};
+    case Cell.O:
+        return Rgb{.r = 0.95f, .g = 0.84f, .b = 0.25f};
+    case Cell.T:
+        return Rgb{.r = 0.72f, .g = 0.38f, .b = 0.90f};
+    case Cell.S:
+        return Rgb{.r = 0.40f, .g = 0.86f, .b = 0.42f};
+    case Cell.Z:
+        return Rgb{.r = 0.92f, .g = 0.32f, .b = 0.34f};
+    case Cell.J:
+        return Rgb{.r = 0.32f, .g = 0.48f, .b = 0.95f};
+    case Cell.L:
+        return Rgb{.r = 0.96f, .g = 0.58f, .b = 0.22f};
+    default:
+        return Rgb{.r = 0.45f, .g = 0.48f, .b = 0.55f};
+    }
+}
+
+type Game struct {
+    gpu Gpu;
+    board [20][10]Cell;
+    kind Cell;
+    rot i32;
+    px i32;
+    py i32;
+    next Cell;
+    alive bool;
+    lines i32;
+    score i32;
+    running bool;
+    told bool;
+    last u64;
+}
+
+func Game::place(piece Cell, spot Spot, ox i32, oy i32, turn i32) (i32, i32) {
+    // The square is already in its box. Rotating it would walk around that box.
+    if (piece == Cell.O) {
+        return ox + spot.x, oy + spot.y;
+    }
+    var turned = spot.turn(turn);
+    return ox + turned.x, oy + turned.y;
+}
+
+func Game::fits(self *this, piece Cell, turn i32, ox i32, oy i32) bool {
+    var shape = piece.shape();
+    for (var spot : shape) {
+        x, y := Game.place(piece, spot, ox, oy, turn);
+        if (x < 0 || x >= columns || y >= rows) {
             return false;
         }
-        if (y >= 0 && board[y * 10 + x] != 0) {
+        if (y >= 0 && self.board[y][x] != Cell.Empty) {
             return false;
         }
     }
     return true;
 }
 
-func wipe() void {
-    for (var i = 0; i < 200; i = i + 1) {
-        board[i] = 0;
+func Game::wipe(self *this) void {
+    for (var y = 0; y < rows; y = y + 1) {
+        for (var x = 0; x < columns; x = x + 1) {
+            self.board[y][x] = Cell.Empty;
+        }
     }
 }
 
-func clear_lines() i32 {
+func Game::clear_lines(self *this) i32 {
     var cleared = 0;
-    var y = 19;
+    var y = rows - 1;
     while (y >= 0) {
         var full = true;
-        for (var x = 0; x < 10; x = x + 1) {
-            if (board[y * 10 + x] == 0) {
+        for (var x = 0; x < columns; x = x + 1) {
+            if (self.board[y][x] == Cell.Empty) {
                 full = false;
             }
         }
         if (full) {
             for (var yy = y; yy > 0; yy = yy - 1) {
-                for (var xx = 0; xx < 10; xx = xx + 1) {
-                    board[yy * 10 + xx] = board[(yy - 1) * 10 + xx];
+                for (var xx = 0; xx < columns; xx = xx + 1) {
+                    self.board[yy][xx] = self.board[yy - 1][xx];
                 }
             }
-            for (var zx = 0; zx < 10; zx = zx + 1) {
-                board[zx] = 0;
+            for (var zx = 0; zx < columns; zx = zx + 1) {
+                self.board[0][zx] = Cell.Empty;
             }
             cleared = cleared + 1;
         } else {
@@ -158,120 +265,121 @@ func clear_lines() i32 {
     return cleared;
 }
 
-func pace() u64 {
-    if (lines >= 28) {
+func Game::pace(self this) u64 {
+    if (self.lines >= 28) {
         return 80u64;
     }
-    return 500u64 - u64(lines) * 15u64;
+    return 500u64 - u64(self.lines) * 15u64;
 }
 
-func spawn() void {
-    kind = next_kind;
-    next_kind = SDL_rand(7);
-    rot = 0;
-    px = 3;
-    py = 0;
-    if (!fits(kind, rot, px, py)) {
-        alive = false;
-        if (!told) {
-            printf("game over  lines %d  score %d\n"b, lines, score);
-            told = true;
+func Game::spawn(self *this) void {
+    self.kind = self.next;
+    self.next = Cell.roll(SDL_rand(7));
+    self.rot = 0;
+    self.px = 3;
+    self.py = 0;
+    if (!self.fits(self.kind, self.rot, self.px, self.py)) {
+        self.alive = false;
+        if (!self.told) {
+            printf("game over  lines %d  score %d\n"b, self.lines, self.score);
+            self.told = true;
         }
         return;
     }
-    alive = true;
+    self.alive = true;
 }
 
-func settle() void {
+func Game::settle(self *this) void {
     var buried = false;
-    for (var i = 0; i < 4; i = i + 1) {
-        x, y := cell_at(kind, i, px, py, rot);
+    var kind Cell = self.kind;
+    var shape = kind.shape();
+    for (var spot : shape) {
+        x, y := Game.place(kind, spot, self.px, self.py, self.rot);
         if (y < 0) {
             buried = true;
         } else {
-            board[y * 10 + x] = kind + 1;
+            self.board[y][x] = kind;
         }
     }
     if (buried) {
-        alive = false;
-        if (!told) {
-            printf("game over  lines %d  score %d\n"b, lines, score);
-            told = true;
+        self.alive = false;
+        if (!self.told) {
+            printf("game over  lines %d  score %d\n"b, self.lines, self.score);
+            self.told = true;
         }
         return;
     }
-    var cleared = clear_lines();
+    var cleared = self.clear_lines();
     if (cleared != 0) {
-        lines = lines + cleared;
-        score = score + cleared * cleared * 100;
-        printf("lines %d  score %d\n"b, lines, score);
+        self.lines = self.lines + cleared;
+        self.score = self.score + cleared * cleared * 100;
+        printf("lines %d  score %d\n"b, self.lines, self.score);
     }
-    spawn();
+    self.spawn();
 }
 
-func restart() void {
-    wipe();
-    lines = 0;
-    score = 0;
-    told = false;
-    next_kind = SDL_rand(7);
-    spawn();
-    last = SDL_GetTicks();
+func Game::restart(self *this) void {
+    self.wipe();
+    self.lines = 0;
+    self.score = 0;
+    self.told = false;
+    self.next = Cell.roll(SDL_rand(7));
+    self.spawn();
+    self.last = SDL_GetTicks();
 }
 
-func try_turn(dir i32) void {
-    var turn = (rot + 4 + dir) % 4;
-    var kicks = [_]i32{0, -1, 1, -2, 2};
-    for (var i = 0; i < 5; i = i + 1) {
-        var dx = kicks[i];
-        if (fits(kind, turn, px + dx, py)) {
-            px = px + dx;
-            rot = turn;
+func Game::try_turn(self *this, dir i32) void {
+    var turn = (self.rot + 4 + dir) % 4;
+    const kicks = [_]i32{0, -1, 1, -2, 2};
+    for (var dx : kicks) {
+        if (self.fits(self.kind, turn, self.px + dx, self.py)) {
+            self.px = self.px + dx;
+            self.rot = turn;
             return;
         }
     }
 }
 
-func hard_drop() void {
-    while (fits(kind, rot, px, py + 1)) {
-        py = py + 1;
-        score = score + 2;
+func Game::hard_drop(self *this) void {
+    while (self.fits(self.kind, self.rot, self.px, self.py + 1)) {
+        self.py = self.py + 1;
+        self.score = self.score + 2;
     }
-    settle();
-    last = SDL_GetTicks();
+    self.settle();
+    self.last = SDL_GetTicks();
 }
 
-func on_key(code i32, again bool) void {
+func Game::on_key(self *this, code i32, again bool) void {
     if (code == SdlScancode.SDL_SCANCODE_ESCAPE) {
-        running = false;
+        self.running = false;
         return;
     }
-    if (!alive) {
+    if (!self.alive) {
         if (!again && code == SdlScancode.SDL_SCANCODE_R) {
-            restart();
+            self.restart();
         }
         return;
     }
     if (code == SdlScancode.SDL_SCANCODE_LEFT) {
-        if (fits(kind, rot, px - 1, py)) {
-            px = px - 1;
+        if (self.fits(self.kind, self.rot, self.px - 1, self.py)) {
+            self.px = self.px - 1;
         }
         return;
     }
     if (code == SdlScancode.SDL_SCANCODE_RIGHT) {
-        if (fits(kind, rot, px + 1, py)) {
-            px = px + 1;
+        if (self.fits(self.kind, self.rot, self.px + 1, self.py)) {
+            self.px = self.px + 1;
         }
         return;
     }
     if (code == SdlScancode.SDL_SCANCODE_DOWN) {
-        if (fits(kind, rot, px, py + 1)) {
-            py = py + 1;
-            score = score + 1;
-            last = SDL_GetTicks();
+        if (self.fits(self.kind, self.rot, self.px, self.py + 1)) {
+            self.py = self.py + 1;
+            self.score = self.score + 1;
+            self.last = SDL_GetTicks();
         } else {
-            settle();
-            last = SDL_GetTicks();
+            self.settle();
+            self.last = SDL_GetTicks();
         }
         return;
     }
@@ -279,22 +387,19 @@ func on_key(code i32, again bool) void {
         return;
     }
     if (code == SdlScancode.SDL_SCANCODE_UP) {
-        try_turn(1);
+        self.try_turn(1);
         return;
     }
     if (code == SdlScancode.SDL_SCANCODE_Z) {
-        try_turn(-1);
+        self.try_turn(-1);
         return;
     }
     if (code == SdlScancode.SDL_SCANCODE_SPACE) {
-        hard_drop();
+        self.hard_drop();
     }
 }
 
-var gpu_array = 0u32;
-var gpu_buffer = 0u32;
-
-func shader_status(object u32, pname u32, linked bool) bool {
+func Gpu::status(object u32, pname u32, linked bool) bool {
     var ok i32 = 0;
     if (linked) {
         GetProgramiv(object, pname, &ok);
@@ -314,17 +419,17 @@ func shader_status(object u32, pname u32, linked bool) bool {
     return true;
 }
 
-func make_shader(kind u32, source *const u8) u32 {
+func Gpu::make_shader(kind u32, source *const u8) u32 {
     var shader = CreateShader(kind);
     ShaderSource(shader, 1, &source, null);
     CompileShader(shader);
-    if (!shader_status(shader, GLenum.COMPILE_STATUS, false)) {
+    if (!Gpu.status(shader, GLenum.COMPILE_STATUS, false)) {
         return 0;
     }
     return shader;
 }
 
-func load_gl() bool {
+func Gpu::load(self *this) bool {
     if (!load()) {
         return false;
     }
@@ -345,8 +450,8 @@ void main() {
     frag = vec4(v_color, 1.0);
 }
 `b;
-    var vertex = make_shader(GLenum.VERTEX_SHADER, vertex_source);
-    var fragment = make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
+    var vertex = Gpu.make_shader(GLenum.VERTEX_SHADER, vertex_source);
+    var fragment = Gpu.make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
     if (vertex == 0 || fragment == 0) {
         return false;
     }
@@ -354,44 +459,28 @@ void main() {
     AttachShader(program, vertex);
     AttachShader(program, fragment);
     LinkProgram(program);
-    if (!shader_status(program, GLenum.LINK_STATUS, true)) {
+    if (!Gpu.status(program, GLenum.LINK_STATUS, true)) {
         return false;
     }
     DeleteShader(vertex);
     DeleteShader(fragment);
 
-    GenVertexArrays(1, &gpu_array);
-    BindVertexArray(gpu_array);
-    GenBuffers(1, &gpu_buffer);
-    BindBuffer(GLenum.ARRAY_BUFFER, gpu_buffer);
+    GenVertexArrays(1, &self.array);
+    BindVertexArray(self.array);
+    GenBuffers(1, &self.buffer);
+    BindBuffer(GLenum.ARRAY_BUFFER, self.buffer);
     EnableVertexAttribArray(0);
-    VertexAttribPointer(0, 2, GLenum.FLOAT, 0, 20, *void(0));
+    VertexAttribPointer(0, 2, GLenum.FLOAT, 0, sizeof(Vertex), *void(0));
     EnableVertexAttribArray(1);
-    VertexAttribPointer(1, 3, GLenum.FLOAT, 0, 20, *void(8));
+    VertexAttribPointer(1, 3, GLenum.FLOAT, 0, sizeof(Vertex), *void(sizeof(f32) * 2));
     UseProgram(program);
     return true;
 }
 
-func draw_mesh(verts *f32, count i32) void {
-    BufferData(GLenum.ARRAY_BUFFER, i64(count * 20), *void(verts), GLenum.DYNAMIC_DRAW);
+func Gpu::mesh(verts *Vertex, count i32) void {
+    BufferData(GLenum.ARRAY_BUFFER, i64(count * sizeof(Vertex)), *void(verts), GLenum.DYNAMIC_DRAW);
     DrawArrays(GLenum.TRIANGLES, 0, count);
 }
-
-func quad(x0 f32, y0 f32, x1 f32, y1 f32, red f32, green f32, blue f32) void {
-    var verts = [_]f32{
-        x0, y0, red, green, blue,
-        x1, y0, red, green, blue,
-        x0, y1, red, green, blue,
-        x0, y1, red, green, blue,
-        x1, y0, red, green, blue,
-        x1, y1, red, green, blue,
-    };
-    draw_mesh(verts, 6);
-}
-
-var paint_r = 0.0f;
-var paint_g = 0.0f;
-var paint_b = 0.0f;
 
 func ndc_x(pixel i32) f32 {
     return f32(pixel) / f32(window_w) * 2.0f - 1.0f;
@@ -401,135 +490,136 @@ func ndc_y(pixel i32) f32 {
     return 1.0f - f32(pixel) / f32(window_h) * 2.0f;
 }
 
-func rect(x i32, y i32, w i32, h i32) void {
-    quad(ndc_x(x), ndc_y(y), ndc_x(x + w), ndc_y(y + h), paint_r, paint_g, paint_b);
+func Game::quad(x0 f32, y0 f32, x1 f32, y1 f32, color Rgb) void {
+    var verts = [_]Vertex{
+        Vertex{.x = x0, .y = y0, .r = color.r, .g = color.g, .b = color.b},
+        Vertex{.x = x1, .y = y0, .r = color.r, .g = color.g, .b = color.b},
+        Vertex{.x = x0, .y = y1, .r = color.r, .g = color.g, .b = color.b},
+        Vertex{.x = x0, .y = y1, .r = color.r, .g = color.g, .b = color.b},
+        Vertex{.x = x1, .y = y0, .r = color.r, .g = color.g, .b = color.b},
+        Vertex{.x = x1, .y = y1, .r = color.r, .g = color.g, .b = color.b},
+    };
+    Gpu.mesh(verts, verts.len);
 }
 
-func set_color(id i32) void {
-    switch (id) {
-    case 1:
-        paint_r = 0.35f;
-        paint_g = 0.90f;
-        paint_b = 0.95f;
-        break;
-    case 2:
-        paint_r = 0.95f;
-        paint_g = 0.84f;
-        paint_b = 0.25f;
-        break;
-    case 3:
-        paint_r = 0.72f;
-        paint_g = 0.38f;
-        paint_b = 0.90f;
-        break;
-    case 4:
-        paint_r = 0.40f;
-        paint_g = 0.86f;
-        paint_b = 0.42f;
-        break;
-    case 5:
-        paint_r = 0.92f;
-        paint_g = 0.32f;
-        paint_b = 0.34f;
-        break;
-    case 6:
-        paint_r = 0.32f;
-        paint_g = 0.48f;
-        paint_b = 0.95f;
-        break;
-    case 7:
-        paint_r = 0.96f;
-        paint_g = 0.58f;
-        paint_b = 0.22f;
-        break;
-    default:
-        paint_r = 0.45f;
-        paint_g = 0.48f;
-        paint_b = 0.55f;
-        break;
-    }
+func Game::rect(x i32, y i32, w i32, h i32, color Rgb) void {
+    Game.quad(ndc_x(x), ndc_y(y), ndc_x(x + w), ndc_y(y + h), color);
 }
 
-func draw_block(col i32, row i32, color i32, ox i32, oy i32) void {
-    set_color(color);
-    rect(ox + col * 28, oy + row * 28, 26, 26);
+func Game::block(col i32, row i32, color Rgb, ox i32, oy i32) void {
+    Game.rect(ox + col * cell, oy + row * cell, cell - 2, cell - 2, color);
 }
 
-func draw_piece(piece i32, turn i32, ox i32, oy i32, color i32, drop bool) void {
-    for (var i = 0; i < 4; i = i + 1) {
-        x, y := cell_at(piece, i, ox, oy, turn);
+func Game::draw_piece(self *this, piece Cell, turn i32, ox i32, oy i32, color Rgb) void {
+    var shape = piece.shape();
+    for (var spot : shape) {
+        x, y := Game.place(piece, spot, ox, oy, turn);
         if (y >= 0) {
-            var color_id = color;
-            if (drop) {
-                color_id = 0;
-            }
-            draw_block(x, y, color_id, 48, 32);
+            Game.block(x, y, color, origin_x, origin_y);
         }
     }
 }
 
-func draw_next() void {
-    paint_r = 0.12f;
-    paint_g = 0.13f;
-    paint_b = 0.16f;
-    rect(360, 32, 4 * 28, 4 * 28);
-    for (var i = 0; i < 4; i = i + 1) {
-        x, y := cell_at(next_kind, i, 0, 0, 0);
-        draw_block(x, y, next_kind + 1, 360, 32);
+func Game::draw_next(self *this) void {
+    var well = Rgb{.r = 0.12f, .g = 0.13f, .b = 0.16f};
+    Game.rect(preview_x, origin_y, 4 * cell, 4 * cell, well);
+    var upcoming Cell = self.next;
+    var shape = upcoming.shape();
+    var color = upcoming.rgb();
+    for (var spot : shape) {
+        x, y := Game.place(upcoming, spot, 0, 0, 0);
+        Game.block(x, y, color, preview_x, origin_y);
     }
 }
 
-func draw_lines() void {
-    var shown = lines;
-    if (shown > 20) {
-        shown = 20;
+func Game::draw_lines(self *this) void {
+    var shown = self.lines;
+    if (shown > rows) {
+        shown = rows;
     }
+    var mark = Rgb{.r = 0.90f, .g = 0.90f, .b = 0.85f};
     for (var i = 0; i < shown; i = i + 1) {
-        paint_r = 0.90f;
-        paint_g = 0.90f;
-        paint_b = 0.85f;
-        rect(16, 32 + (19 - i) * 28, 18, 18);
+        Game.rect(16, origin_y + (rows - 1 - i) * cell, 18, 18, mark);
     }
 }
 
-func ghost_y() i32 {
-    var gy = py;
-    while (fits(kind, rot, px, gy + 1)) {
+func Game::ghost_y(self *this) i32 {
+    var gy = self.py;
+    while (self.fits(self.kind, self.rot, self.px, gy + 1)) {
         gy = gy + 1;
     }
     return gy;
 }
 
-func draw() void {
+func Game::draw(self *this) void {
     Clear(GLenum.COLOR_BUFFER_BIT);
-    paint_r = 0.10f;
-    paint_g = 0.11f;
-    paint_b = 0.14f;
-    rect(48, 32, 10 * 28, 20 * 28);
-    for (var row = 0; row < 20; row = row + 1) {
-        for (var col = 0; col < 10; col = col + 1) {
-            var filled = board[row * 10 + col];
-            if (filled != 0) {
-                draw_block(col, row, filled, 48, 32);
+    var well = Rgb{.r = 0.10f, .g = 0.11f, .b = 0.14f};
+    Game.rect(origin_x, origin_y, columns * cell, rows * cell, well);
+    for (var row = 0; row < rows; row = row + 1) {
+        for (var col = 0; col < columns; col = col + 1) {
+            var filled Cell = self.board[row][col];
+            if (filled != Cell.Empty) {
+                var color Rgb = filled.rgb();
+                Game.block(col, row, color, origin_x, origin_y);
             }
         }
     }
-    if (alive) {
-        var gy = ghost_y();
-        if (gy != py) {
-            draw_piece(kind, rot, px, gy, 0, true);
+    if (self.alive) {
+        var gy = self.ghost_y();
+        var kind Cell = self.kind;
+        var paint = kind.rgb();
+        var ghost = Cell.Empty;
+        var gray = ghost.rgb();
+        if (gy != self.py) {
+            self.draw_piece(kind, self.rot, self.px, gy, gray);
         }
-        draw_piece(kind, rot, px, py, kind + 1, false);
+        self.draw_piece(kind, self.rot, self.px, self.py, paint);
     }
-    draw_next();
-    draw_lines();
-    if (!alive) {
-        paint_r = 0.55f;
-        paint_g = 0.16f;
-        paint_b = 0.18f;
-        rect(48, 32, 10 * 28, 8);
-        rect(48, 32 + 20 * 28 - 8, 10 * 28, 8);
+    self.draw_next();
+    self.draw_lines();
+    if (!self.alive) {
+        var edge = Rgb{.r = 0.55f, .g = 0.16f, .b = 0.18f};
+        Game.rect(origin_x, origin_y, columns * cell, 8, edge);
+        Game.rect(origin_x, origin_y + rows * cell - 8, columns * cell, 8, edge);
     }
+}
+
+func Game::begin(self *this) void {
+    self.wipe();
+    self.lines = 0;
+    self.score = 0;
+    self.told = false;
+    self.running = true;
+    self.next = Cell.roll(SDL_rand(7));
+    self.spawn();
+    self.last = SDL_GetTicks();
+}
+
+func Game::frame(self *this, window *SDL_Window) void {
+    var event = SDL_Event{};
+    while (SDL_PollEvent(&event)) {
+        if (event.kind == SdlEventKind.SDL_EVENT_QUIT ||
+            event.kind == SdlEventKind.SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            self.running = false;
+        }
+        if (event.kind == SdlEventKind.SDL_EVENT_KEY_DOWN) {
+            self.on_key(event.key.scancode, event.key.repeat);
+        }
+    }
+    if (self.alive) {
+        var now = SDL_GetTicks();
+        if (now - self.last >= self.pace()) {
+            if (self.fits(self.kind, self.rot, self.px, self.py + 1)) {
+                self.py = self.py + 1;
+            } else {
+                self.settle();
+            }
+            self.last = SDL_GetTicks();
+        }
+    }
+    self.draw();
+    SDL_GL_SwapWindow(window);
+    SDL_Delay(16);
 }
 
 func main() i32 {
@@ -556,44 +646,18 @@ func main() i32 {
         return 1;
     }
     SDL_GL_MakeCurrent(window, context);
-    if (!load_gl()) {
+    var game Game;
+    if (!game.gpu.load()) {
         printf("OpenGL failed\n"b);
         return 1;
     }
     Viewport(0, 0, window_w, window_h);
     ClearColor(0.05f, 0.06f, 0.08f, 1.0f);
-
-    next_kind = SDL_rand(7);
-    spawn();
-    last = SDL_GetTicks();
-    running = true;
+    game.begin();
     printf("left right down move, up and z rotate, space drops, r restarts\n"b);
 
-    while (running) {
-        var event = SDL_Event{};
-        while (SDL_PollEvent(&event)) {
-            if (event.kind == SdlEventKind.SDL_EVENT_QUIT ||
-                event.kind == SdlEventKind.SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-                running = false;
-            }
-            if (event.kind == SdlEventKind.SDL_EVENT_KEY_DOWN) {
-                on_key(event.key.scancode, event.key.repeat);
-            }
-        }
-        if (alive) {
-            var now = SDL_GetTicks();
-            if (now - last >= pace()) {
-                if (fits(kind, rot, px, py + 1)) {
-                    py = py + 1;
-                } else {
-                    settle();
-                }
-                last = SDL_GetTicks();
-            }
-        }
-        draw();
-        SDL_GL_SwapWindow(window);
-        SDL_Delay(16);
+    while (game.running) {
+        game.frame(window);
     }
     return 0;
 }
