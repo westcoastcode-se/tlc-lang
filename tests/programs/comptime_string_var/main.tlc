@@ -1,0 +1,8 @@
+comptime func cut(text []const u8) []const u8 {
+    return text[0:5];
+}
+
+func main() i32 {
+    var text = "Hello, world"b;
+    return cut(text).len;
+}

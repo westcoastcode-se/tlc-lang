@@ -1271,6 +1271,9 @@ bool Checker::constant_slice_expr(const Expr &expr, std::unordered_set<std::stri
     if (std::holds_alternative<Expr::String>(expr.data)) {
         return true;
     }
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        return call->comptime_text;
+    }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `numbers[1:3]`, `numbers[2:]`, `numbers[:2]`, and `numbers[:]`.
         // The address is fixed. A runtime bound is not a header in the binary.

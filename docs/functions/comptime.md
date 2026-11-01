@@ -115,7 +115,7 @@ retq                             # return
 
 ## When the call folds
 
-The call folds when every argument is a comptime value and the result is `i32` or a struct, with no runtime symbol and no trace frame.
+The call folds when every argument is a comptime value and the result is `i32`, a struct, or a constant `[]const u8`, with no runtime symbol and no trace frame.
 
 A body that is one `return` of a constant `i32` folds.
 
@@ -123,7 +123,41 @@ A body with statements is compiled and run, and that integer is the constant.
 
 A struct result is kept as that literal.
 
-A result that is not `i32` and not a struct is `not supported yet`.
+A `[]const u8` result is that string.
+
+`return "Hello"[0:5]` is `Hello`.
+
+A body with statements is compiled and run, and the returned slice is that string.
+
+`cut("Hello, world")` is `Hello` when the body keeps the bytes before `,`.
+
+`cut("Hello, world").len` is `5`, and `cut("Hello, world")[1]` is `e`.
+
+`printf("%s", cut("Hello, world"))` prints `Hello`.
+
+```c
+comptime func cut(text []const u8) []const u8 {
+    return text[0:5];
+}
+
+func main() i32 {
+    return cut("Hello, world").len;
+}
+```
+
+```asm
+main:
+movl $5, %eax                    # constant
+retq
+```
+
+`comptime const label = cut("Hello, world")` names that string.
+
+`label[0]` is `H`.
+
+A `var` passed to that function is `not supported yet`.
+
+A result that is not `i32`, not a struct, and not a constant `[]const u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 

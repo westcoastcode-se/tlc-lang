@@ -987,6 +987,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         node.comptime_struct = std::move(kept.value);
                         return result;
                     }
+                    if (slice_of_const_u8(result)) {
+                        if (!fold_comptime_string(node)) {
+                            error(node.loc, "not supported yet");
+                            return type_invalid();
+                        }
+                        return result;
+                    }
                     if (!fold_int(expr)) {
                         error(node.loc, "not supported yet");
                         return type_invalid();

@@ -1782,6 +1782,17 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
 }
 
 std::optional<CodeGen::SlicePieces> CodeGen::slice_pieces(const Expr &expr, std::unordered_set<std::string> &seen) {
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data); call != nullptr && call->comptime_text) {
+        llvm::Constant *data = llvm::ConstantDataArray::getString(context_, call->comptime_bytes, true);
+        auto *global = new llvm::GlobalVariable(module_, data->getType(), true, llvm::GlobalValue::PrivateLinkage, data,
+                                                ".str");
+        SlicePieces pieces;
+        pieces.element = i8();
+        pieces.pointer = llvm::ConstantExpr::getInBoundsGetElementPtr(
+            data->getType(), global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
+        pieces.length = static_cast<int32_t>(call->comptime_bytes.size());
+        return pieces;
+    }
     if (const auto *text = std::get_if<Expr::String>(&expr.data)) {
         llvm::Constant *data = llvm::ConstantDataArray::getString(context_, text->text, true);
         auto *global = new llvm::GlobalVariable(module_, data->getType(), true, llvm::GlobalValue::PrivateLinkage, data,

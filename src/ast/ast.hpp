@@ -164,6 +164,9 @@ struct Expr {
         mutable int comptime_value = 0;
         // A struct result of that run, as a literal. Distinct from `comptime_value`: `fold_int` of the call stays empty.
         mutable std::unique_ptr<Expr> comptime_struct;
+        // A constant `[]const u8` result. Empty text is a real result, so `comptime_text` says it was kept.
+        mutable bool comptime_text = false;
+        mutable std::string comptime_bytes;
     };
     struct Selector {
         SourceLoc loc{};

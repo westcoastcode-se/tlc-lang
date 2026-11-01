@@ -37,6 +37,10 @@ CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const 
 // `file` is the file whose names the body resolves. Nullopt when emission or the call fails.
 std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
 
+// Compile `fn` and call it. `fn` returns `[]const u8` and takes no parameters.
+// The bytes are that slice. Nullopt when emission or the call fails.
+std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
+
 // One slot of a struct a comptime func returned. Offsets are relative to that slot.
 // Plain data: the module that measured them is already destroyed.
 struct ComptimeSlot {

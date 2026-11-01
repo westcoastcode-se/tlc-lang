@@ -440,6 +440,7 @@ class CodeGen {
     void enable_debug() { debug_ = true; }
     // Emit `fn` as `tlc.comptime.eval` after the package is declared. False when that emission reports a diagnostic.
     bool define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
+    bool define_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
     // Emit `fn` as a struct return and a `void (ptr)` wrapper that stores it. False when emission fails.
     // `image.not_constant` is set when a field cannot be a constant. The schema has no LLVM types.
     bool define_comptime_struct(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,

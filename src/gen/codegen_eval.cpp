@@ -138,6 +138,245 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
     return diags_.size() == prepared && !function->isDeclaration();
 }
 
+bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file) {
+    if (graph.nodes.empty() || fn.body == nullptr) {
+        return false;
+    }
+    eval_ = true;
+    graph_ = &graph;
+    entry_file_ = graph.nodes.front().file_id;
+    prepare_enums();
+    prepare_structs();
+    prepare_traits();
+    for (const PackageNode &node : graph.nodes) {
+        declare_functions(node);
+    }
+    for (const PackageNode &node : graph.nodes) {
+        declare_globals(node);
+    }
+    for (const PackageNode &node : graph.nodes) {
+        current_file_ = node.file_id;
+        for (const TopDecl &decl : node.unit.decls) {
+            if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+                apply_initializer(*var);
+            }
+        }
+    }
+    const std::size_t prepared = diags_.size();
+    const PackageNode *home = find_node(file);
+    const auto give_up = [&]() {
+        pop();
+        graph_ = nullptr;
+        return false;
+    };
+    if (home == nullptr) {
+        graph_ = nullptr;
+        return false;
+    }
+    current_file_ = file;
+    packages_.clear();
+    push();
+    bind_package_globals();
+    bind_imports(*home);
+    llvm::FunctionType *ftype = function_type(fn, file);
+    if (ftype == nullptr || ftype->getNumParams() != 0 || ftype->getReturnType() != slice_type()) {
+        return give_up();
+    }
+    if (module_.getNamedValue(kBodyName) != nullptr || module_.getNamedValue(kEvalName) != nullptr) {
+        return give_up();
+    }
+    auto *body = llvm::Function::Create(ftype, llvm::GlobalValue::ExternalLinkage, kBodyName, module_);
+    body->setCallingConv(llvm::CallingConv::C);
+    emit_function_body(fn, body, 0);
+    pop();
+
+    for (int guard = 0; guard < 64; ++guard) {
+        struct Pending {
+            uint32_t file = 0;
+            const FunctionDecl *decl = nullptr;
+            llvm::Function *function = nullptr;
+            int depth = 0;
+        };
+        std::vector<Pending> pending;
+        for (auto &entry : files_) {
+            for (auto &symbol : entry.second.functions) {
+                auto *callee = llvm::dyn_cast_or_null<llvm::Function>(symbol.second.value);
+                if (callee == nullptr || !callee->isDeclaration() || callee->use_empty()) {
+                    continue;
+                }
+                const FunctionDecl *decl = symbol.second.decl;
+                if (decl == nullptr || decl->body == nullptr || symbol.second.is_generic ||
+                    function_is_generic(entry.first, *decl)) {
+                    continue;
+                }
+                pending.push_back(Pending{entry.first, decl, callee, symbol.second.depth});
+            }
+        }
+        if (pending.empty()) {
+            break;
+        }
+        for (const Pending &item : pending) {
+            const PackageNode *node = find_node(item.file);
+            if (node == nullptr || !item.function->isDeclaration()) {
+                continue;
+            }
+            current_file_ = item.file;
+            packages_.clear();
+            push();
+            bind_package_globals();
+            bind_imports(*node);
+            emit_function_body(*item.decl, item.function, item.depth);
+            pop();
+            if (item.function->isDeclaration()) {
+                graph_ = nullptr;
+                return false;
+            }
+        }
+    }
+    std::vector<llvm::Function *> drop;
+    for (llvm::Function &item : module_) {
+        if (!item.isDeclaration() || &item == body) {
+            continue;
+        }
+        if (!item.use_empty()) {
+            graph_ = nullptr;
+            return false;
+        }
+        drop.push_back(&item);
+    }
+    for (llvm::Function *item : drop) {
+        item->eraseFromParent();
+    }
+    if (body->isDeclaration()) {
+        graph_ = nullptr;
+        return false;
+    }
+    // The returned slice may address a constant in this module. Copy it before that module is discarded.
+    auto *pool_ty = llvm::ArrayType::get(i8(), kPoolBytes);
+    auto *pool = new llvm::GlobalVariable(module_, pool_ty, false, llvm::GlobalValue::ExternalLinkage,
+                                          llvm::ConstantAggregateZero::get(pool_ty), kPoolName);
+    auto *used = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage, const_i32(0),
+                                          kUsedName);
+    auto *fail = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage, const_i32(0),
+                                          kFailName);
+    auto *wrapper_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), {}, false);
+    auto *wrapper = llvm::Function::Create(wrapper_ty, llvm::GlobalValue::ExternalLinkage, kEvalName, module_);
+    wrapper->setCallingConv(llvm::CallingConv::C);
+    auto *entry = llvm::BasicBlock::Create(context_, "entry", wrapper);
+    builder_.SetInsertPoint(entry);
+    llvm::Value *slice = builder_.CreateCall(body, {});
+    llvm::Value *data = builder_.CreateExtractValue(slice, 0);
+    llvm::Value *len = builder_.CreateExtractValue(slice, 1);
+    auto *fail_bb = llvm::BasicBlock::Create(context_, "fail", wrapper);
+    auto *null_bb = llvm::BasicBlock::Create(context_, "null", wrapper);
+    auto *room_bb = llvm::BasicBlock::Create(context_, "room", wrapper);
+    auto *copy_bb = llvm::BasicBlock::Create(context_, "copy", wrapper);
+    auto *done_bb = llvm::BasicBlock::Create(context_, "done", wrapper);
+    builder_.CreateCondBr(builder_.CreateICmpSLT(len, const_i32(0)), fail_bb, null_bb);
+    builder_.SetInsertPoint(null_bb);
+    llvm::Value *null_len = builder_.CreateAnd(builder_.CreateICmpEQ(data, null_ptr()),
+                                               builder_.CreateICmpNE(len, const_i32(0)));
+    builder_.CreateCondBr(null_len, fail_bb, room_bb);
+    builder_.SetInsertPoint(room_bb);
+    builder_.CreateCondBr(builder_.CreateICmpUGT(len, const_i32(static_cast<int>(kPoolBytes))), fail_bb, copy_bb);
+    builder_.SetInsertPoint(copy_bb);
+    builder_.CreateMemCpy(pool, llvm::Align(1), data, llvm::Align(1), builder_.CreateZExt(len, i64()));
+    builder_.CreateStore(len, used);
+    builder_.CreateBr(done_bb);
+    builder_.SetInsertPoint(fail_bb);
+    builder_.CreateStore(const_i32(1), fail);
+    builder_.CreateBr(done_bb);
+    builder_.SetInsertPoint(done_bb);
+    builder_.CreateRetVoid();
+    graph_ = nullptr;
+    return diags_.size() == prepared && !wrapper->isDeclaration();
+}
+
+std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file) {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+    auto machine_or = llvm::orc::JITTargetMachineBuilder::detectHost();
+    if (!machine_or) {
+        llvm::consumeError(machine_or.takeError());
+        return std::nullopt;
+    }
+    llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
+    machine.setCPU("generic");
+    machine.setRelocationModel(llvm::Reloc::PIC_);
+    machine.getOptions().EmulatedTLS = false;
+    auto layout_or = machine.getDefaultDataLayoutForTarget();
+    if (!layout_or) {
+        llvm::consumeError(layout_or.takeError());
+        return std::nullopt;
+    }
+
+    SourceSet sources;
+    DiagnosticEngine diags(sources);
+    auto context = std::make_unique<llvm::LLVMContext>();
+    auto module = std::make_unique<llvm::Module>("tlc.comptime", *context);
+    module->setTargetTriple(machine.getTargetTriple());
+    module->setDataLayout(*layout_or);
+    {
+        CodeGen gen(*context, *module, diags);
+        if (!gen.define_comptime_string(graph, fn, file)) {
+            return std::nullopt;
+        }
+    }
+    std::string verify_error;
+    llvm::raw_string_ostream verify_stream(verify_error);
+    if (llvm::verifyModule(*module, &verify_stream)) {
+        return std::nullopt;
+    }
+
+    llvm::orc::LLJITBuilder builder;
+    builder.setJITTargetMachineBuilder(std::move(machine));
+    auto jit_or = builder.create();
+    if (!jit_or) {
+        llvm::consumeError(jit_or.takeError());
+        return std::nullopt;
+    }
+    std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
+    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+        llvm::consumeError(std::move(err));
+        return std::nullopt;
+    }
+    auto addr = jit->lookup(kEvalName);
+    if (!addr) {
+        llvm::consumeError(addr.takeError());
+        return std::nullopt;
+    }
+    auto *call = addr->toPtr<void (*)()>();
+    if (call == nullptr) {
+        return std::nullopt;
+    }
+    auto fail_addr = jit->lookup(kFailName);
+    auto used_addr = jit->lookup(kUsedName);
+    auto pool_addr = jit->lookup(kPoolName);
+    if (!fail_addr || !used_addr || !pool_addr) {
+        if (!fail_addr) {
+            llvm::consumeError(fail_addr.takeError());
+        }
+        if (!used_addr) {
+            llvm::consumeError(used_addr.takeError());
+        }
+        if (!pool_addr) {
+            llvm::consumeError(pool_addr.takeError());
+        }
+        return std::nullopt;
+    }
+    call();
+    if (*fail_addr->toPtr<int32_t *>() != 0) {
+        return std::nullopt;
+    }
+    const auto len = *used_addr->toPtr<int32_t *>();
+    if (len < 0 || static_cast<uint32_t>(len) > kPoolBytes) {
+        return std::nullopt;
+    }
+    const auto *pool = pool_addr->toPtr<const uint8_t *>();
+    return std::string(reinterpret_cast<const char *>(pool), static_cast<std::size_t>(len));
+}
+
 std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();

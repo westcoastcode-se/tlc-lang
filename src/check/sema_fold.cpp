@@ -236,6 +236,28 @@ bool plain_i32_result(const FunctionDecl &fn) {
            slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
 }
 
+const Expr *single_return_expr(const FunctionDecl &fn) {
+    if (fn.body == nullptr) {
+        return nullptr;
+    }
+    const auto *body = std::get_if<Stmt::Block>(&fn.body->data);
+    if (body == nullptr) {
+        return nullptr;
+    }
+    const Expr *value = nullptr;
+    for (const auto &stmt : body->statements) {
+        if (stmt == nullptr) {
+            continue;
+        }
+        const auto *ret = std::get_if<Stmt::Return>(&stmt->data);
+        if (ret == nullptr || value != nullptr || ret->value == nullptr || !ret->extra.empty()) {
+            return nullptr;
+        }
+        value = ret->value.get();
+    }
+    return value;
+}
+
 const Expr *single_i32_return(const FunctionDecl &fn) {
     if (!plain_i32_result(fn)) {
         return nullptr;
@@ -597,6 +619,9 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
         return text->text;
     }
     if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        if (call->comptime_text) {
+            return call->comptime_bytes;
+        }
         return format_call(*call);
     }
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
@@ -1899,6 +1924,104 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     call.comptime_ran = true;
     call.comptime_value = *ran;
     return call.comptime_value;
+}
+
+bool Checker::fold_comptime_string(const Expr::Call &call) {
+    if (call.comptime_text) {
+        return true;
+    }
+    const FunctionDecl *fn = comptime_callee(call);
+    if (fn == nullptr) {
+        fn = baked_callee(call);
+    }
+    if (fn == nullptr || fn->is_macro || fn->variadic || !fn->type_params.empty() || !fn->method_struct.empty() ||
+        !call.type_args.empty() || call.args.size() != fn->params.size() || comptime_folding_.contains(fn)) {
+        return false;
+    }
+    std::vector<std::unique_ptr<Expr>> owned;
+    std::vector<std::string> names;
+    owned.reserve(fn->params.size());
+    names.reserve(fn->params.size());
+    for (std::size_t i = 0; i < fn->params.size(); ++i) {
+        if (call.args[i] == nullptr || (!fn->is_comptime && !fn->params[i].is_comptime)) {
+            return false;
+        }
+        const SourceLoc loc = expr_loc(*call.args[i]);
+        std::unique_ptr<Expr> literal;
+        if (const std::optional<int> number = fold_int(*call.args[i])) {
+            literal = folded_int(*number, loc);
+        } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
+            literal = folded_int(*local, loc);
+        } else {
+            std::unordered_set<std::string> seen;
+            if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
+                literal = folded_string(*text, loc);
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+                literal = comptime_substitute(*call.args[i]);
+            }
+        }
+        if (literal == nullptr) {
+            return false;
+        }
+        names.push_back(fn->params[i].name);
+        owned.push_back(std::move(literal));
+    }
+    if (!comptime_folding_.insert(fn).second) {
+        return false;
+    }
+    struct Leave {
+        std::unordered_set<const FunctionDecl *> &set;
+        const FunctionDecl *kept;
+        ~Leave() { set.erase(kept); }
+    } leave{comptime_folding_, fn};
+    std::vector<const Expr *> exprs;
+    exprs.reserve(owned.size());
+    for (const auto &item : owned) {
+        exprs.push_back(item.get());
+    }
+    if (const Expr *value = single_return_expr(*fn)) {
+        std::unique_ptr<Expr> rewritten = clone_expr(*value);
+        replace_names(rewritten, names, exprs);
+        std::unordered_set<std::string> seen;
+        if (const std::optional<std::string> text = constant_string(*rewritten, seen)) {
+            call.comptime_text = true;
+            call.comptime_bytes = *text;
+            return true;
+        }
+    }
+    if (!fn->is_comptime || graph_ == nullptr) {
+        return false;
+    }
+    FunctionDecl wrapper = clone_function(*fn);
+    if (wrapper.body == nullptr) {
+        return false;
+    }
+    replace_stmt_names(*wrapper.body, names, exprs);
+    wrapper.params.clear();
+    wrapper.captures.clear();
+    wrapper.captured_here.clear();
+    wrapper.is_comptime = false;
+    wrapper.is_macro = false;
+    wrapper.is_extern = false;
+    wrapper.extern_c = false;
+    wrapper.exported = false;
+    wrapper.variadic = false;
+    wrapper.link_name.clear();
+    uint32_t file = file_id_;
+    for (const PackageNode &node : graph_->nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            if (const auto *item = std::get_if<FunctionDecl>(&decl.data); item == fn) {
+                file = node.file_id;
+            }
+        }
+    }
+    const std::optional<std::string> ran = eval_comptime_string(*graph_, wrapper, file);
+    if (!ran) {
+        return false;
+    }
+    call.comptime_text = true;
+    call.comptime_bytes = *ran;
+    return true;
 }
 
 const Expr *Checker::comptime_struct_field(const Expr &object, const std::string &field) {

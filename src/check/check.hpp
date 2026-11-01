@@ -709,6 +709,8 @@ class Checker {
     // `bound` is the type argument. Null on `fence` and on a specialization.
     bool atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &call, const SpecArg *bound);
     std::optional<int> fold_comptime_call(const Expr::Call &call);
+    // A `comptime func` whose result is a constant `[]const u8`. False when that call does not fold.
+    bool fold_comptime_string(const Expr::Call &call);
     // Runs a comptime func that returns a struct. The literal is the result.
     struct KeptStruct {
         enum class Status { Unsupported, NotConstant, Value };

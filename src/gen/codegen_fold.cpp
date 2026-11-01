@@ -416,6 +416,9 @@ std::optional<std::string> CodeGen::constant_string(const Expr &expr, std::unord
         return text->text;
     }
     if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        if (call->comptime_text) {
+            return call->comptime_bytes;
+        }
         if (!is_builtin_fmt(*call) || call->args.size() != 2 || call->args[0] == nullptr || call->args[1] == nullptr) {
             return std::nullopt;
         }

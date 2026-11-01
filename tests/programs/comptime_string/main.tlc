@@ -1,0 +1,40 @@
+extern(abi="c"b) func printf(fmt *const u8, ...) i32;
+
+comptime func greet() []const u8 {
+    return "Hello"b;
+}
+
+comptime func none() []const u8 {
+    return ""b;
+}
+
+comptime func word(text []const u8) []const u8 {
+    return text[0:5];
+}
+
+comptime func cut(text []const u8) []const u8 {
+    var n = 0;
+    while (n < text.len() && text[n] != ','b) {
+        n = n + 1;
+    }
+    return text[0:n];
+}
+
+comptime const label = cut("Hello, world"b);
+
+func main() i32 {
+    if (greet().len != 5 || greet()[0] != 'H' || greet()[4] != 'o') {
+        return 1;
+    }
+    if (word("Hello, world"b).len != 5 || word("Hello, world"b)[4] != 'o') {
+        return 2;
+    }
+    if (cut("Hello, world"b).len != 5 || cut("Hello, world"b)[1] != 'e') {
+        return 3;
+    }
+    if (label.len != 5 || label[0] != 'H' || none().len != 0) {
+        return 4;
+    }
+    printf("%s\n"b, cut("Hello, world"b));
+    return 0;
+}

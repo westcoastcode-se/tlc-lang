@@ -210,7 +210,7 @@ A runtime `const` of a tuple is `type mismatch`.
 
 `return` leaves the function.
 
-A call used as a value folds when every argument is a comptime value and the result is `i32` or a struct.
+A call used as a value folds when every argument is a comptime value and the result is `i32`, a struct, or a constant `[]const u8`.
 
 A body that is one `return` of a constant `i32` folds. A body with statements is compiled and run, and that integer is the constant.
 
@@ -242,7 +242,9 @@ A value that does not fit in `i32`, such as `3000000000u32`, is `not supported y
 
 A data pointer field and a union result are `global initializer is not a constant`.
 
-A result that is not `i32` and not a struct is `not supported yet`.
+A `[]const u8` result is that string. `cut("Hello, world")` is `Hello` when the body keeps the bytes before `,`. `cut("Hello, world").len` is `movl $5, %eax` and `retq`. A `var` passed to that function is `not supported yet`.
+
+A result that is not `i32`, not a struct, and not a constant `[]const u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 
