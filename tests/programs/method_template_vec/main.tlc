@@ -1,0 +1,10 @@
+type Vec[T type] struct {
+    value T;
+};
+
+func Vec[T]::get[U type](self *this, value U) U;
+
+func main() i32 {
+    var v = Vec[i32]{.value = 3};
+    return v.get[i32](4);
+}

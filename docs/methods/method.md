@@ -255,6 +255,28 @@ Another package calls `value.get(...)`.
 
 `pkg.Point.sum` is reported as `not supported yet`.
 
+## A method with no body
+
+A method may have no body.
+
+The declaration ends with `;`.
+
+It is not `extern(abi="c")`.
+
+The call is a call to that symbol.
+
+The compiler may supply the body.
+
+A program that calls a method with no body, when the compiler does not supply one, does not link.
+
+A method template is that same rule.
+
+The call names the specialization.
+
+When the file is `main.tlc`, `p.id[i32](4)` calls `main.Point.id.spec.i32`.
+
+A comptime parameter on that template is `not supported yet`.
+
 ## extern
 
 ### A method in a tlc library
@@ -317,7 +339,13 @@ A bare `extern` and `extern(abi="tlc")` on a method template are `not supported 
 
 `extern(name="symbol")` is `name requires abi="c"`.
 
-A prototype with no body is `not supported yet`.
+A method template may have no body.
+
+The call names the specialization.
+
+The compiler may supply the body.
+
+A program that calls it, when the compiler does not supply one, does not link.
 
 A comptime parameter on that prototype is `not supported yet`.
 

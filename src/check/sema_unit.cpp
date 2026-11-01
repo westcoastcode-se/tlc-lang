@@ -414,8 +414,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 require_method_params(*fn);
                 if (generic_struct_name(file_id_, fn->method_struct)) {
                     // `func Vec[T]::get[U type]` is a method template on each specialization.
-                    // `...` and a trait parameter stay rejected. An `extern` prototype names
-                    // the specialization.
+                    // `...` and a trait parameter stay rejected. A method with no body is
+                    // that specialization. A comptime parameter on it needs a body.
                     if (!fn->type_params.empty()) {
                         for (const TypeParam &param : fn->type_params) {
                             for (const std::string &used : fn->method_params) {
@@ -424,8 +424,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                                 }
                             }
                         }
-                        if (fn->variadic || extern_generic_trait_param(file_id_, *fn) ||
-                            (fn->body == nullptr && !extern_generic_prototype(*fn))) {
+                        if (fn->variadic || extern_generic_trait_param(file_id_, *fn) || comptime_prototype(*fn)) {
                             error(fn->loc, "not supported yet");
                         }
                     }

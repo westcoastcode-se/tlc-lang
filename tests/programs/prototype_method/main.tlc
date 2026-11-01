@@ -1,0 +1,10 @@
+type Point struct {
+    x i32;
+};
+
+func Point::read(self this) i32;
+
+func main() i32 {
+    var p = Point{.x = 1};
+    return p.read();
+}

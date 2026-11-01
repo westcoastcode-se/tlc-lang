@@ -1,1 +1,1 @@
-exit: 42
+link-error: undefined reference to `main.Point.id.spec.i32'

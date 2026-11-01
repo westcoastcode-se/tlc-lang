@@ -871,10 +871,9 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                 }
             }
             // `export` and a static method are registered. `...` and a trait parameter are
-            // not one concrete method. An `extern` prototype names the specialization.
-            // A body in this compilation defines that symbol and keeps `extern`.
-            const bool missing_body = method.body == nullptr && !extern_generic_prototype(method);
-            const bool rejected = method.variadic || method.extern_c || shadow || missing_body;
+            // not one concrete method. A method with no body is that specialization.
+            // A comptime parameter on it needs a body.
+            const bool rejected = method.variadic || method.extern_c || shadow || comptime_prototype(method);
             if (rejected) {
                 continue;
             }
@@ -1658,6 +1657,18 @@ bool Checker::extern_generic_prototype(const FunctionDecl &fn) const {
         }
     }
     return true;
+}
+
+bool Checker::comptime_prototype(const FunctionDecl &fn) const {
+    if (fn.body != nullptr) {
+        return false;
+    }
+    for (const Param &param : fn.params) {
+        if (param.is_comptime) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::Call &call,
@@ -3098,9 +3109,9 @@ void Checker::register_method_template(const FunctionDecl &fn) {
         return;
     }
     // A tlc `extern` is one symbol per specialization. `...` and a trait parameter are
-    // still not one concrete method. An `extern` prototype names that specialization.
-    if (fn.variadic || extern_generic_trait_param(file_id_, fn) ||
-        (fn.body == nullptr && !extern_generic_prototype(fn))) {
+    // still not one concrete method. A method with no body is that specialization.
+    // A comptime parameter on it needs a body.
+    if (fn.variadic || extern_generic_trait_param(file_id_, fn) || comptime_prototype(fn)) {
         error(fn.loc, "not supported yet");
         return;
     }
@@ -3514,8 +3525,8 @@ std::optional<Type> Checker::apply_method_template(Expr &expr, const FunctionDec
             check_expr(*selector->base, true);
         }
     };
-    // A body defines the symbol. An `extern` prototype names that same specialization.
-    if (templ.body == nullptr && !extern_generic_prototype(templ)) {
+    // A method with no body is that specialization. A comptime parameter on it needs a body.
+    if (comptime_prototype(templ)) {
         note_base();
         error(call.loc, "not supported yet");
         check_args();

@@ -1461,7 +1461,7 @@ int run_sema_tests() {
             "type Point struct { x i32; };\n"
             "func Point::id[T type](value T) T;\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_EQ(check, errors, "");
     }
 
     {
@@ -7353,10 +7353,10 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "type Vec[T type] struct { n i32; };\n"
-            "func Vec[T]::get[U type](self *this) i32;\n"
+            "type Vec[T type] struct { n T; };\n"
+            "func Vec[T]::get[U type](self *this, value U) U;\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_EQ(check, errors, "");
     }
 
     {

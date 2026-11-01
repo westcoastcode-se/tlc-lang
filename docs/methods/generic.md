@@ -88,7 +88,17 @@ Without `export`, that call is `get is not exported`.
 
 An unexported struct is `Vec is not exported`.
 
-A prototype that is not `extern` is `not supported yet`.
+A method template may have no body.
+
+The call names the specialization.
+
+When the file is `main.tlc`, `p.id[i32](4)` calls `main.Point.id.spec.i32`, and `v.get[i32](4)` on `Vec[i32]` calls `main.Vec.spec.i32.get.spec.i32`.
+
+The compiler may supply the body.
+
+A program that calls it, when the compiler does not supply one, does not link.
+
+A comptime parameter on that prototype is `not supported yet`.
 
 `...` on a method template is `not supported yet`.
 
@@ -110,7 +120,13 @@ That declaration emits nothing.
 
 `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`.
 
-A prototype that is not `extern` is `not supported yet`.
+A method template may have no body.
+
+The call names the specialization.
+
+The compiler may supply the body.
+
+A program that calls it, when the compiler does not supply one, does not link.
 
 A comptime parameter on that prototype is `not supported yet`.
 

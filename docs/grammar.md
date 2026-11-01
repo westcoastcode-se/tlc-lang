@@ -478,6 +478,14 @@ The call is a call to that symbol. The compiler may supply the body.
 
 A program that calls a function with no body, when the compiler does not supply one, does not link.
 
+A method is the same rule.
+
+A method template names the specialization.
+
+When the file is `main.tlc`, `p.id[i32](4)` calls `main.Point.id.spec.i32`.
+
+A comptime parameter on that template is `not supported yet`.
+
 One name may have several parameter lists.
 
 A call uses the types of the arguments.
@@ -698,7 +706,13 @@ The call stays `value.name[i32](...)`.
 
 Each specialization is its own symbol.
 
-A body defines that symbol.
+A method template may have no body.
+
+The call names the specialization.
+
+The compiler may supply the body.
+
+A program that calls it, when the compiler does not supply one, does not link.
 
 `extern(abi="c")` on that template is reported as `extern(abi="c") on a trait or a generic`.
 
@@ -707,8 +721,6 @@ A body defines that symbol.
 A prototype may be the declaration that says `extern`.
 
 A call of that prototype names the specialization.
-
-A prototype that is not `extern` is reported as `not supported yet`.
 
 A comptime parameter on that prototype is reported as `not supported yet`.
 
@@ -774,15 +786,19 @@ The call stays `value.name[i32](...)`.
 
 Each specialization is its own symbol.
 
-A body defines that symbol.
+A method template may have no body.
+
+The call names the specialization.
+
+The compiler may supply the body.
+
+A program that calls it, when the compiler does not supply one, does not link.
 
 `extern(abi="c")` on that template is reported as `extern(abi="c") on a trait or a generic`.
 
 A prototype may be the declaration that says `extern`.
 
 A call of that prototype names the specialization.
-
-A prototype that is not `extern` is reported as `not supported yet`.
 
 A comptime parameter on that prototype is reported as `not supported yet`.
 

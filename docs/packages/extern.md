@@ -36,7 +36,13 @@ That error is `extern(abi="c") on a trait or a generic`.
 
 A generic prototype with no body is `not supported yet`.
 
-A method template prototype with no body is `not supported yet`.
+A method template may have no body.
+
+The call names the specialization.
+
+The compiler may supply the body.
+
+A program that calls it, when the compiler does not supply one, does not link.
 
 A comptime parameter on that prototype is `not supported yet`.
 
