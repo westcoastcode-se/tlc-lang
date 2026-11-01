@@ -49,7 +49,7 @@ import {
     DrawArrays,
 } from "vendor/gl"b;
 
-extern(abi="c"b) func printf(fmt *const u8, ...) i32;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
 
 comptime const window_w = 480;
 comptime const window_h = 640;

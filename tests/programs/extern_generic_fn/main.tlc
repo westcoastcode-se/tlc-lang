@@ -4,7 +4,7 @@ func id[T type](value T) T {
     return value;
 }
 
-extern(abi="tlc"b) func add[T type](left T, right T) T {
+extern(abi="tlc") func add[T type](left T, right T) T {
     return left + right;
 }
 

@@ -1,6 +1,6 @@
 import "builtin";
 
-extern(abi="c"b) func printf(fmt *const u8, ...) i32;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
 
 type Point struct {
     x i32;

@@ -4,6 +4,6 @@ export extern func id[T type](value T) T {
     return value;
 }
 
-export extern(abi="tlc"b) func add[T type](a T, b T) T {
+export extern(abi="tlc") func add[T type](a T, b T) T {
     return a + b;
 }

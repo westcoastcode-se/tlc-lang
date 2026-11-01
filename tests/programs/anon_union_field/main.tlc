@@ -17,7 +17,7 @@ type Box struct {
     };
 };
 
-extern(abi="c"b) type Shape struct {
+extern(abi="c") type Shape struct {
     data union {
         n i32;
         raw [4]u8;

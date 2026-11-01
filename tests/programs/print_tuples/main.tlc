@@ -1,6 +1,6 @@
 import "builtin";
 
-extern(abi="c"b) func printf(fmt *const u8, ...) i32;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
 
 macro func print_with_tuples[T type](fmt comptime []const u8, values comptime T) void {
     emit printf(builtin.fmt(fmt, values));

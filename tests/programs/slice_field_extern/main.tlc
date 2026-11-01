@@ -1,4 +1,4 @@
-extern(abi="c"b) type Pair struct {
+extern(abi="c") type Pair struct {
     items []i32;
 }
 

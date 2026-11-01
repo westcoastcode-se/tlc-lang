@@ -1,4 +1,4 @@
-extern(abi="c"b) type Rect struct {
+extern(abi="c") type Rect struct {
     w i32;
     h i32;
 }
@@ -7,7 +7,7 @@ type Shape trait {
     func area() i32;
 }
 
-extern(abi="c"b) func Shape::twice(self *this) i32 {
+extern(abi="c") func Shape::twice(self *this) i32 {
     return self.area() + self.area();
 }
 

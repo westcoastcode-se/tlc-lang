@@ -1,6 +1,6 @@
 import "builtin";
 
-extern(abi="c"b) func printf(fmt *const u8, ...) i32;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
 
 type Point struct {
     x i32;
@@ -35,7 +35,7 @@ func Point::make(x i32) Point {
 
 func id[T type](value T) T { return value; }
 
-extern(abi="c"b) func logf(fmt *const u8, ...) i32;
+extern(abi="c") func logf(fmt *const u8, ...) i32;
 
 func main() i32 {
     if (sizeof(builtin.Type) != 8) {

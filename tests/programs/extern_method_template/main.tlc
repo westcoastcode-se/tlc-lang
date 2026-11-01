@@ -19,7 +19,7 @@ extern func Point::id[T type](self *this, value T) T {
     return value;
 }
 
-extern(abi="tlc"b) func Point::add[T type](self *this, n T) i32 {
+extern(abi="tlc") func Point::add[T type](self *this, n T) i32 {
     return self.x + n;
 }
 

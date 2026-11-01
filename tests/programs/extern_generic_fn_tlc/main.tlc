@@ -1,4 +1,4 @@
-extern(abi="tlc"b) func add[T type](left T, right T) T;
+extern(abi="tlc") func add[T type](left T, right T) T;
 
 func main() i32 {
     return add[i32](20, 22);

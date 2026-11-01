@@ -2,7 +2,7 @@ func take(x const i32) i32 {
     return x;
 }
 
-extern(abi="c"b) func from_c(x const i32) i32 {
+extern(abi="c") func from_c(x const i32) i32 {
     return x;
 }
 

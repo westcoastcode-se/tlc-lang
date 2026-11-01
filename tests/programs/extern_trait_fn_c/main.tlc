@@ -6,9 +6,9 @@ type Rect struct {
     w i32;
 };
 
-extern(abi="c"b) func use(s Shape) i32;
+extern(abi="c") func use(s Shape) i32;
 
-extern(abi="c"b) func Rect::paint(self *this, s Shape) i32 {
+extern(abi="c") func Rect::paint(self *this, s Shape) i32 {
     return 0;
 }
 

@@ -1,7 +1,7 @@
 type Entity struct { n i32; };
-extern(abi="c"b) comptime const shown i32 = 20;
-extern(abi="c"b, name="mark"b) comptime const flag = 7;
-extern(abi="c"b) comptime const Entity::next = 15;
+extern(abi="c") comptime const shown i32 = 20;
+extern(abi="c", name="mark"b) comptime const flag = 7;
+extern(abi="c") comptime const Entity::next = 15;
 
 func main() i32 {
     return shown + flag + Entity.next;

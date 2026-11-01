@@ -1,7 +1,7 @@
 import "builtin";
 
-extern(abi="c"b) func printf(fmt *const u8, ...) i32;
-extern(abi="c"b) func putchar(c i32) i32;
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+extern(abi="c") func putchar(c i32) i32;
 
 // kind is 1, 2, 3, or 4. The other two numbers fit in 14 bits.
 // 1 is a slice of the format, 2 is `{`, 3 is `}`, 4 is a hole.

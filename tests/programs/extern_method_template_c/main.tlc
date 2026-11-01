@@ -2,7 +2,7 @@ type Point struct {
     x i32;
 };
 
-extern(abi="c"b) func Point::id[T type](self *this, value T) T {
+extern(abi="c") func Point::id[T type](self *this, value T) T {
     return value;
 }
 
