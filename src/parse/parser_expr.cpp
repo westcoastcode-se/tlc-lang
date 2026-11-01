@@ -33,7 +33,20 @@ std::unique_ptr<Expr> Parser::parse_assignment() {
 }
 
 std::unique_ptr<Expr> Parser::parse_conditional() {
-    auto cond = parse_or();
+    auto lhs = parse_or();
+    // `??` is right-associative and looser than `||`.
+    if (check(TokenKind::QuestionQuestion)) {
+        const SourceLoc loc = peek().loc;
+        ++pos_;
+        auto rhs = parse_conditional();
+        Expr::Binary node;
+        node.loc = loc;
+        node.op = TokenKind::QuestionQuestion;
+        node.lhs = std::move(lhs);
+        node.rhs = std::move(rhs);
+        return make_expr(std::move(node));
+    }
+    auto cond = std::move(lhs);
     if (eat(TokenKind::Question)) {
         error_here("not supported yet");
         parse_expr();

@@ -129,6 +129,8 @@ struct Expr {
         TokenKind op = TokenKind::End;
         // `pointer!`. Prefix `!` stays the integer operator.
         bool postfix = false;
+        // Set on a `!` in the left side of `??`. A null pointer selects the right side.
+        mutable bool coalesce = false;
         std::unique_ptr<Expr> expr;
     };
     struct Binary {
@@ -136,6 +138,8 @@ struct Expr {
         TokenKind op = TokenKind::End;
         std::unique_ptr<Expr> lhs;
         std::unique_ptr<Expr> rhs;
+        // The left side of `??` is an optional pointer. Null selects the right side.
+        mutable bool coalesce_null = false;
     };
     struct Assign {
         SourceLoc loc{};

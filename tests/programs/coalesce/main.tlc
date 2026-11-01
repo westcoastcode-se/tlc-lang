@@ -1,0 +1,43 @@
+type Child struct {
+    n i32;
+}
+
+type Parent struct {
+    kid ?*Child;
+}
+
+var hits i32;
+
+func tick() i32 {
+    hits = hits + 1;
+    return 9;
+}
+
+func main() i32 {
+    var kid Child = {.n = 40};
+    var parent Parent = {.kid = &kid};
+    var empty Parent = {.kid = null};
+    if ((parent.kid!.n ?? 0) != 40) {
+        return 1;
+    }
+    if ((empty.kid!.n ?? 2) != 2) {
+        return 2;
+    }
+    var gone ?*Parent = null;
+    if ((gone!.kid!.n ?? 3) != 3) {
+        return 3;
+    }
+    var n = 4;
+    var p ?*i32 = &n;
+    if ((*p! ?? tick()) != 4 || hits != 0) {
+        return 4;
+    }
+    var q ?*i32 = null;
+    if ((*q! ?? tick()) != 9 || hits != 1) {
+        return 5;
+    }
+    if ((q ?? p) != p) {
+        return 6;
+    }
+    return 42;
+}

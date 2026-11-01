@@ -2085,8 +2085,11 @@ Assignment is right-associative.
 
 The others are left-associative.
 
+`??` is right-associative and looser than `||`.
+
 ```ebnf
-expression  = or [ ( "=" | "+=" | "-=" | "*=" | "/=" ) expression ] ;
+expression  = coalesce [ ( "=" | "+=" | "-=" | "*=" | "/=" ) expression ] ;
+coalesce    = or [ "??" coalesce ] ;
 or          = and { "||" and } ;
 and         = bit-or { "&&" bit-or } ;
 bit-or      = bit-xor { "|" bit-xor } ;

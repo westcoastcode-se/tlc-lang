@@ -102,6 +102,7 @@ enum class TokenKind {
     Arrow,
     Ellipsis,
     Question,
+    QuestionQuestion,
     Colon,
     ColonColon,
     ColonEq,

@@ -451,6 +451,46 @@ Type Checker::check_raw(const Expr &expr, bool used) {
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
                 Type lhs;
                 Type rhs;
+                if (node.op == TokenKind::QuestionQuestion) {
+                    // `value!.field ?? fallback`. A null `!` on that chain selects the fallback.
+                    const auto mark = [](auto &self, Expr &arm) -> bool {
+                        if (auto *unary = std::get_if<Expr::Unary>(&arm.data)) {
+                            if (unary->postfix && unary->op == TokenKind::Bang && unary->expr != nullptr) {
+                                unary->coalesce = true;
+                                self(self, *unary->expr);
+                                return true;
+                            }
+                            if (unary->op == TokenKind::Star && unary->expr != nullptr) {
+                                return self(self, *unary->expr);
+                            }
+                            return false;
+                        }
+                        if (auto *selector = std::get_if<Expr::Selector>(&arm.data); selector != nullptr && selector->base != nullptr) {
+                            return self(self, *selector->base);
+                        }
+                        if (auto *index = std::get_if<Expr::Index>(&arm.data); index != nullptr && index->base != nullptr) {
+                            return self(self, *index->base);
+                        }
+                        return false;
+                    };
+                    if (node.lhs == nullptr || node.rhs == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    const bool chain = mark(mark, *node.lhs);
+                    lhs = check_expr(*node.lhs, true);
+                    if (lhs.kind == TypeKind::Invalid) {
+                        return lhs;
+                    }
+                    if (!chain && !(lhs.kind == TypeKind::Pointer && lhs.optional)) {
+                        error(node.loc, "type mismatch");
+                        check_expr(*node.rhs, true);
+                        return type_invalid();
+                    }
+                    node.coalesce_null = lhs.kind == TypeKind::Pointer && lhs.optional;
+                    check_against(*node.rhs, lhs);
+                    return lhs;
+                }
                 if (node.op == TokenKind::AmpAmp || node.op == TokenKind::PipePipe) {
                     lhs = node.lhs ? check_expr(*node.lhs, true) : type_invalid();
                     const AssignState left_true = cond_true_;

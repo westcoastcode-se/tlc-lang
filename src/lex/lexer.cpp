@@ -206,6 +206,7 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::Arrow: return "->";
     case TokenKind::Ellipsis: return "...";
     case TokenKind::Question: return "?";
+    case TokenKind::QuestionQuestion: return "??";
     case TokenKind::Colon: return ":";
     case TokenKind::ColonColon: return "::";
     case TokenKind::ColonEq: return ":=";
@@ -842,7 +843,12 @@ Token Lexer::lex_token() {
     case ']': return finish(TokenKind::RBracket, start);
     case ',': return finish(TokenKind::Comma, start);
     case ';': return finish(TokenKind::Semicolon, start);
-    case '?': return finish(TokenKind::Question, start);
+    case '?':
+        if (peek() == '?') {
+            get();
+            return finish(TokenKind::QuestionQuestion, start);
+        }
+        return finish(TokenKind::Question, start);
     case ':':
         if (peek() == ':') {
             get();

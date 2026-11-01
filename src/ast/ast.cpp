@@ -936,12 +936,14 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.loc = node.loc;
                 copy.op = node.op;
                 copy.postfix = node.postfix;
+                copy.coalesce = node.coalesce;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
                 Expr::Binary copy;
                 copy.loc = node.loc;
                 copy.op = node.op;
+                copy.coalesce_null = node.coalesce_null;
                 copy.lhs = node.lhs ? clone_expr(*node.lhs) : nullptr;
                 copy.rhs = node.rhs ? clone_expr(*node.rhs) : nullptr;
                 out->data = std::move(copy);

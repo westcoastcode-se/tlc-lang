@@ -279,11 +279,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (pointer == nullptr || terminated() || function_ == nullptr || !pointer->getType()->isPointerTy()) {
                         return inner_value;
                     }
-                    llvm::BasicBlock *bad = llvm::BasicBlock::Create(context_, "bang.null", function_);
                     llvm::BasicBlock *ok = llvm::BasicBlock::Create(context_, "bang.ok", function_);
+                    llvm::BasicBlock *bad = node.coalesce && coalesce_miss_ != nullptr
+                                                ? coalesce_miss_
+                                                : llvm::BasicBlock::Create(context_, "bang.null", function_);
                     builder_.CreateCondBr(builder_.CreateICmpEQ(pointer, null_ptr()), bad, ok);
-                    builder_.SetInsertPoint(bad);
-                    abort_panic(node.loc, "null pointer");
+                    if (bad != coalesce_miss_) {
+                        builder_.SetInsertPoint(bad);
+                        abort_panic(node.loc, "null pointer");
+                    }
                     builder_.SetInsertPoint(ok);
                     return inner_value;
                 }
@@ -312,6 +316,44 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return {llvm::ConstantInt::get(i1(), *folded == 0 ? 0 : 1, false), 0, false, -1, false, false,
                                 true};
                     }
+                }
+                if (node.op == TokenKind::QuestionQuestion) {
+                    if (node.lhs == nullptr || node.rhs == nullptr || function_ == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    llvm::BasicBlock *miss = llvm::BasicBlock::Create(context_, "coal.miss", function_);
+                    llvm::BasicBlock *done = llvm::BasicBlock::Create(context_, "coal.done", function_);
+                    llvm::BasicBlock *saved = coalesce_miss_;
+                    coalesce_miss_ = miss;
+                    const TypedValue left = emit_rvalue(*node.lhs);
+                    coalesce_miss_ = saved;
+                    if (left.value == nullptr || terminated()) {
+                        return {zero(), 0};
+                    }
+                    llvm::Value *chosen = left.value;
+                    if (node.coalesce_null && chosen->getType()->isPointerTy()) {
+                        llvm::BasicBlock *have = llvm::BasicBlock::Create(context_, "coal.have", function_);
+                        builder_.CreateCondBr(builder_.CreateICmpEQ(chosen, null_ptr()), miss, have);
+                        builder_.SetInsertPoint(have);
+                    }
+                    llvm::BasicBlock *have_end = builder_.GetInsertBlock();
+                    if (!terminated()) {
+                        builder_.CreateBr(done);
+                    }
+                    builder_.SetInsertPoint(miss);
+                    const TypedValue right = emit_rvalue(*node.rhs);
+                    if (right.value == nullptr || right.value->getType() != chosen->getType() || terminated()) {
+                        return {zero(), 0};
+                    }
+                    llvm::BasicBlock *miss_end = builder_.GetInsertBlock();
+                    builder_.CreateBr(done);
+                    builder_.SetInsertPoint(done);
+                    llvm::PHINode *phi = builder_.CreatePHI(chosen->getType(), 2);
+                    phi->addIncoming(chosen, have_end);
+                    phi->addIncoming(right.value, miss_end);
+                    return {phi, left.depth, left.elem_char, left.struct_id, false, left.elem_void, left.elem_bool,
+                            left.elem_bits, left.elem_unsigned, left.trait_id, left.elem_float};
                 }
                 if (node.op == TokenKind::AmpAmp) {
                     return {emit_short_circuit(node, true), 0, false, -1, false, false, true};

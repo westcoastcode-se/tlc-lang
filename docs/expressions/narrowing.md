@@ -42,6 +42,49 @@ Passing `?*T` where `*T` is required is `type mismatch`.
 
 A null `p!` calls `builtin.panic("null pointer")` and does not return.
 
+## `??`
+
+`value!.field ?? fallback` yields `fallback` when `value` is null.
+
+A `!` in that chain does not call `builtin.panic("null pointer")`.
+
+The fallback has the type of the left side. A null optional pointer, `p ?? q`, yields `q`.
+
+`??` is right-associative and looser than `||`. `(n ?? 0) != 1` needs the parentheses. `n ?? 0 != 1` is `n ?? (0 != 1)`.
+
+A value that cannot be null, and has no `!`, is `type mismatch`.
+
+```c
+type Child struct { n i32; }
+
+func main() i32 {
+    var kid Child = {.n = 40};
+    var gone ?*Child = null;
+    return gone!.n ?? kid.n;
+}
+```
+
+```asm
+main:
+movl $40, -16(%rsp)              # 40
+movq $0, -8(%rsp)                # null
+movq -8(%rsp), %rax              # gone
+movq %rax, -24(%rsp)             # move
+cmpq $0, %rax
+jne 1f
+movl -16(%rsp), %eax             # kid.n
+movl %eax, -28(%rsp)             # fallback
+jmp 2f
+1:
+movq -24(%rsp), %rax             # gone
+movl (%rax), %eax                # n
+movl %eax, -28(%rsp)             # n
+jmp 2f
+2:
+movl -28(%rsp), %eax             # return
+retq                             # return
+```
+
 ## Prefix `!`
 
 Prefix `!` is logical not on a `bool` and yields `bool`.

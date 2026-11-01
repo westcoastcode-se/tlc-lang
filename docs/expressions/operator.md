@@ -10,6 +10,8 @@ The arithmetic operators are `+ - * / %`, and the bitwise operators are `& | ^ ~
 
 `&& || !` are the logical operators, and the comparisons are operators too.
 
+`value!.field ?? fallback` yields `fallback` when a pointer in that `!` chain is null. That `!` does not call `builtin.panic("null pointer")`.
+
 Unary `+` and `-` are operators, and so is assignment `=`.
 
 `++n` adds 1 and yields the new value. `n++` yields the value `n` had, then adds 1.

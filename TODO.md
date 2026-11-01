@@ -51,7 +51,6 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 - An atomic value wider than 64 bits is `not supported yet`. `atomic.Bool` stores a `u8`.
 - A generic `Atomic[T]` for a struct whose size is 1, 2, 4, or 8 bytes.
 - Compound assignment other than `+=`, `-=`, `*=`, and `/=`, `?:`, and `->`.
-- `??`. `value!.value2!.value3 ?? default_value` yields `default_value` when a pointer in that `!` chain is null, and that `!` does not call `builtin.panic("null pointer")`. `??` is not a form.
 - `goto`.
 
 ## Declarations

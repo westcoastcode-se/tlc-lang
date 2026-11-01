@@ -466,6 +466,8 @@ class CodeGen {
     llvm::IRBuilder<> builder_;
     const PackageGraph *graph_ = nullptr;
     llvm::Function *function_ = nullptr;
+    // A null `!` on the left of `??` branches here instead of calling `panic`.
+    llvm::BasicBlock *coalesce_miss_ = nullptr;
     // The function whose body is being emitted. Its `captured_here` names keep a stable slot.
     const FunctionDecl *emitting_fn_ = nullptr;
     llvm::Type *return_type_ = nullptr;
