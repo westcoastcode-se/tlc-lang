@@ -200,7 +200,7 @@ void Checker::absorb_function(Symbol &existing, const FunctionDecl &fn, Type sig
     }
     FnList *slot = nullptr;
     for (FnList &list : existing.lists) {
-        if (same_selection(list.type, false, signature, false)) {
+        if (same_selection(list.type, false, signature, false) && same_comptime_list(list.decl, false, &fn, false)) {
             slot = &list;
             break;
         }
@@ -547,11 +547,13 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     // The receiver is not a parameter. `self this` and `self *this` share the remaining list.
                     MethodInfo *slot = nullptr;
                     const bool skip_new = !fn->static_method;
-                    if (same_selection(found->second.type, !found->second.is_static, signature, skip_new)) {
+                    if (same_selection(found->second.type, !found->second.is_static, signature, skip_new) &&
+                        same_comptime_list(found->second.decl, !found->second.is_static, fn, skip_new)) {
                         slot = &found->second;
                     } else {
                         for (MethodInfo &extra : found->second.more) {
-                            if (same_selection(extra.type, !extra.is_static, signature, skip_new)) {
+                            if (same_selection(extra.type, !extra.is_static, signature, skip_new) &&
+                                same_comptime_list(extra.decl, !extra.is_static, fn, skip_new)) {
                                 slot = &extra;
                                 break;
                             }
@@ -1825,7 +1827,8 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 }
                 FnList *slot = nullptr;
                 for (FnList &list : found->second.lists) {
-                    if (same_selection(list.type, false, signature, false)) {
+                    if (same_selection(list.type, false, signature, false) &&
+                        same_comptime_list(list.decl, false, fn, false)) {
                         slot = &list;
                         break;
                     }

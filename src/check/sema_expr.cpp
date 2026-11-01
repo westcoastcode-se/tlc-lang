@@ -1931,14 +1931,26 @@ const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const 
     const MethodInfo *winner = nullptr;
     int matches = 0;
     int visible_counts = 0;
+    int best = -1;
     for (const MethodInfo *form : forms) {
         if (!count_ok(form->type)) {
             continue;
         }
         ++visible_counts;
-        if (args_match(form->type, false)) {
-            ++matches;
+        if (!args_match(form->type, false)) {
+            continue;
+        }
+        const std::size_t skip = !want_static ? 1 : 0;
+        const int score = comptime_overload_score(form->decl, node, skip);
+        if (score < 0) {
+            continue;
+        }
+        if (score > best) {
+            best = score;
             winner = form;
+            matches = 1;
+        } else if (score == best) {
+            ++matches;
         }
     }
     int hidden_counts = 0;
@@ -2004,6 +2016,7 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
     const FnList *winner = nullptr;
     int matches = 0;
     int counts = 0;
+    int best = -1;
     for (const FnList &list : symbol.lists) {
         if (list.type.kind != TypeKind::Function || list.type.result == nullptr) {
             continue;
@@ -2021,9 +2034,20 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
                 break;
             }
         }
-        if (same) {
-            ++matches;
+        if (!same) {
+            continue;
+        }
+        // `n comptime i32` is viable only for a comptime argument, and it wins over `n i32`.
+        const int score = comptime_overload_score(list.decl, node, 0);
+        if (score < 0) {
+            continue;
+        }
+        if (score > best) {
+            best = score;
             winner = &list;
+            matches = 1;
+        } else if (score == best) {
+            ++matches;
         }
     }
     // Two lists of one count stay an exact match. One list may satisfy a trait parameter.

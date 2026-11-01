@@ -64,6 +64,8 @@ bool same_type(const Type &lhs, const Type &rhs);
 bool allows_added_const(const Type &got, const Type &want);
 // Parameter lists used to tell two functions of one name apart. A method skips its receiver.
 bool same_selection(const Type &lhs, bool skip_lhs, const Type &rhs, bool skip_rhs);
+// `n comptime i32` and `n i32` are different lists. A missing declaration matches only a list with no `comptime`.
+bool same_comptime_list(const FunctionDecl *lhs, bool skip_lhs, const FunctionDecl *rhs, bool skip_rhs);
 // `[]T`: an array whose length is unknown. `[]const T` does not store an element.
 bool is_slice(const Type &type);
 // `[N]T`, a parameter `[N]T`, and `*[N]T` convert to `[]T`.

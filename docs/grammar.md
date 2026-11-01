@@ -434,11 +434,13 @@ A bare `extern` and `extern(abi="tlc")` on that function are `not supported yet`
 
 `comptime { ... }` inside an ordinary function is `not supported yet`.
 
-A generic function may declare the same name again with `name comptime Type` on a parameter.
+A function, a method, or a generic function may declare the same name and the same number of arguments again, one list with `comptime` and one without.
 
-That overload is chosen when every `comptime` argument is a comptime value, and it is preferred over the overload without `comptime`.
+That list is chosen when every `comptime` argument is a comptime value, and it is preferred over the list without `comptime`.
 
-A `var` does not choose it.
+A `var` chooses the list without `comptime`.
+
+When only the `comptime` list exists and an argument is not a comptime value, the call is `type mismatch`.
 
 `func id[T type](value T)` drops `value` when the argument is comptime.
 

@@ -1,0 +1,17 @@
+type Point struct {
+    x i32;
+};
+
+func Point::read(self this, n comptime i32) i32 {
+    return self.x + n;
+}
+
+func Point::read(self this, n i32) i32 {
+    return self.x + n + 3;
+}
+
+func main() i32 {
+    var p = Point{.x = 40};
+    var n = 1;
+    return p.read(1) + p.read(n);
+}

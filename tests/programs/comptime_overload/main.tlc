@@ -1,0 +1,30 @@
+func id(n comptime i32) i32 {
+    return n + 1;
+}
+
+func id(n i32) i32 {
+    return n + 40;
+}
+
+func scale(n comptime i32, x i32) i32 {
+    return x + n;
+}
+
+func scale(n i32, x i32) i32 {
+    return x + n + 1;
+}
+
+func len_of(text comptime []const u8) i32 {
+    return text.len;
+}
+
+func len_of(text []const u8) i32 {
+    return 0;
+}
+
+func main() i32 {
+    var n = 1;
+    var x = 40;
+    var text = "hello"b;
+    return id(1) + id(n) + scale(2, x) + scale(n, x) + len_of("hi"b) + len_of(text);
+}

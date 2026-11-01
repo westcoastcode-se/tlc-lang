@@ -1668,17 +1668,37 @@ std::optional<std::string> Checker::format_call(const Expr::Call &call) {
         });
 }
 
-bool Checker::comptime_arguments(const FunctionDecl &fn, const Expr::Call &call) {
-    const std::size_t count = fn.params.size() < call.args.size() ? fn.params.size() : call.args.size();
-    for (std::size_t i = 0; i < count; ++i) {
+bool Checker::comptime_arguments(const FunctionDecl &fn, const Expr::Call &call, std::size_t skip) {
+    if (skip > fn.params.size()) {
+        return false;
+    }
+    for (std::size_t i = skip; i < fn.params.size(); ++i) {
         if (!fn.params[i].is_comptime) {
             continue;
         }
-        if (call.args[i] == nullptr || !comptime_kept_argument(*call.args[i])) {
+        const std::size_t arg = i - skip;
+        if (arg >= call.args.size() || call.args[arg] == nullptr || !comptime_kept_argument(*call.args[arg])) {
             return false;
         }
     }
     return true;
+}
+
+int Checker::comptime_overload_score(const FunctionDecl *fn, const Expr::Call &call, std::size_t skip) {
+    if (fn == nullptr) {
+        return 0;
+    }
+    if (!comptime_arguments(*fn, call, skip)) {
+        return -1;
+    }
+    int score = 0;
+    const std::size_t start = skip < fn->params.size() ? skip : fn->params.size();
+    for (std::size_t i = start; i < fn->params.size(); ++i) {
+        if (fn->params[i].is_comptime) {
+            ++score;
+        }
+    }
+    return score;
 }
 
 const FunctionDecl *Checker::mem_compare_callee(const Expr::Call &call) {

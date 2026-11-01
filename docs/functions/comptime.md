@@ -1563,15 +1563,23 @@ A local `const text = "hi"` passed to that function is `not supported yet`.
 
 ## A comptime overload
 
-A generic function may declare the same parameter list again with `comptime` on a parameter.
+A function may declare the same name and the same number of arguments again, one list with `comptime` and one without.
 
-That overload is chosen when every `comptime` argument is a comptime value.
+A generic function may do the same on a type parameter.
 
-It is preferred over the overload without `comptime`.
+A method may do the same after `self`.
 
-A `var` does not choose it.
+The list with `comptime` is chosen when every `comptime` argument is a comptime value.
 
-When only the `comptime` overload matches the types and an argument is not a comptime value, the call is `type mismatch`.
+It is preferred over the list without `comptime`.
+
+A `var` chooses the list without `comptime`.
+
+`id(1)` calls the `comptime` list. `id(n)` when `n` is a `var` calls the other list.
+
+When only the `comptime` list exists and an argument is not a comptime value, the call is `type mismatch`.
+
+Two lists that both mark the same parameters `comptime` are `redefinition`.
 
 [`builtin.memeql`](../builtin/mem.md) and `builtin.memcmp` fold two constant `[]const u8` values through that overload.
 

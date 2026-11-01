@@ -229,6 +229,29 @@ bool same_type(const Type &lhs, const Type &rhs) {
     return true;
 }
 
+bool same_comptime_list(const FunctionDecl *lhs, bool skip_lhs, const FunctionDecl *rhs, bool skip_rhs) {
+    auto shape = [](const FunctionDecl *fn, bool skip) {
+        std::string out;
+        if (fn == nullptr) {
+            return out;
+        }
+        const std::size_t start = skip && !fn->params.empty() ? 1 : 0;
+        for (std::size_t i = start; i < fn->params.size(); ++i) {
+            out.push_back(fn->params[i].is_comptime ? '1' : '0');
+        }
+        return out;
+    };
+    if (lhs == nullptr || rhs == nullptr) {
+        const FunctionDecl *known = lhs != nullptr ? lhs : rhs;
+        const bool skip = lhs != nullptr ? skip_lhs : skip_rhs;
+        if (known == nullptr) {
+            return true;
+        }
+        return shape(known, skip).find('1') == std::string::npos;
+    }
+    return shape(lhs, skip_lhs) == shape(rhs, skip_rhs);
+}
+
 bool same_selection(const Type &lhs, bool skip_lhs, const Type &rhs, bool skip_rhs) {
     if (lhs.kind != TypeKind::Function || rhs.kind != TypeKind::Function || lhs.variadic != rhs.variadic) {
         return false;

@@ -742,7 +742,11 @@ class Checker {
     // An enumerator, or the name of a `comptime` parameter. A method passes it. A generic copy keeps it.
     bool comptime_kept_argument(const Expr &arg);
     // Every `comptime` parameter has a comptime argument. A function with none passes.
-    bool comptime_arguments(const FunctionDecl &fn, const Expr::Call &call);
+    // `skip` is 1 for a method. The receiver is not an argument.
+    bool comptime_arguments(const FunctionDecl &fn, const Expr::Call &call, std::size_t skip = 0);
+    // How many `comptime` parameters this list has, when every one of them is a comptime argument.
+    // Negative when a `comptime` parameter is not. A missing declaration is the list without `comptime`.
+    int comptime_overload_score(const FunctionDecl *fn, const Expr::Call &call, std::size_t skip);
     std::unordered_set<const FunctionDecl *> comptime_expanding_;
     std::unordered_set<const FunctionDecl *> comptime_folding_;
     // Nonzero while checking a `comptime func` or a `macro`. Nested calls are not expanded there.

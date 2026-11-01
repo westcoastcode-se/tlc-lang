@@ -1,0 +1,11 @@
+func id(n comptime i32) i32 {
+    return n;
+}
+
+func id(n comptime i32) i32 {
+    return n + 1;
+}
+
+func main() i32 {
+    return id(1);
+}

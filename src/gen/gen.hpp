@@ -167,6 +167,9 @@ inline void append_type_args_key(std::string &out, const std::vector<TypeArg> &a
 }
 
 inline void append_param_key(std::string &out, const Param &param) {
+    if (param.is_comptime) {
+        out += "comptime.";
+    }
     if (param.is_tuple) {
         out.push_back('(');
         for (std::size_t i = 0; i < param.tuple_parts.size(); ++i) {
