@@ -4327,7 +4327,7 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "extern(abi=\"c\") type Node struct { kids []Node; };\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "extern(abi=\"c\") cannot use a slice");
     }
 
     {

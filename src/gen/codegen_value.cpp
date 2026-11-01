@@ -1374,6 +1374,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     value.alias_file = target.alias_file;
                     return value;
                 }
+                // `*T(items)` reads the pointer stored in the slice. It does not check the length.
+                if (target.depth > 0 && (source.is_slice || source.value->getType() == slice_type())) {
+                    llvm::Value *packed = as_slice_value(source, node.loc);
+                    llvm::Value *pointer = builder_.CreateExtractValue(packed, 0);
+                    return {pointer, target.depth, target.elem_char, target.struct_id, false, target.elem_void,
+                            target.elem_bool, target.elem_bits, target.elem_unsigned, target.trait_id, target.elem_float};
+                }
                 if (target.depth > 0 && source.depth > 0) {
                     return {source.value, target.depth, target.elem_char, target.struct_id, false, target.elem_void,
                             target.elem_bool, target.elem_bits, target.elem_unsigned, target.trait_id, target.elem_float};

@@ -1,0 +1,13 @@
+extern(abi="c") func take(buf []i32) void;
+
+extern(abi="c") func give() []u8;
+
+extern(abi="c") func view(buf *[]u8) void;
+
+type Bytes []u8;
+
+extern(abi="c") func named(buf Bytes) void;
+
+func main() i32 {
+    return 0;
+}

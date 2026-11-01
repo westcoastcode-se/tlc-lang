@@ -122,6 +122,8 @@ The arguments may appear in either order.
 
 A field whose type is a tagged union, inside an `extern(abi="c")` struct or union, is reported as `extern(abi="c") on a tagged union`.
 
+A slice parameter, result, or field of `extern(abi="c")` is `extern(abi="c") cannot use a slice`. `*T(items)` is the data pointer and `items.len` is the separate length. Dropping `const` on that cast is `unsafe cast`.
+
 `extern(abi="c", name="symbol")` on a `type` is reported as `not supported yet`.
 
 An empty name is `type mismatch`.

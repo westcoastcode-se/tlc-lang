@@ -208,7 +208,7 @@ A sized array of a struct defined later, `kids [2]Row` before `type Row`, stores
 
 `kids *[2]Row` and `kids *[]Row` before `type Row` are that same pointer.
 
-The same slice field in `extern(abi="c")` is reported as `not supported yet`. A tlc union arm that is not a struct is reported as `type mismatch`.
+A slice is not a C type. A parameter, a result, or a field of `extern(abi="c")` is `extern(abi="c") cannot use a slice`. `*T(items)` is the data pointer. `items.len` is the length. Those are two arguments. A tlc union arm that is not a struct is reported as `type mismatch`.
 
 `sizeof v` is 16, the same as `sizeof([]T)`. `typeof([]i32).name()` spells `[]i32`.
 

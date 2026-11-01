@@ -102,6 +102,10 @@ Two different names are `redefinition`.
 
 ## Parameters, results, and layout
 
+A parameter, a result, or a field of `extern(abi="c")` cannot be a slice. The diagnostic is `extern(abi="c") cannot use a slice`.
+
+`*T(items)` is the data pointer of that slice. `items.len` is passed beside it. Dropping `const` on that cast is `unsafe cast`.
+
 A parameter or result of an `extern(abi="c")` function cannot be a function pointer that returns several results.
 
 A struct used by such a function, by value or through a pointer, must itself be `extern(abi="c")`.

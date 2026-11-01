@@ -1,0 +1,11 @@
+extern(abi="c") func sum(ptr *const i32, n i32) i32;
+
+func main() i32 {
+    var buf = [_]i32{10, 20, 12};
+    var items = buf[:];
+    var none = buf[0:0];
+    if (sum(*const i32(none), none.len) != 0) {
+        return 1;
+    }
+    return sum(*const i32(items), items.len);
+}

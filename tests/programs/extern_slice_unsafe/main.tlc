@@ -1,0 +1,5 @@
+func main() i32 {
+    var text = "hi"b;
+    var p = *u8(text);
+    return i32(p == null);
+}

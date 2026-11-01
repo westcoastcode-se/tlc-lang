@@ -2219,6 +2219,24 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return target;
                     }
                 }
+                // `*T(items)` is the data pointer of a slice. The length stays on `items`.
+                if (target.kind == TypeKind::Pointer && !target.optional && is_slice(source) && source.element != nullptr &&
+                    target.pointee != nullptr) {
+                    Type element = *source.element;
+                    if (source.is_const) {
+                        element.is_const = true;
+                    }
+                    Type element_bare = element;
+                    Type pointee_bare = *target.pointee;
+                    element_bare.is_const = false;
+                    pointee_bare.is_const = false;
+                    if (same_type(element_bare, pointee_bare)) {
+                        if (element.is_const && !target.pointee->is_const && unsafe_depth_ == 0) {
+                            error(node.loc, "unsafe cast");
+                        }
+                        return target;
+                    }
+                }
                 source = value_type(std::move(source));
                 if (target.kind == TypeKind::Invalid || source.kind == TypeKind::Invalid) {
                     return type_invalid();

@@ -44,7 +44,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 ## Types and operators
 
 - Pattern matching on a tagged union. `type Shape union(ShapeType)` is matched by reading `ShapeType(shape)` and then the field. A match that binds the active arm is not a form, and the spelling is not decided. An optional value in the standard library would be that union, not `?` on a primitive.
-- A slice field on `extern(abi="c")`. It is `not supported yet`.
+- A slice is not a C type. A parameter, a result, or a field of `extern(abi="c")` is `extern(abi="c") cannot use a slice`. `*T(items)` is the data pointer and `items.len` is the length.
 - A file-scope slice whose initializer is not the name of an array, a slice of one of those constants, a string, a constant range of one of those, or a call. A bound that does not fold is `global initializer is not a constant`. An array literal is `global initializer is not a constant`. A range, a literal, or a call used as the initializer of a `const` slice is `global initializer is not a constant` when it is not one of those constant ranges.
 - A cast to `void`.
 - An atomic `f32`, `f64`, or `bool`. `builtin.atomic_load` of those types is `not supported yet`. `atomic.Bool` stores a `u8`.

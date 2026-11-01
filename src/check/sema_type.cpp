@@ -766,6 +766,11 @@ bool Checker::field_waits(const FieldDecl &field) const {
 }
 
 void Checker::require_extern_struct(const Type &type, SourceLoc loc) {
+    // A slice is `{ ptr, len }`. C takes that pointer and the length as two arguments.
+    if (is_slice(type)) {
+        error(loc, "extern(abi=\"c\") cannot use a slice");
+        return;
+    }
     if (type.kind == TypeKind::Pointer && type.pointee) {
         if (type.pointee->kind == TypeKind::Tuple && type.pointee->alias_id != 0) {
             return;
@@ -1437,7 +1442,7 @@ void Checker::define_struct_fields() {
             }
             // A slice is a tlc value, `{ptr, i32}`. An `extern(abi="c")` struct keeps the C layout.
             if (is_slice(field_type) && info.extern_c) {
-                error(field.loc, "not supported yet");
+                error(field.loc, "extern(abi=\"c\") cannot use a slice");
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
                 continue;
             }

@@ -1,1 +1,1 @@
-compile-error: not supported yet
+compile-error: extern(abi="c") cannot use a slice
