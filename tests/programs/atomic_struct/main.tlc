@@ -1,0 +1,48 @@
+import "std/atomic";
+
+type Flag struct {
+    bit u8;
+}
+
+type Pair struct {
+    a i16;
+    b i16;
+}
+
+type Wide struct {
+    a i32;
+    b i32;
+}
+
+func main() i32 {
+    var flag atomic.Atomic[Flag];
+    flag.store({.bit = 1});
+    if (flag.load().bit != 1) {
+        return 1;
+    }
+    var pair atomic.Atomic[Pair];
+    pair.store({.a = 1, .b = 2});
+    var got = pair.load();
+    if (got.a != 1 || got.b != 2) {
+        return 2;
+    }
+    var prev = pair.swap({.a = 3, .b = 4});
+    if (prev.a != 1 || prev.b != 2) {
+        return 3;
+    }
+    var old, ok = pair.cmpxchg({.a = 3, .b = 4}, {.a = 5, .b = 6});
+    if (!ok || old.a != 3 || old.b != 4) {
+        return 4;
+    }
+    var miss, no = pair.cmpxchg({.a = 0, .b = 0}, {.a = 7, .b = 8});
+    if (no || miss.a != 5 || miss.b != 6) {
+        return 5;
+    }
+    var wide atomic.Atomic[Wide];
+    wide.store_order({.a = 8, .b = 9}, atomic.Order.relaxed);
+    var read = wide.load_order(atomic.Order.acquire);
+    if (read.a != 8 || read.b != 9) {
+        return 6;
+    }
+    return 42;
+}

@@ -1,0 +1,7 @@
+import "std/atomic";
+type Trio struct { a u8; b u8; c u8; }
+func main() i32 {
+    var bad atomic.Atomic[Trio];
+    _ = bad.load();
+    return 0;
+}

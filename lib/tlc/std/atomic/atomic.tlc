@@ -823,3 +823,191 @@ export func Ptr[T]::cmpxchg(self *this, expected *T, desired *T) (*T, bool) {
     return prev, ok;
 }
 
+// The struct and the integer share the first bytes. The integer width is sizeof(T).
+type View[T type] union {
+    value T;
+    b8 u8;
+    b16 u16;
+    b32 u32;
+    b64 u64;
+};
+
+func as8[T type](value T) u8 {
+    var view View[T] = {.value = value};
+    return view.b8;
+}
+
+func from8[T type](bits u8) T {
+    var view View[T];
+    view.b8 = bits;
+    return view.value;
+}
+
+func as16[T type](value T) u16 {
+    var view View[T] = {.value = value};
+    return view.b16;
+}
+
+func from16[T type](bits u16) T {
+    var view View[T];
+    view.b16 = bits;
+    return view.value;
+}
+
+func as32[T type](value T) u32 {
+    var view View[T] = {.value = value};
+    return view.b32;
+}
+
+func from32[T type](bits u32) T {
+    var view View[T];
+    view.b32 = bits;
+    return view.value;
+}
+
+func as64[T type](value T) u64 {
+    var view View[T] = {.value = value};
+    return view.b64;
+}
+
+func from64[T type](bits u64) T {
+    var view View[T];
+    view.b64 = bits;
+    return view.value;
+}
+
+// T is 1, 2, 4, or 8 bytes. Another size panics with "type mismatch".
+// align=8 keeps a short struct on an address the widest access may use.
+export type Atomic[T type] struct(align=8) {
+    value T;
+};
+
+export func Atomic[T]::load(self *this) T {
+    comptime if (sizeof(T) == 1) {
+        return from8[T](builtin.atomic_load[u8](*u8(&self.value), 4));
+    }
+    comptime if (sizeof(T) == 2) {
+        return from16[T](builtin.atomic_load[u16](*u16(&self.value), 4));
+    }
+    comptime if (sizeof(T) == 4) {
+        return from32[T](builtin.atomic_load[u32](*u32(&self.value), 4));
+    }
+    comptime if (sizeof(T) == 8) {
+        return from64[T](builtin.atomic_load[u64](*u64(&self.value), 4));
+    }
+    builtin.panic("type mismatch"b);
+    return self.value;
+}
+
+export func Atomic[T]::load_order(self *this, order comptime Order) T {
+    comptime if (sizeof(T) == 1) {
+        return from8[T](load_at[u8](*u8(&self.value), order));
+    }
+    comptime if (sizeof(T) == 2) {
+        return from16[T](load_at[u16](*u16(&self.value), order));
+    }
+    comptime if (sizeof(T) == 4) {
+        return from32[T](load_at[u32](*u32(&self.value), order));
+    }
+    comptime if (sizeof(T) == 8) {
+        return from64[T](load_at[u64](*u64(&self.value), order));
+    }
+    builtin.panic("type mismatch"b);
+    return self.value;
+}
+
+export func Atomic[T]::store(self *this, value T) void {
+    comptime if (sizeof(T) == 1) {
+        builtin.atomic_store[u8](*u8(&self.value), as8[T](value), 4);
+        return;
+    }
+    comptime if (sizeof(T) == 2) {
+        builtin.atomic_store[u16](*u16(&self.value), as16[T](value), 4);
+        return;
+    }
+    comptime if (sizeof(T) == 4) {
+        builtin.atomic_store[u32](*u32(&self.value), as32[T](value), 4);
+        return;
+    }
+    comptime if (sizeof(T) == 8) {
+        builtin.atomic_store[u64](*u64(&self.value), as64[T](value), 4);
+        return;
+    }
+    builtin.panic("type mismatch"b);
+}
+
+export func Atomic[T]::store_order(self *this, value T, order comptime Order) void {
+    comptime if (sizeof(T) == 1) {
+        store_at[u8](*u8(&self.value), as8[T](value), order);
+        return;
+    }
+    comptime if (sizeof(T) == 2) {
+        store_at[u16](*u16(&self.value), as16[T](value), order);
+        return;
+    }
+    comptime if (sizeof(T) == 4) {
+        store_at[u32](*u32(&self.value), as32[T](value), order);
+        return;
+    }
+    comptime if (sizeof(T) == 8) {
+        store_at[u64](*u64(&self.value), as64[T](value), order);
+        return;
+    }
+    builtin.panic("type mismatch"b);
+}
+
+export func Atomic[T]::swap(self *this, value T) T {
+    comptime if (sizeof(T) == 1) {
+        return from8[T](builtin.atomic_rmw[u8](*u8(&self.value), 0, as8[T](value), 4));
+    }
+    comptime if (sizeof(T) == 2) {
+        return from16[T](builtin.atomic_rmw[u16](*u16(&self.value), 0, as16[T](value), 4));
+    }
+    comptime if (sizeof(T) == 4) {
+        return from32[T](builtin.atomic_rmw[u32](*u32(&self.value), 0, as32[T](value), 4));
+    }
+    comptime if (sizeof(T) == 8) {
+        return from64[T](builtin.atomic_rmw[u64](*u64(&self.value), 0, as64[T](value), 4));
+    }
+    builtin.panic("type mismatch"b);
+    return self.value;
+}
+
+export func Atomic[T]::swap_order(self *this, value T, order comptime Order) T {
+    comptime if (sizeof(T) == 1) {
+        return from8[T](xchg_at[u8](*u8(&self.value), as8[T](value), order));
+    }
+    comptime if (sizeof(T) == 2) {
+        return from16[T](xchg_at[u16](*u16(&self.value), as16[T](value), order));
+    }
+    comptime if (sizeof(T) == 4) {
+        return from32[T](xchg_at[u32](*u32(&self.value), as32[T](value), order));
+    }
+    comptime if (sizeof(T) == 8) {
+        return from64[T](xchg_at[u64](*u64(&self.value), as64[T](value), order));
+    }
+    builtin.panic("type mismatch"b);
+    return self.value;
+}
+
+export func Atomic[T]::cmpxchg(self *this, expected T, desired T) (T, bool) {
+    comptime if (sizeof(T) == 1) {
+        var prev, ok = builtin.atomic_cmpxchg[u8](*u8(&self.value), as8[T](expected), as8[T](desired), 4, 0);
+        return from8[T](prev), ok;
+    }
+    comptime if (sizeof(T) == 2) {
+        var prev, ok = builtin.atomic_cmpxchg[u16](*u16(&self.value), as16[T](expected), as16[T](desired), 4, 0);
+        return from16[T](prev), ok;
+    }
+    comptime if (sizeof(T) == 4) {
+        var prev, ok = builtin.atomic_cmpxchg[u32](*u32(&self.value), as32[T](expected), as32[T](desired), 4, 0);
+        return from32[T](prev), ok;
+    }
+    comptime if (sizeof(T) == 8) {
+        var prev, ok = builtin.atomic_cmpxchg[u64](*u64(&self.value), as64[T](expected), as64[T](desired), 4, 0);
+        return from64[T](prev), ok;
+    }
+    builtin.panic("type mismatch"b);
+    return self.value, false;
+}
+

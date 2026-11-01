@@ -49,7 +49,6 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 - A cast to `void`.
 - Using `builtin.fence` as a value, and `defer builtin.fence(order)`. Both are `not supported yet`. A direct call is replaced with a fence.
 - An atomic value wider than 64 bits is `not supported yet`. `atomic.Bool` stores a `u8`.
-- A generic `Atomic[T]` for a struct whose size is 1, 2, 4, or 8 bytes.
 - Compound assignment other than `+=`, `-=`, `*=`, and `/=`, `?:`, and `->`.
 - `goto`.
 

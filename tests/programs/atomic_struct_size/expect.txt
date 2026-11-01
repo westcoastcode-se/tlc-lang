@@ -1,0 +1,4 @@
+exit: 128
+stderr: panic: type mismatch
+atomic.tlc:898:5: load
+main.tlc:5:9: main
