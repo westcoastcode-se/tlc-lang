@@ -1,6 +1,45 @@
 import "builtin";
 
+var f f32;
+var d f64;
+var flag bool;
+
 func main() i32 {
-    var n f32 = 0.0f;
-    return i32(builtin.atomic_rmw[f32](&n, 0, 1.0f, 0) == 0.0f);
+    var prev = builtin.atomic_rmw[f32](&f, 0, 1.5f, 0);
+    if (prev != 0.0f || builtin.atomic_load[f32](&f, 0) != 1.5f) {
+        return 1;
+    }
+    prev = builtin.atomic_rmw[f32](&f, 1, 1.0f, 0);
+    if (prev != 1.5f) {
+        return 2;
+    }
+    prev = builtin.atomic_rmw[f32](&f, 2, 0.5f, 0);
+    if (prev != 2.5f || builtin.atomic_load[f32](&f, 0) != 2.0f) {
+        return 3;
+    }
+    var wide = builtin.atomic_rmw[f64](&d, 0, 4.0, 4);
+    if (wide != 0.0 || builtin.atomic_load[f64](&d, 0) != 4.0) {
+        return 4;
+    }
+    var was = builtin.atomic_rmw[bool](&flag, 0, true, 0);
+    if (was || !builtin.atomic_load[bool](&flag, 0)) {
+        return 5;
+    }
+    var old, ok = builtin.atomic_cmpxchg[f32](&f, 2.0f, 3.0f, 4, 0);
+    if (!ok || old != 2.0f) {
+        return 6;
+    }
+    var missed, no = builtin.atomic_cmpxchg[f32](&f, 1.0f, 9.0f, 4, 0);
+    if (no || missed != 3.0f) {
+        return 7;
+    }
+    var bit, yes = builtin.atomic_cmpxchg[bool](&flag, true, false, 4, 1);
+    if (!yes || !bit || builtin.atomic_load[bool](&flag, 0)) {
+        return 8;
+    }
+    var bits = builtin.atomic_rmw[f64](&d, 5, 0.0, 0);
+    if (bits != 4.0) {
+        return 9;
+    }
+    return 42;
 }

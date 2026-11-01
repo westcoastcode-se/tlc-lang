@@ -1057,11 +1057,32 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
     }
     // An atomic `i1` is not a byte. `bool` occupies one byte, so the access is `i8`.
     const bool bool_byte = ty->isIntegerTy(1);
-    if (kind != AtomicBuiltin::Load && kind != AtomicBuiltin::Store && (bool_byte || ty->isFloatingPointTy())) {
-        fail("not supported yet");
-        return;
-    }
     llvm::Type *access = bool_byte ? i8() : ty;
+    llvm::Type *bit_ty = nullptr;
+    if (ty->isFloatingPointTy()) {
+        bit_ty = ty->getPrimitiveSizeInBits() == 64 ? static_cast<llvm::Type *>(i64()) : i32();
+    }
+    const auto as_byte = [&](llvm::Value *value) {
+        if (!bool_byte) {
+            return value;
+        }
+        if (!value->getType()->isIntegerTy(1)) {
+            value = builder_.CreateTrunc(value, i1());
+        }
+        return builder_.CreateZExt(value, i8());
+    };
+    const auto from_byte = [&](llvm::Value *value) {
+        if (!bool_byte || value->getType()->isIntegerTy(1)) {
+            return value;
+        }
+        return builder_.CreateTrunc(value, i1());
+    };
+    const auto as_bits = [&](llvm::Value *value) {
+        return builder_.CreateBitCast(value, bit_ty);
+    };
+    const auto from_bits = [&](llvm::Value *value) {
+        return builder_.CreateBitCast(value, ty);
+    };
     const uint64_t bytes = module_.getDataLayout().getTypeStoreSize(access).getFixedValue();
     const llvm::Align align(bytes == 0 ? 1 : bytes);
     llvm::Value *pointer = prepared.args[0];
@@ -1135,14 +1156,27 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
         llvm::AtomicRMWInst::BinOp bin = llvm::AtomicRMWInst::Xchg;
         switch (*op) {
         case 0: bin = llvm::AtomicRMWInst::Xchg; break;
-        case 1: bin = llvm::AtomicRMWInst::Add; break;
-        case 2: bin = llvm::AtomicRMWInst::Sub; break;
+        case 1: bin = ty->isFloatingPointTy() ? llvm::AtomicRMWInst::FAdd : llvm::AtomicRMWInst::Add; break;
+        case 2: bin = ty->isFloatingPointTy() ? llvm::AtomicRMWInst::FSub : llvm::AtomicRMWInst::Sub; break;
         case 3: bin = llvm::AtomicRMWInst::And; break;
         case 4: bin = llvm::AtomicRMWInst::Or; break;
         case 5: bin = llvm::AtomicRMWInst::Xor; break;
         default: break;
         }
-        llvm::Value *previous = builder_.CreateAtomicRMW(bin, pointer, prepared.args[2], align, *mapped);
+        llvm::Value *operand = prepared.args[2];
+        // `and`, `or`, and `xor` on a float use the bits. Add and sub are floating operations.
+        const bool float_bits = ty->isFloatingPointTy() && *op >= 3;
+        if (bool_byte) {
+            operand = as_byte(operand);
+        } else if (float_bits) {
+            operand = as_bits(operand);
+        }
+        llvm::Value *previous = builder_.CreateAtomicRMW(bin, pointer, operand, align, *mapped);
+        if (bool_byte) {
+            previous = from_byte(previous);
+        } else if (float_bits) {
+            previous = from_bits(previous);
+        }
         prepared.yielded = true;
         scalar(previous);
         return;
@@ -1157,12 +1191,26 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
         fail("type mismatch");
         return;
     }
-    llvm::Value *pair =
-        builder_.CreateAtomicCmpXchg(pointer, prepared.args[1], prepared.args[2], align, *success_order, *failure_order);
+    llvm::Value *expected = prepared.args[1];
+    llvm::Value *desired = prepared.args[2];
+    if (bool_byte) {
+        expected = as_byte(expected);
+        desired = as_byte(desired);
+    } else if (ty->isFloatingPointTy()) {
+        // Compare-exchange matches the bits, not a floating equality.
+        expected = as_bits(expected);
+        desired = as_bits(desired);
+    }
+    llvm::Value *pair = builder_.CreateAtomicCmpXchg(pointer, expected, desired, align, *success_order, *failure_order);
     llvm::Type *ret = aggregate_return(*prepared.decl, current_file_);
     auto *struct_ty = llvm::dyn_cast<llvm::StructType>(ret);
     llvm::Value *previous = builder_.CreateExtractValue(pair, 0);
     llvm::Value *flag = builder_.CreateExtractValue(pair, 1);
+    if (bool_byte) {
+        previous = from_byte(previous);
+    } else if (ty->isFloatingPointTy()) {
+        previous = from_bits(previous);
+    }
     if (struct_ty == nullptr || struct_ty->getNumElements() != 2 || previous->getType() != struct_ty->getElementType(0) ||
         flag->getType() != struct_ty->getElementType(1)) {
         fail("type mismatch");

@@ -1931,7 +1931,7 @@ bool atomic_type_ok(const SpecArg &bound) {
     return bound.type_package.empty() && atomic_integer(bound.type_name);
 }
 
-// `atomic_load` and `atomic_store` also take `f32`, `f64`, and `bool`.
+// `f32`, `f64`, and `bool` are atomic values. A struct is not.
 bool atomic_load_store_type(const SpecArg &bound) {
     return atomic_plain(bound) &&
            (bound.type_name == "f32" || bound.type_name == "f64" || bound.type_name == "bool");
@@ -1990,12 +1990,9 @@ bool Checker::atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &
     if (kind == AtomicBuiltin::None || !is_std_builtin_file(comptime_decl_file(fn))) {
         return false;
     }
-    if (bound != nullptr && !atomic_type_ok(*bound)) {
-        const bool load_store = kind == AtomicBuiltin::Load || kind == AtomicBuiltin::Store;
-        if (!(load_store && atomic_load_store_type(*bound))) {
-            error(call.loc, "not supported yet");
-            return true;
-        }
+    if (bound != nullptr && !atomic_type_ok(*bound) && !atomic_load_store_type(*bound)) {
+        error(call.loc, "not supported yet");
+        return true;
     }
     const auto folded = [&](std::size_t index, int &out) {
         if (index >= call.args.size() || call.args[index] == nullptr) {

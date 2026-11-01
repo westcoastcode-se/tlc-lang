@@ -22,9 +22,9 @@ The call does not record a trace frame.
 
 `T` is `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, or a pointer.
 
-`atomic_load` and `atomic_store` also take `f32`, `f64`, and `bool`.
+`atomic_load`, `atomic_store`, `atomic_rmw`, and `atomic_cmpxchg` also take `f32`, `f64`, and `bool`.
 
-`atomic_rmw` and `atomic_cmpxchg` of those three types are `not supported yet`.
+On a float, add and sub are floating operations. `and`, `or`, `xor`, and `atomic_cmpxchg` use the bits.
 
 A struct is `not supported yet`.
 
@@ -105,6 +105,10 @@ A relaxed store is `movl`.
 A `seq_cst` store of an `f32` is `xchgl` of those bits. A relaxed load of an `f32` is `movl`.
 
 A relaxed store of a `bool` is `movb`. A `seq_cst` load of a `bool` is `movb`. The value is one byte.
+
+A relaxed add of an `f32` is `addss` and `lock cmpxchgl`. A relaxed exchange of a `bool` is `xchgb`.
+
+A `seq_cst` compare-exchange of an `f32` is `lock cmpxchgl` of those bits.
 
 `builtin.fence(4)` is `lock orl $0, -64(%rsp)`.
 

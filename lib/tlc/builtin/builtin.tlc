@@ -185,8 +185,9 @@ export func memcmp[T type](lhs []const T, rhs []const T) i32 {
 
 // Atomic operations. Code generation replaces the call. There is no body.
 // order is 0 relaxed, 1 acquire, 2 release, 3 acq_rel, 4 seq_cst.
-// T is an integer of 8, 16, 32, or 64 bits, a pointer, or, for load and store, f32, f64, or bool.
-// Another T is not supported yet. rmw and cmpxchg of f32, f64, and bool are not supported yet.
+// T is an integer of 8, 16, 32, or 64 bits, a pointer, f32, f64, or bool.
+// Another T is not supported yet.
+// On a float, add and sub are floating operations. and, or, xor, and cmpxchg use the bits.
 // A var order is type mismatch. An unknown order is type mismatch.
 export func atomic_load[T type](p *T, order comptime i32) T;
 
