@@ -122,7 +122,7 @@ Reading `p[i]` is allowed.
 
 Reading `p.len` on `*const [N]T` is allowed.
 
-The compiler reports that read on `*i32`, `*[]T`, `**[N]T`, `new [n]T`, and a still-optional `?*[N]T` as `type mismatch`.
+The compiler reports that read on `*i32`, `*[]T`, `**[N]T`, and a still-optional `?*[N]T` as `type mismatch`. `new [n]T` is `[]T`, so `buf.len` is `n`. `p[i]` on a raw `*T` is `type mismatch`. `p[0:n]` is the slice of `n` elements.
 
 The compiler reports assigning `p.len`, or taking its address, as `not an lvalue`.
 

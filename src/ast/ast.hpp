@@ -866,17 +866,14 @@ struct FunctionDecl {
     bool value_tried = false;
 };
 
-// `builtin.memeql` and `builtin.memcmp`. The slice form compares `[]const T`.
-// The pointer form compares `lhslen` elements of `*const T` with `rhslen` elements.
+// `builtin.memeql` and `builtin.memcmp`. Both compare `[]const T`.
 // A slice form whose parameters are `comptime` is a different overload.
 enum class MemCompare : uint8_t {
     None,
     EqlSlice,
     EqlSliceComptime,
-    EqlPtr,
     CmpSlice,
-    CmpSliceComptime,
-    CmpPtr
+    CmpSliceComptime
 };
 
 inline bool mem_slice_param(const Param &param, const std::string &type_param, bool comptime) {
@@ -896,28 +893,6 @@ inline bool mem_slice_param(const Param &param, const std::string &type_param, b
     const TypeShell &shell = param.shells.front();
     return shell.kind == TypeShell::Kind::Slice && !shell.optional && !shell.const_pointee && shell.length == 0 &&
            shell.length_name.empty();
-}
-
-inline bool mem_ptr_param(const Param &param, const std::string &type_param) {
-    if (param.is_comptime || param.is_array || param.elem_const || param.elem_slice || !param.shells.empty()) {
-        return false;
-    }
-    if (param.indirections != 1 || param.optional != 0 || param.const_pointee != 1 || param.is_const) {
-        return false;
-    }
-    if (param.is_struct || param.is_enum || param.is_fn_ptr || param.is_tuple || param.is_receiver) {
-        return false;
-    }
-    return param.type_name == type_param && param.type_package.empty() && param.array_len == 0 &&
-           param.array_len_name.empty() && param.type_args.empty();
-}
-
-inline bool mem_i32_param(const Param &param) {
-    return !param.is_comptime && !param.is_array && param.indirections == 0 && param.optional == 0 &&
-           param.const_pointee == 0 && !param.is_const && !param.elem_const && !param.elem_slice && param.shells.empty() &&
-           !param.is_struct && !param.is_enum && !param.is_fn_ptr && !param.is_tuple && !param.is_receiver &&
-           param.type_name == "i32" && param.type_package.empty() && param.array_len == 0 && param.array_len_name.empty() &&
-           param.type_args.empty();
 }
 
 inline bool mem_plain_result(const FunctionDecl &fn, const std::string &name) {
@@ -964,15 +939,6 @@ inline MemCompare mem_compare_kind(const FunctionDecl &fn) {
         mem_slice_param(fn.params[0], type_name, false) && mem_slice_param(fn.params[1], type_name, false)) {
         return MemCompare::CmpSlice;
     }
-    if (fn.params.size() == 4 && mem_ptr_param(fn.params[0], type_name) && mem_i32_param(fn.params[1]) &&
-        mem_ptr_param(fn.params[2], type_name) && mem_i32_param(fn.params[3])) {
-        if (fn.name == "memeql" && mem_plain_result(fn, "bool")) {
-            return MemCompare::EqlPtr;
-        }
-        if (fn.name == "memcmp" && mem_plain_result(fn, "i32")) {
-            return MemCompare::CmpPtr;
-        }
-    }
     return MemCompare::None;
 }
 
@@ -987,12 +953,12 @@ inline bool mem_compare_comptime(MemCompare kind) {
 
 // `memeql` is a bool. `memcmp` is an `i32`.
 inline bool mem_compare_bool(MemCompare kind) {
-    return kind == MemCompare::EqlSlice || kind == MemCompare::EqlSliceComptime || kind == MemCompare::EqlPtr;
+    return kind == MemCompare::EqlSlice || kind == MemCompare::EqlSliceComptime;
 }
 
 // Element order of two `[]const u8` values. `memeql` is 1 or 0. `memcmp` is -1, 0, or 1.
 inline int mem_compare_bytes(const std::string &left, const std::string &right, MemCompare kind) {
-    if (kind == MemCompare::EqlSlice || kind == MemCompare::EqlSliceComptime || kind == MemCompare::EqlPtr) {
+    if (kind == MemCompare::EqlSlice || kind == MemCompare::EqlSliceComptime) {
         return left == right ? 1 : 0;
     }
     const std::size_t count = left.size() < right.size() ? left.size() : right.size();

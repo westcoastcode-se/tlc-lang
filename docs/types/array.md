@@ -96,7 +96,7 @@ A string literal is `[]const u8`. It can be passed to `[]const u8` and to `*cons
 
 The index has type `i32`.
 
-`new [n]i32` reserves `n` elements and yields `*i32`. `buf[i] = 1` writes an element.
+`new [n]i32` reserves `n` elements and yields `[]i32`. `buf[i] = 1` writes an element. `buf[i]` is rejected at run time when `i` is outside `n`.
 
 `new [n]Point{{.x = 1}...}` stores that value in every element. `new [_]Point{{.x = 1}, {.y = 2}}` is `*[2]Point`. See [Builtin](../builtin/allocator.md).
 
@@ -126,7 +126,7 @@ Assigning `row.len`, or taking its address, is reported as `not an lvalue`.
 
 A slice parameter stays a slice. `a.len` and `a.len()` in `func take(a [3]i32)` are 3, the length that was written. The parameter is still a pointer.
 
-`return a` where `[]T` is expected builds the slice header that `a[:]` builds. `var s []i32 = a` is that slice. `var copy = a` stays `*i32`.
+`return a` where `[]T` is expected builds the slice header that `a[:]` builds. `var s []i32 = a` is that slice. `var copy = a` keeps that length, so `copy[0]` is the same element as `a[0]`.
 
 `return p` when `p` is `*[4]i32` builds that same header. `*i32` and a still-optional `?*[4]i32` are reported as `type mismatch`.
 
@@ -322,7 +322,7 @@ A written `*i32` takes the address of the first element, so `var p *i32 = row` i
 
 A parameter `[2]i32` is a pointer. `var copy [2]i32 = row` copies those elements. A later store into the parameter does not change the copy.
 
-`var copy = row` stays `*i32`. `kept = row` copies those elements when `kept` is a local `[2]i32`. A later store into the parameter does not change `kept`.
+`var copy = row` keeps that length. `copy[0]` is the same element as `row[0]`, so a store through `copy` changes the caller's array. `kept = row` copies those elements when `kept` is a local `[2]i32`. A later store into the parameter does not change `kept`.
 
 A different length, `var copy [3]i32 = row`, is reported as `type mismatch: expected [3]i32, found *i32`.
 
@@ -398,7 +398,7 @@ A further array is the same index. `p[1][0][1]` on `*[2][2][2]i32` and `p[1][0][
 
 `return {a, b}` copies those parameter rows when the result is `[2][2]i32`. Passing that parameter to a function that takes `[N]T` passes the pointer.
 
-`return row` where `[]i32` is expected builds the slice header that `row[:]` builds. `var copy = row` stays `*i32`.
+`return row` where `[]i32` is expected builds the slice header that `row[:]` builds. `var copy = row` keeps that length.
 
 A different length is reported as `return type: expected [3]i32, found *i32`. `return grid` where `[3][2]i32` is expected is reported as `return type: expected [3][2]i32, found *[2]i32`.
 

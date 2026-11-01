@@ -109,5 +109,25 @@ func main() i32 {
     if (text.find("lo"b) != 3) {
         return 30;
     }
+    var owned = unicode.from("hello"b);
+    var seen = owned.view();
+    if (!seen.equals("hello"b) || seen.len() != 5 || seen[0] != 104) {
+        return 35;
+    }
+    var long = unicode.from("01234567890123456789012"b);
+    var long_view = long.view();
+    if (long_view.len() != 23 || long_view[22] != 50 || !long_view.equals("01234567890123456789012"b)) {
+        return 36;
+    }
+    long.release();
+    var ascii_owned = ascii.from("hello"b);
+    if (!ascii_owned.view().equals("hello"b)) {
+        return 37;
+    }
+    var ascii_long = ascii.from("01234567890123456789012"b);
+    if (ascii_long.view().len() != 23 || ascii_long.view()[0] != 48) {
+        return 38;
+    }
+    ascii_long.release();
     return 0;
 }

@@ -1,21 +1,13 @@
+import "builtin";
 import "builtin/env/consts";
 
-func is(text *const u8, want *const u8) i32 {
-    var i i32 = 0;
-    while (text[i] == want[i]) {
-        if (text[i] == 0) {
-            return 1;
-        }
-        i = i + 1;
-        if (i > 8) {
-            return 0;
-        }
-    }
-    return 0;
-}
-
 func main() i32 {
-    if (is(consts.family, "unix"b) == 1 || is(consts.family, "windows"b) == 1) {
+    var head = consts.family[0:4];
+    if (builtin.memeql(head, "unix"b)) {
+        return 0;
+    }
+    var wide = consts.family[0:7];
+    if (builtin.memeql(wide, "windows"b)) {
         return 0;
     }
     return 1;

@@ -76,10 +76,10 @@ func main() i32 {
     if (!builtin.memeql[u8](text, "hi"b) || builtin.memeql[u8](text, local) || !builtin.memeql[u8](local, "ha"b)) {
         return 1;
     }
-    if (builtin.memeql[u8](text, 2, local, 2) || !builtin.memeql[u8]("hi"b, 2, "hi"b, 2)) {
+    if (builtin.memeql[u8](text[0:2], local[0:2]) || !builtin.memeql[u8]("hi"b[0:2], "hi"b)) {
         return 2;
     }
-    if (!builtin.memeql[u8](""b, 0, ""b, 0) || builtin.memcmp[u8]("a"b, 1, "ab"b, 2) != -1) {
+    if (!builtin.memeql[u8](""b, ""b) || builtin.memcmp[u8]("a"b, "ab"b) != -1) {
         return 3;
     }
     if (builtin.memcmp[u8](text, "ha"b) != 1 || builtin.memcmp[u8](local, text) != -1) {
@@ -88,10 +88,10 @@ func main() i32 {
     if (builtin.memeql[i32](xs[:], ys[:]) || !builtin.memeql[i32](xs[:], zs[:])) {
         return 5;
     }
-    if (builtin.memcmp[i32](xs[:], ys[:]) != -1 || builtin.memcmp[i32](&xs[0], 2, &zs[0], 2) != 0) {
+    if (builtin.memcmp[i32](xs[:], ys[:]) != -1 || builtin.memcmp[i32](xs[0:2], zs[:]) != 0) {
         return 6;
     }
-    if (builtin.memeql[i32](&xs[0], 2, &ys[0], 2) || !builtin.memeql[i32](&xs[0], 2, &zs[0], 2) ||
+    if (builtin.memeql[i32](xs[0:2], ys[:]) || !builtin.memeql[i32](xs[0:2], zs[:]) ||
         builtin.memeql(text, "hi"b) == false) {
         return 7;
     }

@@ -6,11 +6,11 @@ var live [2]i32 = [_]i32{1, 2};
 comptime const flags = [_]bool{true, false};
 var narrow = [_]i8{-1, 2};
 
-func read(p *const i32) i32 {
+func read(p []const i32) i32 {
     return p[0] + p[1];
 }
 
-func sum(p *i32) i32 {
+func sum(p []i32) i32 {
     return p[0] + p[2];
 }
 
@@ -19,5 +19,5 @@ func main() i32 {
         return 1;
     }
     live[0] = 3;
-    return read(*const i32(fixed)) + sum(*i32(named)) + listed[0] + listed[1] + live[0] + narrow[0] + 1;
+    return read(fixed[:]) + sum(named[:]) + listed[0] + listed[1] + live[0] + narrow[0] + 1;
 }

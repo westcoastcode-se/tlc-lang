@@ -6,19 +6,15 @@ import "builtin";
 // A longer value is stored behind a pointer from `new`.
 const short_cap i32 = 22;
 
-export type Storage enum {
-    Short,
-    Long,
-};
-
-export type string union(Storage) {
+// Both arms start with `len`. That length selects the bytes. There is no tag.
+export type string union {
     Short struct {
         len i32;
         bytes [22]u8;
     };
     Long struct {
         len i32;
-        bytes *u8;
+        bytes []u8;
     };
 };
 
@@ -126,27 +122,31 @@ export func from(text []const u8, alloc *Allocator) string {
         }
         return s;
     }
-    var buf *u8 = new(alloc) [text.len()]u8;
+    var buf = new(alloc) [text.len()]u8;
     var i i32 = 0;
     while (i < text.len()) {
         buf[i] = text[i];
         i = i + 1;
     }
-    return string{.Long = {.len = text.len(), .bytes = buf}};
+    return string{.Long = {.len = buf.len, .bytes = buf}};
 }
 
 export func string::len(self this) i32 {
-    if (Storage(self) == Storage.Short) {
-        return self.Short.len;
-    }
-    return self.Long.len;
+    return self.Short.len;
 }
 
 export func string::at(self this, i i32) u8 {
-    if (Storage(self) == Storage.Short) {
+    if (self.Short.len <= short_cap) {
         return self.Short.bytes[i];
     }
     return self.Long.bytes[i];
+}
+
+export func string::view(self *this) string_view {
+    if (self.Short.len <= short_cap) {
+        return self.Short.bytes[0:self.Short.len];
+    }
+    return self.Long.bytes;
 }
 
 export func string::release(self *this) void {
@@ -154,13 +154,13 @@ export func string::release(self *this) void {
 }
 
 export func string::release(self *this, alloc *Allocator) void {
-    if (Storage(*self) != Storage.Long) {
+    if (self.Short.len <= short_cap) {
         return;
     }
-    // Drop the arm before `delete`, so a second `release` does not free the same block.
-    var ptr *u8 = self.Long.bytes;
+    // Set the length to 0 before `delete`, so a second `release` does not free the same block.
+    var block = self.Long.bytes;
     self.Short.len = 0;
-    delete(alloc) ptr;
+    delete(alloc) block;
 }
 
 export func string::equals(self this, other string_view) bool {

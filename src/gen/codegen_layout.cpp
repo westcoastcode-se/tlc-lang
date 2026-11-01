@@ -408,6 +408,12 @@ void CodeGen::prepare_structs() {
                     body.push_back(llvm::ArrayType::get(prefix_type, 0));
                     body.push_back(llvm::ArrayType::get(i8(), rounded == 0 ? 1 : rounded));
                     body.push_back(enum_mem_type(tag_id));
+                } else if (!item->extern_c && prefix_type != nullptr) {
+                    // A tlc union has no tag. The payload is bytes. A field that sits in the
+                    // prefix type's padding stays when the value is copied. A load uses that field's type.
+                    body.clear();
+                    body.push_back(llvm::ArrayType::get(prefix_type, 0));
+                    body.push_back(llvm::ArrayType::get(i8(), rounded == 0 ? 1 : rounded));
                 } else {
                     body.clear();
                     body.push_back(prefix_type);

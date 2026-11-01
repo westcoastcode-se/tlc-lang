@@ -1,0 +1,6 @@
+func main() i32 {
+    var n i32 = 1;
+    var p *i32 = new i32;
+    *p = 4;
+    return p[0];
+}

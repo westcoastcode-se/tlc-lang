@@ -155,7 +155,7 @@ A cast of a pointer to a struct or union, or to a different primitive, is [`unsa
 
 ## An array of elements
 
-`new [n]T` and `new(&arena) [n]T` reserve `n` elements of `T` and yield `*T`, a pointer to the first element.
+`new [n]T` and `new(&arena) [n]T` reserve `n` elements of `T` and yield `[]T`. The length is `n`. `buf[i]` is rejected at run time when `i` is outside that length. `delete buf` frees the pointer inside the slice.
 
 `n` has type `i32`.
 

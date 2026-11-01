@@ -349,6 +349,26 @@ void CodeGen::abort_out_of_memory(SourceLoc loc) {
     abort_panic(loc, "out of memory");
 }
 
+void CodeGen::trap_index(llvm::Value *index, llvm::Value *length, SourceLoc loc) {
+    // A comptime function is evaluated by interpreting its body. The panic branch is not part of that.
+    // The evaluator clears `is_comptime` on its wrapper and sets `eval_` instead.
+    if (eval_ || (emitting_fn_ != nullptr && emitting_fn_->is_comptime)) {
+        return;
+    }
+    if (index == nullptr || length == nullptr || terminated() || function_ == nullptr) {
+        return;
+    }
+    llvm::Value *low_bad = builder_.CreateICmpSLT(index, const_i32(0));
+    llvm::Value *high_bad = builder_.CreateICmpSGE(index, length);
+    llvm::Value *bad = builder_.CreateOr(low_bad, high_bad);
+    auto *fail = llvm::BasicBlock::Create(context_, "index.fail", function_);
+    auto *ok = llvm::BasicBlock::Create(context_, "index.ok", function_);
+    builder_.CreateCondBr(bad, fail, ok);
+    builder_.SetInsertPoint(fail);
+    abort_panic(loc, "index out of range");
+    builder_.SetInsertPoint(ok);
+}
+
 llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, llvm::Value *bytes, uint64_t align) {
     if (bytes == nullptr) {
         return nullptr;
@@ -655,8 +675,6 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         return {zero(), 0};
     }
     TypedValue result;
-    result.value = raw;
-    result.depth = low.depth + 1;
     result.elem_char = low.elem_char;
     result.struct_id = low.struct_id;
     result.elem_void = low.elem_void;
@@ -665,6 +683,21 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     result.elem_unsigned = low.elem_unsigned;
     result.elem_float = low.elem_float;
     result.enum_id = low.enum_id;
+    if (node.count != nullptr && !node.count_inferred) {
+        // `new [n]T` is `[]T`. The length is the element count.
+        llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_type());
+        packed = builder_.CreateInsertValue(packed, raw, 0);
+        packed = builder_.CreateInsertValue(packed, element_count, 1);
+        result.value = packed;
+        result.is_slice = true;
+        result.depth = low.depth;
+        result.array_len = -1;
+        result.elem_slice = low.is_slice;
+        result.inner_array_len = low.is_array ? low.array_len : low.inner_array_len;
+        return result;
+    }
+    result.value = raw;
+    result.depth = low.depth + 1;
     if (node.count_inferred) {
         result.ptr_to_array = true;
         result.ptr_array_len = list_len;
@@ -709,7 +742,11 @@ void CodeGen::emit_delete(const Expr::Delete &node) {
     if (value.value == nullptr || terminated()) {
         return;
     }
-    call_free(node, value.value, receiver);
+    llvm::Value *pointer = value.value;
+    if (value.is_slice || value.value->getType() == slice_type()) {
+        pointer = builder_.CreateExtractValue(value.value, 0);
+    }
+    call_free(node, pointer, receiver);
 }
 
 void CodeGen::emit_builtin_panic() {

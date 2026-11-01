@@ -1,11 +1,11 @@
 func main() i32 {
-    var text *const u8 = `hello
+    var text []const u8 = `hello
 world`b;
-    if (text[0] != 'h'b || text[5] != '\n'b || text[6] != 'w'b || text[11] != 0) {
+    if (text.len != 11 || text[0] != 'h'b || text[5] != '\n'b || text[10] != 'd'b) {
         return 1;
     }
-    var raw *const u8 = `a\n"b`b;
-    if (raw[0] != 'a'b || raw[1] != '\\'b || raw[2] != 'n'b || raw[3] != '"'b || raw[4] != 'b'b || raw[5] != 0) {
+    var raw []const u8 = `a\n"b`b;
+    if (raw.len != 5 || raw[0] != 'a'b || raw[1] != '\\'b || raw[2] != 'n'b || raw[3] != '"'b || raw[4] != 'b'b) {
         return 2;
     }
     return 42;

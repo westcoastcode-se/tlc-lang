@@ -64,7 +64,7 @@ A `?*T` field that is left out is null when the field has no value.
 
 ## Arrays and one specialization
 
-`new [n]T` reserves `n` elements and yields `*T`.
+`new [n]T` reserves `n` elements and yields `[]T`. The length is `n`. `buf[i]` is rejected at run time when `i` is outside that length.
 
 `new [n]Point{{.x = 1}...}` stores that value in every element.
 

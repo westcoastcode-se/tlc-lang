@@ -4,15 +4,15 @@
 
 `import "std/ascii"` loads `lib/tlc/std/ascii`.
 
-`ascii.string` is the same tagged union as [`unicode.string`](unicode.md). The bytes are ASCII. `from` calls `builtin.panic("not ascii")` when a byte is 128 or greater.
+`ascii.string` is the same union as [`unicode.string`](unicode.md). The bytes are ASCII. `from` calls `builtin.panic("not ascii")` when a byte is 128 or greater.
 
-A string of at most 22 bytes is the `Short` arm. A longer string is the `Long` arm, reserved with `new` and released with `delete`.
+A string of at most 22 bytes reads the array in the value. A longer string reads the pointer, reserved with `new` and released with `delete`.
 
 `from(text)` and `text.release()` use `builtin.allocator`. `from(text, alloc)` and `text.release(alloc)` pass that `*Allocator` to `new` and `delete`. The struct exports `malloc`, `free`, and `realloc`.
 
-`release` of a `Long` string switches the value to an empty `Short` arm and then calls `delete`. A later `release` does not call `delete`.
+`release` of a string longer than 22 bytes sets the length to 0 and then calls `delete`. A later `release` sees that length and does not call `delete`.
 
-`ascii.string_view` is `[]const u8`.
+`ascii.string_view` is `[]const u8`. `view()` is that view of the stored bytes.
 
 `equals`, `compare`, `find_first_of`, `find`, `starts_with`, and `ends_with` are the same methods as on [`unicode.string`](unicode.md), on the view and on `ascii.string`.
 
@@ -29,6 +29,6 @@ func main() i32 {
 
 ## Cost
 
-`from` of two ASCII bytes stores the `Short` arm and does not call `malloc`.
+`from` of two ASCII bytes stores those bytes in the value and does not call `malloc`.
 
 [Index](../README.md) · [Previous: unicode](unicode.md) · [Next: seq](seq.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -674,6 +674,8 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.elem_float = got.elem_float;
             binding.ptr_to_array = got.ptr_to_array;
             binding.ptr_array_len = got.ptr_array_len;
+            // `var copy = row` on a parameter `[N]T` copies the pointer and keeps `N`.
+            binding.array_len = got.array_len > 0 ? got.array_len : 0;
             binding.elem_slice = got.elem_slice;
             binding.fn_ty = got.fn_ty;
             binding.fn_ret_depth = got.fn_ret_depth;

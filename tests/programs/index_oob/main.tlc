@@ -1,0 +1,6 @@
+func main() i32 {
+    var buf = new [2]i32;
+    buf[2] = 1;
+    delete buf;
+    return 0;
+}

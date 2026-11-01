@@ -240,9 +240,11 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
         // A string literal is still the array. Its depth is one above the byte.
         const bool packed = base.value->getType() == slice_type();
         llvm::Value *data = base.value;
+        llvm::Value *limit = nullptr;
         int elem_depth = base.depth;
         if (packed) {
             data = builder_.CreateExtractValue(base.value, 0);
+            limit = builder_.CreateExtractValue(base.value, 1);
         } else {
             if (llvm::Type *object = object_type(base.value); object != nullptr && object->isArrayTy()) {
                 data = builder_.CreateInBoundsGEP(object, base.value,
@@ -250,6 +252,17 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
             }
             if (elem_depth > 0) {
                 --elem_depth;
+            }
+            if (llvm::Type *object = object_type(base.value); object != nullptr && object->isArrayTy()) {
+                limit = const_i32(static_cast<int>(llvm::cast<llvm::ArrayType>(object)->getNumElements()));
+            } else if (base.array_len > 0) {
+                limit = const_i32(base.array_len);
+            }
+        }
+        if (limit != nullptr) {
+            trap_index(subscript, limit, loc);
+            if (terminated()) {
+                return {};
             }
         }
         llvm::Type *element = leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
@@ -337,6 +350,13 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
                 base.elem_unsigned, -1, base.elem_float};
     }
     const int depth = base.depth - 1;
+    // A parameter `[N]T`, and a pointer copied from it, still knows `N`.
+    if (base.array_len > 0) {
+        trap_index(offset, const_i32(base.array_len), loc);
+        if (terminated()) {
+            return {};
+        }
+    }
     llvm::Value *slot = builder_.CreateInBoundsGEP(
         leaf_type(depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float), base.value,
         llvm::ArrayRef<llvm::Value *>{offset});
@@ -1100,6 +1120,68 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         return {zero(), 0};
     }
     adopt_pointer_array(base);
+    // `p[0:n]` on a raw `*T` names that block. The pointer has no length of its own.
+    const bool raw_pointer = !base.is_slice && base.array_len <= 0 && !base.ptr_to_array && base.depth > 0 &&
+                             base.shells.empty() && base.value->getType()->isPointerTy();
+    if (raw_pointer) {
+        if (node.index == nullptr || node.end == nullptr) {
+            error(node.loc, "type mismatch");
+            return {zero(), 0};
+        }
+        const TypedValue low = emit_rvalue(*node.index);
+        const TypedValue high = emit_rvalue(*node.end);
+        if (low.value == nullptr || high.value == nullptr || terminated()) {
+            return {zero(), 0};
+        }
+        auto as_bound = [&](const TypedValue &bound) -> llvm::Value * {
+            if (bound.value == nullptr || !bound.value->getType()->isIntegerTy()) {
+                return nullptr;
+            }
+            if (bound.value->getType() == i32()) {
+                return bound.value;
+            }
+            return resize_int(bound.value, i32(), bound.elem_unsigned);
+        };
+        llvm::Value *start_index = as_bound(low);
+        llvm::Value *end_index = as_bound(high);
+        if (start_index == nullptr || end_index == nullptr) {
+            error(node.loc, "type mismatch");
+            return {zero(), 0};
+        }
+        if (!eval_ && (emitting_fn_ == nullptr || !emitting_fn_->is_comptime)) {
+            llvm::Value *low_bad = builder_.CreateICmpSLT(start_index, const_i32(0));
+            llvm::Value *order_bad = builder_.CreateICmpSLT(end_index, start_index);
+            llvm::Value *bad = builder_.CreateOr(low_bad, order_bad);
+            auto *fail = llvm::BasicBlock::Create(context_, "range.fail", function_);
+            auto *ok = llvm::BasicBlock::Create(context_, "range.ok", function_);
+            builder_.CreateCondBr(bad, fail, ok);
+            builder_.SetInsertPoint(fail);
+            abort_panic(node.loc, "index out of range");
+            builder_.SetInsertPoint(ok);
+        }
+        const int elem_depth = base.depth > 0 ? base.depth - 1 : 0;
+        llvm::Type *element =
+            leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
+        llvm::Value *start = builder_.CreateInBoundsGEP(element, base.value, llvm::ArrayRef<llvm::Value *>{start_index});
+        llvm::Value *len = builder_.CreateSub(end_index, start_index);
+        llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_type());
+        packed = builder_.CreateInsertValue(packed, start, 0);
+        packed = builder_.CreateInsertValue(packed, len, 1);
+        TypedValue result;
+        result.value = packed;
+        result.is_slice = true;
+        result.array_len = -1;
+        result.depth = elem_depth;
+        result.elem_char = base.elem_char;
+        result.struct_id = base.struct_id;
+        result.elem_void = base.elem_void;
+        result.elem_bool = base.elem_bool;
+        result.elem_bits = base.elem_bits;
+        result.elem_unsigned = base.elem_unsigned;
+        result.elem_float = base.elem_float;
+        result.enum_id = base.enum_id;
+        return result;
+    }
     // `[N]Duo` keeps the tuple slots on the element. That element is not a slice.
     if (!base.tuple_parts.empty() && base.shells.empty() && !base.elem_slice && base.inner_array_len <= 0) {
         error(node.loc, "type mismatch");
@@ -1173,6 +1255,8 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         };
         llvm::Value *start = data;
         llvm::Value *len = nullptr;
+        llvm::Value *start_index = nullptr;
+        llvm::Value *end_index = nullptr;
         // A header element steps by `tlc.slice`. A row `[M]T` steps by that row.
         // A parameter `[N][]T` is a pointer. The range steps by the element after that pointer.
         if (decayed_slice_elems) {
@@ -1193,14 +1277,15 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         }
         if (low_omitted) {
             len = as_bound(high);
+            end_index = len;
         } else {
-            llvm::Value *start_index = as_bound(low);
+            start_index = as_bound(low);
             if (start_index == nullptr) {
                 error(node.loc, "type mismatch");
                 return {zero(), 0};
             }
             start = builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{start_index});
-            llvm::Value *end_index = high_omitted ? builder_.CreateExtractValue(packed, 1) : as_bound(high);
+            end_index = high_omitted ? builder_.CreateExtractValue(packed, 1) : as_bound(high);
             if (end_index == nullptr) {
                 error(node.loc, "type mismatch");
                 return {zero(), 0};
@@ -1210,6 +1295,23 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         if (len == nullptr) {
             error(node.loc, "type mismatch");
             return {zero(), 0};
+        }
+        if (packed->getType() == slice_type() && !eval_ && (emitting_fn_ == nullptr || !emitting_fn_->is_comptime)) {
+            llvm::Value *old = builder_.CreateExtractValue(packed, 1);
+            llvm::Value *start_at = low_omitted ? const_i32(0) : start_index;
+            llvm::Value *end_at = high_omitted ? old : end_index;
+            if (start_at != nullptr && end_at != nullptr) {
+                llvm::Value *low_bad = builder_.CreateICmpSLT(start_at, const_i32(0));
+                llvm::Value *order_bad = builder_.CreateICmpSLT(end_at, start_at);
+                llvm::Value *high_bad = builder_.CreateICmpSGT(end_at, old);
+                llvm::Value *bad = builder_.CreateOr(builder_.CreateOr(low_bad, order_bad), high_bad);
+                auto *fail = llvm::BasicBlock::Create(context_, "range.fail", function_);
+                auto *ok = llvm::BasicBlock::Create(context_, "range.ok", function_);
+                builder_.CreateCondBr(bad, fail, ok);
+                builder_.SetInsertPoint(fail);
+                abort_panic(node.loc, "index out of range");
+                builder_.SetInsertPoint(ok);
+            }
         }
         out = llvm::ConstantAggregateZero::get(slice_type());
         out = builder_.CreateInsertValue(out, start, 0);

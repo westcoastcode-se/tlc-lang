@@ -99,21 +99,6 @@ export func Malloc::free(self *this, ptr *u8) void;
 // Returns null when the reservation fails. The caller handles null.
 export unsafe func Malloc::realloc(self *this, ptr *u8, size i32, align i32) ?*u8;
 
-// True when the lengths match and every element matches.
-export func memeql[T type](lhs *const T, lhslen i32, rhs *const T, rhslen i32) bool {
-    if (lhslen != rhslen) {
-        return false;
-    }
-    var i i32 = 0;
-    while (i < lhslen) {
-        if (lhs[i] != rhs[i]) {
-            return false;
-        }
-        i = i + 1;
-    }
-    return true;
-}
-
 // True when both slices are comptime values and hold the same elements.
 // Chosen instead of the runtime overload when both arguments are comptime.
 export func memeql[T type](lhs comptime []const T, rhs comptime []const T) bool {
@@ -145,33 +130,8 @@ export func memeql[T type](lhs []const T, rhs []const T) bool {
     return true;
 }
 
-// Element order. -1 when lhs is less, 1 when lhs is greater, 0 when they match.
+// Element order of two comptime slices. -1 when lhs is less, 1 when lhs is greater, 0 when they match.
 // A shared prefix takes the shorter length as less.
-export func memcmp[T type](lhs *const T, lhslen i32, rhs *const T, rhslen i32) i32 {
-    var n i32 = lhslen;
-    if (rhslen < n) {
-        n = rhslen;
-    }
-    var i i32 = 0;
-    while (i < n) {
-        if (lhs[i] < rhs[i]) {
-            return -1;
-        }
-        if (rhs[i] < lhs[i]) {
-            return 1;
-        }
-        i = i + 1;
-    }
-    if (lhslen < rhslen) {
-        return -1;
-    }
-    if (rhslen < lhslen) {
-        return 1;
-    }
-    return 0;
-}
-
-// Element order of two comptime slices, the same rule as the pointer form.
 // Chosen instead of the runtime overload when both arguments are comptime.
 export func memcmp[T type](lhs comptime []const T, rhs comptime []const T) i32 {
     var n i32 = lhs.len;
@@ -197,7 +157,8 @@ export func memcmp[T type](lhs comptime []const T, rhs comptime []const T) i32 {
     return 0;
 }
 
-// Element order of two slices, the same rule as the pointer form.
+// Element order of two slices. -1 when lhs is less, 1 when lhs is greater, 0 when they match.
+// A shared prefix takes the shorter length as less.
 export func memcmp[T type](lhs []const T, rhs []const T) i32 {
     var n i32 = lhs.len;
     if (rhs.len < n) {

@@ -97,17 +97,17 @@ func main() i32 {
     }
     // The payload is at offset 0. The enum tag is stored after it.
     var placed Shape = {.Rectangle = {.width = 0, .height = 0}};
-    var raw *u8 = *u8(&placed);
+    var raw = (*u8(&placed))[0:12];
     if (raw[0] != 0 || raw[4] != 0 || raw[8] != 1 || raw[9] != 0 || raw[10] != 0 || raw[11] != 0) {
         return 7;
     }
     var wide_b Wide = {.B = {.n = 0}};
-    var wide_raw *u8 = *u8(&wide_b);
+    var wide_raw = (*u8(&wide_b))[0:12];
     if (wide_raw[0] != 0 || wide_raw[8] != 1 || wide_raw[9] != 0 || wide_raw[10] != 0 || wide_raw[11] != 0) {
         return 8;
     }
     var pick_b Pick = {.B = {.n = 0}};
-    var pick_raw *u8 = *u8(&pick_b);
+    var pick_raw = (*u8(&pick_b))[0:8];
     if (pick_raw[0] != 0 || pick_raw[4] != 3 || pick_raw[5] != 0 || pick_raw[6] != 0 || pick_raw[7] != 0) {
         return 9;
     }

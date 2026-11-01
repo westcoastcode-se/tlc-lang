@@ -1,6 +1,5 @@
 type Vec[T type] struct {
-    data *T;
-    len i32;
+    data []T;
 };
 
 func Vec[T]::get(self *this, i i32) T {
@@ -8,7 +7,7 @@ func Vec[T]::get(self *this, i i32) T {
 }
 
 func main() i32 {
-    var value = 42;
-    var v Vec[i32] = {.data = &value, .len = 1};
+    var value = [_]i32{42};
+    var v Vec[i32] = {.data = value[:]};
     return v.get(0);
 }

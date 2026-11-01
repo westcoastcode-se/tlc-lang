@@ -427,7 +427,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "func add4(p *i32) i32 {\n"
+            "func add4(p []i32) i32 {\n"
             "  return p[0] + p[1] + p[2] + p[3];\n"
             "}\n"
             "func main() i32 {\n"
@@ -436,13 +436,8 @@ int run_sema_tests() {
             "  a[1] = 20;\n"
             "  a[2] = 7;\n"
             "  a[3] = 5;\n"
-            "  var q *i32 = *i32(a);\n"
-            "  var s *const u8 = \"hi\";\n"
-            "  var n i32 = 0;\n"
-            "  while (s[n] != 0) {\n"
-            "    n = n + 1;\n"
-            "  }\n"
-            "  return add4(*i32(a)) + q[0] - a[0] + n;\n"
+            "  var s []const u8 = \"hi\";\n"
+            "  return add4(a[:]) + s.len;\n"
             "}\n");
         EXPECT_EQ(check, errors, "");
     }
@@ -6616,12 +6611,12 @@ int run_sema_tests() {
             "func make[T type](value T) *Box[T] { return new Box[T]{.value = value, .extra = 2}; }\n"
             "func main() i32 {\n"
             "  var n i32 = 4;\n"
-            "  var buf *i32 = new [n]i32;\n"
-            "  var wide *i32 = new [n + 1]i32;\n"
-            "  var pts *Point = new [2]Point;\n"
+            "  var buf []i32 = new [n]i32;\n"
+            "  var wide []i32 = new [n + 1]i32;\n"
+            "  var pts []Point = new [2]Point;\n"
             "  var box *Box[i32] = new Box[i32]{.value = 40, .extra = 2};\n"
             "  var made *Box[i32] = make[i32](1);\n"
-            "  var refs *?*i32 = new [2]?*i32;\n"
+            "  var refs []?*i32 = new [2]?*i32;\n"
             "  buf[0] = 1;\n"
             "  pts[1].y = wide[0];\n"
             "  delete buf;\n"
@@ -6663,9 +6658,9 @@ int run_sema_tests() {
             "type Point struct { x i32; y i32; };\n"
             "func main() i32 {\n"
             "  var n i32 = 3;\n"
-            "  var buf *Point = new [n]Point{{.x = 1}...};\n"
+            "  var buf []Point = new [n]Point{{.x = 1}...};\n"
             "  var row *[2]Point = new [_]Point{{.x = 4, .y = 2}, {.y = 10}};\n"
-            "  var nums *i32 = new [2]i32{6, 8};\n"
+            "  var nums []i32 = new [2]i32{6, 8};\n"
             "  buf[2].y = row[0].x;\n"
             "  delete buf;\n"
             "  delete row;\n"
@@ -6828,8 +6823,8 @@ int run_sema_tests() {
             "import \"builtin/env/consts\";\n"
             "import { family } from \"builtin/env/consts\";\n"
             "func main() i32 {\n"
-            "  var p *const u8 = consts.family;\n"
-            "  var q *const u8 = family;\n"
+            "  var p = consts.family[0:1];\n"
+            "  var q = family[0:1];\n"
             "  return p[0] == q[0];\n"
             "}\n");
         EXPECT(check, errors.empty());
@@ -6861,8 +6856,8 @@ int run_sema_tests() {
     {
         const std::string errors = check_program(
             "func main() i32 {\n"
-            "  var text *const u8 = \"hi\";\n"
-            "  var raw *const u8 = `h\ni`;\n"
+            "  var text []const u8 = \"hi\";\n"
+            "  var raw []const u8 = `h\ni`;\n"
             "  var inferred = \"ab\";\n"
             "  if (text[0] != 'h' || raw[0] != 'h' || inferred[1] != 'b') {\n"
             "    return 1;\n"
@@ -6907,14 +6902,14 @@ int run_sema_tests() {
             std::ofstream out(path);
             out << "var greeting = \"Hello\";\n"
                    "const plain = \"hi\";\n"
-                   "const c_text *const u8 = \"unix\";\n"
+                   "const c_text []const u8 = \"unix\";\n"
                    "func take(s []const u8) i32 { return s.len; }\n"
                    "func main() i32 {\n"
                    "  var str = \"Hello\";\n"
                    "  var raw = `Hi`;\n"
                    "  var empty = \"\";\n"
-                   "  var p *const u8 = \"Hello\";\n"
-                   "  var from_slice *const u8 = plain;\n"
+                   "  var p []const u8 = \"Hello\";\n"
+                   "  var from_slice []const u8 = plain;\n"
                    "  var typed []const u8 = \"Yo\";\n"
                    "  if (str.len != 5 || str[0] != 'H' || str[4] != 'o') { return 1; }\n"
                    "  if (raw.len != 2 || raw[1] != 'i') { return 2; }\n"
@@ -6952,11 +6947,11 @@ int run_sema_tests() {
 
     {
         const std::string errors = check_program(
-            "const label *const u8 = \"unix\";\n"
+            "const label []const u8 = \"unix\";\n"
             "const plain = \"hi\";\n"
             "func main() i32 {\n"
-            "  var p *const u8 = plain;\n"
-            "  var q *const u8 = label;\n"
+            "  var p = plain;\n"
+            "  var q = label;\n"
             "  return label[0] + p[0] + q[0];\n"
             "}\n");
         EXPECT(check, errors.empty());
@@ -8086,7 +8081,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "func take(p *i32) i32 { return p[0]; }\n"
+            "func take(p []i32) i32 { return p[0]; }\n"
             "func main() i32 {\n"
             "  var row = [_]i32{10, 20, 12};\n"
             "  other := [_]i32{7, 8,};\n"
@@ -8094,7 +8089,7 @@ int run_sema_tests() {
             "  var typed [2]i32 = [_]i32{4, 1};\n"
             "  var n = 3;\n"
             "  var live = [_]i32{n, 1};\n"
-            "  return row[0] + other[1] + fixed[0] + typed[1] + live[0] + take(*i32(row));\n"
+            "  return row[0] + other[1] + fixed[0] + typed[1] + live[0] + take(row[:]);\n"
             "}\n");
         EXPECT(check, errors.empty());
     }
@@ -8125,10 +8120,10 @@ int run_sema_tests() {
             "var live [2]i32 = [_]i32{1, 2};\n"
             "var flags = [_]bool{true, false};\n"
             "var bytes = [_]u8{1, 2};\n"
-            "func take(p *const i32) i32 { return p[0] + p[1]; }\n"
+            "func take(p []const i32) i32 { return p[0] + p[1]; }\n"
             "func main() i32 {\n"
             "  live[0] = 3;\n"
-            "  return take(*const i32(fixed)) + named[0] + other[1] + live[0] + i32(flags[0]) + bytes[0];\n"
+            "  return take(fixed[:]) + named[0] + other[1] + live[0] + i32(flags[0]) + bytes[0];\n"
             "}\n");
         EXPECT(check, errors.empty());
     }
@@ -9545,8 +9540,9 @@ int run_sema_tests() {
             "  var log [4]u8;\n"
             "  log[0] = 1;\n"
             "  var p *u8 = log;\n"
+            "  var head = p[0:1];\n"
             "  var view []u8 = log;\n"
-            "  return i32(p[0]) + i32(view[0]);\n"
+            "  return i32(head[0]) + i32(view[0]);\n"
             "}\n");
         EXPECT(check, errors.empty());
     }

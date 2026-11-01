@@ -2552,6 +2552,16 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (rhs.kind == TypeKind::Invalid) {
                     return;
                 }
+                // `check_expr` drops `decayed_len`. `var copy = row` on a parameter `[N]T` is that same pointer.
+                if (node.names.size() == 1 && node.value != nullptr && rhs.kind == TypeKind::Pointer) {
+                    if (const auto *named = std::get_if<Expr::Name>(&node.value->data)) {
+                        if (const Symbol *symbol = lookup(named->text);
+                            symbol != nullptr && symbol->type.kind == TypeKind::Pointer && !symbol->type.optional &&
+                            symbol->type.decayed_len > 0) {
+                            rhs.decayed_len = symbol->type.decayed_len;
+                        }
+                    }
+                }
                 // `var made = move(origin)` keeps the whole struct. A field, `var n = move(origin).x`, folds.
                 if (!node.is_comptime && !node.is_const && node.value != nullptr) {
                     if (const auto *call = std::get_if<Expr::Call>(&node.value->data);

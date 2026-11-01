@@ -354,7 +354,37 @@ llvm::Constant *CodeGen::untagged_default(int struct_id) {
         return nullptr;
     }
     // The largest field is the prefix. A shorter integer is the low bits of that prefix.
-    llvm::Type *prefix = layout.type->getElementType(0);
+    // A tlc union stores that prefix as a zero-length array and the payload as bytes.
+    llvm::Type *first = layout.type->getElementType(0);
+    llvm::Type *prefix = first;
+    unsigned payload_at = 0;
+    if (const auto *align = llvm::dyn_cast<llvm::ArrayType>(first); align != nullptr && align->getNumElements() == 0) {
+        prefix = align->getElementType();
+        payload_at = 1;
+    }
+    if (payload_at >= layout.type->getNumElements()) {
+        return nullptr;
+    }
+    if (payload_at == 1) {
+        const auto *bytes = llvm::dyn_cast<llvm::ArrayType>(layout.type->getElementType(payload_at));
+        const auto *narrow = llvm::dyn_cast<llvm::ConstantInt>(value);
+        if (bytes == nullptr || !bytes->getElementType()->isIntegerTy(8) || narrow == nullptr) {
+            return nullptr;
+        }
+        const uint64_t nbytes = bytes->getNumElements();
+        std::vector<uint8_t> raw(nbytes, 0);
+        unsigned width = narrow->getType()->getIntegerBitWidth();
+        if (const auto *wide = llvm::dyn_cast<llvm::IntegerType>(prefix); wide != nullptr && width < wide->getBitWidth()) {
+            width = wide->getBitWidth();
+        }
+        const llvm::APInt bits = narrow->getValue().zext(std::max(width, narrow->getType()->getIntegerBitWidth()));
+        const unsigned limit = std::min<unsigned>(static_cast<unsigned>(nbytes), (bits.getBitWidth() + 7) / 8);
+        for (unsigned index = 0; index < limit; ++index) {
+            raw[index] = static_cast<uint8_t>(bits.extractBits(8, index * 8).getZExtValue());
+        }
+        return llvm::ConstantStruct::get(layout.type, {llvm::ConstantAggregateZero::get(first),
+                                                       llvm::ConstantDataArray::get(context_, raw)});
+    }
     llvm::Constant *stored = nullptr;
     if (value->getType() == prefix) {
         stored = value;

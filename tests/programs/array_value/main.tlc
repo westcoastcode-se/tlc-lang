@@ -12,8 +12,7 @@ func main() i32 {
     var row = [_]i32{10, 20};
     var copy = row;
     row[0] = 1;
-    var p = *i32(row);
-    var seen = p[0];
+    var seen = row[0];
     var slice = row[:];
     var grid = [_][2]i32{{1, 2}, {3, 4}};
     var line = grid[1];

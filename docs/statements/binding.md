@@ -221,7 +221,7 @@ A parameter `[2]i32` is a pointer.
 
 A later store into the parameter does not change the copy.
 
-`var copy = row` stays `*i32`.
+`var copy = row` keeps that length, so `copy[0]` is the same element as `row[0]`.
 
 A list element copies that array too.
 

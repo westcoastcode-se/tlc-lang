@@ -113,6 +113,10 @@ Type Checker::increment_operand(const Expr &expr) {
             if (base.is_const) {
                 element.is_const = true;
             }
+        } else if (base.kind == TypeKind::Pointer && !base.optional && base.decayed_len > 0 &&
+                   base.pointee != nullptr) {
+            // A parameter `[N]T` still carries `N`. `a[i] = n` stores that element.
+            element = *base.pointee;
         } else {
             bool pointee_void = false;
             if (!indexed_type(base, element, pointee_void)) {
@@ -762,9 +766,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             element.is_const = true;
                         }
                     } else if (base.kind == TypeKind::Pointer && !base.optional && base.decayed_len > 0 &&
-                               base.pointee != nullptr && base.pointee->kind == TypeKind::Array &&
-                               base.pointee->length >= 0) {
-                        // A parameter `[N][M]T` points at the first row. `grid[i]` is that row.
+                               base.pointee != nullptr) {
+                        // A parameter `[N]T` still carries `N`. `[N][M]T` yields the row.
                         element = *base.pointee;
                     } else if (!indexed_type(base, element, pointee_void)) {
                         if (base.kind != TypeKind::Invalid) {
@@ -1928,6 +1931,23 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return type_array(std::move(element), -1);
                     }
+                    // `p[0:n]` on `*T` is the block of `n - 0` elements. Both bounds are the length.
+                    if (base.kind == TypeKind::Pointer && !base.optional && base.pointee != nullptr &&
+                        base.decayed_len <= 0 &&
+                        !(base.pointee->kind == TypeKind::Array && base.pointee->length >= 0)) {
+                        if (node.index == nullptr || node.end == nullptr || base.pointee->kind == TypeKind::Void) {
+                            error(node.loc, "type mismatch");
+                            return type_invalid();
+                        }
+                        Type element = *base.pointee;
+                        if (base.pointee->is_const) {
+                            element.is_const = true;
+                        }
+                        if (tuple_element(element)) {
+                            return type_invalid();
+                        }
+                        return type_array(std::move(element), -1);
+                    }
                     if (base.kind != TypeKind::Array || base.element == nullptr) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
@@ -2003,10 +2023,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
+                // A parameter `[N]T` is a pointer that still carries `N`. `a[i]` is that element.
                 // A parameter `[N][M]T` points at the first row. `grid[i]` is that row.
-                // `*[M]T` has no decayed length, so `p[i]` is still `(*p)[i]`.
                 if (base.kind == TypeKind::Pointer && base.decayed_len > 0 && base.pointee != nullptr &&
-                    base.pointee->kind == TypeKind::Array && base.pointee->length >= 0) {
+                    !base.optional) {
+                    if (base.pointee->kind == TypeKind::Array && base.pointee->length >= 0) {
+                        return *base.pointee;
+                    }
                     return *base.pointee;
                 }
                 Type element;
@@ -2464,7 +2487,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return type_invalid();
                     }
                     const Type got = check_expr(*node.expr, true);
-                    if (got.kind != TypeKind::Invalid && got.kind != TypeKind::Pointer) {
+                    if (got.kind != TypeKind::Invalid && got.kind != TypeKind::Pointer && !is_slice(got)) {
                         error(node.loc, "type mismatch");
                     }
                     return type_void();
@@ -2575,7 +2598,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         } else if (needs_nonnull_pointer(object)) {
                             error(node.loc, "type mismatch");
                         }
-                        return type_pointer(object);
+                        // `new [n]T` is `[]T`. The length is `n`.
+                        return type_array(object, -1);
                     }
                     // The fields are checked against the reserved object. A non-struct has no fields.
                     if (node.init) {

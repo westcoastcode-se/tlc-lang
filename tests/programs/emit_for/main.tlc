@@ -1,5 +1,5 @@
-macro func add_all(items *const i32, n i32, total *i32) void {
-    emit for (var i = 0; i < n; i = i + 1) {
+macro func add_all(items []const i32, total *i32) void {
+    emit for (var i = 0; i < items.len; i = i + 1) {
         *total = *total + items[i];
     }
 }
@@ -10,7 +10,6 @@ func main() i32 {
     items[1] = 2;
     items[2] = 4;
     var total = 0;
-    var n = 3;
-    add_all(items, n, &total);
+    add_all(items[:], &total);
     return total;
 }

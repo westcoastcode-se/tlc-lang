@@ -1496,6 +1496,8 @@ class CodeGen {
     void abort_out_of_memory(SourceLoc loc);
     // `builtin.panic(message)`, then unreachable. The frame names `loc`.
     void abort_panic(SourceLoc loc, const char *message);
+    // `index < 0` or `index >= length` calls `panic("index out of range")`.
+    void trap_index(llvm::Value *index, llvm::Value *length, SourceLoc loc);
     // `base[low:high]`. The result is a slice header.
     TypedValue emit_range(const Expr::Index &node);
     // Load one field. A slice field is the header. An array field decays to a pointer.

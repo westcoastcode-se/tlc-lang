@@ -34,7 +34,7 @@ func make[T type](value T) *Box[T] {
 func main() i32 {
     var arena Arena;
     var n i32 = 3;
-    var buf *i32 = new(&arena) [n + 1]i32;
+    var buf = new(&arena) [n + 1]i32;
     if (used != 16) {
         return 1;
     }
@@ -43,7 +43,7 @@ func main() i32 {
     buf[2] = 8;
     buf[3] = 4;
 
-    var pts *Point = new [2]Point;
+    var pts = new [2]Point;
     pts[0].x = 6;
     pts[1].y = 2;
 
@@ -57,7 +57,7 @@ func main() i32 {
     }
 
     var local i32 = 5;
-    var refs *?*i32 = new [2]?*i32;
+    var refs = new [2]?*i32;
     refs[0] = null;
     refs[1] = ?*i32(&local);
     if (refs[1] == null) {

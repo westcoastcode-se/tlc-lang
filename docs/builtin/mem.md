@@ -41,19 +41,17 @@ retq                             # return
 
 ## The two forms
 
-Each name has two forms.
+Each name has two forms. Both take `[]const T`.
 
-`T type` is the element type.
+`T type` is the element type. The length is the slice length.
 
-The lengths in the pointer form are element counts.
+A raw `*T` is not an argument. `p[0:n]` is the slice.
 
 ```c
 export func memeql[T type](lhs comptime []const T, rhs comptime []const T) bool;
 export func memeql[T type](lhs []const T, rhs []const T) bool;
-export func memeql[T type](lhs *const T, lhslen i32, rhs *const T, rhslen i32) bool;
 export func memcmp[T type](lhs comptime []const T, rhs comptime []const T) i32;
 export func memcmp[T type](lhs []const T, rhs []const T) i32;
-export func memcmp[T type](lhs *const T, lhslen i32, rhs *const T, rhslen i32) i32;
 ```
 
 ```asm
@@ -117,18 +115,6 @@ A false comparison fails the assert, and the diagnostic is the message.
 `const order = builtin.memcmp[u8]("ab", "ac")` is the integer `-1`.
 
 `var live_cmp = builtin.memcmp[u8]("ab", "ac")` is an `i32`.
-
-## The pointer form
-
-The pointer form runs the body, including when both pointers are string literals and both lengths are constant integers.
-
-`builtin.memeql[u8]("", 0, "", 0)` is true.
-
-`builtin.memcmp[u8]("a", 1, "ab", 2)` is `-1`.
-
-A length past the slice reads those addresses.
-
-A string literal stores a null after its bytes, and that null is an element when the length counts it.
 
 ## Calls the compiler rejects
 

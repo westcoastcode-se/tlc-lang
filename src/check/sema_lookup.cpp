@@ -347,6 +347,10 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
     // A decayed `[N][]T` points at slice headers. The step is one header, not one `T`.
     if (pointee.kind == TypeKind::Array) {
         if (pointee.length < 0) {
+            // A decayed `[N][]T` has a count of headers. A raw `*[]T` does not.
+            if (base.decayed_len <= 0) {
+                return false;
+            }
             out = pointee;
             return true;
         }
@@ -364,8 +368,8 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
         }
         return true;
     }
-    out = pointee;
-    return true;
+    // A raw `*T` has no length. `p[i]` is not an element. `p[0:n]` names the block.
+    return false;
 }
 
 Type Checker::type_of_param(const Param &param) {

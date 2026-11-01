@@ -172,7 +172,7 @@ Reading `p[1:3]` on `*const [4]i32` is allowed. That range is `[]const i32`.
 
 Reading `p.len` on `*const [N]T` is allowed. A field `items *[N]T` has that length. `type Quad [N]T` makes `p.len` on `*Quad` that `N`.
 
-`*i32`, `*[]T`, `**[N]T`, `new [n]T`, and a still-optional `?*[N]T` are reported as `type mismatch`. After `if (opt == null) return`, `opt.len` is `N`.
+`*i32`, `*[]T`, `**[N]T`, and a still-optional `?*[N]T` are reported as `type mismatch`. `new [n]T` is `[]T`, so its `len` is `n`. `p[i]` on a raw `*T` is `type mismatch`. `p[0:n]` is that slice. After `if (opt == null) return`, `opt.len` is `N`.
 
 Assigning `p.len`, or taking its address, is reported as `not an lvalue`.
 
@@ -182,7 +182,7 @@ At file scope, `const N = (&row).len` is that length and can be an array length.
 
 `row[0:2]`, `row[i:]`, `row[:j]`, and `row[:]` on a parameter `[N]T` are `[]T`. `return row` where `[]T` is expected is that slice.
 
-`var s []i32 = row` is that slice. `var copy = row` stays `*i32`. `row.len` is that `N`.
+`var s []i32 = row` is that slice. `var copy = row` keeps that length, so `copy[0]` is the same element as `row[0]`. `row.len` is that `N`.
 
 A parameter `[N][M]T` gives `[][M]T` for a range of the outer dimension. A range of `[_][2]i32` is a slice of `[2]i32`.
 
@@ -236,7 +236,7 @@ An array literal, a call, or a bound that does not fold is reported as `global i
 
 `const v = row` copies that array. `const v []i32 = row` stores the slice.
 
-An array parameter is already a pointer. `return row` from `func open(row [4]i32) []i32` builds the slice header that `row[:]` builds. `var copy = row` stays `*i32`. `row[0:2]` in that function is `[]i32`, and `row.len` is 4.
+An array parameter is already a pointer. `return row` from `func open(row [4]i32) []i32` builds the slice header that `row[:]` builds. `var copy = row` keeps that length. `row[0:2]` in that function is `[]i32`, and `row.len` is 4.
 
 A file-scope `var view []i32 = p`, when `p` is `*[N]T`, is reported as `global initializer is not a constant`.
 

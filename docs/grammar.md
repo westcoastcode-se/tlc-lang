@@ -2344,7 +2344,7 @@ A `*T` field has to be named, or the initializer is reported as `type mismatch`,
 
 `new Point{1, 2}` and `new i32{1}` are reported as `type mismatch`.
 
-`new [n]T` reserves `n` elements and yields `*T`.
+`new [n]T` reserves `n` elements and yields `[]T`. The length is `n`.
 
 `n` has type `i32`.
 

@@ -1,0 +1,3 @@
+exit: 128
+stderr: panic: index out of range
+main.tlc:3:5: main

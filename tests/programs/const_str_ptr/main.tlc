@@ -1,18 +1,18 @@
-const early *const u8 = later;
 const later = "hi"b;
+const early []const u8 = later;
 
 const label = "hi"b;
 const bytes = [_]u8{104, 105, 0};
 const view []const u8 = bytes;
-const from_text *const u8 = label;
-const from_array *const u8 = view;
-const from_range *const u8 = "hello"b[1:4];
+const from_text []const u8 = label;
+const from_array []const u8 = view;
+const from_range []const u8 = "hello"b[1:4];
 
 func main() i32 {
-    if (early[0] != 'h'b || early[1] != 'i'b || early[2] != 0) {
+    if (early.len != 2 || early[0] != 'h'b || early[1] != 'i'b) {
         return 1;
     }
-    if (from_text[0] != 'h'b || from_text[1] != 'i'b || from_text[2] != 0) {
+    if (from_text.len != 2 || from_text[0] != 'h'b || from_text[1] != 'i'b) {
         return 2;
     }
     if (from_array[0] != 'h'b || from_array[2] != 0) {

@@ -42,9 +42,9 @@ An array parameter is already a pointer. `return row` when the result is `[2]i32
 
 `return grid` when `grid` is a parameter `[2][2]i32` and the result is `[2][2]i32` copies both rows. `return grid[1]` copies that row, and `return {a, b}` copies those parameter rows.
 
-`var copy [2]i32 = row` copies those elements. `var copy = row` stays `*i32`.
+`var copy [2]i32 = row` copies those elements. `var copy = row` keeps the length, so `copy[0]` is the same element as `row[0]`.
 
-`return row` from `func open(row [4]i32) []i32` builds the slice header that `row[:]` builds. `var copy = row` stays `*i32`, and `row[0:2]` in that function is `[]i32`.
+`return row` from `func open(row [4]i32) []i32` builds the slice header that `row[:]` builds. `var copy = row` keeps that length, and `row[0:2]` in that function is `[]i32`.
 
 `row[i:]`, `row[:j]`, `row[:]`, and `row.len` use the length from `[4]`.
 
