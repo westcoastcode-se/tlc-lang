@@ -150,6 +150,6 @@ One argument is `argument count`.
 
 `+` on `[]const u8` is `type mismatch: expected an integer, found []const u8`.
 
-[`string.equals`](../std/string.md) and `string.compare` remain the runtime methods on `string_view`.
+[`unicode.string_view.equals`](../std/unicode.md) and `compare` remain the runtime methods on `string_view`. `ascii.string_view` has those same methods.
 
 [Index](../README.md) · [Previous: panic](panic.md) · [Next: atomic](atomic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

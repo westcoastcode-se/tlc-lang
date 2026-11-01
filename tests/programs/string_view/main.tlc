@@ -1,9 +1,10 @@
-import "std/string";
+import "std/unicode";
+import "std/ascii";
 
-comptime const greeting string.byte_string_view = "hello"b;
+comptime const greeting unicode.string_view = "hello"b;
 
 func main() i32 {
-    var text string.byte_string_view = "hello"b;
+    var text unicode.string_view = "hello"b;
     if (!text.equals("hello"b)) {
         return 1;
     }
@@ -13,7 +14,7 @@ func main() i32 {
     if (text.equals(""b)) {
         return 3;
     }
-    var empty string.byte_string_view = ""b;
+    var empty unicode.string_view = ""b;
     if (!empty.equals(""b)) {
         return 4;
     }
@@ -89,8 +90,21 @@ func main() i32 {
     if (!greeting.equals("hello"b)) {
         return 28;
     }
-    if (!string.from("world"b).equals("world"b)) {
+    if (!unicode.from("world"b).equals("world"b)) {
         return 29;
+    }
+    var ascii_text ascii.string_view = "hello"b;
+    if (!ascii_text.equals("hello"b) || ascii_text.find("lo"b) != 3) {
+        return 31;
+    }
+    if (!ascii_text.starts_with("he"b) || !ascii_text.ends_with("lo"b)) {
+        return 32;
+    }
+    if (ascii_text.compare("a"b) <= 0 || ascii_text.find_first_of("ol"b) != 2) {
+        return 33;
+    }
+    if (!ascii.from("world"b).equals("world"b) || ascii.from("world"b).find("or"b) != 1) {
+        return 34;
     }
     if (text.find("lo"b) != 3) {
         return 30;

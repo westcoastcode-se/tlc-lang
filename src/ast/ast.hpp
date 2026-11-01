@@ -188,7 +188,7 @@ struct Expr {
         std::string text;
         // `"hi"b` is a byte string. Without the suffix the literal is Unicode.
         bool byte_form = false;
-        // Struct id of `string.string_view` when this literal is Unicode.
+        // Struct id of `unicode.string_view` when this literal is Unicode.
         mutable int view_struct = -1;
     };
     struct Index {

@@ -56,7 +56,7 @@ The receiver is the value `self this`.
 
 `self *this` on a slice alias is a pointer to that slice.
 
-The functions on that alias live in [`std/string`](../std/string.md), which is `lib/tlc/std/string`.
+The functions on that alias live in [`std/unicode`](../std/unicode.md) and [`std/ascii`](../std/ascii.md).
 
 The call omits the receiver.
 

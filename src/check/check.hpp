@@ -260,7 +260,7 @@ class Checker {
     // `fields()` yields `[]const Field`: `name []const u8` and `kind Type`.
     // Negative until `ensure_field_info` runs. `builtin.Field` replaces it when that struct is declared.
     int field_info_id_ = -1;
-    // `string.string_view` in `std/string`. A Unicode string literal uses it.
+    // `unicode.string_view` in `std/unicode`. A Unicode string literal uses it.
     int text_view_id_ = -1;
     // `builtin.CompiledType`, the tagged union. Negative until that union is declared.
     int type_value_id_ = -1;

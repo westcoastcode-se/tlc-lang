@@ -910,7 +910,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 out.elem_char = true;
                 out.is_slice = true;
                 out.array_len = static_cast<int>(node.text.size());
-                // A Unicode literal is `string_view`: one field, the UTF-8 slice.
+                // A Unicode literal is `unicode.string_view`: one field, the UTF-8 slice.
                 if (!node.byte_form && node.view_struct >= 0 &&
                     node.view_struct < static_cast<int>(structs_.size()) &&
                     structs_[static_cast<std::size_t>(node.view_struct)].type != nullptr) {

@@ -66,7 +66,7 @@ The same forms work for `bool`, `f32`, `f64`, and the other integer widths.
 
 A slice alias such as `type string_view []const u8` is a different owner.
 
-Its value methods are library source in [`std/string`](../std/string.md).
+Its value methods are library source in [`std/unicode`](../std/unicode.md) and [`std/ascii`](../std/ascii.md).
 
 `self *this` on that alias is a pointer to the slice.
 

@@ -207,11 +207,11 @@ retq                             # return
 
 `pointer[0]` is the same first byte, and the read walks bytes until the null.
 
-## The string package
+## The text packages
 
-[`std/string`](../std/string.md) is the library package `lib/tlc/std/string`.
+[`std/unicode`](../std/unicode.md) and [`std/ascii`](../std/ascii.md) name this slice `string_view`.
 
-It names this slice `string_view` and provides `equals`, `compare`, and `find_first_of`.
+Each provides `equals`, `compare`, `find_first_of`, `find`, `starts_with`, and `ends_with` on that view and on the owned `string`.
 
 Those functions are tlc source, and the compiler does not implement them.
 

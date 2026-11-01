@@ -12,6 +12,12 @@ A string of at most 22 bytes is the `Short` arm. A longer string is the `Long` a
 
 `release` of a `Long` string switches the value to an empty `Short` arm and then calls `delete`. A later `release` does not call `delete`.
 
+`ascii.string_view` is `[]const u8`.
+
+`equals`, `compare`, `find_first_of`, `find`, `starts_with`, and `ends_with` are the same methods as on [`unicode.string`](unicode.md), on the view and on `ascii.string`.
+
+`from` still calls `builtin.panic("not ascii")` when a byte is 128 or greater. A `string_view` does not.
+
 ```c
 import "std/ascii";
 

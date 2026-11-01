@@ -61,7 +61,7 @@ Search proceeds as follows.
 
    `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`.
 
-   `import "std/string"` is a different package.
+   `import "std/unicode"` is a different package.
 
    `import "std"` names a directory with no `.tlc` file and is `unknown package`.
 

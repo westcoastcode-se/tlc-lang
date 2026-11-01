@@ -1867,7 +1867,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 (void)used;
                 // `"Hello"b` is `[]const u8`. The bytes still end with a null.
-                // `"Hello"` is `string.string_view` when `std/string` is part of the program.
+                // `"Hello"` is `unicode.string_view` when that struct is part of the program.
                 // Without that struct the literal stays the byte slice.
                 if (node.byte_form || text_view_id_ < 0) {
                     return string_slice();

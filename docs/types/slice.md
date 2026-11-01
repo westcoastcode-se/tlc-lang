@@ -28,7 +28,7 @@ A const array converts to `[]const T`, and `row[:]` is that slice. `[]const T` d
 
 `Row` can have value methods, written `func Row::first(self this) i32`. `self *this` on that alias is a pointer to the slice.
 
-The library type [`string_view`](../std/string.md) is `type string_view []const u8` in `lib/tlc/std/string`.
+The library type [`string_view`](../std/unicode.md) is `type string_view []const u8` in `lib/tlc/std/unicode` and in `lib/tlc/std/ascii`.
 
 `var v = row` keeps the array. It does not infer a slice.
 

@@ -1,6 +1,6 @@
 # builtin/env/consts
 
-[Index](../README.md) · [Previous: atomic](atomic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: atomic](atomic.md) · [Next: unicode](../std/unicode.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 This page describes the `family` constant in `builtin/env/consts`.
 
@@ -50,4 +50,4 @@ On Windows it prints `windows`.
 
 Assigning `consts.family`, or writing `consts.family[0] = 1`, is reported as `type mismatch`.
 
-[Index](../README.md) · [Previous: atomic](atomic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: atomic](atomic.md) · [Next: unicode](../std/unicode.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
