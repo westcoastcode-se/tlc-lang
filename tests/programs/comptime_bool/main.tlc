@@ -1,0 +1,41 @@
+comptime func yes() bool {
+    return true;
+}
+
+comptime func no() bool {
+    return false;
+}
+
+comptime func pos(n i32) bool {
+    return n > 0;
+}
+
+comptime func live(n i32) bool {
+    var x = n;
+    return x > 0;
+}
+
+comptime func keep(flag bool) bool {
+    return flag;
+}
+
+func main() i32 {
+    comptime const ok = yes();
+    comptime if (yes()) {
+    } else {
+        return 1;
+    }
+    comptime if (no()) {
+        return 2;
+    }
+    comptime if (!pos(0) && pos(3) && keep(ok)) {
+    } else {
+        return 3;
+    }
+    if (!ok || pos(0) || !pos(3) || !live(4) || live(-1) || !keep(true) || keep(false)) {
+        return 4;
+    }
+    assert(yes(), "yes"b);
+    assert(!no(), "no"b);
+    return 42;
+}

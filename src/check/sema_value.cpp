@@ -997,6 +997,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return result;
                     }
+                    // `comptime func yes() bool` stays `bool`. The folded value is 0 or 1.
+                    if (result.kind == TypeKind::Bool) {
+                        if (!fold_int(expr)) {
+                            error(node.loc, "not supported yet");
+                            return type_invalid();
+                        }
+                        return result;
+                    }
                     if (!fold_int(expr)) {
                         error(node.loc, "not supported yet");
                         return type_invalid();

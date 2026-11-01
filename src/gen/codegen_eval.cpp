@@ -60,17 +60,22 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
     bind_package_globals();
     bind_imports(*home);
     llvm::FunctionType *ftype = function_type(fn, file);
-    if (ftype == nullptr || !ftype->getReturnType()->isIntegerTy(32) || ftype->getNumParams() != 0) {
+    // A `bool` result is `i1`. The evaluator still reads an `i32` of 0 or 1.
+    const bool bool_result = ftype != nullptr && ftype->getReturnType()->isIntegerTy(1);
+    if (ftype == nullptr || ftype->getNumParams() != 0 ||
+        !(bool_result || ftype->getReturnType()->isIntegerTy(32))) {
         pop();
         graph_ = nullptr;
         return false;
     }
-    if (module_.getNamedValue(kEvalName) != nullptr) {
+    if (module_.getNamedValue(kEvalName) != nullptr ||
+        (bool_result && module_.getNamedValue(kBodyName) != nullptr)) {
         pop();
         graph_ = nullptr;
         return false;
     }
-    auto *function = llvm::Function::Create(ftype, llvm::GlobalValue::ExternalLinkage, kEvalName, module_);
+    auto *function = llvm::Function::Create(ftype, llvm::GlobalValue::ExternalLinkage,
+                                            bool_result ? kBodyName : kEvalName, module_);
     function->setCallingConv(llvm::CallingConv::C);
     emit_function_body(fn, function, 0);
     pop();
@@ -133,6 +138,16 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
     }
     for (llvm::Function *item : drop) {
         item->eraseFromParent();
+    }
+    if (bool_result && !function->isDeclaration()) {
+        auto *wrap_ty = llvm::FunctionType::get(i32(), {}, false);
+        auto *wrapper = llvm::Function::Create(wrap_ty, llvm::GlobalValue::ExternalLinkage, kEvalName, module_);
+        wrapper->setCallingConv(llvm::CallingConv::C);
+        auto *entry = llvm::BasicBlock::Create(context_, "entry", wrapper);
+        builder_.SetInsertPoint(entry);
+        llvm::CallInst *call = builder_.CreateCall(function, {});
+        call->setCallingConv(llvm::CallingConv::C);
+        builder_.CreateRet(builder_.CreateZExt(call, i32()));
     }
     graph_ = nullptr;
     return diags_.size() == prepared && !function->isDeclaration();

@@ -2672,11 +2672,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                         if (!strict_comptime_expr(*bind.value) && !comptime_address(*bind.value)) {
                             error(loc, "not supported yet");
-                        } else if (plain_int_constant(parts[index])) {
+                        } else if (plain_int_constant(parts[index]) ||
+                                   (parts[index].kind == TypeKind::Bool && parts[index].alias_id == 0)) {
                             if (const std::optional<int> value = constant_index(*bind.value)) {
                                 symbol.is_constant = true;
                                 symbol.folded_local = true;
-                                symbol.const_value = *value;
+                                symbol.const_value = parts[index].kind == TypeKind::Bool ? (*value != 0 ? 1 : 0) : *value;
                                 symbol.const_init = bind.value.get();
                             }
                         } else {
@@ -2842,11 +2843,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                                 }
                                 if (!strict_comptime_expr(*written.init) && !comptime_address(*written.init)) {
                                     error(var.loc, "not supported yet");
-                                } else if (plain_int_constant(live->type)) {
+                                } else if (plain_int_constant(live->type) ||
+                                           (live->type.kind == TypeKind::Bool && live->type.alias_id == 0)) {
                                     if (const std::optional<int> value = constant_index(*written.init)) {
                                         live->is_constant = true;
                                         live->folded_local = true;
-                                        live->const_value = *value;
+                                        live->const_value = live->type.kind == TypeKind::Bool ? (*value != 0 ? 1 : 0) : *value;
                                         live->const_init = written.init.get();
                                     }
                                 } else {

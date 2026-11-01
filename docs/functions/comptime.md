@@ -115,7 +115,7 @@ retq                             # return
 
 ## When the call folds
 
-The call folds when every argument is a comptime value and the result is `i32`, a struct, or a constant `[]const u8`, with no runtime symbol and no trace frame.
+The call folds when every argument is a comptime value and the result is `i32`, a `bool`, a struct, or a constant `[]const u8`, with no runtime symbol and no trace frame.
 
 A body that is one `return` of a constant `i32` folds.
 
@@ -157,7 +157,28 @@ retq
 
 A `var` passed to that function is `not supported yet`.
 
-A result that is not `i32`, not a struct, and not a constant `[]const u8` is `not supported yet`.
+A `bool` result stays `bool`. `comptime if (pos(3))` keeps that arm. A body with statements is compiled and run, and the returned `bool` is that constant.
+
+```c
+comptime func pos(n i32) bool {
+    return n > 0;
+}
+
+func main() i32 {
+    comptime if (pos(3)) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
+A result that is not `i32`, not a `bool`, not a struct, and not a constant `[]const u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 

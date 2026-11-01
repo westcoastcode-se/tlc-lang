@@ -236,6 +236,30 @@ bool plain_i32_result(const FunctionDecl &fn) {
            slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
 }
 
+bool plain_bool_result(const FunctionDecl &fn) {
+    if (fn.results.size() != 1 || fn.return_type != "bool" || fn.body == nullptr) {
+        return false;
+    }
+    const ResultSlot &slot = fn.results.front();
+    return slot.type_name == "bool" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
+           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
+}
+
+// A `bool` parameter stays a bool literal. An integer literal would be `i32` in the body.
+std::unique_ptr<Expr> folded_scalar_arg(const Param &param, int number, SourceLoc loc) {
+    if (param.type_name == "bool" && param.type_package.empty() && param.indirections == 0 && param.optional == 0 &&
+        !param.is_array && !param.is_struct && !param.is_enum && !param.is_fn_ptr && param.const_pointee == 0 &&
+        param.shells.empty() && !param.elem_slice) {
+        auto expr = std::make_unique<Expr>();
+        Expr::Bool node;
+        node.loc = loc;
+        node.value = number != 0;
+        expr->data = std::move(node);
+        return expr;
+    }
+    return folded_int(number, loc);
+}
+
 const Expr *single_return_expr(const FunctionDecl &fn) {
     if (fn.body == nullptr) {
         return nullptr;
@@ -832,6 +856,11 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Name>) {
                 const Symbol *symbol = lookup(node.text);
                 if (symbol != nullptr && symbol->is_constant && plain_int_constant(symbol->type)) {
+                    return symbol->const_value;
+                }
+                // `comptime const ok = yes()` when `yes` returns `bool`. The value is 0 or 1.
+                if (symbol != nullptr && symbol->is_constant && symbol->folded_local && symbol->type.alias_id == 0 &&
+                    symbol->type.kind == TypeKind::Bool) {
                     return symbol->const_value;
                 }
                 return std::nullopt;
@@ -1867,9 +1896,9 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
         if (const std::optional<int> number = fold_int(*call.args[i])) {
-            literal = folded_int(*number, loc);
+            literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
-            literal = folded_int(*local, loc);
+            literal = folded_scalar_arg(fn->params[i], *local, loc);
         } else {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
@@ -1905,8 +1934,27 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
             return folded;
         }
     }
-    // A body with statements is compiled and called. The integer is the constant.
-    if (!fn->is_comptime || !plain_i32_result(*fn) || graph_ == nullptr || !comptime_folding_.insert(fn).second) {
+    // `return n > 0` is 0 or 1. A body with statements is compiled below.
+    if (plain_bool_result(*fn)) {
+        if (const Expr *value = single_return_expr(*fn)) {
+            if (!comptime_folding_.insert(fn).second) {
+                return std::nullopt;
+            }
+            struct Leave {
+                std::unordered_set<const FunctionDecl *> &set;
+                const FunctionDecl *fn;
+                ~Leave() { set.erase(fn); }
+            } leave{comptime_folding_, fn};
+            std::unique_ptr<Expr> rewritten = clone_expr(*value);
+            replace_names(rewritten, names, exprs);
+            if (const std::optional<int> folded = fold_int(*rewritten)) {
+                return *folded == 0 ? 0 : 1;
+            }
+        }
+    }
+    // A body with statements is compiled and called. The integer or bool is the constant.
+    if (!fn->is_comptime || (!plain_i32_result(*fn) && !plain_bool_result(*fn)) || graph_ == nullptr ||
+        !comptime_folding_.insert(fn).second) {
         return std::nullopt;
     }
     struct Leave {
@@ -1969,9 +2017,9 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
         if (const std::optional<int> number = fold_int(*call.args[i])) {
-            literal = folded_int(*number, loc);
+            literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
-            literal = folded_int(*local, loc);
+            literal = folded_scalar_arg(fn->params[i], *local, loc);
         } else {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
@@ -2089,9 +2137,9 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
         if (const std::optional<int> number = fold_int(*call.args[i])) {
-            literal = folded_int(*number, loc);
+            literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
-            literal = folded_int(*local, loc);
+            literal = folded_scalar_arg(fn->params[i], *local, loc);
         } else {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
