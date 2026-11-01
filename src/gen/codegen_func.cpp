@@ -474,8 +474,10 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
         const PackageNode *owner = find_node(current_file_);
         const std::string qualifier = owner != nullptr && !owner->qualifier.empty() ? owner->qualifier : "local";
         const std::string symbol = qualifier + ".local." + fn.name + "." + std::to_string(++local_seq_);
-        function = llvm::Function::Create(function_type_with_captures(fn), llvm::GlobalValue::InternalLinkage, symbol,
-                                           module_);
+        // A local function with no body is a declaration. Internal linkage cannot name one.
+        const auto linkage =
+            fn.body == nullptr ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::InternalLinkage;
+        function = llvm::Function::Create(function_type_with_captures(fn), linkage, symbol, module_);
         function->setCallingConv(llvm::CallingConv::C);
         unsigned index = 0;
         for (auto &arg : function->args()) {

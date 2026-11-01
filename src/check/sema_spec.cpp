@@ -2209,8 +2209,10 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     }
     // A body defines the symbol. An `extern` prototype names that same specialization.
     // A trait parameter is not specialized away with `T`.
+    // `builtin.atomic_*` and `builtin.fence` have no body. Code generation replaces the call.
+    const bool compiler_atomic = is_std_builtin_file(owner) && atomic_builtin(templ->name) != AtomicBuiltin::None;
     if (templ->extern_c || templ->variadic || extern_generic_trait_param(owner, *templ) ||
-        (templ->body == nullptr && !extern_generic_prototype(*templ))) {
+        (templ->body == nullptr && !extern_generic_prototype(*templ) && !compiler_atomic)) {
         error(call.loc, templ->extern_c ? "extern(abi=\"c\") on a trait or a generic" : "not supported yet");
         return type_invalid();
     }

@@ -8,11 +8,13 @@ This page describes the atomic builtins the compiler replaces with machine instr
 
 `import "builtin"` loads the compiler package.
 
-These calls have bodies in `lib/tlc/builtin/builtin.tlc` so the types can be checked.
+These calls are declarations in `lib/tlc/builtin/builtin.tlc`.
+
+They have no body.
 
 Code generation replaces the call.
 
-The body does not run, and the call does not record a trace frame.
+The call does not record a trace frame.
 
 [`atomic.Int32`](../std/atomic.md) and the other types in `std/atomic` call these.
 

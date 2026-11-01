@@ -472,6 +472,12 @@ The functions are ordinary tlc in `lib/tlc/builtin`.
 
 A function with no body is a prototype and ends with `;`.
 
+It is not `extern(abi="c")`.
+
+The call is a call to that symbol. The compiler may supply the body.
+
+A program that calls a function with no body, when the compiler does not supply one, does not link.
+
 One name may have several parameter lists.
 
 A call uses the types of the arguments.

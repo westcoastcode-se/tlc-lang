@@ -124,8 +124,13 @@ void CodeGen::declare_functions(const PackageNode &node) {
             continue;
         }
         const std::string object = acc.extern_c ? acc.plain : name;
-        const SymbolForm form = symbol_form(node, object, acc.is_extern, acc.extern_c, acc.is_static, acc.exported,
-                                            entry && !testing_ && acc.plain == "main" && name == acc.plain, acc.link_name);
+        SymbolForm form = symbol_form(node, object, acc.is_extern, acc.extern_c, acc.is_static, acc.exported,
+                                      entry && !testing_ && acc.plain == "main" && name == acc.plain, acc.link_name);
+        // A function with no body is a declaration. Internal linkage cannot name one.
+        // The compiler may supply the body. A C function stays the library symbol.
+        if (acc.fn->body == nullptr && form.linkage == llvm::GlobalValue::InternalLinkage) {
+            form.linkage = llvm::GlobalValue::ExternalLinkage;
+        }
         const ExternLayout layout = acc.extern_c ? extern_layout(*acc.fn, node.file_id) : ExternLayout{};
         llvm::FunctionType *ftype = layout.active ? layout.type : function_type(*acc.fn, node.file_id);
         llvm::Function *function = nullptr;

@@ -1,0 +1,11 @@
+func answer() i32;
+
+type Point struct {
+    x i32;
+};
+
+func Point::read(self this) i32;
+
+func main() i32 {
+    return 0;
+}

@@ -67,7 +67,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ## Functions
 
-- A prototype. `func add(a i32, b i32) i32;` is accepted, and so is a later body with the same parameter list. `export func add(a i32, b i32) i32;` and `func id[T type](value T) T;` are accepted. `extern(abi="c")` stays the prototype. A bare `extern` and `extern(abi="tlc")` are `not supported yet`. A call of an `extern(abi="c")` prototype with no body is accepted by `--check`.
+- A prototype. `func add(a i32, b i32) i32;` is accepted, and so is a later body with the same parameter list. A function with no body is that symbol. The compiler may supply the body. A call of a function the compiler does not supply does not link. `export func add(a i32, b i32) i32;` and `func id[T type](value T) T;` are accepted. `extern(abi="c")` stays the prototype. A bare `extern` and `extern(abi="tlc")` are `not supported yet`. A call of an `extern(abi="c")` prototype with no body is accepted by `--check`. A call of a generic prototype with no body is `not supported yet`.
 - An overloaded name used as a value, `var f = show` when `show` has several parameter lists, is `not supported yet`. A call selects the list.
 - A struct argument to `testing.error`.
 - `builtin.va` outside a variadic function.

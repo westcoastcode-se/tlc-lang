@@ -146,6 +146,18 @@ addl -4(%rsp), %eax              # add
 retq                             # return
 ```
 
+A function may have no body.
+
+The declaration ends with `;`.
+
+It is not `extern(abi="c")`.
+
+The call is a call to that symbol.
+
+The compiler may supply the body.
+
+A program that calls a function with no body, when the compiler does not supply one, does not link.
+
 ## Several parameter lists
 
 One name may have several parameter lists, and a call uses the types of the arguments.
