@@ -233,6 +233,22 @@ void CodeGen::declare_globals(const PackageNode &node) {
             low.elem_unsigned = true;
             low.elem_char = true;
             low.type = slice_type();
+        } else if (var->inferred && var->unpack_count > 1) {
+            const Expr *init = var->init.get();
+            if (init == nullptr) {
+                for (const TopDecl &prior : node.unit.decls) {
+                    const auto *head = std::get_if<VarDecl>(&prior.data);
+                    if (head != nullptr && head->unpack_index == 0 && head->unpack_count == var->unpack_count &&
+                        head->name == var->unpack_head) {
+                        init = head->init.get();
+                        break;
+                    }
+                }
+            }
+            if (init == nullptr || !lower_unpack(node.file_id, *init, var->unpack_index, var->unpack_count, low)) {
+                error(var->loc, "type mismatch");
+                low = lower(node.file_id, "i32", "", false, 0, false, 0, false);
+            }
         } else if (var->inferred) {
             if (var->init == nullptr || !infer_global(node.file_id, *var->init, low)) {
                 error(var->loc, "type mismatch");
@@ -462,7 +478,52 @@ void CodeGen::emit_dynamic_inits() {
             }
             const auto *var = std::get_if<VarDecl>(&decl.data);
             if (var == nullptr || !var->runtime_init || var->init == nullptr || var->name.empty() ||
-                !var->owner_params.empty()) {
+                !var->owner_params.empty() || var->unpack_index != 0) {
+                continue;
+            }
+            if (var->unpack_count > 1) {
+                const auto file = files_.find(current_file_);
+                if (file == files_.end()) {
+                    continue;
+                }
+                trace_name_ = var->name;
+                set_loc(var->loc);
+                const TypedValue value = emit_rvalue(*var->init);
+                if (terminated() || value.value == nullptr || !value.value->getType()->isStructTy() ||
+                    llvm::cast<llvm::StructType>(value.value->getType())->getNumElements() !=
+                        static_cast<unsigned>(var->unpack_count)) {
+                    error(var->loc, "type mismatch");
+                    continue;
+                }
+                for (const TopDecl &member_decl : item.node->unit.decls) {
+                    const auto *member = std::get_if<VarDecl>(&member_decl.data);
+                    if (member == nullptr || member->unpack_count != var->unpack_count ||
+                        member->unpack_head != var->name || member->unpack_index < 0 ||
+                        member->unpack_index >= var->unpack_count) {
+                        continue;
+                    }
+                    const auto found = file->second.globals.find(global_key(*member));
+                    if (found == file->second.globals.end() || found->second.value == nullptr) {
+                        error(member->loc, "type mismatch");
+                        continue;
+                    }
+                    llvm::Value *field =
+                        builder_.CreateExtractValue(value.value, static_cast<unsigned>(member->unpack_index));
+                    llvm::Type *slot = object_type(found->second.value);
+                    llvm::Value *stored =
+                        slot == nullptr ? nullptr : as_stored(field, found->second.depth, slot, found->second.elem_unsigned);
+                    if (found->second.is_slice) {
+                        TypedValue part;
+                        part.value = field;
+                        part.is_slice = true;
+                        stored = as_slice_value(part, member->loc);
+                    }
+                    if (stored == nullptr || slot == nullptr || stored->getType() != slot) {
+                        error(member->loc, "type mismatch");
+                    } else if (!terminated()) {
+                        builder_.CreateStore(stored, found->second.value);
+                    }
+                }
                 continue;
             }
             const auto file = files_.find(current_file_);

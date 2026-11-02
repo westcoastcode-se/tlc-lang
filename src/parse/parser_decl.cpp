@@ -717,8 +717,10 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             return;
         }
         if (var_is_bind()) {
-            diags_.error(peek().loc, "not supported yet");
-            parse_bind(true);
+            if (is_extern) {
+                diags_.error(peek().loc, "not supported yet");
+            }
+            parse_file_tuple(unit, exported && !is_extern);
         } else {
             VarDecl var = parse_typed_var(exported, false, is_extern, extern_c, false, link_name);
             TopDecl top;

@@ -1215,6 +1215,8 @@ Several names unpack one tuple.
 
 A call that returns several results is that tuple, so `var a, b = call` unpacks it the same way.
 
+The same binding is allowed at file scope. A constant tuple is stored in the binary. A call runs before `main`, and each name receives one result. An initializer that is not a constant, and not a call, is `global initializer is not a constant`.
+
 The number of names matches the tuple.
 
 The compiler reports a different count as `type mismatch`.

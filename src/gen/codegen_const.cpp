@@ -1966,6 +1966,49 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         file.folded.insert(key);
         return;
     }
+    if (var.unpack_count > 1) {
+        if (var.unpack_index > 0 || var.runtime_init || var.init == nullptr) {
+            file.folded.insert(key);
+            return;
+        }
+        const auto *init = std::get_if<Expr::Init>(&var.init->data);
+        const PackageNode *node = find_node(current_file_);
+        if (init == nullptr || !init->is_tuple || static_cast<int>(init->elements.size()) != var.unpack_count ||
+            node == nullptr) {
+            error(var.loc, "global initializer is not a constant");
+            return;
+        }
+        for (const TopDecl &item : node->unit.decls) {
+            const auto *member = std::get_if<VarDecl>(&item.data);
+            if (member == nullptr || member->unpack_head != var.name || member->unpack_count != var.unpack_count ||
+                member->unpack_index < 0 || member->unpack_index >= var.unpack_count) {
+                continue;
+            }
+            const Expr *element = init->elements[static_cast<std::size_t>(member->unpack_index)].get();
+            const auto found = file.globals.find(global_key(*member));
+            auto *global = found == file.globals.end() ? nullptr
+                                                       : llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value);
+            const std::optional<int> folded = element == nullptr ? std::nullopt : fold(*element);
+            if (global == nullptr || !folded) {
+                error(member->loc, "global initializer is not a constant");
+                continue;
+            }
+            if (found->second.elem_bool) {
+                global->setInitializer(llvm::ConstantInt::get(i1(), *folded == 0 ? 0 : 1, false));
+            } else if (found->second.elem_bits == 8) {
+                global->setInitializer(llvm::ConstantInt::get(i8(), static_cast<uint64_t>(*folded) & 0xFFU, false));
+            } else if (found->second.elem_bits == 16) {
+                global->setInitializer(llvm::ConstantInt::get(i16(), static_cast<uint64_t>(*folded) & 0xFFFFU, false));
+            } else if (found->second.elem_bits == 64) {
+                global->setInitializer(
+                    llvm::ConstantInt::get(i64(), static_cast<uint64_t>(static_cast<int64_t>(*folded)), true));
+            } else {
+                global->setInitializer(const_i32(*folded));
+            }
+            file.folded.insert(global_key(*member));
+        }
+        return;
+    }
     if (var.is_const_decl) {
         const auto found = file.globals.find(key);
         auto *global = found == file.globals.end() ? nullptr : llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value);

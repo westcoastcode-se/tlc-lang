@@ -1356,7 +1356,7 @@ See [Variables on a type](methods/variable.md) and [Constants on a type](methods
 
 `var name :=` is an error.
 
-Inside a function, several names unpack one tuple.
+Inside a function, and at file scope, several names unpack one tuple. `var a, b = expr` is that binding. A different count is `type mismatch`. An initializer that is not a constant, and not a call, is `global initializer is not a constant`.
 
 `_ = expr` discards that value when `_` is not already a binding. A later read of that `_` is `undeclared identifier`. `var _ = expr` still declares a name. A `void` result is `type mismatch`.
 

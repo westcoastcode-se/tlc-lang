@@ -1363,7 +1363,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("var a, b = 1;\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
     }
 
     {

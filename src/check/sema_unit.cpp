@@ -676,6 +676,76 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 declare(std::move(symbol), fn->loc);
             }
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (var->unpack_count > 1) {
+                if (var->unpack_index != 0) {
+                    continue;
+                }
+                if (var->init == nullptr) {
+                    error(var->loc, "type mismatch");
+                    continue;
+                }
+                const Type rhs = check_expr(*var->init, true);
+                if (rhs.kind != TypeKind::Tuple || static_cast<int>(rhs.results.size()) != var->unpack_count) {
+                    const std::string found = rhs.kind == TypeKind::Tuple
+                                                  ? std::to_string(rhs.results.size()) + " results"
+                                                  : type_desc(rhs);
+                    error(var->loc, "type mismatch: expected " + std::to_string(var->unpack_count) + " results, found " +
+                                        found);
+                    continue;
+                }
+                std::vector<const VarDecl *> members(static_cast<std::size_t>(var->unpack_count), nullptr);
+                for (const TopDecl &item : unit.decls) {
+                    const auto *member = std::get_if<VarDecl>(&item.data);
+                    if (member == nullptr || member->unpack_count != var->unpack_count ||
+                        member->unpack_head != var->name) {
+                        continue;
+                    }
+                    if (member->unpack_index < 0 || member->unpack_index >= var->unpack_count ||
+                        members[static_cast<std::size_t>(member->unpack_index)] != nullptr) {
+                        error(member->loc, "redefinition");
+                        continue;
+                    }
+                    members[static_cast<std::size_t>(member->unpack_index)] = member;
+                }
+                bool bad = false;
+                for (const VarDecl *member : members) {
+                    if (member == nullptr || member->name.empty()) {
+                        bad = true;
+                    }
+                }
+                if (!bad) {
+                    for (int i = 0; i < var->unpack_count; ++i) {
+                        for (int j = i + 1; j < var->unpack_count; ++j) {
+                            if (members[static_cast<std::size_t>(i)]->name ==
+                                members[static_cast<std::size_t>(j)]->name) {
+                                error(members[static_cast<std::size_t>(i)]->loc, "redefinition");
+                                bad = true;
+                            }
+                        }
+                    }
+                }
+                if (bad) {
+                    continue;
+                }
+                for (int i = 0; i < var->unpack_count; ++i) {
+                    const VarDecl *member = members[static_cast<std::size_t>(i)];
+                    if (lookup_scope(member->name) != nullptr || shared_has(member->name)) {
+                        error(member->loc, "redefinition");
+                        continue;
+                    }
+                    Symbol symbol;
+                    symbol.name = member->name;
+                    symbol.type = rhs.results[static_cast<std::size_t>(i)];
+                    symbol.link_name = member->link_name;
+                    if (remember_shared(symbol, member->loc)) {
+                        declare(symbol, member->loc);
+                    }
+                    if (member->exported && !exports_[file_id_].contains(member->name)) {
+                        exports_[file_id_].emplace(member->name, symbol);
+                    }
+                }
+                continue;
+            }
             if (!var->owner.empty()) {
                 bind_ready();
                 declare_assoc(*var);
@@ -1530,6 +1600,20 @@ void Checker::check_globals(const TranslationUnit &unit) {
         } else if (const auto *item = std::get_if<AssertDecl>(&decl.data)) {
             check_assert(item->loc, item->cond.get(), item->message);
         } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+            if (var->unpack_count > 1) {
+                if (var->unpack_index != 0 || var->init == nullptr || var->is_extern) {
+                    continue;
+                }
+                if (runs_at_startup(*var->init)) {
+                    const_cast<VarDecl *>(var)->runtime_init = true;
+                    continue;
+                }
+                std::unordered_set<std::string> seen;
+                if (file_constant(*var->init, seen, true) != FileConst::Yes) {
+                    error(var->loc, "global initializer is not a constant");
+                }
+                continue;
+            }
             struct PartialFlag {
                 bool &slot;
                 bool saved;

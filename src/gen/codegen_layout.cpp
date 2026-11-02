@@ -1971,4 +1971,37 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
     return true;
 }
 
+bool CodeGen::lower_unpack(uint32_t file, const Expr &expr, int index, int count, Lowered &out) const {
+    if (index < 0 || count < 2 || index >= count) {
+        return false;
+    }
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        const FunctionDecl *fn = call->selected;
+        if (fn == nullptr && call->callee != nullptr) {
+            if (const Binding *found = function_designator(file, *call->callee)) {
+                fn = found->decl;
+            }
+        }
+        if (fn != nullptr && static_cast<int>(fn->results.size()) == count) {
+            out = lower_result(file, fn->results[static_cast<std::size_t>(index)]);
+            return out.type != nullptr;
+        }
+        if (fn != nullptr && fn->results.size() == 1 && fn->results.front().is_tuple &&
+            static_cast<int>(fn->results.front().tuple_parts.size()) == count) {
+            out = lower_result(file, fn->results.front().tuple_parts[static_cast<std::size_t>(index)]);
+            return out.type != nullptr;
+        }
+    }
+    Lowered whole;
+    if (!infer_global(file, expr, whole) || !whole.is_tuple || static_cast<int>(whole.tuple_parts.size()) != count ||
+        whole.type == nullptr || !whole.type->isStructTy()) {
+        return false;
+    }
+    out = lower_result(file, whole.tuple_parts[static_cast<std::size_t>(index)]);
+    if (out.type == nullptr) {
+        out.type = llvm::cast<llvm::StructType>(whole.type)->getElementType(static_cast<unsigned>(index));
+    }
+    return out.type != nullptr;
+}
+
 } // namespace tlc

@@ -626,6 +626,11 @@ struct VarDecl {
     std::string link_name;
     // `name := expr` at file scope. The type comes from the initializer.
     bool inferred = false;
+    // `var a, b = expr` at file scope. `unpack_count` is 0 on an ordinary variable.
+    // The first name owns `init`. `unpack_head` is that name.
+    int unpack_index = 0;
+    int unpack_count = 0;
+    std::string unpack_head;
     // File-scope `const name = expr` or `const name Type = expr`.
     // Without `comptime` this is a runtime variable that cannot be assigned.
     // `comptime const` is a compiler constant. Its initializer has to be one too.

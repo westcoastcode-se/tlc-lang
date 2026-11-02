@@ -722,6 +722,53 @@ std::unique_ptr<Stmt> Parser::parse_var_or_bind() {
     return parse_bind(check(TokenKind::KwVar));
 }
 
+void Parser::parse_file_tuple(TranslationUnit &unit, bool exported) {
+    const SourceLoc loc = peek().loc;
+    expect(TokenKind::KwVar, "expected 'var'");
+    std::vector<std::string> names;
+    std::vector<SourceLoc> locs;
+    while (check(TokenKind::Identifier)) {
+        names.push_back(peek().text);
+        locs.push_back(peek().loc);
+        ++pos_;
+        if (!eat(TokenKind::Comma)) {
+            break;
+        }
+        if (!check(TokenKind::Identifier)) {
+            error_here("expected an identifier");
+            break;
+        }
+    }
+    if (names.empty()) {
+        error_here("expected an identifier");
+    }
+    if (eat(TokenKind::ColonEq)) {
+        diags_.error(loc, "type mismatch");
+    } else {
+        expect(TokenKind::Eq, "expected '='");
+    }
+    std::unique_ptr<Expr> value = parse_expr();
+    expect(TokenKind::Semicolon, "expected ';'");
+    const int count = static_cast<int>(names.size());
+    for (int index = 0; index < count; ++index) {
+        VarDecl var;
+        var.loc = locs[static_cast<std::size_t>(index)];
+        var.name = names[static_cast<std::size_t>(index)];
+        var.inferred = true;
+        var.exported = exported;
+        var.unpack_index = index;
+        var.unpack_count = count;
+        var.unpack_head = names.front();
+        if (index == 0) {
+            var.init = std::move(value);
+        }
+        TopDecl top;
+        top.data = std::move(var);
+        unit.decls.push_back(std::move(top));
+    }
+    saw_decl_ = true;
+}
+
 void Parser::parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var, bool exported) {
     VarDecl var;
     var.loc = peek().loc;

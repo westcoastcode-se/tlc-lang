@@ -55,7 +55,6 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 ## Declarations
 
 - `var _ = give()` still declares a name. A later `_` reads that binding. The hint that the value may be ignored is not implemented. `_ = give()` discards the result and does not declare `_`.
-- `var a, b =` at file scope. Inside a function, several names unpack one tuple.
 - `extern` on an inferred variable, `var name = expr` or `name := expr`. `export var name = expr` and `export name := expr` are accepted.
 - A local `type`, including a local struct or enum.
 - A file-scope array element that is not a constant, such as `n + 1` when `n` is a `var`, or `give() + 1`. That is `global initializer is not a constant`. A `const` with that call, and `var n = give(); var row = [_]i32{n}`, are that error.

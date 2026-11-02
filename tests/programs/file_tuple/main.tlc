@@ -1,0 +1,10 @@
+func pair() (i32, i32) {
+    return 10, 20;
+}
+
+var a, b = (40, 2);
+var c, d = pair();
+
+func main() i32 {
+    return a + b + c + d - 30;
+}

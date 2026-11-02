@@ -272,6 +272,7 @@ class Parser {
     // `const i32 x` and `const i32 x = 1`. The variable has an address. It is not `const name = expr`.
     VarDecl parse_const_type_var(bool exported, bool is_extern, bool extern_c, std::string link_name);
     void parse_inferred_global(TranslationUnit &unit, bool is_static, bool from_var, bool exported);
+    void parse_file_tuple(TranslationUnit &unit, bool exported);
     void reject_c_var(SourceLoc loc);
 
     std::unique_ptr<Expr> parse_expr();

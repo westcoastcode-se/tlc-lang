@@ -1262,6 +1262,8 @@ class CodeGen {
                         bool variadic, const std::vector<FnParam> &results) const;
     Lowered lower_param_type(uint32_t file, const Param &param) const;
     bool infer_global(uint32_t file, const Expr &expr, Lowered &out) const;
+    // One element of a file-scope `var a, b = expr`.
+    bool lower_unpack(uint32_t file, const Expr &expr, int index, int count, Lowered &out) const;
     void apply_low(Binding &binding, const Lowered &low) const;
     // Scalar fields only. An array or a slice return does not set those flags on a function.
     void apply_scalar_result(Binding &binding, const Lowered &ret, bool returns_void) const;
