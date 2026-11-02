@@ -39,6 +39,7 @@ std::string help_text() {
         "  --emit-obj      write an object file\n"
         "  --run           compile, link, and run\n"
         "  --test          compile, link, and run every test in the program\n"
+        "  --debug         check a null postfix !. tlc --test does this too\n"
         "  --allocator <type>\n"
         "                  type bare new and delete use. Malloc is the default.\n"
         "                  tlc --test uses debug.DebugAllocator unless this flag names a type.\n"
@@ -217,6 +218,9 @@ Options parse_args(int argc, char **argv) {
             set_mode(Mode::Run);
         } else if (arg == "--test") {
             set_mode(Mode::Test);
+            opt.debug_build = true;
+        } else if (arg == "--debug") {
+            opt.debug_build = true;
         } else if (arg == "--allocator" || arg.starts_with("--allocator=")) {
             std::string name;
             if (arg.starts_with("--allocator=")) {
@@ -481,8 +485,10 @@ CompileOutput compile_source(const Options &opt) {
         }
     }
 
+    const bool checks = opt.debug_build || opt.mode == Mode::Test;
     const CodegenOutput generated =
-        codegen(graph, diags, object_path, opt.mode == Mode::Test, opt.debug_info, opt.opt_level, std::move(allocator));
+        codegen(graph, diags, object_path, opt.mode == Mode::Test, checks, opt.debug_info, opt.opt_level,
+                std::move(allocator));
     output.ir = generated.ir;
     if (!generated.ok || !diags.ok()) {
         output.compiler_stderr = diags.render();

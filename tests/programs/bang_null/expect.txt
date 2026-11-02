@@ -1,3 +1,4 @@
+debug:
 exit: 128
 stderr: panic: null pointer
 main.tlc:6:17: show

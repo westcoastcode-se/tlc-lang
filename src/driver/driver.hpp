@@ -33,6 +33,8 @@ struct Options {
     std::vector<std::string> link_args;
     // `-g`. Emit DWARF line numbers and variable locations.
     bool debug_info = false;
+    // `--debug`, and `tlc --test`. A null `p!` panics. A release build leaves that check out.
+    bool debug_build = false;
     // No `-O` flag is Default. The last `-O` flag wins.
     OptLevel opt_level = OptLevel::Default;
     // `--allocator`. Empty keeps `Malloc`, except `tlc --test`, which uses `debug.DebugAllocator`.

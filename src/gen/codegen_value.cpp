@@ -284,7 +284,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 const TypedValue inner_value = emit_rvalue(*node.expr);
                 if (node.op == TokenKind::Bang && node.postfix) {
                     llvm::Value *pointer = inner_value.value;
-                    // `p!` is `*T` for this use. A null pointer panics before that use.
+                    // `p!` is `*T` for this use. A debug build panics on null before that use.
+                    // `value!.field ?? fallback` still selects the fallback when `value` is null.
+                    const bool coalesce = node.coalesce && coalesce_miss_ != nullptr;
+                    if (!coalesce && !checks_) {
+                        return inner_value;
+                    }
                     if (pointer == nullptr || terminated() || function_ == nullptr || !pointer->getType()->isPointerTy()) {
                         return inner_value;
                     }

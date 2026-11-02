@@ -441,6 +441,8 @@ class CodeGen {
     void emit(const PackageGraph &graph);
     void enable_tests() { testing_ = true; }
     void enable_debug() { debug_ = true; }
+    // `--debug` and `tlc --test`. A null postfix `!` panics.
+    void enable_checks() { checks_ = true; }
     // Empty keeps `Malloc`. Another name is `pkg.Type`, used for bare `new` and `delete`.
     void set_allocator(std::string name) { allocator_name_ = std::move(name); }
     // Emit `fn` as `tlc.comptime.eval` after the package is declared. False when that emission reports a diagnostic.
@@ -497,6 +499,8 @@ class CodeGen {
     std::unordered_map<const FunctionDecl *, Binding> local_fns_;
     uint32_t entry_file_ = 0;
     bool testing_ = false;
+    // A null postfix `!` panics. A release build leaves that check out.
+    bool checks_ = false;
     // `--allocator`. Empty is `Malloc`, which calls `malloc` and `free`.
     std::string allocator_name_;
     enum class DefaultAlloc { Malloc, Named };

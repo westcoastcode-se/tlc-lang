@@ -21,7 +21,8 @@ tlc --help
 | `--emit-llvm` | Print LLVM IR. |
 | `--emit-obj` | Write an object file. The name is `a.o` when `-o` is absent. |
 | `--run` | Compile, link, and run. |
-| `--test` | Compile, link, and run every `test`. `main` is not called. Bare `new` and `delete` use `debug.DebugAllocator`. |
+| `--test` | Compile, link, and run every `test`. `main` is not called. Bare `new` and `delete` use `debug.DebugAllocator`. This is a debug build. |
+| `--debug` | A null postfix `!` calls `builtin.panic("null pointer")`. `tlc --test` does this too. A release build leaves that check out. |
 | `--allocator <type>` | Type that bare `new` and `delete` use. `Malloc` is the default and calls `malloc` and `free`. `pkg.Name` is a struct in that package, and it satisfies `Allocator`. `tlc --test` uses `debug.DebugAllocator` unless this flag names a type. |
 | `-o <file>` | Output path. |
 | `-P <dir>` | Extra package search root, after the entry file's directory. |

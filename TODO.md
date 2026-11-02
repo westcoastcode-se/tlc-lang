@@ -79,13 +79,11 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ## Compiler
 
-- A race condition is not reported. `tlc --test` reports one, and so does a debug build. A release build that is not `tlc --test` does not. The compiler has no debug or release mode yet.
+- A race condition is not reported. `tlc --debug` and `tlc --test` are debug builds. A release build is the default. A debug build reports a race, and a release build does not.
 
 ## Inconsistencies
 
 An accepted form whose rule does not match its page is inserted here. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there.
-
-- Postfix `!` on a `?*T` is `*T`. A null `p!` calls `builtin.panic("null pointer")` (`docs/expressions/narrowing.md`, `docs/builtin/panic.md`, `docs/grammar.md`). That call runs in a debug build and is left out of a release build. The compiler has no debug or release mode yet.
 
 ## Optimization
 

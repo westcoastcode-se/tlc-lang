@@ -40,7 +40,7 @@ Postfix `!` asserts a `?*T` at that use.
 
 Passing `?*T` where `*T` is required is `type mismatch`.
 
-A null `p!` calls `builtin.panic("null pointer")` and does not return.
+A debug build checks that pointer. A null `p!` calls `builtin.panic("null pointer")` and does not return. `tlc --debug` and `tlc --test` are debug builds. A release build does not emit that check.
 
 ## `??`
 
