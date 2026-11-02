@@ -1,6 +1,6 @@
 # ascii
 
-[Index](../README.md) · [Previous: unicode](unicode.md) · [Next: seq](seq.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: unicode](unicode.md) · [Next: mem](mem.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 `import "std/ascii"` loads `lib/tlc/std/ascii`.
 
@@ -31,4 +31,4 @@ func main() i32 {
 
 `from` of two ASCII bytes stores those bytes in the value and does not call `malloc`.
 
-[Index](../README.md) · [Previous: unicode](unicode.md) · [Next: seq](seq.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: unicode](unicode.md) · [Next: mem](mem.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

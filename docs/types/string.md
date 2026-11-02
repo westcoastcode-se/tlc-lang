@@ -124,19 +124,19 @@ A range of an integer array stays that header.
 
 ## Equality and order
 
-`==` and `!=` on two `[]u8` or `[]const u8` values, including two `var` values, are `compare with builtin.memeql`.
+`==` and `!=` on two `[]u8` or `[]const u8` values, including two `var` values, are `compare with mem.memeql`.
 
 `+` on `[]const u8` is `type mismatch: expected an integer, found []const u8`.
 
-Constant slices are compared with [`builtin.memeql`](../builtin/mem.md) and ordered with `builtin.memcmp`.
+Constant slices are compared with [`mem.memeql`](../std/mem.md) and ordered with `mem.memcmp`.
 
-`builtin.memeql[u8]("hi", "hi")` is true while compiling, and `builtin.memeql[u8]("hello"[0:2], "he")` is true.
+`mem.memeql[u8]("hi", "hi")` is true while compiling, and `mem.memeql[u8]("hello"[0:2], "he")` is true.
 
 `""` equals `""`, and different lengths are false.
 
-A null in the middle counts, and the terminating null does not, so `builtin.memeql[u8]("a\000b", "ab")` is false.
+A null in the middle counts, and the terminating null does not, so `mem.memeql[u8]("a\000b", "ab")` is false.
 
-`builtin.memcmp[u8]("ab", "ac")` is `-1`.
+`mem.memcmp[u8]("ab", "ac")` is `-1`.
 
 A `var` or a local `const` runs the function.
 

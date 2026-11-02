@@ -45,6 +45,26 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "func main() i32 {\n"
+            "  unsafe {\n"
+            "    return 1;\n"
+            "  }\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_EQ(check, parsed.dump,
+                  "(tu\n"
+                  "  (fn main (params) i32\n"
+                  "    (block\n"
+                  "      (block unsafe\n"
+                  "        (return (int 1))\n"
+                  "      )\n"
+                  "    )\n"
+                  "  )\n"
+                  ")\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "func main() i32 {\n"
             "  return 1 | 2 & 3 ^ 4;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
@@ -563,6 +583,19 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(fn add (params (a i32) (b i32)) i32\n");
         EXPECT(check, parsed.dump.find("extern") == std::string::npos);
         EXPECT_HAS(check, parsed.dump, "(struct Pair align 16\n");
+    }
+
+    {
+        const Parsed parsed = parse_source(
+            "extern(abi=\"compiler\") func hook() i32;\n"
+            "extern(abi=\"compiler\") type Malloc struct {}\n"
+            "extern(abi=\"compiler\") export type Allocator trait {\n"
+            "    func free(ptr *u8) void;\n"
+            "}\n");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(fn hook (params) i32 extern(abi=\"compiler\")\n");
+        EXPECT_HAS(check, parsed.dump, "(struct Malloc extern(abi=\"compiler\")\n");
+        EXPECT_HAS(check, parsed.dump, "(trait Allocator export extern(abi=\"compiler\")\n");
     }
 
     {

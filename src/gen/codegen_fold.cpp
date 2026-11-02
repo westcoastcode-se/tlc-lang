@@ -992,7 +992,7 @@ const FunctionDecl *CodeGen::mem_compare_decl(const Expr::Call &call) const {
     }
     auto exported = [&](uint32_t file, const std::string &name) -> const FunctionDecl * {
         const PackageNode *start = find_node(file);
-        if (start == nullptr || !is_compiler_builtin(start)) {
+        if (start == nullptr || !is_std_mem_package(start)) {
             return nullptr;
         }
         const FunctionDecl *comptime_fn = nullptr;
@@ -1000,7 +1000,7 @@ const FunctionDecl *CodeGen::mem_compare_decl(const Expr::Call &call) const {
         bool clash = false;
         for (const uint32_t id : package_files(file)) {
             const PackageNode *node = find_node(id);
-            if (node == nullptr || !is_compiler_builtin(node)) {
+            if (node == nullptr || !is_std_mem_package(node)) {
                 continue;
             }
             for (const TopDecl &decl : node->unit.decls) {

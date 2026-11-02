@@ -515,6 +515,8 @@ struct StructDecl {
     bool is_extern = false;
     // `extern(abi="c")` uses C layout. Plain `extern` is abi "tlc".
     bool extern_c = false;
+    // `extern(abi="compiler")`. The type is part of the compiler contract.
+    bool extern_compiler = false;
     // `struct(align=N)`. Zero means the natural alignment.
     int align = 0;
     // An `extern(abi="c") union` overlays its fields. A tlc union stores `tag_name` and one payload.
@@ -547,6 +549,8 @@ struct EnumDecl {
     bool is_extern = false;
     // `extern(abi="c")` is a C enum. Plain `extern` keeps the tlc enum rules.
     bool extern_c = false;
+    // `extern(abi="compiler")`. The enum is part of the compiler contract.
+    bool extern_compiler = false;
 };
 
 struct TypedefDecl {
@@ -583,6 +587,8 @@ struct TypedefDecl {
     std::vector<TypeParam> type_params;
     // `type Name const i32`. The value is constant. This is not `*const T`.
     bool is_const = false;
+    // `extern(abi="compiler")`. The alias is part of the compiler contract.
+    bool extern_compiler = false;
 };
 
 struct VarDecl {
@@ -653,6 +659,8 @@ struct Stmt {
     struct Block {
         SourceLoc loc{};
         std::vector<std::unique_ptr<Stmt>> statements;
+        // `unsafe { ... }`. The statements are an unsafe context. A nested function does not inherit it.
+        bool unsafe_block = false;
     };
     struct Return {
         SourceLoc loc{};
@@ -841,6 +849,8 @@ struct FunctionDecl {
     bool is_extern = false;
     // `extern(abi="c")` uses the C ABI. The object name is `link_name` when that is set.
     bool extern_c = false;
+    // `extern(abi="compiler")`. The compiler supplies the body, or the declaration is part of that contract.
+    bool extern_compiler = false;
     // `extern(..., name="symbol")`. Empty keeps the C name, or `qualifier.name` for tlc.
     std::string link_name;
     bool variadic = false;
@@ -875,7 +885,7 @@ struct FunctionDecl {
     bool value_tried = false;
 };
 
-// `builtin.memeql` and `builtin.memcmp`. Both compare `[]const T`.
+// `mem.memeql` and `mem.memcmp` in `std/mem`. Both compare `[]const T`.
 // A slice form whose parameters are `comptime` is a different overload.
 enum class MemCompare : uint8_t {
     None,
@@ -1012,7 +1022,8 @@ inline bool comptime_param_template(const FunctionDecl &fn) {
     return compile && runtime;
 }
 
-// A non-C `extern` is not parsed. `extern(abi="c")` is not a template, so this is false.
+// `extern(abi="compiler")` is parsed. A comptime parameter still has no external symbol.
+// `extern(abi="c")` is not a template, so this is false.
 inline bool comptime_param_kept(const FunctionDecl &fn) {
     return fn.is_extern && comptime_param_template(fn);
 }
@@ -1032,6 +1043,8 @@ struct TraitDecl {
     bool exported = false;
     // Unused. A trait is not an `extern(abi="c")` type.
     bool is_extern = false;
+    // `extern(abi="compiler")`. The trait is part of the compiler contract.
+    bool extern_compiler = false;
     // `type Seq[T type] trait`. Empty on `type Shape trait`. One `name type` parameter.
     std::vector<TypeParam> type_params;
     // `type Shape trait(Parent)`. Empty when the trait has no parent.

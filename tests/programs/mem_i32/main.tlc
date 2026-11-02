@@ -1,6 +1,6 @@
-import "builtin";
+import "std/mem";
 
-comptime const n = builtin.memeql[i32]("hi"b, "hi"b);
+comptime const n = mem.memeql[i32]("hi"b, "hi"b);
 
 func main() i32 {
     return n;

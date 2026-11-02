@@ -1,0 +1,8 @@
+func main() i32 {
+    var n i32 = 42;
+    unsafe {
+    }
+    var p = *u8(&n);
+    _ = p;
+    return n;
+}

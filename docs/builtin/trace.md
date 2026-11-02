@@ -12,7 +12,7 @@ The compiler's own copy is `lib/tlc/builtin/builtin.tlc`.
 
 An editor shows the signatures in that file and the `//` comments above them.
 
-It exports `trace`, `va`, `panic`, `memeql`, `memcmp`, and `Type`.
+It exports `trace`, `va`, `panic`, `Type`, and `Malloc`. `extern(abi="compiler")` marks each declaration the compiler implements. `memeql` and `memcmp` are in [`std/mem`](../std/mem.md).
 
 `builtin.Type` is the type of a type, described in [The Type type](../types/type.md).
 

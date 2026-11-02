@@ -1,6 +1,6 @@
 # atomic
 
-[Index](../README.md) · [Previous: memeql and memcmp](mem.md) · [Next: builtin/env/consts](family.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: panic](panic.md) · [Next: builtin/env/consts](family.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 This page describes the atomic builtins the compiler replaces with machine instructions.
 
@@ -124,4 +124,4 @@ A `seq_cst` compare-exchange of an `f32` is `lock cmpxchgl` of those bits.
 
 `fence(order comptime i32)` has no result.
 
-[Index](../README.md) · [Previous: memeql and memcmp](mem.md) · [Next: builtin/env/consts](family.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: panic](panic.md) · [Next: builtin/env/consts](family.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

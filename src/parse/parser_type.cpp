@@ -26,6 +26,7 @@ Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, b
         }
         if (token.kind == TokenKind::KwExtern) {
             take_extern(specs.is_extern, specs.extern_c, specs.link_name, specs.name_loc);
+            specs.extern_compiler = extern_compiler_;
             continue;
         }
         if (token.kind == TokenKind::KwVoid) {
@@ -318,6 +319,8 @@ bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name
                     if (!duplicate && is_abi) {
                         if (peek().text == "c") {
                             extern_c = true;
+                        } else if (peek().text == "compiler") {
+                            extern_compiler_ = true;
                         } else {
                             diags_.error(peek().loc, "not supported yet");
                         }
@@ -350,7 +353,7 @@ bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name
     }
     expect(TokenKind::RParen, "expected ')'");
     // `extern(name=...)` has no abi. `extern(abi="tlc")` was reported on that string.
-    if (extern_c) {
+    if (extern_c || extern_compiler_) {
         is_extern = true;
     } else if (!saw_abi && any) {
         diags_.error(extern_loc, "not supported yet");
@@ -1277,6 +1280,7 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     fn.is_static = is_static;
     fn.is_extern = is_extern;
     fn.extern_c = extern_c;
+    fn.extern_compiler = extern_compiler_;
     fn.link_name = std::move(link_name);
     fn.is_comptime = comptime_fn;
     fn.loc = peek().loc;

@@ -1,6 +1,6 @@
 # panic
 
-[Index](../README.md) · [Previous: va](va.md) · [Next: memeql and memcmp](mem.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: va](va.md) · [Next: atomic](atomic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
 This page describes `builtin.panic`, which prints a message and aborts the process.
 
@@ -143,4 +143,4 @@ The file name is the source path relative to the entry file's directory, as for 
 
 `defer builtin.panic("out of memory")` aborts when the deferred calls run.
 
-[Index](../README.md) · [Previous: va](va.md) · [Next: memeql and memcmp](mem.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
+[Index](../README.md) · [Previous: va](va.md) · [Next: atomic](atomic.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

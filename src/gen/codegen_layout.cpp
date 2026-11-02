@@ -1130,6 +1130,50 @@ const Binding *CodeGen::method_binding(uint32_t caller, uint32_t resolved_file, 
     return method;
 }
 
+const Binding *CodeGen::method_list_binding(uint32_t caller, uint32_t resolved_file, const std::string &key,
+                                            std::size_t args) const {
+    if (key.empty()) {
+        return nullptr;
+    }
+    auto defined_here = [&](uint32_t file) {
+        if (file == 0 || resolved_file == 0) {
+            return false;
+        }
+        for (const uint32_t id : package_files(file)) {
+            if (id == resolved_file) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const uint32_t home = resolved_file != 0 && !defined_here(caller) ? resolved_file : caller;
+    const Binding *found = nullptr;
+    int hits = 0;
+    for (const uint32_t id : package_files(home)) {
+        const auto table = files_.find(id);
+        if (table == files_.end()) {
+            continue;
+        }
+        for (const auto &[name, binding] : table->second.functions) {
+            const bool listed = name.size() > key.size() && name.starts_with(key) && name[key.size()] == '.';
+            if (!listed || binding.decl == nullptr || binding.decl->static_method) {
+                continue;
+            }
+            const std::size_t skip =
+                !binding.decl->params.empty() && binding.decl->params.front().is_receiver ? 1 : 0;
+            if (binding.decl->params.size() < skip || binding.decl->params.size() - skip != args) {
+                continue;
+            }
+            found = &binding;
+            ++hits;
+        }
+    }
+    if (hits == 0 && home == caller && resolved_file != 0 && resolved_file != caller) {
+        return method_list_binding(resolved_file, resolved_file, key, args);
+    }
+    return hits == 1 ? found : nullptr;
+}
+
 const Binding *CodeGen::trait_spec_method(uint32_t caller, uint32_t resolved_file, const std::string &key,
                                           const Expr::Selector &selector, const Expr::Call &node) const {
     if (emitting_fn_ == nullptr || active_spec_.empty() || key.empty() || selector.base == nullptr || graph_ == nullptr) {

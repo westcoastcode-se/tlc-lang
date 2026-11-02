@@ -1,0 +1,16 @@
+func main() i32 {
+    var row = [_]i32{40, 2};
+    var items []i32 = row;
+    if (&items[0] != &row[0]) {
+        return 1;
+    }
+    var tail = items[1:2];
+    if (&tail[0] != &row[1]) {
+        return 2;
+    }
+    var none = row[0:0];
+    if (&none[0] != &row[0]) {
+        return 3;
+    }
+    return *(&items[0]) + *(&tail[0]);
+}

@@ -215,6 +215,19 @@ std::unique_ptr<Stmt> Parser::parse_block() {
     return make_stmt(std::move(block));
 }
 
+std::unique_ptr<Stmt> Parser::parse_unsafe_block() {
+    const SourceLoc loc = peek().loc;
+    ++pos_;
+    std::unique_ptr<Stmt> stmt = parse_block();
+    if (stmt != nullptr) {
+        if (auto *block = std::get_if<Stmt::Block>(&stmt->data)) {
+            block->unsafe_block = true;
+            block->loc = loc;
+        }
+    }
+    return stmt;
+}
+
 std::unique_ptr<Stmt> Parser::parse_required_block() {
     if (check(TokenKind::LBrace)) {
         return parse_block();
@@ -911,6 +924,10 @@ std::unique_ptr<Stmt> Parser::parse_bind(bool is_var) {
 }
 
 std::unique_ptr<Stmt> Parser::parse_statement() {
+    // `unsafe { ... }` is a block. `unsafe name(...)` stays an expression.
+    if (check(TokenKind::KwUnsafe) && peek(1).kind == TokenKind::LBrace) {
+        return parse_unsafe_block();
+    }
     if (check(TokenKind::LBrace)) {
         return parse_block();
     }

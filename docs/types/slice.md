@@ -36,6 +36,30 @@ The library type [`string_view`](../std/unicode.md) is `type string_view []const
 
 `v[i]` reads one element. The index has type `i32`.
 
+`&v[0]` is `*T`, the pointer stored in the slice. A length of 0 still yields that pointer. `&v[i]` for another index is the address of that element, and the program panics with `index out of range` when `i` is outside the length. `[]const T` yields `*const T`.
+
+```c
+func main() i32 {
+    var row = [_]i32{40, 2};
+    var items []i32 = row;
+    return *(&items[0]) + *(&items[1]);
+}
+```
+
+```asm
+main:
+movl $40, -24(%rsp)              # constant
+movl $2, -20(%rsp)               # constant
+leaq -24(%rsp), %rax             # address
+movq %rax, -16(%rsp)             # move
+movl $2, -8(%rsp)                # constant
+movl -8(%rsp), %eax              # move
+movq -16(%rsp), %rcx             # move
+movl (%rcx), %eax                # move
+addl 4(%rcx), %eax               # add
+retq                             # return
+```
+
 `v[i] = 1` stores that element when the slice is `[]i32`, and the array sees the store. `var v []const i32` and `const v []i32` report `v[i] = 1` as `type mismatch`.
 
 `v[i].x` reads a field. `v[i].x = 1` stores that field. A const element reports that store as `type mismatch`.

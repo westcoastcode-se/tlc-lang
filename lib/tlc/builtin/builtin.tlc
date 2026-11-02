@@ -1,36 +1,107 @@
 package builtin;
 
-// Compiler intrinsics. The compiler supplies the bodies of trace, va, and panic,
-// and of the methods on Malloc. atomic_load, atomic_store, atomic_rmw,
-// atomic_cmpxchg, and fence have no body: code generation replaces the call.
-// memeql and memcmp are ordinary tlc in this file.
-// The comptime slice overload is chosen when both arguments are comptime values.
-// A call of two constant []const u8 values is folded while compiling.
+// Compiler intrinsics. `extern(abi="compiler")` marks a type, method, or function
+// the compiler implements or checks against. A signature that drifts is `type mismatch`.
+// The compiler supplies the bodies of trace, va, and panic, and of the methods on Malloc.
+// atomic_load, atomic_store, atomic_rmw, atomic_cmpxchg, and fence have no body:
+// code generation replaces the call.
+// Allocator is that trait. The typed alloc and realloc defaults are ordinary tlc here.
+// memeql and memcmp live in std/mem.
 
-export type TypeKind enum {
+// The trait new and delete require. Every file can name Allocator.
+// malloc returns null when the reservation fails. free releases that block.
+// realloc changes the size. A null pointer reserves a new block, as malloc does.
+extern(abi="compiler") export type Allocator trait {
+    unsafe func malloc(size i32, align i32) ?*u8;
+    func free(ptr *u8) void;
+    unsafe func realloc(ptr *u8, size i32, align i32) ?*u8;
+}
+
+// One object. Null from malloc is `out of memory`, the same failure as `new`.
+// The function is `unsafe`, so the body does not repeat the prefix.
+extern(abi="compiler") export unsafe func Allocator::malloc[T type](self *this) ?*T {
+    var value = self.malloc(sizeof(T), alignof(T));
+    return ?*T(value);
+}
+
+// One object. The result is not optional. A failed reservation aborts.
+extern(abi="compiler") export func Allocator::alloc[T type](self *this) *T {
+    unsafe {
+        var raw = self.malloc(sizeof(T), alignof(T));
+        if (raw != null) {
+            return *T(raw);
+        }
+    }
+    panic("out of memory"b);
+}
+
+// `count` elements. The result is that slice. A count below 1 is `type mismatch`.
+extern(abi="compiler") export func Allocator::alloc[T type](self *this, count i32) []T {
+    if (count < 1) {
+        panic("type mismatch"b);
+    }
+    unsafe {
+        var raw = self.malloc(count * sizeof(T), alignof(T));
+        if (raw != null) {
+            return (*T(raw))[0:count];
+        }
+    }
+    panic("out of memory"b);
+}
+
+// One object, replacing `ptr`. A null pointer reserves a new block.
+extern(abi="compiler") export func Allocator::realloc[T type](self *this, ptr *T) *T {
+    unsafe {
+        var raw = self.realloc(*u8(ptr), sizeof(T), alignof(T));
+        if (raw != null) {
+            return *T(raw);
+        }
+    }
+    panic("out of memory"b);
+}
+
+// `count` elements. A block that already holds at least `count` is returned as it is.
+// A count below 1 is `type mismatch`.
+extern(abi="compiler") export func Allocator::realloc[T type](self *this, block []T, count i32) []T {
+    if (count < 1) {
+        panic("type mismatch"b);
+    }
+    if (block.len >= count) {
+        return block;
+    }
+    unsafe {
+        var raw = self.realloc(*u8(*T(block)), count * sizeof(T), alignof(T));
+        if (raw != null) {
+            return (*T(raw))[0:count];
+        }
+    }
+    panic("out of memory"b);
+}
+
+extern(abi="compiler") export type TypeKind enum {
     Other,
     Function,
     Struct,
 }
 
-type Desc struct {
+extern(abi="compiler") type Desc struct {
     name *const u8;
     fields []const Field;
 }
 
-export type Function struct {
+extern(abi="compiler") export type Function struct {
     desc *const Desc;
     export has_this bool;
     export generic bool;
     export variadic bool;
 }
 
-export type Struct struct {
+extern(abi="compiler") export type Struct struct {
     desc *const Desc;
     export generic bool;
 }
 
-export type Other struct {
+extern(abi="compiler") export type Other struct {
     desc *const Desc;
 }
 
@@ -42,146 +113,62 @@ export type Other struct {
 // Struct is a struct. generic is true when that struct is a specialization.
 // desc holds the spelling and the fields. Another package cannot name desc.
 // The compiler supplies the bodies of name and fields.
-export type CompiledType union(TypeKind) {
+extern(abi="compiler") export type CompiledType union(TypeKind) {
     Other Other;
     Function Function;
     Struct Struct;
 }
 
 // Type is a pointer to that value. typeof returns Type. The union is not copied.
-export type Type *const CompiledType;
+extern(abi="compiler") export type Type *const CompiledType;
 
 // One field returned by fields. name is the field's name. kind is its type.
 // kind is that Type pointer. The type is constant. Storing through kind is rejected.
-export type Field struct {
+extern(abi="compiler") export type Field struct {
     export name []const u8;
     export kind Type;
 };
 
 // The spelling of this type, the same text a diagnostic prints.
 // The bytes are constant. A store through the pointer is type mismatch.
-export func CompiledType::name(self *const this) *const u8;
+extern(abi="compiler") export func CompiledType::name(self *const this) *const u8;
 
 // The fields of a named struct, in the order they are written.
 // A tuple lists one field per element. The name is the index, "0", "1", and so on.
 // The element is constant. A type that is neither a named struct nor a tuple has length 0.
-export func CompiledType::fields(self *const this) []const Field;
+extern(abi="compiler") export func CompiledType::fields(self *const this) []const Field;
 
 // `{0}` and `{1}` read elements of a compile-time tuple. `{{` and `}}` are braces.
 // A string element is copied as text. An integer element is decimal. The call is that text.
-export func fmt[T type](text comptime []const u8, value comptime T) []const u8;
+extern(abi="compiler") export func fmt[T type](text comptime []const u8, value comptime T) []const u8;
 
 // The calls that have not returned, newest first.
 // The pointer addresses this thread's buffer. The next call on that thread replaces that text.
-export func trace() *const u8;
+extern(abi="compiler") export func trace() *const u8;
 
 // The extra arguments of the variadic function this call is inside.
 // The pointer is the argument pointer vprintf takes. Each call reads those arguments from the start.
-export func va() *u8;
+extern(abi="compiler") export func va() *u8;
 
 // Prints the message and the call stack, then aborts the process.
-export func panic(message *const u8) void;
+extern(abi="compiler") export func panic(message *const u8) void;
 
 // The libc heap. new and delete call malloc, free, and realloc directly.
-export type Malloc struct {};
+extern(abi="compiler") export type Malloc struct {};
 
 // The allocator new and delete use when the call names none.
 export var allocator Malloc;
 
 // Reserves size bytes. An alignment above 16 uses aligned_alloc.
 // Returns null when the reservation fails. The caller handles null.
-export unsafe func Malloc::malloc(self *this, size i32, align i32) ?*u8;
+extern(abi="compiler") export unsafe func Malloc::malloc(self *this, size i32, align i32) ?*u8;
 
 // Releases a block from malloc or realloc. A null pointer does nothing.
-export func Malloc::free(self *this, ptr *u8) void;
+extern(abi="compiler") export func Malloc::free(self *this, ptr *u8) void;
 
 // Changes the size of a block. A null pointer reserves a new block, as malloc does.
 // Returns null when the reservation fails. The caller handles null.
-export unsafe func Malloc::realloc(self *this, ptr *u8, size i32, align i32) ?*u8;
-
-// True when both slices are comptime values and hold the same elements.
-// Chosen instead of the runtime overload when both arguments are comptime.
-export func memeql[T type](lhs comptime []const T, rhs comptime []const T) bool {
-    if (lhs.len != rhs.len) {
-        return false;
-    }
-    var i i32 = 0;
-    while (i < lhs.len) {
-        if (lhs[i] != rhs[i]) {
-            return false;
-        }
-        i = i + 1;
-    }
-    return true;
-}
-
-// True when the slices have the same length and the same elements.
-export func memeql[T type](lhs []const T, rhs []const T) bool {
-    if (lhs.len != rhs.len) {
-        return false;
-    }
-    var i i32 = 0;
-    while (i < lhs.len) {
-        if (lhs[i] != rhs[i]) {
-            return false;
-        }
-        i = i + 1;
-    }
-    return true;
-}
-
-// Element order of two comptime slices. -1 when lhs is less, 1 when lhs is greater, 0 when they match.
-// A shared prefix takes the shorter length as less.
-// Chosen instead of the runtime overload when both arguments are comptime.
-export func memcmp[T type](lhs comptime []const T, rhs comptime []const T) i32 {
-    var n i32 = lhs.len;
-    if (rhs.len < n) {
-        n = rhs.len;
-    }
-    var i i32 = 0;
-    while (i < n) {
-        if (lhs[i] < rhs[i]) {
-            return -1;
-        }
-        if (rhs[i] < lhs[i]) {
-            return 1;
-        }
-        i = i + 1;
-    }
-    if (lhs.len < rhs.len) {
-        return -1;
-    }
-    if (rhs.len < lhs.len) {
-        return 1;
-    }
-    return 0;
-}
-
-// Element order of two slices. -1 when lhs is less, 1 when lhs is greater, 0 when they match.
-// A shared prefix takes the shorter length as less.
-export func memcmp[T type](lhs []const T, rhs []const T) i32 {
-    var n i32 = lhs.len;
-    if (rhs.len < n) {
-        n = rhs.len;
-    }
-    var i i32 = 0;
-    while (i < n) {
-        if (lhs[i] < rhs[i]) {
-            return -1;
-        }
-        if (rhs[i] < lhs[i]) {
-            return 1;
-        }
-        i = i + 1;
-    }
-    if (lhs.len < rhs.len) {
-        return -1;
-    }
-    if (rhs.len < lhs.len) {
-        return 1;
-    }
-    return 0;
-}
+extern(abi="compiler") export unsafe func Malloc::realloc(self *this, ptr *u8, size i32, align i32) ?*u8;
 
 // Atomic operations. Code generation replaces the call. There is no body.
 // order is 0 relaxed, 1 acquire, 2 release, 3 acq_rel, 4 seq_cst.
@@ -189,17 +176,17 @@ export func memcmp[T type](lhs []const T, rhs []const T) i32 {
 // Another T is not supported yet.
 // On a float, add and sub are floating operations. and, or, xor, and cmpxchg use the bits.
 // A var order is type mismatch. An unknown order is type mismatch.
-export func atomic_load[T type](p *T, order comptime i32) T;
+extern(abi="compiler") export func atomic_load[T type](p *T, order comptime i32) T;
 
-export func atomic_store[T type](p *T, value T, order comptime i32) void;
+extern(abi="compiler") export func atomic_store[T type](p *T, value T, order comptime i32) void;
 
 // op is 0 xchg, 1 add, 2 sub, 3 and, 4 or, 5 xor. The result is the previous value.
-export func atomic_rmw[T type](p *T, op comptime i32, value T, order comptime i32) T;
+extern(abi="compiler") export func atomic_rmw[T type](p *T, op comptime i32, value T, order comptime i32) T;
 
 // Strong compare-exchange. The results are the previous value and whether the store happened.
 // success is the order when the values match. failure is the order when they do not.
-export func atomic_cmpxchg[T type](p *T, expected T, desired T, success comptime i32, failure comptime i32) (T, bool);
+extern(abi="compiler") export func atomic_cmpxchg[T type](p *T, expected T, desired T, success comptime i32, failure comptime i32) (T, bool);
 
 // A relaxed fence is no instruction. Another order is a fence.
 // The name is not a value. `var f = fence` is not supported yet.
-export func fence(order comptime i32) void;
+extern(abi="compiler") export func fence(order comptime i32) void;

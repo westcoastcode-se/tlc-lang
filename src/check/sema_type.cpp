@@ -114,6 +114,436 @@ void Checker::ensure_allocator_trait() {
     traits_.push_back(std::move(info));
 }
 
+namespace {
+
+bool slice_spelling(bool is_array, int array_len, bool elem_const, bool elem_slice, const std::vector<TypeShell> &shells,
+                    bool constant) {
+    if (!is_array || array_len >= 0 || elem_slice || elem_const != constant || shells.size() != 1) {
+        return false;
+    }
+    const TypeShell &shell = shells.front();
+    return shell.kind == TypeShell::Kind::Slice && !shell.optional && !shell.const_pointee && shell.length == 0;
+}
+
+bool plain_slot(const std::string &type_name, const std::string &type_package, bool is_struct, bool is_enum,
+                int indirections, uint32_t optional, uint32_t const_pointee, bool is_array, const std::string &want) {
+    return type_name == want && type_package.empty() && !is_struct && !is_enum && indirections == 0 && optional == 0 &&
+           const_pointee == 0 && !is_array;
+}
+
+bool ptr_slot(const std::string &type_name, const std::string &type_package, bool is_struct, bool is_enum,
+              int indirections, uint32_t optional, uint32_t const_pointee, bool is_array, const std::string &want,
+              bool optional_ptr, bool constant) {
+    return type_name == want && type_package.empty() && !is_struct && !is_enum && indirections == 1 && !is_array &&
+           ((optional & 1u) != 0) == optional_ptr && ((const_pointee & 1u) != 0) == constant;
+}
+
+bool param_plain(const Param &param, const std::string &want, bool comptime) {
+    return plain_slot(param.type_name, param.type_package, param.is_struct, param.is_enum, param.indirections,
+                      param.optional, param.const_pointee, param.is_array, want) &&
+           !param.is_receiver && param.is_comptime == comptime && param.shells.empty();
+}
+
+bool param_ptr(const Param &param, const std::string &want, bool optional_ptr, bool constant, bool comptime) {
+    return ptr_slot(param.type_name, param.type_package, param.is_struct, param.is_enum, param.indirections,
+                    param.optional, param.const_pointee, param.is_array, want, optional_ptr, constant) &&
+           !param.is_receiver && param.is_comptime == comptime;
+}
+
+bool param_slice(const Param &param, const std::string &want, bool constant, bool comptime) {
+    return param.type_name == want && param.type_package.empty() && !param.is_receiver && param.is_comptime == comptime &&
+           slice_spelling(param.is_array, param.array_len, param.elem_const, param.elem_slice, param.shells, constant);
+}
+
+bool result_plain(const FunctionDecl &fn, const std::string &want) {
+    if (fn.results.size() != 1) {
+        return false;
+    }
+    const ResultSlot &slot = fn.results.front();
+    return plain_slot(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections, slot.optional,
+                      slot.const_pointee, slot.is_array, want) &&
+           !slot.is_tuple;
+}
+
+bool result_ptr(const FunctionDecl &fn, const std::string &want, bool optional_ptr, bool constant) {
+    if (fn.results.size() != 1) {
+        return false;
+    }
+    const ResultSlot &slot = fn.results.front();
+    return ptr_slot(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.indirections, slot.optional,
+                    slot.const_pointee, slot.is_array, want, optional_ptr, constant) &&
+           !slot.is_tuple;
+}
+
+bool result_slice(const FunctionDecl &fn, const std::string &want, bool constant) {
+    if (fn.results.size() != 1) {
+        return false;
+    }
+    const ResultSlot &slot = fn.results.front();
+    return slot.type_name == want && slot.type_package.empty() &&
+           slice_spelling(slot.is_array, slot.array_len, slot.elem_const, slot.elem_slice, slot.shells, constant);
+}
+
+bool type_param_t(const FunctionDecl &fn) {
+    if (fn.type_params.size() != 1) {
+        return false;
+    }
+    const TypeParam &param = fn.type_params.front();
+    return param.is_type && !param.is_value && !param.is_trait && !param.is_pack && param.name == "T" &&
+           param.constraint.empty();
+}
+
+bool compiler_header(const FunctionDecl &fn, bool want_body) {
+    return fn.extern_compiler && fn.is_extern && !fn.extern_c && fn.link_name.empty() && !fn.variadic && !fn.is_macro &&
+           !fn.is_comptime && !fn.is_static && fn.exported && (fn.body != nullptr) == want_body;
+}
+
+bool pointer_receiver(const FunctionDecl &fn, bool constant) {
+    if (fn.static_method || fn.params.empty() || !fn.params.front().is_receiver) {
+        return false;
+    }
+    const Param &self = fn.params.front();
+    return self.type_name == fn.method_struct && self.type_package.empty() && self.indirections == 1 &&
+           self.optional == 0 && !self.is_array && ((self.const_pointee & 1u) != 0) == constant;
+}
+
+bool named_plain_field(const FieldDecl &field, const std::string &name, const std::string &type, bool exported) {
+    return field.name == name && field.exported == exported && field.init == nullptr &&
+           plain_slot(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
+                      field.optional, field.const_pointee, field.is_array, type);
+}
+
+bool named_ptr_field(const FieldDecl &field, const std::string &name, const std::string &type, bool constant,
+                     bool exported) {
+    return field.name == name && field.exported == exported && field.init == nullptr &&
+           ptr_slot(field.type_name, field.type_package, field.is_struct, field.is_enum, field.indirections,
+                    field.optional, field.const_pointee, field.is_array, type, false, constant);
+}
+
+bool named_slice_field(const FieldDecl &field, const std::string &name, const std::string &type, bool constant,
+                       bool exported) {
+    return field.name == name && field.exported == exported && field.init == nullptr && field.type_name == type &&
+           field.type_package.empty() &&
+           slice_spelling(field.is_array, field.array_len, field.elem_const, field.elem_slice, field.shells, constant);
+}
+
+const Param *value_param(const FunctionDecl &fn, std::size_t index) {
+    std::size_t skip = !fn.params.empty() && fn.params.front().is_receiver ? 1 : 0;
+    if (skip + index >= fn.params.size()) {
+        return nullptr;
+    }
+    return &fn.params[skip + index];
+}
+
+std::size_t value_count(const FunctionDecl &fn) {
+    const std::size_t skip = !fn.params.empty() && fn.params.front().is_receiver ? 1 : 0;
+    return fn.params.size() - skip;
+}
+
+} // namespace
+
+void Checker::validate_builtin(const TranslationUnit &unit) {
+    std::unordered_set<std::string> seen;
+    bool missing = false;
+    const auto fail = [&](SourceLoc loc) { error(loc, "type mismatch"); };
+    const auto keep = [&](const std::string &key, bool ok, SourceLoc loc) {
+        if (!ok) {
+            fail(loc);
+        }
+        seen.insert(key);
+    };
+    const SourceLoc top = unit.package ? unit.package->loc : SourceLoc{};
+    for (const TopDecl &decl : unit.decls) {
+        if (const auto *item = std::get_if<StructDecl>(&decl.data)) {
+            if (item->anonymous || item->name.empty()) {
+                continue;
+            }
+            const bool marked = item->extern_compiler && item->is_extern && !item->extern_c;
+            if (item->name == "Desc") {
+                const bool fields = item->fields.size() == 2 && named_ptr_field(item->fields[0], "name", "u8", true, false) &&
+                                    named_slice_field(item->fields[1], "fields", "Field", true, false);
+                keep("Desc", marked && !item->exported && !item->is_union && item->tag_name.empty() && fields, item->loc);
+            } else if (item->name == "Function") {
+                const bool fields = item->fields.size() == 4 &&
+                                    named_ptr_field(item->fields[0], "desc", "Desc", true, false) &&
+                                    named_plain_field(item->fields[1], "has_this", "bool", true) &&
+                                    named_plain_field(item->fields[2], "generic", "bool", true) &&
+                                    named_plain_field(item->fields[3], "variadic", "bool", true);
+                keep("Function", marked && item->exported && !item->is_union && fields, item->loc);
+            } else if (item->name == "Struct") {
+                const bool fields = item->fields.size() == 2 && named_ptr_field(item->fields[0], "desc", "Desc", true, false) &&
+                                    named_plain_field(item->fields[1], "generic", "bool", true);
+                keep("Struct", marked && item->exported && !item->is_union && fields, item->loc);
+            } else if (item->name == "Other") {
+                const bool fields = item->fields.size() == 1 && named_ptr_field(item->fields[0], "desc", "Desc", true, false);
+                keep("Other", marked && item->exported && !item->is_union && fields, item->loc);
+            } else if (item->name == "Field") {
+                const bool fields = item->fields.size() == 2 &&
+                                    named_slice_field(item->fields[0], "name", "u8", true, true) &&
+                                    named_plain_field(item->fields[1], "kind", "Type", true);
+                keep("Field", marked && item->exported && !item->is_union && fields, item->loc);
+            } else if (item->name == "Malloc") {
+                keep("Malloc", marked && item->exported && !item->is_union && item->fields.empty() && item->tag_name.empty(),
+                     item->loc);
+            } else if (item->name == "CompiledType") {
+                const bool fields = item->fields.size() == 3 && item->fields[0].name == "Other" &&
+                                    item->fields[0].type_name == "Other" && item->fields[1].name == "Function" &&
+                                    item->fields[1].type_name == "Function" && item->fields[2].name == "Struct" &&
+                                    item->fields[2].type_name == "Struct";
+                keep("CompiledType",
+                     marked && item->exported && item->is_union && item->tag_name == "TypeKind" &&
+                         item->tag_package.empty() && fields,
+                     item->loc);
+            } else if (item->extern_compiler) {
+                fail(item->loc);
+            }
+            continue;
+        }
+        if (const auto *item = std::get_if<EnumDecl>(&decl.data)) {
+            if (item->name == "TypeKind") {
+                bool values = item->enumerators.size() == 3;
+                const char *names[] = {"Other", "Function", "Struct"};
+                for (int i = 0; values && i < 3; ++i) {
+                    const Enumerator &enumerator = item->enumerators[static_cast<std::size_t>(i)];
+                    values = enumerator.name == names[i] && (!enumerator.has_value || enumerator.value == i);
+                }
+                keep("TypeKind",
+                     item->extern_compiler && item->is_extern && !item->extern_c && item->exported &&
+                         item->underlying.empty() && values,
+                     item->loc);
+            } else if (item->extern_compiler) {
+                fail(item->loc);
+            }
+            continue;
+        }
+        if (const auto *item = std::get_if<TypedefDecl>(&decl.data)) {
+            if (item->name == "Type") {
+                keep("Type",
+                     item->extern_compiler && item->exported && item->type_name == "CompiledType" &&
+                         item->type_package.empty() && item->indirections == 1 && (item->const_pointee & 1u) != 0 &&
+                         item->optional == 0 && !item->is_array && !item->is_tuple,
+                     item->loc);
+            } else if (item->extern_compiler) {
+                fail(item->loc);
+            }
+            continue;
+        }
+        if (const auto *item = std::get_if<TraitDecl>(&decl.data)) {
+            if (item->name == "Allocator") {
+                bool malloc_ok = false;
+                bool free_ok = false;
+                bool realloc_ok = false;
+                bool extra = item->methods.size() != 3 || !item->fields.empty() || !item->type_params.empty() ||
+                             !item->parent_name.empty();
+                for (const FunctionDecl &method : item->methods) {
+                    const bool header = method.body == nullptr && method.type_params.empty() && !method.variadic &&
+                                        method.link_name.empty();
+                    if (method.name == "malloc" && header && method.unsafe && value_count(method) == 2 &&
+                        value_param(method, 0) != nullptr && param_plain(*value_param(method, 0), "i32", false) &&
+                        param_plain(*value_param(method, 1), "i32", false) && result_ptr(method, "u8", true, false)) {
+                        malloc_ok = true;
+                    } else if (method.name == "free" && header && !method.unsafe && value_count(method) == 1 &&
+                               value_param(method, 0) != nullptr && param_ptr(*value_param(method, 0), "u8", false, false, false) &&
+                               result_plain(method, "void")) {
+                        free_ok = true;
+                    } else if (method.name == "realloc" && header && method.unsafe && value_count(method) == 3 &&
+                               value_param(method, 0) != nullptr &&
+                               param_ptr(*value_param(method, 0), "u8", false, false, false) &&
+                               param_plain(*value_param(method, 1), "i32", false) &&
+                               param_plain(*value_param(method, 2), "i32", false) && result_ptr(method, "u8", true, false)) {
+                        realloc_ok = true;
+                    } else {
+                        extra = true;
+                    }
+                }
+                keep("Allocator",
+                     item->extern_compiler && item->exported && !extra && malloc_ok && free_ok && realloc_ok, item->loc);
+            } else if (item->extern_compiler) {
+                fail(item->loc);
+            }
+            continue;
+        }
+        if (const auto *item = std::get_if<VarDecl>(&decl.data)) {
+            if (item->name == "allocator") {
+                keep("allocator",
+                     item->exported && !item->is_extern && !item->is_static && item->init == nullptr &&
+                         item->type_name == "Malloc" && item->type_package.empty() && item->indirections == 0 &&
+                         !item->is_array,
+                     item->loc);
+            }
+            continue;
+        }
+        const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+        if (fn == nullptr || fn->name.empty()) {
+            if (fn != nullptr && fn->extern_compiler) {
+                fail(fn->loc);
+            }
+            continue;
+        }
+        const auto value_ok = [&](std::size_t index, auto &&test) {
+            const Param *param = value_param(*fn, index);
+            return param != nullptr && test(*param);
+        };
+        if (fn->method_struct == "Allocator") {
+            const bool head = compiler_header(*fn, true) && type_param_t(*fn) && pointer_receiver(*fn, false);
+            if (fn->name == "malloc" && value_count(*fn) == 0) {
+                keep("malloc[T]", head && fn->unsafe && result_ptr(*fn, "T", true, false), fn->loc);
+            } else if (fn->name == "alloc" && value_count(*fn) == 0) {
+                keep("alloc[T]", head && !fn->unsafe && result_ptr(*fn, "T", false, false), fn->loc);
+            } else if (fn->name == "alloc" && value_count(*fn) == 1) {
+                keep("alloc[T,n]", head && !fn->unsafe && value_ok(0, [](const Param &param) {
+                         return param_plain(param, "i32", false);
+                     }) && result_slice(*fn, "T", false),
+                     fn->loc);
+            } else if (fn->name == "realloc" && value_count(*fn) == 1) {
+                keep("realloc[T]", head && !fn->unsafe && value_ok(0, [](const Param &param) {
+                         return param_ptr(param, "T", false, false, false);
+                     }) && result_ptr(*fn, "T", false, false),
+                     fn->loc);
+            } else if (fn->name == "realloc" && value_count(*fn) == 2) {
+                keep("realloc[T,n]",
+                     head && !fn->unsafe && value_ok(0, [](const Param &param) {
+                         return param_slice(param, "T", false, false);
+                     }) && value_ok(1, [](const Param &param) { return param_plain(param, "i32", false); }) &&
+                         result_slice(*fn, "T", false),
+                     fn->loc);
+            } else if (fn->extern_compiler) {
+                fail(fn->loc);
+            }
+            continue;
+        }
+        if (fn->method_struct == "CompiledType") {
+            const bool head = compiler_header(*fn, false) && fn->type_params.empty() && pointer_receiver(*fn, true) &&
+                              value_count(*fn) == 0 && !fn->unsafe;
+            if (fn->name == "name") {
+                keep("CompiledType.name", head && result_ptr(*fn, "u8", false, true), fn->loc);
+            } else if (fn->name == "fields") {
+                keep("CompiledType.fields", head && result_slice(*fn, "Field", true), fn->loc);
+            } else if (fn->extern_compiler) {
+                fail(fn->loc);
+            }
+            continue;
+        }
+        if (fn->method_struct == "Malloc") {
+            const bool head = compiler_header(*fn, false) && fn->type_params.empty() && pointer_receiver(*fn, false);
+            if (fn->name == "malloc") {
+                keep("Malloc.malloc",
+                     head && fn->unsafe && value_count(*fn) == 2 && value_ok(0, [](const Param &param) {
+                         return param_plain(param, "i32", false);
+                     }) && value_ok(1, [](const Param &param) { return param_plain(param, "i32", false); }) &&
+                         result_ptr(*fn, "u8", true, false),
+                     fn->loc);
+            } else if (fn->name == "free") {
+                keep("Malloc.free",
+                     head && !fn->unsafe && value_count(*fn) == 1 && value_ok(0, [](const Param &param) {
+                         return param_ptr(param, "u8", false, false, false);
+                     }) && result_plain(*fn, "void"),
+                     fn->loc);
+            } else if (fn->name == "realloc") {
+                keep("Malloc.realloc",
+                     head && fn->unsafe && value_count(*fn) == 3 && value_ok(0, [](const Param &param) {
+                         return param_ptr(param, "u8", false, false, false);
+                     }) && value_ok(1, [](const Param &param) { return param_plain(param, "i32", false); }) &&
+                         value_ok(2, [](const Param &param) { return param_plain(param, "i32", false); }) &&
+                         result_ptr(*fn, "u8", true, false),
+                     fn->loc);
+            } else if (fn->extern_compiler) {
+                fail(fn->loc);
+            }
+            continue;
+        }
+        if (!fn->method_struct.empty()) {
+            if (fn->extern_compiler) {
+                fail(fn->loc);
+            }
+            continue;
+        }
+        const bool free_head = compiler_header(*fn, false);
+        if (fn->name == "trace") {
+            keep("trace", free_head && fn->type_params.empty() && fn->params.empty() && !fn->unsafe &&
+                              result_ptr(*fn, "u8", false, true),
+                 fn->loc);
+        } else if (fn->name == "va") {
+            keep("va", free_head && fn->type_params.empty() && fn->params.empty() && !fn->unsafe &&
+                           result_ptr(*fn, "u8", false, false),
+                 fn->loc);
+        } else if (fn->name == "panic") {
+            keep("panic", free_head && fn->type_params.empty() && !fn->unsafe && value_count(*fn) == 1 &&
+                              value_ok(0, [](const Param &param) { return param_ptr(param, "u8", false, true, false); }) &&
+                              result_plain(*fn, "void"),
+                 fn->loc);
+        } else if (fn->name == "fence") {
+            keep("fence", free_head && fn->type_params.empty() && !fn->unsafe && value_count(*fn) == 1 &&
+                              value_ok(0, [](const Param &param) { return param_plain(param, "i32", true); }) &&
+                              result_plain(*fn, "void"),
+                 fn->loc);
+        } else if (fn->name == "fmt") {
+            keep("fmt", free_head && type_param_t(*fn) && !fn->unsafe && value_count(*fn) == 2 &&
+                            value_ok(0, [](const Param &param) { return param_slice(param, "u8", true, true); }) &&
+                            value_ok(1, [](const Param &param) { return param_plain(param, "T", true); }) &&
+                            result_slice(*fn, "u8", true),
+                 fn->loc);
+        } else if (fn->name == "atomic_load") {
+            keep("atomic_load", free_head && type_param_t(*fn) && !fn->unsafe && value_count(*fn) == 2 &&
+                                    value_ok(0, [](const Param &param) { return param_ptr(param, "T", false, false, false); }) &&
+                                    value_ok(1, [](const Param &param) { return param_plain(param, "i32", true); }) &&
+                                    result_plain(*fn, "T"),
+                 fn->loc);
+        } else if (fn->name == "atomic_store") {
+            keep("atomic_store",
+                 free_head && type_param_t(*fn) && !fn->unsafe && value_count(*fn) == 3 &&
+                     value_ok(0, [](const Param &param) { return param_ptr(param, "T", false, false, false); }) &&
+                     value_ok(1, [](const Param &param) { return param_plain(param, "T", false); }) &&
+                     value_ok(2, [](const Param &param) { return param_plain(param, "i32", true); }) &&
+                     result_plain(*fn, "void"),
+                 fn->loc);
+        } else if (fn->name == "atomic_rmw") {
+            keep("atomic_rmw",
+                 free_head && type_param_t(*fn) && !fn->unsafe && value_count(*fn) == 4 &&
+                     value_ok(0, [](const Param &param) { return param_ptr(param, "T", false, false, false); }) &&
+                     value_ok(1, [](const Param &param) { return param_plain(param, "i32", true); }) &&
+                     value_ok(2, [](const Param &param) { return param_plain(param, "T", false); }) &&
+                     value_ok(3, [](const Param &param) { return param_plain(param, "i32", true); }) &&
+                     result_plain(*fn, "T"),
+                 fn->loc);
+        } else if (fn->name == "atomic_cmpxchg") {
+            const bool pair = fn->results.size() == 2 &&
+                              plain_slot(fn->results[0].type_name, fn->results[0].type_package, fn->results[0].is_struct,
+                                         fn->results[0].is_enum, fn->results[0].indirections, fn->results[0].optional,
+                                         fn->results[0].const_pointee, fn->results[0].is_array, "T") &&
+                              plain_slot(fn->results[1].type_name, fn->results[1].type_package, fn->results[1].is_struct,
+                                         fn->results[1].is_enum, fn->results[1].indirections, fn->results[1].optional,
+                                         fn->results[1].const_pointee, fn->results[1].is_array, "bool");
+            keep("atomic_cmpxchg",
+                 free_head && type_param_t(*fn) && !fn->unsafe && value_count(*fn) == 5 &&
+                     value_ok(0, [](const Param &param) { return param_ptr(param, "T", false, false, false); }) &&
+                     value_ok(1, [](const Param &param) { return param_plain(param, "T", false); }) &&
+                     value_ok(2, [](const Param &param) { return param_plain(param, "T", false); }) &&
+                     value_ok(3, [](const Param &param) { return param_plain(param, "i32", true); }) &&
+                     value_ok(4, [](const Param &param) { return param_plain(param, "i32", true); }) && pair,
+                 fn->loc);
+        } else if (fn->extern_compiler) {
+            fail(fn->loc);
+        }
+    }
+    const char *required[] = {"Desc",        "Function",         "Struct",         "Other",
+                              "Field",       "Malloc",           "CompiledType",   "TypeKind",
+                              "Type",        "Allocator",        "allocator",      "malloc[T]",
+                              "alloc[T]",    "alloc[T,n]",       "realloc[T]",     "realloc[T,n]",
+                              "CompiledType.name", "CompiledType.fields", "Malloc.malloc", "Malloc.free",
+                              "Malloc.realloc", "trace",         "va",             "panic",
+                              "fence",       "fmt",              "atomic_load",    "atomic_store",
+                              "atomic_rmw",  "atomic_cmpxchg"};
+    for (const char *key : required) {
+        if (!seen.contains(key)) {
+            missing = true;
+        }
+    }
+    if (missing) {
+        fail(top);
+    }
+}
+
 bool Checker::package_is_iteration(uint32_t file) const {
     const PackageNode *node = find_node(file);
     return node != nullptr && node->iteration_package;
@@ -213,6 +643,11 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
     for (const TopDecl &decl : unit.decls) {
         const auto *item = std::get_if<TraitDecl>(&decl.data);
         if (item == nullptr || item->name.empty()) {
+            continue;
+        }
+        // The file states the contract. The trait value stays the one built above,
+        // so a program that never imports builtin still has `Allocator`.
+        if (item->name == "Allocator" && is_std_builtin_file(file_id)) {
             continue;
         }
         uint32_t template_owner = file_id;

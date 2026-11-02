@@ -630,7 +630,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return elem.kind == TypeKind::Char && elem.rank == 1 && elem.is_unsigned && !elem.plain_char;
                 };
                 if ((node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) && byte_slice(lhs) && byte_slice(rhs)) {
-                    error(node.loc, "compare with builtin.memeql");
+                    error(node.loc, "compare with mem.memeql");
                     return type_invalid();
                 }
                 expect_integer(lhs, expr_loc(*node.lhs));
@@ -1765,6 +1765,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (const Symbol *symbol = lookup(named->text);
                             symbol != nullptr && symbol->is_function && !symbol->is_template && symbol->lists.size() == 1) {
                             ordinary = symbol->lists.front().decl;
+                            // The name was borrowed from the package that wrote this default.
+                            // Code generation calls that function, not a symbol in the struct's file.
+                            if (ordinary != nullptr && symbol->package_file != 0 && symbol->package_file != file_id_) {
+                                node.selected = ordinary;
+                            }
                         }
                     } else if (const auto *called = std::get_if<Expr::Selector>(&node.callee->data)) {
                         const auto *base = called->base == nullptr ? nullptr : std::get_if<Expr::Name>(&called->base->data);

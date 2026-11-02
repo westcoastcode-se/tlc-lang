@@ -8,6 +8,8 @@ This page describes a block, and the statements that choose or repeat other stat
 
 A block is a sequence of statements in braces, and `if`, `while`, and `for` take a block.
 
+`unsafe { ... }` is that block with an unsafe context. Calls and casts inside it are described on [Unsafe](../expressions/unsafe.md).
+
 In a [macro](../functions/macro.md), `if` keeps the arm whose condition folds.
 
 `else` is a block or another `if`.

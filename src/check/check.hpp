@@ -271,6 +271,8 @@ class Checker {
     // The built-in `Allocator` trait. Negative until the first unit is registered.
     int allocator_trait_id_ = -1;
     void ensure_allocator_trait();
+    // `lib/tlc/builtin` must match the signatures this compiler implements.
+    void validate_builtin(const TranslationUnit &unit);
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::unordered_map<std::string, MethodInfo>>> methods_;
     // file, owner, field. The owner is the struct name or a specialization such as `Box.spec.i32`.
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::unordered_map<std::string, AssocVar>>> assoc_vars_;
@@ -359,7 +361,8 @@ class Checker {
     bool variadic_function_ = false;
     // The callee of a call is being checked. That callee is a name, a function expression, or a selector.
     bool direct_callee_ = false;
-    // `unsafe` expressions and the body of an `unsafe func`. Nested functions do not inherit it.
+    // `unsafe` expressions, an `unsafe { }` block, and the body of an `unsafe func`.
+    // Nested functions do not inherit it.
     int unsafe_depth_ = 0;
     int loop_depth_ = 0;
     bool checking_defer_ = false;
@@ -722,7 +725,7 @@ class Checker {
     KeptStruct fold_comptime_struct(const Expr::Call &call);
     // A field of a struct literal, or of a comptime call that kept one. A plain file-scope name is not one.
     const Expr *comptime_struct_field(const Expr &object, const std::string &field);
-    // The comptime slice overload of `builtin.memeql` or `builtin.memcmp` when both arguments are
+    // The comptime slice overload of `mem.memeql` or `mem.memcmp` when both arguments are
     // constant `[]const u8`. Null when that overload is not the one to fold.
     const FunctionDecl *mem_compare_callee(const Expr::Call &call);
     // The folded `[]const u8` slice call. Null when an argument is not that slice, or `T` is not `u8`.

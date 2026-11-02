@@ -1,0 +1,12 @@
+unsafe func point(n i32) i32 {
+    return n;
+}
+
+func main() i32 {
+    unsafe {
+        func inner() i32 {
+            return point(42);
+        }
+        return inner();
+    }
+}

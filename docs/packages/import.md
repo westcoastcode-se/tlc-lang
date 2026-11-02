@@ -67,7 +67,7 @@ Search proceeds as follows.
 
    `import "builtin"` loads `<prefix>/lib/tlc/builtin`, the compiler package.
 
-   It exports `memeql` and `memcmp`.
+   `import "std/mem"` exports `memeql` and `memcmp`.
 
    A directory named `builtin` found earlier on the search path is used instead.
 

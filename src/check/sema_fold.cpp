@@ -1755,7 +1755,7 @@ const FunctionDecl *Checker::mem_compare_callee(const Expr::Call &call) {
         }
         symbol = find_export(package->package_file, selector->field);
     }
-    if (symbol == nullptr || !symbol->is_template || !is_std_builtin_file(symbol->package_file)) {
+    if (symbol == nullptr || !symbol->is_template || !is_std_mem_package(find_node(symbol->package_file))) {
         return nullptr;
     }
     const FunctionDecl *comptime_fn = nullptr;

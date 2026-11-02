@@ -1,13 +1,13 @@
-import "builtin";
+import "std/mem";
 import "builtin/env/consts";
 
 func main() i32 {
     var head = consts.family[0:4];
-    if (builtin.memeql(head, "unix"b)) {
+    if (mem.memeql(head, "unix"b)) {
         return 0;
     }
     var wide = consts.family[0:7];
-    if (builtin.memeql(wide, "windows"b)) {
+    if (mem.memeql(wide, "windows"b)) {
         return 0;
     }
     return 1;

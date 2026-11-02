@@ -70,7 +70,9 @@ A `test` inside a function is `test is only valid at file scope`.
 
 `unsafe func` makes the body an unsafe context.
 
-A call is `unsafe name(...)`.
+`unsafe { ... }` is a block. The statements inside are an unsafe context. The context ends at `}`.
+
+A call outside that context is `unsafe name(...)`.
 
 `export` and `extern` may stand, in any order, in front of a function, a method, a variable, or a `type`.
 
@@ -114,7 +116,11 @@ The arguments may appear in either order.
 
 `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are reported as `name requires abi="c"`.
 
-`extern(abi="c")` on a trait or a generic is reported as `extern(abi="c") on a trait or a generic`.
+`extern(abi="compiler")` marks a type, a method, or a function the compiler implements or checks. It is not a C type and does not require a C library.
+
+In `lib/tlc/builtin`, every such declaration has to match the compiler's view. A missing declaration, an extra one, or a different signature is `type mismatch`.
+
+`extern(abi="c")` on a trait or a generic is reported as `extern(abi="c") on a trait or a generic`. `extern(abi="compiler")` is accepted on the `Allocator` trait.
 
 `extern(abi="c") type Name union(Enum)` is reported as `extern(abi="c") on a tagged union`.
 
@@ -464,11 +470,11 @@ A `var` is `type mismatch`.
 
 When only the `comptime` overload matches the types and an argument is not a comptime value, the call is `type mismatch`.
 
-`builtin.memeql[u8]` and `builtin.memcmp[u8]` fold two constant `[]const u8` values through the `comptime` slice overload.
+`mem.memeql[u8]` and `mem.memcmp[u8]` fold two constant `[]const u8` values through the `comptime` slice overload.
 
-The functions are ordinary tlc in `lib/tlc/builtin`.
+The functions are ordinary tlc in `lib/tlc/std/mem`.
 
-`==` and `!=` on two `[]u8` or `[]const u8` values are `compare with builtin.memeql`.
+`==` and `!=` on two `[]u8` or `[]const u8` values are `compare with mem.memeql`.
 
 `+` on `[]const u8` is `type mismatch: expected an integer, found []const u8`.
 
@@ -2023,6 +2029,7 @@ The listings are on the statement pages.
 ```ebnf
 block       = "{" { statement } "}" ;
 statement   = block
+            | "unsafe" block
             | if-statement
             | "while" "(" expression ")" block
             | "do" block "while" "(" expression ")" ";"
@@ -2056,6 +2063,8 @@ for-init    = ";" | var-decl | binding | expression ";" ;
 ```
 
 `if`, `while`, and `for` take a block.
+
+`unsafe { ... }` is a statement in a block. It is not the body of `if`, `while`, or `for`.
 
 `else` takes a block or another `if`.
 
@@ -2183,6 +2192,8 @@ Prefix `!` is logical not on a `bool` and yields `bool`.
 An integer is reported as `type mismatch: expected bool, found i32`.
 
 A null pointer calls `builtin.panic("null pointer")`.
+
+`&items[0]` on a slice is `*T`, the pointer stored in the slice. A length of 0 does not reject that address. `&items[i]` for another index panics at run time when `i` is outside the length.
 
 `a[i:j]` is the slice of elements from `i` up to, but not including, `j`.
 

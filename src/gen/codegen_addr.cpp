@@ -259,7 +259,11 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
                 limit = const_i32(base.array_len);
             }
         }
-        if (limit != nullptr) {
+        // `&items[0]` is that stored pointer. Another index still rejects a length of 0.
+        const bool data_pointer = slice_data_addr_ && subscript != nullptr &&
+                                  llvm::isa<llvm::ConstantInt>(subscript) &&
+                                  llvm::cast<llvm::ConstantInt>(subscript)->isZero();
+        if (limit != nullptr && !data_pointer) {
             trap_index(subscript, limit, loc);
             if (terminated()) {
                 return {};

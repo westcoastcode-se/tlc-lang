@@ -250,7 +250,16 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             return pointer;
                         }
                     }
+                    const bool saved_data = slice_data_addr_;
+                    if (const auto *index = std::get_if<Expr::Index>(&node.expr->data);
+                        index != nullptr && !index->is_range && index->index != nullptr) {
+                        if (const std::optional<FoldedNumber> number = fold_number(*index->index);
+                            number && !number->is_float && number->value == 0.0) {
+                            slice_data_addr_ = true;
+                        }
+                    }
                     const TypedValue addr = emit_addr(*node.expr);
+                    slice_data_addr_ = saved_data;
                     if (addr.value == nullptr) {
                         return {zero(), 0};
                     }

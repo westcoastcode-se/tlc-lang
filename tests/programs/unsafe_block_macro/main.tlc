@@ -1,0 +1,15 @@
+unsafe func point(raw *u8) *i32 {
+    return *i32(raw);
+}
+
+macro func load(slot *i32) void {
+    unsafe {
+        emit *slot = *point(*u8(slot)) + 2;
+    }
+}
+
+func main() i32 {
+    var n i32 = 40;
+    load(&n);
+    return n;
+}

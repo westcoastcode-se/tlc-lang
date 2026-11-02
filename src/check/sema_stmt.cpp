@@ -893,6 +893,25 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     }
     if (auto *block = std::get_if<Stmt::Block>(&stmt->data)) {
         std::vector<std::unique_ptr<Stmt>> children = std::move(block->statements);
+        // Pasting flattens a plain block. An `unsafe` block stays, so the context stays with it.
+        if (block->unsafe_block) {
+            std::vector<std::unique_ptr<Stmt>> inner;
+            ++unsafe_depth_;
+            for (auto &child : children) {
+                if (folded_switch_stop_) {
+                    break;
+                }
+                expand_macro_stmt(std::move(child), fn, names, exprs, inner, false, true, false);
+            }
+            --unsafe_depth_;
+            block->statements = std::move(inner);
+            if (defer) {
+                out.push_back(std::move(stmt));
+            } else {
+                append_statement(std::move(stmt), out, false);
+            }
+            return;
+        }
         if (keep_block) {
             std::vector<std::unique_ptr<Stmt>> inner;
             for (auto &child : children) {
@@ -1156,9 +1175,12 @@ bool Checker::expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case 
     }
     if (auto *block = std::get_if<Stmt::Block>(&stmt->data)) {
         std::vector<std::unique_ptr<Stmt>> children = std::move(block->statements);
+        // The taken arm stays inside the `unsafe` block. A plain block is flattened.
+        std::vector<std::unique_ptr<Stmt>> held;
+        std::vector<std::unique_ptr<Stmt>> &dest = block->unsafe_block ? held : out;
         for (auto &child : children) {
             if (folded_switch_stop_) {
-                return true;
+                break;
             }
             if (child == nullptr) {
                 continue;
@@ -1167,7 +1189,15 @@ bool Checker::expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case 
             if (!active && !switch_reaches_case(*child, arm)) {
                 continue;
             }
-            expand_folded_switch(std::move(child), arm, active, fn, names, exprs, out, defer);
+            expand_folded_switch(std::move(child), arm, active, fn, names, exprs, dest, defer);
+        }
+        if (block->unsafe_block) {
+            block->statements = std::move(held);
+            if (defer) {
+                out.push_back(std::move(stmt));
+            } else {
+                append_statement(std::move(stmt), out, false);
+            }
         }
         return folded_switch_stop_;
     }
@@ -1917,9 +1947,13 @@ void Checker::check_stmt(const Stmt &stmt) {
         [&](const auto &node) {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Stmt::Block>) {
+                // `unsafe { ... }` covers the statements. A nested function sets its own depth.
+                const int extra = node.unsafe_block ? 1 : 0;
+                unsafe_depth_ += extra;
                 push();
                 check_statements(const_cast<Stmt::Block &>(node).statements);
                 pop();
+                unsafe_depth_ -= extra;
             } else if constexpr (std::is_same_v<T, Stmt::Return>) {
                 // Learning an omitted result. The real check of this body matches the type afterwards.
                 if (collect_returns_) {

@@ -1,1 +1,1 @@
-compile-error: compare with builtin.memeql
+compile-error: compare with mem.memeql

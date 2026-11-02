@@ -33,6 +33,7 @@ class Parser {
         bool is_static = false;
         bool is_extern = false;
         bool extern_c = false;
+        bool extern_compiler = false;
         // `extern(..., name="symbol")`. Empty keeps the usual object name.
         std::string link_name;
         SourceLoc name_loc{};
@@ -239,6 +240,8 @@ class Parser {
     AssertDecl parse_assert();
     TestDecl parse_test();
     std::unique_ptr<Stmt> parse_block();
+    // `unsafe { ... }`. The block is an unsafe context.
+    std::unique_ptr<Stmt> parse_unsafe_block();
     // The body of if, while, and for. A missing '{' is an error.
     std::unique_ptr<Stmt> parse_required_block();
     std::unique_ptr<Stmt> parse_if();
@@ -339,6 +342,8 @@ class Parser {
 
     // Struct, enum, union, and type-alias names seen in this file.
     std::unordered_set<std::string> type_names_;
+    // Set by `extern(abi="compiler")` until the next top-level declaration.
+    bool extern_compiler_ = false;
     // Type parameters of the function whose body is being parsed. Value parameters stay out.
     std::vector<std::string> open_type_params_;
 };

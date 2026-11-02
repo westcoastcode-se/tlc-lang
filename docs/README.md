@@ -130,7 +130,6 @@ A listing is for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
 - [`allocator`](builtin/allocator.md)
 - [`va`](builtin/va.md)
 - [`panic`](builtin/panic.md)
-- [`memeql` and `memcmp`](builtin/mem.md)
 - [`atomic`](builtin/atomic.md)
 - [`builtin/env/consts`](builtin/family.md)
 
@@ -138,6 +137,7 @@ A listing is for a compile with no `-O` flag, on `x86_64-pc-linux-gnu`.
 
 - [`unicode`](std/unicode.md)
 - [`ascii`](std/ascii.md)
+- [`memeql` and `memcmp`](std/mem.md)
 - [`seq`](std/seq.md)
 - [`thread`](std/thread.md)
 - [`atomic`](std/atomic.md)

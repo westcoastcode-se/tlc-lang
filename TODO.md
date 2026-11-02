@@ -35,7 +35,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ### Constant evaluation
 
-`assert`, `const`, and a compile-time integer share one evaluator. An `assert` whose condition does not fold is `not supported yet`. A call is not a constant, except a call of a `comptime func` that returns `i32`, a `bool`, a struct, or a constant `[]const u8` (a body that is one `return` of a constant folds, and a body with statements is compiled and run), a call of an ordinary function whose every parameter is `comptime` and whose body is that same `return`, and `builtin.memeql[u8]` or `builtin.memcmp[u8]` of two constant `[]const u8` values. A `comptime func` whose result is not `i32`, not a `bool`, not a struct, and not a constant `[]const u8` is `not supported yet`. An index outside the length does not fold, and neither does a bound past the string or a high bound below the low bound. A suffix whose value does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
+`assert`, `const`, and a compile-time integer share one evaluator. An `assert` whose condition does not fold is `not supported yet`. A call is not a constant, except a call of a `comptime func` that returns `i32`, a `bool`, a struct, or a constant `[]const u8` (a body that is one `return` of a constant folds, and a body with statements is compiled and run), a call of an ordinary function whose every parameter is `comptime` and whose body is that same `return`, and `mem.memeql[u8]` or `mem.memcmp[u8]` of two constant `[]const u8` values. A `comptime func` whose result is not `i32`, not a `bool`, not a struct, and not a constant `[]const u8` is `not supported yet`. An index outside the length does not fold, and neither does a bound past the string or a high bound below the low bound. A suffix whose value does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
 
 ## Reflection
 
@@ -58,7 +58,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 - `extern` on an inferred variable, `var name = expr` or `name := expr`. `export var name = expr` and `export name := expr` are accepted.
 - A local `type`, including a local struct or enum.
 - A file-scope array element that is not a constant, such as `n + 1` when `n` is a `var`, or `give() + 1`. That is `global initializer is not a constant`. A `const` with that call, and `var n = give(); var row = [_]i32{n}`, are that error.
-- A bare `extern`, `extern(abi="tlc")`, and any abi other than `"c"`. The diagnostic is `not supported yet`. `extern(abi="c")` is the C library. `extern(name="symbol")` without `abi="c"` is also `name requires abi="c"`.
+- A bare `extern`, `extern(abi="tlc")`, and any abi other than `"c"` and `"compiler"`. The diagnostic is `not supported yet`. `extern(abi="c")` is the C library. `extern(abi="compiler")` marks a type, method, or function the compiler implements or checks. In `lib/tlc/builtin`, a signature that does not match that contract is `type mismatch`. `extern(name="symbol")` without `abi="c"` is also `name requires abi="c"`.
 - `const` before a type on a function type, a result, an array, an associated variable, or `const name const Type`. `func (const i32) i32`, `func f() const i32`, `const [4]i32 row`, `const n const i32`, and `var Type::name const Type` are `not supported yet`. `var row const [4]i32` is `expected a type`. `type Name[T type] const T` is `expected ']'`. `const *i32` is not a spelling of `*const i32`. `[]const [4]T` is `not supported yet`.
 
 ## Functions

@@ -1,0 +1,13 @@
+unsafe func point(raw *u8) *i32 {
+    return *i32(raw);
+}
+
+func main() i32 {
+    var n i32 = 40;
+    var out i32 = 0;
+    unsafe {
+        var p = point(*u8(&n));
+        out = *p + 2;
+    }
+    return out;
+}

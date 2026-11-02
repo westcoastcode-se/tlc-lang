@@ -61,6 +61,35 @@ std::string check_std_seq(const std::string &body, bool iteration) {
     return errors;
 }
 
+std::string check_compiler_builtin(const std::string &builtin_src) {
+    static int seq = 0;
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / ("tlc-builtin-" + std::to_string(++seq));
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    const std::filesystem::path dir = root / "lib" / "tlc" / "builtin";
+    std::filesystem::create_directories(dir, ec);
+    {
+        std::ofstream out(dir / "builtin.tlc");
+        out << builtin_src;
+    }
+    {
+        std::ofstream out(root / "main.tlc");
+        out << "import \"builtin\";\n\nfunc main() i32 {\n    return 0;\n}\n";
+    }
+    tlc::SourceSet sources;
+    tlc::DiagnosticEngine diags(sources);
+    tlc::ResolveRequest request;
+    request.entry = (root / "main.tlc").string();
+    request.std_root = (root / "lib" / "tlc").string();
+    tlc::PackageGraph graph;
+    tlc::resolve_packages(request, sources, diags, graph);
+    tlc::analyze(graph, diags);
+    const std::string errors = diags.render();
+    std::filesystem::remove_all(root, ec);
+    return errors;
+}
+
 std::string diagnose(const std::string &source, bool keep_going = false) {
     tlc::SourceSet sources;
     tlc::SourceFile &file = sources.add("mem.tlc", source);
@@ -7402,6 +7431,19 @@ int run_sema_tests() {
             "unsafe func Allocator::malloc[T type](self *this) ?*T { return null; }\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "redefinition");
+    }
+
+    {
+        const std::string errors = diagnose(
+            "extern(abi=\"compiler\") func hook() i32;\n"
+            "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = check_compiler_builtin(
+            "package builtin;\n\nextern(abi=\"compiler\") func trace() i32;\n");
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {

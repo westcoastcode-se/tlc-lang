@@ -48,15 +48,22 @@ void append_indent(std::string &out, int indent) {
 
 std::string quote_string(const std::string &text);
 
-void append_extern(std::string &out, bool is_extern, bool extern_c, const std::string &link_name = {}) {
-    if (!is_extern) {
+void append_extern(std::string &out, bool is_extern, bool extern_c, const std::string &link_name = {},
+                   bool extern_compiler = false) {
+    if (!is_extern && !extern_compiler) {
         return;
     }
-    if (!extern_c && link_name.empty()) {
+    if (!extern_c && !extern_compiler && link_name.empty()) {
         out += " extern";
         return;
     }
     out += " extern(";
+    if (extern_compiler) {
+        out += "abi=\"compiler\"";
+        if (extern_c || !link_name.empty()) {
+            out += ", ";
+        }
+    }
     if (extern_c) {
         out += "abi=\"c\"";
         if (!link_name.empty()) {
@@ -274,7 +281,7 @@ void dump_stmt(const Stmt &stmt, std::string &out, int indent) {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Stmt::Block>) {
                 append_indent(out, indent);
-                out += "(block\n";
+                out += node.unsafe_block ? "(block unsafe\n" : "(block\n";
                 for (const auto &child : node.statements) {
                     if (child) {
                         dump_stmt(*child, out, indent + 1);
@@ -520,7 +527,7 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
     if (fn.is_static) {
         out += " static";
     }
-    append_extern(out, fn.is_extern, fn.extern_c, fn.link_name);
+    append_extern(out, fn.is_extern, fn.extern_c, fn.link_name, fn.extern_compiler);
     out += "\n";
     if (fn.body) {
         dump_stmt(*fn.body, out, indent + 1);
@@ -780,7 +787,7 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             if (item->exported) {
                 out += " export";
             }
-            append_extern(out, item->is_extern, item->extern_c);
+            append_extern(out, item->is_extern, item->extern_c, {}, item->extern_compiler);
             out += "\n";
             for (const FieldDecl &field : item->fields) {
                 dump_field(field, out, 2);
@@ -801,7 +808,7 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             if (item->exported) {
                 out += " export";
             }
-            append_extern(out, item->is_extern, item->extern_c);
+            append_extern(out, item->is_extern, item->extern_c, {}, item->extern_compiler);
             out += "\n";
             for (const Enumerator &enumerator : item->enumerators) {
                 append_indent(out, 2);
@@ -832,6 +839,7 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             if (item->exported) {
                 out += " export";
             }
+            append_extern(out, false, false, {}, item->extern_compiler);
             out += ")\n";
         } else if (const auto *item = std::get_if<TestDecl>(&decl.data)) {
             append_indent(out, 1);
@@ -854,6 +862,10 @@ std::string dump_translation_unit(const TranslationUnit &unit) {
             append_indent(out, 1);
             out += "(trait ";
             out += item->name;
+            if (item->exported) {
+                out += " export";
+            }
+            append_extern(out, item->is_extern, false, {}, item->extern_compiler);
             out += "\n";
             if (!item->parent_name.empty()) {
                 append_indent(out, 2);
@@ -1151,6 +1163,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
             if constexpr (std::is_same_v<T, Stmt::Block>) {
                 Stmt::Block copy;
                 copy.loc = node.loc;
+                copy.unsafe_block = node.unsafe_block;
                 for (const auto &child : node.statements) {
                     copy.statements.push_back(child ? clone_stmt(*child) : nullptr);
                 }

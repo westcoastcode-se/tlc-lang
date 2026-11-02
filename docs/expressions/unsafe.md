@@ -2,13 +2,11 @@
 
 [Index](../README.md) · [Previous: Casts](cast.md) · [Next: Tuples and lists](tuple.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-This page describes `unsafe`, a prefix that marks an expression without adding a check.
+This page describes `unsafe`. It is a prefix on an expression, and a block that makes its statements an unsafe context.
 
-`unsafe` is a prefix on an expression.
+`unsafe` on an expression adds no check.
 
 The expression keeps its type and its value.
-
-The prefix adds no check.
 
 ```c
 type Point struct {
@@ -83,6 +81,56 @@ The cast is still that pointer, so one diagnostic does not hide the type.
 
 `unsafe unsafe *f32(p)` is the same prefix twice.
 
+## Blocks
+
+`unsafe { ... }` is a block. The statements inside are an unsafe context.
+
+A call in that block is `point(raw)`. A cast in that block omits the prefix.
+
+The context ends at `}`.
+
+A nested function and an anonymous function do not inherit it.
+
+`if`, `while`, and `for` still take a `{` block. The `unsafe` block is a statement inside it.
+
+```c
+unsafe func point(raw *u8) *i32 {
+    return *i32(raw);
+}
+
+func main() i32 {
+    var n i32 = 40;
+    var out i32 = 0;
+    unsafe {
+        var p = point(*u8(&n));
+        out = *p + 2;
+    }
+    return out;
+}
+```
+
+```asm
+main:
+subq $40, %rsp                   # subtract
+movl $40, 24(%rsp)               # constant
+# trace frame for the call, then the matching pop
+leaq 24(%rsp), %rdi              # address
+callq point                      # call point
+movq %rax, 32(%rsp)              # move
+movq 32(%rsp), %rax              # move
+movl (%rax), %eax                # move
+addl $2, %eax                    # add
+movl %eax, 28(%rsp)              # move
+movl 28(%rsp), %eax              # move
+addq $40, %rsp                   # add
+retq                             # return
+
+point:
+movq %rdi, -8(%rsp)              # raw
+movq -8(%rsp), %rax              # return that address
+retq
+```
+
 ## Functions
 
 `unsafe func` makes the body an unsafe context.
@@ -120,7 +168,7 @@ The function is only a call.
 
 `defer unsafe point(raw)` calls it.
 
-`defer point(raw)` is `unsafe call` outside an unsafe function.
+`defer point(raw)` is `unsafe call` outside an unsafe context.
 
 `unsafe` on a declaration that is not a function, such as `unsafe var`, is reported as `not supported yet`.
 
@@ -145,6 +193,8 @@ The call through the trait still writes `unsafe`.
 `malloc` and `realloc` on `Allocator` are unsafe.
 
 The call is `unsafe arena.malloc(...)` or `unsafe arena.realloc(...)`, and it is `unsafe call` without the prefix.
+
+Inside `unsafe { }`, that prefix is not required.
 
 `free` is an ordinary call.
 

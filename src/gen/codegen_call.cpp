@@ -150,6 +150,10 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             }
             const std::string key = structs_[static_cast<std::size_t>(struct_id)].name + "." + node.trait_method;
             const Binding *method = method_binding(current_file_, structs_[static_cast<std::size_t>(struct_id)].file_id, key);
+            if (method == nullptr) {
+                method = method_list_binding(current_file_, structs_[static_cast<std::size_t>(struct_id)].file_id, key,
+                                             node.args.size());
+            }
             auto *function = method == nullptr ? nullptr : llvm::dyn_cast<llvm::Function>(method->value);
             if (function == nullptr || method->decl == nullptr || method->decl->static_method) {
                 error(node.loc, "type mismatch");
@@ -464,8 +468,11 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             if (struct_id >= 0 && struct_id < static_cast<int>(structs_.size())) {
                 const std::string key = structs_[static_cast<std::size_t>(struct_id)].name + "." + selector->field;
                 method = selected_binding(method_binding(current_file_, selector->resolved_file, key));
+                if (method == nullptr) {
+                    method = method_list_binding(current_file_, selector->resolved_file, key, node.args.size());
+                }
                 // Specialization knows the struct. The trait's list picks the overload. No table.
-                if (node.selected == nullptr) {
+                if (method == nullptr && node.selected == nullptr) {
                     if (const Binding *exact =
                             trait_spec_method(current_file_, selector->resolved_file, key, *selector, node)) {
                         method = exact;

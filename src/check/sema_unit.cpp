@@ -1565,7 +1565,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
         }
     };
     std::unordered_set<std::string> tests;
-    // A folded `builtin.memeql` or `builtin.memcmp` is the value stored in the global.
+    // A folded `mem.memeql` or `mem.memcmp` is the value stored in the global.
     auto runs_at_startup = [&](const Expr &expr) {
         if (!startup_call(expr)) {
             return false;
@@ -2328,6 +2328,11 @@ void Checker::analyze_graph(const PackageGraph &graph) {
         }
         if (node != nullptr) {
             prepare_unit(node->unit, node->file_id, node);
+        }
+    }
+    for (const PackageNode &node : graph.nodes) {
+        if (is_compiler_builtin(&node) && !is_std_builtin_path(node.path)) {
+            validate_builtin(node.unit);
         }
     }
     for (const PackageNode &node : graph.nodes) {

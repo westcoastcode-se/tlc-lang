@@ -1,0 +1,10 @@
+unsafe func point(n i32) i32 {
+    return n;
+}
+
+func main() i32 {
+    unsafe {
+        var n = 1;
+    }
+    return point(42);
+}

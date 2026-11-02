@@ -1,0 +1,59 @@
+import "builtin";
+
+type Arena struct {
+    bytes [64]u8;
+    used i32;
+    calls i32;
+};
+
+unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    _ = align;
+    if (size < 1 || self.used + size > 64) {
+        return null;
+    }
+    var start = self.used;
+    self.used = self.used + size;
+    return ?*u8(&self.bytes[start]);
+}
+
+func Arena::free(self *this, ptr *u8) void {
+    _ = ptr;
+}
+
+unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    _ = ptr;
+    self.calls = self.calls + 1;
+    return self.malloc(size, align);
+}
+
+func main() i32 {
+    var arena Arena;
+    arena.used = 0;
+    arena.calls = 0;
+    var buf = arena.alloc[i32](3);
+    buf[0] = 10;
+    buf[1] = 20;
+    buf[2] = 12;
+    var same = arena.realloc[i32](buf, 3);
+    var wide = arena.realloc[i32](same, 1);
+    if (arena.calls != 0) {
+        return 1;
+    }
+    if (wide.len != 3) {
+        return 2;
+    }
+    if (&wide[0] != &buf[0]) {
+        return 3;
+    }
+    if (wide[0] + wide[1] + wide[2] != 42) {
+        return 4;
+    }
+    var grown = arena.realloc[i32](wide, 4);
+    if (arena.calls != 1) {
+        return 5;
+    }
+    if (grown.len != 4) {
+        return 6;
+    }
+    return wide[0] + wide[1] + wide[2];
+}

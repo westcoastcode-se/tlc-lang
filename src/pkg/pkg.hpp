@@ -147,6 +147,11 @@ inline bool is_compiler_builtin(const PackageNode *node) {
     return node != nullptr && (node->compiler_builtin || is_std_builtin_path(node->path));
 }
 
+// `lib/tlc/std/mem`. `memeql` and `memcmp` live here. The compiler folds the comptime slice overload.
+inline bool is_std_mem_package(const PackageNode *node) {
+    return node != nullptr && node->path.find("/std/mem/") != std::string::npos;
+}
+
 // Loads the import graph of `request.entry`. The entry directory is the first
 // package root, followed by each path in `package_paths`, then `vendor_root`
 // when that directory exists. Returns false when any diagnostic was reported.

@@ -16,7 +16,7 @@ It may also be a float comparison, `1.5f < 2.0f`, or a string byte, `"hi"[1] == 
 
 `"hello"[1:4][0] == 101` indexes a slice of a string and compares that byte.
 
-`builtin.memeql[u8]("hi", "hi")` compares two strings while the program compiles.
+`mem.memeql[u8]("hi", "hi")` compares two strings while the program compiles.
 
 The message is a string literal.
 

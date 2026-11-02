@@ -384,6 +384,7 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
             item.exported = exported;
             item.is_extern = is_extern;
             item.extern_c = extern_c;
+            item.extern_compiler = extern_compiler_;
             item.align = align;
             item.type_params = std::move(type_params);
             TopDecl top;
@@ -427,6 +428,8 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         // `export` on a trait with no type parameter publishes the name the same way.
         if (extern_c) {
             diags_.error(name_loc, "extern(abi=\"c\") on a trait or a generic");
+        } else if (extern_compiler_) {
+            // `extern(abi="compiler")` names a trait the compiler implements.
         } else if (is_extern && !generic_ok) {
             diags_.error(name_loc, "not supported yet");
         } else if (exported && !generic_ok && !plain) {
@@ -435,8 +438,9 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         TraitDecl trait;
         trait.loc = name_loc;
         trait.name = std::move(name);
-        trait.exported = exported && !extern_c && (generic_ok || (plain && !is_extern));
-        trait.is_extern = generic_ok && is_extern && !extern_c;
+        trait.exported = exported && !extern_c && (generic_ok || plain);
+        trait.is_extern = (generic_ok && is_extern && !extern_c) || extern_compiler_;
+        trait.extern_compiler = extern_compiler_;
         trait.type_params = std::move(type_params);
         trait.parent_name = std::move(parent_name);
         trait.parent_package = std::move(parent_package);
@@ -496,6 +500,7 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
         item.exported = exported;
         item.is_extern = is_extern;
         item.extern_c = extern_c;
+        item.extern_compiler = extern_compiler_;
         expect(TokenKind::RBrace, "expected '}'");
         eat(TokenKind::Semicolon);
         TopDecl top;
@@ -544,6 +549,7 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
     // without that ABI. `union(Enum)` stays a tlc type.
     item.is_extern = is_extern || (as_union && extern_c && !variant_body);
     item.extern_c = extern_c;
+    item.extern_compiler = extern_compiler_;
     item.align = align;
     item.is_union = as_union;
     item.tag_name = std::move(tag_name);
@@ -633,6 +639,7 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     }
     item.type_params = std::move(type_params);
     item.exported = exported;
+    item.extern_compiler = extern_compiler_;
     if (!item.name.empty()) {
         type_names_.insert(item.name);
     }
@@ -650,6 +657,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         return;
     }
     const std::size_t marker = pos_;
+    extern_compiler_ = false;
     bool exported = false;
     bool is_extern = false;
     bool extern_c = false;
@@ -840,6 +848,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         item.exported = specs.exported;
         item.is_extern = specs.is_extern;
         item.extern_c = specs.extern_c;
+        item.extern_compiler = specs.extern_compiler;
         item.align = specs.align;
         TopDecl top;
         top.data = std::move(item);
@@ -860,6 +869,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         item.exported = specs.exported;
         item.is_extern = specs.is_extern;
         item.extern_c = specs.extern_c;
+        item.extern_compiler = specs.extern_compiler;
         TopDecl top;
         top.data = std::move(item);
         unit.decls.push_back(std::move(top));

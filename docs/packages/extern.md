@@ -4,7 +4,13 @@
 
 `extern` names a symbol that a library defines.
 
-## Only `abi="c"`
+## Which abi string
+
+`extern(abi="c")` is a C library symbol.
+
+`extern(abi="compiler")` marks a type, a method, or a function the compiler implements or checks. The declaration stays a tlc type. It does not use the C layout and it does not require a C library.
+
+`lib/tlc/builtin/builtin.tlc` is that contract. A signature there that does not match the compiler is `type mismatch`.
 
 A bare `extern` and `extern(abi="tlc")` are `not supported yet`.
 

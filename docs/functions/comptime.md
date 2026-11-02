@@ -1602,6 +1602,6 @@ When only the `comptime` list exists and an argument is not a comptime value, th
 
 Two lists that both mark the same parameters `comptime` are `redefinition`.
 
-[`builtin.memeql`](../builtin/mem.md) and `builtin.memcmp` fold two constant `[]const u8` values through that overload.
+[`mem.memeql`](../std/mem.md) and `mem.memcmp` fold two constant `[]const u8` values through that overload.
 
 [Index](../README.md) · [Previous: Generics](generic.md) · [Next: Macros](macro.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

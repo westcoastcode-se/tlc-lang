@@ -29,6 +29,37 @@ void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
             declare(entry.second, {});
         }
     }
+    // A default written in builtin calls `panic`. The struct's file does not import that name.
+    // The call is checked here and code generation follows `selected` back to that function.
+    if (graph_ != nullptr) {
+        const auto origin = default_origin_.find(&fn);
+        if (origin != default_origin_.end() && origin->second != nullptr) {
+            const FunctionDecl *templ = origin->second;
+            for (const PackageNode &node : graph_->nodes) {
+                bool home = false;
+                for (const TopDecl &decl : node.unit.decls) {
+                    if (std::get_if<FunctionDecl>(&decl.data) == templ) {
+                        home = true;
+                        break;
+                    }
+                }
+                if (!home) {
+                    continue;
+                }
+                const auto package = package_syms_.find(node.package_key);
+                if (package == package_syms_.end()) {
+                    break;
+                }
+                const auto panic = package->second.find("panic");
+                if (panic != package->second.end() && lookup_scope("panic") == nullptr) {
+                    Symbol symbol = panic->second;
+                    symbol.package_file = node.file_id;
+                    declare(std::move(symbol), {});
+                }
+                break;
+            }
+        }
+    }
     check_function(fn);
     pop();
     scopes_ = std::move(saved_scopes);
@@ -2230,7 +2261,7 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         return type_invalid();
     }
     // The comptime slice overload of memeql or memcmp is the value. It has no runtime specialization.
-    if (is_std_builtin_file(owner) && mem_compare_comptime(mem_compare_kind(*templ)) && fold_mem_compare(call)) {
+    if (is_std_mem_package(find_node(owner)) && mem_compare_comptime(mem_compare_kind(*templ)) && fold_mem_compare(call)) {
         return mem_compare_bool(mem_compare_kind(*templ)) ? type_bool() : type_int();
     }
     // A body defines the symbol. An `extern` prototype names that same specialization.
@@ -2989,6 +3020,11 @@ bool same_default_shape(const FunctionDecl &lhs, const FunctionDecl &rhs) {
     return same_result_spelling(lhs, rhs);
 }
 
+std::size_t written_params(const FunctionDecl &fn) {
+    const std::size_t skip = !fn.params.empty() && fn.params.front().is_receiver ? 1 : 0;
+    return fn.params.size() - skip;
+}
+
 bool type_arg_count_ok(const FunctionDecl &fn, const Expr::Call &call) {
     if (fn.type_params.empty()) {
         return false;
@@ -2997,6 +3033,11 @@ bool type_arg_count_ok(const FunctionDecl &fn, const Expr::Call &call) {
         return call.type_args.size() + 1 >= fn.type_params.size();
     }
     return call.type_args.size() == fn.type_params.size();
+}
+
+// `alloc[T]()` and `alloc[T](count)` share a type-parameter count. The value arguments pick the list.
+bool default_call_matches(const FunctionDecl &fn, const Expr::Call &call) {
+    return type_arg_count_ok(fn, call) && written_params(fn) == call.args.size();
 }
 
 } // namespace
@@ -3034,11 +3075,32 @@ void Checker::register_trait_default(const FunctionDecl &fn) {
         return;
     }
     TraitInfo &info = traits_[static_cast<std::size_t>(trait_id)];
-    for (const FunctionDecl *existing : info.defaults) {
-        if (existing != nullptr && same_default_shape(*existing, fn)) {
+    for (const FunctionDecl *&existing : info.defaults) {
+        if (existing == nullptr || !same_default_shape(*existing, fn)) {
+            continue;
+        }
+        // `builtin.tlc` replaces the synthesized `Allocator.malloc[T]`. The file's body is the one that runs.
+        bool synthetic = false;
+        if (is_std_builtin_file(file_id_)) {
+            for (const FunctionDecl &owned : owned_defaults_) {
+                if (&owned == existing) {
+                    synthetic = true;
+                }
+            }
+        }
+        if (!synthetic) {
             error(fn.loc, "redefinition");
             return;
         }
+        const FunctionDecl *old = existing;
+        for (TraitInfo &trait : traits_) {
+            for (const FunctionDecl *&slot : trait.defaults) {
+                if (slot == old) {
+                    slot = &fn;
+                }
+            }
+        }
+        return;
     }
     if (fn.type_params.empty()) {
         const Type tail = method_tail(fn);
@@ -3719,7 +3781,7 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
         std::vector<const FunctionDecl *> matches;
         if (trait_id >= 0 && trait_id < static_cast<int>(traits_.size())) {
             for (const FunctionDecl *def : traits_[static_cast<std::size_t>(trait_id)].defaults) {
-                if (def != nullptr && def->name == selector->field && type_arg_count_ok(*def, call)) {
+                if (def != nullptr && def->name == selector->field && default_call_matches(*def, call)) {
                     matches.push_back(def);
                 }
             }
@@ -3858,7 +3920,7 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
         for (std::size_t trait_i = 0; trait_i < traits_.size(); ++trait_i) {
             bool named = false;
             for (const FunctionDecl *def : traits_[trait_i].defaults) {
-                if (def != nullptr && def->name == selector->field && type_arg_count_ok(*def, call)) {
+                if (def != nullptr && def->name == selector->field && default_call_matches(*def, call)) {
                     named = true;
                     break;
                 }
@@ -3874,7 +3936,7 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
                 continue;
             }
             for (const FunctionDecl *def : traits_[trait_i].defaults) {
-                if (def != nullptr && def->name == selector->field && type_arg_count_ok(*def, call)) {
+                if (def != nullptr && def->name == selector->field && default_call_matches(*def, call)) {
                     matches.push_back(def);
                 }
             }
