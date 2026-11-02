@@ -79,7 +79,6 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ## Compiler
 
-- `new` does not push a trace frame. A `StackTrace` taken inside `DebugAllocator.malloc` is the call that entered the allocating function. The `new` token is not one of those frames.
 - A race condition is not reported. `tlc --test` reports one, and so does a debug build. A release build that is not `tlc --test` does not. The compiler has no debug or release mode yet.
 
 ## Inconsistencies

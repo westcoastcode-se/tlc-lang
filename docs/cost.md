@@ -87,7 +87,9 @@ A function with a trait parameter is specialized, and the call of that specializ
 
 Calls inside the specialized body still push frames.
 
-`malloc` and `free`, used by `new` and `delete`, do not push a frame.
+`new` records a frame. The name is the function that contains the `new`, and the location is that `new`.
+
+`free`, used by `delete`, does not push a frame.
 
 On the path where fewer than 32 frames are already stored, this program is the listing below.
 

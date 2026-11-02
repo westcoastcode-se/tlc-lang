@@ -75,16 +75,17 @@ test "keeps the block" {
 
 A build without `--test` does not emit the test, so this example emits nothing.
 
-`tlc --test` prints one line for that block, then the failure:
+`tlc --test` prints one line for that block, then the frame, then the failure:
 
 ```text
 not released
+main.tlc:2:13: keeps the block
 fail: keeps the block
 ```
 
-A `new` in the test body has no frame. The harness does not record its call, and `new` does not push one.
+The frame is that `new`. The name is the test. The harness does not record its own call.
 
-A call that entered the allocating function is printed under that line:
+A call that entered the allocating function is printed under that line, after the `new`:
 
 ```c
 func leak() i32 {
@@ -102,11 +103,12 @@ A build without `--test` does not emit this test either. `tlc --test` prints:
 
 ```text
 not released
+main.tlc:2:13: leak
 main.tlc:8:12: keeps the block
 fail: keeps the block
 ```
 
-The frame is the `leak()` call. The name is the test. The allocator frees that `StackTrace` when the block is released and when `report` prints it.
+The first frame is the `new` inside `leak`. The second is the `leak()` call. The allocator frees that `StackTrace` when the block is released and when `report` prints it.
 
 `--allocator Malloc` keeps `malloc` and `free` for that run, so the same test does not report the block. `--allocator pkg.Name` uses another struct that satisfies `Allocator`.
 

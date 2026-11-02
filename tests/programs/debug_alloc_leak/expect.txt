@@ -2,6 +2,8 @@ mode: test
 exit: 2
 stdout:
 not released
+main.tlc:2:13: keeps the block
 fail: keeps the block
 not released
+main.tlc:7:15: keeps the slice
 fail: keeps the slice

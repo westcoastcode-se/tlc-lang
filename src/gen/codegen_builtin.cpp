@@ -387,6 +387,15 @@ void CodeGen::trap_index(llvm::Value *index, llvm::Value *length, SourceLoc loc)
     builder_.SetInsertPoint(ok);
 }
 
+llvm::Value *CodeGen::call_traced(SourceLoc loc, llvm::FunctionType *type, llvm::Value *callee,
+                                 llvm::ArrayRef<llvm::Value *> args) {
+    llvm::Value *pushed = push_trace(loc);
+    llvm::CallInst *call = builder_.CreateCall(type, callee, args);
+    call->setCallingConv(llvm::CallingConv::C);
+    pop_trace(pushed);
+    return call;
+}
+
 llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, llvm::Value *bytes, uint64_t align) {
     if (bytes == nullptr) {
         return nullptr;
@@ -402,11 +411,11 @@ llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, l
             bytes = builder_.CreateMul(builder_.CreateUDiv(padded, step), step);
             auto *fn_type = llvm::FunctionType::get(ptr_type(), {i64(), i64()}, false);
             llvm::FunctionCallee fn = module_.getOrInsertFunction("aligned_alloc", fn_type);
-            return builder_.CreateCall(fn_type, fn.getCallee(), {step, bytes});
+            return call_traced(node.loc, fn_type, fn.getCallee(), {step, bytes});
         }
         auto *fn_type = llvm::FunctionType::get(ptr_type(), {i64()}, false);
         llvm::FunctionCallee fn = module_.getOrInsertFunction("malloc", fn_type);
-        return builder_.CreateCall(fn_type, fn.getCallee(), {bytes});
+        return call_traced(node.loc, fn_type, fn.getCallee(), {bytes});
     }
     if (receiver == nullptr) {
         error(node.loc, "undeclared identifier");
@@ -430,8 +439,8 @@ llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, l
         error(node.loc, "not supported yet");
         return nullptr;
     }
-    return builder_.CreateCall(method->getFunctionType(), method,
-                              {receiver, builder_.CreateTrunc(bytes, i32()), const_i32(static_cast<int>(align))});
+    return call_traced(node.loc, method->getFunctionType(), method,
+                      {receiver, builder_.CreateTrunc(bytes, i32()), const_i32(static_cast<int>(align))});
 }
 
 llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t align) {
@@ -451,9 +460,9 @@ llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t
             return nullptr;
         }
         const uint64_t bytes = size == 0 ? 1 : size;
-        return builder_.CreateCall(method->getFunctionType(), method,
-                                  {default_alloc_global_, const_i32(static_cast<int32_t>(bytes)),
-                                   const_i32(static_cast<int32_t>(align))});
+        return call_traced(node.loc, method->getFunctionType(), method,
+                          {default_alloc_global_, const_i32(static_cast<int32_t>(bytes)),
+                           const_i32(static_cast<int32_t>(align))});
     }
     if (node.builtin_alloc) {
         uint64_t bytes = size == 0 ? 1 : size;
@@ -462,12 +471,12 @@ llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t
             bytes = (bytes + align - 1) / align * align;
             auto *fn_type = llvm::FunctionType::get(ptr_type(), {i64(), i64()}, false);
             llvm::FunctionCallee fn = module_.getOrInsertFunction("aligned_alloc", fn_type);
-            raw = builder_.CreateCall(fn_type, fn.getCallee(),
-                                     {llvm::ConstantInt::get(i64(), align), llvm::ConstantInt::get(i64(), bytes)});
+            raw = call_traced(node.loc, fn_type, fn.getCallee(),
+                             {llvm::ConstantInt::get(i64(), align), llvm::ConstantInt::get(i64(), bytes)});
         } else {
             auto *fn_type = llvm::FunctionType::get(ptr_type(), {i64()}, false);
             llvm::FunctionCallee fn = module_.getOrInsertFunction("malloc", fn_type);
-            raw = builder_.CreateCall(fn_type, fn.getCallee(), {llvm::ConstantInt::get(i64(), bytes)});
+            raw = call_traced(node.loc, fn_type, fn.getCallee(), {llvm::ConstantInt::get(i64(), bytes)});
         }
         return raw;
     }
@@ -485,8 +494,8 @@ llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t
         return nullptr;
     }
     auto *fn_type = method->getFunctionType();
-    return builder_.CreateCall(fn_type, method,
-                              {receiver, const_i32(static_cast<int32_t>(size)), const_i32(static_cast<int32_t>(align))});
+    return call_traced(node.loc, fn_type, method,
+                      {receiver, const_i32(static_cast<int32_t>(size)), const_i32(static_cast<int32_t>(align))});
 }
 
 void CodeGen::call_free(const Expr::Delete &node, llvm::Value *pointer, llvm::Value *receiver) {

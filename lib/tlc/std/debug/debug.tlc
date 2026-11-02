@@ -139,7 +139,7 @@ export unsafe func DebugAllocator::malloc(self *this, size i32, align i32) ?*u8 
     defer self.lock.unlock();
     var raw = builtin.allocator.malloc(size, align);
     if (raw != null) {
-        // `new` does not push a frame, so this chain does not include the `new` token.
+        // The newest frame is this `new`. The name is the function that contains it.
         var trace = builtin.StackTrace.get();
         self.track(raw, frame_block(trace), trace.frames.len);
     }

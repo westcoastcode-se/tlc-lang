@@ -48,6 +48,8 @@ The compiler package is used when the search finds none.
 
 A call records one frame, then calls.
 
+`new` records one frame the same way. The name is the function that contains the `new`, and the location is that `new`.
+
 The frames are the calls that have not returned, newest first.
 
 A line is `file:line:column: name`.

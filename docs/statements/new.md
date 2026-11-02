@@ -89,42 +89,27 @@ func main() i32 {
 
 ```asm
 main:
-subq $24, %rsp                   # subtract
-movl $4, %edi                    # constant
+subq $40, %rsp                   # subtract
+# trace frame for the call, then the matching pop
+movl $8, %edi                    # constant
 callq malloc                     # call malloc
 movq %rax, 8(%rsp)               # move
 cmpq $0, %rax                    # compare
 jne .L1                          # branch
-movl (%rip), %eax                # move
-movl %eax, 4(%rsp)               # move
-cmpl $32, %eax                   # compare
-jb .L2                           # branch
-jmp .L3                          # jump
+# trace frame for the call, then the matching pop
+callq panic                      # call panic
 .L1:
 movq 8(%rsp), %rax               # move
-movq %rax, 16(%rsp)              # move
-movq 16(%rsp), %rdi              # move
+movl $40, (%rax)                 # constant
+movq %rax, 24(%rsp)              # move
+movq 24(%rsp), %rax              # move
+movl (%rax), %eax                # move
+movl %eax, 36(%rsp)              # move
+movq 24(%rsp), %rdi              # move
 callq free                       # call free
-xorl %eax, %eax                  # zero the result
-addq $24, %rsp                   # add
+movl 36(%rsp), %eax              # move
+addq $40, %rsp                   # add
 retq                             # return
-.L2:
-movl 4(%rsp), %eax               # move
-leaq (%rip), %rcx                # address
-movslq %eax, %rdx                # move
-imulq $24, %rdx, %rdx            # multiply
-addq %rdx, %rcx                  # add
-leaq (%rip), %rdx                # address
-movq %rdx, (%rcx)                # move
-movl $2, 8(%rcx)                 # constant
-movl $13, 12(%rcx)               # constant
-leaq (%rip), %rdx                # address
-movq %rdx, 16(%rcx)              # move
-addl $1, %eax                    # add
-movl %eax, (%rip)                # move
-.L3:
-leaq (%rip), %rdi                # address
-callq panic                      # call panic
 ```
 
 [Index](../README.md) · [Previous: Bindings](binding.md) · [Next: assert](assert.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

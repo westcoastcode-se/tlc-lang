@@ -1507,6 +1507,9 @@ class CodeGen {
     // `*Allocator` names its struct only inside the specialized body. Fills the three result slots.
     bool bind_trait_allocator(const Expr &allocator, bool &builtin_alloc, uint32_t &alloc_file, std::string &alloc_name);
     llvm::Value *call_malloc(const Expr::New &node, uint64_t size, uint64_t align);
+    // `new` records a frame around its allocation. The name is the function that contains the `new`.
+    llvm::Value *call_traced(SourceLoc loc, llvm::FunctionType *type, llvm::Value *callee,
+                             llvm::ArrayRef<llvm::Value *> args);
     // `bytes` is an i64. `receiver` is null for `builtin.allocator`.
     llvm::Value *heap_alloc(const Expr::New &node, llvm::Value *receiver, llvm::Value *bytes, uint64_t align);
     void call_free(const Expr::Delete &node, llvm::Value *pointer, llvm::Value *receiver);
