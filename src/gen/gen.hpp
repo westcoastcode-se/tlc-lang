@@ -1361,6 +1361,8 @@ class CodeGen {
     TypedValue emit_builtin_va(SourceLoc loc);
     // `StackTrace.get` copies the frames. `StackTrace.free` releases that copy.
     void emit_stack_trace();
+    // Debug builds report a race on a shared global. Release builds leave the checks out.
+    void emit_races();
     void emit_builtin_panic();
     void emit_builtin_heap();
     void prepare_default_allocator();

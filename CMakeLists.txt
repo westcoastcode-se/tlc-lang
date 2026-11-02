@@ -54,6 +54,7 @@ add_library(tlc_lib
     src/gen/codegen_value.cpp
     src/gen/codegen_stmt.cpp
     src/gen/codegen_builtin.cpp
+    src/gen/codegen_race.cpp
     src/gen/codegen_global.cpp
     src/gen/codegen_debug.cpp
     src/lsp/lsp_json.cpp

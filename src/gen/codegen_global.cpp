@@ -634,6 +634,9 @@ void CodeGen::emit(const PackageGraph &graph) {
     }
     // A test body can be the first call that creates `tlc.panic`. Fill that body after the tests.
     emit_builtin_panic();
+    if (checks_) {
+        emit_races();
+    }
     if (di_builder_ != nullptr) {
         finish_debug();
     }

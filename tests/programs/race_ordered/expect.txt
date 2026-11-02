@@ -1,0 +1,3 @@
+debug:
+exit: 1
+stderr:

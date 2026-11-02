@@ -39,7 +39,7 @@ std::string help_text() {
         "  --emit-obj      write an object file\n"
         "  --run           compile, link, and run\n"
         "  --test          compile, link, and run every test in the program\n"
-        "  --debug         check a null postfix !. tlc --test does this too\n"
+        "  --debug         check a null postfix ! and report a race. tlc --test does this too\n"
         "  --allocator <type>\n"
         "                  type bare new and delete use. Malloc is the default.\n"
         "                  tlc --test uses debug.DebugAllocator unless this flag names a type.\n"
@@ -517,6 +517,9 @@ CompileOutput compile_source(const Options &opt) {
     std::vector<std::string> link_cmd = {"cc", "-o", exe_path, object_path};
     link_cmd.insert(link_cmd.end(), opt.link_args.begin(), opt.link_args.end());
     link_cmd.insert(link_cmd.end(), graph.link_args.begin(), graph.link_args.end());
+    if (opt.debug_build || opt.mode == Mode::Test) {
+        link_cmd.push_back("-lpthread");
+    }
     if (uses_c_abi(graph) && !links_c_library(opt.link_args) && !links_c_library(graph.link_args)) {
         SourceLoc loc = first_c_abi(graph);
         diags.error(loc, "extern(abi=\"c\") requires a C library");

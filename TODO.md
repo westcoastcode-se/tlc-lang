@@ -79,7 +79,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ## Compiler
 
-- A race condition is not reported. `tlc --debug` and `tlc --test` are debug builds. A release build is the default. A debug build reports a race, and a release build does not.
+No open items.
 
 ## Inconsistencies
 

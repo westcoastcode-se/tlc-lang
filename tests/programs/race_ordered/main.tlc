@@ -1,0 +1,20 @@
+import "std/thread";
+
+var n i32;
+
+func write_n() void {
+    n = 1;
+}
+
+func work(arg *void) *void {
+    write_n();
+    return arg;
+}
+
+func main() i32 {
+    var dummy i32 = 0;
+    n = 2;
+    var t = thread.spawn(work, *void(&dummy));
+    _ = thread.join(t);
+    return n;
+}
