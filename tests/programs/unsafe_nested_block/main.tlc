@@ -1,0 +1,18 @@
+import "builtin";
+
+func main() i32 {
+    unsafe {
+        func inner() i32 {
+            var raw = builtin.allocator.malloc(4, 4);
+            if (raw == null) {
+                return 0;
+            }
+            var p = *i32(raw);
+            *p = 42;
+            var n = *p;
+            builtin.allocator.free(raw);
+            return n;
+        }
+        return inner();
+    }
+}

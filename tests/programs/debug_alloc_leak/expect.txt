@@ -1,0 +1,7 @@
+mode: test
+exit: 2
+stdout:
+not released
+fail: keeps the block
+not released
+fail: keeps the slice

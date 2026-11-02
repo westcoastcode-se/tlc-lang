@@ -355,9 +355,9 @@ void analyze(const TranslationUnit &unit, DiagnosticEngine &diags) {
     checker.analyze(unit);
 }
 
-void analyze(const PackageGraph &graph, DiagnosticEngine &diags) {
+void analyze(const PackageGraph &graph, DiagnosticEngine &diags, std::string_view default_allocator) {
     Checker checker(diags);
-    checker.analyze_graph(graph);
+    checker.analyze_graph(graph, default_allocator);
 }
 
 } // namespace tlc

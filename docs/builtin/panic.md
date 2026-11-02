@@ -34,7 +34,7 @@ The first stack line is the function that called `builtin.panic`, at that call.
 
 The stack is the calls of the thread that called `builtin.panic`.
 
-`builtin.trace()` lists the same calls in that order.
+`builtin.StackTrace.get()` returns those same calls.
 
 A null pointer is printed as `(null)`.
 
@@ -137,7 +137,7 @@ main.tlc:12:5: main
 
 ## Where the names come from
 
-The file name is the source path relative to the entry file's directory, as for `builtin.trace`.
+The file name is the source path relative to the entry file's directory, as for a `Frame`.
 
 `var f = builtin.panic` is a function pointer, and `f("out of memory")` aborts at that call.
 

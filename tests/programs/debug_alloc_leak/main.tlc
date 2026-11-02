@@ -1,0 +1,9 @@
+test "keeps the block" {
+    var p = new i32;
+    _ = p;
+}
+
+test "keeps the slice" {
+    var buf = new [1]i32;
+    _ = buf;
+}

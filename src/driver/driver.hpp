@@ -35,6 +35,8 @@ struct Options {
     bool debug_info = false;
     // No `-O` flag is Default. The last `-O` flag wins.
     OptLevel opt_level = OptLevel::Default;
+    // `--allocator`. Empty keeps `Malloc`, except `tlc --test`, which uses `debug.DebugAllocator`.
+    std::string allocator;
     std::string error;
 };
 

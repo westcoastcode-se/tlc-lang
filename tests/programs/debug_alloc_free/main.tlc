@@ -1,0 +1,12 @@
+test "releases the block" {
+    var p = new i32;
+    var q = new i32;
+    *p = 40;
+    *q = 2;
+    delete p;
+    delete q;
+    var n i32 = 1;
+    var buf = new [n]i32;
+    buf[0] = 2;
+    delete buf;
+}

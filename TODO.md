@@ -79,7 +79,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ## Compiler
 
-- A compiler argument names the type `new` and `delete` use when the call names no allocator. Today that type is `builtin.Malloc`, and those calls use the C functions `malloc` and `free` (`docs/builtin/allocator.md`, `docs/statements/new.md`). `new(&arena)` keeps the type of that pointer. The named type satisfies `Allocator`. The later use is a `DebugAllocator` for `tlc --test`, so a test reports a block that was reserved and not released.
+- `new` does not push a trace frame. A `StackTrace` taken inside `DebugAllocator.malloc` is the call that entered the allocating function. The `new` token is not one of those frames.
 - A race condition is not reported. `tlc --test` reports one, and so does a debug build. A release build that is not `tlc --test` does not. The compiler has no debug or release mode yet.
 
 ## Inconsistencies

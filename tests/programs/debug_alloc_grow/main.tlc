@@ -1,0 +1,12 @@
+import "std/debug";
+
+test "grows" {
+    var buf = debug.allocator.alloc[i32](1);
+    buf[0] = 40;
+    var grown = debug.allocator.realloc[i32](buf, 2);
+    grown[1] = 2;
+    if (grown[0] + grown[1] != 42) {
+        return 1;
+    }
+    delete(&debug.allocator) grown;
+}

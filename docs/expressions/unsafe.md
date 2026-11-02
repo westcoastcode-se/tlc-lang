@@ -89,7 +89,7 @@ A call in that block is `point(raw)`. A cast in that block omits the prefix.
 
 The context ends at `}`.
 
-A nested function and an anonymous function do not inherit it.
+A function defined in the block is checked in that context. It is not itself an `unsafe func`.
 
 `if`, `while`, and `for` still take a `{` block. The `unsafe` block is a statement inside it.
 
@@ -160,7 +160,7 @@ The flag is part of the function.
 
 `unsafe func point(raw *u8) *Point;` and `func point(raw *u8) *Point { ... }` are reported as `redefinition`.
 
-A nested function and an anonymous function do not inherit the context.
+A function defined in an `unsafe func`, or in `unsafe { }`, is checked in that context. An anonymous function is too. It is not itself an `unsafe func`.
 
 `var f = point` and `var f = unsafe point` are reported as `type mismatch`.
 

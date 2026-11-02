@@ -152,7 +152,7 @@ type-params = "[" type-param { "," type-param } "]" ;
 type-param  = identifier "type"
             | identifier integer-name
             | identifier identifier [ "." identifier ] ;
-method      = [ "unsafe" ] "func" identifier [ method-params ] "::" identifier [ type-params ] "(" [ parameters ] ")" ( result ( block | ";" ) | block ) ;
+method      = [ "unsafe" ] "func" identifier [ method-params ] "::" ( identifier | "new" ) [ type-params ] "(" [ parameters ] ")" ( result ( block | ";" ) | block ) ;
 method-params = "[" identifier { "," identifier } "]" ;
 receiver    = identifier [ "*" ] "this" ;
 
@@ -2117,7 +2117,7 @@ unary       = "unsafe" unary
 postfix     = primary { postfix-op } ;
 postfix-op  = "(" [ argument-list ] ")"
             | type-args "(" [ argument-list ] ")"
-            | "." identifier
+            | "." ( identifier | "new" )
             | "[" expression "]"
             | "[" [ expression ] ":" [ expression ] "]"
             | "!"

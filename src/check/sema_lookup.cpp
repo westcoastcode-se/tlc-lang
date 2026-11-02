@@ -992,22 +992,59 @@ Type Checker::lookup_tag(const std::string &name, SourceLoc loc, bool allow_inco
     return type_struct(id);
 }
 
-Type Checker::lookup_qualified_type(const std::string &package, const std::string &name, SourceLoc loc) {
+int Checker::imported_tag(uint32_t file, const std::string &package, const std::string &name) const {
+    const PackageNode *node = find_node(file);
+    if (node == nullptr || graph_ == nullptr) {
+        return -1;
+    }
+    for (const ImportDecl &import : node->unit.imports) {
+        if (import.form == ImportDecl::Form::Selective) {
+            continue;
+        }
+        const PackageNode *target = target_of(*node, import);
+        if (target == nullptr) {
+            continue;
+        }
+        const std::string binding = import.form == ImportDecl::Form::Alias ? import.alias : target->qualifier;
+        if (binding != package) {
+            continue;
+        }
+        return find_tag(target->file_id, name);
+    }
+    return -1;
+}
+
+Type Checker::lookup_qualified_type(const std::string &package, const std::string &name, SourceLoc loc,
+                                   bool allow_incomplete) {
     const Symbol *symbol = lookup(package);
-    if (symbol == nullptr || !symbol->is_package) {
-        error(loc, "undeclared identifier");
-        return type_invalid();
+    if (symbol != nullptr && symbol->is_package) {
+        const Symbol *member = find_export(symbol->package_file, name);
+        if (member == nullptr) {
+            error(loc, name + " is not exported");
+            return type_invalid();
+        }
+        if (!member->is_type) {
+            error(loc, "type mismatch");
+            return type_invalid();
+        }
+        return member->type;
     }
-    const Symbol *member = find_export(symbol->package_file, name);
-    if (member == nullptr) {
-        error(loc, name + " is not exported");
-        return type_invalid();
+    // Struct fields are typed before the import names are bound.
+    const int tag = imported_tag(file_id_, package, name);
+    if (tag >= 0 && tag < static_cast<int>(structs_.size())) {
+        const StructInfo &info = structs_[static_cast<std::size_t>(tag)];
+        if (!info.exported) {
+            error(loc, name + " is not exported");
+            return type_invalid();
+        }
+        if (!allow_incomplete && !info.complete) {
+            error(loc, "not supported yet");
+            return type_invalid();
+        }
+        return type_struct(tag);
     }
-    if (!member->is_type) {
-        error(loc, "type mismatch");
-        return type_invalid();
-    }
-    return member->type;
+    error(loc, "undeclared identifier");
+    return type_invalid();
 }
 
 bool Checker::struct_open(int struct_id, std::unordered_set<int> &seen) const {

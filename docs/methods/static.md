@@ -8,6 +8,8 @@ A function on the struct with no `this` parameter is static.
 
 The call names the type, not a value: `Point.make(40, 2)`.
 
+The name may be `new`. `Mutex.new()` is that call.
+
 A call on a value, `p.make(40, 2)`, is reported as `type mismatch`.
 
 An instance method called on the type, `Point.sum()`, is reported as `type mismatch`.

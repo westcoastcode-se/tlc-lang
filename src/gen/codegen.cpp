@@ -117,7 +117,7 @@ bool write_object(llvm::Module &module, llvm::TargetMachine &machine, const std:
 } // namespace
 
 CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const std::string &object_path,
-                      bool testing, bool debug_info, OptLevel opt_level) {
+                      bool testing, bool debug_info, OptLevel opt_level, std::string allocator) {
     CodegenOutput output;
     TargetState target = prepare_target(opt_level);
     if (!target.machine) {
@@ -135,6 +135,9 @@ CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const 
     }
     if (debug_info) {
         gen.enable_debug();
+    }
+    if (!allocator.empty()) {
+        gen.set_allocator(std::move(allocator));
     }
     gen.emit(graph);
     std::string verify_error;

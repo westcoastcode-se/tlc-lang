@@ -20,7 +20,7 @@ It returns `1`.
 
 The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `f64`.
 
-`testing.error` prints `builtin.trace()`, then the message. `builtin.trace` is the tlc calls that have not returned.
+`testing.error` prints the frames from `builtin.StackTrace.get()`, then the message. The frames are the tlc calls that have not returned. `error` frees that copy.
 
 Each line is `file:line:column: name`, newest first, and the last line has no newline.
 
@@ -63,6 +63,52 @@ retq
 `tlc --test file.tlc` compiles the program, runs every test, and skips `main`.
 
 A failing test prints `fail:` and the name. The process status is the number of failed tests.
+
+`tlc --test` reserves bare `new` with `debug.DebugAllocator`. A block that `delete` does not release fails that test.
+
+```c
+test "keeps the block" {
+    var p = new i32;
+    _ = p;
+}
+```
+
+A build without `--test` does not emit the test, so this example emits nothing.
+
+`tlc --test` prints one line for that block, then the failure:
+
+```text
+not released
+fail: keeps the block
+```
+
+A `new` in the test body has no frame. The harness does not record its call, and `new` does not push one.
+
+A call that entered the allocating function is printed under that line:
+
+```c
+func leak() i32 {
+    var p = new i32;
+    _ = p;
+    return 1;
+}
+
+test "keeps the block" {
+    return leak();
+}
+```
+
+A build without `--test` does not emit this test either. `tlc --test` prints:
+
+```text
+not released
+main.tlc:8:12: keeps the block
+fail: keeps the block
+```
+
+The frame is the `leak()` call. The name is the test. The allocator frees that `StackTrace` when the block is released and when `report` prints it.
+
+`--allocator Malloc` keeps `malloc` and `free` for that run, so the same test does not report the block. `--allocator pkg.Name` uses another struct that satisfies `Allocator`.
 
 A build without `--test` typechecks the tests and does not run them.
 

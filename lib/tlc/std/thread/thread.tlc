@@ -30,6 +30,13 @@ export func Mutex::init(self *this) {
     os_mutex_init(self);
 }
 
+// A new mutex. `init` has already run. `destroy` releases it.
+export func Mutex::new() Mutex {
+    var lock Mutex;
+    lock.init();
+    return lock;
+}
+
 export func Mutex::lock(self *this) {
     os_mutex_lock(self);
 }

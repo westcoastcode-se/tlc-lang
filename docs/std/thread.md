@@ -91,6 +91,8 @@ The field value is `null`, so `var lock thread.Mutex` starts null, at file scope
 
 `lock.init` allocates 128 bytes and calls `pthread_mutex_init`.
 
+`Mutex.new()` returns a mutex on which `init` has already run. `destroy` releases it.
+
 That size covers the unix mutex types this package uses.
 
 `malloc` aligns the block to 16.

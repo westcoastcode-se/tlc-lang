@@ -1,0 +1,9 @@
+import "std/thread";
+
+func main() i32 {
+    var lock = thread.Mutex.new();
+    lock.lock();
+    lock.unlock();
+    lock.destroy();
+    return 42;
+}

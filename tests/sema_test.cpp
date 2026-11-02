@@ -2185,7 +2185,7 @@ int run_sema_tests() {
             "  return unsafe *i32(raw);\n"
             "}\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "unsafe cast");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -6485,8 +6485,8 @@ int run_sema_tests() {
         const std::string errors = check_program(
             "import \"builtin\";\n"
             "func main() i32 {\n"
-            "  var p *const u8 = builtin.trace();\n"
-            "  var q *u8 = builtin.trace();\n"
+            "  var p *const u8 = \"ok\";\n"
+            "  var q *u8 = \"ok\";\n"
             "  return *p;\n"
             "}\n");
         EXPECT_HAS(check, errors, "type mismatch");
@@ -7442,7 +7442,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = check_compiler_builtin(
-            "package builtin;\n\nextern(abi=\"compiler\") func trace() i32;\n");
+            "package builtin;\n\nextern(abi=\"compiler\") func va() i32;\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
 

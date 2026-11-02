@@ -50,13 +50,10 @@ void CodeGen::ensure_trace() {
                                             "tlc.trace.depth");
     trace_stack_ = new llvm::GlobalVariable(module_, trace_stack_type_, false, llvm::GlobalValue::InternalLinkage,
                                             llvm::ConstantAggregateZero::get(trace_stack_type_), "tlc.trace.stack");
-    auto *buffer_type = llvm::ArrayType::get(i8(), 4096);
-    trace_buffer_ = new llvm::GlobalVariable(module_, buffer_type, false, llvm::GlobalValue::InternalLinkage,
-                                             llvm::ConstantAggregateZero::get(buffer_type), "tlc.trace.buf");
     // One tlc invocation is one executable. Local-exec is an %fs offset.
     // A shared library would need another model. The comptime runner is one process-local global.
     if (!eval_) {
-        for (llvm::GlobalVariable *global : {trace_depth_, trace_stack_, trace_buffer_}) {
+        for (llvm::GlobalVariable *global : {trace_depth_, trace_stack_}) {
             global->setThreadLocalMode(llvm::GlobalValue::LocalExecTLSModel);
         }
     }
@@ -184,67 +181,88 @@ llvm::Function *CodeGen::builtin_function(const std::string &name) const {
     return nullptr;
 }
 
-void CodeGen::emit_builtin_trace() {
-    llvm::Function *function = builtin_function("trace");
-    if (function == nullptr || !function->empty()) {
+void CodeGen::emit_stack_trace() {
+    llvm::Function *get = builtin_function("StackTrace.get");
+    llvm::Function *release = builtin_function("StackTrace.free");
+    if ((get == nullptr || !get->empty()) && (release == nullptr || !release->empty())) {
+        return;
+    }
+    const StructLayout *frame_layout = nullptr;
+    const StructLayout *trace_layout = nullptr;
+    for (const StructLayout &layout : structs_) {
+        if (layout.type == nullptr || !is_compiler_builtin(find_node(layout.file_id))) {
+            continue;
+        }
+        if (layout.name == "Frame") {
+            frame_layout = &layout;
+        } else if (layout.name == "StackTrace") {
+            trace_layout = &layout;
+        }
+    }
+    if (frame_layout == nullptr || trace_layout == nullptr || frame_layout->fields.size() < 4) {
         return;
     }
     ensure_trace();
+    const uint64_t stride = module_.getDataLayout().getTypeAllocSize(frame_layout->type).getFixedValue();
+    auto *malloc_type = llvm::FunctionType::get(ptr_type(), {i64()}, false);
+    llvm::FunctionCallee malloc_fn = module_.getOrInsertFunction("malloc", malloc_type);
+    auto *free_type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), {ptr_type()}, false);
+    llvm::FunctionCallee free_fn = module_.getOrInsertFunction("free", free_type);
     const llvm::IRBuilderBase::InsertPoint saved = builder_.saveIP();
-    auto *entry = llvm::BasicBlock::Create(context_, "entry", function);
-    auto *head = llvm::BasicBlock::Create(context_, "head", function);
-    auto *body = llvm::BasicBlock::Create(context_, "body", function);
-    auto *write = llvm::BasicBlock::Create(context_, "write", function);
-    auto *next = llvm::BasicBlock::Create(context_, "next", function);
-    auto *done = llvm::BasicBlock::Create(context_, "done", function);
-    auto *buffer_type = llvm::cast<llvm::ArrayType>(trace_buffer_->getValueType());
-    builder_.SetInsertPoint(entry);
-    llvm::Value *first = builder_.CreateInBoundsGEP(buffer_type, trace_buffer_, {const_i32(0), const_i32(0)});
-    builder_.CreateStore(llvm::ConstantInt::get(i8(), 0), first);
-    llvm::Value *depth = builder_.CreateLoad(i32(), trace_depth_);
-    builder_.CreateBr(head);
-    builder_.SetInsertPoint(head);
-    auto *index = builder_.CreatePHI(i32(), 2);
-    auto *length = builder_.CreatePHI(i32(), 2);
-    // `index` is how many frames are not written yet. The newest frame is first.
-    index->addIncoming(depth, entry);
-    length->addIncoming(const_i32(0), entry);
-    builder_.CreateCondBr(builder_.CreateICmpNE(index, const_i32(0)), body, done);
-    builder_.SetInsertPoint(body);
-    llvm::Value *remain = builder_.CreateSub(const_i32(4096), length);
-    builder_.CreateCondBr(builder_.CreateICmpSGT(remain, const_i32(1)), write, done);
-    builder_.SetInsertPoint(write);
-    llvm::Value *frame_index = builder_.CreateSub(index, const_i32(1));
-    llvm::Value *frame = builder_.CreateInBoundsGEP(trace_stack_type_, trace_stack_, {const_i32(0), frame_index});
-    auto load_field = [&](unsigned field_index, llvm::Type *type) {
-        llvm::Value *slot =
-            builder_.CreateInBoundsGEP(trace_frame_, frame, {const_i32(0), const_i32(static_cast<int>(field_index))});
-        return builder_.CreateLoad(type, slot);
-    };
-    llvm::Value *file = load_field(0, ptr_type());
-    llvm::Value *line = load_field(1, i32());
-    llvm::Value *column = load_field(2, i32());
-    llvm::Value *name = load_field(3, ptr_type());
-    llvm::Value *last = builder_.CreateICmpEQ(frame_index, const_i32(0));
-    llvm::Value *format = builder_.CreateSelect(last, builder_.CreateGlobalString("%s:%d:%d: %s"),
-                                                builder_.CreateGlobalString("%s:%d:%d: %s\n"));
-    llvm::Value *dest = builder_.CreateInBoundsGEP(buffer_type, trace_buffer_, {const_i32(0), length});
-    auto *snprintf_type = llvm::FunctionType::get(i32(), {ptr_type(), i64(), ptr_type()}, true);
-    llvm::FunctionCallee snprintf_fn = module_.getOrInsertFunction("snprintf", snprintf_type);
-    llvm::Value *wrote = builder_.CreateCall(snprintf_type, snprintf_fn.getCallee(),
-                                             {dest, builder_.CreateZExt(remain, i64()), format, file, line, column, name});
-    llvm::Value *count = builder_.CreateSelect(builder_.CreateICmpSGT(wrote, const_i32(0)), wrote, const_i32(0));
-    llvm::Value *limit = builder_.CreateSub(remain, const_i32(1));
-    llvm::Value *fitted = builder_.CreateSelect(builder_.CreateICmpSLT(count, limit), count, limit);
-    llvm::Value *sum = builder_.CreateAdd(length, fitted);
-    llvm::Value *next_index = frame_index;
-    builder_.CreateBr(next);
-    builder_.SetInsertPoint(next);
-    index->addIncoming(next_index, next);
-    length->addIncoming(sum, next);
-    builder_.CreateBr(head);
-    builder_.SetInsertPoint(done);
-    builder_.CreateRet(trace_buffer_);
+    if (get != nullptr && get->empty() && get->getReturnType() == trace_layout->type) {
+        auto *entry = llvm::BasicBlock::Create(context_, "entry", get);
+        auto *none = llvm::BasicBlock::Create(context_, "none", get);
+        auto *reserve = llvm::BasicBlock::Create(context_, "reserve", get);
+        auto *fail = llvm::BasicBlock::Create(context_, "fail", get);
+        auto *head = llvm::BasicBlock::Create(context_, "head", get);
+        auto *body = llvm::BasicBlock::Create(context_, "body", get);
+        auto *done = llvm::BasicBlock::Create(context_, "done", get);
+        builder_.SetInsertPoint(entry);
+        llvm::Value *depth = builder_.CreateLoad(i32(), trace_depth_);
+        builder_.CreateCondBr(builder_.CreateICmpEQ(depth, const_i32(0)), none, reserve);
+        builder_.SetInsertPoint(none);
+        builder_.CreateRet(llvm::ConstantAggregateZero::get(trace_layout->type));
+        builder_.SetInsertPoint(reserve);
+        llvm::Value *bytes = builder_.CreateMul(builder_.CreateZExt(depth, i64()), llvm::ConstantInt::get(i64(), stride));
+        llvm::Value *memory = builder_.CreateCall(malloc_type, malloc_fn.getCallee(), {bytes});
+        builder_.CreateCondBr(builder_.CreateICmpEQ(memory, null_ptr()), fail, head);
+        builder_.SetInsertPoint(fail);
+        abort_panic(SourceLoc{}, "out of memory");
+        builder_.SetInsertPoint(head);
+        auto *index = builder_.CreatePHI(i32(), 2);
+        index->addIncoming(const_i32(0), reserve);
+        builder_.CreateCondBr(builder_.CreateICmpSLT(index, depth), body, done);
+        builder_.SetInsertPoint(body);
+        llvm::Value *source_index = builder_.CreateSub(builder_.CreateSub(depth, const_i32(1)), index);
+        llvm::Value *source = builder_.CreateInBoundsGEP(trace_stack_type_, trace_stack_, {const_i32(0), source_index});
+        llvm::Value *dest = builder_.CreateInBoundsGEP(frame_layout->type, memory, {index});
+        for (unsigned field = 0; field < 4; ++field) {
+            llvm::Type *field_type = field == 1 || field == 2 ? i32() : ptr_type();
+            llvm::Value *from = builder_.CreateInBoundsGEP(trace_frame_, source, {const_i32(0), const_i32(field)});
+            llvm::Value *to = builder_.CreateInBoundsGEP(frame_layout->type, dest, {const_i32(0), const_i32(field)});
+            builder_.CreateStore(builder_.CreateLoad(field_type, from), to);
+        }
+        llvm::Value *next = builder_.CreateAdd(index, const_i32(1));
+        index->addIncoming(next, body);
+        builder_.CreateBr(head);
+        builder_.SetInsertPoint(done);
+        llvm::Value *slice = llvm::ConstantAggregateZero::get(slice_type());
+        slice = builder_.CreateInsertValue(slice, memory, 0);
+        slice = builder_.CreateInsertValue(slice, depth, 1);
+        llvm::Value *result = builder_.CreateInsertValue(llvm::ConstantAggregateZero::get(trace_layout->type), slice, 0);
+        builder_.CreateRet(result);
+    }
+    if (release != nullptr && release->empty() && release->arg_size() >= 1) {
+        auto *entry = llvm::BasicBlock::Create(context_, "entry", release);
+        builder_.SetInsertPoint(entry);
+        llvm::Value *header = builder_.CreateInBoundsGEP(trace_layout->type, release->getArg(0), {const_i32(0), const_i32(0)});
+        llvm::Value *pointer_slot = builder_.CreateInBoundsGEP(slice_type(), header, {const_i32(0), const_i32(0)});
+        llvm::Value *length_slot = builder_.CreateInBoundsGEP(slice_type(), header, {const_i32(0), const_i32(1)});
+        builder_.CreateCall(free_type, free_fn.getCallee(), {builder_.CreateLoad(ptr_type(), pointer_slot)});
+        builder_.CreateStore(null_ptr(), pointer_slot);
+        builder_.CreateStore(const_i32(0), length_slot);
+        builder_.CreateRetVoid();
+    }
     builder_.restoreIP(saved);
 }
 
@@ -373,7 +391,11 @@ llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, l
     if (bytes == nullptr) {
         return nullptr;
     }
-    if (node.builtin_alloc) {
+    // A bare `new` uses the type named by `--allocator`. `new(&arena)` keeps that pointer.
+    const bool bare = node.builtin_alloc && node.allocator == nullptr;
+    if (bare && default_alloc_ == DefaultAlloc::Named) {
+        receiver = default_alloc_global_;
+    } else if (node.builtin_alloc) {
         if (align > 16) {
             llvm::Value *step = llvm::ConstantInt::get(i64(), align);
             llvm::Value *padded = builder_.CreateAdd(bytes, llvm::ConstantInt::get(i64(), align - 1));
@@ -397,7 +419,9 @@ llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, l
     builder_.SetInsertPoint(big);
     abort_now();
     builder_.SetInsertPoint(fit);
-    llvm::Function *method = allocator_method(node.alloc_file, node.alloc_name, "malloc");
+    const uint32_t method_file = bare ? default_alloc_file_ : node.alloc_file;
+    const std::string &method_type = bare ? default_alloc_type_ : node.alloc_name;
+    llvm::Function *method = allocator_method(method_file, method_type, "malloc");
     if (method == nullptr) {
         error(node.loc, "undeclared identifier");
         return nullptr;
@@ -411,6 +435,26 @@ llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, l
 }
 
 llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t align) {
+    const bool bare = node.builtin_alloc && node.allocator == nullptr;
+    if (bare && default_alloc_ == DefaultAlloc::Named) {
+        if (default_alloc_global_ == nullptr) {
+            error(node.loc, "undeclared identifier");
+            return nullptr;
+        }
+        if (size > 2147483647ULL || align > 2147483647ULL) {
+            error(node.loc, "not supported yet");
+            return nullptr;
+        }
+        llvm::Function *method = allocator_method(default_alloc_file_, default_alloc_type_, "malloc");
+        if (method == nullptr) {
+            error(node.loc, "undeclared identifier");
+            return nullptr;
+        }
+        const uint64_t bytes = size == 0 ? 1 : size;
+        return builder_.CreateCall(method->getFunctionType(), method,
+                                  {default_alloc_global_, const_i32(static_cast<int32_t>(bytes)),
+                                   const_i32(static_cast<int32_t>(align))});
+    }
     if (node.builtin_alloc) {
         uint64_t bytes = size == 0 ? 1 : size;
         llvm::Value *raw = nullptr;
@@ -447,6 +491,16 @@ llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t
 
 void CodeGen::call_free(const Expr::Delete &node, llvm::Value *pointer, llvm::Value *receiver) {
     if (pointer == nullptr) {
+        return;
+    }
+    const bool bare = node.builtin_alloc && node.allocator == nullptr;
+    if (bare && default_alloc_ == DefaultAlloc::Named) {
+        llvm::Function *method = allocator_method(default_alloc_file_, default_alloc_type_, "free");
+        if (method == nullptr || default_alloc_global_ == nullptr) {
+            error(node.loc, "undeclared identifier");
+            return;
+        }
+        builder_.CreateCall(method->getFunctionType(), method, {default_alloc_global_, pointer});
         return;
     }
     if (node.builtin_alloc) {
@@ -797,6 +851,84 @@ void CodeGen::emit_builtin_panic() {
     builder_.CreateCall(abort_type, abort_fn.getCallee());
     builder_.CreateUnreachable();
     builder_.restoreIP(saved);
+}
+
+
+void CodeGen::prepare_default_allocator() {
+    if (allocator_name_.empty()) {
+        return;
+    }
+    const AllocatorChoice choice = parse_allocator_choice(allocator_name_);
+    if (choice.kind == AllocatorChoice::Kind::Malloc) {
+        default_alloc_ = DefaultAlloc::Malloc;
+        return;
+    }
+    default_alloc_ = DefaultAlloc::Named;
+    const StructLayout *found = nullptr;
+    int matches = 0;
+    for (const StructLayout &layout : structs_) {
+        if (layout.name != choice.type) {
+            continue;
+        }
+        const PackageNode *node = find_node(layout.file_id);
+        if (node == nullptr) {
+            continue;
+        }
+        if (!choice.package.empty() && node->qualifier != choice.package) {
+            continue;
+        }
+        found = &layout;
+        ++matches;
+    }
+    if (matches != 1 || found == nullptr || found->type == nullptr || !found->type->isSized()) {
+        error(SourceLoc{}, matches == 0 ? "undeclared identifier" : "type mismatch");
+        return;
+    }
+    default_alloc_file_ = found->file_id;
+    default_alloc_type_ = found->name;
+    // An exported variable of this type is that allocator. Its initializer runs before `main`.
+    const PackageNode *owner = find_node(found->file_id);
+    const VarDecl *instance = nullptr;
+    uint32_t instance_file = 0;
+    bool many = false;
+    if (owner != nullptr && graph_ != nullptr) {
+        for (const PackageNode &node : graph_->nodes) {
+            if (node.package_key != owner->package_key) {
+                continue;
+            }
+            for (const TopDecl &decl : node.unit.decls) {
+                const auto *var = std::get_if<VarDecl>(&decl.data);
+                if (var == nullptr || !var->exported || !var->owner.empty() || var->is_extern || var->indirections != 0 ||
+                    var->is_array || var->type_name != found->name || !var->type_package.empty()) {
+                    continue;
+                }
+                if (instance != nullptr) {
+                    many = true;
+                }
+                instance = var;
+                instance_file = node.file_id;
+            }
+        }
+    }
+    if (many) {
+        error(SourceLoc{}, "type mismatch");
+        return;
+    }
+    if (instance != nullptr) {
+        const auto file = files_.find(instance_file);
+        if (file != files_.end()) {
+            const auto global = file->second.globals.find(instance->name);
+            if (global != file->second.globals.end() && global->second.value != nullptr) {
+                default_alloc_global_ = llvm::dyn_cast<llvm::GlobalVariable>(global->second.value);
+            }
+        }
+    }
+    if (default_alloc_global_ != nullptr) {
+        return;
+    }
+    default_alloc_global_ =
+        new llvm::GlobalVariable(module_, found->type, false, llvm::GlobalValue::InternalLinkage,
+                                 llvm::ConstantAggregateZero::get(found->type), "tlc.allocator");
 }
 
 void CodeGen::emit_builtin_heap() {

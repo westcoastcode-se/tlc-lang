@@ -1,0 +1,25 @@
+type Slot struct {
+    value i32;
+};
+
+unsafe func Slot::malloc(self *this, size i32, align i32) ?*u8 {
+    _ = size;
+    _ = align;
+    return ?*u8(&self.value);
+}
+
+func Slot::free(self *this, ptr *u8) void {
+    _ = ptr;
+}
+
+unsafe func Slot::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    _ = ptr;
+    return self.malloc(size, align);
+}
+
+func main() i32 {
+    var p = new i32;
+    *p = 42;
+    delete p;
+    return *p;
+}

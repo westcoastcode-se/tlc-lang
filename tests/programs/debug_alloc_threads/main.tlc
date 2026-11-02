@@ -1,0 +1,20 @@
+import "std/thread";
+
+func work(arg *void) *void {
+    var i i32 = 0;
+    while (i < 40) {
+        var p = new i32;
+        *p = i;
+        delete p;
+        i = i + 1;
+    }
+    return arg;
+}
+
+test "threads" {
+    var dummy i32 = 0;
+    var a = thread.spawn(work, *void(&dummy));
+    var b = thread.spawn(work, *void(&dummy));
+    thread.join(a);
+    thread.join(b);
+}

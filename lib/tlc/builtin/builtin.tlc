@@ -2,7 +2,8 @@ package builtin;
 
 // Compiler intrinsics. `extern(abi="compiler")` marks a type, method, or function
 // the compiler implements or checks against. A signature that drifts is `type mismatch`.
-// The compiler supplies the bodies of trace, va, and panic, and of the methods on Malloc.
+// The compiler supplies the bodies of va and panic, of StackTrace.get and StackTrace.free,
+// and of the methods on Malloc.
 // atomic_load, atomic_store, atomic_rmw, atomic_cmpxchg, and fence have no body:
 // code generation replaces the call.
 // Allocator is that trait. The typed alloc and realloc defaults are ordinary tlc here.
@@ -142,9 +143,26 @@ extern(abi="compiler") export func CompiledType::fields(self *const this) []cons
 // A string element is copied as text. An integer element is decimal. The call is that text.
 extern(abi="compiler") export func fmt[T type](text comptime []const u8, value comptime T) []const u8;
 
-// The calls that have not returned, newest first.
-// The pointer addresses this thread's buffer. The next call on that thread replaces that text.
-extern(abi="compiler") export func trace() *const u8;
+// One call that has not returned. file and name address the trace frame's bytes.
+// Those bytes are not owned. line and column are that call.
+extern(abi="compiler") export type Frame struct {
+    export file *const u8;
+    export line i32;
+    export column i32;
+    export name *const u8;
+};
+
+// A copy of the calls that have not returned. frames is newest first.
+// At most 32 frames. The caller owns the copy. `free` releases it.
+extern(abi="compiler") export type StackTrace struct {
+    export frames []const Frame;
+};
+
+// The calls that have not returned, newest first. The list is a copy. The caller frees it.
+extern(abi="compiler") export func StackTrace::get() StackTrace;
+
+// Releases the frame list. The file and name bytes stay. A null list does nothing.
+extern(abi="compiler") export func StackTrace::free(self *this) void;
 
 // The extra arguments of the variadic function this call is inside.
 // The pointer is the argument pointer vprintf takes. Each call reads those arguments from the start.

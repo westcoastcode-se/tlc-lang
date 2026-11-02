@@ -1,0 +1,4 @@
+test "kept" {
+    var p = new i32;
+    _ = p;
+}

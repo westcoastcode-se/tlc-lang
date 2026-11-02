@@ -16,6 +16,10 @@ The result is that pointer.
 
 With no allocator written, both use `builtin.allocator`.
 
+`--allocator` names that type instead. `Malloc` calls `malloc` and `free`. `tlc --test` uses `debug.DebugAllocator` unless the flag names another type.
+
+`new(&arena)` keeps the type of that pointer.
+
 ## Choosing an allocator
 
 `new(&arena) T` and `delete(&arena) p` take a pointer.

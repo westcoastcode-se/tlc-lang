@@ -441,6 +441,8 @@ class CodeGen {
     void emit(const PackageGraph &graph);
     void enable_tests() { testing_ = true; }
     void enable_debug() { debug_ = true; }
+    // Empty keeps `Malloc`. Another name is `pkg.Type`, used for bare `new` and `delete`.
+    void set_allocator(std::string name) { allocator_name_ = std::move(name); }
     // Emit `fn` as `tlc.comptime.eval` after the package is declared. False when that emission reports a diagnostic.
     bool define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
     bool define_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
@@ -495,6 +497,13 @@ class CodeGen {
     std::unordered_map<const FunctionDecl *, Binding> local_fns_;
     uint32_t entry_file_ = 0;
     bool testing_ = false;
+    // `--allocator`. Empty is `Malloc`, which calls `malloc` and `free`.
+    std::string allocator_name_;
+    enum class DefaultAlloc { Malloc, Named };
+    DefaultAlloc default_alloc_ = DefaultAlloc::Malloc;
+    uint32_t default_alloc_file_ = 0;
+    std::string default_alloc_type_;
+    llvm::GlobalVariable *default_alloc_global_ = nullptr;
     // Compiling a fragment to run during checking. Trace storage stays a normal global.
     bool eval_ = false;
     // `lower` is const. The struct is created the first time a slice is lowered.
@@ -514,7 +523,6 @@ class CodeGen {
     llvm::ArrayType *trace_stack_type_ = nullptr;
     llvm::GlobalVariable *trace_depth_ = nullptr;
     llvm::GlobalVariable *trace_stack_ = nullptr;
-    llvm::GlobalVariable *trace_buffer_ = nullptr;
     uint32_t current_file_ = 0;
     // Comptime funcs on the fold stack. A cycle folds as not a constant.
     mutable std::unordered_set<const FunctionDecl *> comptime_folding_;
@@ -561,8 +569,8 @@ class CodeGen {
         CAbi abi_ret{};
         std::vector<AbiMark> abi_attrs;
         SourceLoc loc{};
-        // Push a call-stack frame around this call. `builtin.trace` and `builtin.va` leave it
-        // off, so those calls are not part of the text. `builtin.panic` keeps the frame.
+        // Push a call-stack frame around this call. `builtin.va` leaves it off.
+        // `StackTrace.get` is omitted where the call is emitted. `builtin.panic` keeps the frame.
         bool trace = false;
         // `items.len()` on an array or a slice. The value is the length, the element, or its address.
         bool yielded = false;
@@ -1347,9 +1355,11 @@ class CodeGen {
     llvm::Value *push_trace(SourceLoc loc);
     void pop_trace(llvm::Value *pushed);
     TypedValue emit_builtin_va(SourceLoc loc);
-    void emit_builtin_trace();
+    // `StackTrace.get` copies the frames. `StackTrace.free` releases that copy.
+    void emit_stack_trace();
     void emit_builtin_panic();
     void emit_builtin_heap();
+    void prepare_default_allocator();
     llvm::Value *variadic_arg(const TypedValue &value);
     void apply_initializer(const VarDecl &var);
     // Pointer to the first element, the element type a further range steps by, and the length.

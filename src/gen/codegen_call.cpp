@@ -75,7 +75,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         error(node.loc, "type mismatch");
         return prepared;
     }
-    prepared.trace = !is_std_builtin_call(*node.callee, "trace") && !is_std_builtin_call(*node.callee, "va");
+    prepared.trace = !is_std_builtin_call(*node.callee, "va");
     auto selected_binding = [&](const Binding *found) -> const Binding * {
         if (node.selected == nullptr) {
             return found;
@@ -675,7 +675,10 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
     if (terminated() || (call.function == nullptr && (call.indirect == nullptr || call.fn_ty == nullptr))) {
         return {zero(), 0};
     }
-    llvm::Value *pushed = call.trace ? push_trace(call.loc) : nullptr;
+    // `StackTrace.get` reads the frames. Its own call is not one of them, same as `trace`.
+    const bool stack_get = call.decl != nullptr && call.decl->extern_compiler && call.decl->static_method &&
+                           call.decl->name == "get" && call.decl->method_struct == "StackTrace";
+    llvm::Value *pushed = call.trace && !stack_get ? push_trace(call.loc) : nullptr;
     llvm::CallInst *inst = call.indirect != nullptr ? builder_.CreateCall(call.fn_ty, call.indirect, call.args)
                                                     : builder_.CreateCall(call.function, call.args);
     if (pushed != nullptr) {

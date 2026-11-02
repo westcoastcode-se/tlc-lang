@@ -130,7 +130,9 @@ class Checker {
     explicit Checker(DiagnosticEngine &diags) : diags_(diags) {}
 
     void analyze(const TranslationUnit &unit);
-    void analyze_graph(const PackageGraph &graph);
+    void analyze_graph(const PackageGraph &graph, std::string_view default_allocator = {});
+    // `--allocator` names a struct that satisfies `Allocator`. `Malloc` calls `malloc` and `free`.
+    void validate_default_allocator(std::string_view name);
 
   private:
     struct SelectorTarget {
@@ -525,7 +527,10 @@ class Checker {
     std::unordered_map<std::string, std::vector<ReflectedField>> tuple_fields_;
     void mismatch(SourceLoc loc, const Type &want, const Type &got);
     Type lookup_tag(const std::string &name, SourceLoc loc, bool allow_incomplete);
-    Type lookup_qualified_type(const std::string &package, const std::string &name, SourceLoc loc);
+    Type lookup_qualified_type(const std::string &package, const std::string &name, SourceLoc loc,
+                               bool allow_incomplete = false);
+    // Struct id of `pkg.Name` before imports are bound. -1 when this file does not import that package.
+    int imported_tag(uint32_t file, const std::string &package, const std::string &name) const;
     bool lookup_field(const Type &object, const std::string &name, Type &out) const;
     // Another package sees `export` members. A member whose type is a struct that is not
     // visible stays hidden. The same package sees every member.

@@ -31,6 +31,7 @@ struct Expectation {
     bool has_exit = false;
     int exit_code = 0;
     bool run_tests = false;
+    std::string allocator;
     bool has_stdout = false;
     std::string stdout_text;
     bool has_stderr = false;
@@ -55,6 +56,7 @@ Expectation parse_expect(const std::string &text) {
         constexpr std::string_view kStdout = "stdout:";
         constexpr std::string_view kStderr = "stderr:";
         constexpr std::string_view kMode = "mode:";
+        constexpr std::string_view kAllocator = "allocator:";
         if (line.starts_with(kExit)) {
             expect.has_exit = true;
             expect.exit_code = std::stoi(line.substr(kExit.size()));
@@ -88,6 +90,12 @@ Expectation parse_expect(const std::string &text) {
                 mode.erase(0, first);
             }
             expect.run_tests = mode == "test";
+        } else if (line.starts_with(kAllocator)) {
+            expect.allocator = line.substr(kAllocator.size());
+            const auto first = expect.allocator.find_first_not_of(' ');
+            if (first != std::string::npos) {
+                expect.allocator.erase(0, first);
+            }
         } else if (line.starts_with(kStdout) || line.starts_with(kStderr)) {
             const bool err = line.starts_with(kStderr);
             const std::string_view key = err ? kStderr : kStdout;
@@ -154,6 +162,7 @@ int run_program_tests() {
         for (const auto &path : extras) {
             opt.link_args.push_back(path.string());
         }
+        opt.allocator = expect.allocator;
         opt.mode = expect.compile_error ? tlc::Mode::Check : (expect.run_tests ? tlc::Mode::Test : tlc::Mode::Run);
         const tlc::CompileOutput output = tlc::compile_source(opt);
         if (expect.link_error) {

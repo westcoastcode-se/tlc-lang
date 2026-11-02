@@ -1,0 +1,26 @@
+import "builtin";
+
+func leaf() i32 {
+    var trace = builtin.StackTrace.get();
+    var n = trace.frames.len;
+    var line = 0;
+    if (n > 0) {
+        line = trace.frames[0].line;
+    }
+    trace.free();
+    trace.free();
+    if (n != 1 || line < 1) {
+        return 1;
+    }
+    return 42;
+}
+
+func main() i32 {
+    var trace = builtin.StackTrace.get();
+    var n = trace.frames.len;
+    trace.free();
+    if (n != 0) {
+        return 2;
+    }
+    return leaf();
+}

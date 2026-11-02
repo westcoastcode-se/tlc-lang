@@ -1,0 +1,2 @@
+allocator: main.Slot
+compile-error: undeclared identifier

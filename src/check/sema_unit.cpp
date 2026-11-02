@@ -1739,9 +1739,48 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 const std::size_t before = diags_.size();
                 // The declaration check already accepted this name. This pass checks it again.
                 check_against(*var->init, want);
+                // `{.lock = Mutex.new()}` runs before `main`. A field that is not a call stays a constant.
+                auto startup_value = [&](auto &self, const Expr &expr) -> bool {
+                    if (startup_call(expr)) {
+                        return true;
+                    }
+                    const auto *init = std::get_if<Expr::Init>(&expr.data);
+                    if (init == nullptr || init->array_literal || init->is_tuple ||
+                        (init->fields.empty() && init->elements.empty())) {
+                        return false;
+                    }
+                    bool call = false;
+                    std::unordered_set<std::string> seen;
+                    for (const Expr::FieldInit &field : init->fields) {
+                        if (field.value == nullptr) {
+                            return false;
+                        }
+                        if (self(self, *field.value)) {
+                            call = true;
+                            continue;
+                        }
+                        if (file_constant(*field.value, seen, true) != FileConst::Yes) {
+                            return false;
+                        }
+                    }
+                    for (const auto &element : init->elements) {
+                        if (!element) {
+                            return false;
+                        }
+                        if (self(self, *element)) {
+                            call = true;
+                            continue;
+                        }
+                        if (file_constant(*element, seen, true) != FileConst::Yes) {
+                            return false;
+                        }
+                    }
+                    return call;
+                };
                 if (diags_.size() == before) {
                     if (!(var->is_const_decl && var->is_comptime) && !var->is_extern &&
-                        (runs_at_startup(*var->init) || want.kind == TypeKind::Tuple)) {
+                        (runs_at_startup(*var->init) || want.kind == TypeKind::Tuple ||
+                         startup_value(startup_value, *var->init))) {
                         const_cast<VarDecl *>(var)->runtime_init = true;
                     } else if (is_slice(want)) {
                         require_slice_name(*var->init, want, var->loc, before);
@@ -2231,7 +2270,7 @@ std::vector<uint32_t> prepare_order(const PackageGraph &graph) {
 
 } // namespace
 
-void Checker::analyze_graph(const PackageGraph &graph) {
+void Checker::analyze_graph(const PackageGraph &graph, std::string_view default_allocator) {
     graph_ = &graph;
     ensure_field_info();
     for (const PackageNode &node : graph.nodes) {
@@ -2340,6 +2379,9 @@ void Checker::analyze_graph(const PackageGraph &graph) {
     }
     flush_appends();
     publish_reflected_fields();
+    if (!default_allocator.empty()) {
+        validate_default_allocator(default_allocator);
+    }
     graph_ = nullptr;
 }
 

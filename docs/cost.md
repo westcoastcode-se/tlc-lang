@@ -77,9 +77,9 @@ The frame is 24 bytes: a file, a line, a column, and the name of the callee.
 
 At most 32 frames are stored.
 
-The frame count, the 32 frames, and the text buffer are thread-local, so one thread does not see another's frames.
+The frame count and the 32 frames are thread-local, so one thread does not see another's frames.
 
-`builtin.trace` and `builtin.va` do not push a frame.
+`builtin.va` and `builtin.StackTrace.get` do not push a frame.
 
 A `defer` runs its call later without a frame.
 

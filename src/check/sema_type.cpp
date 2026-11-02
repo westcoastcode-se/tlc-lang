@@ -282,6 +282,18 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                                     named_slice_field(item->fields[0], "name", "u8", true, true) &&
                                     named_plain_field(item->fields[1], "kind", "Type", true);
                 keep("Field", marked && item->exported && !item->is_union && fields, item->loc);
+            } else if (item->name == "Frame") {
+                const bool fields = item->fields.size() == 4 &&
+                                    named_ptr_field(item->fields[0], "file", "u8", true, true) &&
+                                    named_plain_field(item->fields[1], "line", "i32", true) &&
+                                    named_plain_field(item->fields[2], "column", "i32", true) &&
+                                    named_ptr_field(item->fields[3], "name", "u8", true, true);
+                keep("Frame", marked && item->exported && !item->is_union && item->tag_name.empty() && fields, item->loc);
+            } else if (item->name == "StackTrace") {
+                const bool fields = item->fields.size() == 1 &&
+                                    named_slice_field(item->fields[0], "frames", "Frame", true, true);
+                keep("StackTrace", marked && item->exported && !item->is_union && item->tag_name.empty() && fields,
+                     item->loc);
             } else if (item->name == "Malloc") {
                 keep("Malloc", marked && item->exported && !item->is_union && item->fields.empty() && item->tag_name.empty(),
                      item->loc);
@@ -424,23 +436,43 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
             }
             continue;
         }
+        if (fn->method_struct == "StackTrace") {
+            const bool head = compiler_header(*fn, false);
+            // The result name is the struct. The parser does not mark that name `is_struct`.
+            const bool as_struct = fn->results.size() == 1 && fn->results[0].type_name == "StackTrace" &&
+                                   fn->results[0].type_package.empty() && fn->results[0].indirections == 0 &&
+                                   !fn->results[0].is_array;
+            if (fn->name == "get") {
+                keep("StackTrace.get", head && fn->static_method && fn->params.empty() && !fn->unsafe && as_struct,
+                     fn->loc);
+            } else if (fn->name == "free") {
+                keep("StackTrace.free",
+                     head && !fn->static_method && !fn->unsafe && pointer_receiver(*fn, false) && value_count(*fn) == 0 &&
+                         result_plain(*fn, "void"),
+                     fn->loc);
+            } else if (fn->extern_compiler) {
+                fail(fn->loc);
+            }
+            continue;
+        }
         if (fn->method_struct == "Malloc") {
             const bool head = compiler_header(*fn, false) && fn->type_params.empty() && pointer_receiver(*fn, false);
+            const std::string prefix = std::string("Malloc.");
             if (fn->name == "malloc") {
-                keep("Malloc.malloc",
+                keep(prefix + "malloc",
                      head && fn->unsafe && value_count(*fn) == 2 && value_ok(0, [](const Param &param) {
                          return param_plain(param, "i32", false);
                      }) && value_ok(1, [](const Param &param) { return param_plain(param, "i32", false); }) &&
                          result_ptr(*fn, "u8", true, false),
                      fn->loc);
             } else if (fn->name == "free") {
-                keep("Malloc.free",
+                keep(prefix + "free",
                      head && !fn->unsafe && value_count(*fn) == 1 && value_ok(0, [](const Param &param) {
                          return param_ptr(param, "u8", false, false, false);
                      }) && result_plain(*fn, "void"),
                      fn->loc);
             } else if (fn->name == "realloc") {
-                keep("Malloc.realloc",
+                keep(prefix + "realloc",
                      head && fn->unsafe && value_count(*fn) == 3 && value_ok(0, [](const Param &param) {
                          return param_ptr(param, "u8", false, false, false);
                      }) && value_ok(1, [](const Param &param) { return param_plain(param, "i32", false); }) &&
@@ -459,11 +491,7 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
             continue;
         }
         const bool free_head = compiler_header(*fn, false);
-        if (fn->name == "trace") {
-            keep("trace", free_head && fn->type_params.empty() && fn->params.empty() && !fn->unsafe &&
-                              result_ptr(*fn, "u8", false, true),
-                 fn->loc);
-        } else if (fn->name == "va") {
+        if (fn->name == "va") {
             keep("va", free_head && fn->type_params.empty() && fn->params.empty() && !fn->unsafe &&
                            result_ptr(*fn, "u8", false, false),
                  fn->loc);
@@ -531,7 +559,8 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                               "Type",        "Allocator",        "allocator",      "malloc[T]",
                               "alloc[T]",    "alloc[T,n]",       "realloc[T]",     "realloc[T,n]",
                               "CompiledType.name", "CompiledType.fields", "Malloc.malloc", "Malloc.free",
-                              "Malloc.realloc", "trace",         "va",             "panic",
+                              "Malloc.realloc", "Frame",          "StackTrace",
+                              "StackTrace.get", "StackTrace.free", "va",          "panic",
                               "fence",       "fmt",              "atomic_load",    "atomic_store",
                               "atomic_rmw",  "atomic_cmpxchg"};
     for (const char *key : required) {
@@ -542,6 +571,47 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
     if (missing) {
         fail(top);
     }
+}
+
+void Checker::validate_default_allocator(std::string_view name) {
+    const AllocatorChoice choice = parse_allocator_choice(name);
+    if (choice.kind != AllocatorChoice::Kind::Named) {
+        return;
+    }
+    if (choice.type.empty() || graph_ == nullptr) {
+        error(SourceLoc{}, "undeclared identifier");
+        return;
+    }
+    std::vector<int> hits;
+    for (int id = 0; id < static_cast<int>(structs_.size()); ++id) {
+        const StructInfo &info = structs_[static_cast<std::size_t>(id)];
+        if (info.name != choice.type || info.anonymous) {
+            continue;
+        }
+        const PackageNode *node = find_node(info.file_id);
+        if (node == nullptr) {
+            continue;
+        }
+        if (!choice.package.empty() && node->qualifier != choice.package) {
+            continue;
+        }
+        hits.push_back(id);
+    }
+    if (hits.empty()) {
+        error(SourceLoc{}, "undeclared identifier");
+        return;
+    }
+    if (hits.size() != 1) {
+        error(structs_[static_cast<std::size_t>(hits.front())].loc, "type mismatch");
+        return;
+    }
+    const int id = hits.front();
+    // The compiler calls the methods. It sees them even when another package would not.
+    const uint32_t saved = file_id_;
+    file_id_ = structs_[static_cast<std::size_t>(id)].file_id;
+    ensure_allocator_trait();
+    require_satisfies(id, allocator_trait_id_, true, structs_[static_cast<std::size_t>(id)].loc);
+    file_id_ = saved;
 }
 
 bool Checker::package_is_iteration(uint32_t file) const {
@@ -1179,18 +1249,27 @@ bool Checker::trait_is(int got, int want) const {
 }
 
 bool Checker::field_waits(const FieldDecl &field) const {
-    if (field.indirections > 0 || field.is_fn_ptr || !field.type_package.empty() || field.is_enum ||
-        field.type_name.empty()) {
-        return false;
-    }
-    // A sized array stores the element. A pointer or a slice does not, so it does not wait.
+    // A pointer or a slice does not store the struct, so it does not wait for that struct.
+    bool hides = field.indirections > 0 || field.is_fn_ptr || field.is_enum || field.elem_slice ||
+                 (field.is_array && field.array_len < 0);
     if (!field.shells.empty()) {
         for (const TypeShell &shell : field.shells) {
             if (shell.kind != TypeShell::Kind::Array) {
-                return false;
+                hides = true;
             }
         }
-    } else if (field.elem_slice || (field.is_array && field.array_len < 0)) {
+    }
+    if (!field.type_package.empty()) {
+        if (hides || field.type_name.empty()) {
+            return false;
+        }
+        const int tag = imported_tag(file_id_, field.type_package, field.type_name);
+        if (tag < 0 || tag >= static_cast<int>(structs_.size())) {
+            return false;
+        }
+        return !structs_[static_cast<std::size_t>(tag)].complete;
+    }
+    if (hides || field.type_name.empty()) {
         return false;
     }
     const int id = find_tag(file_id_, field.type_name);
@@ -2613,7 +2692,8 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     }
     Type type;
     if (!package.empty()) {
-        type = with_indirections(lookup_qualified_type(package, name, loc), indirections, loc, optional, const_pointee);
+        type = with_indirections(lookup_qualified_type(package, name, loc, indirections > 0 || allow_incomplete),
+                                 indirections, loc, optional, const_pointee);
     } else if (is_struct) {
         const int tag = find_tag(file_id_, name);
         const int enumeration = find_enum(file_id_, name);

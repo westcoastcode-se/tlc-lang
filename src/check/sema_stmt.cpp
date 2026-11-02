@@ -2950,7 +2950,8 @@ void Checker::check_function(const FunctionDecl &fn) {
     const bool saved_collect = collect_returns_;
     collect_returns_ = false;
     const int saved_unsafe = unsafe_depth_;
-    unsafe_depth_ = fn.unsafe ? 1 : 0;
+    // A function written in an `unsafe func` or `unsafe { }` keeps that context.
+    unsafe_depth_ = fn.unsafe && saved_unsafe == 0 ? 1 : saved_unsafe;
     if (fn.results.size() > 1) {
         for (const ResultSlot &slot : fn.results) {
             if (slot.is_fn_ptr) {
@@ -3540,7 +3541,8 @@ bool Checker::infer_omitted_result(FunctionDecl &fn) {
     quiet_ = true;
     InitSuspend suspend(*this);
     const int saved_unsafe = unsafe_depth_;
-    unsafe_depth_ = fn.unsafe ? 1 : 0;
+    // A function written in an `unsafe func` or `unsafe { }` keeps that context.
+    unsafe_depth_ = fn.unsafe && saved_unsafe == 0 ? 1 : saved_unsafe;
     checking_.push_back(&fn);
     push_function();
     const Type saved_ret = return_type_;

@@ -1293,8 +1293,8 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
             fn.method_params = parse_method_params();
             fn.method_struct = fn.name;
             expect(TokenKind::ColonColon, "expected '::'");
-            if (check(TokenKind::Identifier)) {
-                fn.name = peek().text;
+            if (check(TokenKind::Identifier) || check(TokenKind::KwNew)) {
+                fn.name = check(TokenKind::KwNew) ? "new" : peek().text;
                 fn.loc = peek().loc;
                 ++pos_;
             } else {
@@ -1304,8 +1304,8 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         } else if (check(TokenKind::ColonColon)) {
             ++pos_;
             fn.method_struct = fn.name;
-            if (check(TokenKind::Identifier)) {
-                fn.name = peek().text;
+            if (check(TokenKind::Identifier) || check(TokenKind::KwNew)) {
+                fn.name = check(TokenKind::KwNew) ? "new" : peek().text;
                 fn.loc = peek().loc;
                 ++pos_;
             } else {

@@ -613,6 +613,7 @@ void CodeGen::emit(const PackageGraph &graph) {
     for (const PackageNode &node : graph.nodes) {
         declare_globals(node);
     }
+    prepare_default_allocator();
     for (const PackageNode &node : graph.nodes) {
         current_file_ = node.file_id;
         for (const TopDecl &decl : node.unit.decls) {
@@ -625,12 +626,14 @@ void CodeGen::emit(const PackageGraph &graph) {
         emit_bodies(node);
     }
     emit_dynamic_inits();
-    emit_builtin_trace();
+    emit_stack_trace();
     emit_builtin_panic();
     emit_builtin_heap();
     if (testing_) {
         emit_tests();
     }
+    // A test body can be the first call that creates `tlc.panic`. Fill that body after the tests.
+    emit_builtin_panic();
     if (di_builder_ != nullptr) {
         finish_debug();
     }
@@ -718,7 +721,16 @@ void CodeGen::emit_tests() {
     for (const TestFn &test : tests) {
         llvm::BasicBlock *from = builder_.GetInsertBlock();
         llvm::Value *result = builder_.CreateCall(test.function);
-        llvm::Value *bad = builder_.CreateICmpNE(result, const_i32(0));
+        llvm::Value *leaks = const_i32(0);
+        // `report` is optional. `DebugAllocator.report` prints each block still reserved.
+        if (default_alloc_ == DefaultAlloc::Named && default_alloc_global_ != nullptr) {
+            if (llvm::Function *report = allocator_method(default_alloc_file_, default_alloc_type_, "report");
+                report != nullptr && report->getReturnType()->isIntegerTy(32)) {
+                leaks = builder_.CreateCall(report->getFunctionType(), report, {default_alloc_global_});
+            }
+        }
+        llvm::Value *bad = builder_.CreateOr(builder_.CreateICmpNE(result, const_i32(0)),
+                                             builder_.CreateICmpNE(leaks, const_i32(0)));
         auto *fail_block = llvm::BasicBlock::Create(context_, "fail", main);
         auto *next_block = llvm::BasicBlock::Create(context_, "next", main);
         builder_.CreateCondBr(bad, fail_block, next_block);

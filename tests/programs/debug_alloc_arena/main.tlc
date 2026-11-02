@@ -1,0 +1,33 @@
+type Arena struct {
+    bytes [64]u8;
+    used i32;
+};
+
+unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    _ = align;
+    if (size < 1 || self.used + size > 64) {
+        return null;
+    }
+    var start = self.used;
+    self.used = self.used + size;
+    return ?*u8(&self.bytes[start]);
+}
+
+func Arena::free(self *this, ptr *u8) void {
+    _ = ptr;
+}
+
+unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    _ = ptr;
+    return self.malloc(size, align);
+}
+
+test "uses the named allocator" {
+    var arena Arena;
+    arena.used = 0;
+    var p = new(&arena) i32;
+    *p = 42;
+    if (*p != 42) {
+        return 1;
+    }
+}

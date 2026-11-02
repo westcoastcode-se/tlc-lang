@@ -1,0 +1,9 @@
+func leak() i32 {
+    var p = new i32;
+    _ = p;
+    return 1;
+}
+
+test "keeps the block" {
+    return leak();
+}

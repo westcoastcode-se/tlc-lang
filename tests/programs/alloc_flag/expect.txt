@@ -1,0 +1,2 @@
+allocator: main.Slot
+exit: 42

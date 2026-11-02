@@ -74,6 +74,7 @@ bool is_slice(const Type &type);
 bool accepts_slice(const Type &got, const Type &want);
 
 void analyze(const TranslationUnit &unit, DiagnosticEngine &diags);
-void analyze(const PackageGraph &graph, DiagnosticEngine &diags);
+// `default_allocator` is the type bare `new` and `delete` use. Empty keeps `Malloc`.
+void analyze(const PackageGraph &graph, DiagnosticEngine &diags, std::string_view default_allocator = {});
 
 } // namespace tlc

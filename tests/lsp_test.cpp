@@ -1231,7 +1231,7 @@ int run_lsp_tests() {
                                        "}\n"
                                        "\n"
                                        "func main() i32 {\n"
-                                       "    var p = builtin.trace;\n"
+                                       "    var p = builtin.StackTrace.get;\n"
                                        "    var t builtin.Type = typeof(i32);\n"
                                        "    var fs = t.fields();\n"
                                        "    var heap builtin.Malloc = builtin.allocator;\n"
@@ -1246,10 +1246,11 @@ int run_lsp_tests() {
     send_json(to_child[1],
               std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
                   builtin_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(builtin_source) + R"("}}})");
-    const LineCol trace_at = at_needle(builtin_source, "trace", false);
+    LineCol trace_at = at_needle(builtin_source, "StackTrace.get", false);
     EXPECT(check, trace_at.line >= 0);
+    trace_at.character += static_cast<int>(std::string("StackTrace.").size());
     const std::string trace_hover = request_at(to_child[1], from_child[0], 120, "textDocument/hover", builtin_uri, trace_at);
-    EXPECT_HAS(check, trace_hover, "func trace() *const u8");
+    EXPECT_HAS(check, trace_hover, "func StackTrace.get() StackTrace");
     EXPECT_HAS(check, trace_hover, "newest first");
     const std::string trace_def =
         request_at(to_child[1], from_child[0], 121, "textDocument/definition", builtin_uri, trace_at);
@@ -1269,7 +1270,7 @@ int run_lsp_tests() {
     EXPECT(check, builtin_dot.line >= 0);
     const std::string member_items =
         request_at(to_child[1], from_child[0], 124, "textDocument/completion", builtin_uri, builtin_dot);
-    EXPECT_HAS(check, member_items, "\"trace\"");
+    EXPECT_HAS(check, member_items, "\"StackTrace\"");
     EXPECT_HAS(check, member_items, "\"va\"");
     EXPECT_HAS(check, member_items, "\"panic\"");
     EXPECT_HAS(check, member_items, "\"Type\"");

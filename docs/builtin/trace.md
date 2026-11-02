@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Traits](../methods/trait.md) · [Next: allocator](allocator.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-This page describes `import "builtin"` and the call-stack text from `builtin.trace`.
+This page describes the call stack and `builtin.StackTrace`.
 
 ## The compiler package
 
@@ -12,15 +12,11 @@ The compiler's own copy is `lib/tlc/builtin/builtin.tlc`.
 
 An editor shows the signatures in that file and the `//` comments above them.
 
-It exports `trace`, `va`, `panic`, `Type`, and `Malloc`. `extern(abi="compiler")` marks each declaration the compiler implements. `memeql` and `memcmp` are in [`std/mem`](../std/mem.md).
+It exports `va`, `panic`, `Type`, `Frame`, `StackTrace`, and `Malloc`. `extern(abi="compiler")` marks each declaration the compiler implements. `memeql` and `memcmp` are in [`std/mem`](../std/mem.md).
 
 `builtin.Type` is the type of a type, described in [The Type type](../types/type.md).
 
-`trace` returns `*const u8`.
-
-`va` returns `*u8`.
-
-Both take no arguments.
+`va` returns `*u8` and takes no arguments.
 
 An argument is reported as `argument count`.
 
@@ -33,95 +29,12 @@ The import links the C library.
 ```c
 import "builtin";
 import "builtin" as b;
-import { trace, va, panic } from "builtin";
-```
-
-```asm
-main:
-pushq %rax
-callq trace                      # call trace
-movq %rax, (%rsp)                # move
-cmpq $0, (%rsp)                  # compare
-jne .L1                          # branch
-movl $1, %eax                    # constant
-popq %rcx
-retq                             # return
-.L1:
-jmp .L2                          # jump
-.L2:
-xorl %eax, %eax                  # zero the result
-popq %rcx
-retq                             # return
-
-trace:
-subq $40, %rsp                   # subtract
-movb $0, (%rip)                  # constant
-movl (%rip), %ecx                # move
-xorl %eax, %eax                  # zero the result
-movl %ecx, 32(%rsp)              # move
-movl %eax, 36(%rsp)              # move
-.L2:
-movl 32(%rsp), %eax              # move
-movl 36(%rsp), %ecx              # move
-movl %ecx, 24(%rsp)              # move
-movl %eax, 28(%rsp)              # move
-cmpl $0, %eax                    # compare
-je .L1                           # branch
-movl 24(%rsp), %ecx              # move
-movl $4096, %eax                 # constant
-subl %ecx, %eax                  # subtract
-movl %eax, 20(%rsp)              # move
-cmpl $1, %eax                    # compare
-jle .L1                          # branch
-movl 24(%rsp), %r10d             # move
-movl 20(%rsp), %esi              # move
-movl 28(%rsp), %r11d             # move
-subl $1, %r11d                   # subtract
-movl %r11d, 12(%rsp)             # move
-leaq (%rip), %rax                # address
-movslq %r11d, %rcx               # move
-imulq $24, %rcx, %rcx            # multiply
-addq %rcx, %rax                  # add
-movq (%rax), %rcx                # move
-movl 8(%rax), %r8d               # move
-movl 12(%rax), %r9d              # move
-movq 16(%rax), %rax              # move
-leaq (%rip), %rdx                # address
-leaq (%rip), %rdi                # address
-cmpl $0, %r11d                   # compare
-cmoveq %rdi, %rdx
-leaq (%rip), %rdi                # address
-movslq %r10d, %r10               # move
-addq %r10, %rdi                  # add
-movl %esi, %esi                  # move
-movq %rax, (%rsp)                # move
-movb $0, %al                     # constant
-callq snprintf                   # call snprintf
-movl 20(%rsp), %ecx              # move
-movl %eax, %esi                  # move
-movl 24(%rsp), %eax              # move
-xorl %edx, %edx                  # xorl
-cmpl $0, %esi                    # compare
-cmovgl %esi, %edx
-subl $1, %ecx                    # subtract
-cmpl %ecx, %edx                  # compare
-cmovll %edx, %ecx
-addl %ecx, %eax                  # add
-movl %eax, 16(%rsp)              # move
-movl 16(%rsp), %eax              # move
-movl 12(%rsp), %ecx              # move
-movl %ecx, 32(%rsp)              # move
-movl %eax, 36(%rsp)              # move
-jmp .L2                          # jump
-.L1:
-leaq (%rip), %rax                # address
-addq $40, %rsp                   # add
-retq                             # return
+import { va, panic, StackTrace } from "builtin";
 ```
 
 ## How the names are spelled
 
-The first form calls them as `builtin.trace()`, `builtin.va()`, and `builtin.panic(message)`.
+The first form calls them as `builtin.va()`, `builtin.panic(message)`, and `builtin.StackTrace.get()`.
 
 The alias uses the new qualifier.
 
@@ -131,289 +44,25 @@ A directory named `builtin` on the search path is that package.
 
 The compiler package is used when the search finds none.
 
-## The text `trace` returns
+## The frames a call records
 
-`builtin.trace()` returns `*const u8`.
+A call records one frame, then calls.
 
-The text lists the calls that have not returned, newest first.
+The frames are the calls that have not returned, newest first.
 
 A line is `file:line:column: name`.
 
 The name is the function that made the call, and the location is that call.
 
-The last line has no newline.
-
-Calls of `builtin.trace` and `builtin.va` are omitted.
+Calls of `builtin.va` and `builtin.StackTrace.get` are omitted.
 
 A call of `builtin.panic` is kept.
 
-When no such call is still running, the text is empty.
+When no such call is still running, the list is empty.
 
-```c
-import "builtin";
+At most 32 calls are kept.
 
-extern(abi="c") func printf(fmt *const u8, ...) i32;
-
-func leaf() i32 {
-    printf("%s\n", *u8(builtin.trace()));
-    return 1;
-}
-
-func mid() i32 {
-    return leaf();
-}
-
-func main() i32 {
-    return mid();
-}
-```
-
-```asm
-mid:
-# trace frame for the call, then the matching pop
-callq leaf                       # call leaf
-retq                             # return
-
-leaf:
-subq $24, %rsp                   # subtract
-callq trace                      # call trace
-movq %rax, 8(%rsp)               # move
-movl (%rip), %ecx                # move
-movl %ecx, 16(%rsp)              # move
-xorl %eax, %eax                  # zero the result
-cmpl $32, %ecx                   # compare
-movb %al, 23(%rsp)               # move
-jae .L1                          # branch
-movl 16(%rsp), %eax              # move
-leaq (%rip), %rcx                # address
-movslq %eax, %rdx                # move
-imulq $24, %rdx, %rdx            # multiply
-addq %rdx, %rcx                  # add
-leaq (%rip), %rdx                # address
-movq %rdx, (%rcx)                # move
-movl $6, 8(%rcx)                 # constant
-movl $5, 12(%rcx)                # constant
-leaq (%rip), %rdx                # address
-movq %rdx, 16(%rcx)              # move
-addl $1, %eax                    # add
-movl %eax, (%rip)                # move
-movb $1, %al                     # constant
-movb %al, 23(%rsp)               # move
-.L1:
-movq 8(%rsp), %rsi               # move
-movb 23(%rsp), %al               # move
-movb %al, 7(%rsp)                # move
-leaq (%rip), %rdi                # address
-movb $0, %al                     # constant
-callq printf                     # call printf
-movb 7(%rsp), %al                # move
-testb $1, %al                    # test
-jne .L2                          # branch
-jmp .L3                          # jump
-.L2:
-movl (%rip), %eax                # move
-subl $1, %eax                    # subtract
-movl %eax, (%rip)                # move
-.L3:
-movl $1, %eax                    # constant
-addq $24, %rsp                   # add
-retq                             # return
-
-realloc:
-subq $40, %rsp                   # subtract
-movq %rsi, 16(%rsp)              # move
-movl %ecx, 28(%rsp)              # move
-movl %edx, %eax                  # move
-movq %rax, 32(%rsp)              # move
-cmpq $0, %rsi                    # compare
-jne .L1                          # branch
-movl 28(%rsp), %eax              # move
-cmpl $16, %eax                   # compare
-jg .L2                           # branch
-jmp .L3                          # jump
-.L1:
-movq 32(%rsp), %rsi              # move
-movq 16(%rsp), %rdi              # move
-callq realloc                    # call realloc
-addq $40, %rsp                   # add
-retq                             # return
-.L3:
-movq 32(%rsp), %rdi              # move
-callq malloc                     # call malloc
-movq %rax, 8(%rsp)               # move
-jmp .L4                          # jump
-.L2:
-movq 32(%rsp), %rax              # move
-movl 28(%rsp), %ecx              # move
-movl %ecx, %ecx                  # move
-movl %ecx, %edi                  # move
-movq %rdi, %rcx                  # move
-subq $1, %rcx                    # subtract
-addq %rcx, %rax                  # add
-xorl %ecx, %ecx
-movl %ecx, %edx                  # move
-divq %rdi
-movq %rax, %rsi                  # move
-imulq %rdi, %rsi                 # multiply
-callq aligned_alloc              # call aligned_alloc
-movq %rax, 8(%rsp)               # move
-.L4:
-movq 8(%rsp), %rax               # move
-addq $40, %rsp                   # add
-retq                             # return
-
-malloc:
-subq $24, %rsp                   # subtract
-movl %edx, 12(%rsp)              # move
-movl %esi, %eax                  # move
-movq %rax, 16(%rsp)              # move
-cmpl $16, %edx                   # compare
-jg .L1                           # branch
-movq 16(%rsp), %rdi              # move
-callq malloc                     # call malloc
-movq %rax, (%rsp)                # move
-jmp .L2                          # jump
-.L1:
-movq 16(%rsp), %rax              # move
-movl 12(%rsp), %ecx              # move
-movl %ecx, %ecx                  # move
-movl %ecx, %edi                  # move
-movq %rdi, %rcx                  # move
-subq $1, %rcx                    # subtract
-addq %rcx, %rax                  # add
-xorl %ecx, %ecx
-movl %ecx, %edx                  # move
-divq %rdi
-movq %rax, %rsi                  # move
-imulq %rdi, %rsi                 # multiply
-callq aligned_alloc              # call aligned_alloc
-movq %rax, (%rsp)                # move
-.L2:
-movq (%rsp), %rax                # move
-addq $24, %rsp                   # add
-retq                             # return
-
-panic:
-subq $24, %rsp                   # subtract
-movq %rdi, %rdx                  # move
-leaq (%rip), %rax                # address
-cmpq $0, %rdx                    # compare
-cmoveq %rax, %rdx
-movl $2, %edi                    # constant
-leaq (%rip), %rsi                # address
-movb $0, %al                     # constant
-callq dprintf                    # call dprintf
-movl (%rip), %eax                # move
-movl %eax, 20(%rsp)              # move
-.L2:
-movl 20(%rsp), %eax              # move
-movl %eax, 16(%rsp)              # move
-cmpl $0, %eax                    # compare
-je .L1                           # branch
-movl 16(%rsp), %ecx              # move
-subl $1, %ecx                    # subtract
-movl %ecx, 12(%rsp)              # move
-leaq (%rip), %rax                # address
-movslq %ecx, %rcx                # move
-imulq $24, %rcx, %rcx            # multiply
-addq %rcx, %rax                  # add
-movq (%rax), %rdx                # move
-movl 8(%rax), %ecx               # move
-movl 12(%rax), %r8d              # move
-movq 16(%rax), %r9               # move
-movl $2, %edi                    # constant
-leaq (%rip), %rsi                # address
-movb $0, %al                     # constant
-callq dprintf                    # call dprintf
-movl 12(%rsp), %eax              # move
-movl %eax, 20(%rsp)              # move
-jmp .L2                          # jump
-.L1:
-callq abort                      # call abort
-
-trace:
-subq $40, %rsp                   # subtract
-movb $0, (%rip)                  # constant
-movl (%rip), %ecx                # move
-xorl %eax, %eax                  # zero the result
-movl %ecx, 32(%rsp)              # move
-movl %eax, 36(%rsp)              # move
-.L2:
-movl 32(%rsp), %eax              # move
-movl 36(%rsp), %ecx              # move
-movl %ecx, 24(%rsp)              # move
-movl %eax, 28(%rsp)              # move
-cmpl $0, %eax                    # compare
-je .L1                           # branch
-movl 24(%rsp), %ecx              # move
-movl $4096, %eax                 # constant
-subl %ecx, %eax                  # subtract
-movl %eax, 20(%rsp)              # move
-cmpl $1, %eax                    # compare
-jle .L1                          # branch
-movl 24(%rsp), %r10d             # move
-movl 20(%rsp), %esi              # move
-movl 28(%rsp), %r11d             # move
-subl $1, %r11d                   # subtract
-movl %r11d, 12(%rsp)             # move
-leaq (%rip), %rax                # address
-movslq %r11d, %rcx               # move
-imulq $24, %rcx, %rcx            # multiply
-addq %rcx, %rax                  # add
-movq (%rax), %rcx                # move
-movl 8(%rax), %r8d               # move
-movl 12(%rax), %r9d              # move
-movq 16(%rax), %rax              # move
-leaq (%rip), %rdx                # address
-leaq (%rip), %rdi                # address
-cmpl $0, %r11d                   # compare
-cmoveq %rdi, %rdx
-leaq (%rip), %rdi                # address
-movslq %r10d, %r10               # move
-addq %r10, %rdi                  # add
-movl %esi, %esi                  # move
-movq %rax, (%rsp)                # move
-movb $0, %al                     # constant
-callq snprintf                   # call snprintf
-movl 20(%rsp), %ecx              # move
-movl %eax, %esi                  # move
-movl 24(%rsp), %eax              # move
-xorl %edx, %edx
-cmpl $0, %esi                    # compare
-cmovgl %esi, %edx
-subl $1, %ecx                    # subtract
-cmpl %ecx, %edx                  # compare
-cmovll %edx, %ecx
-addl %ecx, %eax                  # add
-movl %eax, 16(%rsp)              # move
-movl 16(%rsp), %eax              # move
-movl 12(%rsp), %ecx              # move
-movl %ecx, 32(%rsp)              # move
-movl %eax, 36(%rsp)              # move
-jmp .L2                          # jump
-.L1:
-leaq (%rip), %rax                # address
-addq $40, %rsp                   # add
-retq                             # return
-
-free:
-pushq %rax
-movq %rsi, (%rsp)                # move
-movq %rdi, %rax                  # move
-movq (%rsp), %rdi                # move
-callq free                       # call free
-popq %rax
-retq                             # return
-```
-
-`leaf` is calling `printf`, whose argument is the trace.
-
-`mid` has called `leaf`, and `main` has called `mid`, so the program prints:
-
-```text
-main.tlc:11:12: mid
-main.tlc:15:12: main
-```
+Another thread has its own frames.
 
 ## How a line is named
 
@@ -427,234 +76,144 @@ An anonymous function is named `anon`.
 
 Inside a `test`, the name is the test's name.
 
-## How much text is kept
+## A copy of the frames
 
-At most 32 calls are kept.
+`builtin.StackTrace.get()` returns `StackTrace`.
 
-The text is at most 4095 bytes.
+`frames` is `[]const Frame`. The frames are the calls that have not returned, newest first.
 
-The pointer refers to this thread's buffer, and the next `builtin.trace()` on that thread replaces that text.
+A `Frame` holds `file`, `line`, `column`, and `name`. `file` and `name` are `*const u8`. They address the bytes the trace frame already points at.
 
-Another thread has its own frames and its own buffer.
+At most 32 frames are copied.
 
-## A function pointer and `defer`
+The call of `get` pushes no frame.
 
-`var f = builtin.trace` is a function pointer.
+The list is a copy. The caller owns it. `trace.free()` releases that list. The file and name bytes stay.
 
-`defer builtin.trace()` runs the call when the deferred calls run.
+A second `free` releases a null pointer and leaves the length at 0.
+
+A `StackTrace` that is not freed leaks that list. The allocation is the libc heap.
+
+When no call is still running, `frames.len` is 0. `free` on that value does nothing.
+
+A null result from `malloc` calls `panic("out of memory")`.
 
 ```c
 import "builtin";
 
+func leaf() i32 {
+    var trace = builtin.StackTrace.get();
+    var n = trace.frames.len;
+    trace.free();
+    return n;
+}
+
 func main() i32 {
-    var f = builtin.trace;
-    defer f();
-    defer builtin.trace();
-    return 0;
+    return leaf();
 }
 ```
 
 ```asm
 main:
-subq $24, %rsp                   # subtract
-movq (%rip), %rax                # move
-movq %rax, 8(%rsp)               # move
-movb $1, 23(%rsp)                # constant
-testb $1, 23(%rsp)               # test
-jne .L1                          # branch
-jmp .L2                          # jump
-.L1:
-callq trace                      # call trace
-.L2:
-xorl %eax, %eax                  # zero the result
-addq $24, %rsp                   # add
+# trace frame for the call, then the matching pop
+callq leaf                       # call leaf
 retq                             # return
 
-realloc:
+leaf:
 subq $40, %rsp                   # subtract
-movq %rsi, 16(%rsp)              # move
-movl %ecx, 28(%rsp)              # move
-movl %edx, %eax                  # move
-movq %rax, 32(%rsp)              # move
-cmpq $0, %rsi                    # compare
-jne .L1                          # branch
-movl 28(%rsp), %eax              # move
-cmpl $16, %eax                   # compare
-jg .L2                           # branch
-jmp .L3                          # jump
-.L1:
-movq 32(%rsp), %rsi              # move
-movq 16(%rsp), %rdi              # move
-callq realloc                    # call realloc
-addq $40, %rsp                   # add
-retq                             # return
-.L3:
-movq 32(%rsp), %rdi              # move
-callq malloc                     # call malloc
-movq %rax, 8(%rsp)               # move
-jmp .L4                          # jump
-.L2:
-movq 32(%rsp), %rax              # move
-movl 28(%rsp), %ecx              # move
-movl %ecx, %ecx                  # move
-movl %ecx, %edi                  # move
-movq %rdi, %rcx                  # move
-subq $1, %rcx                    # subtract
-addq %rcx, %rax                  # add
-xorl %ecx, %ecx
-movl %ecx, %edx                  # move
-divq %rdi
-movq %rax, %rsi                  # move
-imulq %rdi, %rsi                 # multiply
-callq aligned_alloc              # call aligned_alloc
-movq %rax, 8(%rsp)               # move
-.L4:
-movq 8(%rsp), %rax               # move
-addq $40, %rsp                   # add
-retq                             # return
-
-malloc:
-subq $24, %rsp                   # subtract
-movl %edx, 12(%rsp)              # move
-movl %esi, %eax                  # move
+callq StackTrace.get             # call get
+movl %edx, 24(%rsp)              # move
 movq %rax, 16(%rsp)              # move
-cmpl $16, %edx                   # compare
-jg .L1                           # branch
-movq 16(%rsp), %rdi              # move
-callq malloc                     # call malloc
-movq %rax, (%rsp)                # move
-jmp .L2                          # jump
-.L1:
-movq 16(%rsp), %rax              # move
-movl 12(%rsp), %ecx              # move
-movl %ecx, %ecx                  # move
-movl %ecx, %edi                  # move
-movq %rdi, %rcx                  # move
-subq $1, %rcx                    # subtract
-addq %rcx, %rax                  # add
-xorl %ecx, %ecx
-movl %ecx, %edx                  # move
-divq %rdi
-movq %rax, %rsi                  # move
-imulq %rdi, %rsi                 # multiply
-callq aligned_alloc              # call aligned_alloc
-movq %rax, (%rsp)                # move
-.L2:
-movq (%rsp), %rax                # move
-addq $24, %rsp                   # add
-retq                             # return
-
-panic:
-subq $24, %rsp                   # subtract
-movq %rdi, %rdx                  # move
-leaq (%rip), %rax                # address
-cmpq $0, %rdx                    # compare
-cmoveq %rax, %rdx
-movl $2, %edi                    # constant
-leaq (%rip), %rsi                # address
-movb $0, %al                     # constant
-callq dprintf                    # call dprintf
-movl (%rip), %eax                # move
-movl %eax, 20(%rsp)              # move
-.L2:
-movl 20(%rsp), %eax              # move
-movl %eax, 16(%rsp)              # move
-cmpl $0, %eax                    # compare
-je .L1                           # branch
-movl 16(%rsp), %ecx              # move
-subl $1, %ecx                    # subtract
-movl %ecx, 12(%rsp)              # move
-leaq (%rip), %rax                # address
-movslq %ecx, %rcx                # move
-imulq $24, %rcx, %rcx            # multiply
-addq %rcx, %rax                  # add
-movq (%rax), %rdx                # move
-movl 8(%rax), %ecx               # move
-movl 12(%rax), %r8d              # move
-movq 16(%rax), %r9               # move
-movl $2, %edi                    # constant
-leaq (%rip), %rsi                # address
-movb $0, %al                     # constant
-callq dprintf                    # call dprintf
-movl 12(%rsp), %eax              # move
-movl %eax, 20(%rsp)              # move
-jmp .L2                          # jump
-.L1:
-callq abort                      # call abort
-
-trace:
-subq $40, %rsp                   # subtract
-movb $0, (%rip)                  # constant
-movl (%rip), %ecx                # move
-xorl %eax, %eax                  # zero the result
-movl %ecx, 32(%rsp)              # move
-movl %eax, 36(%rsp)              # move
-.L2:
-movl 32(%rsp), %eax              # move
-movl 36(%rsp), %ecx              # move
-movl %ecx, 24(%rsp)              # move
-movl %eax, 28(%rsp)              # move
-cmpl $0, %eax                    # compare
-je .L1                           # branch
-movl 24(%rsp), %ecx              # move
-movl $4096, %eax                 # constant
-subl %ecx, %eax                  # subtract
-movl %eax, 20(%rsp)              # move
-cmpl $1, %eax                    # compare
-jle .L1                          # branch
-movl 24(%rsp), %r10d             # move
-movl 20(%rsp), %esi              # move
-movl 28(%rsp), %r11d             # move
-subl $1, %r11d                   # subtract
-movl %r11d, 12(%rsp)             # move
-leaq (%rip), %rax                # address
-movslq %r11d, %rcx               # move
-imulq $24, %rcx, %rcx            # multiply
-addq %rcx, %rax                  # add
-movq (%rax), %rcx                # move
-movl 8(%rax), %r8d               # move
-movl 12(%rax), %r9d              # move
-movq 16(%rax), %rax              # move
-leaq (%rip), %rdx                # address
-leaq (%rip), %rdi                # address
-cmpl $0, %r11d                   # compare
-cmoveq %rdi, %rdx
-leaq (%rip), %rdi                # address
-movslq %r10d, %r10               # move
-addq %r10, %rdi                  # add
-movl %esi, %esi                  # move
-movq %rax, (%rsp)                # move
-movb $0, %al                     # constant
-callq snprintf                   # call snprintf
-movl 20(%rsp), %ecx              # move
-movl %eax, %esi                  # move
 movl 24(%rsp), %eax              # move
-xorl %edx, %edx
-cmpl $0, %esi                    # compare
-cmovgl %esi, %edx
-subl $1, %ecx                    # subtract
-cmpl %ecx, %edx                  # compare
-cmovll %edx, %ecx
-addl %ecx, %eax                  # add
-movl %eax, 16(%rsp)              # move
-movl 16(%rsp), %eax              # move
-movl 12(%rsp), %ecx              # move
-movl %ecx, 32(%rsp)              # move
 movl %eax, 36(%rsp)              # move
-jmp .L2                          # jump
-.L1:
-leaq (%rip), %rax                # address
+# trace frame for the call, then the matching pop
+leaq 16(%rsp), %rdi              # address
+callq StackTrace.free            # call free
+movl 36(%rsp), %eax              # move
 addq $40, %rsp                   # add
 retq                             # return
 
-free:
+StackTrace.get:
+subq $24, %rsp                   # subtract
+movl %fs:0, %eax                 # move
+movl %eax, 20(%rsp)              # move
+cmpl $0, %eax                    # compare
+jne .L1                          # branch
+xorl %edx, %edx                  # zero the result
+movl %edx, %eax                  # move
+addq $24, %rsp                   # add
+retq                             # return
+.L1:
+movl 20(%rsp), %eax              # move
+movl %eax, %eax                  # move
+imulq $24, %rax, %rdi            # multiply
+callq malloc                     # call malloc
+movq %rax, %rcx                  # move
+movq %rcx, 8(%rsp)               # move
+xorl %eax, %eax                  # zero the result
+cmpq $0, %rcx                    # compare
+movl %eax, 16(%rsp)              # move
+jne .L2                          # branch
+leaq (%rip), %rdi                # address
+callq panic                      # call panic
+.L2:
+movl 20(%rsp), %ecx              # move
+movl 16(%rsp), %eax              # move
+movl %eax, 4(%rsp)               # move
+cmpl %ecx, %eax                  # compare
+jge .L3                          # branch
+movl 4(%rsp), %eax               # move
+movq 8(%rsp), %rcx               # move
+movl 20(%rsp), %esi              # move
+movl %eax, %edx                  # move
+notl %edx                        # not
+addl %esi, %edx                  # add
+movslq %edx, %rdx                # move
+leaq (%rdx,%rdx,2), %rsi         # address
+movq %fs:0, %rdx                 # move
+leaq (%rdx,%rsi,8), %rdx         # address
+movslq %eax, %rsi                # move
+imulq $24, %rsi, %rsi            # multiply
+addq %rsi, %rcx                  # add
+movq (%rdx), %rsi                # move
+movq %rsi, (%rcx)                # move
+movl 8(%rdx), %esi               # move
+movl %esi, 8(%rcx)               # move
+movl 12(%rdx), %esi              # move
+movl %esi, 12(%rcx)              # move
+movq 16(%rdx), %rdx              # move
+movq %rdx, 16(%rcx)              # move
+addl $1, %eax                    # add
+movl %eax, 16(%rsp)              # move
+jmp .L2                          # jump
+.L3:
+movl 20(%rsp), %edx              # move
+movq 8(%rsp), %rax               # move
+addq $24, %rsp                   # add
+retq                             # return
+
+StackTrace.free:
 pushq %rax
-movq %rsi, (%rsp)                # move
-movq %rdi, %rax                  # move
-movq (%rsp), %rdi                # move
+movq %rdi, (%rsp)                # move
+movq (%rdi), %rdi                # move
 callq free                       # call free
+movq (%rsp), %rdi                # move
+movq $0, (%rdi)                  # constant
+movl $0, 8(%rdi)                 # constant
 popq %rax
 retq                             # return
 ```
+
+`leaf` was entered from `main`, so the program returns 1.
+
+The frame is the `leaf()` call:
+
+```text
+main.tlc:11:12: main
+```
+
+`get` returns that frame list in `%rax` and the length in `%edx`.
+
+`free` takes the address of the `StackTrace`.
 
 [Index](../README.md) · [Previous: Traits](../methods/trait.md) · [Next: allocator](allocator.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

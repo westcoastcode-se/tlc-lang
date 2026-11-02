@@ -127,7 +127,7 @@ class Resolver {
   public:
     Resolver(const ResolveRequest &request, SourceSet &sources, DiagnosticEngine &diags, PackageGraph &graph)
         : sources_(sources), diags_(diags), graph_(graph), overlays_(request.overlays),
-          vendor_request_(request.vendor_root), std_request_(request.std_root) {
+          vendor_request_(request.vendor_root), std_request_(request.std_root), preload_(request.preload) {
         for (const std::string &root : request.package_paths) {
             extra_roots_.emplace_back(root);
         }
@@ -170,6 +170,11 @@ class Resolver {
         }
         by_package_.emplace(graph_.nodes[index].package_key, index);
         walk_package(graph_.nodes[index].package_key);
+        if (!preload_.empty() && diags_.ok()) {
+            ImportDecl import;
+            import.path = preload_;
+            resolve_one(graph_.nodes[index].file_id, canonical.parent_path(), import);
+        }
     }
 
   private:
@@ -189,6 +194,7 @@ class Resolver {
     fs::path entry_;
     std::string vendor_request_;
     std::string std_request_;
+    std::string preload_;
     fs::path vendor_root_;
     fs::path std_root_;
     std::vector<fs::path> extra_roots_;
@@ -752,13 +758,10 @@ class Resolver {
         message.indirections = 1;
         message.const_pointee = 1;
         panic_fn.params.push_back(std::move(message));
-        TopDecl trace;
-        trace.data = pointer_char("trace", true);
         TopDecl va;
         va.data = pointer_char("va", false);
         TopDecl panic;
         panic.data = std::move(panic_fn);
-        node.unit.decls.push_back(std::move(trace));
         node.unit.decls.push_back(std::move(va));
         node.unit.decls.push_back(std::move(panic));
         // `builtin.allocator` is the libc heap. `new` and `delete` use it when no allocator is written.

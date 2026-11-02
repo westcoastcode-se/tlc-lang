@@ -31,7 +31,7 @@ struct CodegenOutput {
 };
 
 CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const std::string &object_path,
-                      bool testing, bool debug_info, OptLevel opt_level);
+                      bool testing, bool debug_info, OptLevel opt_level, std::string allocator);
 
 // Compile `fn` in `graph` and call it. `fn` returns `i32` and takes no parameters.
 // `file` is the file whose names the body resolves. Nullopt when emission or the call fails.

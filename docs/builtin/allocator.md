@@ -184,6 +184,18 @@ The argument is a pointer, and the pointee type is taken from that pointer.
 
 `Malloc` calls the C functions `malloc`, `free`, and `realloc`.
 
+## Another allocator
+
+`--allocator pkg.Name` selects the type bare `new` and `delete` use. The struct satisfies `Allocator`. A missing name is `undeclared identifier`.
+
+`Malloc` is the default. It calls `malloc` and `free`.
+
+`tlc --test` selects `debug.DebugAllocator` unless the flag names another type. That type is ordinary tlc in `lib/tlc/std/debug/debug.tlc`. It records each block and the `StackTrace` taken in `malloc` or `realloc`. A test that leaves one reserved prints `not released`, then those frames, and fails.
+
+`malloc`, `free`, `realloc`, and `report` lock that value's mutex, so two threads can use one allocator.
+
+`import "std/debug"` names `debug.allocator`. Its initializer sets `lock` to `thread.Mutex.new()`. Bare `new` uses that same value.
+
 `malloc` returns `null` when it cannot reserve the bytes.
 
 `new` then calls `builtin.panic("out of memory")`.
@@ -459,71 +471,6 @@ movl %eax, 20(%rsp)              # move
 jmp .L2                          # jump
 .L1:
 callq abort                      # call abort
-
-trace:
-subq $40, %rsp                   # subtract
-movb $0, (%rip)                  # constant
-movl (%rip), %ecx                # move
-xorl %eax, %eax                  # zero the result
-movl %ecx, 32(%rsp)              # move
-movl %eax, 36(%rsp)              # move
-.L2:
-movl 32(%rsp), %eax              # move
-movl 36(%rsp), %ecx              # move
-movl %ecx, 24(%rsp)              # move
-movl %eax, 28(%rsp)              # move
-cmpl $0, %eax                    # compare
-je .L1                           # branch
-movl 24(%rsp), %ecx              # move
-movl $4096, %eax                 # constant
-subl %ecx, %eax                  # subtract
-movl %eax, 20(%rsp)              # move
-cmpl $1, %eax                    # compare
-jle .L1                          # branch
-movl 24(%rsp), %r10d             # move
-movl 20(%rsp), %esi              # move
-movl 28(%rsp), %r11d             # move
-subl $1, %r11d                   # subtract
-movl %r11d, 12(%rsp)             # move
-leaq (%rip), %rax                # address
-movslq %r11d, %rcx               # move
-imulq $24, %rcx, %rcx            # multiply
-addq %rcx, %rax                  # add
-movq (%rax), %rcx                # move
-movl 8(%rax), %r8d               # move
-movl 12(%rax), %r9d              # move
-movq 16(%rax), %rax              # move
-leaq (%rip), %rdx                # address
-leaq (%rip), %rdi                # address
-cmpl $0, %r11d                   # compare
-cmoveq %rdi, %rdx
-leaq (%rip), %rdi                # address
-movslq %r10d, %r10               # move
-addq %r10, %rdi                  # add
-movl %esi, %esi                  # move
-movq %rax, (%rsp)                # move
-movb $0, %al                     # constant
-callq snprintf                   # call snprintf
-movl 20(%rsp), %ecx              # move
-movl %eax, %esi                  # move
-movl 24(%rsp), %eax              # move
-xorl %edx, %edx
-cmpl $0, %esi                    # compare
-cmovgl %esi, %edx
-subl $1, %ecx                    # subtract
-cmpl %ecx, %edx                  # compare
-cmovll %edx, %ecx
-addl %ecx, %eax                  # add
-movl %eax, 16(%rsp)              # move
-movl 16(%rsp), %eax              # move
-movl 12(%rsp), %ecx              # move
-movl %ecx, 32(%rsp)              # move
-movl %eax, 36(%rsp)              # move
-jmp .L2                          # jump
-.L1:
-leaq (%rip), %rax                # address
-addq $40, %rsp                   # add
-retq                             # return
 
 free:
 pushq %rax

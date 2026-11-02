@@ -1,0 +1,10 @@
+import "builtin";
+
+func main() i32 {
+    func inner() i32 {
+        var raw = builtin.allocator.malloc(4, 4);
+        _ = raw;
+        return 0;
+    }
+    return inner();
+}

@@ -1,1 +1,1 @@
-compile-error: unsafe call
+exit: 42

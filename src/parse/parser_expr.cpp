@@ -704,8 +704,8 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             Expr::Selector selector;
             selector.loc = expr_loc(*expr);
             selector.base = std::move(expr);
-            if (check(TokenKind::Identifier)) {
-                selector.field = peek().text;
+            if (check(TokenKind::Identifier) || check(TokenKind::KwNew)) {
+                selector.field = check(TokenKind::KwNew) ? "new" : peek().text;
                 ++pos_;
             } else {
                 error_here("expected an identifier");
@@ -725,8 +725,8 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             selector.base = std::move(expr);
             selector.type_args = parse_type_args();
             expect(TokenKind::Dot, "expected '.'");
-            if (check(TokenKind::Identifier)) {
-                selector.field = peek().text;
+            if (check(TokenKind::Identifier) || check(TokenKind::KwNew)) {
+                selector.field = check(TokenKind::KwNew) ? "new" : peek().text;
                 ++pos_;
             } else {
                 error_here("expected an identifier");

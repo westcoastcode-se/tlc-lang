@@ -5,6 +5,7 @@
 #include "source/source.hpp"
 
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -121,6 +122,34 @@ inline bool import_selects(const ImportDecl &import, const std::string &name) {
     return false;
 }
 
+// `--allocator`. `Malloc` calls the C functions. Any other name is `pkg.Type`.
+struct AllocatorChoice {
+    enum class Kind { Malloc, Named };
+    Kind kind = Kind::Malloc;
+    // Empty when the name has no package. `main.Slot` stores `main`.
+    std::string package;
+    std::string type;
+};
+
+inline AllocatorChoice parse_allocator_choice(std::string_view text) {
+    AllocatorChoice choice;
+    const auto dot = text.rfind('.');
+    std::string_view package;
+    std::string_view type = text;
+    if (dot != std::string_view::npos) {
+        package = text.substr(0, dot);
+        type = text.substr(dot + 1);
+    }
+    if ((package.empty() || package == "builtin") && type == "Malloc") {
+        choice.kind = AllocatorChoice::Kind::Malloc;
+        return choice;
+    }
+    choice.kind = AllocatorChoice::Kind::Named;
+    choice.package = std::string(package);
+    choice.type = std::string(type);
+    return choice;
+}
+
 struct ResolveRequest {
     std::string entry;
     std::vector<std::string> package_paths;
@@ -137,6 +166,9 @@ struct ResolveRequest {
     // uses this for the unsaved buffer. A missing file is still loaded when its
     // path is a key and its parent directory exists.
     std::unordered_map<std::string, std::string> overlays;
+    // Loaded after the entry file, as `import "std/debug"` is loaded. Empty skips it.
+    // The entry file does not gain that import in its source.
+    std::string preload;
 };
 
 // `import "builtin"` is the compiler package. The copy in `<std_root>/builtin` is that

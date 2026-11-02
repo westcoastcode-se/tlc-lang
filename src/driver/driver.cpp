@@ -39,6 +39,9 @@ std::string help_text() {
         "  --emit-obj      write an object file\n"
         "  --run           compile, link, and run\n"
         "  --test          compile, link, and run every test in the program\n"
+        "  --allocator <type>\n"
+        "                  type bare new and delete use. Malloc is the default.\n"
+        "                  tlc --test uses debug.DebugAllocator unless this flag names a type.\n"
         "  -o <file>       output path\n"
         "  -P <dir>        package search root, after the entry directory\n"
         "  -l <lib>        link lib<lib> when producing an executable\n"
@@ -214,6 +217,23 @@ Options parse_args(int argc, char **argv) {
             set_mode(Mode::Run);
         } else if (arg == "--test") {
             set_mode(Mode::Test);
+        } else if (arg == "--allocator" || arg.starts_with("--allocator=")) {
+            std::string name;
+            if (arg.starts_with("--allocator=")) {
+                name = arg.substr(std::string("--allocator=").size());
+            } else if (i + 1 >= argc) {
+                opt.mode = Mode::Error;
+                opt.error = "missing type after --allocator";
+                break;
+            } else {
+                name = argv[++i];
+            }
+            if (name.empty()) {
+                opt.mode = Mode::Error;
+                opt.error = "missing type after --allocator";
+                break;
+            }
+            opt.allocator = std::move(name);
         } else if (arg == "--lsp" || arg == "lsp") {
             set_mode(Mode::Lsp);
         } else if (arg == "-o") {
@@ -424,9 +444,18 @@ CompileOutput compile_source(const Options &opt) {
     request.package_paths = opt.package_paths;
     request.vendor_root = vendor_library_root();
     request.std_root = std_library_root();
+    std::string allocator = opt.allocator;
+    if (allocator.empty() && opt.mode == Mode::Test) {
+        allocator = "debug.DebugAllocator";
+    } else if (allocator == "DebugAllocator") {
+        allocator = "debug.DebugAllocator";
+    }
+    if (allocator == "debug.DebugAllocator") {
+        request.preload = "std/debug";
+    }
     PackageGraph graph;
     if (resolve_packages(request, sources, diags, graph) && diags.ok()) {
-        analyze(graph, diags);
+        analyze(graph, diags, allocator);
     }
     if (!diags.ok()) {
         output.compiler_stderr = diags.render();
@@ -453,7 +482,7 @@ CompileOutput compile_source(const Options &opt) {
     }
 
     const CodegenOutput generated =
-        codegen(graph, diags, object_path, opt.mode == Mode::Test, opt.debug_info, opt.opt_level);
+        codegen(graph, diags, object_path, opt.mode == Mode::Test, opt.debug_info, opt.opt_level, std::move(allocator));
     output.ir = generated.ir;
     if (!generated.ok || !diags.ok()) {
         output.compiler_stderr = diags.render();

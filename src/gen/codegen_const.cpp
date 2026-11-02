@@ -1237,6 +1237,8 @@ TypedValue CodeGen::emit_init(const Expr::Init &init) {
             store_struct_defaults(slot, init.struct_id, fresh, &init);
         }
     } else {
+        // An omitted field is zero, then a constant field value replaces that zero.
+        builder_.CreateStore(llvm::ConstantAggregateZero::get(layout.type), slot);
         std::unordered_set<int> seen;
         store_struct_defaults(slot, init.struct_id, seen, &init);
     }

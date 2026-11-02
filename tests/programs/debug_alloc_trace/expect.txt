@@ -1,0 +1,6 @@
+mode: test
+exit: 1
+stdout:
+not released
+main.tlc:8:12: keeps the block
+fail: keeps the block

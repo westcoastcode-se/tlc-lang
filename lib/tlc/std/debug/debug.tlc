@@ -1,0 +1,198 @@
+package debug;
+
+import "builtin";
+import "std/thread";
+
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+
+// The same fields, in the same order, as `builtin.Frame`.
+// A cast names a type declared in this file. `*builtin.Frame(p)` is not a cast.
+type StoredFrame struct {
+    file *const u8;
+    line i32;
+    column i32;
+    name *const u8;
+};
+
+type Live struct {
+    ptr *u8;
+    frames ?*u8;
+    count i32;
+};
+
+// Records each block from malloc and realloc, and the calls still running then.
+// `tlc --test` uses `allocator` for `new` and `delete` that name no allocator.
+// `report` prints one line per block still reserved, then those calls.
+// `lock` is created in the initializer. Each value has its own mutex.
+export type DebugAllocator struct {
+    data ?*u8;
+    len i32;
+    cap i32;
+    lock thread.Mutex;
+};
+
+export var allocator DebugAllocator = {
+    .lock = thread.Mutex.new(),
+};
+
+unsafe func DebugAllocator::grow(self *this) void {
+    var next = self.cap * 2;
+    if (next < 4) {
+        next = 4;
+    }
+    var bytes = next * sizeof(Live);
+    var old = self.data;
+    var raw ?*u8 = null;
+    if (old == null) {
+        raw = builtin.allocator.malloc(bytes, alignof(Live));
+    } else {
+        raw = builtin.allocator.realloc(old, bytes, alignof(Live));
+    }
+    if (raw == null) {
+        builtin.panic("out of memory"b);
+    }
+    self.data = raw;
+    self.cap = next;
+}
+
+func DebugAllocator::slots(self *this, base *u8) []Live {
+    return (unsafe *Live(base))[0:self.cap];
+}
+
+unsafe func DebugAllocator::track(self *this, ptr *u8, frames ?*u8, count i32) void {
+    var block = frames;
+    if (ptr == null) {
+        if (block != null) {
+            builtin.allocator.free(block);
+        }
+        return;
+    }
+    if (self.len == self.cap) {
+        self.grow();
+    }
+    var data = self.data;
+    if (data == null) {
+        if (block != null) {
+            builtin.allocator.free(block);
+        }
+        return;
+    }
+    var view = self.slots(data);
+    view[self.len].ptr = ptr;
+    view[self.len].frames = frames;
+    view[self.len].count = count;
+    self.len = self.len + 1;
+}
+
+func DebugAllocator::forget(self *this, ptr *u8) void {
+    if (ptr == null) {
+        return;
+    }
+    var data = self.data;
+    if (data == null) {
+        return;
+    }
+    var view = self.slots(data);
+    var i i32 = 0;
+    while (i < self.len) {
+        if (view[i].ptr == ptr) {
+            var frames = view[i].frames;
+            var last = self.len - 1;
+            view[i] = view[last];
+            self.len = last;
+            if (frames != null) {
+                builtin.allocator.free(frames);
+            }
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+func write_frames(frames ?*u8, count i32) void {
+    var block = frames;
+    if (block == null) {
+        return;
+    }
+    if (count < 1) {
+        return;
+    }
+    var view = (unsafe *StoredFrame(block))[0:count];
+    var i i32 = 0;
+    while (i < count) {
+        var frame = view[i];
+        printf("%s:%d:%d: %s\n"b, *u8(frame.file), frame.line, frame.column, *u8(frame.name));
+        i = i + 1;
+    }
+}
+
+// The slice pointer is the block `StackTrace.get` reserved. `free` releases that block.
+unsafe func frame_block(trace builtin.StackTrace) ?*u8 {
+    if (trace.frames.len < 1) {
+        return null;
+    }
+    return ?*u8(&trace.frames[0]);
+}
+
+export unsafe func DebugAllocator::malloc(self *this, size i32, align i32) ?*u8 {
+    self.lock.lock();
+    defer self.lock.unlock();
+    var raw = builtin.allocator.malloc(size, align);
+    if (raw != null) {
+        // `new` does not push a frame, so this chain does not include the `new` token.
+        var trace = builtin.StackTrace.get();
+        self.track(raw, frame_block(trace), trace.frames.len);
+    }
+    return raw;
+}
+
+export func DebugAllocator::free(self *this, ptr *u8) void {
+    if (ptr == null) {
+        return;
+    }
+    self.lock.lock();
+    defer self.lock.unlock();
+    self.forget(ptr);
+    builtin.allocator.free(ptr);
+}
+
+export unsafe func DebugAllocator::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    if (ptr == null) {
+        return self.malloc(size, align);
+    }
+    self.lock.lock();
+    defer self.lock.unlock();
+    var raw = builtin.allocator.realloc(ptr, size, align);
+    if (raw != null) {
+        self.forget(ptr);
+        var trace = builtin.StackTrace.get();
+        self.track(raw, frame_block(trace), trace.frames.len);
+    }
+    return raw;
+}
+
+export func DebugAllocator::report(self *this) i32 {
+    self.lock.lock();
+    defer self.lock.unlock();
+    var n = self.len;
+    var data = self.data;
+    if (data != null) {
+        var view = self.slots(data);
+        var i i32 = 0;
+        while (i < n) {
+            printf("not released\n"b);
+            write_frames(view[i].frames, view[i].count);
+            var frames = view[i].frames;
+            if (frames != null) {
+                builtin.allocator.free(frames);
+            }
+            builtin.allocator.free(view[i].ptr);
+            i = i + 1;
+        }
+        builtin.allocator.free(data);
+    }
+    self.data = null;
+    self.len = 0;
+    self.cap = 0;
+    return n;
+}
