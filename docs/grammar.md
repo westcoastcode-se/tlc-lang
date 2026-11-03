@@ -2097,7 +2097,7 @@ The others are left-associative.
 `??` is right-associative and looser than `||`.
 
 ```ebnf
-expression  = coalesce [ ( "=" | "+=" | "-=" | "*=" | "/=" ) expression ] ;
+expression  = coalesce [ ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" ) expression ] ;
 coalesce    = or [ "??" coalesce ] ;
 or          = and { "||" and } ;
 and         = bit-or { "&&" bit-or } ;

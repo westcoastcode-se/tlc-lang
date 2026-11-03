@@ -556,21 +556,41 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         combined = builder_.CreateSub(lhs, rhs);
                     } else if (node.op == TokenKind::StarEq) {
                         combined = builder_.CreateMul(lhs, rhs);
-                    } else if (common_unsigned) {
-                        combined = builder_.CreateUDiv(lhs, rhs);
-                    } else if (const auto *divisor = llvm::dyn_cast<llvm::ConstantInt>(rhs);
-                               divisor != nullptr && divisor->isAllOnesValue()) {
-                        // `sdiv` of the minimum signed value and -1 is poison. The quotient wraps.
-                        combined = builder_.CreateNeg(lhs);
-                    } else if (llvm::isa<llvm::ConstantInt>(rhs)) {
-                        combined = builder_.CreateSDiv(lhs, rhs);
+                    } else if (node.op == TokenKind::AmpEq) {
+                        combined = builder_.CreateAnd(lhs, rhs);
+                    } else if (node.op == TokenKind::PipeEq) {
+                        combined = builder_.CreateOr(lhs, rhs);
+                    } else if (node.op == TokenKind::CaretEq) {
+                        combined = builder_.CreateXor(lhs, rhs);
+                    } else if (node.op == TokenKind::LtLtEq) {
+                        combined = builder_.CreateShl(lhs, rhs);
+                    } else if (node.op == TokenKind::GtGtEq) {
+                        combined = common_unsigned ? builder_.CreateLShr(lhs, rhs) : builder_.CreateAShr(lhs, rhs);
+                    } else if (node.op == TokenKind::SlashEq || node.op == TokenKind::PercentEq) {
+                        // `sdiv` and `srem` of the minimum signed value and -1 are poison.
+                        // The quotient wraps. The remainder is 0.
+                        const bool remainder = node.op == TokenKind::PercentEq;
+                        if (common_unsigned) {
+                            combined = remainder ? builder_.CreateURem(lhs, rhs) : builder_.CreateUDiv(lhs, rhs);
+                        } else if (const auto *divisor = llvm::dyn_cast<llvm::ConstantInt>(rhs);
+                                   divisor != nullptr && divisor->isAllOnesValue()) {
+                            combined = remainder ? llvm::ConstantInt::get(common, 0) : builder_.CreateNeg(lhs);
+                        } else if (llvm::isa<llvm::ConstantInt>(rhs)) {
+                            combined = remainder ? builder_.CreateSRem(lhs, rhs) : builder_.CreateSDiv(lhs, rhs);
+                        } else {
+                            llvm::Constant *neg_one = llvm::ConstantInt::get(common, static_cast<uint64_t>(-1), true);
+                            llvm::Value *by_neg_one = builder_.CreateICmpEQ(rhs, neg_one);
+                            llvm::Value *safe =
+                                builder_.CreateSelect(by_neg_one, llvm::ConstantInt::get(common, 1), rhs);
+                            llvm::Value *divided =
+                                remainder ? builder_.CreateSRem(lhs, safe) : builder_.CreateSDiv(lhs, safe);
+                            llvm::Value *wrapped =
+                                remainder ? llvm::ConstantInt::get(common, 0) : builder_.CreateNeg(lhs);
+                            combined = builder_.CreateSelect(by_neg_one, wrapped, divided);
+                        }
                     } else {
-                        llvm::Constant *neg_one = llvm::ConstantInt::get(common, static_cast<uint64_t>(-1), true);
-                        llvm::Value *by_neg_one = builder_.CreateICmpEQ(rhs, neg_one);
-                        llvm::Value *safe = builder_.CreateSelect(by_neg_one, llvm::ConstantInt::get(common, 1), rhs);
-                        llvm::Value *divided = builder_.CreateSDiv(lhs, safe);
-                        llvm::Value *wrapped = builder_.CreateNeg(lhs);
-                        combined = builder_.CreateSelect(by_neg_one, wrapped, divided);
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
                     }
                     if (!terminated() && combined != nullptr) {
                         builder_.CreateStore(resize_int(combined, mem, common_unsigned), slot.value);

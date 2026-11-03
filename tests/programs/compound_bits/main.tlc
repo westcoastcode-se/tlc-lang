@@ -1,0 +1,73 @@
+var hits = 0;
+
+func slot() i32 {
+    hits = hits + 1;
+    return 0;
+}
+
+func main() i32 {
+    var n = 13;
+    n %= 5;
+    if (n != 3) {
+        return 1;
+    }
+    n &= 1;
+    if (n != 1) {
+        return 2;
+    }
+    n |= 8;
+    if (n != 9) {
+        return 3;
+    }
+    n ^= 1;
+    if (n != 8) {
+        return 4;
+    }
+    n <<= 1;
+    if (n != 16) {
+        return 5;
+    }
+    n >>= 2;
+    if (n != 4) {
+        return 6;
+    }
+    var neg = -8;
+    neg >>= 1;
+    if (neg != -4) {
+        return 7;
+    }
+    var wide u32 = 0 - 1;
+    wide >>= 1;
+    if (wide != 2147483647u32) {
+        return 8;
+    }
+    var top = -2147483647 - 1;
+    top %= -1;
+    if (top != 0) {
+        return 9;
+    }
+    var div = -1;
+    var edge = -2147483647 - 1;
+    edge %= div;
+    if (edge != 0) {
+        return 13;
+    }
+    var m = 6;
+    var got = (m %= 4);
+    if (got != 2 || m != 2) {
+        return 10;
+    }
+    var row [1]i32;
+    row[0] = 7;
+    row[slot()] %= 4;
+    if (hits != 1 || row[0] != 3) {
+        return 11;
+    }
+    var mask = 1;
+    var flag = 2;
+    mask &= flag |= 1;
+    if (mask != 1 || flag != 3) {
+        return 12;
+    }
+    return 42;
+}

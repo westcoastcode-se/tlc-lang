@@ -20,7 +20,37 @@ Unary `+` and `-` are operators, and so is assignment `=`.
 
 The operand is an integer lvalue. A `const` binding is `type mismatch`. A value that is not a place is `not an lvalue`. The result is not a place.
 
-`n += m`, `n -= m`, `n *= m`, and `n /= m` apply that operation and store the result in `n`. The value is the new `n`. The place is read once.
+`n += m`, `n -= m`, `n *= m`, `n /= m`, `n %= m`, `n &= m`, `n |= m`, `n ^= m`, `n <<= m`, and `n >>= m` apply that operation and store the result in `n`. The value is the new `n`. The place is read once.
+
+A signed `>>=` keeps the sign. An unsigned `>>=` shifts in zeros. `(-2147483647 - 1) %= -1` stores 0.
+
+```c
+func main() i32 {
+    var n = 43;
+    n %= 2;
+    n <<= 1;
+    n |= 40;
+    return n;
+}
+```
+
+```asm
+main:
+movl $43, -4(%rsp)               # constant
+movl -4(%rsp), %eax              # move
+movl $2, %ecx                    # constant
+cltd
+idivl %ecx
+movl %edx, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+shll %eax                        # shll
+movl %eax, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+orl $40, %eax                    # orl
+movl %eax, -4(%rsp)              # move
+movl -4(%rsp), %eax              # move
+retq                             # return
+```
 
 Calls, indexing, `.`, address-of `&`, and dereference `*` are operators too.
 
