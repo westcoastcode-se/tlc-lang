@@ -1,0 +1,73 @@
+import "builtin";
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Alias Point;
+
+type Color enum {
+    Red,
+    Blue,
+};
+
+type Box[T type] struct {
+    value T;
+};
+
+func Point::sum(self this) i32 {
+    return self.x + self.y;
+}
+
+func Point::origin() Point {
+    var point Point;
+    point.x = 0;
+    point.y = 0;
+    return point;
+}
+
+func Color::code(self this) i32 {
+    if (self == Color.Blue) {
+        return 2;
+    }
+    return 1;
+}
+
+func Box[T]::get(self *this) T {
+    return self.value;
+}
+
+func main() i32 {
+    var methods = typeof(Point).methods();
+    var listed []const builtin.Method = methods;
+    if (methods.len != 2 || listed.len != 2) {
+        return 1;
+    }
+    if (methods[0].name.len != 3 || methods[1].name.len != 6) {
+        return 2;
+    }
+    if (methods[0].kind != typeof(Point.sum) || methods[1].kind != typeof(Point.origin)) {
+        return 3;
+    }
+    if (typeof(i32).methods().len != 0 || typeof(Point).fields().len != 2) {
+        return 4;
+    }
+    var kind builtin.Type = typeof(Point);
+    var through *builtin.Type = &kind;
+    if (through.methods().len != 2 || through.methods()[0].kind != typeof(Point.sum)) {
+        return 5;
+    }
+    if (typeof(Alias).methods().len != 2 || typeof(Alias).methods()[0].kind != typeof(Point.sum)) {
+        return 6;
+    }
+    if (typeof(Color).methods().len != 1 || typeof(Color).methods()[0].kind != typeof(Color.code)) {
+        return 7;
+    }
+    var box Box[i32];
+    box.value = 40;
+    if (typeof(box).methods().len != 1 || typeof(box).methods()[0].name.len != 3) {
+        return 8;
+    }
+    return methods.len + typeof(Color).methods().len;
+}

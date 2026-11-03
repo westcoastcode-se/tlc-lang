@@ -672,7 +672,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (node.trait_cast && node.args.size() == 1 && node.args.front() != nullptr) {
                     return emit_rvalue(*node.args.front());
                 }
-                if (node.type_name || node.type_fields) {
+                if (node.type_name || node.type_fields || node.type_methods) {
                     const auto *selector = node.callee == nullptr ? nullptr : std::get_if<Expr::Selector>(&node.callee->data);
                     if (selector == nullptr || selector->base == nullptr) {
                         error(node.loc, "type mismatch");
@@ -683,12 +683,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
                     }
-                    const int slot_index = node.type_fields ? 1 : 0;
+                    const int slot_index = node.type_methods ? 2 : (node.type_fields ? 1 : 0);
                     llvm::Value *slot = builder_.CreateInBoundsGEP(
                         type_desc_type(), desc,
                         llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(slot_index)});
-                    if (node.type_fields) {
-                        if (field_struct_id_ < 0) {
+                    if (node.type_fields || node.type_methods) {
+                        const int element = node.type_methods ? method_struct_id_ : field_struct_id_;
+                        if (node.type_methods && element < 0) {
+                            install_method_struct();
+                        }
+                        const int ready = node.type_methods ? method_struct_id_ : field_struct_id_;
+                        if (ready < 0) {
                             error(node.loc, "type mismatch");
                             return {zero(), 0};
                         }
@@ -697,7 +702,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         out.is_slice = true;
                         out.array_len = -1;
                         out.depth = 0;
-                        out.struct_id = field_struct_id_;
+                        out.struct_id = ready;
                         return out;
                     }
                     return {builder_.CreateLoad(ptr_type(), slot), 1, true};

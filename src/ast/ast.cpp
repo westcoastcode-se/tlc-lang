@@ -973,6 +973,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.type_args = node.type_args;
                 copy.type_name = node.type_name;
                 copy.type_fields = node.type_fields;
+                copy.type_methods = node.type_methods;
                 copy.selected = node.selected;
                 copy.trait_cast = node.trait_cast;
                 copy.trait_method = node.trait_method;

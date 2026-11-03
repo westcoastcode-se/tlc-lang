@@ -1309,8 +1309,8 @@ llvm::StructType *CodeGen::type_desc_type() {
     if (type_desc_ty_ != nullptr) {
         return type_desc_ty_;
     }
-    // `builtin.Desc` is `{ name *const u8, fields []const Field }`. The synthetic struct is that same shape
-    // when Desc has not been laid out.
+    // `builtin.Desc` is `{ name *const u8, fields []const Field, methods []const Method }`.
+    // The synthetic struct is that same shape when Desc has not been laid out.
     if (desc_struct_id_ >= 0 && desc_struct_id_ < static_cast<int>(structs_.size())) {
         llvm::StructType *desc = structs_[static_cast<std::size_t>(desc_struct_id_)].type;
         if (desc != nullptr && desc->isSized() && desc->getNumElements() >= 2) {
@@ -1319,7 +1319,7 @@ llvm::StructType *CodeGen::type_desc_type() {
         }
     }
     auto *type = llvm::StructType::create(context_, "tlc.type");
-    type->setBody({ptr_type(), slice_type()});
+    type->setBody({ptr_type(), slice_type(), slice_type()});
     type_desc_ty_ = type;
     return type;
 }
@@ -1333,6 +1333,7 @@ llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
                                             ".tdesc");
     type_descs_.emplace(text, global);
     llvm::Constant *fields = llvm::ConstantStruct::get(slice_type(), {null_ptr(), const_i32(0)});
+    llvm::Constant *methods = llvm::ConstantStruct::get(slice_type(), {null_ptr(), const_i32(0)});
     if (graph_ != nullptr && field_struct_id_ >= 0 && field_struct_id_ < static_cast<int>(structs_.size())) {
         const auto reflected = graph_->reflected_fields.find(text);
         if (reflected != graph_->reflected_fields.end() && !reflected->second.empty()) {
@@ -1355,7 +1356,40 @@ llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
             fields = llvm::ConstantStruct::get(slice_type(), {array, const_i32(static_cast<int32_t>(elems.size()))});
         }
     }
-    global->setInitializer(llvm::ConstantStruct::get(type_desc_type(), {intern_type_name(text), fields}));
+    if (graph_ != nullptr) {
+        const auto reflected = graph_->reflected_methods.find(text);
+        if (reflected != graph_->reflected_methods.end() && !reflected->second.empty()) {
+            if (method_struct_id_ < 0) {
+                install_method_struct();
+            }
+            if (method_struct_id_ >= 0 && method_struct_id_ < static_cast<int>(structs_.size())) {
+                llvm::StructType *method_ty = structs_[static_cast<std::size_t>(method_struct_id_)].type;
+                std::vector<llvm::Constant *> elems;
+                elems.reserve(reflected->second.size());
+                for (const ReflectedField &method : reflected->second) {
+                    llvm::Constant *bytes = intern_type_name(method.name);
+                    llvm::Constant *name = llvm::ConstantStruct::get(
+                        slice_type(), {bytes, const_i32(static_cast<int32_t>(method.name.size()))});
+                    llvm::Constant *kind =
+                        type_kind_ptr(method.type, method.arm, method.has_this, method.generic, method.variadic);
+                    if (kind == nullptr) {
+                        kind = llvm::ConstantPointerNull::get(ptr_type());
+                    }
+                    elems.push_back(llvm::ConstantStruct::get(method_ty, {name, kind}));
+                }
+                auto *array_ty = llvm::ArrayType::get(method_ty, elems.size());
+                auto *array = new llvm::GlobalVariable(module_, array_ty, true, llvm::GlobalValue::PrivateLinkage,
+                                                       llvm::ConstantArray::get(array_ty, elems), ".tmethods");
+                methods = llvm::ConstantStruct::get(slice_type(), {array, const_i32(static_cast<int32_t>(elems.size()))});
+            }
+        }
+    }
+    llvm::StructType *desc_ty = type_desc_type();
+    if (desc_ty->getNumElements() >= 3) {
+        global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(text), fields, methods}));
+    } else {
+        global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(text), fields}));
+    }
     return global;
 }
 

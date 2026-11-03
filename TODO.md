@@ -39,7 +39,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ## Reflection
 
-`typeof(T).fields()` returns `[]const Field`. Methods are not read yet. A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is `not supported yet`. A `var` passed to a `comptime func`, `comptime { ... }` inside an ordinary function, `emit` outside a `macro`, `comptime for` whose bounds do not fold, `comptime if` whose condition is not comptime, `comptime switch` whose value is not comptime, a method, `extern`, `export`, a value call of a `macro`, a value call that does not fold, and `const for` are `not supported yet`.
+`typeof(T).fields()` returns `[]const Field`. `typeof(T).methods()` returns `[]const Method` for a named struct, an enum, or an alias, in the order the methods are written. A generic method is not listed. Any other type has length 0. A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is `not supported yet`. A `var` passed to a `comptime func`, `comptime { ... }` inside an ordinary function, `emit` outside a `macro`, `comptime for` whose bounds do not fold, `comptime if` whose condition is not comptime, `comptime switch` whose value is not comptime, a method, `extern`, `export`, a value call of a `macro`, a value call that does not fold, and `const for` are `not supported yet`.
 
 ## Types and operators
 

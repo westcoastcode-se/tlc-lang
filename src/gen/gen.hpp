@@ -799,6 +799,8 @@ class CodeGen {
     llvm::StructType *type_desc_ty_ = nullptr;
     // `fields()` element: `{ name []const u8, kind Type }`. Negative until `prepare_structs`.
     int field_struct_id_ = -1;
+    // `methods()` element. Same shape as `Field`. Negative until `prepare_structs`.
+    int method_struct_id_ = -1;
     // `builtin.Type` and `builtin.Desc`. Negative until those structs are laid out.
     int type_struct_id_ = -1;
     int desc_struct_id_ = -1;
@@ -1459,6 +1461,7 @@ class CodeGen {
     // The descriptor pointer a `Type` or `*Type` receiver holds. Null on a bad receiver.
     llvm::Value *type_descriptor(const Expr &expr);
     void install_field_struct();
+    void install_method_struct();
     llvm::Constant *const_struct(const Expr::Init &init, int struct_id);
     // Omitted fields take the value written on the field. `strict` drops the constant when a named field does not fold.
     llvm::Constant *const_struct_into(const Expr::Init *overlay, int struct_id, bool strict,

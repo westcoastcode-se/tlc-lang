@@ -78,6 +78,75 @@ Any other type has length 0, including `i32`, a pointer, an array, a slice, a fu
 
 `fields` takes no arguments. Another argument is reported as `argument count`. `t.fields` without the call is reported as `undeclared identifier`. `p.fields()` on a `*builtin.Type` uses the `Type` `p` points at.
 
+## `methods`
+
+`t.methods()` returns the methods of a named struct, an enum, or an alias, in the order they are written. The result is `[]const Method`.
+
+Each parameter list is one element. `methods[i].name` is the method's name as `[]const u8`. `methods[i].kind` is `builtin.Type`, the same value as `typeof(Point.get)` for that method. An instance method has `has_this` set. A static method does not.
+
+A generic method is not listed. An alias lists the methods of the type it names. `typeof(Alias)` stays different from `typeof(Point)`.
+
+Any other type has length 0, including `i32`, a pointer, an array, a slice, a function, a tuple, an anonymous struct, and a union.
+
+`methods` takes no arguments. Another argument is reported as `argument count`. `t.methods` without the call is reported as `undeclared identifier`. `p.methods()` on a `*builtin.Type` uses the `Type` `p` points at.
+
+```c
+import "builtin";
+
+type Point struct {
+    x i32;
+};
+
+func Point::get(self this) i32 {
+    return self.x;
+}
+
+func main() i32 {
+    var point Point;
+    point.x = 40;
+    var methods = typeof(Point).methods();
+    if (methods.len == 1) {
+        return point.get();
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+subq $56, %rsp
+movl $40, 32(%rsp)               # point.x
+movq (%rip), %rcx                # typeof(Point)
+movq 24(%rcx), %rax              # methods
+movl 32(%rcx), %ecx              # methods.len
+movl %ecx, 48(%rsp)              # len
+movq %rax, 40(%rsp)              # data
+movl 48(%rsp), %eax              # len
+movq 40(%rsp), %rcx              # data
+cmpl $1, %eax                    # len == 1
+jne .L0
+movl 32(%rsp), %eax              # point.x
+movl %eax, 20(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 20(%rsp), %edi              # move
+callq Point.get
+movl %eax, 16(%rsp)              # move
+movl 16(%rsp), %eax              # move
+addq $56, %rsp
+retq
+.L0:
+xorl %eax, %eax                  # constant
+addq $56, %rsp
+retq
+
+Point.get:
+movl %edi, -8(%rsp)              # self.x
+movl -8(%rsp), %eax              # return
+retq
+```
+
+The program returns 40.
+
 ## Comparison
 
 `==` and `!=` compare two `builtin.Type` pointers and yield `bool`. Two types are equal when the spelling and the flags are the same.

@@ -894,12 +894,12 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     shape.type = ptr_type();
                     return shape;
                 }
-                if (node.type_fields) {
+                if (node.type_fields || node.type_methods) {
                     Shape shape;
                     shape.is_slice = true;
                     shape.array_len = -1;
                     shape.depth = 0;
-                    shape.struct_id = field_struct_id_;
+                    shape.struct_id = node.type_methods ? method_struct_id_ : field_struct_id_;
                     shape.type = slice_type();
                     return shape;
                 }

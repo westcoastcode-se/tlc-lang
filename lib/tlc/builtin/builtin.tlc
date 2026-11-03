@@ -88,6 +88,7 @@ extern(abi="compiler") export type TypeKind enum {
 extern(abi="compiler") type Desc struct {
     name *const u8;
     fields []const Field;
+    methods []const Method;
 }
 
 extern(abi="compiler") export type Function struct {
@@ -138,6 +139,18 @@ extern(abi="compiler") export func CompiledType::name(self *const this) *const u
 // A tuple lists one field per element. The name is the index, "0", "1", and so on.
 // The element is constant. A type that is neither a named struct nor a tuple has length 0.
 extern(abi="compiler") export func CompiledType::fields(self *const this) []const Field;
+
+// One method returned by methods. name is the method's name. kind is its function type.
+// kind is that Type pointer. An instance method has has_this set. A static method does not.
+extern(abi="compiler") export type Method struct {
+    export name []const u8;
+    export kind Type;
+};
+
+// The methods of a named struct, an enum, or an alias, in the order they are written.
+// Each parameter list is one element. A generic method is not listed.
+// A type with no methods has length 0.
+extern(abi="compiler") export func CompiledType::methods(self *const this) []const Method;
 
 // `{0}` and `{1}` read elements of a compile-time tuple. `{{` and `}}` are braces.
 // A string element is copied as text. An integer element is decimal. The call is that text.

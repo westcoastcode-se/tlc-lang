@@ -738,9 +738,10 @@ std::optional<int> Checker::known_len(const Expr &base) {
         return std::nullopt;
     }
     const auto *method = std::get_if<Expr::Selector>(&call->callee->data);
-    if (method == nullptr || method->field != "fields" || method->base == nullptr) {
+    if (method == nullptr || method->base == nullptr || (method->field != "fields" && method->field != "methods")) {
         return std::nullopt;
     }
+    const bool methods = method->field == "methods";
     const auto *info = std::get_if<Expr::Typeof>(&method->base->data);
     if (info == nullptr || folding_fields_len_) {
         return std::nullopt;
@@ -755,6 +756,56 @@ std::optional<int> Checker::known_len(const Expr &base) {
     folding_fields_len_ = false;
     if (type.kind == TypeKind::Invalid || mentions_trait(type)) {
         return std::nullopt;
+    }
+    if (methods) {
+        std::string owner;
+        if (type.kind == TypeKind::Struct && type.struct_id >= 0 && type.struct_id < static_cast<int>(structs_.size()) &&
+            !structs_[static_cast<std::size_t>(type.struct_id)].is_union &&
+            !structs_[static_cast<std::size_t>(type.struct_id)].anonymous) {
+            owner = structs_[static_cast<std::size_t>(type.struct_id)].name;
+        } else if (type.kind == TypeKind::Enum && type.enum_id >= 0 &&
+                   type.enum_id < static_cast<int>(enum_types_.size())) {
+            owner = enum_types_[static_cast<std::size_t>(type.enum_id)].name;
+        } else if (type.alias_id > 0) {
+            owner = type_desc(type);
+        }
+        if (owner.empty()) {
+            return 0;
+        }
+        int count = 0;
+        for (const auto &file : methods_) {
+            const auto found = file.second.find(owner);
+            if (found == file.second.end()) {
+                continue;
+            }
+            for (const auto &named : found->second) {
+                const auto one = [](const MethodInfo &info) {
+                    if (info.type.kind != TypeKind::Function || info.type.result == nullptr) {
+                        return false;
+                    }
+                    if (info.decl != nullptr && info.decl->is_macro) {
+                        return false;
+                    }
+                    if (info.decl != nullptr && !info.decl->type_params.empty() && !info.decl->generic_instance) {
+                        return false;
+                    }
+                    if (info.decl != nullptr && !info.decl->method_params.empty() && !info.decl->generic_instance &&
+                        info.decl->method_struct.find(".spec.") == std::string::npos) {
+                        return false;
+                    }
+                    return true;
+                };
+                if (one(named.second)) {
+                    ++count;
+                }
+                for (const MethodInfo &extra : named.second.more) {
+                    if (one(extra)) {
+                        ++count;
+                    }
+                }
+            }
+        }
+        return count;
     }
     if (type.kind == TypeKind::Tuple) {
         return static_cast<int>(type.results.size());

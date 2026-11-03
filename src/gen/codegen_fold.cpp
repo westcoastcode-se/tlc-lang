@@ -498,15 +498,16 @@ std::optional<int32_t> CodeGen::known_len(const Expr &base) const {
         return std::nullopt;
     }
     const auto *method = std::get_if<Expr::Selector>(&call->callee->data);
-    if (method == nullptr || method->field != "fields" || method->base == nullptr) {
+    if (method == nullptr || method->base == nullptr || (method->field != "fields" && method->field != "methods")) {
         return std::nullopt;
     }
     const auto *info = std::get_if<Expr::Typeof>(&method->base->data);
     if (info == nullptr || info->canonical.empty()) {
         return std::nullopt;
     }
-    const auto found = graph_->reflected_fields.find(info->canonical);
-    if (found == graph_->reflected_fields.end()) {
+    const auto &table = method->field == "methods" ? graph_->reflected_methods : graph_->reflected_fields;
+    const auto found = table.find(info->canonical);
+    if (found == table.end()) {
         return 0;
     }
     return static_cast<int32_t>(found->second.size());

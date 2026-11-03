@@ -60,6 +60,9 @@ struct PackageGraph {
     // Filled by the checker. Keyed by the spelling `typeof` stores.
     // Codegen reads it when it builds a type descriptor. Absent means no fields.
     std::unordered_map<std::string, std::vector<ReflectedField>> reflected_fields;
+    // Methods of that spelling, in source order. One entry per parameter list.
+    // Absent or empty means the type has no methods. `generic` stays false.
+    std::unordered_map<std::string, std::vector<ReflectedField>> reflected_methods;
     // Specialized structs in checker id order. Concrete structs are numbered first.
     std::vector<StructSpecNote> struct_specs;
     // Linker arguments from packages loaded out of the vendor root or the

@@ -1796,6 +1796,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
 
 void Checker::analyze(const TranslationUnit &unit) {
     ensure_field_info();
+    ensure_method_info();
     primary_unit_ = const_cast<TranslationUnit *>(&unit);
     collect_templates(const_cast<TranslationUnit &>(unit), 0);
     register_structs(unit, 0);
@@ -2273,6 +2274,7 @@ std::vector<uint32_t> prepare_order(const PackageGraph &graph) {
 void Checker::analyze_graph(const PackageGraph &graph, std::string_view default_allocator) {
     graph_ = &graph;
     ensure_field_info();
+    ensure_method_info();
     for (const PackageNode &node : graph.nodes) {
         collect_templates(const_cast<TranslationUnit &>(node.unit), node.file_id);
     }
@@ -2379,6 +2381,7 @@ void Checker::analyze_graph(const PackageGraph &graph, std::string_view default_
     }
     flush_appends();
     publish_reflected_fields();
+    publish_reflected_methods();
     if (!default_allocator.empty()) {
         validate_default_allocator(default_allocator);
     }

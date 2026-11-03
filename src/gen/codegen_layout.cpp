@@ -92,8 +92,9 @@ void CodeGen::prepare_structs() {
     if (graph_ == nullptr) {
         return;
     }
-    // Same index the checker reserves, so an initializer's struct id still names that struct.
+    // Same indexes the checker reserves, so an initializer's struct id still names that struct.
     install_field_struct();
+    install_method_struct();
     auto add_struct = [&](uint32_t file, const std::string &qualifier, const StructDecl &item) {
         if (item.name.empty() || !item.type_params.empty() || tag_id(file, item.name) >= 0) {
             return;
@@ -550,6 +551,26 @@ void CodeGen::prepare_structs() {
         field_struct_id_ = id;
         break;
     }
+    for (const PackageNode &node : graph_->nodes) {
+        if (!is_compiler_builtin(&node)) {
+            continue;
+        }
+        const int id = tag_id(node.file_id, "Method");
+        if (id < 0 || id >= static_cast<int>(structs_.size())) {
+            continue;
+        }
+        const StructLayout &layout = structs_[static_cast<std::size_t>(id)];
+        const FieldLayout *name = layout.fields.size() == 2 ? &layout.fields[0] : nullptr;
+        const FieldLayout *kind = name != nullptr ? &layout.fields[1] : nullptr;
+        const bool name_text = name != nullptr && name->name == "name" && name->is_slice && name->elem_unsigned &&
+                               name->elem_bits == 8;
+        if (!layout.ready || !name_text || kind == nullptr || kind->name != "kind" || kind->depth != 1 ||
+            type_struct_id_ < 0 || kind->struct_id != type_struct_id_) {
+            continue;
+        }
+        method_struct_id_ = id;
+        break;
+    }
     // A file that does not import builtin still emits `typeof`. The pointer addresses this union.
     if (type_struct_id_ < 0) {
         (void)type_union_type();
@@ -582,6 +603,34 @@ void CodeGen::install_field_struct() {
     layout.fields.push_back(std::move(kind));
     structs_.push_back(std::move(layout));
     field_struct_id_ = id;
+}
+
+void CodeGen::install_method_struct() {
+    if (method_struct_id_ >= 0) {
+        return;
+    }
+    const int id = static_cast<int>(structs_.size());
+    StructLayout layout;
+    layout.name = ".Method";
+    layout.ready = true;
+    layout.type = llvm::StructType::create(context_, "tlc.method");
+    layout.type->setBody({slice_type(), ptr_type()});
+    FieldLayout name;
+    name.name = "name";
+    name.type = slice_type();
+    name.is_slice = true;
+    name.elem_char = true;
+    name.elem_bits = 8;
+    name.elem_unsigned = true;
+    FieldLayout kind;
+    kind.name = "kind";
+    kind.type = ptr_type();
+    kind.depth = 1;
+    kind.struct_id = synthetic_type_id;
+    layout.fields.push_back(std::move(name));
+    layout.fields.push_back(std::move(kind));
+    structs_.push_back(std::move(layout));
+    method_struct_id_ = id;
 }
 
 void CodeGen::publish_spec_types() {
@@ -1723,12 +1772,12 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                         low.type = ptr_type();
                         return low;
                     }
-                    if (item.type_fields) {
+                    if (item.type_fields || item.type_methods) {
                         Lowered low;
                         low.is_slice = true;
                         low.array_len = -1;
                         low.depth = 0;
-                        low.struct_id = field_struct_id_;
+                        low.struct_id = item.type_methods ? method_struct_id_ : field_struct_id_;
                         low.type = slice_type();
                         return low;
                     }

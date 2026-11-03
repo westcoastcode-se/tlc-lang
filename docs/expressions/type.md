@@ -18,6 +18,8 @@ Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` 
 
 `t.fields()` returns `[]const Field`, the fields of a named struct.
 
+`t.methods()` returns `[]const Method`, the methods of a named struct, an enum, or an alias, in the order they are written. A generic method is not listed.
+
 A tuple is that same list, one element per value, and `fields[i].name` is the index `"0"`, `"1"`, and so on.
 
 `typeof(("hi", 26)).name()` spells `([]const u8, i32)`.
@@ -51,6 +53,8 @@ A method and a free function with the same parameters are not equal.
 `var f = add` has type `*func(i32, i32) i32`, and `typeof(f).name()` spells that.
 
 `typeof(add).fields().len` is 0, and `return typeof(add).fields().len` is `xorl %eax, %eax` and `retq`.
+
+`typeof(add).methods().len` is 0, and that return is the same two instructions.
 
 `typeof(id)` for `func id[T type](value T) T` spells `func[T type](T) T` and `generic` is true.
 

@@ -1370,7 +1370,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 return type_invalid();
                             }
-                            if (selector->field != "name" && selector->field != "fields") {
+                            if (selector->field != "name" && selector->field != "fields" && selector->field != "methods") {
                                 error(node.loc, "undeclared identifier");
                                 for (const auto &arg : node.args) {
                                     check_expr(*arg, true);
@@ -1384,13 +1384,17 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 return type_invalid();
                             }
-                            if (selector->field == "fields") {
-                                const Type slice = type_field_slice();
+                            if (selector->field == "fields" || selector->field == "methods") {
+                                const Type slice = selector->field == "fields" ? type_field_slice() : type_method_slice();
                                 if (slice.kind == TypeKind::Invalid) {
                                     error(node.loc, "type mismatch");
                                     return type_invalid();
                                 }
-                                node.type_fields = true;
+                                if (selector->field == "fields") {
+                                    node.type_fields = true;
+                                } else {
+                                    node.type_methods = true;
+                                }
                                 return slice;
                             }
                             node.type_name = true;

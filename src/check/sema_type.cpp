@@ -2,6 +2,8 @@
 #include "check/check.hpp"
 #include "check/check_util.hpp"
 
+#include <algorithm>
+
 namespace tlc {
 
 namespace {
@@ -260,8 +262,9 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
             }
             const bool marked = item->extern_compiler && item->is_extern && !item->extern_c;
             if (item->name == "Desc") {
-                const bool fields = item->fields.size() == 2 && named_ptr_field(item->fields[0], "name", "u8", true, false) &&
-                                    named_slice_field(item->fields[1], "fields", "Field", true, false);
+                const bool fields = item->fields.size() == 3 && named_ptr_field(item->fields[0], "name", "u8", true, false) &&
+                                    named_slice_field(item->fields[1], "fields", "Field", true, false) &&
+                                    named_slice_field(item->fields[2], "methods", "Method", true, false);
                 keep("Desc", marked && !item->exported && !item->is_union && item->tag_name.empty() && fields, item->loc);
             } else if (item->name == "Function") {
                 const bool fields = item->fields.size() == 4 &&
@@ -282,6 +285,11 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                                     named_slice_field(item->fields[0], "name", "u8", true, true) &&
                                     named_plain_field(item->fields[1], "kind", "Type", true);
                 keep("Field", marked && item->exported && !item->is_union && fields, item->loc);
+            } else if (item->name == "Method") {
+                const bool fields = item->fields.size() == 2 &&
+                                    named_slice_field(item->fields[0], "name", "u8", true, true) &&
+                                    named_plain_field(item->fields[1], "kind", "Type", true);
+                keep("Method", marked && item->exported && !item->is_union && fields, item->loc);
             } else if (item->name == "Frame") {
                 const bool fields = item->fields.size() == 4 &&
                                     named_ptr_field(item->fields[0], "file", "u8", true, true) &&
@@ -431,6 +439,8 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                 keep("CompiledType.name", head && result_ptr(*fn, "u8", false, true), fn->loc);
             } else if (fn->name == "fields") {
                 keep("CompiledType.fields", head && result_slice(*fn, "Field", true), fn->loc);
+            } else if (fn->name == "methods") {
+                keep("CompiledType.methods", head && result_slice(*fn, "Method", true), fn->loc);
             } else if (fn->extern_compiler) {
                 fail(fn->loc);
             }
@@ -555,10 +565,11 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
         }
     }
     const char *required[] = {"Desc",        "Function",         "Struct",         "Other",
-                              "Field",       "Malloc",           "CompiledType",   "TypeKind",
-                              "Type",        "Allocator",        "allocator",      "malloc[T]",
-                              "alloc[T]",    "alloc[T,n]",       "realloc[T]",     "realloc[T,n]",
-                              "CompiledType.name", "CompiledType.fields", "Malloc.malloc", "Malloc.free",
+                              "Field",       "Method",           "Malloc",         "CompiledType",
+                              "TypeKind",    "Type",             "Allocator",      "allocator",
+                              "malloc[T]",   "alloc[T]",         "alloc[T,n]",     "realloc[T]",
+                              "realloc[T,n]", "CompiledType.name", "CompiledType.fields", "CompiledType.methods",
+                              "Malloc.malloc", "Malloc.free",
                               "Malloc.realloc", "Frame",          "StackTrace",
                               "StackTrace.get", "StackTrace.free", "va",          "panic",
                               "fence",       "fmt",              "atomic_load",    "atomic_store",
@@ -3049,10 +3060,10 @@ void Checker::ensure_field_info() {
     field_info_id_ = id;
 }
 
-int Checker::builtin_field_struct() const {
+int Checker::builtin_named_info(const std::string &struct_name) const {
     for (int id = 0; id < static_cast<int>(structs_.size()); ++id) {
         const StructInfo &info = structs_[static_cast<std::size_t>(id)];
-        if (info.name != "Field" || info.anonymous || info.is_union || !info.complete ||
+        if (info.name != struct_name || info.anonymous || info.is_union || !info.complete ||
             !is_std_builtin_file(info.file_id) || info.fields.size() != 2) {
             continue;
         }
@@ -3067,6 +3078,48 @@ int Checker::builtin_field_struct() const {
         }
     }
     return -1;
+}
+
+int Checker::builtin_field_struct() const { return builtin_named_info("Field"); }
+
+int Checker::builtin_method_struct() const { return builtin_named_info("Method"); }
+
+void Checker::ensure_method_info() {
+    if (method_info_id_ >= 0) {
+        return;
+    }
+    const int id = static_cast<int>(structs_.size());
+    StructInfo info;
+    info.name = ".Method";
+    info.complete = true;
+    info.anonymous = true;
+    StructInfo::Field name;
+    name.name = "name";
+    name.exported = true;
+    Type bytes = type_rank(1, true);
+    bytes.is_const = true;
+    name.type = type_array(std::move(bytes), -1);
+    StructInfo::Field kind;
+    kind.name = "kind";
+    kind.exported = true;
+    kind.type = type_value();
+    info.fields.push_back(std::move(name));
+    info.fields.push_back(std::move(kind));
+    structs_.push_back(std::move(info));
+    method_info_id_ = id;
+}
+
+Type Checker::type_method_slice() const {
+    int id = builtin_method_struct();
+    if (id < 0) {
+        id = method_info_id_;
+    }
+    if (id < 0) {
+        return type_invalid();
+    }
+    Type element = type_struct(id);
+    element.is_const = true;
+    return type_array(std::move(element), -1);
 }
 
 Type Checker::type_field_slice() const {
@@ -3194,6 +3247,113 @@ void Checker::publish_reflected_fields() {
         }
     }
     const_cast<PackageGraph *>(graph_)->reflected_fields = std::move(table);
+}
+
+void Checker::publish_reflected_methods() {
+    if (graph_ == nullptr) {
+        return;
+    }
+    const auto accept = [&](const MethodInfo &info, const std::string &name, ReflectedField &out) {
+        if (info.type.kind != TypeKind::Function || info.type.result == nullptr) {
+            return false;
+        }
+        if (info.decl != nullptr && info.decl->is_macro) {
+            return false;
+        }
+        // A generic method stays a template. A specialization has no type parameters of its own.
+        if (info.decl != nullptr && !info.decl->type_params.empty() && !info.decl->generic_instance) {
+            return false;
+        }
+        if (info.decl != nullptr && !info.decl->method_params.empty() && !info.decl->generic_instance &&
+            info.decl->method_struct.find(".spec.") == std::string::npos) {
+            return false;
+        }
+        out.name = name;
+        out.type = type_desc(info.type);
+        out.arm = 1;
+        out.has_this = !info.is_static;
+        out.generic = false;
+        out.variadic = info.type.variadic;
+        return !out.type.empty() && out.type != "invalid";
+    };
+    struct Item {
+        int file_order = 0;
+        uint32_t offset = 0;
+        std::string owner;
+        ReflectedField method;
+    };
+    std::unordered_map<uint32_t, int> file_order;
+    int next = 0;
+    for (const PackageNode &node : graph_->nodes) {
+        file_order.emplace(node.file_id, next);
+        ++next;
+    }
+    std::vector<Item> items;
+    for (const auto &file : methods_) {
+        const int order = file_order.contains(file.first) ? file_order.find(file.first)->second : next;
+        for (const auto &owner : file.second) {
+            for (const auto &named : owner.second) {
+                const auto push = [&](const MethodInfo &info) {
+                    ReflectedField method;
+                    if (!accept(info, named.first, method)) {
+                        return;
+                    }
+                    Item item;
+                    item.file_order = order;
+                    item.offset = info.decl != nullptr ? info.decl->loc.offset : 0;
+                    item.owner = owner.first;
+                    item.method = std::move(method);
+                    items.push_back(std::move(item));
+                };
+                push(named.second);
+                for (const MethodInfo &extra : named.second.more) {
+                    push(extra);
+                }
+            }
+        }
+    }
+    std::stable_sort(items.begin(), items.end(), [](const Item &lhs, const Item &rhs) {
+        if (lhs.file_order != rhs.file_order) {
+            return lhs.file_order < rhs.file_order;
+        }
+        if (lhs.offset != rhs.offset) {
+            return lhs.offset < rhs.offset;
+        }
+        return lhs.method.name < rhs.method.name;
+    });
+    std::unordered_map<std::string, std::vector<ReflectedField>> table;
+    for (Item &item : items) {
+        if (item.owner.empty()) {
+            continue;
+        }
+        table[item.owner].push_back(std::move(item.method));
+    }
+    for (const auto &file : typedefs_) {
+        for (const auto &item : file.second) {
+            const Type &type = item.second;
+            std::string owner;
+            if (type.kind == TypeKind::Struct && type.struct_id >= 0 &&
+                type.struct_id < static_cast<int>(structs_.size()) &&
+                !structs_[static_cast<std::size_t>(type.struct_id)].is_union) {
+                owner = structs_[static_cast<std::size_t>(type.struct_id)].name;
+            } else if (type.kind == TypeKind::Enum && type.enum_id >= 0 &&
+                       type.enum_id < static_cast<int>(enum_types_.size())) {
+                owner = enum_types_[static_cast<std::size_t>(type.enum_id)].name;
+            } else {
+                continue;
+            }
+            const std::string alias = type_desc(type);
+            if (alias.empty() || alias == owner) {
+                continue;
+            }
+            const auto found = table.find(owner);
+            if (found == table.end() || table.contains(alias)) {
+                continue;
+            }
+            table.emplace(alias, found->second);
+        }
+    }
+    const_cast<PackageGraph *>(graph_)->reflected_methods = std::move(table);
 }
 
 } // namespace tlc

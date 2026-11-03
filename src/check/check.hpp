@@ -262,6 +262,8 @@ class Checker {
     // `fields()` yields `[]const Field`: `name []const u8` and `kind Type`.
     // Negative until `ensure_field_info` runs. `builtin.Field` replaces it when that struct is declared.
     int field_info_id_ = -1;
+    // `methods()` yields `[]const Method`, the same two fields. Negative until `ensure_method_info`.
+    int method_info_id_ = -1;
     // `unicode.string_view` in `std/unicode`. A Unicode string literal uses it.
     int text_view_id_ = -1;
     // `builtin.CompiledType`, the tagged union. Negative until that union is declared.
@@ -514,10 +516,19 @@ class Checker {
     // The slice `Type.fields()` returns. Invalid before `ensure_field_info`.
     Type type_field_slice() const;
     void ensure_field_info();
+    // `builtin.Field` or `builtin.Method` when that struct is `name []const u8` and `kind Type`.
+    int builtin_named_info(const std::string &struct_name) const;
     // `builtin.Field` when that struct is `name []const u8` and `kind Type`. Otherwise -1.
     int builtin_field_struct() const;
+    // The slice `Type.methods()` returns.
+    Type type_method_slice() const;
+    void ensure_method_info();
+    // `builtin.Method` when that struct matches `Field`. Otherwise -1.
+    int builtin_method_struct() const;
     // Writes `reflected_fields` on the package graph after every struct is known.
     void publish_reflected_fields();
+    // Writes `reflected_methods` after every method is registered.
+    void publish_reflected_methods();
     // `typeof` of a tuple. Element `i` is a field named `"i"` whose kind is that element's type.
     void note_tuple_fields(const Type &type);
     bool is_builtin_fmt(const Expr::Call &call);
