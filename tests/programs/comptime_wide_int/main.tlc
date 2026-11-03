@@ -1,0 +1,34 @@
+func id(value u32) i32 {
+    return 7;
+}
+
+func id(value i32) i32 {
+    return 9;
+}
+
+comptime const wide = 3000000000u32;
+comptime const big = 9223372036854775807i64;
+comptime const full = 18446744073709551615u64;
+
+func main() i32 {
+    comptime const local = 3000000000u32;
+    comptime const wide_signed = 9223372036854775807i64;
+    comptime const wide_unsigned = 18446744073709551615u64;
+    if (id(wide) != 7 || id(local) != 7) {
+        return 1;
+    }
+    if (wide != 3000000000u32 || local != 3000000000u32) {
+        return 2;
+    }
+    if (big != 9223372036854775807i64 || wide_signed != 9223372036854775807i64) {
+        return 3;
+    }
+    if (full != 18446744073709551615u64 || wide_unsigned != 18446744073709551615u64) {
+        return 4;
+    }
+    var copy u32 = wide;
+    if (copy != local) {
+        return 5;
+    }
+    return 42;
+}

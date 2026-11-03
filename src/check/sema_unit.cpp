@@ -1195,6 +1195,13 @@ Type Checker::check_file_const(VarDecl &written) {
     if (integer_const_type(got)) {
         const std::optional<int> value = fold_int(*written.init);
         if (!value) {
+            // `3000000000u32` keeps `u32`. It is not the compile-time `i32`.
+            if (written.init != nullptr) {
+                if (const auto *number = std::get_if<Expr::Int>(&written.init->data);
+                    number != nullptr && number->value > 2147483647ULL) {
+                    return got;
+                }
+            }
             // `const N = 4u32` is a constant tlc does not fold. A call is not a constant.
             error(written.loc, constant_operand(*written.init) ? "not supported yet"
                                                                 : "global initializer is not a constant");

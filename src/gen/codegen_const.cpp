@@ -1837,6 +1837,22 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
         llvm::Type *ty = dest.elem_bits >= 64 ? f64_ty() : f32_ty();
         return llvm::ConstantFP::get(ty, static_cast<double>(*number));
     }
+    // `3000000000u32` and `9223372036854775807i64` do not fit in the i32 fold.
+    if (const auto *number = std::get_if<Expr::Int>(&cursor->data);
+        number != nullptr && number->value > 2147483647ULL && dest.depth == 0 && dest.struct_id < 0 &&
+        dest.fn_ty == nullptr && !dest.elem_float && !dest.elem_bool) {
+        const int slot = dest.elem_bits == 0 ? 32 : dest.elem_bits;
+        if (slot >= 64) {
+            return llvm::ConstantInt::get(i64(), number->value, false);
+        }
+        if (slot == 16) {
+            return llvm::ConstantInt::get(i16(), number->value & 0xFFFFULL, false);
+        }
+        if (slot == 8 || dest.elem_char) {
+            return llvm::ConstantInt::get(i8(), number->value & 0xFFULL, false);
+        }
+        return llvm::ConstantInt::get(i32(), static_cast<uint64_t>(static_cast<uint32_t>(number->value)), false);
+    }
     const std::optional<int32_t> number = fold(*cursor);
     if (!number) {
         return nullptr;

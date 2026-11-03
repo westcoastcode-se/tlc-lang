@@ -529,6 +529,8 @@ It may be an index of a constant `[]const u8`, another `comptime const`, or a ca
 
 A suffix whose value fits in `i32`, such as `1u32`, folds too.
 
+A suffix that does not fit in `i32` keeps that type. `comptime const n = 3000000000u32` is that `u32`. `9223372036854775807i64` and `18446744073709551615u64` are those types. The name is not an `i32`, so `[n]i32`, a generic value argument, and `comptime if (n == 1)` stay `not supported yet` or `type mismatch`. `comptime const m = n + 1u32` is `not supported yet`.
+
 > **Warning:** `comptime const N = 4` can be an array length, `[N]i32`. `comptime const N = 0` is the empty array `[0]i32`. A `const` whose initializer folds to a non-negative `i32` is that length, including one inside a function. A negative length is `not supported yet`. A `var` cannot.
 
 An initializer that is not a compile-time constant is `global initializer is not a constant` at file scope.

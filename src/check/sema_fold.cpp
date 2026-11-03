@@ -2387,6 +2387,11 @@ bool Checker::strict_comptime_expr(const Expr &expr) {
     if (fold_int(expr) || fold_switch_case(expr)) {
         return true;
     }
+    // `3000000000u32` fits in `u32`. The compile-time `i32` does not hold those bits.
+    if (const auto *number = std::get_if<Expr::Int>(&expr.data);
+        number != nullptr && number->value > 2147483647ULL) {
+        return true;
+    }
     std::unordered_set<std::string> seen;
     if (constant_string(expr, seen)) {
         return true;

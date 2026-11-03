@@ -1,0 +1,6 @@
+comptime const n = 3000000000u32;
+
+func main() i32 {
+    var row [n]i32;
+    return row.len;
+}

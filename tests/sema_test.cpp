@@ -8251,6 +8251,13 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "comptime const N = 3000000000u32;\n"
             "func main() i32 { return 0; }\n");
+        EXPECT(check, errors.empty());
+    }
+
+    {
+        const std::string errors = diagnose(
+            "comptime const N = 3000000000u32;\n"
+            "func main() i32 { var buf [N]i32; return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
