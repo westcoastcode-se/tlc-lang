@@ -50,6 +50,26 @@ TypedValue CodeGen::addr_tuple_elem(const Binding &binding, unsigned index) {
     return slot;
 }
 
+void CodeGen::drop_tuple_forward(const Binding *binding) {
+    if (binding == nullptr || binding->tuple_forward == nullptr) {
+        return;
+    }
+    binding->tuple_forward->values.clear();
+    binding->tuple_forward->block = nullptr;
+}
+
+void CodeGen::keep_tuple_forward(const Binding *binding, const TypedValue &value) {
+    if (binding == nullptr || binding->tuple_forward == nullptr) {
+        return;
+    }
+    if (value.tuple_forward == nullptr || value.tuple_forward->values.size() != binding->tuple_parts.size()) {
+        drop_tuple_forward(binding);
+        return;
+    }
+    binding->tuple_forward->values = value.tuple_forward->values;
+    binding->tuple_forward->block = builder_.GetInsertBlock();
+}
+
 TypedValue CodeGen::load_tuple_elem(const Binding &binding, unsigned index) {
     if (index >= binding.tuple_elems.size() || index >= binding.tuple_parts.size() ||
         binding.tuple_elems[index] == nullptr) {
@@ -212,14 +232,34 @@ bool CodeGen::expand_tuple_arg(std::vector<llvm::Value *> &args, const Expr &exp
         }
     }
     if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
-        if (const Binding *binding = lookup(named->text);
-            binding != nullptr && binding->tuple_elems.size() == parts.size()) {
-            for (std::size_t part = 0; part < parts.size(); ++part) {
-                push_element(args, load_tuple_elem(*binding, static_cast<unsigned>(part)), fty->getParamType(index),
-                             loc);
-                ++index;
+        if (const Binding *binding = lookup(named->text); binding != nullptr) {
+            if (binding->tuple_elems.size() == parts.size()) {
+                for (std::size_t part = 0; part < parts.size(); ++part) {
+                    push_element(args, load_tuple_elem(*binding, static_cast<unsigned>(part)),
+                                 fty->getParamType(index), loc);
+                    ++index;
+                }
+                return true;
             }
-            return true;
+            // `var t = (a, b); sum(t)` still has the loads of `a` and `b`. Passing those
+            // values skips the reload of `t`. A later store, or a call in another block, does not.
+            const TupleForward *forward = binding->tuple_forward.get();
+            if (forward != nullptr && forward->block == builder_.GetInsertBlock() &&
+                forward->values.size() == parts.size()) {
+                for (std::size_t part = 0; part < parts.size(); ++part) {
+                    llvm::Value *elem = forward->values[part];
+                    llvm::Type *want = fty->getParamType(index);
+                    if (elem != nullptr && want != nullptr && elem->getType() == want) {
+                        args.push_back(elem);
+                    } else {
+                        TypedValue piece;
+                        piece.value = elem;
+                        push_element(args, piece, want, loc);
+                    }
+                    ++index;
+                }
+                return true;
+            }
         }
     }
     if (const auto *init = std::get_if<Expr::Init>(&expr.data);

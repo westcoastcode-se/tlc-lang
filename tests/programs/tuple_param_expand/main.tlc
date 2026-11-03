@@ -38,6 +38,19 @@ func main() i32 {
     if (sum(local) != 42) {
         return 3;
     }
+    local[0] = 10;
+    if (sum(local) != 12) {
+        return 9;
+    }
+    var step = (40, 2);
+    var total = 0;
+    for (var i i32 = 0; i < 2; i = i + 1) {
+        total = total + sum(step);
+        step[0] = step[0] + 1;
+    }
+    if (total != 85) {
+        return 10;
+    }
     if (duo(Duo((20, 22))) != 42) {
         return 4;
     }

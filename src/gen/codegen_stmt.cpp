@@ -531,6 +531,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.value = slot;
             binding.is_tuple = true;
             binding.tuple_parts = got.tuple_parts;
+            binding.tuple_forward = got.tuple_forward;
             // `comptime const local = (20, 1)` keeps the literal so `local[1]` folds.
             if (node.is_comptime && node.value != nullptr) {
                 binding.const_init = node.value.get();
@@ -795,6 +796,9 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             } else {
                 llvm::Type *ty = object_type(dest);
                 builder_.CreateStore(as_stored(value.value, value.depth, ty, value.elem_unsigned), dest);
+                if (found != nullptr && found->is_tuple) {
+                    keep_tuple_forward(found, value);
+                }
             }
         }
         return;

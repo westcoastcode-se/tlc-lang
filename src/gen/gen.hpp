@@ -325,6 +325,14 @@ inline Param param_from_slot(const ResultSlot &slot) {
     return param;
 }
 
+// Element values captured when a tuple local is initialized. A later call in the
+// same block passes these instead of reloading the stored aggregate. A store or
+// an address of the tuple clears `block`.
+struct TupleForward {
+    std::vector<llvm::Value *> values;
+    llvm::BasicBlock *block = nullptr;
+};
+
 struct Binding {
     llvm::Value *value = nullptr;
     int depth = 0;
@@ -373,6 +381,8 @@ struct Binding {
     // A by-value tuple parameter. Each element is its own argument slot.
     // Empty when the tuple is one aggregate in `value`.
     std::vector<llvm::Value *> tuple_elems;
+    // Set for `var t = (a, b)`. Shared by copies of this binding.
+    std::shared_ptr<TupleForward> tuple_forward;
     // `[]T`. The slot holds `{ data, len }`. `depth` is the element, not the slice.
     bool is_slice = false;
     // The element of this slice or array is one `[]E`. A further slice stays rejected.
@@ -412,6 +422,8 @@ struct TypedValue {
     bool is_tuple = false;
     // Element types of a tuple value, in order. Empty when the value is not a tuple.
     std::vector<ResultSlot> tuple_parts{};
+    // Element values of a tuple literal, in the block that built them.
+    std::shared_ptr<TupleForward> tuple_forward;
     // Set when this value is a pointer to an array (`*[4]i32`).
     bool ptr_to_array = false;
     int ptr_array_len = 0;
@@ -1328,6 +1340,8 @@ class CodeGen {
     bool expand_tuple_arg(std::vector<llvm::Value *> &args, const Expr &expr, const std::vector<ResultSlot> &parts,
                           llvm::FunctionType *fty, unsigned &index, SourceLoc loc);
     TypedValue load_tuple_elem(const Binding &binding, unsigned index);
+    void drop_tuple_forward(const Binding *binding);
+    void keep_tuple_forward(const Binding *binding, const TypedValue &value);
     TypedValue addr_tuple_elem(const Binding &binding, unsigned index);
     TypedValue materialize_tuple_param(const Binding &binding);
     bool infer_global(uint32_t file, const Expr &expr, Lowered &out) const;

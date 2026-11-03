@@ -608,6 +608,24 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         builder_.CreateStore(stored, slot.value);
                     }
                 }
+                if (node.lhs != nullptr) {
+                    if (const auto *named = std::get_if<Expr::Name>(&node.lhs->data)) {
+                        keep_tuple_forward(lookup(named->text), rhs);
+                    } else {
+                        const Expr *cursor = node.lhs.get();
+                        for (int depth = 0; cursor != nullptr && depth < 8; ++depth) {
+                            const auto *index = std::get_if<Expr::Index>(&cursor->data);
+                            if (index == nullptr || index->base == nullptr) {
+                                break;
+                            }
+                            cursor = index->base.get();
+                            if (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
+                                drop_tuple_forward(lookup(named->text));
+                                break;
+                            }
+                        }
+                    }
+                }
                 if (slot.depth == 0 && slot.elem_bool && stored != nullptr) {
                     return {builder_.CreateZExt(stored, i32()), 0};
                 }
@@ -1543,6 +1561,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     value.value = as_stored(source.value, 0, target.type, source.elem_unsigned);
                     value.is_tuple = true;
                     value.tuple_parts = target.tuple_parts;
+                    value.tuple_forward = source.tuple_forward;
                     return value;
                 }
                 if (target.depth == 0 && source.depth == 0 && target.struct_id < 0 && !target.elem_void) {
@@ -1781,6 +1800,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     TypedValue out;
                     out.value = aggregate;
                     out.is_tuple = true;
+                    out.tuple_forward = std::make_shared<TupleForward>();
+                    out.tuple_forward->values = fields;
+                    out.tuple_forward->block = builder_.GetInsertBlock();
                     out.tuple_parts.reserve(element_values.size());
                     for (const TypedValue &element : element_values) {
                         out.tuple_parts.push_back(slot_of(element));

@@ -91,6 +91,6 @@ Go through the features, including tuples, so a form does not keep more stack or
 
 A by-value tuple parameter is passed as one argument per element. A pointer to a tuple, an array of tuples, a nested tuple, and `extern(abi="c")` stay one value. An array element uses the same address an array parameter uses. Two `i32` is 5 instructions in the callee, the same as two parameters. `func sum(t (i32, f64)) i32 { return t[0]; }` is 3, and the callee does not store the `f64`. Eight `i32` is 5 in the callee, the same as eight parameters. `func sum(t ([4]i32, i32))` passes the address of the array, the same as `func sum(a [4]i32, b i32)`.
 
-`var t = (a, b); sum(t)` is 4 instructions more in `main` than `sum(a, b)`. The local tuple is stored, then each element is loaded for the call.
+`var t = (a, b); sum(t)` in the same block, with no store to `t` before the call, is the same instructions in `main` as `sum(a, b)`. The call passes the loads of `a` and `b`. The store of `t` is not read, so it is removed.
 
 A tuple result uses the same registers as several results. `return (40, 2)` from `func pair() ((i32, i32))` is 3 instructions, the same as `return 40, 2`. The caller that reads `value[0]` reloads the stored tuple: 1 instruction more in `main` for two `i32`, and 7 more for eight `i32`. `(i32, f64)` reloads the `f64` when the caller reads only the `i32`, 4 instructions more in `main`.

@@ -12,6 +12,10 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             error(name->loc, "not an lvalue");
             return {};
         }
+        // The address can be stored through later. The saved element values would miss that write.
+        if (binding->is_tuple) {
+            drop_tuple_forward(binding);
+        }
         // A tuple parameter has one slot per element. The whole value is a copy.
         if (binding->is_tuple && !binding->tuple_elems.empty()) {
             if (terminated()) {
@@ -106,6 +110,9 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             // `box.value[0]` is the same field inside a struct, not only a bare name.
             const auto *named = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
             const Binding *binding = named == nullptr ? nullptr : lookup(named->text);
+            if (binding != nullptr && binding->is_tuple) {
+                drop_tuple_forward(binding);
+            }
             if (binding != nullptr && !binding->tuple_elems.empty()) {
                 const int part = index->tuple_index;
                 if (part < 0 || static_cast<std::size_t>(part) >= binding->tuple_elems.size()) {
