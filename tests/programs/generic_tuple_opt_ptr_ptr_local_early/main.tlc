@@ -1,0 +1,10 @@
+func read[T type](value ?**T) i32 {
+    var q ?**T = value;
+    return (**q)[0];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var p = &row;
+    return read(&p);
+}

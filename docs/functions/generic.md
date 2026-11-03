@@ -3540,7 +3540,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `deep(&wpp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
-`?**T` and `***const T` are `not supported yet`.
+`***const T` is `not supported yet`.
 
 ```c
 func id[T type](value ***T) i32 {
@@ -4074,7 +4074,7 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
-`?**T` and `***const T` are `not supported yet`.
+`***const T` is `not supported yet`.
 
 ```c
 func pair[T type](a T, b T) [2]T {
@@ -4240,7 +4240,60 @@ After `value == null`, `(**value)[0][0]` is 40 and `(**value)[1][1]` is 3.
 
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
-A local `var q ?**T` is `not supported yet`. `***const T` is `not supported yet`.
+A local `var q ?**T = value` stores that pointer. The outer pointer is optional. `(**q)[0]` before `q == null` is `type mismatch`. `***const T` is `not supported yet`.
+
+```c
+func read[T type](value ?**T) i32 {
+    var q ?**T = value;
+    if (q == null) {
+        return 0;
+    }
+    return (**q)[0] + (**q)[1];
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var p = &row;
+    return read(&p);
+}
+```
+
+```asm
+main.read.spec.tuple.2.i32.i32:
+movq %rdi, -16(%rsp)             # value
+movq -16(%rsp), %rax             # value
+movq %rax, -8(%rsp)              # q = value
+cmpq $0, -8(%rsp)                # q == null
+jne .L1                          # branch
+xorl %eax, %eax                  # 0
+retq                             # return
+.L1:
+jmp .L2                          # jump
+.L2:
+movq -8(%rsp), %rax              # q
+movq (%rax), %rcx                # *q
+movl (%rcx), %eax                # (**q)[0]
+movl 4(%rcx), %ecx               # (**q)[1]
+addl %ecx, %eax                  # add
+retq                             # return
+
+main:
+subq $40, %rsp                   # allocate
+movl $2, 28(%rsp)                # row[1] = 2
+movl $40, 24(%rsp)               # row[0] = 40
+leaq 24(%rsp), %rax              # &row
+movq %rax, 32(%rsp)              # p
+# trace frame for the call, then the matching pop
+leaq 32(%rsp), %rdi              # &p
+callq main.read.spec.tuple.2.i32.i32 # call read
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # read(&p)
+addq $40, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
 
 ```c
 func pair[T type](a T, b T) [2]T {

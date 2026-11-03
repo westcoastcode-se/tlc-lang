@@ -1196,7 +1196,7 @@ The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
 
 `(**value)[0][0]` is 40 and `(**value)[1][1]` is 3.
 
-`(**value)[0][0]` before `value == null` is `type mismatch`. A local `var q ?**T` is `not supported yet`.
+`(**value)[0][0]` before `value == null` is `type mismatch`. A local `var q ?**T = value` stores that pointer. The outer pointer is optional. `(**q)[0]` before `q == null` is `type mismatch`.
 
 `var box Box[T]` with no initializer is `type mismatch`.
 
