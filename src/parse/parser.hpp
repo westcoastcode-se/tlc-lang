@@ -281,6 +281,7 @@ class Parser {
     std::unique_ptr<Expr> parse_expr();
     std::unique_ptr<Expr> parse_assignment();
     std::unique_ptr<Expr> parse_conditional();
+    std::unique_ptr<Expr> parse_coalesce();
     std::unique_ptr<Expr> parse_or();
     // Left-associative operators. Level 0 is `||`. The last level is `*`, `/`, and `%`.
     std::unique_ptr<Expr> parse_binary(int level);

@@ -1049,6 +1049,16 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 // `i8` and `u8` are `Char`. Only `u8` and a plain `char` zero-extend.
                 return cast_folded(*inner, width_of(named), named.is_unsigned || named.plain_char, false);
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if (node.op == TokenKind::Question) {
+                    if (node.lhs == nullptr || node.mid == nullptr || node.rhs == nullptr) {
+                        return std::nullopt;
+                    }
+                    const std::optional<int> cond = fold_condition(*node.lhs);
+                    if (!cond) {
+                        return std::nullopt;
+                    }
+                    return fold_int(*(*cond != 0 ? node.mid : node.rhs));
+                }
                 if (node.lhs == nullptr || node.rhs == nullptr) {
                     return std::nullopt;
                 }

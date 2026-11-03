@@ -1,0 +1,68 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+var hits = 0;
+
+func bump(n i32) i32 {
+    hits = hits + 1;
+    return n;
+}
+
+func pick[T type](flag bool, a T, b T) T {
+    return flag ? a : b;
+}
+
+func main() i32 {
+    if (pick[i32](true, 40, 2) != 40) {
+        return 1;
+    }
+    if ((true ? 40 : 2) != 40) {
+        return 2;
+    }
+    var flag = true;
+    var n = flag ? bump(40) : bump(2);
+    if (hits != 1 || n != 40) {
+        return 3;
+    }
+    flag = false;
+    n = flag ? bump(1) : bump(2);
+    if (hits != 2 || n != 2) {
+        return 4;
+    }
+    if ((flag ? 1 : true ? 20 : 3) != 20) {
+        return 5;
+    }
+    if ((true ? false ? 1 : 20 : 3) != 20) {
+        return 6;
+    }
+    var m = 0;
+    var got = flag ? (m = 7) : 3;
+    if (got != 3 || m != 0) {
+        return 7;
+    }
+    flag = true;
+    got = flag ? (m = 7) : 3;
+    if (got != 7 || m != 7) {
+        return 8;
+    }
+    var here = Point{.x = 40, .y = 2};
+    var p ?*Point = null;
+    if ((p != null ? p.x : 2) != 2) {
+        return 9;
+    }
+    if ((p == null ? 2 : p.x) != 2) {
+        return 10;
+    }
+    p = &here;
+    if ((p != null ? p.x : 0) != 40) {
+        return 11;
+    }
+    var q ?*i32 = null;
+    var chosen = flag ? null : q;
+    if (chosen != null) {
+        return 12;
+    }
+    return 42;
+}

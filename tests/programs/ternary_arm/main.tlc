@@ -1,0 +1,4 @@
+func main() i32 {
+    var flag = true;
+    return flag ? 40 : missing;
+}

@@ -1,0 +1,6 @@
+func main() i32 {
+    var flag = true;
+    var n = 1;
+    flag ? 1 : n = 2;
+    return n;
+}

@@ -138,6 +138,8 @@ struct Expr {
         TokenKind op = TokenKind::End;
         std::unique_ptr<Expr> lhs;
         std::unique_ptr<Expr> rhs;
+        // Then-arm of `cond ? then : else`. Empty for every other operator.
+        std::unique_ptr<Expr> mid;
         // The left side of `??` is an optional pointer. Null selects the right side.
         mutable bool coalesce_null = false;
     };

@@ -451,6 +451,96 @@ Type Checker::check_raw(const Expr &expr, bool used) {
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
                 Type lhs;
                 Type rhs;
+                if (node.op == TokenKind::Question) {
+                    // `cond ? then : else`. Both arms are typechecked. Only the chosen arm runs.
+                    if (node.lhs == nullptr || node.mid == nullptr || node.rhs == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return type_invalid();
+                    }
+                    expect_condition(check_expr(*node.lhs, true), expr_loc(*node.lhs));
+                    const AssignState on_true = cond_true_;
+                    const AssignState on_false = cond_false_;
+                    std::string guard_name;
+                    bool guard_null = false;
+                    bool have_guard = false;
+                    if (const auto *cmp = std::get_if<Expr::Binary>(&node.lhs->data);
+                        cmp != nullptr && (cmp->op == TokenKind::EqEq || cmp->op == TokenKind::BangEq)) {
+                        const auto named_or_null = [](const Expr *arm, bool &is_null) -> const Expr::Name * {
+                            is_null = false;
+                            if (arm == nullptr) {
+                                return nullptr;
+                            }
+                            if (std::holds_alternative<Expr::Nullptr>(arm->data)) {
+                                is_null = true;
+                                return nullptr;
+                            }
+                            return std::get_if<Expr::Name>(&arm->data);
+                        };
+                        bool lhs_null = false;
+                        bool rhs_null = false;
+                        const Expr::Name *left_name = named_or_null(cmp->lhs.get(), lhs_null);
+                        const Expr::Name *right_name = named_or_null(cmp->rhs.get(), rhs_null);
+                        const Expr::Name *guard = nullptr;
+                        if (left_name != nullptr && rhs_null) {
+                            guard = left_name;
+                        } else if (right_name != nullptr && lhs_null) {
+                            guard = right_name;
+                        }
+                        if (guard != nullptr) {
+                            have_guard = true;
+                            guard_null = cmp->op == TokenKind::EqEq;
+                            guard_name = guard->text;
+                        }
+                    }
+                    auto check_arm = [&](Expr &arm, const AssignState &state, bool narrow) -> Type {
+                        assign_ = state;
+                        const bool narrowed = narrow && narrow_optional(guard_name);
+                        const Type got = check_expr(arm, true);
+                        if (narrowed) {
+                            restore_optional(guard_name);
+                        }
+                        return got;
+                    };
+                    Type then_type;
+                    Type else_type;
+                    AssignState then_out;
+                    AssignState else_out;
+                    if (!have_guard || guard_null) {
+                        then_type = check_arm(*node.mid, on_true, false);
+                        then_out = assign_;
+                        else_type = check_arm(*node.rhs, on_false, have_guard);
+                        else_out = assign_;
+                    } else {
+                        then_type = check_arm(*node.mid, on_true, true);
+                        then_out = assign_;
+                        else_type = check_arm(*node.rhs, on_false, false);
+                        else_out = assign_;
+                    }
+                    assign_ = init_merge(then_out, else_out);
+                    cond_split_ = false;
+                    if (then_type.kind == TypeKind::Invalid || else_type.kind == TypeKind::Invalid) {
+                        return type_invalid();
+                    }
+                    then_type.is_const = false;
+                    else_type.is_const = false;
+                    if (same_type(then_type, else_type)) {
+                        return then_type;
+                    }
+                    if (then_type.kind == TypeKind::Nullptr && else_type.kind == TypeKind::Pointer &&
+                        else_type.optional) {
+                        return else_type;
+                    }
+                    if (else_type.kind == TypeKind::Nullptr && then_type.kind == TypeKind::Pointer &&
+                        then_type.optional) {
+                        return then_type;
+                    }
+                    if (then_type.alias_id != 0 || else_type.alias_id != 0 || !is_integer(then_type) ||
+                        !is_integer(else_type)) {
+                        mismatch(node.loc, then_type, else_type);
+                        return type_invalid();
+                    }
+                    return usual(then_type, else_type);
+                }
                 if (node.op == TokenKind::QuestionQuestion) {
                     // `value!.field ?? fallback`. A null `!` on that chain selects the fallback.
                     const auto mark = [](auto &self, Expr &arm) -> bool {

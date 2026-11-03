@@ -52,6 +52,44 @@ movl -4(%rsp), %eax              # move
 retq                             # return
 ```
 
+`cond ? then : else` yields `then` when `cond` is true and `else` when it is false. `cond` is a `bool`. An integer is `type mismatch: expected bool, found i32`. A pointer is `compare with null`.
+
+Both arms are typechecked. Only the chosen arm runs.
+
+The arms have the same type, or both are integers and the result is their common type. `null` may be one arm when the other is an optional pointer.
+
+`?:` is right-associative and looser than `??`. `p ?? q ? 1 : 2` is `(p ?? q) ? 1 : 2`.
+
+The middle arm is an expression. `flag ? n = 1 : 2` stores `1` in `n` when `flag` is true. `flag ? 1 : n = 2` assigns the chosen value, and that value is `not an lvalue`.
+
+`p != null ? p.x : 0` narrows `p` in the then-arm. `p == null ? 0 : p.x` narrows `p` in the else-arm.
+
+`return true ? 40 : 2` is `movl $40, %eax` and `retq`.
+
+```c
+func main() i32 {
+    var flag = true;
+    return flag ? 40 : 2;
+}
+```
+
+```asm
+main:
+movl $1, -4(%rsp)                # flag = true
+cmpl $0, -4(%rsp)                # flag
+je .L1                           # branch
+movl $40, %eax                   # 40
+movl %eax, -8(%rsp)              # chosen
+jmp .L2                          # jump
+.L1:
+movl $2, %eax                    # 2
+movl %eax, -8(%rsp)              # chosen
+jmp .L2                          # jump
+.L2:
+movl -8(%rsp), %eax              # return
+retq
+```
+
 Calls, indexing, `.`, address-of `&`, and dereference `*` are operators too.
 
 ## Binding and associativity

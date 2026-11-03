@@ -2096,8 +2096,11 @@ The others are left-associative.
 
 `??` is right-associative and looser than `||`.
 
+`?:` is right-associative and looser than `??`. The middle arm is an expression. The else arm stops before an assignment.
+
 ```ebnf
-expression  = coalesce [ ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" ) expression ] ;
+expression  = conditional [ ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" ) expression ] ;
+conditional = coalesce [ "?" expression ":" conditional ] ;
 coalesce    = or [ "??" coalesce ] ;
 or          = and { "||" and } ;
 and         = bit-or { "&&" bit-or } ;

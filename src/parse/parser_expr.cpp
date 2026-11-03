@@ -28,28 +28,38 @@ std::unique_ptr<Expr> Parser::parse_assignment() {
 }
 
 std::unique_ptr<Expr> Parser::parse_conditional() {
+    auto cond = parse_coalesce();
+    // `?:` is right-associative and looser than `??`.
+    if (!eat(TokenKind::Question)) {
+        return cond;
+    }
+    auto then_arm = parse_expr();
+    expect(TokenKind::Colon, "expected ':'");
+    auto else_arm = parse_conditional();
+    Expr::Binary node;
+    node.loc = expr_loc(*cond);
+    node.op = TokenKind::Question;
+    node.lhs = std::move(cond);
+    node.mid = std::move(then_arm);
+    node.rhs = std::move(else_arm);
+    return make_expr(std::move(node));
+}
+
+std::unique_ptr<Expr> Parser::parse_coalesce() {
     auto lhs = parse_or();
-    // `??` is right-associative and looser than `||`.
-    if (check(TokenKind::QuestionQuestion)) {
-        const SourceLoc loc = peek().loc;
-        ++pos_;
-        auto rhs = parse_conditional();
-        Expr::Binary node;
-        node.loc = loc;
-        node.op = TokenKind::QuestionQuestion;
-        node.lhs = std::move(lhs);
-        node.rhs = std::move(rhs);
-        return make_expr(std::move(node));
+    // `??` is right-associative and looser than `||`, and tighter than `?:`.
+    if (!check(TokenKind::QuestionQuestion)) {
+        return lhs;
     }
-    auto cond = std::move(lhs);
-    if (eat(TokenKind::Question)) {
-        error_here("not supported yet");
-        parse_expr();
-        expect(TokenKind::Colon, "expected ':'");
-        parse_conditional();
-        return unsupported_expr(expr_loc(*cond));
-    }
-    return cond;
+    const SourceLoc loc = peek().loc;
+    ++pos_;
+    auto rhs = parse_coalesce();
+    Expr::Binary node;
+    node.loc = loc;
+    node.op = TokenKind::QuestionQuestion;
+    node.lhs = std::move(lhs);
+    node.rhs = std::move(rhs);
+    return make_expr(std::move(node));
 }
 
 std::unique_ptr<Expr> Parser::parse_or() { return parse_binary(0); }

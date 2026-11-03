@@ -265,7 +265,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 } else if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
                                      std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
                     return node.expr == nullptr || self(self, *node.expr);
-                } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
+                } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    return (node.lhs == nullptr || self(self, *node.lhs)) &&
+                           (node.mid == nullptr || self(self, *node.mid)) &&
+                           (node.rhs == nullptr || self(self, *node.rhs));
+                } else if constexpr (std::is_same_v<T, Expr::Assign>) {
                     return (node.lhs == nullptr || self(self, *node.lhs)) &&
                            (node.rhs == nullptr || self(self, *node.rhs));
                 } else if constexpr (std::is_same_v<T, Expr::Index>) {

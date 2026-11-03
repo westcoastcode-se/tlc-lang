@@ -6,7 +6,7 @@ This page describes the condition that `if`, `while`, `do`, and `for` test.
 
 ## A condition is a `bool`
 
-A condition in `if`, `while`, `do`, and `for` is a `bool`.
+A condition in `if`, `while`, `do`, `for`, and `cond ? then : else` is a `bool`.
 
 The compiler reports an integer as `type mismatch: expected bool, found i32`.
 

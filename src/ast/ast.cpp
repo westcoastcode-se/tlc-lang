@@ -580,9 +580,15 @@ std::string dump_expr(const Expr &expr) {
                 const std::string op = node.postfix ? "!post" : token_kind_name(node.op);
                 return "(" + op + " " + (node.expr ? dump_expr(*node.expr) : "(unsupported)") + ")";
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
-                return std::string("(") + token_kind_name(node.op) + " " +
-                       (node.lhs ? dump_expr(*node.lhs) : "(unsupported)") + " " +
-                       (node.rhs ? dump_expr(*node.rhs) : "(unsupported)") + ")";
+                std::string text = std::string("(") + token_kind_name(node.op) + " " +
+                                   (node.lhs ? dump_expr(*node.lhs) : "(unsupported)") + " " +
+                                   (node.rhs ? dump_expr(*node.rhs) : "(unsupported)");
+                if (node.mid != nullptr) {
+                    text += " ";
+                    text += dump_expr(*node.mid);
+                }
+                text += ')';
+                return text;
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
                 const std::string op = node.op == TokenKind::Eq ? "=" : token_kind_name(node.op);
                 return "(" + op + " " + (node.lhs ? dump_expr(*node.lhs) : "(unsupported)") + " " +
@@ -958,6 +964,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.coalesce_null = node.coalesce_null;
                 copy.lhs = node.lhs ? clone_expr(*node.lhs) : nullptr;
                 copy.rhs = node.rhs ? clone_expr(*node.rhs) : nullptr;
+                copy.mid = node.mid ? clone_expr(*node.mid) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
                 Expr::Assign copy;
@@ -1356,6 +1363,9 @@ void replace_names(std::unique_ptr<Expr> &slot, const std::vector<std::string> &
             } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
                 replace_names(node.lhs, names, exprs);
                 replace_names(node.rhs, names, exprs);
+                if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    replace_names(node.mid, names, exprs);
+                }
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
                 replace_names(node.callee, names, exprs);
                 for (auto &arg : node.args) {

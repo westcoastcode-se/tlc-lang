@@ -931,6 +931,9 @@ void note_expr_node(Used &used, const Shadow &shadow, const Node &node) {
         if (node.lhs != nullptr) {
             note_expr(used, shadow, *node.lhs);
         }
+        if (node.mid != nullptr) {
+            note_expr(used, shadow, *node.mid);
+        }
         if (node.rhs != nullptr) {
             note_expr(used, shadow, *node.rhs);
         }
@@ -2980,6 +2983,11 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 if (node.rhs) {
                     substitute_expr(params, bounds, *node.rhs);
+                }
+                if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    if (node.mid) {
+                        substitute_expr(params, bounds, *node.mid);
+                    }
                 }
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
                 if (node.callee) {

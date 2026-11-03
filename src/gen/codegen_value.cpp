@@ -324,6 +324,79 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 default: return {zero(), 0};
                 }
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                if (node.op == TokenKind::Question) {
+                    if (node.lhs == nullptr || node.mid == nullptr || node.rhs == nullptr || function_ == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    // A folded condition runs one arm. The other arm is typechecked and not run.
+                    if (const std::optional<int32_t> folded = fold(*node.lhs)) {
+                        return emit_rvalue(*(*folded != 0 ? node.mid : node.rhs));
+                    }
+                    llvm::BasicBlock *then_block = llvm::BasicBlock::Create(context_, "tern.then", function_);
+                    llvm::BasicBlock *else_block = llvm::BasicBlock::Create(context_, "tern.else", function_);
+                    llvm::BasicBlock *done = llvm::BasicBlock::Create(context_, "tern.done", function_);
+                    const TypedValue cond = emit_rvalue(*node.lhs);
+                    if (cond.value == nullptr || terminated()) {
+                        return {zero(), 0};
+                    }
+                    builder_.CreateCondBr(is_nonzero(cond.value), then_block, else_block);
+                    builder_.SetInsertPoint(then_block);
+                    const TypedValue then_value = emit_rvalue(*node.mid);
+                    const bool then_reaches = then_value.value != nullptr && !terminated();
+                    llvm::BasicBlock *then_end = builder_.GetInsertBlock();
+                    if (then_reaches) {
+                        builder_.CreateBr(done);
+                    }
+                    builder_.SetInsertPoint(else_block);
+                    const TypedValue else_value = emit_rvalue(*node.rhs);
+                    const bool else_reaches = else_value.value != nullptr && !terminated();
+                    llvm::BasicBlock *else_end = builder_.GetInsertBlock();
+                    if (else_reaches) {
+                        builder_.CreateBr(done);
+                    }
+                    if (!then_reaches && !else_reaches) {
+                        return {zero(), 0};
+                    }
+                    builder_.SetInsertPoint(done);
+                    const TypedValue &meta = then_value.value != nullptr && !then_value.elem_void ? then_value
+                                                                                                  : else_value;
+                    llvm::Value *then_bit = then_reaches ? then_value.value : nullptr;
+                    llvm::Value *else_bit = else_reaches ? else_value.value : nullptr;
+                    if (then_bit != nullptr && else_bit != nullptr && then_bit->getType() != else_bit->getType() &&
+                        then_bit->getType()->isIntegerTy() && else_bit->getType()->isIntegerTy()) {
+                        llvm::Type *wider = then_bit->getType()->getIntegerBitWidth() >=
+                                                    else_bit->getType()->getIntegerBitWidth()
+                                                ? then_bit->getType()
+                                                : else_bit->getType();
+                        then_bit = resize_int(then_bit, wider, then_value.elem_unsigned);
+                        else_bit = resize_int(else_bit, wider, else_value.elem_unsigned);
+                    }
+                    if ((then_bit != nullptr && else_bit != nullptr && then_bit->getType() != else_bit->getType()) ||
+                        (then_bit == nullptr && else_bit == nullptr)) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    llvm::Type *phi_type = then_bit != nullptr ? then_bit->getType() : else_bit->getType();
+                    llvm::PHINode *phi = builder_.CreatePHI(phi_type, 2);
+                    if (then_bit != nullptr) {
+                        phi->addIncoming(then_bit, then_end);
+                    }
+                    if (else_bit != nullptr) {
+                        phi->addIncoming(else_bit, else_end);
+                    }
+                    return {phi,
+                            meta.depth,
+                            meta.elem_char,
+                            meta.struct_id,
+                            false,
+                            false,
+                            meta.elem_bool,
+                            meta.elem_bits,
+                            meta.elem_unsigned,
+                            meta.trait_id,
+                            meta.elem_float};
+                }
                 if ((node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) && node.lhs != nullptr &&
                     node.rhs != nullptr && std::holds_alternative<Expr::Typeof>(node.lhs->data) &&
                     std::holds_alternative<Expr::Typeof>(node.rhs->data)) {

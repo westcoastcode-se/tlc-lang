@@ -4104,6 +4104,9 @@ void relocate_expr(Expr &expr, const std::unordered_map<const FunctionDecl *, co
                 if (node.lhs) {
                     relocate_expr(*node.lhs, moved);
                 }
+                if (node.mid) {
+                    relocate_expr(*node.mid, moved);
+                }
                 if (node.rhs) {
                     relocate_expr(*node.rhs, moved);
                 }

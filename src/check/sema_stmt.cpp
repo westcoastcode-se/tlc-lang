@@ -784,6 +784,9 @@ void Checker::fold_format_expr(std::unique_ptr<Expr> &slot) {
             } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
                 fold_format_expr(node.lhs);
                 fold_format_expr(node.rhs);
+                if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    fold_format_expr(node.mid);
+                }
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
                 fold_format_expr(node.callee);
                 for (auto &arg : node.args) {
