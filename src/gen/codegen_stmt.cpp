@@ -531,7 +531,23 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.value = slot;
             binding.is_tuple = true;
             binding.tuple_parts = got.tuple_parts;
-            binding.tuple_forward = got.tuple_forward;
+            auto *aggregate = llvm::cast<llvm::StructType>(got.value->getType());
+            const unsigned fields = aggregate->getNumElements();
+            const bool forwarded = got.tuple_forward != nullptr && got.tuple_forward->block == builder_.GetInsertBlock() &&
+                                   got.tuple_forward->values.size() == fields;
+            if (forwarded) {
+                binding.tuple_forward = got.tuple_forward;
+            } else {
+                // `var value = pair()`. `value[i]` uses the returned field. The store of
+                // `value` is removed when no later read uses that address.
+                auto forward = std::make_shared<TupleForward>();
+                forward->block = builder_.GetInsertBlock();
+                forward->values.reserve(fields);
+                for (unsigned index = 0; index < fields; ++index) {
+                    forward->values.push_back(builder_.CreateExtractValue(got.value, index));
+                }
+                binding.tuple_forward = std::move(forward);
+            }
             // `comptime const local = (20, 1)` keeps the literal so `local[1]` folds.
             if (node.is_comptime && node.value != nullptr) {
                 binding.const_init = node.value.get();

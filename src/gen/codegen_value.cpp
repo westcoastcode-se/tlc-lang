@@ -1107,26 +1107,51 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             cursor = init;
                         }
                     }
-                    const TypedValue base = emit_rvalue(*node.base);
-                    if (base.value == nullptr || !base.value->getType()->isStructTy()) {
-                        error(node.loc, "type mismatch");
-                        return {zero(), 0};
-                    }
-                    auto *struct_ty = llvm::cast<llvm::StructType>(base.value->getType());
-                    const auto index = static_cast<unsigned>(node.tuple_index);
-                    if (index >= struct_ty->getNumElements()) {
-                        error(node.loc, "type mismatch");
-                        return {zero(), 0};
-                    }
-                    llvm::Value *extracted = builder_.CreateExtractValue(base.value, index);
+                    llvm::Value *extracted = nullptr;
                     const ResultSlot *slot = nullptr;
-                    if (base.is_tuple && index < base.tuple_parts.size()) {
-                        slot = &base.tuple_parts[index];
-                    } else if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
-                        const Binding *binding = lookup(named->text);
-                        if (binding != nullptr && index < binding->tuple_parts.size()) {
-                            slot = &binding->tuple_parts[index];
+                    ResultSlot slot_copy;
+                    bool have_slot = false;
+                    if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                        if (const Binding *binding = lookup(named->text); binding != nullptr &&
+                                                                          binding->tuple_forward != nullptr &&
+                                                                          binding->tuple_forward->block == builder_.GetInsertBlock()) {
+                            const auto index = static_cast<unsigned>(node.tuple_index);
+                            if (index < binding->tuple_forward->values.size() &&
+                                binding->tuple_forward->values[index] != nullptr) {
+                                extracted = binding->tuple_forward->values[index];
+                                if (index < binding->tuple_parts.size()) {
+                                    slot_copy = binding->tuple_parts[index];
+                                    have_slot = true;
+                                }
+                            }
                         }
+                    }
+                    if (extracted == nullptr) {
+                        const TypedValue base = emit_rvalue(*node.base);
+                        if (base.value == nullptr || !base.value->getType()->isStructTy()) {
+                            error(node.loc, "type mismatch");
+                            return {zero(), 0};
+                        }
+                        auto *struct_ty = llvm::cast<llvm::StructType>(base.value->getType());
+                        const auto index = static_cast<unsigned>(node.tuple_index);
+                        if (index >= struct_ty->getNumElements()) {
+                            error(node.loc, "type mismatch");
+                            return {zero(), 0};
+                        }
+                        extracted = builder_.CreateExtractValue(base.value, index);
+                        if (base.is_tuple && index < base.tuple_parts.size()) {
+                            slot_copy = base.tuple_parts[index];
+                            have_slot = true;
+                        } else if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                            const Binding *binding = lookup(named->text);
+                            if (binding != nullptr && index < binding->tuple_parts.size()) {
+                                slot_copy = binding->tuple_parts[index];
+                                have_slot = true;
+                            }
+                        }
+                    }
+                    if (have_slot) {
+                        slot = &slot_copy;
                     }
                     // `p[0]` when the element is `*T` and `T` is `[2](i32, i32)`. The bits are that pointer.
                     if (slot != nullptr && slot->is_tuple && slot->indirections == 0 && !slot->shells.empty() &&
