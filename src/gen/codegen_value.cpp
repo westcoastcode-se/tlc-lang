@@ -26,7 +26,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (binding->immediate) {
                     return value_of_binding(*binding);
                 }
-                if (binding->value == nullptr) {
+                // A tuple parameter has one slot per element and no single address.
+                if (binding->value == nullptr && binding->tuple_elems.empty()) {
                     error(node.loc, "undeclared identifier");
                     return {zero(), 0};
                 }
@@ -1043,6 +1044,19 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         }
                         return nullptr;
                     };
+                    if (node.base != nullptr) {
+                        if (const auto *named = std::get_if<Expr::Name>(&node.base->data)) {
+                            if (const Binding *binding = lookup(named->text);
+                                binding != nullptr && !binding->tuple_elems.empty()) {
+                                const auto index = static_cast<unsigned>(node.tuple_index);
+                                if (index >= binding->tuple_elems.size()) {
+                                    error(node.loc, "type mismatch");
+                                    return {zero(), 0};
+                                }
+                                return load_tuple_elem(*binding, index);
+                            }
+                        }
+                    }
                     if (const Expr *element = tuple_element(tuple_element, *node.base, node.tuple_index, 0)) {
                         const Expr *cursor = element;
                         for (int follow = 0; cursor != nullptr && follow <= 8; ++follow) {

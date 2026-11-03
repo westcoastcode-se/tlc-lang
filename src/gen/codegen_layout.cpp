@@ -6,7 +6,8 @@ namespace tlc {
 bool CodeGen::addressable(const Expr &expr) const {
     if (const auto *name = std::get_if<Expr::Name>(&expr.data)) {
         const Binding *binding = lookup(name->text);
-        return binding != nullptr && binding->value != nullptr && !binding->is_function && !binding->is_array;
+        return binding != nullptr && !binding->is_function && !binding->is_array &&
+               (binding->value != nullptr || !binding->tuple_elems.empty());
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data)) {
         return star->op == TokenKind::Star && star->expr != nullptr;

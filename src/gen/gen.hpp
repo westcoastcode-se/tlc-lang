@@ -296,6 +296,35 @@ inline FnParam fn_param_from_slot(const ResultSlot &slot) {
     return param;
 }
 
+// One tuple element, lowered with the same rules as its own parameter.
+inline Param param_from_slot(const ResultSlot &slot) {
+    Param param;
+    param.type_name = slot.type_name;
+    param.type_package = slot.type_package;
+    param.is_struct = slot.is_struct;
+    param.is_enum = slot.is_enum;
+    param.indirections = slot.indirections;
+    param.optional = slot.optional;
+    param.const_pointee = slot.const_pointee;
+    param.is_array = slot.is_array;
+    param.elem_const = slot.elem_const;
+    param.elem_slice = slot.elem_slice;
+    param.shells = slot.shells;
+    param.array_len = slot.array_len;
+    param.array_len_name = slot.array_len_name;
+    param.type_args = slot.type_args;
+    param.is_fn_ptr = slot.is_fn_ptr;
+    param.ret_indirections = slot.ret_indirections;
+    param.ret_optional = slot.ret_optional;
+    param.ret_const_pointee = slot.ret_const_pointee;
+    param.fn_params = slot.fn_params;
+    param.fn_variadic = slot.fn_variadic;
+    param.fn_results = slot.fn_results;
+    param.is_tuple = slot.is_tuple;
+    param.tuple_parts = slot.tuple_parts;
+    return param;
+}
+
 struct Binding {
     llvm::Value *value = nullptr;
     int depth = 0;
@@ -341,6 +370,9 @@ struct Binding {
     // A pack of several types, stored as one anonymous struct.
     bool is_tuple = false;
     std::vector<ResultSlot> tuple_parts;
+    // A by-value tuple parameter. Each element is its own argument slot.
+    // Empty when the tuple is one aggregate in `value`.
+    std::vector<llvm::Value *> tuple_elems;
     // `[]T`. The slot holds `{ data, len }`. `depth` is the element, not the slice.
     bool is_slice = false;
     // The element of this slice or array is one `[]E`. A further slice stays rejected.
@@ -1125,6 +1157,9 @@ class CodeGen {
             }
             return value;
         }
+        if (binding.is_tuple && !binding.tuple_elems.empty()) {
+            return materialize_tuple_param(binding);
+        }
         if (binding.is_tuple && binding.value != nullptr) {
             llvm::Type *ty = object_type(binding.value);
             if (ty == nullptr) {
@@ -1275,6 +1310,26 @@ class CodeGen {
                         bool ret_enum, int ret_indirections, int fn_depth, const std::vector<FnParam> &params,
                         bool variadic, const std::vector<FnParam> &results) const;
     Lowered lower_param_type(uint32_t file, const Param &param) const;
+    // A by-value tuple, including `type Duo (i32, i32)`. A pointer, an array, and a
+    // nested tuple element stay one argument. `extern(abi="c")` does not ask.
+    bool tuple_parts_of(uint32_t file, const Param &param, std::vector<ResultSlot> &parts) const;
+    void append_param_types(std::vector<llvm::Type *> &out, uint32_t file, const Param &param, bool expand) const;
+    unsigned expanded_arg_count(const FunctionDecl &fn) const;
+    // One TLC argument. A tuple parameter consumes one LLVM argument per element.
+    void push_call_args(std::vector<llvm::Value *> &args, const std::vector<std::unique_ptr<Expr>> &exprs,
+                        const FunctionDecl *decl, llvm::FunctionType *fty, unsigned &index, SourceLoc loc,
+                        bool variadic);
+    void push_call_values(std::vector<llvm::Value *> &args, const std::vector<TypedValue> &values,
+                          const FunctionDecl *decl, llvm::FunctionType *fty, unsigned &index, SourceLoc loc);
+    void push_element(std::vector<llvm::Value *> &args, const TypedValue &value, llvm::Type *want, SourceLoc loc);
+    bool split_tuple_value(std::vector<llvm::Value *> &args, const TypedValue &value,
+                           const std::vector<ResultSlot> &parts, llvm::FunctionType *fty, unsigned &index,
+                           SourceLoc loc);
+    bool expand_tuple_arg(std::vector<llvm::Value *> &args, const Expr &expr, const std::vector<ResultSlot> &parts,
+                          llvm::FunctionType *fty, unsigned &index, SourceLoc loc);
+    TypedValue load_tuple_elem(const Binding &binding, unsigned index);
+    TypedValue addr_tuple_elem(const Binding &binding, unsigned index);
+    TypedValue materialize_tuple_param(const Binding &binding);
     bool infer_global(uint32_t file, const Expr &expr, Lowered &out) const;
     // One element of a file-scope `var a, b = expr`.
     bool lower_unpack(uint32_t file, const Expr &expr, int index, int count, Lowered &out) const;

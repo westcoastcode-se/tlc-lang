@@ -334,8 +334,7 @@ take:
 movl %edi, -8(%rsp)              # move
 movl %esi, -4(%rsp)              # move
 movl -8(%rsp), %eax              # move
-movl -4(%rsp), %ecx              # move
-addl %ecx, %eax                  # add
+addl -4(%rsp), %eax              # add
 retq                             # return
 ```
 
@@ -366,12 +365,11 @@ callq *%rax                      # call *%rax
 retq                             # return
 
 take:
-movl %edi, -16(%rsp)             # move
-movl %esi, -12(%rsp)             # move
+movl %edi, -12(%rsp)             # move
+movl %esi, -8(%rsp)              # move
 movl %edx, -4(%rsp)              # move
-movl -16(%rsp), %eax             # move
-movl -12(%rsp), %ecx             # move
-addl %ecx, %eax                  # add
+movl -12(%rsp), %eax             # move
+addl -8(%rsp), %eax              # add
 addl -4(%rsp), %eax              # add
 retq                             # return
 ```
@@ -382,7 +380,7 @@ The program returns 42.
 
 A function of three `i32` parameters does not match, and that assignment is `type mismatch`. `op(Duo((40, 1)), 1)` is `type mismatch`, because `type Duo (i32, i32)` is a different type.
 
-An array inside the tuple stays an array. `func () (([2]i32, i32))` matches a function that returns `([2]i32, i32)`. `func (([2]i32, i32)) i32` matches a function that takes it.
+An array inside a tuple result stays an array. `func () (([2]i32, i32))` matches a function that returns `([2]i32, i32)`. `func (([2]i32, i32)) i32` matches a function that takes it, and that array element is passed as its address.
 
 `var row, n = op()` on `func () ([2]i32, i32)` keeps the array, and `row[1]` reads an element.
 

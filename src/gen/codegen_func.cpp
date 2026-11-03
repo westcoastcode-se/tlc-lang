@@ -184,7 +184,13 @@ llvm::FunctionType *CodeGen::spec_type(const FunctionDecl &fn, const std::vector
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (std::size_t index = 0; index < fn.params.size(); ++index) {
-        params.push_back(stored_type(spec_param(fn, index, spec)));
+        const bool replaced = index < spec.size() &&
+                              (spec[index] == kFnSpec || spec[index] == kIterSpec || spec[index] >= 0);
+        if (!replaced && !fn.extern_c) {
+            append_param_types(params, current_file_, fn.params[index], true);
+        } else {
+            params.push_back(stored_type(spec_param(fn, index, spec)));
+        }
     }
     return llvm::FunctionType::get(ret, params, false);
 }
@@ -282,25 +288,48 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
             }
         }
     } else {
-        unsigned index = 0;
-        for (auto &arg : function->args()) {
-            const std::string name = index < fn.params.size() ? fn.params[index].name : "";
-            if (!name.empty()) {
-                const Lowered low = lower_param(fn, index);
-                llvm::AllocaInst *slot = alloca_typed(stored_type(low), name);
-                builder_.CreateStore(&arg, slot);
-                Binding binding;
-                binding.value = slot;
-                apply_low(binding, low);
-                scopes_.back()[name] = binding;
-                alias_capture(name, binding);
-                debug_declare(name, fn.params[index].loc, binding, static_cast<unsigned>(index + 1));
+        unsigned abi = 0;
+        for (std::size_t index = 0; index < fn.params.size() && abi < function->arg_size(); ++index) {
+            const Param &param = fn.params[index];
+            std::vector<ResultSlot> parts;
+            if (!fn.extern_c && tuple_parts_of(current_file_, param, parts)) {
+                std::vector<llvm::Value *> elems;
+                elems.reserve(parts.size());
+                for (std::size_t part = 0; part < parts.size() && abi < function->arg_size(); ++part) {
+                    llvm::Argument *arg = function->getArg(abi++);
+                    llvm::AllocaInst *slot = alloca_typed(arg->getType(), param.name.empty() ? "arg" : param.name);
+                    builder_.CreateStore(arg, slot);
+                    elems.push_back(slot);
+                }
+                if (!param.name.empty()) {
+                    Binding binding;
+                    binding.is_tuple = true;
+                    binding.tuple_parts = std::move(parts);
+                    binding.tuple_elems = std::move(elems);
+                    scopes_.back()[param.name] = binding;
+                    alias_capture(param.name, scopes_.back()[param.name]);
+                }
+                continue;
             }
-            ++index;
+            llvm::Argument *arg = function->getArg(abi++);
+            if (param.name.empty()) {
+                continue;
+            }
+            const Lowered low = lower_param(fn, index);
+            llvm::AllocaInst *slot = alloca_typed(stored_type(low), param.name);
+            builder_.CreateStore(arg, slot);
+            Binding binding;
+            binding.value = slot;
+            apply_low(binding, low);
+            scopes_.back()[param.name] = binding;
+            alias_capture(param.name, binding);
+            debug_declare(param.name, param.loc, binding, static_cast<unsigned>(index + 1));
         }
     }
     if (captures != nullptr) {
-        const unsigned base = static_cast<unsigned>(fn.params.size());
+        const unsigned caps = static_cast<unsigned>(fn.captures.size());
+        const unsigned base = function->arg_size() >= caps ? function->arg_size() - caps
+                                                           : static_cast<unsigned>(fn.params.size());
         for (std::size_t index = 0; index < fn.captures.size() && index < captures->size(); ++index) {
             const unsigned arg_index = base + static_cast<unsigned>(index);
             if (arg_index >= function->arg_size()) {
@@ -499,7 +528,7 @@ void CodeGen::emit_local_function(const FunctionDecl &fn) {
         local_fns_.insert_or_assign(&fn, found->second);
     }
     if (function != nullptr && !fn.captures.empty() &&
-        function->arg_size() != fn.params.size() + fn.captures.size()) {
+        function->arg_size() != expanded_arg_count(fn) + fn.captures.size()) {
         error(fn.loc, "not supported yet");
         return;
     }

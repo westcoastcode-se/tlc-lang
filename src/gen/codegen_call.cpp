@@ -5,6 +5,390 @@
 
 namespace tlc {
 
+TypedValue CodeGen::addr_tuple_elem(const Binding &binding, unsigned index) {
+    TypedValue slot;
+    if (index >= binding.tuple_elems.size() || index >= binding.tuple_parts.size() ||
+        binding.tuple_elems[index] == nullptr) {
+        return slot;
+    }
+    Binding elem;
+    elem.value = binding.tuple_elems[index];
+    apply_low(elem, lower_param_type(current_file_, param_from_slot(binding.tuple_parts[index])));
+    slot.value = elem.value;
+    slot.depth = elem.depth;
+    slot.elem_char = elem.elem_char;
+    slot.struct_id = elem.struct_id;
+    slot.is_array = elem.is_array;
+    slot.elem_void = elem.elem_void;
+    slot.elem_bool = elem.elem_bool;
+    slot.elem_bits = elem.elem_bits;
+    slot.elem_unsigned = elem.elem_unsigned;
+    slot.trait_id = elem.trait_id;
+    slot.elem_float = elem.elem_float;
+    slot.fn_ty = elem.fn_ty;
+    slot.fn_ret_depth = elem.fn_ret_depth;
+    slot.fn_ret_float = elem.fn_ret_float;
+    slot.fn_ret_bits = elem.fn_ret_bits;
+    slot.fn_ret_unsigned = elem.fn_ret_unsigned;
+    slot.fn_ret_char = elem.fn_ret_char;
+    slot.fn_ret_bool = elem.fn_ret_bool;
+    slot.fn_ret_struct = elem.fn_ret_struct;
+    slot.fn_results = std::move(elem.fn_results);
+    slot.enum_id = elem.enum_id;
+    slot.is_slice = elem.is_slice;
+    slot.elem_slice = elem.elem_slice;
+    slot.shells = std::move(elem.shells);
+    slot.array_len = elem.array_len;
+    slot.inner_array_len = elem.inner_array_len;
+    slot.ptr_to_array = elem.ptr_to_array;
+    slot.ptr_array_len = elem.ptr_array_len;
+    slot.is_tuple = elem.is_tuple;
+    slot.tuple_parts = std::move(elem.tuple_parts);
+    if (llvm::Type *object = object_type(elem.value); object != nullptr && object->isArrayTy()) {
+        slot.array_type = object;
+    }
+    return slot;
+}
+
+TypedValue CodeGen::load_tuple_elem(const Binding &binding, unsigned index) {
+    if (index >= binding.tuple_elems.size() || index >= binding.tuple_parts.size() ||
+        binding.tuple_elems[index] == nullptr) {
+        return {zero(), 0};
+    }
+    Binding elem;
+    elem.value = binding.tuple_elems[index];
+    apply_low(elem, lower_param_type(current_file_, param_from_slot(binding.tuple_parts[index])));
+    return value_of_binding(elem);
+}
+
+TypedValue CodeGen::materialize_tuple_param(const Binding &binding) {
+    TypedValue out;
+    if (binding.tuple_elems.empty() || terminated()) {
+        return out;
+    }
+    std::vector<llvm::Type *> types;
+    std::vector<llvm::Value *> fields;
+    const std::size_t count = std::min(binding.tuple_parts.size(), binding.tuple_elems.size());
+    types.reserve(count);
+    fields.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        const Lowered low = lower_result(current_file_, binding.tuple_parts[index]);
+        llvm::Type *stored = stored_type(low);
+        llvm::Value *slot = binding.tuple_elems[index];
+        llvm::Type *held = object_type(slot);
+        if (stored == nullptr || slot == nullptr || held == nullptr) {
+            fields.push_back(zero());
+            types.push_back(i32());
+            continue;
+        }
+        llvm::Value *loaded = builder_.CreateLoad(held, slot);
+        if (stored->isArrayTy() && loaded->getType()->isPointerTy()) {
+            // The argument is the address. The tuple value still holds the array.
+            llvm::Value *bits = array_bits(loaded, stored, {});
+            loaded = bits != nullptr ? bits : llvm::ConstantAggregateZero::get(stored);
+        } else if (loaded->getType() != stored) {
+            loaded = as_stored(loaded, low.depth, stored, low.elem_unsigned || low.elem_char);
+            if (loaded == nullptr || loaded->getType() != stored) {
+                loaded = llvm::Constant::getNullValue(stored);
+            }
+        }
+        fields.push_back(loaded);
+        types.push_back(stored);
+    }
+    if (fields.empty() || terminated()) {
+        return out;
+    }
+    llvm::StructType *aggregate_ty = llvm::StructType::get(context_, types);
+    llvm::Value *aggregate = llvm::UndefValue::get(aggregate_ty);
+    for (unsigned index = 0; index < fields.size(); ++index) {
+        aggregate = builder_.CreateInsertValue(aggregate, fields[index], index);
+    }
+    out.value = aggregate;
+    out.is_tuple = true;
+    out.tuple_parts = binding.tuple_parts;
+    return out;
+}
+
+namespace {
+
+bool element_fits(const TypedValue &value, llvm::Type *want) {
+    if (value.value == nullptr || want == nullptr) {
+        return false;
+    }
+    llvm::Type *got = value.value->getType();
+    if (got == want) {
+        return true;
+    }
+    if (want->isPointerTy() && got->isArrayTy()) {
+        return true;
+    }
+    if (want->isPointerTy() && got->isPointerTy() && (value.depth > 0 || value.array_type != nullptr)) {
+        return true;
+    }
+    if (want->isIntegerTy() && got->isIntegerTy()) {
+        return true;
+    }
+    if (want->isFloatingPointTy() && (got->isFloatingPointTy() || got->isIntegerTy())) {
+        return true;
+    }
+    if (want->isIntegerTy() && got->isFloatingPointTy()) {
+        return true;
+    }
+    if (want->isPointerTy() && got->isPointerTy()) {
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+void CodeGen::push_element(std::vector<llvm::Value *> &args, const TypedValue &value, llvm::Type *want, SourceLoc loc) {
+    if (want != nullptr && want->isPointerTy() && value.value != nullptr) {
+        if (value.value->getType()->isArrayTy()) {
+            llvm::AllocaInst *slot = alloca_typed(value.value->getType(), "tup.arg");
+            builder_.CreateStore(value.value, slot);
+            args.push_back(slot);
+            return;
+        }
+        if (value.value->getType()->isPointerTy() &&
+            (value.depth > 0 || (value.array_type != nullptr && value.array_type->isArrayTy()))) {
+            args.push_back(value.value);
+            return;
+        }
+    }
+    args.push_back(adapt(value, want, loc));
+}
+
+bool CodeGen::split_tuple_value(std::vector<llvm::Value *> &args, const TypedValue &value,
+                                const std::vector<ResultSlot> &parts, llvm::FunctionType *fty, unsigned &index,
+                                SourceLoc loc) {
+    if (value.value == nullptr || !value.value->getType()->isStructTy() || fty == nullptr) {
+        return false;
+    }
+    auto *struct_ty = llvm::cast<llvm::StructType>(value.value->getType());
+    if (struct_ty->getNumElements() != parts.size() || index + parts.size() > fty->getNumParams()) {
+        return false;
+    }
+    for (std::size_t part = 0; part < parts.size(); ++part) {
+        llvm::Value *field = builder_.CreateExtractValue(value.value, static_cast<unsigned>(part));
+        llvm::Type *want = fty->getParamType(index);
+        if (want != nullptr && want->isPointerTy() && field->getType()->isArrayTy()) {
+            llvm::AllocaInst *slot = alloca_typed(field->getType(), "tup.arg");
+            builder_.CreateStore(field, slot);
+            args.push_back(slot);
+        } else if (field->getType() == want) {
+            args.push_back(field);
+        } else {
+            const Lowered low = lower_result(current_file_, parts[part]);
+            TypedValue piece;
+            piece.value = field;
+            piece.depth = low.depth;
+            piece.elem_char = low.elem_char;
+            piece.elem_bool = low.elem_bool;
+            piece.elem_bits = low.elem_bits;
+            piece.elem_unsigned = low.elem_unsigned;
+            piece.elem_float = low.elem_float;
+            piece.struct_id = low.struct_id;
+            piece.is_slice = low.is_slice;
+            piece.is_tuple = low.is_tuple;
+            piece.tuple_parts = low.tuple_parts;
+            piece.array_len = low.array_len;
+            push_element(args, piece, want, loc);
+        }
+        ++index;
+    }
+    return true;
+}
+
+bool CodeGen::expand_tuple_arg(std::vector<llvm::Value *> &args, const Expr &expr, const std::vector<ResultSlot> &parts,
+                               llvm::FunctionType *fty, unsigned &index, SourceLoc loc) {
+    if (fty == nullptr || parts.empty() || index + parts.size() > fty->getNumParams()) {
+        return false;
+    }
+    for (std::size_t part = 0; part < parts.size(); ++part) {
+        llvm::Type *want = stored_type(lower_param_type(current_file_, param_from_slot(parts[part])));
+        if (fty->getParamType(index + static_cast<unsigned>(part)) != want) {
+            return false;
+        }
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        if (const Binding *binding = lookup(named->text);
+            binding != nullptr && binding->tuple_elems.size() == parts.size()) {
+            for (std::size_t part = 0; part < parts.size(); ++part) {
+                push_element(args, load_tuple_elem(*binding, static_cast<unsigned>(part)), fty->getParamType(index),
+                             loc);
+                ++index;
+            }
+            return true;
+        }
+    }
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data);
+        init != nullptr && init->is_tuple && init->elements.size() == parts.size()) {
+        for (std::size_t part = 0; part < parts.size(); ++part) {
+            const Expr *element = init->elements[part].get();
+            const TypedValue value = element == nullptr ? TypedValue{} : emit_rvalue(*element);
+            push_element(args, value, fty->getParamType(index), loc);
+            ++index;
+        }
+        return true;
+    }
+    if (addressable(expr)) {
+        const TypedValue addr = emit_addr(expr);
+        llvm::Type *object = addr.value == nullptr ? nullptr : object_type(addr.value);
+        auto *aggregate = llvm::dyn_cast_or_null<llvm::StructType>(object);
+        if (addr.is_tuple && aggregate != nullptr && aggregate->getNumElements() == parts.size()) {
+            for (std::size_t part = 0; part < parts.size(); ++part) {
+                llvm::Value *field = builder_.CreateInBoundsGEP(
+                    aggregate, addr.value,
+                    llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(static_cast<int>(part))});
+                llvm::Type *field_ty = aggregate->getElementType(static_cast<unsigned>(part));
+                llvm::Type *want = fty->getParamType(index);
+                if (want != nullptr && want->isPointerTy() && field_ty->isArrayTy()) {
+                    args.push_back(field);
+                } else {
+                    llvm::Value *loaded = builder_.CreateLoad(field_ty, field);
+                    const Lowered low = lower_result(current_file_, parts[part]);
+                    TypedValue piece;
+                    piece.value = loaded;
+                    piece.depth = low.depth;
+                    piece.elem_char = low.elem_char;
+                    piece.elem_bool = low.elem_bool;
+                    piece.elem_bits = low.elem_bits;
+                    piece.elem_unsigned = low.elem_unsigned;
+                    piece.elem_float = low.elem_float;
+                    piece.struct_id = low.struct_id;
+                    piece.is_slice = low.is_slice;
+                    piece.is_tuple = low.is_tuple;
+                    piece.tuple_parts = low.tuple_parts;
+                    if (loaded->getType() == want) {
+                        args.push_back(loaded);
+                    } else {
+                        push_element(args, piece, want, loc);
+                    }
+                }
+                ++index;
+            }
+            return true;
+        }
+    }
+    const TypedValue value = emit_rvalue(expr);
+    if (split_tuple_value(args, value, parts, fty, index, loc)) {
+        return true;
+    }
+    // The elements were checked against this callee. A value that is not that tuple
+    // still consumes one slot per element so the call stays aligned.
+    for (std::size_t part = 0; part < parts.size(); ++part) {
+        args.push_back(llvm::Constant::getNullValue(fty->getParamType(index)));
+        ++index;
+    }
+    error(loc, "type mismatch");
+    return true;
+}
+
+void CodeGen::push_call_args(std::vector<llvm::Value *> &args, const std::vector<std::unique_ptr<Expr>> &exprs,
+                             const FunctionDecl *decl, llvm::FunctionType *fty, unsigned &index, SourceLoc loc,
+                             bool variadic) {
+    // The receiver, when there is one, is already in `args`. It occupies one LLVM argument,
+    // so `index` is also the index of the next TLC parameter.
+    const std::size_t param_base = index;
+    for (std::size_t arg_index = 0; arg_index < exprs.size(); ++arg_index) {
+        const Expr *expr = exprs[arg_index].get();
+        const bool past = fty != nullptr && index >= fty->getNumParams();
+        const std::size_t param_index = param_base + arg_index;
+        std::vector<ResultSlot> parts;
+        if (!past && decl != nullptr && !decl->extern_c && param_index < decl->params.size() && expr != nullptr &&
+            tuple_parts_of(current_file_, decl->params[param_index], parts) &&
+            expand_tuple_arg(args, *expr, parts, fty, index, loc)) {
+            continue;
+        }
+        if (!past && expr != nullptr && fty != nullptr) {
+            if (const auto *init = std::get_if<Expr::Init>(&expr->data);
+                init != nullptr && init->is_tuple && !init->elements.empty() &&
+                index + init->elements.size() <= fty->getNumParams()) {
+                std::vector<TypedValue> elements;
+                elements.reserve(init->elements.size());
+                bool fit = true;
+                for (const auto &element : init->elements) {
+                    elements.push_back(element == nullptr ? TypedValue{} : emit_rvalue(*element));
+                    if (!element_fits(elements.back(), fty->getParamType(index + static_cast<unsigned>(elements.size() - 1)))) {
+                        fit = false;
+                    }
+                }
+                if (fit) {
+                    for (const TypedValue &element : elements) {
+                        push_element(args, element, fty->getParamType(index), loc);
+                        ++index;
+                    }
+                    continue;
+                }
+                // The elements are already evaluated. A callee that still wants the
+                // whole tuple gets that struct, including an array copied from its address.
+                std::vector<llvm::Type *> types;
+                std::vector<llvm::Value *> fields;
+                types.reserve(elements.size());
+                fields.reserve(elements.size());
+                for (const TypedValue &element : elements) {
+                    llvm::Value *field = element.value == nullptr ? zero() : element.value;
+                    fields.push_back(field);
+                    types.push_back(field->getType());
+                }
+                llvm::StructType *aggregate_ty = llvm::StructType::get(context_, types);
+                llvm::Value *aggregate = llvm::ConstantAggregateZero::get(aggregate_ty);
+                for (unsigned field = 0; field < fields.size(); ++field) {
+                    aggregate = builder_.CreateInsertValue(aggregate, fields[field], field);
+                }
+                TypedValue packed;
+                packed.value = aggregate;
+                packed.is_tuple = true;
+                llvm::Type *slot = fty->getParamType(index);
+                args.push_back(adapt(packed, slot, loc));
+                ++index;
+                continue;
+            }
+        }
+        TypedValue value = expr == nullptr ? TypedValue{} : emit_rvalue(*expr);
+        if (!past && value.is_tuple && !value.tuple_parts.empty() && value.value != nullptr && fty != nullptr &&
+            index < fty->getNumParams() && fty->getParamType(index) != value.value->getType() &&
+            split_tuple_value(args, value, value.tuple_parts, fty, index, loc)) {
+            continue;
+        }
+        llvm::Type *slot = !past && fty != nullptr && index < fty->getNumParams() ? fty->getParamType(index) : nullptr;
+        llvm::Value *stored = adapt(value, slot, loc);
+        if (past && variadic) {
+            if (value.is_slice && stored != nullptr && stored->getType() == slice_type()) {
+                stored = builder_.CreateExtractValue(stored, 0);
+            }
+            TypedValue widened = value;
+            widened.value = stored;
+            stored = variadic_arg(widened);
+        }
+        args.push_back(stored);
+        ++index;
+    }
+}
+
+void CodeGen::push_call_values(std::vector<llvm::Value *> &args, const std::vector<TypedValue> &values,
+                               const FunctionDecl *decl, llvm::FunctionType *fty, unsigned &index, SourceLoc loc) {
+    for (std::size_t arg_index = 0; arg_index < values.size(); ++arg_index) {
+        const TypedValue &value = values[arg_index];
+        std::vector<ResultSlot> parts;
+        if (decl != nullptr && !decl->extern_c && arg_index < decl->params.size() && fty != nullptr &&
+            index < fty->getNumParams() && tuple_parts_of(current_file_, decl->params[arg_index], parts)) {
+            bool match = index + parts.size() <= fty->getNumParams();
+            for (std::size_t part = 0; match && part < parts.size(); ++part) {
+                llvm::Type *want = stored_type(lower_param_type(current_file_, param_from_slot(parts[part])));
+                match = fty->getParamType(index + static_cast<unsigned>(part)) == want;
+            }
+            if (match && split_tuple_value(args, value, parts, fty, index, loc)) {
+                continue;
+            }
+        }
+        llvm::Type *slot = fty != nullptr && index < fty->getNumParams() ? fty->getParamType(index) : nullptr;
+        args.push_back(adapt(value, slot, loc));
+        ++index;
+    }
+}
+
 std::vector<llvm::Value *> CodeGen::pack_extern_args(llvm::Function *function, const ExternLayout &layout,
                                                        const std::vector<TypedValue> &sources, PreparedCall &prepared) {
     std::vector<llvm::Value *> args;
@@ -177,14 +561,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             args.reserve(node.args.size() + 1);
             args.push_back(receiver_arg);
             unsigned index = 1;
-            for (const auto &arg : node.args) {
-                const TypedValue value = emit_rvalue(*arg);
-                llvm::Type *param = index < function->getFunctionType()->getNumParams()
-                                        ? function->getFunctionType()->getParamType(index)
-                                        : nullptr;
-                args.push_back(adapt(value, param, node.loc));
-                ++index;
-            }
+            push_call_args(args, node.args, method->decl, function->getFunctionType(), index, node.loc, false);
             remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
                      method->elem_bool, method->elem_bits, method->elem_unsigned);
             prepared.decl = method->decl;
@@ -208,14 +585,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                     std::vector<llvm::Value *> args;
                     args.reserve(node.args.size());
                     unsigned index = 0;
-                    for (const auto &arg : node.args) {
-                        const TypedValue value = emit_rvalue(*arg);
-                        llvm::Type *param = index < function->getFunctionType()->getNumParams()
-                                                ? function->getFunctionType()->getParamType(index)
-                                                : nullptr;
-                        args.push_back(adapt(value, param, node.loc));
-                        ++index;
-                    }
+                    push_call_args(args, node.args, method->decl, function->getFunctionType(), index, node.loc, false);
                     remember(function, std::move(args), method->depth, method->elem_char, method->struct_id,
                              method->elem_void, method->elem_bool, method->elem_bits, method->elem_unsigned);
                     prepared.decl = method->decl;
@@ -272,14 +642,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 std::vector<llvm::Value *> args;
                 args.reserve(node.args.size());
                 unsigned index = 0;
-                for (const auto &arg : node.args) {
-                    const TypedValue value = emit_rvalue(*arg);
-                    llvm::Type *param = index < function->getFunctionType()->getNumParams()
-                                            ? function->getFunctionType()->getParamType(index)
-                                            : nullptr;
-                    args.push_back(adapt(value, param, node.loc));
-                    ++index;
-                }
+                push_call_args(args, node.args, method->decl, function->getFunctionType(), index, node.loc, false);
                 remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
                          method->elem_bool, method->elem_bits, method->elem_unsigned);
                 prepared.decl = method->decl;
@@ -345,14 +708,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 args.reserve(node.args.size() + 1);
                 args.push_back(receiver_arg);
                 unsigned index = 1;
-                for (const auto &arg : node.args) {
-                    const TypedValue value = emit_rvalue(*arg);
-                    llvm::Type *param = index < function->getFunctionType()->getNumParams()
-                                            ? function->getFunctionType()->getParamType(index)
-                                            : nullptr;
-                    args.push_back(adapt(value, param, node.loc));
-                    ++index;
-                }
+                push_call_args(args, node.args, method->decl, function->getFunctionType(), index, node.loc, false);
                 remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
                          method->elem_bool, method->elem_bits, method->elem_unsigned);
                 prepared.decl = method->decl;
@@ -412,14 +768,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 args.reserve(node.args.size() + 1);
                 args.push_back(receiver_arg);
                 unsigned index = 1;
-                for (const auto &arg : node.args) {
-                    const TypedValue value = emit_rvalue(*arg);
-                    llvm::Type *param = index < function->getFunctionType()->getNumParams()
-                                            ? function->getFunctionType()->getParamType(index)
-                                            : nullptr;
-                    args.push_back(adapt(value, param, node.loc));
-                    ++index;
-                }
+                push_call_args(args, node.args, method->decl, function->getFunctionType(), index, node.loc, false);
                 remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
                          method->elem_bool, method->elem_bits, method->elem_unsigned);
                 prepared.decl = method->decl;
@@ -515,13 +864,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                         std::vector<llvm::Value *> args;
                         args.reserve(node.args.size());
                         unsigned index = 0;
-                        for (const auto &arg : node.args) {
-                            const TypedValue value = emit_rvalue(*arg);
-                            llvm::Type *param = index < field.fn_ty->getNumParams() ? field.fn_ty->getParamType(index)
-                                                                                    : nullptr;
-                            args.push_back(adapt(value, param, node.loc));
-                            ++index;
-                        }
+                        push_call_args(args, node.args, nullptr, field.fn_ty, index, node.loc, false);
                         prepared.indirect = field.value;
                         prepared.fn_ty = field.fn_ty;
                         prepared.args = std::move(args);
@@ -565,14 +908,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             args.reserve(node.args.size() + 1);
             args.push_back(receiver_arg);
             unsigned index = 1;
-            for (const auto &arg : node.args) {
-                const TypedValue value = emit_rvalue(*arg);
-                llvm::Type *param = index < function->getFunctionType()->getNumParams()
-                                        ? function->getFunctionType()->getParamType(index)
-                                        : nullptr;
-                args.push_back(adapt(value, param, node.loc));
-                ++index;
-            }
+            push_call_args(args, node.args, method->decl, function->getFunctionType(), index, node.loc, false);
             remember(function, std::move(args), method->depth, method->elem_char, method->struct_id, method->elem_void,
                      method->elem_bool, method->elem_bits, method->elem_unsigned);
             prepared.decl = method->decl;
@@ -598,12 +934,8 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         std::vector<llvm::Value *> args;
         args.reserve(node.args.size());
         unsigned index = 0;
-        for (const auto &arg : node.args) {
-            const TypedValue value = emit_rvalue(*arg);
-            llvm::Type *param = index < callee.fn_ty->getNumParams() ? callee.fn_ty->getParamType(index) : nullptr;
-            args.push_back(adapt(value, param, node.loc));
-            ++index;
-        }
+        // The value is the pointer, not the function. Its TLC parameters are not on `decl`.
+        push_call_args(args, node.args, nullptr, callee.fn_ty, index, node.loc, false);
         prepared.indirect = callee.value;
         prepared.fn_ty = callee.fn_ty;
         prepared.args = std::move(args);
@@ -637,24 +969,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
     std::vector<llvm::Value *> args;
     args.reserve(node.args.size());
     unsigned index = 0;
-    for (const auto &arg : node.args) {
-        const TypedValue value = emit_rvalue(*arg);
-        llvm::Type *param = index < function->getFunctionType()->getNumParams()
-                                ? function->getFunctionType()->getParamType(index)
-                                : nullptr;
-        llvm::Value *stored = adapt(value, param, node.loc);
-        if (param == nullptr && function->isVarArg()) {
-            // A slice in a C variadic slot passes the address, not the header.
-            if (value.is_slice && stored != nullptr && stored->getType() == slice_type()) {
-                stored = builder_.CreateExtractValue(stored, 0);
-            }
-            TypedValue widened = value;
-            widened.value = stored;
-            stored = variadic_arg(widened);
-        }
-        args.push_back(stored);
-        ++index;
-    }
+    push_call_args(args, node.args, prepared.decl, function->getFunctionType(), index, node.loc, function->isVarArg());
     append_captures(prepared.decl, args, node.loc);
     if (prepared.decl != nullptr && !prepared.decl->captures.empty() && !function->isVarArg() &&
         args.size() != function->arg_size()) {
@@ -1193,13 +1508,7 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
     out_args.clear();
     out_args.reserve(arg_values.size());
     unsigned index = 0;
-    for (const TypedValue &value : arg_values) {
-        llvm::Type *param = index < function->getFunctionType()->getNumParams()
-                                ? function->getFunctionType()->getParamType(index)
-                                : nullptr;
-        out_args.push_back(adapt(value, param, loc));
-        ++index;
-    }
+    push_call_values(out_args, arg_values, &fn, function->getFunctionType(), index, loc);
     return function;
 }
 
@@ -1245,16 +1554,7 @@ void CodeGen::call_trait_fn(llvm::Value *fnptr, const TypedValue &meta, const Ex
     std::vector<llvm::Value *> args;
     args.reserve(node.args.size());
     unsigned index = 0;
-    for (const auto &arg : node.args) {
-        if (arg == nullptr) {
-            ++index;
-            continue;
-        }
-        const TypedValue value = emit_rvalue(*arg);
-        llvm::Type *param = index < meta.fn_ty->getNumParams() ? meta.fn_ty->getParamType(index) : nullptr;
-        args.push_back(adapt(value, param, node.loc));
-        ++index;
-    }
+    push_call_args(args, node.args, nullptr, meta.fn_ty, index, node.loc, false);
     prepared.indirect = fnptr;
     prepared.fn_ty = meta.fn_ty;
     prepared.args = std::move(args);
@@ -1507,14 +1807,7 @@ bool CodeGen::emit_iter_call(const Expr::Call &node, const Expr::Selector &selec
         args.reserve(node.args.size() + 1);
         args.push_back(receiver);
         unsigned arg_index = 1;
-        for (const auto &arg : node.args) {
-            const TypedValue value = emit_rvalue(*arg);
-            llvm::Type *param_ty = arg_index < function->getFunctionType()->getNumParams()
-                                       ? function->getFunctionType()->getParamType(arg_index)
-                                       : nullptr;
-            args.push_back(adapt(value, param_ty, node.loc));
-            ++arg_index;
-        }
+        push_call_args(args, node.args, method->decl, function->getFunctionType(), arg_index, node.loc, false);
         prepared.function = function;
         prepared.args = std::move(args);
         prepared.depth = method->depth;

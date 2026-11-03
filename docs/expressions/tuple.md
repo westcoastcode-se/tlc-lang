@@ -160,6 +160,14 @@ The compiler reports `var n One = (40)` as `type mismatch`.
 
 `func ((i32, i32)) i32` is one tuple parameter.
 
+The elements are passed as separate arguments.
+
+An array element is passed as its address, the same way an array parameter is, so a write through that element changes the caller's array.
+
+A nested tuple stays one argument.
+
+`extern(abi="c")` passes the tuple as one value.
+
 `var op func ((i32, i32)) i32 = take` stores `take` when `take` takes `(i32, i32)`, and `op((40, 2))` calls it.
 
 The compiler reports `op(40, 2)` as `argument count`.

@@ -207,7 +207,7 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
     std::vector<llvm::Type *> params;
     params.reserve(fn.params.size());
     for (const Param &param : fn.params) {
-        params.push_back(stored_type(lower_param_type(file, param)));
+        append_param_types(params, file, param, !fn.extern_c);
     }
     return llvm::FunctionType::get(ret, params, fn.variadic);
 }
@@ -1073,7 +1073,25 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
                      slice ? part.array_len : 0, parameter, part.elem_slice, part.shells);
     };
     for (const FnParam &param : params) {
-        args.push_back(stored_type(lower_part(lower_part, param, true)));
+        const bool blocked = param.indirections != 0 || param.is_array ||
+                             (!param.shells.empty() && (param.shells.front().kind == TypeShell::Kind::Pointer ||
+                                                        param.shells.front().kind == TypeShell::Kind::Array ||
+                                                        param.shells.front().kind == TypeShell::Kind::Slice));
+        // One level. A nested tuple, and a tuple alias used as an element, stay one struct.
+        if (!blocked && param.is_tuple && !param.results.empty()) {
+            for (const FnParam &inner : param.results) {
+                args.push_back(stored_type(lower_part(lower_part, inner, true)));
+            }
+            continue;
+        }
+        const Lowered one = lower_part(lower_part, param, true);
+        if (!blocked && one.is_tuple && !one.tuple_parts.empty()) {
+            for (const ResultSlot &slot : one.tuple_parts) {
+                args.push_back(stored_type(lower_param_type(file, param_from_slot(slot))));
+            }
+            continue;
+        }
+        args.push_back(stored_type(one));
     }
     Lowered out;
     out.depth = fn_depth < 1 ? 1 : fn_depth;
@@ -1158,6 +1176,61 @@ CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) co
     }
     return lower(file, param.type_name, param.type_package, param.is_struct, param.indirections, param.is_array,
                  param.array_len, true, param.elem_slice, param.shells);
+}
+
+bool CodeGen::tuple_parts_of(uint32_t file, const Param &param, std::vector<ResultSlot> &parts) const {
+    parts.clear();
+    if (param.is_fn_ptr || param.indirections != 0 || param.is_array) {
+        return false;
+    }
+    if (!param.shells.empty()) {
+        const TypeShell::Kind kind = param.shells.front().kind;
+        if (kind == TypeShell::Kind::Pointer || kind == TypeShell::Kind::Array || kind == TypeShell::Kind::Slice) {
+            return false;
+        }
+    }
+    if (param.is_tuple) {
+        if (param.tuple_parts.empty()) {
+            return false;
+        }
+        parts = param.tuple_parts;
+        return true;
+    }
+    // `type Duo (i32, i32)`. The name is the tuple. A nested use of Duo is not this parameter.
+    const Lowered low = lower(file, param.type_name, param.type_package, param.is_struct, 0, false, 0, false,
+                              param.elem_slice, param.shells);
+    if (!low.is_tuple || low.tuple_parts.empty()) {
+        return false;
+    }
+    parts = low.tuple_parts;
+    return true;
+}
+
+void CodeGen::append_param_types(std::vector<llvm::Type *> &out, uint32_t file, const Param &param,
+                                 bool expand) const {
+    std::vector<ResultSlot> parts;
+    if (expand && tuple_parts_of(file, param, parts)) {
+        for (const ResultSlot &slot : parts) {
+            llvm::Type *type = stored_type(lower_param_type(file, param_from_slot(slot)));
+            out.push_back(type == nullptr ? i32() : type);
+        }
+        return;
+    }
+    llvm::Type *type = stored_type(lower_param_type(file, param));
+    out.push_back(type == nullptr ? i32() : type);
+}
+
+unsigned CodeGen::expanded_arg_count(const FunctionDecl &fn) const {
+    unsigned count = 0;
+    std::vector<ResultSlot> parts;
+    for (const Param &param : fn.params) {
+        if (!fn.extern_c && tuple_parts_of(current_file_, param, parts)) {
+            count += static_cast<unsigned>(parts.size());
+        } else {
+            ++count;
+        }
+    }
+    return count;
 }
 
 std::optional<CodeGen::Lowered> CodeGen::lower_array_literal(uint32_t file, const Expr::Init &item) const {

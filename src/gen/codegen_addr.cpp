@@ -12,6 +12,23 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             error(name->loc, "not an lvalue");
             return {};
         }
+        // A tuple parameter has one slot per element. The whole value is a copy.
+        if (binding->is_tuple && !binding->tuple_elems.empty()) {
+            if (terminated()) {
+                return {};
+            }
+            const TypedValue made = materialize_tuple_param(*binding);
+            if (made.value == nullptr || terminated()) {
+                return {};
+            }
+            llvm::AllocaInst *slot = alloca_typed(made.value->getType(), name->text);
+            builder_.CreateStore(made.value, slot);
+            TypedValue out;
+            out.value = slot;
+            out.is_tuple = true;
+            out.tuple_parts = binding->tuple_parts;
+            return out;
+        }
         // `copy = row` stores into this array. The address is the binding, not a decayed pointer.
         if (binding->is_array) {
             TypedValue slot{binding->value, binding->depth, binding->elem_char, binding->struct_id, true,
@@ -89,6 +106,14 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             // `box.value[0]` is the same field inside a struct, not only a bare name.
             const auto *named = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
             const Binding *binding = named == nullptr ? nullptr : lookup(named->text);
+            if (binding != nullptr && !binding->tuple_elems.empty()) {
+                const int part = index->tuple_index;
+                if (part < 0 || static_cast<std::size_t>(part) >= binding->tuple_elems.size()) {
+                    error(index->loc, "not an lvalue");
+                    return {};
+                }
+                return addr_tuple_elem(*binding, static_cast<unsigned>(part));
+            }
             llvm::Value *aggregate_ptr = nullptr;
             llvm::StructType *aggregate = nullptr;
             std::vector<ResultSlot> parts;
