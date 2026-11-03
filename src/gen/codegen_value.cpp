@@ -329,9 +329,69 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
                     }
-                    // A folded condition runs one arm. The other arm is typechecked and not run.
+                    // Width and sign follow the common integer type, not one arm.
+                    // `i32` and `u32` are `u32`. A wider arm makes the result that wide.
+                    auto int_width = [](const TypedValue &v) -> int {
+                        if (v.value == nullptr || v.elem_float || v.elem_bool || v.depth != 0 || v.struct_id >= 0 ||
+                            !v.value->getType()->isIntegerTy()) {
+                            return 0;
+                        }
+                        const unsigned width = v.value->getType()->getIntegerBitWidth();
+                        if (width >= 64) {
+                            return 64;
+                        }
+                        if (width == 16) {
+                            return 16;
+                        }
+                        if (width == 8) {
+                            return 8;
+                        }
+                        if (width == 32) {
+                            return 32;
+                        }
+                        return 0;
+                    };
+                    auto common_int = [&](const TypedValue &lhs, const TypedValue &rhs, int &bits, bool &uns) -> bool {
+                        const int left = int_width(lhs);
+                        const int right = int_width(rhs);
+                        if (left == 0 || right == 0) {
+                            return false;
+                        }
+                        if (lhs.elem_unsigned == rhs.elem_unsigned) {
+                            bits = left > right ? left : right;
+                            uns = lhs.elem_unsigned;
+                            return true;
+                        }
+                        const int unsigned_bits = lhs.elem_unsigned ? left : right;
+                        const int signed_bits = lhs.elem_unsigned ? right : left;
+                        const bool unsigned_wins = unsigned_bits >= signed_bits;
+                        bits = unsigned_wins ? unsigned_bits : signed_bits;
+                        uns = unsigned_wins;
+                        return true;
+                    };
+                    auto report_bits = [](int bits, bool uns) -> int { return bits == 32 && !uns ? 0 : bits; };
+                    // A folded condition runs one arm. The other arm is emitted where it cannot run,
+                    // so the result still has the common width and sign.
                     if (const std::optional<int32_t> folded = fold(*node.lhs)) {
-                        return emit_rvalue(*(*folded != 0 ? node.mid : node.rhs));
+                        const Expr *taken = *folded != 0 ? node.mid.get() : node.rhs.get();
+                        const Expr *other = *folded != 0 ? node.rhs.get() : node.mid.get();
+                        llvm::BasicBlock *dead = llvm::BasicBlock::Create(context_, "tern.dead", function_);
+                        llvm::BasicBlock *saved = builder_.GetInsertBlock();
+                        builder_.SetInsertPoint(dead);
+                        const TypedValue other_value = emit_rvalue(*other);
+                        if (!terminated()) {
+                            builder_.CreateUnreachable();
+                        }
+                        builder_.SetInsertPoint(saved);
+                        TypedValue taken_value = emit_rvalue(*taken);
+                        int bits = 0;
+                        bool uns = false;
+                        if (common_int(taken_value, other_value, bits, uns) && taken_value.value != nullptr) {
+                            taken_value.value = resize_int(taken_value.value, bits_type(bits), taken_value.elem_unsigned);
+                            taken_value.elem_bits = report_bits(bits, uns);
+                            taken_value.elem_unsigned = uns;
+                        }
+                        return taken_value;
                     }
                     llvm::BasicBlock *then_block = llvm::BasicBlock::Create(context_, "tern.then", function_);
                     llvm::BasicBlock *else_block = llvm::BasicBlock::Create(context_, "tern.else", function_);
@@ -363,14 +423,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                                                                                   : else_value;
                     llvm::Value *then_bit = then_reaches ? then_value.value : nullptr;
                     llvm::Value *else_bit = else_reaches ? else_value.value : nullptr;
-                    if (then_bit != nullptr && else_bit != nullptr && then_bit->getType() != else_bit->getType() &&
-                        then_bit->getType()->isIntegerTy() && else_bit->getType()->isIntegerTy()) {
-                        llvm::Type *wider = then_bit->getType()->getIntegerBitWidth() >=
-                                                    else_bit->getType()->getIntegerBitWidth()
-                                                ? then_bit->getType()
-                                                : else_bit->getType();
-                        then_bit = resize_int(then_bit, wider, then_value.elem_unsigned);
-                        else_bit = resize_int(else_bit, wider, else_value.elem_unsigned);
+                    int common_bits = 0;
+                    bool common_uns = false;
+                    const bool have_common = common_int(then_value, else_value, common_bits, common_uns);
+                    if (have_common) {
+                        llvm::Type *common_ty = bits_type(common_bits);
+                        if (then_bit != nullptr) {
+                            then_bit = resize_int(then_bit, common_ty, then_value.elem_unsigned);
+                        }
+                        if (else_bit != nullptr) {
+                            else_bit = resize_int(else_bit, common_ty, else_value.elem_unsigned);
+                        }
                     }
                     if ((then_bit != nullptr && else_bit != nullptr && then_bit->getType() != else_bit->getType()) ||
                         (then_bit == nullptr && else_bit == nullptr)) {
@@ -392,8 +455,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             false,
                             false,
                             meta.elem_bool,
-                            meta.elem_bits,
-                            meta.elem_unsigned,
+                            have_common ? report_bits(common_bits, common_uns) : meta.elem_bits,
+                            have_common ? common_uns : meta.elem_unsigned,
                             meta.trait_id,
                             meta.elem_float};
                 }

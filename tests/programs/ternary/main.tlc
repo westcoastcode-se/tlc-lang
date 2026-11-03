@@ -64,5 +64,26 @@ func main() i32 {
     if (chosen != null) {
         return 12;
     }
+    var flag_wide = false;
+    var wide i64 = 3000000000i64;
+    var mixed = flag_wide ? 1 : wide;
+    if (mixed != wide) {
+        return 13;
+    }
+    var flag_sign = true;
+    var bits i64 = flag_sign ? -1 : 1u32;
+    if (bits < 0) {
+        return 14;
+    }
+    const folded = true;
+    var folded_bits i64 = folded ? -1 : 1u32;
+    if (folded_bits < 0) {
+        return 15;
+    }
+    const folded_wide = false;
+    var from_wide = folded_wide ? 1 : wide;
+    if (from_wide != wide) {
+        return 16;
+    }
     return 42;
 }
