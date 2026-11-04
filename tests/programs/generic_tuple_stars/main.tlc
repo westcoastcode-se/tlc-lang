@@ -1,0 +1,49 @@
+func id[T type](value ***const T) i32 {
+    return (***value)[0] + (***value)[1];
+}
+
+func deep[T type](value ****T) i32 {
+    return (****value)[0] + (****value)[1];
+}
+
+func read[T type](value ?***T) i32 {
+    var q ?***T = value;
+    if (q == null) {
+        return 0;
+    }
+    return (***q)[0] + (***q)[1];
+}
+
+type Box[T type] struct {
+    p ***const T;
+};
+
+func through[T type](value ***const T) i32 {
+    var box Box[T] = {.p = value};
+    return (***box.p)[0] + (***box.p)[1];
+}
+
+func give[T type](value ***const T) ***const T {
+    return value;
+}
+
+func main() i32 {
+    var row = (40, 2);
+    var p = &row;
+    var pp = &p;
+    if (id(&pp) != 42) {
+        return 1;
+    }
+    var ppp = &pp;
+    if (deep(&ppp) != 42) {
+        return 2;
+    }
+    if (read(&pp) != 42) {
+        return 3;
+    }
+    if (through(&pp) != 42) {
+        return 4;
+    }
+    var back = give(&pp);
+    return (***back)[0] + (***back)[1];
+}
