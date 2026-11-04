@@ -181,6 +181,57 @@ bool stamp_outer_tuple_arrays(ResultSlot &slot, const SpecArg &pack) {
     return true;
 }
 
+// Any number of stars around a tuple. Bit `i` of `optional` and `const_pointee` marks
+// star `i`, in the order the parser writes them. A plain tuple keeps those flags.
+// An array of tuples becomes one pointer shell per star, then each array. A slice stays out.
+bool stamp_tuple_stars(ResultSlot &slot, const SpecArg &pack) {
+    if (!pack.is_pack || pack.parts.empty() || slot.indirections < 1) {
+        return false;
+    }
+    for (const TypeShell &shell : pack.shells) {
+        if (shell.kind == TypeShell::Kind::Slice) {
+            return false;
+        }
+    }
+    if ((pack.is_array || !pack.shells.empty()) && !tuple_array_pack(pack)) {
+        return false;
+    }
+    const int stars = slot.indirections;
+    const uint32_t optional = slot.optional;
+    const uint32_t const_bits = slot.const_pointee;
+    slot.is_tuple = true;
+    slot.type_name.clear();
+    slot.tuple_parts.clear();
+    for (const SpecArg &part : pack.parts) {
+        slot.tuple_parts.push_back(slot_from_spec(part));
+    }
+    if (!tuple_array_pack(pack)) {
+        return true;
+    }
+    slot.is_array = false;
+    slot.array_len = 0;
+    slot.indirections = 0;
+    slot.optional = 0;
+    slot.const_pointee = 0;
+    slot.shells.clear();
+    for (int star = 0; star < stars; ++star) {
+        TypeShell shell;
+        shell.kind = TypeShell::Kind::Pointer;
+        shell.optional = (optional & (1u << static_cast<unsigned>(star))) != 0;
+        shell.const_pointee = (const_bits & (1u << static_cast<unsigned>(star))) != 0;
+        slot.shells.push_back(shell);
+    }
+    if (!pack.shells.empty()) {
+        slot.shells.insert(slot.shells.end(), pack.shells.begin(), pack.shells.end());
+    } else {
+        TypeShell shell;
+        shell.kind = TypeShell::Kind::Array;
+        shell.length = pack.array_len;
+        slot.shells.push_back(shell);
+    }
+    return true;
+}
+
 // `*T` when `T` is `[2](i32, i32)`. The star is the first shell. Each array of `T` follows.
 // A slice stays out. `?*T`, `*const T`, and `**T` are not this form.
 bool stamp_star_tuple_array(ResultSlot &slot, const SpecArg &pack) {
@@ -2238,9 +2289,21 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
             return;
         }
     }
-    // `var q ?*T` when `T` is a tuple. An array of tuples keeps every array after the star.
-    if (slot.indirections == 1 && slot.optional != 0 && slot.const_pointee == 0 && !slot.is_array && slot.shells.empty() &&
-        slot.type_package.empty() && slot.type_args.empty() && !slot.is_fn_ptr && !slot.is_tuple) {
+    // Any number of stars around a tuple. `?*T`, `**const T`, and `***const T` are the same loop.
+    if (!slot.is_array && slot.shells.empty() && slot.type_package.empty() && slot.type_args.empty() &&
+        !slot.is_fn_ptr && !slot.is_tuple && slot.indirections >= 1) {
+        if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
+            if (!stamp_tuple_stars(slot, *bound)) {
+                error(loc, "not supported yet");
+                slot.type_name = "invalid";
+            }
+            return;
+        }
+    }
+    // `(T, i32)` when `T` is `(i32, i32)`. The element becomes that tuple.
+    // `T` when `T` is `[2](i32, i32)` keeps every array shell.
+    if (slot.type_package.empty() && !slot.is_array && slot.type_args.empty() && slot.shells.empty() &&
+        slot.optional == 0 && slot.const_pointee == 0 && slot.indirections == 0) {
         if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
             if (bound->parts.empty()) {
                 error(loc, "not supported yet");
@@ -2248,39 +2311,6 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
                 return;
             }
             if (tuple_array_pack(*bound)) {
-                if (!stamp_star_tuple_array(slot, *bound)) {
-                    error(loc, "not supported yet");
-                    slot.type_name = "invalid";
-                    return;
-                }
-                slot.shells.front().optional = true;
-                return;
-            }
-            if (bound->is_array || !bound->shells.empty()) {
-                error(loc, "not supported yet");
-                slot.type_name = "invalid";
-                return;
-            }
-            slot.is_tuple = true;
-            slot.type_name.clear();
-            slot.tuple_parts.clear();
-            for (const SpecArg &part : bound->parts) {
-                slot.tuple_parts.push_back(slot_from_spec(part));
-            }
-            return;
-        }
-    }
-    // `(T, i32)` when `T` is `(i32, i32)`. The element becomes that tuple.
-    // `T` when `T` is `[2](i32, i32)` keeps every array shell. `*T` keeps the star.
-    if (slot.type_package.empty() && !slot.is_array && slot.type_args.empty() && slot.shells.empty() &&
-        slot.optional == 0 && slot.const_pointee == 0 && (slot.indirections == 0 || slot.indirections == 1)) {
-        if (const SpecArg *bound = find_arg(params, bounds, slot.type_name); bound != nullptr && bound->is_pack) {
-            if (bound->parts.empty()) {
-                error(loc, "not supported yet");
-                slot.type_name = "invalid";
-                return;
-            }
-            if (slot.indirections == 0 && tuple_array_pack(*bound)) {
                 ResultSlot stamped = slot_from_spec(*bound);
                 slot.is_tuple = true;
                 slot.type_name.clear();
@@ -2288,12 +2318,6 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
                 slot.is_array = stamped.is_array;
                 slot.array_len = stamped.array_len;
                 slot.shells = std::move(stamped.shells);
-                return;
-            }
-            // `p *T` when `T` is `[2](i32, i32)`. The field stores a pointer to that array.
-            // `?*T` and `*const T` do not reach this branch.
-            if (slot.indirections == 1 && tuple_array_pack(*bound)) {
-                stamp_star_tuple_array(slot, *bound);
                 return;
             }
             slot.is_tuple = true;
@@ -2317,52 +2341,8 @@ void Checker::substitute_slot(const std::vector<TypeParam> &params, const std::v
 }
 
 void Checker::substitute_field(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, FieldDecl &field) {
-    // `p **T` and `p ***T` when `T` is a tuple. Each star stays on the field.
-    // An array of tuples keeps every array after those stars. A local and a result do not use this path.
-    if (field.indirections >= 2 && field.optional == 0 && field.const_pointee == 0 && !field.is_array &&
-        field.shells.empty() && field.type_package.empty() && field.type_args.empty() && !field.is_fn_ptr &&
-        !field.is_tuple) {
-        if (const SpecArg *pack = find_arg(params, bounds, field.type_name);
-            pack != nullptr && pack->is_pack && !pack->parts.empty()) {
-            if (!pack->is_array && pack->shells.empty()) {
-                field.is_tuple = true;
-                field.type_name.clear();
-                field.tuple_parts.clear();
-                for (const SpecArg &part : pack->parts) {
-                    field.tuple_parts.push_back(slot_from_spec(part));
-                }
-                return;
-            }
-            if (tuple_array_pack(*pack)) {
-                field.is_tuple = true;
-                field.type_name.clear();
-                field.is_array = false;
-                field.array_len = 0;
-                field.tuple_parts.clear();
-                for (const SpecArg &part : pack->parts) {
-                    field.tuple_parts.push_back(slot_from_spec(part));
-                }
-                const int stars = field.indirections;
-                field.indirections = 0;
-                field.shells.clear();
-                for (int star = 0; star < stars; ++star) {
-                    TypeShell shell;
-                    shell.kind = TypeShell::Kind::Pointer;
-                    field.shells.push_back(shell);
-                }
-                if (!pack->shells.empty()) {
-                    field.shells.insert(field.shells.end(), pack->shells.begin(), pack->shells.end());
-                } else {
-                    TypeShell shell;
-                    shell.kind = TypeShell::Kind::Array;
-                    shell.length = pack->array_len;
-                    field.shells.push_back(shell);
-                }
-                return;
-            }
-        }
-    }
     // The field uses the same substitution as a result. `n T` becomes that tuple.
+    // Stars around a tuple, including `const` and `?`, are stamped there.
     ResultSlot slot;
     slot.type_name = std::move(field.type_name);
     slot.type_package = std::move(field.type_package);
@@ -2414,56 +2394,8 @@ void Checker::substitute_field(const std::vector<TypeParam> &params, const std::
 }
 
 void Checker::substitute_var(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, VarDecl &var) {
-    // `var q **T`, `var q ***T`, and `var q ?**T` when `T` is a tuple.
-    // `?**T` marks the outer pointer optional. Each star stays on the local.
-    // An array of tuples keeps every array after those stars. A result does not use this path.
-    const bool opt_outer = var.indirections == 2 && var.optional == 1u;
-    if (var.indirections >= 2 && (var.optional == 0 || opt_outer) && var.const_pointee == 0 && !var.is_array &&
-        var.shells.empty() && var.type_package.empty() && var.type_args.empty() && !var.is_fn_ptr && !var.is_tuple) {
-        if (const SpecArg *pack = find_arg(params, bounds, var.type_name);
-            pack != nullptr && pack->is_pack && !pack->parts.empty()) {
-            if (!pack->is_array && pack->shells.empty()) {
-                var.is_tuple = true;
-                var.type_name.clear();
-                var.tuple_parts.clear();
-                for (const SpecArg &part : pack->parts) {
-                    var.tuple_parts.push_back(slot_from_spec(part));
-                }
-                return;
-            }
-            if (tuple_array_pack(*pack)) {
-                var.is_tuple = true;
-                var.type_name.clear();
-                var.is_array = false;
-                var.array_len = 0;
-                var.tuple_parts.clear();
-                for (const SpecArg &part : pack->parts) {
-                    var.tuple_parts.push_back(slot_from_spec(part));
-                }
-                const int stars = var.indirections;
-                const uint32_t optional = var.optional;
-                var.indirections = 0;
-                var.optional = 0;
-                var.shells.clear();
-                for (int star = 0; star < stars; ++star) {
-                    TypeShell shell;
-                    shell.kind = TypeShell::Kind::Pointer;
-                    shell.optional = (optional & (1u << static_cast<unsigned>(star))) != 0;
-                    var.shells.push_back(shell);
-                }
-                if (!pack->shells.empty()) {
-                    var.shells.insert(var.shells.end(), pack->shells.begin(), pack->shells.end());
-                } else {
-                    TypeShell shell;
-                    shell.kind = TypeShell::Kind::Array;
-                    shell.length = pack->array_len;
-                    var.shells.push_back(shell);
-                }
-                return;
-            }
-        }
-    }
     // `var row [2]T` uses the same substitution as a field of that array.
+    // Stars around a tuple, including `const` and `?`, are stamped there.
     ResultSlot slot;
     slot.type_name = std::move(var.type_name);
     slot.type_package = std::move(var.type_package);
@@ -3099,33 +3031,25 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         subst_param(subst_param, part);
                     }
                 } else {
-                    // `?*T(value)` when `T` is a tuple. An array of tuples keeps every array after the star.
+                    // Any number of stars in `?*T(value)`, `***const T(value)`, and the same forms.
                     bool stamped = false;
-                    if (node.indirections == 1 && node.optional != 0 && node.const_pointee == 0 &&
-                        node.type_package.empty() && node.type_args.empty()) {
+                    if (node.indirections >= 1 && node.type_package.empty() && node.type_args.empty()) {
                         if (const SpecArg *pack = find_arg(params, bounds, node.type_name);
                             pack != nullptr && pack->is_pack && !pack->parts.empty()) {
-                            if (tuple_array_pack(*pack)) {
-                                ResultSlot shaped;
-                                if (stamp_star_tuple_array(shaped, *pack)) {
-                                    shaped.shells.front().optional = true;
-                                    node.is_tuple = true;
-                                    node.type_name.clear();
-                                    node.indirections = 0;
-                                    node.optional = 0;
-                                    node.shells = shaped.shells;
-                                    node.tuple_parts.clear();
-                                    for (const ResultSlot &part : shaped.tuple_parts) {
-                                        node.tuple_parts.push_back(fn_from_slot(part));
-                                    }
-                                    stamped = true;
-                                }
-                            } else if (!pack->is_array && pack->shells.empty()) {
+                            ResultSlot shaped;
+                            shaped.indirections = node.indirections;
+                            shaped.optional = node.optional;
+                            shaped.const_pointee = node.const_pointee;
+                            if (stamp_tuple_stars(shaped, *pack)) {
                                 node.is_tuple = true;
                                 node.type_name.clear();
+                                node.indirections = shaped.indirections;
+                                node.optional = shaped.optional;
+                                node.const_pointee = shaped.const_pointee;
+                                node.shells = std::move(shaped.shells);
                                 node.tuple_parts.clear();
-                                for (const SpecArg &part : pack->parts) {
-                                    node.tuple_parts.push_back(fn_from_slot(slot_from_spec(part)));
+                                for (const ResultSlot &part : shaped.tuple_parts) {
+                                    node.tuple_parts.push_back(fn_from_slot(part));
                                 }
                                 stamped = true;
                             }
@@ -3425,170 +3349,28 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                 continue;
             }
         }
-        // `value ?*T` when `T` is a tuple. An array of tuples keeps every array after the star.
-        if (param.indirections == 1 && param.optional != 0 && param.const_pointee == 0 && !param.is_array &&
-            !param.is_fn_ptr && !param.is_tuple && param.type_package.empty() && param.type_args.empty() &&
-            param.shells.empty()) {
-            if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
-                pack != nullptr && pack->is_pack) {
-                if (pack->parts.empty()) {
-                    error(param.loc, "not supported yet");
-                    param.type_name = "invalid";
-                } else if (tuple_array_pack(*pack)) {
-                    ResultSlot shaped;
-                    if (!stamp_star_tuple_array(shaped, *pack)) {
-                        error(param.loc, "not supported yet");
-                        param.type_name = "invalid";
-                    } else {
-                        shaped.shells.front().optional = true;
-                        param.is_tuple = true;
-                        param.type_name.clear();
-                        param.indirections = 0;
-                        param.optional = 0;
-                        param.is_array = false;
-                        param.array_len = 0;
-                        param.tuple_parts = std::move(shaped.tuple_parts);
-                        param.shells = std::move(shaped.shells);
-                    }
-                } else if (pack->is_array || !pack->shells.empty()) {
-                    error(param.loc, "not supported yet");
-                    param.type_name = "invalid";
-                } else {
-                    param.is_tuple = true;
-                    param.type_name.clear();
-                    param.tuple_parts.clear();
-                    for (const SpecArg &part : pack->parts) {
-                        param.tuple_parts.push_back(slot_from_spec(part));
-                    }
-                }
-                kept.push_back(std::move(param));
-                continue;
-            }
-        }
-        // `value ?**T` when `T` is a tuple. The outer pointer is optional.
-        // An array of tuples keeps every array after those stars.
-        if (param.indirections == 2 && param.optional == 1u && param.const_pointee == 0 && !param.is_array &&
-            !param.is_fn_ptr && !param.is_tuple && param.type_package.empty() && param.type_args.empty() &&
-            param.shells.empty()) {
-            if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
-                pack != nullptr && pack->is_pack) {
-                if (pack->parts.empty()) {
-                    error(param.loc, "not supported yet");
-                    param.type_name = "invalid";
-                } else if (tuple_array_pack(*pack)) {
-                    param.is_tuple = true;
-                    param.type_name.clear();
-                    param.is_array = false;
-                    param.array_len = 0;
-                    param.tuple_parts.clear();
-                    for (const SpecArg &part : pack->parts) {
-                        param.tuple_parts.push_back(slot_from_spec(part));
-                    }
-                    const uint32_t optional = param.optional;
-                    param.indirections = 0;
-                    param.optional = 0;
-                    param.shells.clear();
-                    for (int star = 0; star < 2; ++star) {
-                        TypeShell shell;
-                        shell.kind = TypeShell::Kind::Pointer;
-                        shell.optional = (optional & (1u << star)) != 0;
-                        param.shells.push_back(shell);
-                    }
-                    if (!pack->shells.empty()) {
-                        param.shells.insert(param.shells.end(), pack->shells.begin(), pack->shells.end());
-                    } else {
-                        TypeShell shell;
-                        shell.kind = TypeShell::Kind::Array;
-                        shell.length = pack->array_len;
-                        param.shells.push_back(shell);
-                    }
-                } else if (pack->is_array || !pack->shells.empty()) {
-                    error(param.loc, "not supported yet");
-                    param.type_name = "invalid";
-                } else {
-                    param.is_tuple = true;
-                    param.type_name.clear();
-                    param.tuple_parts.clear();
-                    for (const SpecArg &part : pack->parts) {
-                        param.tuple_parts.push_back(slot_from_spec(part));
-                    }
-                }
-                kept.push_back(std::move(param));
-                continue;
-            }
-        }
-        // Each star is one more pointer. `*T`, `**T`, and `***T` share that depth.
-        // `*const T` keeps the star const. An array of tuples keeps every array after the stars.
-        const bool bare_const = param.indirections == 1 && param.const_pointee != 0;
-        const bool plain_star = param.const_pointee == 0 && param.indirections >= 1;
-        // `**const T` marks the tuple. `*const *T` marks the inner pointer.
-        // `*const *const T` marks both, including when `T` is an array of tuples.
-        const bool const_tuple = param.indirections == 2 && param.const_pointee == (1u << 1);
-        const bool const_pointer = param.indirections == 2 && param.const_pointee == 1u;
-        const bool const_both = param.indirections == 2 && param.const_pointee == ((1u << 1) | 1u);
-        if ((bare_const || plain_star || const_tuple || const_pointer || const_both) && param.optional == 0 &&
-            !param.is_array &&
-            !param.is_fn_ptr &&
+        // Any number of stars around a tuple. `const` and `?` are bits on those stars.
+        if (param.indirections >= 1 && !param.is_array && param.shells.empty() && !param.is_fn_ptr &&
             !param.is_tuple && param.type_package.empty() && param.type_args.empty()) {
             if (const SpecArg *pack = find_arg(params, bounds, param.type_name);
                 pack != nullptr && pack->is_pack) {
-                if (pack->parts.empty()) {
+                ResultSlot shaped;
+                shaped.indirections = param.indirections;
+                shaped.optional = param.optional;
+                shaped.const_pointee = param.const_pointee;
+                if (!stamp_tuple_stars(shaped, *pack)) {
                     error(param.loc, "not supported yet");
                     param.type_name = "invalid";
-                } else if (pack->is_array || !pack->shells.empty()) {
-                    bool slice = false;
-                    for (const TypeShell &shell : pack->shells) {
-                        if (shell.kind == TypeShell::Kind::Slice) {
-                            slice = true;
-                        }
-                    }
-                    // `*const T` and `**const T` mark the array. `*const *T` marks the inner pointer.
-                    // `*const *const T` marks both.
-                    const bool const_on_tuple = param.indirections == 2 && param.const_pointee == (1u << 1);
-                    const bool const_on_pointer = param.indirections == 2 && param.const_pointee == 1u;
-                    const bool const_on_both = param.indirections == 2 && param.const_pointee == ((1u << 1) | 1u);
-                    if ((param.const_pointee != 0 && param.indirections != 1 && !const_on_tuple && !const_on_pointer &&
-                         !const_on_both) ||
-                        slice || (pack->shells.empty() && pack->array_len <= 0)) {
-                        error(param.loc, "not supported yet");
-                        param.type_name = "invalid";
-                    } else {
-                        param.is_tuple = true;
-                        param.type_name.clear();
-                        param.is_array = false;
-                        param.array_len = 0;
-                        param.tuple_parts.clear();
-                        for (const SpecArg &part : pack->parts) {
-                            param.tuple_parts.push_back(slot_from_spec(part));
-                        }
-                        param.shells.clear();
-                        // One shell per star. `**T` and `***T` are the same loop.
-                        for (int star = 0; star < param.indirections; ++star) {
-                            TypeShell shell;
-                            shell.kind = TypeShell::Kind::Pointer;
-                            // Bit 0 of `*const T` marks the array. Bit 0 of `*const *T` marks the inner pointer.
-                            // Bit 1 of `**const T` marks the array. `*const *const T` sets both bits.
-                            shell.const_pointee = (param.const_pointee & (1u << star)) != 0;
-                            param.shells.push_back(shell);
-                        }
-                        param.indirections = 0;
-                        param.const_pointee = 0;
-                        if (!pack->shells.empty()) {
-                            param.shells.insert(param.shells.end(), pack->shells.begin(), pack->shells.end());
-                        } else {
-                            TypeShell shell;
-                            shell.kind = TypeShell::Kind::Array;
-                            shell.length = pack->array_len;
-                            param.shells.push_back(shell);
-                        }
-                    }
                 } else {
                     param.is_tuple = true;
                     param.type_name.clear();
-                    param.tuple_parts.clear();
-                    for (const SpecArg &part : pack->parts) {
-                        param.tuple_parts.push_back(slot_from_spec(part));
-                    }
+                    param.indirections = shaped.indirections;
+                    param.optional = shaped.optional;
+                    param.const_pointee = shaped.const_pointee;
+                    param.is_array = shaped.is_array;
+                    param.array_len = shaped.array_len;
+                    param.tuple_parts = std::move(shaped.tuple_parts);
+                    param.shells = std::move(shaped.shells);
                 }
                 kept.push_back(std::move(param));
                 continue;
@@ -3599,12 +3381,10 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
                         param.type_args, param.loc, &param.shells, &param.elem_const, &param.const_pointee);
         for (ResultSlot &part : param.tuple_parts) {
             // `p (*T, i32)` when `T` is `[2](i32, i32)`. The element keeps every array.
-            if (part.indirections == 1 && part.optional == 0 && part.const_pointee == 0 && !part.is_array &&
-                !part.is_fn_ptr && !part.is_tuple && part.type_package.empty() && part.type_args.empty() &&
-                part.shells.empty()) {
+            if (part.indirections >= 1 && !part.is_array && !part.is_fn_ptr && !part.is_tuple &&
+                part.type_package.empty() && part.type_args.empty() && part.shells.empty()) {
                 if (const SpecArg *pack = find_arg(params, bounds, part.type_name);
-                    pack != nullptr && tuple_array_pack(*pack)) {
-                    stamp_star_tuple_array(part, *pack);
+                    pack != nullptr && pack->is_pack && stamp_tuple_stars(part, *pack)) {
                     continue;
                 }
             }
@@ -3649,60 +3429,12 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         }
     }
     for (ResultSlot &slot : fn.results) {
-        // `func id[T type](value *T) *T` when `T` is `[2](i32, i32)`. The result keeps every array.
-        // A field `p *T` is stamped in `substitute_slot`.
-        if (slot.indirections == 1 && slot.optional == 0 && slot.const_pointee == 0 && !slot.is_array &&
-            !slot.is_fn_ptr && !slot.is_tuple && slot.type_package.empty() && slot.type_args.empty() &&
-            slot.shells.empty()) {
+        // Any number of stars around a tuple result, including `const` and `?`.
+        if (slot.indirections >= 1 && !slot.is_array && slot.shells.empty() && !slot.is_fn_ptr && !slot.is_tuple &&
+            slot.type_package.empty() && slot.type_args.empty()) {
             if (const SpecArg *pack = find_arg(params, bounds, slot.type_name);
-                pack != nullptr && tuple_array_pack(*pack)) {
-                stamp_star_tuple_array(slot, *pack);
+                pack != nullptr && pack->is_pack && stamp_tuple_stars(slot, *pack)) {
                 continue;
-            }
-        }
-        // `func id[T type](value **T) **T` when `T` is a tuple. `***T` is that same depth.
-        // An array of tuples keeps every array after those stars.
-        if (slot.indirections >= 2 && slot.optional == 0 && slot.const_pointee == 0 && !slot.is_array &&
-            !slot.is_fn_ptr && !slot.is_tuple && slot.type_package.empty() && slot.type_args.empty() &&
-            slot.shells.empty()) {
-            if (const SpecArg *pack = find_arg(params, bounds, slot.type_name);
-                pack != nullptr && pack->is_pack && !pack->parts.empty()) {
-                if (!pack->is_array && pack->shells.empty()) {
-                    slot.is_tuple = true;
-                    slot.type_name.clear();
-                    slot.tuple_parts.clear();
-                    for (const SpecArg &part : pack->parts) {
-                        slot.tuple_parts.push_back(slot_from_spec(part));
-                    }
-                    continue;
-                }
-                if (tuple_array_pack(*pack)) {
-                    slot.is_tuple = true;
-                    slot.type_name.clear();
-                    slot.is_array = false;
-                    slot.array_len = 0;
-                    slot.tuple_parts.clear();
-                    for (const SpecArg &part : pack->parts) {
-                        slot.tuple_parts.push_back(slot_from_spec(part));
-                    }
-                    const int stars = slot.indirections;
-                    slot.indirections = 0;
-                    slot.shells.clear();
-                    for (int star = 0; star < stars; ++star) {
-                        TypeShell shell;
-                        shell.kind = TypeShell::Kind::Pointer;
-                        slot.shells.push_back(shell);
-                    }
-                    if (!pack->shells.empty()) {
-                        slot.shells.insert(slot.shells.end(), pack->shells.begin(), pack->shells.end());
-                    } else {
-                        TypeShell shell;
-                        shell.kind = TypeShell::Kind::Array;
-                        shell.length = pack->array_len;
-                        slot.shells.push_back(shell);
-                    }
-                    continue;
-                }
             }
         }
         subst_slot(slot, fn.loc);

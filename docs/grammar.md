@@ -1140,7 +1140,7 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(***value)[0][0]` is 40 and `(***value)[1][1]` is 3.
 
-`***const T` is `not supported yet`.
+`func id[T type](value ***const T)` of `&pp`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`. Each star is one more pointer. `(***value)[0] = 1` is `type mismatch`. The same form when `row` is `[2](i32, i32)` binds `T` to that array. `(***value)[0][0] = 1` is `type mismatch`.
 
 `type Box[T type] struct { p **T; }` of `{.p = value}`, when `T` is `(i32, i32)`, stores that pointer.
 
