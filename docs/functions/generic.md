@@ -491,7 +491,7 @@ The size of `[4]*i32` is 32, the size of `[2][3]i32` is 24, and the size of `[2]
 
 `sizeof T` is that same integer.
 
-`sizeof(*T)`, when `T` is an array, is `not supported yet`, and so is `sizeof([4]T)`.
+`sizeof(*T)`, when `T` is `[4]i32`, is 8. `sizeof([4]T)`, when `T` is `i32`, is 16.
 
 `typeof(T)` when `T` is an array is that array.
 
@@ -511,7 +511,7 @@ When the file is `main.tlc`, `kind` is `main.kind.spec.arr.4.i32`.
 
 A parameter `[4]i32` is a pointer, so `typeof(value)` is `*i32`.
 
-`typeof(*T)`, when `T` is an array, is `not supported yet`, and so is `typeof([4]T)`.
+`typeof(*T)`, when `T` is `[4]i32`, is `*[4]i32`. `typeof([4]T)`, when `T` is `i32`, is `[4]i32`.
 
 ```c
 type Point struct { x i32; y i32; };

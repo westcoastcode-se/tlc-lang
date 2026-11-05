@@ -1234,11 +1234,11 @@ After the call is specialized, `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "emp
 
 `sizeof(T)` when `T` is `[4]i32` is 16.
 
-`sizeof(*T)` when `T` is an array, and `sizeof([4]T)`, are `not supported yet`.
+`sizeof(*T)` when `T` is `[4]i32` is 8. `sizeof([4]T)` when `T` is `i32` is 16.
 
 `typeof(T)` when `T` is `[4]i32` is that array.
 
-`typeof(*T)` when `T` is an array, and `typeof([4]T)`, are `not supported yet`.
+`typeof(*T)` when `T` is `[4]i32` is `*[4]i32`. `typeof([4]T)` when `T` is `i32` is `[4]i32`.
 
 A generic body may omit the result.
 

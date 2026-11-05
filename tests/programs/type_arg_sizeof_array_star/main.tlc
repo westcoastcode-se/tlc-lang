@@ -1,3 +1,8 @@
 func plain[T type]() i32 { return sizeof(*T); }
 
-func main() i32 { return plain[[4]i32](); }
+func main() i32 {
+    if (plain[[4]i32]() != 8) { return 1; }
+    if (plain[[4]u8]() != 8) { return 2; }
+    if (plain[i32]() != 8) { return 3; }
+    return 42;
+}

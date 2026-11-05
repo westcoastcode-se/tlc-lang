@@ -2677,6 +2677,55 @@ void Checker::substitute_value_arg(const std::vector<TypeParam> &params, const s
 }
 
 void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Expr &expr) {
+    // `sizeof(*T)` and `sizeof([4]T)` when `T` is `[4]i32`. Shells are outermost first.
+    // A written star or array stays outside the bound. `sizeof(T)` does not come here.
+    auto stamp_shaped = [](auto &node, const SpecArg &bound, auto &&diagnose) -> bool {
+        const int stars = node.indirections;
+        const bool written_array = node.is_array || !node.shells.empty();
+        const bool pointer_around = stars != 0 && !bound.shells.empty();
+        if (!written_array && !pointer_around) {
+            return false;
+        }
+        if (bound.is_pack || (bound.is_array && bound.shells.empty())) {
+            diagnose(node.loc);
+            return true;
+        }
+        std::vector<TypeShell> wrapped;
+        wrapped.reserve(static_cast<std::size_t>(stars) + node.shells.size() + bound.shells.size());
+        for (int star = 0; star < stars; ++star) {
+            TypeShell shell;
+            shell.kind = TypeShell::Kind::Pointer;
+            shell.optional = (node.optional & (1u << static_cast<unsigned>(star))) != 0;
+            shell.const_pointee = (node.const_pointee & (1u << static_cast<unsigned>(star))) != 0;
+            wrapped.push_back(shell);
+        }
+        if (!node.shells.empty()) {
+            wrapped.insert(wrapped.end(), node.shells.begin(), node.shells.end());
+        } else if (node.is_array) {
+            TypeShell shell;
+            shell.kind = node.array_len < 0 ? TypeShell::Kind::Slice : TypeShell::Kind::Array;
+            shell.length = node.array_len;
+            wrapped.push_back(shell);
+        }
+        if (bound.is_array) {
+            wrapped.insert(wrapped.end(), bound.shells.begin(), bound.shells.end());
+        }
+        const bool elem_const = node.elem_const || bound.elem_const;
+        node.type_name = bound.type_name;
+        node.type_package = bound.type_package;
+        // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
+        node.is_struct = false;
+        node.is_enum = bound.is_enum;
+        node.indirections = bound.indirections;
+        node.optional = bound.optional;
+        node.const_pointee = bound.const_pointee;
+        node.is_array = false;
+        node.array_len = 0;
+        node.elem_const = elem_const;
+        node.elem_slice = false;
+        node.shells = std::move(wrapped);
+        return true;
+    };
     std::visit(
         [&](auto &node) {
             using T = std::decay_t<decltype(node)>;
@@ -2753,29 +2802,27 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 // `sizeof(T)` is parsed as a type. The parameter is replaced before the value is folded.
-                // `sizeof([N]T)` writes an array around `T`. `sizeof(*T)` adds stars around a bound
-                // that already has shells. Those two stay rejected. `sizeof(T)` when `T` is `[4]i32`
-                // copies that array.
+                // `sizeof([4]T)` keeps that array outside `T`. `sizeof(*T)` keeps that star outside an
+                // array bound. `sizeof(T)` when `T` is `[4]i32` copies that array.
                 if (node.on_type) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
                         bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
-                        if (node.is_array || (!bound->shells.empty() && node.indirections != 0)) {
-                            error(node.loc, "not supported yet");
+                        if (!stamp_shaped(node, *bound, [&](SourceLoc loc) { error(loc, "not supported yet"); })) {
+                            const int stars = node.indirections;
+                            node.type_name = bound->type_name;
+                            node.type_package = bound->type_package;
+                            // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
+                            node.is_struct = false;
+                            node.is_enum = bound->is_enum;
+                            node.indirections = stars + bound->indirections;
+                            node.optional = bound->optional << static_cast<unsigned>(stars);
+                            node.const_pointee = bound->const_pointee << static_cast<unsigned>(stars);
+                            node.is_array = bound->is_array;
+                            node.array_len = bound->array_len;
+                            node.elem_const = bound->elem_const;
+                            node.elem_slice = bound->elem_slice;
+                            node.shells = bound->shells;
                         }
-                        const int stars = node.indirections;
-                        node.type_name = bound->type_name;
-                        node.type_package = bound->type_package;
-                        // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
-                        node.is_struct = false;
-                        node.is_enum = bound->is_enum;
-                        node.indirections = stars + bound->indirections;
-                        node.optional = bound->optional << static_cast<unsigned>(stars);
-                        node.const_pointee = bound->const_pointee << static_cast<unsigned>(stars);
-                        node.is_array = bound->is_array;
-                        node.array_len = bound->array_len;
-                        node.elem_const = bound->elem_const;
-                        node.elem_slice = bound->elem_slice;
-                        node.shells = bound->shells;
                     }
                 }
                 if (node.expr) {
@@ -2794,30 +2841,60 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
                     if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
-                        // `sizeof *T` when `T` is an array. The stars are not a shell around that array.
-                        if (stars != 0 && bound->is_array) {
-                            error(node.loc, "not supported yet");
+                        // `sizeof *T` when `T` is an array. The stars are a shell around that array.
+                        node.indirections = stars;
+                        node.optional = 0;
+                        node.const_pointee = 0;
+                        node.is_array = false;
+                        node.shells.clear();
+                        if (!stamp_shaped(node, *bound, [&](SourceLoc loc) { error(loc, "not supported yet"); })) {
+                            node.type_name = bound->type_name;
+                            node.type_package = bound->type_package;
+                            // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
+                            node.is_struct = false;
+                            node.is_enum = bound->is_enum;
+                            node.indirections = stars + bound->indirections;
+                            node.optional = bound->optional << stars;
+                            if (stars == 0 && bound->is_array) {
+                                node.is_array = true;
+                                node.array_len = bound->array_len;
+                                node.elem_const = bound->elem_const;
+                                node.elem_slice = bound->elem_slice;
+                                node.shells = bound->shells;
+                                node.const_pointee = bound->const_pointee;
+                            }
                         }
                         node.on_type = true;
-                        node.type_name = bound->type_name;
-                        node.type_package = bound->type_package;
-                        // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
-                        node.is_struct = false;
-                        node.is_enum = bound->is_enum;
-                        node.indirections = stars + bound->indirections;
-                        node.optional = bound->optional << stars;
-                        if (stars == 0 && bound->is_array) {
-                            node.is_array = true;
-                            node.array_len = bound->array_len;
-                            node.elem_const = bound->elem_const;
-                            node.elem_slice = bound->elem_slice;
-                            node.shells = bound->shells;
-                            node.const_pointee = bound->const_pointee;
-                        }
                         node.expr.reset();
                     }
                 }
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                // `typeof(T)` is parsed as a type, the same way as `sizeof(T)`.
+                if (node.on_type) {
+                    if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
+                        bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
+                        if (!stamp_shaped(node, *bound, [&](SourceLoc loc) { error(loc, "not supported yet"); })) {
+                            const int stars = node.indirections;
+                            node.type_name = bound->type_name;
+                            node.type_package = bound->type_package;
+                            node.is_struct = false;
+                            node.is_enum = bound->is_enum;
+                            node.indirections = stars + bound->indirections;
+                            node.optional = bound->optional << static_cast<unsigned>(stars);
+                            node.const_pointee = bound->const_pointee << static_cast<unsigned>(stars);
+                            node.is_array = bound->is_array;
+                            node.array_len = bound->array_len;
+                            node.elem_const = bound->elem_const;
+                            node.elem_slice = bound->elem_slice;
+                            node.shells = bound->shells;
+                        }
+                        node.canonical.clear();
+                        node.type_arm = 0;
+                        node.type_has_this = false;
+                        node.type_generic = false;
+                        node.type_variadic = false;
+                    }
+                }
                 if (node.expr) {
                     substitute_expr(params, bounds, *node.expr);
                 }
@@ -2834,28 +2911,32 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
                     if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
-                        // `typeof *T` when `T` is an array. The stars are not a shell around that array.
+                        // `typeof *T` when `T` is an array. The stars are a shell around that array.
                         // `typeof(T)` when `T` is `[4]i32` copies that array.
-                        if (stars != 0 && bound->is_array) {
-                            error(node.loc, "not supported yet");
+                        node.indirections = stars;
+                        node.optional = 0;
+                        node.const_pointee = 0;
+                        node.is_array = false;
+                        node.shells.clear();
+                        if (!stamp_shaped(node, *bound, [&](SourceLoc loc) { error(loc, "not supported yet"); })) {
+                            node.type_name = bound->type_name;
+                            node.type_package = bound->type_package;
+                            node.is_struct = bound->is_struct;
+                            node.is_enum = bound->is_enum;
+                            node.indirections = stars + bound->indirections;
+                            node.optional = bound->optional << stars;
+                            if (stars == 0 && bound->is_array) {
+                                // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
+                                node.is_struct = false;
+                                node.is_array = true;
+                                node.array_len = bound->array_len;
+                                node.elem_const = bound->elem_const;
+                                node.elem_slice = bound->elem_slice;
+                                node.shells = bound->shells;
+                                node.const_pointee = bound->const_pointee;
+                            }
                         }
                         node.on_type = true;
-                        node.type_name = bound->type_name;
-                        node.type_package = bound->type_package;
-                        node.is_struct = bound->is_struct;
-                        node.is_enum = bound->is_enum;
-                        node.indirections = stars + bound->indirections;
-                        node.optional = bound->optional << stars;
-                        if (stars == 0 && bound->is_array) {
-                            // `is_struct` means the source wrote `struct Name`. A bound is an ordinary type.
-                            node.is_struct = false;
-                            node.is_array = true;
-                            node.array_len = bound->array_len;
-                            node.elem_const = bound->elem_const;
-                            node.elem_slice = bound->elem_slice;
-                            node.shells = bound->shells;
-                            node.const_pointee = bound->const_pointee;
-                        }
                         node.canonical.clear();
                         node.type_arm = 0;
                         node.type_has_this = false;
