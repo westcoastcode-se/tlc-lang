@@ -258,9 +258,11 @@ The elements of `new [n]i32` are not stored.
 
 `delete buf` frees the block.
 
-A constant `n` that is not positive is reported as `type mismatch`.
+`new [0]T` is an empty slice. `.len` is 0. The call does not allocate. `delete` of that slice frees a null pointer.
 
-Any other `n` that is not positive aborts.
+A negative constant is `type mismatch`.
+
+A negative count that is not a constant calls `builtin.panic("count must be positive")`.
 
 `new []T` is reported as `expected an expression`.
 

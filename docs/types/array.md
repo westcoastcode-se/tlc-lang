@@ -215,7 +215,7 @@ A negative length, `comptime const N = -1` then `[N]i32`, is `not supported yet`
 
 A parameter `[0]T` is `not supported yet`.
 
-`new [0]i32` is an element count. A constant count that is not positive is `type mismatch`.
+`new [0]i32` is an empty slice. `.len` is 0. A negative constant count is `type mismatch`.
 
 ```c
 comptime const N = 0;

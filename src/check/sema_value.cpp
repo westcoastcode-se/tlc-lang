@@ -2699,7 +2699,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (got.kind != TypeKind::Invalid) {
                             expect(got, type_int(), expr_loc(*node.count));
                         }
-                        if (const std::optional<int> folded = fold_int(*node.count); folded && *folded <= 0) {
+                        // `new [0]T` is an empty slice. A negative constant is `type mismatch`.
+                        if (const std::optional<int> folded = fold_int(*node.count); folded && *folded < 0) {
                             error(expr_loc(*node.count), "type mismatch");
                         }
                     }

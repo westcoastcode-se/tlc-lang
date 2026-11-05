@@ -614,6 +614,9 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     llvm::Value *raw = nullptr;
     llvm::Value *buffer_bytes = nullptr;
     llvm::Value *element_count = nullptr;
+    llvm::BasicBlock *have_slice = nullptr;
+    llvm::BasicBlock *empty_block = nullptr;
+    llvm::Value *empty_slice = nullptr;
     const bool buffer = node.count != nullptr || node.count_inferred;
     int list_len = 0;
     if (node.count_inferred && node.init != nullptr) {
@@ -654,11 +657,23 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
             return {zero(), 0};
         }
         llvm::BasicBlock *bad = llvm::BasicBlock::Create(context_, "new.count", function_);
+        llvm::BasicBlock *check = llvm::BasicBlock::Create(context_, "new.zero", function_);
+        llvm::BasicBlock *empty = llvm::BasicBlock::Create(context_, "new.empty", function_);
         llvm::BasicBlock *ready = llvm::BasicBlock::Create(context_, "new.ready", function_);
         element_count = count_value.value;
-        builder_.CreateCondBr(builder_.CreateICmpSLE(count_value.value, const_i32(0)), bad, ready);
+        // `new [0]T` is an empty slice and does not call malloc. A negative count panics.
+        builder_.CreateCondBr(builder_.CreateICmpSLT(count_value.value, const_i32(0)), bad, check);
         builder_.SetInsertPoint(bad);
-        abort_now();
+        abort_panic(node.loc, "count must be positive");
+        builder_.SetInsertPoint(check);
+        builder_.CreateCondBr(builder_.CreateICmpEQ(count_value.value, const_i32(0)), empty, ready);
+        have_slice = llvm::BasicBlock::Create(context_, "new.have", function_);
+        empty_block = empty;
+        builder_.SetInsertPoint(empty);
+        empty_slice = llvm::ConstantAggregateZero::get(slice_type());
+        empty_slice = builder_.CreateInsertValue(empty_slice, null_ptr(), 0);
+        empty_slice = builder_.CreateInsertValue(empty_slice, element_count, 1);
+        builder_.CreateBr(have_slice);
         builder_.SetInsertPoint(ready);
         llvm::Value *wide = builder_.CreateZExt(count_value.value, i64());
         if (size == 0) {
@@ -757,6 +772,15 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         result.array_len = -1;
         result.elem_slice = low.is_slice;
         result.inner_array_len = low.is_array ? low.array_len : low.inner_array_len;
+        if (have_slice != nullptr && empty_slice != nullptr && empty_block != nullptr && !terminated()) {
+            llvm::BasicBlock *filled = builder_.GetInsertBlock();
+            builder_.CreateBr(have_slice);
+            builder_.SetInsertPoint(have_slice);
+            llvm::PHINode *phi = builder_.CreatePHI(slice_type(), 2, "new.slice");
+            phi->addIncoming(empty_slice, empty_block);
+            phi->addIncoming(packed, filled);
+            result.value = phi;
+        }
         return result;
     }
     result.value = raw;

@@ -1,0 +1,2 @@
+allocator: main.Boom
+exit: 0

@@ -70,6 +70,10 @@ A `?*T` field that is left out is null when the field has no value.
 
 `new [n]T` reserves `n` elements and yields `[]T`. The length is `n`. `buf[i]` is rejected at run time when `i` is outside that length.
 
+`new [0]T` is an empty slice. `.len` is 0. The call does not allocate.
+
+A negative constant is `type mismatch`. A negative count that is not a constant calls `builtin.panic("count must be positive")`.
+
 `new [n]Point{{.x = 1}...}` stores that value in every element.
 
 `new [n]Point{.x = 1}` is parsed as a field list and is reported as `type mismatch`.

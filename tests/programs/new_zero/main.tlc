@@ -1,0 +1,41 @@
+type Boom struct {
+    hits i32;
+};
+
+unsafe func Boom::malloc(self *this, size i32, align i32) ?*u8 {
+    _ = size;
+    _ = align;
+    self.hits = self.hits + 1;
+    return null;
+}
+
+func Boom::free(self *this, ptr *u8) void {
+    _ = ptr;
+}
+
+unsafe func Boom::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    _ = ptr;
+    _ = size;
+    _ = align;
+    return null;
+}
+
+comptime const N = 0;
+
+func main() i32 {
+    var n = 0;
+    var buf = new [n]i32;
+    var fixed = new [0]i32;
+    var folded = new [N]i32;
+    var boom Boom;
+    boom.hits = 0;
+    var custom = new(&boom) [n]i32;
+    var custom_fixed = new(&boom) [0]i32;
+    var got = buf.len + fixed.len + folded.len + custom.len + custom_fixed.len + boom.hits;
+    delete buf;
+    delete fixed;
+    delete folded;
+    delete(&boom) custom;
+    delete(&boom) custom_fixed;
+    return got;
+}
