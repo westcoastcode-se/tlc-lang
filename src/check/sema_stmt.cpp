@@ -2804,6 +2804,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
                 check_assert(node.loc, node.cond.get(), node.message);
+            } else if constexpr (std::is_same_v<T, Stmt::LocalType>) {
+                install_local_type(node);
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 for (const VarDecl &var : node.vars) {
                     if (!var.owner.empty()) {

@@ -237,6 +237,14 @@ int CodeGen::file_alias(const std::string &name) const {
 }
 
 int CodeGen::tag_id(uint32_t file, const std::string &name) const {
+    if (file == current_file_) {
+        for (auto scope = local_tags_.rbegin(); scope != local_tags_.rend(); ++scope) {
+            const auto found = scope->find(name);
+            if (found != scope->end()) {
+                return found->second;
+            }
+        }
+    }
     if (const int aliased = file_alias(name); aliased >= 0) {
         return aliased;
     }
@@ -355,6 +363,14 @@ const CodeGen::Alias *CodeGen::spec_alias(const std::string &name) const {
 }
 
 const CodeGen::Alias *CodeGen::find_alias(uint32_t file, const std::string &name) const {
+    if (file == current_file_) {
+        for (auto scope = local_aliases_.rbegin(); scope != local_aliases_.rend(); ++scope) {
+            const auto found = scope->find(name);
+            if (found != scope->end()) {
+                return &found->second;
+            }
+        }
+    }
     for (const uint32_t id : package_files(file)) {
         const auto found = aliases_.find(id);
         if (found == aliases_.end()) {

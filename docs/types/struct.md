@@ -22,6 +22,36 @@ A field may be another `struct{...}` or an array literal. `s.value` is that fiel
 
 A pointer is written `*Point` and `*i32`, in a parameter, a result, and every other type position. `?*Point` may be `null`. `*Point` may not.
 
+## A local struct
+
+`type Point struct` inside a function or a block names that struct until the block ends.
+
+A later `Point` is `not supported yet`. The same name in that block is `redefinition`. A nested block may declare `Point` again, and that name hides the outer one until the nested block ends.
+
+`type Box[T type] struct`, a union, a trait, and `export` or `extern` on the local type are `not supported yet`.
+
+```c
+func main() i32 {
+    type Point struct {
+        x i32;
+        y i32;
+    };
+    var p Point;
+    p.x = 40;
+    p.y = 2;
+    return p.x + p.y;
+}
+```
+
+```asm
+main:
+movl $40, -8(%rsp)               # p.x = 40
+movl $2, -4(%rsp)                # p.y = 2
+movl -8(%rsp), %eax              # p.x
+addl -4(%rsp), %eax              # add p.y
+retq                             # return
+```
+
 ## Fields
 
 A field is a name, then its type, in the same order as `var`: `x i32`, `next ?*Node`, `home *Address`, `raw [8]u8`.

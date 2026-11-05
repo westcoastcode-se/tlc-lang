@@ -867,6 +867,14 @@ int CodeGen::enum_id_of(uint32_t file, const std::string &name) const {
 }
 
 int CodeGen::enum_named(uint32_t file, const std::string &name) const {
+    if (file == current_file_) {
+        for (auto scope = local_enums_.rbegin(); scope != local_enums_.rend(); ++scope) {
+            const auto found = scope->find(name);
+            if (found != scope->end()) {
+                return found->second;
+            }
+        }
+    }
     for (const uint32_t id : package_files(file)) {
         const auto found = enum_ids_.find(id);
         if (found == enum_ids_.end()) {
@@ -948,6 +956,143 @@ void CodeGen::prepare_enums() {
             enums_.push_back(std::move(layout));
         }
     }
+}
+
+void CodeGen::install_local_struct(const StructDecl &item) {
+    if (local_tags_.empty() || item.name.empty() || !item.type_params.empty() || item.is_union) {
+        return;
+    }
+    if (local_tags_.back().contains(item.name)) {
+        return;
+    }
+    const int id = static_cast<int>(structs_.size());
+    StructLayout layout;
+    layout.name = item.name;
+    layout.file_id = current_file_;
+    layout.type = llvm::StructType::create(context_, "local." + item.name);
+    structs_.push_back(std::move(layout));
+    local_tags_.back()[item.name] = id;
+    std::vector<llvm::Type *> body;
+    std::vector<FieldLayout> fields;
+    for (const FieldDecl &field : item.fields) {
+        const Lowered low = lower(current_file_, field.type_name, field.type_package, field.is_struct, field.indirections,
+                                  field.is_array, field.array_len, false, field.elem_slice, field.shells);
+        FieldLayout slot;
+        slot.name = field.name;
+        slot.type = stored_type(low);
+        if (slot.type == nullptr) {
+            slot.type = i32();
+        }
+        slot.depth = low.depth;
+        slot.elem_char = low.elem_char;
+        slot.is_array = low.is_array;
+        slot.array_len = low.array_len;
+        slot.struct_id = low.struct_id;
+        slot.elem_void = low.elem_void;
+        slot.elem_bool = low.elem_bool;
+        slot.elem_bits = low.elem_bits;
+        slot.elem_unsigned = low.elem_unsigned;
+        slot.elem_float = low.elem_float;
+        slot.enum_id = low.enum_id;
+        slot.is_slice = low.is_slice;
+        slot.elem_slice = low.elem_slice;
+        slot.shells = low.shells;
+        slot.is_tuple = low.is_tuple;
+        slot.tuple_parts = low.tuple_parts;
+        slot.init = field.init.get();
+        body.push_back(slot.type);
+        fields.push_back(std::move(slot));
+    }
+    structs_[static_cast<std::size_t>(id)].type->setBody(body);
+    structs_[static_cast<std::size_t>(id)].fields = std::move(fields);
+    structs_[static_cast<std::size_t>(id)].ready = true;
+}
+
+void CodeGen::install_local_enum(const EnumDecl &item) {
+    if (local_enums_.empty() || item.name.empty()) {
+        return;
+    }
+    if (local_enums_.back().contains(item.name)) {
+        return;
+    }
+    EnumLayout layout;
+    layout.name = item.name;
+    describe_enum(item.underlying, layout);
+    int64_t next = 0;
+    bool next_ok = true;
+    const bool wide = layout.bits >= 63 && !layout.is_bool;
+    for (const Enumerator &enumerator : item.enumerators) {
+        int64_t value = 0;
+        if (enumerator.has_value) {
+            value = enumerator.value;
+        } else if (next_ok) {
+            value = next;
+        }
+        if (!enumerator.name.empty() && !layout.values.contains(enumerator.name)) {
+            layout.values.emplace(enumerator.name, value);
+        }
+        bool full = false;
+        if (layout.is_bool) {
+            full = value >= 1;
+        } else if (layout.is_unsigned || layout.is_char) {
+            full = !wide && value >= ((1LL << layout.bits) - 1);
+        } else if (wide) {
+            full = value == INT64_MAX;
+        } else {
+            full = value >= ((1LL << (layout.bits - 1)) - 1);
+        }
+        if (full) {
+            next_ok = false;
+        } else {
+            next = value + 1;
+            next_ok = true;
+        }
+    }
+    local_enums_.back()[item.name] = static_cast<int>(enums_.size());
+    enums_.push_back(std::move(layout));
+}
+
+void CodeGen::install_local_alias(const TypedefDecl &item) {
+    if (local_aliases_.empty() || item.name.empty() || !item.type_params.empty() || item.is_tuple) {
+        return;
+    }
+    if (local_aliases_.back().contains(item.name)) {
+        return;
+    }
+    const Lowered low = item.is_fn_ptr
+                            ? lower_fnptr(current_file_, item.type_name, item.type_package, item.is_struct, item.is_enum,
+                                          item.ret_indirections, item.indirections, item.fn_params, item.fn_variadic,
+                                          item.fn_results)
+                            : lower(current_file_, item.type_name, item.type_package, item.is_struct, item.indirections,
+                                    item.is_array, item.array_len, false, item.elem_slice, item.shells);
+    Alias alias;
+    alias.depth = low.depth;
+    alias.elem_char = low.elem_char;
+    alias.is_array = low.is_array;
+    alias.array_len = low.array_len;
+    alias.struct_id = low.struct_id;
+    alias.elem_void = low.elem_void;
+    alias.elem_bool = low.elem_bool;
+    alias.elem_bits = low.elem_bits;
+    alias.elem_unsigned = low.elem_unsigned;
+    alias.elem_float = low.elem_float;
+    alias.fn_ty = low.fn_ty;
+    alias.fn_ret_depth = low.fn_ret_depth;
+    alias.fn_ret_float = low.fn_ret_float;
+    alias.fn_ret_bits = low.fn_ret_bits;
+    alias.fn_ret_unsigned = low.fn_ret_unsigned;
+    alias.fn_ret_char = low.fn_ret_char;
+    alias.fn_ret_bool = low.fn_ret_bool;
+    alias.fn_ret_struct = low.fn_ret_struct;
+    alias.fn_results = low.fn_results;
+    alias.enum_id = low.enum_id;
+    alias.is_slice = low.is_slice;
+    alias.elem_slice = low.elem_slice;
+    alias.shells = low.shells;
+    alias.is_tuple = low.is_tuple;
+    alias.tuple_parts = low.tuple_parts;
+    alias.tuple_ty = low.type;
+    local_aliases_.back().emplace(item.name, std::move(alias));
 }
 
 int CodeGen::enum_type_designator(const Expr &expr) const {

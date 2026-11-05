@@ -1,0 +1,9 @@
+func main() i32 {
+    type Point struct {
+        x i32;
+    };
+    type Point struct {
+        y i32;
+    };
+    return 0;
+}

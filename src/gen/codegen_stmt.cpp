@@ -1702,6 +1702,16 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
             } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
                 emit_bind(node);
             } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+            } else if constexpr (std::is_same_v<T, Stmt::LocalType>) {
+                if (node.enumeration != nullptr) {
+                    install_local_enum(*node.enumeration);
+                }
+                if (node.structure != nullptr) {
+                    install_local_struct(*node.structure);
+                }
+                if (node.alias != nullptr) {
+                    install_local_alias(*node.alias);
+                }
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 for (const VarDecl &var : node.vars) {
                     if (var.name.empty()) {

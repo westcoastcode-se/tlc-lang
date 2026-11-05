@@ -684,6 +684,16 @@ std::vector<uint32_t> Checker::files_in_package(uint32_t file_id) const {
 }
 
 int Checker::find_tag(uint32_t file, const std::string &name) const {
+    if (file == file_id_) {
+        for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
+            const auto found = scope->symbols.find(name);
+            if (found == scope->symbols.end() || !found->second.is_struct_tag ||
+                found->second.type.kind != TypeKind::Struct) {
+                continue;
+            }
+            return found->second.type.struct_id;
+        }
+    }
     for (const uint32_t id : files_in_package(file)) {
         const auto found = tags_.find(id);
         if (found == tags_.end()) {
@@ -698,6 +708,16 @@ int Checker::find_tag(uint32_t file, const std::string &name) const {
 }
 
 int Checker::find_enum(uint32_t file, const std::string &name) const {
+    if (file == file_id_) {
+        for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
+            const auto found = scope->symbols.find(name);
+            if (found == scope->symbols.end() || !found->second.is_enum ||
+                found->second.type.kind != TypeKind::Enum) {
+                continue;
+            }
+            return found->second.type.enum_id;
+        }
+    }
     for (const uint32_t id : files_in_package(file)) {
         const auto found = enum_ids_.find(id);
         if (found == enum_ids_.end()) {
@@ -809,7 +829,11 @@ const Checker::EnumInfo::Member *Checker::find_enum_member(int enum_id, const st
 
 int Checker::enum_designator(const Expr &expr) {
     if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
-        if (lookup(named->text) != nullptr) {
+        if (const Symbol *symbol = lookup(named->text); symbol != nullptr) {
+            // A local `type Color enum` is a type, not a value. `Color.Blue` still names it.
+            if (symbol->is_enum && symbol->type.kind == TypeKind::Enum) {
+                return symbol->type.enum_id;
+            }
             return -1;
         }
         return find_enum(file_id_, named->text);
@@ -853,6 +877,16 @@ int Checker::package_trait(uint32_t file, const std::string &name) const {
 
 
 bool Checker::package_typedef(uint32_t file, const std::string &name, Type &out) const {
+    if (file == file_id_) {
+        for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
+            const auto found = scope->symbols.find(name);
+            if (found == scope->symbols.end() || !found->second.is_typedef) {
+                continue;
+            }
+            out = found->second.type;
+            return true;
+        }
+    }
     for (const uint32_t id : files_in_package(file)) {
         const auto found = typedefs_.find(id);
         if (found == typedefs_.end()) {

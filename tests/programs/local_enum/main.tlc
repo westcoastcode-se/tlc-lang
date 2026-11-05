@@ -1,0 +1,11 @@
+func main() i32 {
+    type Color enum {
+        Red,
+        Blue = 40,
+    };
+    var c = Color.Blue;
+    if (c == Color.Blue) {
+        return 42;
+    }
+    return 0;
+}

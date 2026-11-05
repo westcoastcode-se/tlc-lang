@@ -549,7 +549,8 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func main() i32 { type Point struct { x i32; }; return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(struct Point)\n");
     }
 
     {
@@ -878,12 +879,14 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func main() i32 { type T i32; return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(alias T i32)\n");
     }
 
     {
         const Parsed parsed = parse_source("func main() i32 { type E enum { A }; return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
+        EXPECT_HAS(check, parsed.dump, "(enum E)\n");
     }
 
     {

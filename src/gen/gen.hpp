@@ -10,6 +10,7 @@
 #include "llvm/IR/Module.h"
 
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -575,6 +576,9 @@ class CodeGen {
     // Comptime funcs on the fold stack. A cycle folds as not a constant.
     mutable std::unordered_set<const FunctionDecl *> comptime_folding_;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
+    // Type names introduced by `type` in the current function. The innermost block is last.
+    std::deque<std::unordered_map<std::string, int>> local_tags_;
+    std::deque<std::unordered_map<std::string, int>> local_enums_;
     std::unordered_map<uint32_t, FileSymbols> files_;
     // Globals whose constant value is being copied into another initializer.
     std::unordered_set<std::string> const_names_;
@@ -753,6 +757,7 @@ class CodeGen {
         std::vector<ResultSlot> tuple_parts;
         llvm::Type *tuple_ty = nullptr;
     };
+    std::deque<std::unordered_map<std::string, Alias>> local_aliases_;
     struct Shape {
         llvm::Type *type = nullptr;
         int depth = 0;
@@ -1246,8 +1251,27 @@ class CodeGen {
         const llvm::BasicBlock *block = builder_.GetInsertBlock();
         return block != nullptr && block->hasTerminator();
     }
-    void push() { scopes_.emplace_back(); }
-    void pop() { scopes_.pop_back(); }
+    void push() {
+        scopes_.emplace_back();
+        local_tags_.emplace_back();
+        local_enums_.emplace_back();
+        local_aliases_.emplace_back();
+    }
+    void pop() {
+        scopes_.pop_back();
+        if (!local_tags_.empty()) {
+            local_tags_.pop_back();
+        }
+        if (!local_enums_.empty()) {
+            local_enums_.pop_back();
+        }
+        if (!local_aliases_.empty()) {
+            local_aliases_.pop_back();
+        }
+    }
+    void install_local_struct(const StructDecl &item);
+    void install_local_enum(const EnumDecl &item);
+    void install_local_alias(const TypedefDecl &item);
     void open_debug();
     void finish_debug();
     llvm::DIFile *debug_file(SourceLoc loc);

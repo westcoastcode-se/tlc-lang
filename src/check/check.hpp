@@ -641,6 +641,8 @@ class Checker {
     Type finish_value_method(Expr &expr, const Expr::Selector &selector, const MethodInfo &method, const Type &base,
                              bool through_pointer, bool used);
     void register_structs(const TranslationUnit &unit, uint32_t file_id);
+    // `type Name struct` inside a function. The name hides a file-scope type in this scope.
+    void install_local_type(const Stmt::LocalType &local);
     void require_extern_struct(const Type &type, SourceLoc loc);
     // A tagged union, or a pointer or array of one. An alias keeps the union's `struct_id`.
     bool mentions_tagged_union(const Type &type) const;

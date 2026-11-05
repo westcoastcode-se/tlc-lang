@@ -54,7 +54,6 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 ## Declarations
 
 - `extern` on an inferred variable, `var name = expr` or `name := expr`. `export var name = expr` and `export name := expr` are accepted.
-- A local `type`, including a local struct or enum.
 - A file-scope array element that is not a constant, such as `n + 1` when `n` is a `var`, or `give() + 1`. That is `global initializer is not a constant`. A `const` with that call, and `var n = give(); var row = [_]i32{n}`, are that error.
 - A bare `extern`, `extern(abi="tlc")`, and any abi other than `"c"` and `"compiler"`. The diagnostic is `not supported yet`. `extern(abi="c")` is the C library. `extern(abi="compiler")` marks a type, method, or function the compiler implements or checks. In `lib/tlc/builtin`, a signature that does not match that contract is `type mismatch`. `extern(name="symbol")` without `abi="c"` is also `name requires abi="c"`.
 - `const` before a type on a function type, a result, an array, an associated variable, or `const name const Type`. `func (const i32) i32`, `func f() const i32`, `const [4]i32 row`, `const n const i32`, and `var Type::name const Type` are `not supported yet`. `var row const [4]i32` is `expected a type`. `type Name[T type] const T` is `expected ']'`. `const *i32` is not a spelling of `*const i32`. `[]const [4]T` is `not supported yet`.

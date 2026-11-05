@@ -45,30 +45,34 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
         ++pos_;
     }
     if (check(TokenKind::KwType)) {
-        diags_.error(peek().loc, "not supported yet");
-        ++pos_;
-        int depth = 0;
-        while (!eof()) {
-            if (check(TokenKind::LBrace)) {
-                ++depth;
-                ++pos_;
-                continue;
-            }
-            if (check(TokenKind::RBrace)) {
-                if (depth == 0) {
+        // `export type` and `extern type` stay file scope.
+        if (pos_ != marker) {
+            diags_.error(peek().loc, "not supported yet");
+            ++pos_;
+            int depth = 0;
+            while (!eof()) {
+                if (check(TokenKind::LBrace)) {
+                    ++depth;
+                    ++pos_;
+                    continue;
+                }
+                if (check(TokenKind::RBrace)) {
+                    if (depth == 0) {
+                        break;
+                    }
+                    --depth;
+                    ++pos_;
+                    continue;
+                }
+                if (depth == 0 && check(TokenKind::Semicolon)) {
                     break;
                 }
-                --depth;
                 ++pos_;
-                continue;
             }
-            if (depth == 0 && check(TokenKind::Semicolon)) {
-                break;
-            }
-            ++pos_;
+            eat(TokenKind::Semicolon);
+            return make_stmt(Stmt::Expression{});
         }
-        eat(TokenKind::Semicolon);
-        return make_stmt(Stmt::Expression{});
+        return parse_local_type();
     }
     if (at_func_type()) {
         pos_ = marker;
@@ -196,7 +200,47 @@ std::unique_ptr<Stmt> Parser::parse_decl_stmt(bool file_scope) {
     return make_stmt(std::move(decl));
 }
 
+std::unique_ptr<Stmt> Parser::parse_local_type() {
+    TranslationUnit scratch;
+    const SourceLoc loc = peek().loc;
+    parse_type_decl(scratch, false, false, false, {});
+    Stmt::LocalType local;
+    local.loc = loc;
+    bool kept = false;
+    for (TopDecl &decl : scratch.decls) {
+        if (auto *item = std::get_if<StructDecl>(&decl.data)) {
+            if (!item->type_params.empty() || item->is_union || item->is_extern) {
+                diags_.error(item->loc, "not supported yet");
+                continue;
+            }
+            local.structure = std::make_unique<StructDecl>(std::move(*item));
+            kept = true;
+        } else if (auto *item = std::get_if<EnumDecl>(&decl.data)) {
+            if (item->is_extern) {
+                diags_.error(item->loc, "not supported yet");
+                continue;
+            }
+            local.enumeration = std::make_unique<EnumDecl>(std::move(*item));
+            kept = true;
+        } else if (auto *item = std::get_if<TypedefDecl>(&decl.data)) {
+            if (!item->type_params.empty() || item->is_tuple) {
+                diags_.error(item->loc, "not supported yet");
+                continue;
+            }
+            local.alias = std::make_unique<TypedefDecl>(std::move(*item));
+            kept = true;
+        } else {
+            diags_.error(loc, "not supported yet");
+        }
+    }
+    if (!kept) {
+        return make_stmt(Stmt::Expression{});
+    }
+    return make_stmt(std::move(local));
+}
+
 std::unique_ptr<Stmt> Parser::parse_block() {
+    const std::unordered_set<std::string> saved_types = type_names_;
     Stmt::Block block;
     block.loc = peek().loc;
     expect(TokenKind::LBrace, "expected '{'");
@@ -212,6 +256,7 @@ std::unique_ptr<Stmt> Parser::parse_block() {
         }
     }
     expect(TokenKind::RBrace, "expected '}'");
+    type_names_ = saved_types;
     return make_stmt(std::move(block));
 }
 

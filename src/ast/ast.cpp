@@ -418,6 +418,25 @@ void dump_stmt(const Stmt &stmt, std::string &out, int indent) {
                 out += ' ';
                 out += quote_string(node.message);
                 out += ")\n";
+            } else if constexpr (std::is_same_v<T, Stmt::LocalType>) {
+                append_indent(out, indent);
+                if (node.structure != nullptr) {
+                    out += "(struct ";
+                    out += node.structure->name;
+                    out += ")\n";
+                } else if (node.enumeration != nullptr) {
+                    out += "(enum ";
+                    out += node.enumeration->name;
+                    out += ")\n";
+                } else if (node.alias != nullptr) {
+                    out += "(alias ";
+                    out += node.alias->name;
+                    out += " ";
+                    out += node.alias->type_name;
+                    out += ")\n";
+                } else {
+                    out += "(type)\n";
+                }
             } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
                 append_indent(out, indent);
                 out += "(bind ";
@@ -1284,6 +1303,19 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.loc = node.loc;
                 copy.cond = node.cond ? clone_expr(*node.cond) : nullptr;
                 copy.message = node.message;
+                out->data = std::move(copy);
+            } else if constexpr (std::is_same_v<T, Stmt::LocalType>) {
+                Stmt::LocalType copy;
+                copy.loc = node.loc;
+                if (node.structure != nullptr) {
+                    copy.structure = std::make_unique<StructDecl>(clone_struct(*node.structure));
+                }
+                if (node.enumeration != nullptr) {
+                    copy.enumeration = std::make_unique<EnumDecl>(*node.enumeration);
+                }
+                if (node.alias != nullptr) {
+                    copy.alias = std::make_unique<TypedefDecl>(*node.alias);
+                }
                 out->data = std::move(copy);
             } else {
                 out->data = node;

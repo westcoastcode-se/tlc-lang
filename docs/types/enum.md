@@ -22,6 +22,8 @@ An enum does not take type parameters, so `type Name[T type] enum` is not a form
 
 The compiler reports that spelling as `not supported yet`.
 
+`type Color enum` inside a function or a block names that enum until the block ends. `Color.Blue` is an enumerator. A later `Color` is `not supported yet`.
+
 ```c
 type Color enum {
     Red,

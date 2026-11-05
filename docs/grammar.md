@@ -1558,6 +1558,8 @@ A weaker alignment than the fields require is reported as `type mismatch`.
 
 `type Name struct;` is an empty struct, the same type as `type Name struct {}`.
 
+Inside a function or a block, `type Name struct`, `type Name enum`, and `type Name i32` introduce that name until the block ends. A use after that block is `not supported yet`. The same name in that block is `redefinition`. A nested block may declare the name again. `type Box[T type] struct`, a union, a trait, and `export` or `extern` on that local type are `not supported yet`.
+
 `sizeof` is 0, and the struct can have methods.
 
 `type Name struct(align=16);` is that empty struct with the alignment, and `sizeof` is still 0.

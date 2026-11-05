@@ -774,9 +774,16 @@ struct Stmt {
         std::unique_ptr<Expr> cond;
         std::string message;
     };
+    // `type Name struct`, `type Name enum`, or `type Name i32` inside a function or a block.
+    struct LocalType {
+        SourceLoc loc{};
+        std::unique_ptr<StructDecl> structure;
+        std::unique_ptr<EnumDecl> enumeration;
+        std::unique_ptr<TypedefDecl> alias;
+    };
 
     using Data = std::variant<Block, Return, Expression, If, While, For, DoWhile, Switch, Case, Break, Continue, Decl,
-                              Func, Defer, Bind, Assert>;
+                              Func, Defer, Bind, Assert, LocalType>;
 
     Data data;
 

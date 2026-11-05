@@ -2062,6 +2062,191 @@ void Checker::define_struct_fields() {
     pending_structs_.clear();
 }
 
+void Checker::install_local_type(const Stmt::LocalType &local) {
+    if (scopes_.empty()) {
+        error(local.loc, "not supported yet");
+        return;
+    }
+    if (local.structure != nullptr) {
+        const StructDecl &item = *local.structure;
+        if (item.name.empty() || !item.type_params.empty() || item.is_union || item.is_extern) {
+            error(item.loc, "not supported yet");
+            return;
+        }
+        if (scopes_.back().symbols.contains(item.name)) {
+            error(item.loc, "redefinition");
+            return;
+        }
+        const int id = static_cast<int>(structs_.size());
+        StructInfo created;
+        created.name = item.name;
+        created.file_id = file_id_;
+        created.loc = item.loc;
+        created.align = item.align;
+        structs_.push_back(std::move(created));
+        Symbol symbol;
+        symbol.name = item.name;
+        symbol.is_type = true;
+        symbol.is_struct_tag = true;
+        symbol.type = type_struct(id);
+        symbol.function_id = scopes_.back().function_id;
+        symbol.loc = item.loc;
+        declare(std::move(symbol), item.loc);
+        StructInfo &info = structs_[static_cast<std::size_t>(id)];
+        for (const FieldDecl &field : item.fields) {
+            if (field.name.empty()) {
+                continue;
+            }
+            bool repeat = false;
+            for (const StructInfo::Field &existing : info.fields) {
+                if (existing.name == field.name) {
+                    repeat = true;
+                }
+            }
+            if (repeat) {
+                error(field.loc, "redefinition");
+                continue;
+            }
+            FieldDecl &written = const_cast<FieldDecl &>(field);
+            prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
+                            written.indirections, written.optional, written.is_array, written.array_len,
+                            written.array_len_name, written.type_args, written.loc);
+            fold_shells(written.shells, written.loc);
+            const bool by_value = written.indirections == 0 && !written.is_fn_ptr && written.type_package.empty() &&
+                                  !written.is_enum && written.shells.empty() && !written.is_array &&
+                                  written.type_name == item.name;
+            if (by_value) {
+                error(field.loc, "recursive struct " + item.name + " -> " + item.name);
+                info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, false});
+                continue;
+            }
+            const bool hidden = written.indirections > 0 || written.is_array && written.array_len < 0;
+            Type field_type =
+                written.is_tuple
+                    ? type_of_tuple_field(written)
+                    : written.is_fn_ptr
+                          ? type_of_fn_ptr(written.type_name, written.type_package, written.is_struct, written.is_enum,
+                                           written.ret_indirections, written.indirections, written.fn_params,
+                                           written.fn_variadic, written.fn_results, written.loc, written.ret_optional,
+                                           written.ret_const_pointee)
+                          : object_type(written.type_name, written.indirections, written.is_array, written.array_len,
+                                        written.loc, false, written.type_package, written.is_struct, written.is_enum,
+                                        false, written.optional, written.const_pointee, hidden, written.elem_const,
+                                        written.elem_slice, written.shells, true);
+            if (written.is_const) {
+                field_type.is_const = true;
+            }
+            info.fields.push_back(StructInfo::Field{field.name, std::move(field_type), field.loc, false});
+            if (field.init != nullptr) {
+                info.fields.back().has_init = true;
+                info.fields.back().init = field.init.get();
+                check_field_default(*field.init, info.fields.back().type, field.loc);
+            }
+        }
+        info.complete = true;
+        return;
+    }
+    if (local.enumeration != nullptr) {
+        const EnumDecl &item = *local.enumeration;
+        if (item.name.empty() || item.is_extern) {
+            error(item.loc, "not supported yet");
+            return;
+        }
+        if (scopes_.back().symbols.contains(item.name)) {
+            error(item.loc, "redefinition");
+            return;
+        }
+        Type underlying = type_int();
+        if (!item.underlying.empty()) {
+            Type parsed;
+            if (!fill_builtin(item.underlying, parsed) ||
+                (parsed.kind != TypeKind::Int && parsed.kind != TypeKind::Char && parsed.kind != TypeKind::Bool)) {
+                error(item.loc, "type mismatch");
+                return;
+            }
+            underlying = parsed;
+        }
+        const int id = static_cast<int>(enum_types_.size());
+        EnumInfo info;
+        info.name = item.name;
+        info.file_id = file_id_;
+        info.underlying = underlying;
+        int64_t next = 0;
+        for (const Enumerator &enumerator : item.enumerators) {
+            const int64_t value = enumerator.has_value ? enumerator.value : next;
+            if (!enumerator.name.empty()) {
+                bool duplicate = false;
+                for (const EnumInfo::Member &member : info.members) {
+                    if (member.name == enumerator.name) {
+                        duplicate = true;
+                    }
+                }
+                if (duplicate) {
+                    error(enumerator.loc, "redefinition");
+                } else {
+                    info.members.push_back(EnumInfo::Member{enumerator.name, value, enumerator.loc});
+                }
+            }
+            next = value + 1;
+        }
+        enum_types_.push_back(std::move(info));
+        Symbol symbol;
+        symbol.name = item.name;
+        symbol.is_type = true;
+        symbol.is_enum = true;
+        symbol.type = type_enum(id);
+        symbol.function_id = scopes_.back().function_id;
+        symbol.loc = item.loc;
+        declare(std::move(symbol), item.loc);
+        return;
+    }
+    if (local.alias != nullptr) {
+        const TypedefDecl &item = *local.alias;
+        if (item.name.empty() || !item.type_params.empty() || item.is_tuple) {
+            error(item.loc, "not supported yet");
+            return;
+        }
+        if (scopes_.back().symbols.contains(item.name)) {
+            error(item.loc, "redefinition");
+            return;
+        }
+        TypedefDecl &written = const_cast<TypedefDecl &>(item);
+        prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
+                        written.indirections, written.optional, written.is_array, written.array_len,
+                        written.array_len_name, written.type_args, written.loc);
+        fold_shells(written.shells, written.loc);
+        Type type = written.is_fn_ptr
+                        ? type_of_fn_ptr(written.type_name, written.type_package, written.is_struct, written.is_enum,
+                                         written.ret_indirections, written.indirections, written.fn_params,
+                                         written.fn_variadic, written.fn_results, written.loc, written.ret_optional,
+                                         written.ret_const_pointee)
+                        : object_type(written.type_name, written.indirections, written.is_array, written.array_len,
+                                      written.loc, false, written.type_package, written.is_struct, written.is_enum,
+                                      false, written.optional, written.const_pointee, false, written.elem_const,
+                                      written.elem_slice, written.shells, true);
+        if (type.kind == TypeKind::Invalid || type.kind == TypeKind::Trait) {
+            if (type.kind == TypeKind::Trait) {
+                error(item.loc, "not supported yet");
+            }
+            return;
+        }
+        if (written.is_const) {
+            type.is_const = true;
+        }
+        type.alias_id = next_alias_id_++;
+        alias_names_.push_back(item.name);
+        alias_file_.push_back(file_id_);
+        Symbol symbol;
+        symbol.name = item.name;
+        symbol.is_type = true;
+        symbol.is_typedef = true;
+        symbol.type = std::move(type);
+        symbol.function_id = scopes_.back().function_id;
+        symbol.loc = item.loc;
+        declare(std::move(symbol), item.loc);
+    }
+}
+
 void Checker::register_structs(const TranslationUnit &unit, uint32_t file_id) {
     declare_struct_tags(unit, file_id);
     fold_early_consts(const_cast<TranslationUnit &>(unit), file_id);

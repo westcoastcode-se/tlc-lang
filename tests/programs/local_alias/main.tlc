@@ -1,0 +1,5 @@
+func main() i32 {
+    type Integer i32;
+    var n = Integer(40);
+    return i32(n) + 2;
+}

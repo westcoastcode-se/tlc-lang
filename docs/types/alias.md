@@ -46,6 +46,8 @@ retq                             # return
 
 `type Integer i32` is a distinct type with the same representation as `i32`. A cast confirms which type a value has: `Integer(10)` and `i32(n)`.
 
+`type Integer i32` inside a function or a block names that alias until the block ends. `var n Integer = 40` is `type mismatch`. `Integer(40)` is that value.
+
 `type Count const i32` is that alias, and the value is constant. `Count(40)` and `i32(n)` confirm it. Assigning the name is `type mismatch`. `var n Count = 40` is `type mismatch`.
 
 `var n Integer = 10`, `var wide i32 = n`, and `n + 1` are reported as `type mismatch`. `n + Integer(1)` has type `Integer`.

@@ -241,6 +241,7 @@ class Parser {
     AssertDecl parse_assert();
     TestDecl parse_test();
     std::unique_ptr<Stmt> parse_block();
+    std::unique_ptr<Stmt> parse_local_type();
     // `unsafe { ... }`. The block is an unsafe context.
     std::unique_ptr<Stmt> parse_unsafe_block();
     // The body of if, while, and for. A missing '{' is an error.
