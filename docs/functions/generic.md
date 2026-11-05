@@ -4685,7 +4685,9 @@ The receiver is not one of those parameters.
 
 `extern(abi="c")` on a function whose parameter is a trait is `extern(abi="c") on a trait or a generic`.
 
-A bare `extern` and `extern(abi="tlc")` on a generic function are `not supported yet`.
+`extern(abi="tlc")` on a generic function is `not supported yet`.
+
+A bare `extern` declares a generic function the compiler implements. It is not `extern(abi="c")`. The declaration has no body and emits nothing. A body on that declaration is `not supported yet`. A later function with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
 ```c
 extern func id[T type](value T) T;
@@ -4697,7 +4699,7 @@ func main() i32 {
 
 That declaration emits nothing.
 
-A generic prototype with no body is `not supported yet`.
+`func id[T type](value T) T` with no `extern` is `not supported yet`.
 
 `func id[T type](value T) T` then `id(1)` is that error.
 

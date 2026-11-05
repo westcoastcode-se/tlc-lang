@@ -866,8 +866,6 @@ int run_lsp_tests() {
     EXPECT_HAS(check, points_hover, "len i32");
 
     const std::string over_source =
-        "func once(n i32) i32;\n"
-        "\n"
         "func once(n i32) i32 {\n"
         "    return n;\n"
         "}\n"
@@ -916,26 +914,25 @@ int run_lsp_tests() {
 
     const LineCol once_call = at_needle(over_source, "once(1)", false);
     const std::string once_def = request_at(to_child[1], from_child[0], 40, "textDocument/definition", over_uri, once_call);
-    EXPECT_HAS(check, once_def, "\"line\":2,");
-    EXPECT(check, once_def.find("\"line\":0,") == std::string::npos);
+    EXPECT_HAS(check, once_def, "\"line\":0,");
 
     const LineCol zero_call = at_needle(over_source, "zero() +", false);
     const std::string zero_def = request_at(to_child[1], from_child[0], 41, "textDocument/definition", over_uri, zero_call);
-    EXPECT_HAS(check, zero_def, "\"line\":6,");
+    EXPECT_HAS(check, zero_def, "\"line\":4,");
     const std::string zero_hover = request_at(to_child[1], from_child[0], 42, "textDocument/hover", over_uri, zero_call);
     EXPECT_HAS(check, zero_hover, "func zero() i32");
 
     const LineCol zero_n = at_needle(over_source, "zero(1)", false);
     const std::string zero_n_def = request_at(to_child[1], from_child[0], 43, "textDocument/definition", over_uri, zero_n);
-    EXPECT_HAS(check, zero_n_def, "\"line\":10,");
+    EXPECT_HAS(check, zero_n_def, "\"line\":8,");
     const std::string zero_n_hover = request_at(to_child[1], from_child[0], 44, "textDocument/hover", over_uri, zero_n);
     EXPECT_HAS(check, zero_n_hover, "func zero(n i32) i32");
 
     const LineCol twin_decl = at_needle(over_source, "twin(n", false);
     const std::string twin_decl_def =
         request_at(to_child[1], from_child[0], 45, "textDocument/definition", over_uri, twin_decl);
-    EXPECT_HAS(check, twin_decl_def, "\"line\":14,");
-    EXPECT(check, twin_decl_def.find("\"line\":18,") == std::string::npos);
+    EXPECT_HAS(check, twin_decl_def, "\"line\":12,");
+    EXPECT(check, twin_decl_def.find("\"line\":16,") == std::string::npos);
 
     const LineCol twin_call = at_needle(over_source, "twin(1)", false);
     const std::string twin_def = request_at(to_child[1], from_child[0], 46, "textDocument/definition", over_uri, twin_call);
@@ -945,23 +942,23 @@ int run_lsp_tests() {
 
     const LineCol draw_call = at_needle(over_source, "draw()", false);
     const std::string draw_def = request_at(to_child[1], from_child[0], 48, "textDocument/definition", over_uri, draw_call);
-    EXPECT_HAS(check, draw_def, "\"line\":24,");
+    EXPECT_HAS(check, draw_def, "\"line\":22,");
     const std::string draw_hover = request_at(to_child[1], from_child[0], 49, "textDocument/hover", over_uri, draw_call);
     EXPECT_HAS(check, draw_hover, "func Point.draw(self *Point) i32");
 
     const LineCol draw_n = at_needle(over_source, "draw(1)", false);
     const std::string draw_n_def = request_at(to_child[1], from_child[0], 50, "textDocument/definition", over_uri, draw_n);
-    EXPECT_HAS(check, draw_n_def, "\"line\":28,");
+    EXPECT_HAS(check, draw_n_def, "\"line\":26,");
     const std::string draw_n_hover = request_at(to_child[1], from_child[0], 51, "textDocument/hover", over_uri, draw_n);
     EXPECT_HAS(check, draw_n_hover, "func Point.draw(self *Point, n i32) i32");
 
     const LineCol local_call = at_needle(over_source, "local() +", false);
     const std::string local_def = request_at(to_child[1], from_child[0], 52, "textDocument/definition", over_uri, local_call);
-    EXPECT_HAS(check, local_def, "\"line\":33,");
+    EXPECT_HAS(check, local_def, "\"line\":31,");
 
     const LineCol local_n = at_needle(over_source, "local(1)", false);
     const std::string local_n_def = request_at(to_child[1], from_child[0], 53, "textDocument/definition", over_uri, local_n);
-    EXPECT_HAS(check, local_n_def, "\"line\":36,");
+    EXPECT_HAS(check, local_n_def, "\"line\":34,");
 
     const std::string each_source =
         "type Bag struct { n i32; };\n"

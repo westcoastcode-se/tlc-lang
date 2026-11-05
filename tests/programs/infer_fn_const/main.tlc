@@ -22,8 +22,6 @@ func written() func ([]const u8) i32 {
     return len_text;
 }
 
-func agreed() func ([]const u8) i32;
-
 func agreed() {
     return len_text;
 }

@@ -924,6 +924,11 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                     error(method.loc, "redefinition");
                     continue;
                 }
+                // Bare `extern` is the compiler's method. A TLC body does not replace it.
+                if ((compiler_owned_extern(*existing) && method.body != nullptr) ||
+                    (compiler_owned_extern(method) && existing->body != nullptr)) {
+                    continue;
+                }
                 const bool keep_extern = existing->is_extern || method.is_extern;
                 const bool keep_export = existing->exported || method.exported;
                 if (method.body != nullptr) {
@@ -966,6 +971,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             error(method.loc, "not supported yet");
         }
         const bool has_body = method.body != nullptr;
+        const bool incoming_owned = compiler_owned_extern(method);
         const bool is_static = method.static_method;
         const bool unsafe = method.unsafe;
         const bool exported = method.exported;
@@ -1012,12 +1018,15 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             const bool link_clash = !link_name.empty() && !slot->link_name.empty() && slot->link_name != link_name;
             const bool clash = !same_type(slot->type, signature) || (slot->has_body && has_body) ||
                                slot->unsafe_fn != unsafe || link_clash;
-            if (!clash && has_body) {
+            const bool slot_owned = slot->decl != nullptr && compiler_owned_extern(*slot->decl);
+            // The declaration is already `redefinition`. Keep the earlier form.
+            const bool keep_compiler = (slot_owned && has_body) || (incoming_owned && slot->has_body);
+            if (!clash && !keep_compiler && has_body) {
                 slot->has_body = true;
                 slot->decl = stable;
                 slot->type = signature;
             }
-            if (!clash) {
+            if (!clash && !keep_compiler) {
                 if (slot->link_name.empty()) {
                     slot->link_name = link_name;
                 }
@@ -1078,6 +1087,14 @@ void Checker::absorb_template(Symbol &existing, const FunctionDecl &fn, Function
         }
         if (generic_full_key(*slot, slot->type_params) != full || (slot->body != nullptr && fn.body != nullptr) ||
             slot->unsafe != fn.unsafe) {
+            if (report) {
+                error(fn.loc, "redefinition");
+            }
+            return;
+        }
+        // Bare `extern` is a function the compiler implements. A later TLC body is not that form.
+        if ((compiler_owned_extern(*slot) || compiler_owned_extern(fn)) &&
+            (fn.body != nullptr || slot->body != nullptr)) {
             if (report) {
                 error(fn.loc, "redefinition");
             }
@@ -1175,6 +1192,12 @@ void Checker::generic_method_clash(const FunctionDecl &fn) {
                 return;
             }
             continue;
+        }
+        // Bare `extern` is a method the compiler implements. A TLC body is not that form.
+        if ((compiler_owned_extern(owned.fn) && fn.body != nullptr) ||
+            (compiler_owned_extern(fn) && owned.fn.body != nullptr)) {
+            error(fn.loc, "redefinition");
+            return;
         }
         const bool link_clash =
             !fn.link_name.empty() && !owned.fn.link_name.empty() && owned.fn.link_name != fn.link_name;
@@ -1674,6 +1697,10 @@ bool Checker::extern_generic_trait_param(uint32_t file, const FunctionDecl &fn) 
         }
     }
     return false;
+}
+
+bool Checker::compiler_owned_extern(const FunctionDecl &fn) const {
+    return fn.is_extern && !fn.extern_c && !fn.extern_compiler && fn.link_name.empty() && fn.body == nullptr;
 }
 
 bool Checker::extern_generic_prototype(const FunctionDecl &fn) const {
@@ -2268,8 +2295,9 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     // A trait parameter is not specialized away with `T`.
     // `builtin.atomic_*` and `builtin.fence` have no body. Code generation replaces the call.
     const bool compiler_atomic = is_std_builtin_file(owner) && atomic_builtin(templ->name) != AtomicBuiltin::None;
+    // Bare `extern` names a function the compiler implements. A missing implementation is not a link symbol.
     if (templ->extern_c || templ->variadic || extern_generic_trait_param(owner, *templ) ||
-        (templ->body == nullptr && !extern_generic_prototype(*templ) && !compiler_atomic)) {
+        (templ->body == nullptr && !compiler_atomic)) {
         error(call.loc, templ->extern_c ? "extern(abi=\"c\") on a trait or a generic" : "not supported yet");
         return type_invalid();
     }
@@ -3220,8 +3248,14 @@ void Checker::register_method_template(const FunctionDecl &fn) {
         if (existing == nullptr || existing->static_method != fn.static_method || !same_default_shape(*existing, fn)) {
             continue;
         }
-        // A later body defines the specialization. `extern` on either declaration names it.
+        // Two TLC bodies are `redefinition`. Bare `extern` does not take a later body.
         if ((existing->body != nullptr && fn.body != nullptr) || existing->unsafe != fn.unsafe) {
+            error(fn.loc, "redefinition");
+            return;
+        }
+        // Bare `extern` is a method the compiler implements. A later TLC body is not that form.
+        if ((compiler_owned_extern(*existing) && fn.body != nullptr) ||
+            (compiler_owned_extern(fn) && existing->body != nullptr)) {
             error(fn.loc, "redefinition");
             return;
         }
@@ -3603,7 +3637,8 @@ std::optional<Type> Checker::apply_method_template(Expr &expr, const FunctionDec
         }
     };
     // A method with no body is that specialization. A comptime parameter on it needs a body.
-    if (comptime_prototype(templ)) {
+    // Bare `extern` has no TLC body. The compiler supplies one only for a function it implements.
+    if (templ.body == nullptr || comptime_prototype(templ)) {
         note_base();
         error(call.loc, "not supported yet");
         check_args();

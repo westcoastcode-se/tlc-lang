@@ -418,8 +418,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 require_method_params(*fn);
                 if (generic_struct_name(file_id_, fn->method_struct)) {
                     // `func Vec[T]::get[U type]` is a method template on each specialization.
-                    // `...` and a trait parameter stay rejected. A method with no body is
-                    // that specialization. A comptime parameter on it needs a body.
+                    // `...` and a trait parameter stay rejected. Bare `extern` has no TLC body.
+                    // A comptime parameter on it needs a body.
                     if (!fn->type_params.empty()) {
                         for (const TypeParam &param : fn->type_params) {
                             for (const std::string &used : fn->method_params) {
@@ -433,8 +433,8 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                         }
                     }
                     // `export` publishes `value.name(...)` and `pkg.Vec[i32].name(...)`.
-                    // `extern` specializes with the struct. A C symbol is one library name,
-                    // so `extern(abi="c")` is not a method of a generic struct.
+                    // Bare `extern` is a method the compiler implements.
+                    // `extern(abi="c")` is not a method of a generic struct.
                     if (fn->extern_c) {
                         error(fn->loc, "extern(abi=\"c\") on a trait or a generic");
                     } else if (fn->is_extern && fn->variadic) {

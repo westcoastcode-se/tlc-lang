@@ -14,8 +14,6 @@ func give() {
     return touch();
 }
 
-func ready() void;
-
 func ready() {
     return touch();
 }

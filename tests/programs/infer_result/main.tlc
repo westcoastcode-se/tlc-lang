@@ -7,8 +7,6 @@ type Box[T type] struct {
     n T;
 };
 
-func add(a i32, b i32) i32;
-
 func main() {
     var p Point;
     p.x = 10;

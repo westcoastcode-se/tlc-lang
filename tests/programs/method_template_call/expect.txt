@@ -1,1 +1,1 @@
-link-error: undefined reference to `main.Point.id.spec.i32'
+compile-error: not supported yet

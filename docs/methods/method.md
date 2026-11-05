@@ -257,39 +257,21 @@ Another package calls `value.get(...)`.
 
 ## A method with no body
 
-A method may have no body.
+A method has a body. `func Point::read(self this) i32;` is `not supported yet`.
 
-The declaration ends with `;`.
+`extern(abi="c")` may end with `;`.
 
-It is not `extern(abi="c")`.
+A bare `extern` on a generic method declares a method the compiler implements. It emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
-The call is a call to that symbol.
+A bare `extern` on a method that is not generic is `not supported yet`.
 
-The compiler may supply the body.
-
-A program that calls a method with no body, when the compiler does not supply one, does not link.
-
-A method template is that same rule.
-
-The call names the specialization.
-
-When the file is `main.tlc`, `p.id[i32](4)` calls `main.Point.id.spec.i32`.
-
-A comptime parameter on that template is `not supported yet`.
+A comptime parameter on that generic method is `not supported yet`.
 
 ## extern
 
-### A method in a tlc library
+### A C method
 
-`extern func Point::read` names that method in a tlc library.
-
-The call is still `p.read()`.
-
-A function with no receiver is still `Point.origin()`.
-
-The symbol is `qualifier.Point.read`, the same spelling an exported method uses.
-
-A body defines that symbol.
+A bare `extern` on `func Point::read` is `not supported yet`.
 
 `extern(abi="c")` keeps the name `Point.read` and the C calling convention.
 
@@ -305,11 +287,7 @@ Two `extern(abi="c")` parameter lists on one method are `redefinition`.
 
 ### A generic struct
 
-`extern func Vec[T]::get` is the same rule on a generic struct.
-
-Each specialization is its own symbol.
-
-The call stays `value.get(...)`.
+A bare `extern` on `func Vec[T]::get` declares a method the compiler implements. The declaration emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
 `extern(abi="c")` and `extern(abi="c", name="symbol")` on that method are `extern(abi="c") on a trait or a generic`.
 
@@ -333,21 +311,15 @@ A prototype with no body is `not supported yet`.
 
 ### A method template
 
-A bare `extern` and `extern(abi="tlc")` on a method template are `not supported yet`.
+A bare `extern` declares a generic method the compiler implements. The declaration has no body and emits nothing. A body on that declaration is `not supported yet`. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
+
+`extern(abi="tlc")` on that method is `not supported yet`.
 
 `extern(abi="c")` on that template is `extern(abi="c") on a trait or a generic`.
 
 `extern(name="symbol")` is `name requires abi="c"`.
 
-A method template may have no body.
-
-The call names the specialization.
-
-The compiler may supply the body.
-
-A program that calls it, when the compiler does not supply one, does not link.
-
-A comptime parameter on that prototype is `not supported yet`.
+A comptime parameter on that declaration is `not supported yet`.
 
 ### A trait parameter
 

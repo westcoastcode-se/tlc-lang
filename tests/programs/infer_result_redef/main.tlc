@@ -1,4 +1,6 @@
-func pick(n i32) bool;
+func pick(n i32) bool {
+    return n != 0;
+}
 
 func pick(n i32) {
     return n;

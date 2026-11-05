@@ -10,8 +10,6 @@ func touch() {
     var n i32 = 1;
 }
 
-func ready() void;
-
 func ready() {
     var n i32 = 2;
 }

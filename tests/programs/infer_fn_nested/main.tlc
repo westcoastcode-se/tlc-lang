@@ -26,8 +26,6 @@ func bare_written() func () func (i32) i32 {
     return inner;
 }
 
-func agreed() func (i32) func (i32) i32;
-
 func agreed() {
     return id;
 }

@@ -2139,6 +2139,9 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
 Type Checker::finish_static_call(Expr &expr, const MethodInfo &method, bool deferring, bool used) {
     Expr::Call &node = std::get<Expr::Call>(expr.data);
     const std::size_t call_mark = diags_.size();
+    if (method.decl != nullptr && compiler_owned_extern(*method.decl)) {
+        error(node.loc, "not supported yet");
+    }
     require_unsafe_call(method.unsafe_fn, node.loc);
     if (deferring && method.type.variadic) {
         error(node.loc, "not supported yet");
@@ -2380,6 +2383,9 @@ Type Checker::finish_value_method(Expr &expr, const Expr::Selector &selector, co
             check_expr(*arg, true);
         }
         return type_invalid();
+    }
+    if (method.decl != nullptr && compiler_owned_extern(*method.decl)) {
+        error(node.loc, "not supported yet");
     }
     require_unsafe_call(method.unsafe_fn, node.loc);
     if (checking_defer_ && method.type.variadic) {

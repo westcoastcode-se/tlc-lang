@@ -90,7 +90,7 @@ movl -8(%rsp), %eax              # return
 retq
 ```
 
-Calls, indexing, `.`, address-of `&`, and dereference `*` are operators too.
+Calls, indexing, `.`, address-of `&`, and dereference `*` are operators too. `p->x` is not a form. A field is `p.x`.
 
 ## Binding and associativity
 

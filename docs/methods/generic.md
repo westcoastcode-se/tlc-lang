@@ -88,23 +88,9 @@ Without `export`, that call is `get is not exported`.
 
 An unexported struct is `Vec is not exported`.
 
-A method template may have no body.
+A method template has a body. `func Point::id[T type](self *this, value T) T;` is `not supported yet`.
 
-The call names the specialization.
-
-When the file is `main.tlc`, `p.id[i32](4)` calls `main.Point.id.spec.i32`, and `v.get[i32](4)` on `Vec[i32]` calls `main.Vec.spec.i32.get.spec.i32`.
-
-The compiler may supply the body.
-
-A program that calls it, when the compiler does not supply one, does not link.
-
-A comptime parameter on that prototype is `not supported yet`.
-
-`...` on a method template is `not supported yet`.
-
-## extern on a method template
-
-A bare `extern` and `extern(abi="tlc")` on a method template are `not supported yet`.
+A bare `extern` declares a generic method the compiler implements. It is not `extern(abi="c")`. The declaration has no body and emits nothing. A body on that declaration is `not supported yet`. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
 ```c
 extern func Point::id[T type](self *this, value T) T;
@@ -116,21 +102,15 @@ func main() i32 {
 
 That declaration emits nothing.
 
+`extern(abi="tlc")` on that method is `not supported yet`.
+
 `extern(abi="c")` and `extern(abi="c", name="symbol")` on that template are `extern(abi="c") on a trait or a generic`.
 
 `extern(name="symbol")` and `extern(abi="tlc", name="symbol")` are `name requires abi="c"`.
 
-A method template may have no body.
+A comptime parameter on that declaration is `not supported yet`.
 
-The call names the specialization.
-
-The compiler may supply the body.
-
-A program that calls it, when the compiler does not supply one, does not link.
-
-A comptime parameter on that prototype is `not supported yet`.
-
-`...` on that template is `not supported yet`.
+`...` on a method template is `not supported yet`.
 
 A parameter whose type is a trait, such as `s Shape` beside `[T type]`, is `not supported yet`.
 
@@ -140,15 +120,9 @@ A parameter whose type is a trait, such as `s Shape` beside `[T type]`, is `not 
 
 Another package calls `value.get(...)`.
 
-`extern func Vec[T]::get` names that method in a tlc library.
+A bare `extern` on `func Vec[T]::get` declares a method the compiler implements. The declaration emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
-The call stays `value.get(...)`.
-
-When there is no receiver, the call stays `Vec[i32].from(...)`.
-
-Each specialization is its own symbol, the same spelling an exported method on that specialization uses.
-
-A body defines that symbol.
+A body on an ordinary `func Vec[T]::get` defines that method.
 
 `extern(abi="c")` and `extern(abi="c", name="symbol")` on that method are `extern(abi="c") on a trait or a generic`.
 

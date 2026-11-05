@@ -1,0 +1,15 @@
+type Point struct {
+    x i32;
+};
+
+extern func Point::id[T type](self *this, value T) T;
+
+type Vec[T type] struct {
+    n T;
+};
+
+extern func Vec[T]::get(self this) T;
+
+func main() i32 {
+    return 0;
+}

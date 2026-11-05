@@ -9,8 +9,6 @@ func pick(flag bool) {
     return pick(true);
 }
 
-func ready(flag bool) i32;
-
 func ready(flag bool) {
     if (flag) {
         return 2;

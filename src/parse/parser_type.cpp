@@ -263,7 +263,7 @@ void Parser::reject_tlc_link_name(bool extern_c, const std::string &link_name, S
     diags_.error(name_loc.valid() ? name_loc : peek().loc, "name requires abi=\"c\"");
 }
 
-bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name, SourceLoc &name_loc) {
+bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name, SourceLoc &name_loc, bool allow_bare) {
     if (!check(TokenKind::KwExtern)) {
         return false;
     }
@@ -271,9 +271,14 @@ bool Parser::take_extern(bool &is_extern, bool &extern_c, std::string &link_name
     ++pos_;
     is_extern = false;
     extern_c = false;
-    // A bare `extern` was `abi="tlc"`. Only `extern(abi="c")` is a library declaration.
+    // A bare `extern` names a generic function the compiler implements. It is not `abi="c"`.
     if (!eat(TokenKind::LParen)) {
-        diags_.error(extern_loc, "not supported yet");
+        if (!allow_bare) {
+            diags_.error(extern_loc, "not supported yet");
+            return true;
+        }
+        is_extern = true;
+        name_loc = extern_loc;
         return true;
     }
     // A later `extern` in the same specifier list must keep a name already stored.
@@ -1350,7 +1355,31 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         parse_assignment();
         expect(TokenKind::Semicolon, "expected ';'");
     } else {
+        // A body is required. An `extern` function may end at `;`. A trait method does too.
+        if (allow_body && !is_extern && check(TokenKind::Semicolon)) {
+            diags_.error(fn.loc, "not supported yet");
+        }
         expect(TokenKind::Semicolon, "expected ';'");
+    }
+    // Bare `extern` is only a generic function the compiler implements. No TLC body follows.
+    const bool bare = fn.is_extern && !fn.extern_c && !fn.extern_compiler && fn.link_name.empty();
+    if (bare) {
+        // `Vec[T]::get` and `id[T]` are generic. `Point::read` is not.
+        const bool generic = !fn.type_params.empty() || !fn.method_params.empty();
+        bool comptime = false;
+        for (const Param &param : fn.params) {
+            if (param.is_comptime) {
+                comptime = true;
+                break;
+            }
+        }
+        if (!generic || comptime || fn.variadic) {
+            diags_.error(fn.loc, "not supported yet");
+            fn.is_extern = false;
+        } else if (fn.body != nullptr) {
+            diags_.error(fn.loc, "not supported yet");
+            fn.body.reset();
+        }
     }
     return fn;
 }

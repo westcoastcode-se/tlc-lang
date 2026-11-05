@@ -10,8 +10,6 @@ func done() {
     return;
 }
 
-func ready() void;
-
 func ready() {
     return;
 }

@@ -12,9 +12,11 @@
 
 `lib/tlc/builtin/builtin.tlc` is that contract. A signature there that does not match the compiler is `type mismatch`.
 
-A bare `extern` and `extern(abi="tlc")` are `not supported yet`.
+A bare `extern` on a generic function declares a function the compiler implements. The declaration has no body and emits nothing. A body on that declaration is `not supported yet`. A later function with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
-That includes a function, a method, a generic, a trait, a `const`, and a `type`.
+A bare `extern` and `extern(abi="tlc")` on any other declaration are `not supported yet`.
+
+That includes a function that is not generic, a method that is not generic, a trait, a `const`, and a `type`.
 
 The compiler emits nothing for that declaration.
 
@@ -40,17 +42,15 @@ That includes a trait default, a generic function, a method template, and a meth
 
 That error is `extern(abi="c") on a trait or a generic`.
 
-A generic prototype with no body is `not supported yet`.
+A generic function with no body is `not supported yet` unless it is bare `extern`.
 
-A method template may have no body.
+`extern(abi="c")` on that generic is `extern(abi="c") on a trait or a generic`.
 
-The call names the specialization.
+A body on the bare `extern` is `not supported yet`. A later function with the same parameter list is `redefinition`.
 
-The compiler may supply the body.
+A call the compiler does not implement is `not supported yet`.
 
-A program that calls it, when the compiler does not supply one, does not link.
-
-A comptime parameter on that prototype is `not supported yet`.
+A comptime parameter on that declaration is `not supported yet`.
 
 `...` on a function that is not `extern(abi="c")` is `not supported yet`.
 

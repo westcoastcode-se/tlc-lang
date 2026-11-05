@@ -1,4 +1,6 @@
-func bad() i32;
+func bad() i32 {
+    return 1;
+}
 
 func bad() {
     return;

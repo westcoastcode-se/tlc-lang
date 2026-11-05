@@ -478,21 +478,15 @@ The functions are ordinary tlc in `lib/tlc/std/mem`.
 
 `+` on `[]const u8` is `type mismatch: expected an integer, found []const u8`.
 
-A function with no body is a prototype and ends with `;`.
+A function has a body. `func add(a i32, b i32) i32;` is `not supported yet`.
 
-It is not `extern(abi="c")`.
+`extern(abi="c")` may end with `;`.
 
-The call is a call to that symbol. The compiler may supply the body.
+A bare `extern` on a generic function declares a function the compiler implements. It emits nothing. A later function with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
-A program that calls a function with no body, when the compiler does not supply one, does not link.
+A bare `extern` on a function that is not generic is `not supported yet`.
 
-A method is the same rule.
-
-A method template names the specialization.
-
-When the file is `main.tlc`, `p.id[i32](4)` calls `main.Point.id.spec.i32`.
-
-A comptime parameter on that template is `not supported yet`.
+A comptime parameter on that generic function is `not supported yet`.
 
 One name may have several parameter lists.
 
@@ -596,7 +590,7 @@ One expression uses that expression's type.
 
 Several expressions in one `return` are several results when every `return` agrees.
 
-A prototype still writes the result: `func add(a i32, b i32);` is `expected a type`.
+A function with no written result and no body is `not supported yet`. `func add(a i32, b i32);` is that error. An `extern` function still writes the result.
 
 `typeof` is not a result.
 
@@ -682,15 +676,9 @@ On a generic struct that call is `pkg.Vec[i32].name(...)`.
 
 A method without `export` is reported as `name is not exported`.
 
-`extern func Type::name` names that method in a library.
+A bare `extern` on `func Type::name` is `not supported yet`.
 
-The call stays `value.name(...)`, or `Type.name(...)` when there is no receiver.
-
-`extern func Vec[T]::get` names that method.
-
-The call stays `value.get(...)`, or `Vec[i32].name(...)` when there is no receiver.
-
-Each specialization is its own symbol.
+A bare `extern` on `func Vec[T]::get` declares a method the compiler implements. The declaration emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
 `extern(abi="c")` and `extern(abi="c", name="symbol")` on that method are reported as `extern(abi="c") on a trait or a generic`.
 
@@ -714,21 +702,13 @@ The call stays `value.name[i32](...)`.
 
 Each specialization is its own symbol.
 
-A method template may have no body.
-
-The call names the specialization.
-
-The compiler may supply the body.
-
-A program that calls it, when the compiler does not supply one, does not link.
+A bare `extern` on a method template declares a method the compiler implements. The declaration emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
 `extern(abi="c")` on that template is reported as `extern(abi="c") on a trait or a generic`.
 
 `extern(name="symbol")` on that template is reported as `name requires abi="c"`.
 
-A prototype may be the declaration that says `extern`.
-
-A call of that prototype names the specialization.
+A body on that declaration is `not supported yet`.
 
 A comptime parameter on that prototype is reported as `not supported yet`.
 
@@ -794,19 +774,11 @@ The call stays `value.name[i32](...)`.
 
 Each specialization is its own symbol.
 
-A method template may have no body.
-
-The call names the specialization.
-
-The compiler may supply the body.
-
-A program that calls it, when the compiler does not supply one, does not link.
+A bare `extern` on a method template declares a method the compiler implements. The declaration emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
 `extern(abi="c")` on that template is reported as `extern(abi="c") on a trait or a generic`.
 
-A prototype may be the declaration that says `extern`.
-
-A call of that prototype names the specialization.
+A body on that declaration is `not supported yet`.
 
 A comptime parameter on that prototype is reported as `not supported yet`.
 
@@ -1234,7 +1206,9 @@ A `var` is `type mismatch`.
 
 `extern(abi="c")` on `type Name[T] struct` is reported as `extern(abi="c") on a trait or a generic`.
 
-A bare `extern` and `extern(abi="tlc")` on a generic function are `not supported yet`.
+A bare `extern` declares a generic function the compiler implements. The declaration has no body and emits nothing. A body on that declaration is `not supported yet`. A later function with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
+
+`extern(abi="tlc")` on a generic function is `not supported yet`.
 
 A generic function with a body is specialized at the call.
 
@@ -1244,7 +1218,7 @@ Each specialization is its own symbol.
 
 A body defines that symbol.
 
-A generic prototype with no body is `not supported yet`.
+A generic function with no `extern` and no body is `not supported yet`.
 
 A comptime parameter on that prototype is reported as `not supported yet`.
 
@@ -2135,6 +2109,8 @@ element-list = "{" [ element { "," element } [ "," ] ] "}" ;
 element     = expression [ "..." ] ;
 delete-expr = "delete" [ "(" expression ")" ] unary ;
 ```
+
+`->` is not a form. A field is `p.x`.
 
 `[` is a type-parameter list, a type-argument list, an array length, an index, a range, a `new` count, or `_`.
 

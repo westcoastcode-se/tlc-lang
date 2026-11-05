@@ -1,4 +1,6 @@
-func bad() i32;
+func bad() i32 {
+    return 1;
+}
 
 func bad() {
     var n i32 = 1;

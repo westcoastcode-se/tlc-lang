@@ -238,7 +238,7 @@ int run_parser_tests() {
             "func myfunc(ptr func (i32, i32) i32) i32 {\n"
             "  return ptr(10, 20);\n"
             "}\n"
-            "func pick() func (i32) i32;\n"
+            "func pick() func (i32) i32 { return saved; }\n"
             "func main() i32 {\n"
             "  var fp func (i32, i32) i32 = saved;\n"
             "  return myfunc(fp);\n"
@@ -315,7 +315,7 @@ int run_parser_tests() {
         const Parsed parsed = parse_source(
             "var p *i32;\n"
             "var q **i32;\n"
-            "func f(a *i32) *i32;\n"
+            "func f(a *i32) *i32 { return a; }\n"
             "func main() i32 {\n"
             "  p = &q;\n"
             "  return *p;\n"
@@ -392,7 +392,7 @@ int run_parser_tests() {
             "var a [4]i32;\n"
             "var b [2]*i32;\n"
             "var s [3]u8;\n"
-            "func f(xs [4]i32, t *u8) i32;\n"
+            "func f(xs [4]i32, t *u8) i32 { return 0; }\n"
             "func main() i32 {\n"
             "  return \"hi\"[0];\n"
             "}\n");
@@ -1198,7 +1198,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func main() i32 { p->x; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.errors, "not a form");
     }
 
     {

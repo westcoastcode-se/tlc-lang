@@ -66,7 +66,7 @@ A body may omit the result. The type is taken from the `return` expressions, and
 
 Several expressions in one `return` are several results when every `return` agrees.
 
-A prototype still writes the result, and a later body has to agree or the program is `redefinition`.
+Two bodies with the same parameter list are `redefinition`.
 
 A generic omits the result the same way: `func id[T type](value T) { return value; }`. A method body may omit the result too.
 
@@ -125,38 +125,17 @@ movl -4(%rsp), %eax              # move
 retq                             # return
 ```
 
-## A prototype and a later body
+## A body
 
-A function may be declared first and defined later, with the same type. The compiler reports `redefinition` for two bodies with the same parameter list.
+A function has a body. `func add(a i32, b i32) i32;` is `not supported yet`.
 
-```c
-func add(a i32, b i32) i32;
+`extern(abi="c")` may end with `;`.
 
-func add(a i32, b i32) i32 {
-    return a + b;
-}
-```
+A bare `extern` on a generic function declares a function the compiler implements. It emits nothing. A later function with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
-```asm
-add:
-movl %edi, -8(%rsp)              # move
-movl %esi, -4(%rsp)              # move
-movl -8(%rsp), %eax              # move
-addl -4(%rsp), %eax              # add
-retq                             # return
-```
+A bare `extern` on a function that is not generic is `not supported yet`.
 
-A function may have no body.
-
-The declaration ends with `;`.
-
-It is not `extern(abi="c")`.
-
-The call is a call to that symbol.
-
-The compiler may supply the body.
-
-A program that calls a function with no body, when the compiler does not supply one, does not link.
+Two bodies with the same parameter list are `redefinition`.
 
 ## Several parameter lists
 

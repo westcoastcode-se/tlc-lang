@@ -1,0 +1,13 @@
+type Vec[T type] struct {
+    n T;
+};
+
+extern func Vec[T]::get(self this) T;
+
+func Vec[T]::get(self this) T {
+    return self.n;
+}
+
+func main() i32 {
+    return 0;
+}

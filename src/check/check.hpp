@@ -574,6 +574,8 @@ class Checker {
     bool extern_generic_trait_param(uint32_t file, const FunctionDecl &fn) const;
     // An `extern` prototype names the specialization. A comptime parameter has no external symbol.
     bool extern_generic_prototype(const FunctionDecl &fn) const;
+    // Bare `extern` with no body. The compiler supplies that body. It is not a link symbol.
+    bool compiler_owned_extern(const FunctionDecl &fn) const;
     // A comptime parameter on a prototype needs a body. The copy that holds the constant is local.
     bool comptime_prototype(const FunctionDecl &fn) const;
     // A parameter of a generic function whose type is a trait or `Seq[T]`.

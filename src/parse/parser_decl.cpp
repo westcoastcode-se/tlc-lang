@@ -670,7 +670,7 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
             ++pos_;
             continue;
         }
-        if (take_extern(is_extern, extern_c, link_name, name_loc)) {
+        if (take_extern(is_extern, extern_c, link_name, name_loc, true)) {
             continue;
         }
         if (eat(TokenKind::KwUnsafe)) {
@@ -680,6 +680,11 @@ void Parser::parse_top_declaration(TranslationUnit &unit, bool file_scope_export
         break;
     }
     reject_tlc_link_name(extern_c, link_name, name_loc);
+    // Bare `extern` is a generic function the compiler implements. It is not a variable or a type.
+    if (is_extern && !extern_c && !extern_compiler_ && link_name.empty() && !check(TokenKind::KwFunc)) {
+        diags_.error(name_loc.valid() ? name_loc : peek().loc, "not supported yet");
+        is_extern = false;
+    }
     if (const_type_var()) {
         VarDecl var = parse_const_type_var(exported, is_extern, extern_c, link_name);
         TopDecl top;

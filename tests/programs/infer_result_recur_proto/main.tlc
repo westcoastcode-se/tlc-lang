@@ -1,10 +1,8 @@
-func bad(flag bool) bool;
-
 func bad(flag bool) {
     if (flag) {
         return 1;
     }
-    return bad(true);
+    return true;
 }
 
 func main() i32 {

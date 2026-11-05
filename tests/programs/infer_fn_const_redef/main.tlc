@@ -1,4 +1,6 @@
-func pick() func ([]u8) i32;
+func pick() func ([]u8) i32 {
+    return len_text;
+}
 
 func len_text(text []const u8) i32 {
     return text.len;

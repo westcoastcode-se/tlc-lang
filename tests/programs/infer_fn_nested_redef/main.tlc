@@ -6,7 +6,9 @@ func id(n i32) func (i32) i32 {
     return add;
 }
 
-func outer() func (i32) i32;
+func outer() func (i32) i32 {
+    return id;
+}
 
 func outer() {
     return id;

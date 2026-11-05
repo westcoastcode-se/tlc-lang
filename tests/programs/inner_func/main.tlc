@@ -13,7 +13,6 @@ func other() i32 {
 
 func main() i32 {
     bias = 1;
-    func add(n i32) i32;
     func add(n i32) i32 {
         func step(m i32) i32 {
             switch (m) {

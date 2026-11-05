@@ -1314,6 +1314,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.is_static = fn.is_static;
     copy.is_extern = fn.is_extern;
     copy.extern_c = fn.extern_c;
+    copy.extern_compiler = fn.extern_compiler;
     copy.link_name = fn.link_name;
     copy.variadic = fn.variadic;
     copy.method_struct = fn.method_struct;

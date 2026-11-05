@@ -826,7 +826,8 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             continue;
         }
         if (check(TokenKind::Arrow)) {
-            error_here("not supported yet");
+            // `p->x` is not syntax. A field is `p.x`.
+            error_here("not a form");
             ++pos_;
             expr = unsupported_expr(expr_loc(*expr));
             continue;

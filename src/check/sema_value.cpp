@@ -1696,6 +1696,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 selector->resolved_file = method->file_id;
                                 const std::size_t call_mark = diags_.size();
+                                if (method->decl != nullptr && compiler_owned_extern(*method->decl)) {
+                                    error(node.loc, "not supported yet");
+                                }
                                 require_unsafe_call(method->unsafe_fn, node.loc);
                                 if (deferring && method->type.variadic) {
                                     error(node.loc, "not supported yet");

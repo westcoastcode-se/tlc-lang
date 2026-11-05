@@ -138,7 +138,8 @@ class Parser {
     Specifiers parse_specifiers(bool file_scope, bool allow_const = false, bool type_only = false);
     // `extern(abi="c")` is a C library. `name="symbol"` is a C object symbol.
     // A bare `extern` and `extern(abi="tlc")` are `not supported yet`.
-    bool take_extern(bool &is_extern, bool &extern_c, std::string &link_name, SourceLoc &name_loc);
+    bool take_extern(bool &is_extern, bool &extern_c, std::string &link_name, SourceLoc &name_loc,
+                     bool allow_bare = false);
     // `name=` without `abi="c"` is `name requires abi="c"`.
     void reject_tlc_link_name(bool extern_c, const std::string &link_name, SourceLoc name_loc);
     int parse_struct_align();
