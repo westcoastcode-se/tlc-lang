@@ -264,6 +264,8 @@ A negative constant is `type mismatch`.
 
 A negative count that is not a constant calls `builtin.panic("count must be positive")`.
 
+A size that does not fit calls `builtin.panic("size does not fit")`.
+
 `new []T` is reported as `expected an expression`.
 
 ## One value in every element

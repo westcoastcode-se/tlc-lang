@@ -74,6 +74,8 @@ A `?*T` field that is left out is null when the field has no value.
 
 A negative constant is `type mismatch`. A negative count that is not a constant calls `builtin.panic("count must be positive")`.
 
+A size that does not fit calls `builtin.panic("size does not fit")`.
+
 `new [n]Point{{.x = 1}...}` stores that value in every element.
 
 `new [n]Point{.x = 1}` is parsed as a field list and is reported as `type mismatch`.

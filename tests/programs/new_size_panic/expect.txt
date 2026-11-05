@@ -1,0 +1,3 @@
+exit: 128
+stderr: panic: size does not fit
+main.tlc:25:15: main

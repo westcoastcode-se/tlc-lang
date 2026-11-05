@@ -1,0 +1,27 @@
+type Arena struct {
+    n i32;
+};
+
+unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    _ = size;
+    _ = align;
+    return null;
+}
+
+func Arena::free(self *this, ptr *u8) void {
+    _ = ptr;
+}
+
+unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    _ = ptr;
+    _ = size;
+    _ = align;
+    return null;
+}
+
+func main() i32 {
+    var arena Arena;
+    var n = 536870912;
+    var buf = new(&arena) [n]i32;
+    return buf.len;
+}

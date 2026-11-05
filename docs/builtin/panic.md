@@ -12,6 +12,8 @@ This page describes `builtin.panic`, which prints a message and aborts the proce
 
 `new [n]T` calls it with `count must be positive` when `n` is negative and not a constant.
 
+`new [n]T` calls it with `size does not fit` when the byte count does not fit.
+
 Postfix `!` calls it with `null pointer` when that pointer is `null`. A debug build emits that call. `tlc --debug` and `tlc --test` are debug builds. A release build does not.
 
 The message is `*const u8`.

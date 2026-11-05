@@ -426,7 +426,7 @@ llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, l
     llvm::BasicBlock *fit = llvm::BasicBlock::Create(context_, "new.fit", function_);
     builder_.CreateCondBr(builder_.CreateICmpUGT(bytes, llvm::ConstantInt::get(i64(), 2147483647)), big, fit);
     builder_.SetInsertPoint(big);
-    abort_now();
+    abort_panic(node.loc, "size does not fit");
     builder_.SetInsertPoint(fit);
     const uint32_t method_file = bare ? default_alloc_file_ : node.alloc_file;
     const std::string &method_type = bare ? default_alloc_type_ : node.alloc_name;
@@ -685,7 +685,7 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
             llvm::Value *cap = llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(i64()), limit, false);
             builder_.CreateCondBr(builder_.CreateICmpUGT(wide, cap), overflow, sized);
             builder_.SetInsertPoint(overflow);
-            abort_now();
+            abort_panic(node.loc, "size does not fit");
             builder_.SetInsertPoint(sized);
             buffer_bytes = builder_.CreateMul(wide, llvm::ConstantInt::get(i64(), size));
         }
