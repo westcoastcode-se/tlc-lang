@@ -2589,6 +2589,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (rhs.kind == TypeKind::Invalid) {
                     return;
                 }
+                // `var _ = close(fd)` evaluates the call and does not declare `_`.
+                const bool discard_var = node.is_var && !node.is_const;
+                if (discard_var && node.names.size() == 1 && node.names[0] == "_" && rhs.kind == TypeKind::Void) {
+                    error(node.loc, "type mismatch");
+                    return;
+                }
                 // `check_expr` drops `decayed_len`. `var copy = row` on a parameter `[N]T` is that same pointer.
                 if (node.names.size() == 1 && node.value != nullptr && rhs.kind == TypeKind::Pointer) {
                     if (const auto *named = std::get_if<Expr::Name>(&node.value->data)) {
@@ -2627,6 +2633,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                 bool duplicate = false;
                 for (std::size_t i = 0; i < node.names.size(); ++i) {
                     for (std::size_t j = i + 1; j < node.names.size(); ++j) {
+                        // Several `_` names discard results. They are not bindings.
+                        if (discard_var && node.names[i] == "_" && node.names[j] == "_") {
+                            continue;
+                        }
                         if (node.names[i] == node.names[j]) {
                             error(node.name_locs[i], "redefinition");
                             duplicate = true;
@@ -2690,6 +2700,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                 };
                 auto declare_new = [&](std::size_t index) {
+                    if (discard_var && node.names[index] == "_") {
+                        return;
+                    }
                     const SourceLoc loc = index < node.name_locs.size() ? node.name_locs[index] : node.loc;
                     Symbol symbol;
                     symbol.name = node.names[index];
@@ -2736,6 +2749,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                 // `var` and `:=` hide an earlier binding in this block. The value above
                 // was checked first, so it still names that binding. `const` does not hide.
                 auto hide_current = [&](std::size_t index) {
+                    if (discard_var && node.names[index] == "_") {
+                        return;
+                    }
                     const SourceLoc loc = index < node.name_locs.size() ? node.name_locs[index] : node.loc;
                     if (parts[index].kind == TypeKind::Nullptr) {
                         error(loc, "type mismatch");
@@ -2843,7 +2859,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.runtime_const = var.is_const_decl && !var.is_comptime;
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     Symbol *live = nullptr;
-                    if (declare(std::move(symbol), var.loc)) {
+                    // `var _ i32 = close(fd)` evaluates the call and does not declare `_`.
+                    const bool discard = !var.is_const_decl && !var.is_extern && var.owner.empty() && var.name == "_";
+                    if (!discard && declare(std::move(symbol), var.loc)) {
                         live = lookup(var.name);
                     }
                     int tracked = 0;

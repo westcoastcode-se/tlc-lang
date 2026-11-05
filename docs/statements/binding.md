@@ -30,7 +30,13 @@ A variable with no initializer keeps the type: `var value i32;`.
 
 A later read of that `_` is `undeclared identifier`.
 
-`var _ = expr` still declares a name. A later `_ = expr` writes that binding, and a later `_` reads it.
+`var _ = expr` is that same hint. The call runs. The result is not stored, and `_` is not declared. A later `_` is `undeclared identifier`.
+
+`var kept, _ = (3, 9)` keeps `kept` and drops the other result. `var _, _ = (1, 2)` drops both.
+
+`var _ i32 = expr` drops that result too.
+
+With `-O`, the unused result is dropped. A call that changes a `var` still runs.
 
 A `void` result is `type mismatch`.
 
@@ -43,7 +49,7 @@ func close(fd i32) i32 {
 }
 
 func main() i32 {
-    _ = close(40);
+    var _ = close(40);
     return hits;
 }
 ```
@@ -63,6 +69,8 @@ callq close                      # call close
 movl hits(%rip), %eax            # hits
 retq                             # return
 ```
+
+`_ = close(40)` emits that same call. The result is not stored.
 
 ## Storage that starts unset
 

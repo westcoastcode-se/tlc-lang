@@ -487,6 +487,11 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         error(node.loc, "type mismatch");
         return;
     }
+    // `var _ = close(fd)` runs the call. The result is not stored, so `-O` can drop it.
+    if (node.is_var && !node.is_const && node.names.size() == 1 && node.names[0] == "_") {
+        emit_rvalue(*node.value);
+        return;
+    }
     // The name is the template. A call was already rewritten to the specialization.
     auto generic_alias = [&](const Expr &expr) -> const Binding * {
         if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
@@ -944,6 +949,10 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
     }
     for (std::size_t index = 0; index < node.names.size(); ++index) {
         const Lowered &low = parts[index];
+        // A `_` in `var a, _ = pair()` drops that result. The call already ran.
+        if (node.is_var && !node.is_const && node.names[index] == "_") {
+            continue;
+        }
         llvm::Value *field = builder_.CreateExtractValue(value.value, static_cast<unsigned>(index));
         bool create = false;
         llvm::Value *dest = destination(node.names[index], create);
@@ -1696,6 +1705,13 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 for (const VarDecl &var : node.vars) {
                     if (var.name.empty()) {
+                        continue;
+                    }
+                    // `var _ i32 = close(fd)` runs the initializer and does not keep the result.
+                    if (!var.is_const_decl && !var.is_extern && var.owner.empty() && var.name == "_") {
+                        if (var.init != nullptr) {
+                            emit_rvalue(*var.init);
+                        }
                         continue;
                     }
                     // A previous slot with this name, in this block or an outer one, stays

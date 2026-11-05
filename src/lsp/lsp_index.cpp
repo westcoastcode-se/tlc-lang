@@ -782,6 +782,9 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
                const UnitIndex &index) {
     if (const auto *decl = std::get_if<Stmt::Decl>(&stmt.data)) {
         for (const VarDecl &var : decl->vars) {
+            if (!var.is_const_decl && !var.is_extern && var.owner.empty() && var.name == "_") {
+                continue;
+            }
             Sym sym;
             sym.name = var.name;
             mark_direct(sym, var.type_name, var.indirections, var.is_array, var.array_len, var.optional);
@@ -829,6 +832,9 @@ void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri
             }
         }
         for (std::size_t n = 0; n < bind->names.size(); ++n) {
+            if (bind->is_var && !bind->is_const && bind->names[n] == "_") {
+                continue;
+            }
             Sym sym;
             sym.name = bind->names[n];
             sym.detail = bind->is_const ? "const " + bind->names[n] : bind->names[n];

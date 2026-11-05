@@ -1,0 +1,14 @@
+var hits = 0;
+
+func close(fd i32) i32 {
+    hits = hits + fd;
+    return fd;
+}
+
+func main() i32 {
+    var _ = close(39);
+    var kept, _ = (3, 9);
+    var _, _ = (1, 2);
+    var _ i32 = close(0);
+    return hits + kept;
+}

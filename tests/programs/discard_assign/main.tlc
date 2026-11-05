@@ -7,7 +7,7 @@ func close(fd i32) i32 {
 
 func main() i32 {
     _ = close(40);
-    var _ = 1;
-    _ = 2;
-    return hits + _;
+    var n = 1;
+    n = 2;
+    return hits + n;
 }

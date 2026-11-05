@@ -1338,7 +1338,7 @@ See [Variables on a type](methods/variable.md) and [Constants on a type](methods
 
 Inside a function, and at file scope, several names unpack one tuple. `var a, b = expr` is that binding. A different count is `type mismatch`. An initializer that is not a constant, and not a call, is `global initializer is not a constant`.
 
-`_ = expr` discards that value when `_` is not already a binding. A later read of that `_` is `undeclared identifier`. `var _ = expr` still declares a name. A `void` result is `type mismatch`.
+`_ = expr` discards that value when `_` is not already a binding. A later read of that `_` is `undeclared identifier`. `var _ = expr` is that same hint: the call runs, the result is not stored, and `_` is not declared. `var kept, _ = (3, 9)` drops the other result. A `void` result is `type mismatch`. With `-O`, the unused result is dropped.
 
 A call that returns several results is that tuple:
 
