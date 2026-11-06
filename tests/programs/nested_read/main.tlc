@@ -32,6 +32,33 @@ func deep(t (i32, i32)) i32 {
     return mid();
 }
 
+func poke(t (i32, i32)) i32 {
+    func write() i32 {
+        t[0] = 40;
+        return t[1];
+    }
+    var y = write();
+    return t[0] + y;
+}
+
+func point(t (i32, i32)) i32 {
+    func addr() *i32 {
+        return &t[0];
+    }
+    var p = addr();
+    t[0] = 40;
+    return *p + t[1];
+}
+
+var slot i32;
+
+func later(t (i32, i32)) void {
+    defer func() {
+        slot = t[0];
+    }();
+    t[0] = 40;
+}
+
 func main() i32 {
     var n = 40;
     func add(b i32) i32 {
@@ -66,6 +93,16 @@ func main() i32 {
     }
     if (deep((40, 2)) != 40) {
         return 7;
+    }
+    if (poke((1, 2)) != 42) {
+        return 8;
+    }
+    if (point((1, 2)) != 42) {
+        return 9;
+    }
+    later((1, 2));
+    if (slot != 40) {
+        return 10;
     }
     return 42;
 }

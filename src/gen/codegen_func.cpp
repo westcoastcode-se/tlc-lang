@@ -360,9 +360,23 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
                 if (binding.depth < 1) {
                     binding.depth = 1;
                 }
+            } else if (binding.is_tuple && !binding.tuple_elems.empty()) {
+                // The argument is one pointer per field of a tuple parameter. Those addresses are the
+                // parameter's slots, so a store and a later read see the same object.
+                const unsigned count = static_cast<unsigned>(binding.tuple_elems.size());
+                llvm::ArrayType *table = llvm::ArrayType::get(ptr_type(), count);
+                std::vector<llvm::Value *> elems;
+                elems.reserve(count);
+                for (unsigned part = 0; part < count; ++part) {
+                    llvm::Value *slot = builder_.CreateInBoundsGEP(
+                        table, arg, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(static_cast<int>(part))});
+                    elems.push_back(builder_.CreateLoad(ptr_type(), slot));
+                }
+                binding.value = nullptr;
+                binding.tuple_elems = std::move(elems);
+                binding.tuple_forward.reset();
             } else {
                 // The argument is the outer slot. A load uses the same depth and type flags.
-                // A split tuple is packed into that one address at the call. The outer slots stay there.
                 binding.value = arg;
                 binding.tuple_elems.clear();
                 binding.tuple_forward.reset();
@@ -487,17 +501,27 @@ void CodeGen::append_captures(const FunctionDecl *decl, std::vector<llvm::Value 
             args.push_back(value.value);
             continue;
         }
-        // A parameter tuple is one slot per element. The call packs those fields into one address.
+        // A parameter tuple is one slot per element. Pass those addresses, not a copy of the fields.
         if (binding->is_tuple && !binding->tuple_elems.empty()) {
-            const TypedValue made = materialize_tuple_param(*binding);
-            if (made.value == nullptr || !made.value->getType()->isStructTy()) {
-                error(loc, "not supported yet");
-                args.push_back(null_ptr());
+            const unsigned count = static_cast<unsigned>(binding->tuple_elems.size());
+            llvm::ArrayType *table_ty = llvm::ArrayType::get(ptr_type(), count);
+            llvm::AllocaInst *table = alloca_typed(table_ty, item.name.empty() ? "cap" : item.name);
+            for (unsigned part = 0; part < count; ++part) {
+                llvm::Value *elem = binding->tuple_elems[part];
+                if (elem == nullptr || !elem->getType()->isPointerTy()) {
+                    error(loc, "not supported yet");
+                    args.push_back(null_ptr());
+                    table = nullptr;
+                    break;
+                }
+                llvm::Value *slot = builder_.CreateInBoundsGEP(
+                    table_ty, table, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(static_cast<int>(part))});
+                builder_.CreateStore(elem, slot);
+            }
+            if (table == nullptr) {
                 continue;
             }
-            llvm::AllocaInst *slot = alloca_typed(made.value->getType(), item.name.empty() ? "cap" : item.name);
-            builder_.CreateStore(made.value, slot);
-            args.push_back(slot);
+            args.push_back(table);
             continue;
         }
         if (binding->value == nullptr || !binding->value->getType()->isPointerTy()) {
