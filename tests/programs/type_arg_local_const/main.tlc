@@ -1,0 +1,17 @@
+func width[N i32]() i32 {
+    return N;
+}
+
+const n = 9;
+
+func main() i32 {
+    const n = 2;
+    const stepped = n + 1;
+    if (width[n]() != 2) {
+        return 1;
+    }
+    if (width[stepped]() != 3) {
+        return 2;
+    }
+    return 42;
+}

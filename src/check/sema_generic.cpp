@@ -2152,7 +2152,14 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
                 out.value = *value;
                 return true;
             }
-            // A local `comptime const` is this value argument. A runtime `const` is an array length.
+            // A local `const` whose initializer folds to i32, and a local `comptime const`.
+            // A `var` is not this value. The local hides a file-scope const of the same name.
+            if (const std::optional<int> value = array_length_value(arg.type_name)) {
+                out = {};
+                out.is_value = true;
+                out.value = *value;
+                return true;
+            }
             if (const Symbol *symbol = lookup(arg.type_name); symbol != nullptr && symbol->folded_local) {
                 out = {};
                 out.is_value = true;
