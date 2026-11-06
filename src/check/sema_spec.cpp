@@ -2730,7 +2730,23 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
             const std::optional<std::string> encoded = subst != nullptr ? comptime_spec_piece(*subst) : std::nullopt;
             if (!encoded) {
                 if (!comptime_param_kept(fn)) {
-                    error(expr_loc(*call.args[i - skip]), "not supported yet");
+                    // `[2]Point` has no specialization spelling. That call is `type mismatch`.
+                    // `[2]i32` in the same position is `not supported yet`.
+                    const auto struct_array = [](const auto &self, const Type &type) -> bool {
+                        if (type.kind == TypeKind::Array && type.element != nullptr) {
+                            return type.element->kind == TypeKind::Struct || self(self, *type.element);
+                        }
+                        if (type.kind == TypeKind::Tuple) {
+                            for (const Type &part : type.results) {
+                                if (self(self, part)) {
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    };
+                    error(expr_loc(*call.args[i - skip]),
+                          struct_array(struct_array, want) ? "type mismatch" : "not supported yet");
                 }
                 return false;
             }

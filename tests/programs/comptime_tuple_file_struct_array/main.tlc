@@ -1,0 +1,14 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}};
+
+comptime func field(p ([2]Point, i32)) i32 {
+    return p[0][0].x + p[0][1].x;
+}
+
+func main() i32 {
+    return field((row, 0));
+}

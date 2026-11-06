@@ -1345,18 +1345,20 @@ const Expr *Checker::file_scope_const_array(const Expr &expr) {
         if (const auto *inner = std::get_if<Expr::Init>(&item.data)) {
             const bool row = !inner->is_tuple && !inner->array_literal && inner->fields.empty() &&
                              !inner->elements.empty();
-            if (!inner->array_literal && !row) {
-                return false;
-            }
-            for (const auto &child : inner->elements) {
-                if (child == nullptr || !self(self, *child, depth + 1)) {
-                    return false;
+            if (inner->array_literal || row) {
+                for (const auto &child : inner->elements) {
+                    if (child == nullptr || !self(self, *child, depth + 1)) {
+                        return false;
+                    }
                 }
+                return true;
             }
-            return true;
+            // `Point{.x = 2, .y = 0}`. A tuple and an empty brace are not this value.
+            return !inner->is_tuple && !inner->fields.empty() && comptime_constant(item);
         }
         return argument_is_comptime(item) || fold_int(item).has_value() || file_scope_const_int(item).has_value() ||
-               file_scope_const_bool(item).has_value() || file_scope_const_float(item) != nullptr;
+               file_scope_const_bool(item).has_value() || file_scope_const_float(item) != nullptr ||
+               file_scope_const_struct(item) != nullptr;
     };
     for (const auto &item : init->elements) {
         if (item == nullptr || !element_ok(element_ok, *item, 0)) {

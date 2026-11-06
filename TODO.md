@@ -75,7 +75,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ## Compiler
 
-No open items.
+- `--lib <dir>` names a library directory searched before the default library directory. The flag may be repeated. The directories are used in the order written. `import "std/testing"` loads `<dir>/std/testing` from the first of those directories that contains that package, and otherwise `<prefix>/lib/tlc/std/testing`. `import "builtin"` and `import "std/mem"` use that same list. The entry directory and each `-P` root are still searched first. `vendor/<name>` stays `lib/tlc/vendor`, or the directory in `TLC_LIB`. A flag with no directory is `missing directory after --lib`. The language server uses the same list.
 
 ## Inconsistencies
 

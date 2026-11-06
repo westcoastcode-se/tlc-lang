@@ -927,6 +927,16 @@ A local `const` of that array is `not supported yet`.
 
 A `var` array in that tuple is `not supported yet`.
 
+`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` folds the same way.
+
+That `field` is `comptime func field(p ([2]Point, i32)) i32 { return p[0][0].x + p[0][1].x; }`.
+
+`return field((row, 0))` is `movl $42, %eax` and `retq`.
+
+A local `const` and a `var` of that array are `not supported yet`.
+
+`take((row, 0), n)` with `p comptime ([2]Point, i32)` is `type mismatch`.
+
 `pair[0][0] = 1` on that comptime const is `type mismatch`.
 
 Passing the tuple to a `comptime` parameter is `not supported yet`.

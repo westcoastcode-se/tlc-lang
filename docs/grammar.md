@@ -218,6 +218,10 @@ A file-scope `const row = [_]i32{2, 0}` is that element. `field((row, 40))` fold
 
 `const grid = [_][2]i32{{2, 0}, {40, 0}}` is that element. `field((grid, 0))` folds when the body returns `p[0][0][0] + p[0][1][0]`.
 
+`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` is that element. `field((row, 0))` folds when the body returns `p[0][0].x + p[0][1].x`.
+
+`take((row, 0), n)` with `p comptime ([2]Point, i32)` is `type mismatch`.
+
 A local `const` of that array is `not supported yet`.
 
 A runtime `const` of a tuple is `type mismatch`.
