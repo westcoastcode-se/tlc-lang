@@ -516,6 +516,13 @@ void CodeGen::emit_dynamic_inits() {
                 !var->owner_params.empty() || var->unpack_index != 0) {
                 continue;
             }
+            // A const whose initializer folded is already that constant. Storing it would write read-only memory.
+            if (var->is_const_decl) {
+                if (const auto symbols = files_.find(current_file_);
+                    symbols != files_.end() && symbols->second.folded.contains(global_key(*var))) {
+                    continue;
+                }
+            }
             if (var->unpack_count > 1) {
                 const auto file = files_.find(current_file_);
                 if (file == files_.end()) {

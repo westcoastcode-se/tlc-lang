@@ -1815,9 +1815,14 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     return call;
                 };
                 if (diags_.size() == before) {
-                    if (!(var->is_const_decl && var->is_comptime) && !var->is_extern &&
-                        (runs_at_startup(*var->init) || want.kind == TypeKind::Tuple ||
-                         startup_value(startup_value, *var->init))) {
+                    // A folding call is the constant in the global. A store would write read-only memory.
+                    if (var->is_const_decl && !var->is_comptime && !var->is_extern && runs_at_startup(*var->init)) {
+                        if (!fold_int(*var->init)) {
+                            error(var->loc, "global initializer is not a constant");
+                        }
+                    } else if (!(var->is_const_decl && var->is_comptime) && !var->is_extern &&
+                               (runs_at_startup(*var->init) || want.kind == TypeKind::Tuple ||
+                                startup_value(startup_value, *var->init))) {
                         const_cast<VarDecl *>(var)->runtime_init = true;
                     } else if (is_slice(want)) {
                         require_slice_name(*var->init, want, var->loc, before);
