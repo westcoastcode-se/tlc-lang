@@ -1238,6 +1238,23 @@ std::optional<int> Checker::file_scope_const_int(const Expr &expr) {
     return symbol->const_value;
 }
 
+std::optional<bool> Checker::file_scope_const_bool(const Expr &expr) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return std::nullopt;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->is_auto || !symbol->folded_init || symbol->type.alias_id != 0 ||
+        symbol->type.kind != TypeKind::Bool) {
+        return std::nullopt;
+    }
+    const VarDecl *var = global_var(named->text);
+    if (var == nullptr || !var->is_const_decl) {
+        return std::nullopt;
+    }
+    return symbol->const_value != 0;
+}
+
 std::optional<int> Checker::folded_local_int(const Expr &expr) {
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr) {
@@ -1263,7 +1280,8 @@ bool Checker::argument_is_comptime(const Expr &arg) {
         return false;
     }
     for (const auto &element : tuple->elements) {
-        if (element == nullptr || (!argument_is_comptime(*element) && !file_scope_const_int(*element))) {
+        if (element == nullptr || (!argument_is_comptime(*element) && !file_scope_const_int(*element) &&
+                                   !file_scope_const_bool(*element))) {
             return false;
         }
     }
@@ -1434,8 +1452,8 @@ bool Checker::comptime_constant(const Expr &expr) {
                     }
                     continue;
                 }
-                if (!argument_is_comptime(*element) && !file_scope_const_int(*element) && !fold_switch_case(*element) &&
-                    !comptime_constant(*element) && !address_element(*element) &&
+                if (!argument_is_comptime(*element) && !file_scope_const_int(*element) && !file_scope_const_bool(*element) &&
+                    !fold_switch_case(*element) && !comptime_constant(*element) && !address_element(*element) &&
                     !array_element(array_element, *element, 0)) {
                     return false;
                 }
@@ -1571,6 +1589,15 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
                         number.loc = expr_loc(*element);
                         number.value = static_cast<uint64_t>(*value);
                         literal->data = std::move(number);
+                        element = std::move(literal);
+                        continue;
+                    }
+                    if (const std::optional<bool> flag = file_scope_const_bool(*element)) {
+                        auto literal = std::make_unique<Expr>();
+                        Expr::Bool node;
+                        node.loc = expr_loc(*element);
+                        node.value = *flag;
+                        literal->data = std::move(node);
                         element = std::move(literal);
                         continue;
                     }

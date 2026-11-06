@@ -1,0 +1,19 @@
+const flag = true;
+const off = false;
+
+comptime func field(p (bool, i32)) i32 {
+    if (p[0]) {
+        return p[1];
+    }
+    return 0;
+}
+
+func main() i32 {
+    if (field((flag, 42)) != 42) {
+        return 1;
+    }
+    if (field((off, 42)) != 0) {
+        return 2;
+    }
+    return 42;
+}

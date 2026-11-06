@@ -757,6 +757,8 @@ class Checker {
     std::optional<int> folded_local_int(const Expr &expr);
     // File-scope `const two = 2` inside a comptime tuple. A local `const` is not this value.
     std::optional<int> file_scope_const_int(const Expr &expr);
+    // File-scope `const flag = true`. The literal stays `bool`, not `i32`.
+    std::optional<bool> file_scope_const_bool(const Expr &expr);
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     // A `var`, a local `const`, and a tuple are not.
     bool comptime_constant(const Expr &expr);
