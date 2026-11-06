@@ -1140,6 +1140,9 @@ class Checker {
     const TypedefDecl *find_tuple_alias_template(const std::string &name, uint32_t &owner) const;
     // `f(1)` when `f` names `pkg.id` becomes `pkg.<spec>`. A name in this package stays a name.
     bool rewrite_spec_callee(Expr &callee, const std::string &spec_name, uint32_t owner);
+    // `var f = id` and `var f = pkg.id`. Null when the initializer is not that generic.
+    const Symbol *generic_alias_source(const Expr &expr);
+    Symbol generic_alias_symbol(const std::string &name, SourceLoc loc, const Symbol &source, bool immutable) const;
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
     // `func scale(n comptime i32, x i32)`. One copy per constant. `n` is inlined.
     std::optional<Type> maybe_comptime_param_call(Expr &expr, bool used);

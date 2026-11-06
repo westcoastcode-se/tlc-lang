@@ -58,7 +58,7 @@ A method and a free function with the same parameters are not equal.
 
 `typeof(id)` for `func id[T type](value T) T` spells `func[T type](T) T` and `generic` is true.
 
-`var f = id` is `not supported yet`, and `var f = Point.get` is `type mismatch`.
+`return f` when `f` names a generic is `not supported yet`, and `var f = Point.get` is `type mismatch`.
 
 `typeof(trait Name)` is `expected a type`.
 

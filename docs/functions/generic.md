@@ -684,7 +684,7 @@ A use that is not a call is `not supported yet`.
 
 `f = id` is `not supported yet`.
 
-A file-scope `var f = id` is `not supported yet`.
+A file-scope `var f = id` names that generic. `f(1)` specializes it the same way.
 
 An overloaded function that is not generic stays `not supported yet` when it is used as a value.
 

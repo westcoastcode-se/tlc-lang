@@ -1982,7 +1982,7 @@ llvm::Constant *CodeGen::constant_slice(const Expr &expr, std::unordered_set<std
 }
 
 void CodeGen::apply_initializer(const VarDecl &var) {
-    if (!var.owner_params.empty()) {
+    if (!var.owner_params.empty() || var.generic_alias) {
         return;
     }
     // `var p *i32 = row` at file scope stores the address of the first element.

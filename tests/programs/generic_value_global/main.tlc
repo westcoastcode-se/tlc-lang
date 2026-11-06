@@ -5,5 +5,7 @@ func id[T type](value T) T {
 var f = id;
 
 func main() i32 {
-    return 0;
+    const g = f;
+    h := f;
+    return f(40) + f[i32](1) + g(0) + h(1);
 }

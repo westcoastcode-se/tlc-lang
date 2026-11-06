@@ -7068,8 +7068,8 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func id[T type](value T) T { return value; }\n"
             "var f = id;\n"
-            "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+            "func main() i32 { return f(1); }\n");
+        EXPECT(check, errors.empty());
     }
 
     {
@@ -7229,7 +7229,7 @@ int run_sema_tests() {
             "extern func id[T type](value T) T;\n"
             "var f = id;\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {

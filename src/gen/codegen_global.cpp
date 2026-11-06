@@ -192,6 +192,41 @@ void CodeGen::declare_globals(const PackageNode &node) {
         if (var == nullptr || var->name.empty() || !var->owner_params.empty()) {
             continue;
         }
+        if (var->generic_alias) {
+            // `var f = id` is a name in this file. A call was rewritten to the specialization.
+            const Binding *source = nullptr;
+            if (var->init != nullptr) {
+                if (const auto *named = std::get_if<Expr::Name>(&var->init->data)) {
+                    source = lookup(named->text);
+                } else if (const auto *selector = std::get_if<Expr::Selector>(&var->init->data)) {
+                    const auto *base = selector->base == nullptr ? nullptr
+                                                                : std::get_if<Expr::Name>(&selector->base->data);
+                    if (base != nullptr && graph_ != nullptr) {
+                        for (const ImportDecl &import : node.unit.imports) {
+                            const PackageNode *target = import_target(graph_, node.file_id, import);
+                            if (target == nullptr) {
+                                continue;
+                            }
+                            const std::string binding =
+                                import.form == ImportDecl::Form::Alias ? import.alias : target->qualifier;
+                            if (binding != base->text) {
+                                continue;
+                            }
+                            source = visible(target->file_id, selector->field, true);
+                            break;
+                        }
+                    }
+                }
+            }
+            if (source != nullptr && source->is_generic && source->decl != nullptr) {
+                Binding binding = *source;
+                binding.value = nullptr;
+                binding.immediate = false;
+                binding.is_static = var->is_static;
+                file.functions.emplace(var->name, std::move(binding));
+            }
+            continue;
+        }
         const std::string key = global_key(*var);
         if (file.globals.contains(key)) {
             continue;

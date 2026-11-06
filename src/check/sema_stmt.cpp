@@ -389,6 +389,45 @@ const FunctionDecl *Checker::comptime_callee(const Expr::Call &call) {
     return decl;
 }
 
+const Symbol *Checker::generic_alias_source(const Expr &expr) {
+    const Symbol *source = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        source = lookup(named->text);
+    } else if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+        if (package != nullptr && package->is_package) {
+            source = find_export(package->package_file, selector->field);
+        }
+    }
+    if (source == nullptr || !source->is_template || !source->is_function ||
+        (source->fn_templates.empty() && source->fn_template == nullptr)) {
+        return nullptr;
+    }
+    return source;
+}
+
+Symbol Checker::generic_alias_symbol(const std::string &name, SourceLoc loc, const Symbol &source,
+                                     bool immutable) const {
+    Symbol symbol;
+    symbol.name = name;
+    symbol.is_function = true;
+    symbol.is_template = true;
+    symbol.fn_template = source.fn_template;
+    symbol.fn_templates = source.fn_templates;
+    symbol.package_file = source.package_file != 0 ? source.package_file : file_id_;
+    symbol.has_body = source.has_body;
+    symbol.unsafe_fn = source.unsafe_fn;
+    symbol.type = type_function(type_invalid(), {});
+    symbol.loc = loc;
+    symbol.is_auto = true;
+    symbol.is_immutable = immutable;
+    if (!scopes_.empty()) {
+        symbol.function_id = scopes_.back().function_id;
+    }
+    return symbol;
+}
+
 const FunctionDecl *Checker::macro_callee(const Expr::Call &call) {
     if (call.callee == nullptr || !call.type_args.empty()) {
         return nullptr;
@@ -2498,21 +2537,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 // `var f = id` names the generic. The call specializes it. There is no slot.
                 if (node.names.size() == 1 && (node.is_var || node.is_define || node.is_const)) {
-                    const Symbol *source = nullptr;
-                    if (const auto *named = std::get_if<Expr::Name>(&node.value->data)) {
-                        source = lookup(named->text);
-                    } else if (const auto *selector = std::get_if<Expr::Selector>(&node.value->data)) {
-                        const auto *base =
-                            selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
-                        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
-                        if (package != nullptr && package->is_package) {
-                            source = find_export(package->package_file, selector->field);
-                        }
-                    }
-                    if (source != nullptr && source->is_template && source->is_function &&
-                        (!source->fn_templates.empty() || source->fn_template != nullptr)) {
+                    if (const Symbol *source = generic_alias_source(*node.value)) {
                         const SourceLoc loc = node.name_locs.empty() ? node.loc : node.name_locs.front();
-                        // A call is rewritten to `id.spec...` in this package, or to `pkg.id.spec...`.
                         if (scopes_.empty()) {
                             error(loc, "type mismatch");
                             return;
@@ -2522,20 +2548,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             error(loc, "redefinition");
                             return;
                         }
-                        Symbol symbol;
-                        symbol.name = node.names[0];
-                        symbol.is_function = true;
-                        symbol.is_template = true;
-                        symbol.fn_template = source->fn_template;
-                        symbol.fn_templates = source->fn_templates;
-                        symbol.package_file = source->package_file != 0 ? source->package_file : file_id_;
-                        symbol.has_body = source->has_body;
-                        symbol.unsafe_fn = source->unsafe_fn;
-                        symbol.type = type_function(type_invalid(), {});
-                        symbol.function_id = scopes_.back().function_id;
-                        symbol.loc = loc;
-                        symbol.is_auto = true;
-                        symbol.is_immutable = node.is_const;
+                        Symbol symbol = generic_alias_symbol(node.names[0], loc, *source, node.is_const);
                         if (exists) {
                             shadow(std::move(symbol), loc);
                         } else {

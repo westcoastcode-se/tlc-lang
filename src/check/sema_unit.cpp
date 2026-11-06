@@ -786,6 +786,28 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 } else if (const auto *init = std::get_if<Expr::Init>(&var->init->data);
                            init != nullptr && init->array_literal) {
                     type = file_array_initializer(const_cast<VarDecl &>(*var), nullptr);
+                } else if (!var->is_extern && generic_alias_source(*var->init) != nullptr) {
+                    const Symbol *source = generic_alias_source(*var->init);
+                    // `var f = id` names the generic. The call specializes it. There is no object.
+                    Symbol symbol = generic_alias_symbol(var->name, var->loc, *source, var->is_const_decl);
+                    bool defined = false;
+                    if (var->is_static) {
+                        statics_[file_id_].insert_or_assign(var->name, symbol);
+                        declare(symbol, var->loc);
+                        defined = true;
+                    } else if (remember_shared(symbol, var->loc)) {
+                        declare(symbol, var->loc);
+                        defined = true;
+                    }
+                    const_cast<VarDecl *>(var)->generic_alias = true;
+                    if (var->exported && !var->is_static && defined && !exports_[file_id_].contains(var->name)) {
+                        if (exported_elsewhere(var->name)) {
+                            error(var->loc, "redefinition");
+                        } else {
+                            exports_[file_id_].emplace(var->name, symbol);
+                        }
+                    }
+                    continue;
                 } else {
                     type = check_expr(*var->init, true);
                     // `null` has no pointee until a pointer type is written around it.
@@ -1734,6 +1756,10 @@ void Checker::check_globals(const TranslationUnit &unit) {
                        std::get<Expr::Init>(var->init->data).array_literal) {
                 // `var row = [_]i32{1, 2}` and `const row = [_]i32{1}` were checked while declaring them.
             } else if (var->init) {
+                // `var f = id` is a name. The initializer is not a stored value.
+                if (var->generic_alias) {
+                    continue;
+                }
                 // `check_file_const` already reported an initializer that is not a constant.
                 if (var->is_const_decl && var->is_comptime) {
                     const Symbol *bound = lookup(var->name);

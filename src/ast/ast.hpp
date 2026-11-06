@@ -636,6 +636,8 @@ struct VarDecl {
     std::string link_name;
     // `name := expr` at file scope. The type comes from the initializer.
     bool inferred = false;
+    // `var f = id` at file scope. The name is that generic. There is no object.
+    bool generic_alias = false;
     // `var a, b = expr` at file scope. `unpack_count` is 0 on an ordinary variable.
     // The first name owns `init`. `unpack_head` is that name.
     int unpack_index = 0;

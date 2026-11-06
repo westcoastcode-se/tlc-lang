@@ -44,7 +44,7 @@ The compiler supplies the bodies of `name` and `fields`. `fields` returns `[]con
 
 `typeof(Point.ptr)` for `self *this` spells `func(*Point) i32`. `typeof(Point.make)` for a static method has `has_this` false and spells `func(i32) Point`.
 
-`typeof(id)` for `func id[T type](value T) T` spells `func[T type](T) T` and `generic` is true. `var f = id` is reported as `not supported yet`. `var f = Point.get` is reported as `type mismatch`.
+`typeof(id)` for `func id[T type](value T) T` spells `func[T type](T) T` and `generic` is true. `return f` when `f` names that generic is `not supported yet`. `var f = Point.get` is reported as `type mismatch`.
 
 A function pointer is `Other`.
 
