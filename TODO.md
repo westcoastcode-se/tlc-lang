@@ -16,7 +16,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 `...` is only legal on `extern(abi="c")`. `func id[T type](value T, ...) T` is `not supported yet`. `extern(abi="c")` on a generic is `extern(abi="c") on a trait or a generic`. `any` is not a keyword. `...` in a type-parameter list is `expected an identifier`. A bare `extern` on a generic function declares a function the compiler implements. It emits nothing. A body on that declaration is `not supported yet`. A later function with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`. `extern(abi="tlc")` on a generic function is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`.
 
-- A `var` passed to a `comptime func` is `not supported yet`.
+- A store to a `var` before it is passed to a `comptime func`. `var n = 41; n = 1; add(n)` is `not supported yet`. The initializer is that argument when the name is not assigned.
 - An ordinary function as a generic value argument is `not supported yet`. `add(3) + 1` is `expected ']'`. A `var` in that argument is `type mismatch`.
 - `var f = add` then `comptime const ops = (f, 1)` is `not supported yet`.
 - A `var` address is `not supported yet`. `null` is `type mismatch`. Passing `(&addr, 2)` to a `comptime` parameter is `not supported yet`. There is no spelling for the pointer. `&addr` alone on `p comptime *i32` is `type mismatch`.

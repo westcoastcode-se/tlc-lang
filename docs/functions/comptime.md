@@ -26,6 +26,8 @@ A string is a literal, a constant range, or a `comptime const` in the same file.
 
 A `var` is not a comptime value.
 
+A `var` passed to a `comptime func` is that initializer when the initializer is a comptime value and the name is not assigned. A store to the name is `not supported yet`.
+
 A runtime `const` is not a comptime value, until `comptime const folded = name`.
 
 A `comptime const` whose initializer folds to `i32` is a comptime argument, at file scope and inside a function.
@@ -155,7 +157,7 @@ retq
 
 `label[0]` is `H`.
 
-A `var` passed to that function is `not supported yet`.
+A `var` whose initializer is that string, and which is not assigned, is that string. `var text = "hi"` then `len(text)` is `2`. A store to the name is `not supported yet`.
 
 A `bool` result stays `bool`. `comptime if (pos(3))` keeps that arm. A body with statements is compiled and run, and the returned `bool` is that constant.
 
@@ -181,8 +183,6 @@ retq                             # return
 A result that is not `i32`, not a `bool`, not a struct, and not a constant `[]const u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
-
-A `var` passed to a `comptime func` is `not supported yet`.
 
 A type parameter, a method, `extern`, and `export` are `not supported yet`.
 
@@ -444,9 +444,7 @@ An enumerator passed to a `comptime func` folds when the body returns a constant
 
 That `id` is `comptime func id(n Integer) i32 { return i32(n); }`.
 
-A `var` passed to a `comptime func` is `not supported yet`.
-
-A `var` of the enum is `not supported yet` on that call.
+A `var` whose initializer is that struct, enumerator, or alias, and which is not assigned, folds the same way. `var p = Point{.x = 1, .y = 2}` then `field(p)` is `1` when `field` returns `p.x`. `var order = Order.acquire` then `rank(order)` is `42` when `rank` returns that constant. A store to the name is `not supported yet`.
 
 ## A struct returned from a comptime function
 
@@ -569,7 +567,24 @@ retq                             # return
 
 `p[0]` is `40` and `p[1]` is `2`.
 
-A `var` passed to that function is `not supported yet`.
+A `var` whose initializer is that tuple, and which is not assigned, folds the same way.
+
+```c
+func main() i32 {
+    var pair = (40, 2);
+    return field(pair);
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
+The program returns 42.
+
+A store to `pair` is `not supported yet`.
 
 ## A specialized struct parameter
 

@@ -93,6 +93,9 @@ struct Symbol {
     // Initializer of a runtime `const` when that initializer folds.
     // A tuple index reads it. `promotable` is what a later `comptime const` may copy.
     const Expr *promote_init = nullptr;
+    // Initializer of a `var` that is not assigned. A `comptime func` reads it.
+    // The name is not a comptime value in any other position.
+    const Expr *var_fold = nullptr;
     // Initializer of a `comptime const`. `*p` reads it when `p` is a comptime pointer.
     const Expr *const_init = nullptr;
     // Pointer receiver `self *this`. The name is not assigned. `*self` and `self.x` are.
@@ -777,6 +780,11 @@ class Checker {
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     // A `var`, a local `const`, and a tuple are not.
     bool comptime_constant(const Expr &expr);
+    // Initializer of a `var` argument. Null when the name is assigned or is not that `var`.
+    const Expr *comptime_var_init(const Expr &expr);
+    // True when `name` is stored or its address is taken in the current function,
+    // or in the package when the name is file-scope.
+    bool var_assigned(const std::string &name);
     // The element of a comptime tuple index. Null when `expr` is not that index.
     const Expr *comptime_tuple_element(const Expr &expr);
     // That constant, with a file-scope name replaced by its initializer.

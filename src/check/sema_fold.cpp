@@ -2218,7 +2218,12 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
             literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *local, loc);
-        } else {
+        } else if (fn->is_comptime) {
+            if (const Expr *init = comptime_var_init(*call.args[i])) {
+                literal = clone_expr(*init);
+            }
+        }
+        if (literal == nullptr) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
@@ -2343,7 +2348,12 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
             literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *local, loc);
-        } else {
+        } else if (fn->is_comptime) {
+            if (const Expr *init = comptime_var_init(*call.args[i])) {
+                literal = clone_expr(*init);
+            }
+        }
+        if (literal == nullptr) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
@@ -2463,7 +2473,12 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
             literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *local, loc);
-        } else {
+        } else if (fn->is_comptime) {
+            if (const Expr *init = comptime_var_init(*call.args[i])) {
+                literal = clone_expr(*init);
+            }
+        }
+        if (literal == nullptr) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
@@ -2669,6 +2684,209 @@ bool Checker::strict_comptime_expr(const Expr &expr) {
         return true;
     }
     return comptime_constant(expr) || comptime_address(expr);
+}
+
+namespace {
+
+bool rooted_name(const Expr &expr, const std::string &name) {
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        return named->text == name;
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        return index->base != nullptr && rooted_name(*index->base, name);
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        return selector->base != nullptr && rooted_name(*selector->base, name);
+    }
+    return false;
+}
+
+bool stores_name(const Expr &expr, const std::string &name) {
+    if (const auto *assign = std::get_if<Expr::Assign>(&expr.data)) {
+        return assign->lhs != nullptr && rooted_name(*assign->lhs, name);
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        return !unary->postfix && unary->op == TokenKind::Amp && unary->expr != nullptr &&
+               rooted_name(*unary->expr, name);
+    }
+    return false;
+}
+
+bool expr_assigns(const Expr &expr, const std::string &name);
+
+bool stmt_assigns(const Stmt &stmt, const std::string &name) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && stmt_assigns(*child, name)) {
+                        return true;
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                if (node.value != nullptr && expr_assigns(*node.value, name)) {
+                    return true;
+                }
+                for (const auto &extra : node.extra) {
+                    if (extra != nullptr && expr_assigns(*extra, name)) {
+                        return true;
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                return node.expr != nullptr && expr_assigns(*node.expr, name);
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                return (node.cond != nullptr && expr_assigns(*node.cond, name)) ||
+                       (node.then_arm != nullptr && stmt_assigns(*node.then_arm, name)) ||
+                       (node.else_arm != nullptr && stmt_assigns(*node.else_arm, name));
+            } else if constexpr (std::is_same_v<T, Stmt::While>) {
+                return (node.cond != nullptr && expr_assigns(*node.cond, name)) ||
+                       (node.body != nullptr && stmt_assigns(*node.body, name));
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.init != nullptr && stmt_assigns(*node.init, name)) {
+                    return true;
+                }
+                if (node.cond != nullptr && expr_assigns(*node.cond, name)) {
+                    return true;
+                }
+                if (node.step != nullptr && expr_assigns(*node.step, name)) {
+                    return true;
+                }
+                if (node.each_expr != nullptr && expr_assigns(*node.each_expr, name)) {
+                    return true;
+                }
+                if (node.body != nullptr && stmt_assigns(*node.body, name)) {
+                    return true;
+                }
+                for (const auto &copy : node.unrolled) {
+                    if (copy != nullptr && stmt_assigns(*copy, name)) {
+                        return true;
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
+                return (node.body != nullptr && stmt_assigns(*node.body, name)) ||
+                       (node.cond != nullptr && expr_assigns(*node.cond, name));
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                return (node.cond != nullptr && expr_assigns(*node.cond, name)) ||
+                       (node.body != nullptr && stmt_assigns(*node.body, name));
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                return (node.value != nullptr && expr_assigns(*node.value, name)) ||
+                       (node.stmt != nullptr && stmt_assigns(*node.stmt, name));
+            } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                for (const VarDecl &var : node.vars) {
+                    if (var.init != nullptr && expr_assigns(*var.init, name)) {
+                        return true;
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Func>) {
+                return node.decl != nullptr && node.decl->body != nullptr && stmt_assigns(*node.decl->body, name);
+            } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                return node.call != nullptr && expr_assigns(*node.call, name);
+            } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                return node.value != nullptr && expr_assigns(*node.value, name);
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                return node.cond != nullptr && expr_assigns(*node.cond, name);
+            }
+            return false;
+        },
+        stmt.data);
+}
+
+bool expr_assigns(const Expr &expr, const std::string &name) {
+    if (stores_name(expr, name)) {
+        return true;
+    }
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Unary>) {
+                return node.expr != nullptr && expr_assigns(*node.expr, name);
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                return (node.lhs != nullptr && expr_assigns(*node.lhs, name)) ||
+                       (node.rhs != nullptr && expr_assigns(*node.rhs, name)) ||
+                       (node.mid != nullptr && expr_assigns(*node.mid, name));
+            } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                return (node.lhs != nullptr && expr_assigns(*node.lhs, name)) ||
+                       (node.rhs != nullptr && expr_assigns(*node.rhs, name));
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (node.callee != nullptr && expr_assigns(*node.callee, name)) {
+                    return true;
+                }
+                for (const auto &arg : node.args) {
+                    if (arg != nullptr && expr_assigns(*arg, name)) {
+                        return true;
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                return node.base != nullptr && expr_assigns(*node.base, name);
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof> ||
+                                 std::is_same_v<T, Expr::Cast>) {
+                return node.expr != nullptr && expr_assigns(*node.expr, name);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                return (node.base != nullptr && expr_assigns(*node.base, name)) ||
+                       (node.index != nullptr && expr_assigns(*node.index, name)) ||
+                       (node.end != nullptr && expr_assigns(*node.end, name));
+            } else if constexpr (std::is_same_v<T, Expr::Func>) {
+                return node.decl != nullptr && node.decl->body != nullptr && stmt_assigns(*node.decl->body, name);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                for (const Expr::FieldInit &field : node.fields) {
+                    if (field.value != nullptr && expr_assigns(*field.value, name)) {
+                        return true;
+                    }
+                }
+                for (const auto &element : node.elements) {
+                    if (element != nullptr && expr_assigns(*element, name)) {
+                        return true;
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                return (node.allocator != nullptr && expr_assigns(*node.allocator, name)) ||
+                       (node.count != nullptr && expr_assigns(*node.count, name)) ||
+                       (node.init != nullptr && expr_assigns(*node.init, name));
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                return (node.allocator != nullptr && expr_assigns(*node.allocator, name)) ||
+                       (node.expr != nullptr && expr_assigns(*node.expr, name));
+            }
+            return false;
+        },
+        expr.data);
+}
+
+} // namespace
+
+const Expr *Checker::comptime_var_init(const Expr &expr) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr) {
+        return nullptr;
+    }
+    return symbol->var_fold;
+}
+
+bool Checker::var_assigned(const std::string &name) {
+    if (!checking_.empty() && checking_.back() != nullptr && checking_.back()->body != nullptr) {
+        return stmt_assigns(*checking_.back()->body, name);
+    }
+    if (graph_ == nullptr) {
+        return true;
+    }
+    for (const uint32_t id : files_in_package(file_id_)) {
+        for (const PackageNode &node : graph_->nodes) {
+            if (node.file_id != id) {
+                continue;
+            }
+            for (const TopDecl &decl : node.unit.decls) {
+                const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+                if (fn != nullptr && fn->body != nullptr && stmt_assigns(*fn->body, name)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 void Checker::note_promotable(Symbol &symbol, const Expr *init) {

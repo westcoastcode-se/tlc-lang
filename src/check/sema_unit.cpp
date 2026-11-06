@@ -857,9 +857,12 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 symbol.type.is_const = true;
             }
             // `const name = expr` can be copied by a later `comptime const`. A `var` cannot,
-            // including `var name const Type`.
+            // including `var name const Type`. A `comptime func` may still read an unassigned `var`.
             if (var->is_const_decl && !var->is_comptime) {
                 note_promotable(symbol, var->init.get());
+            } else if (!var->is_const_decl && !var->is_comptime && var->init != nullptr &&
+                       strict_comptime_expr(*var->init) && !var_assigned(var->name)) {
+                symbol.var_fold = var->init.get();
             }
             symbol.link_name = var->link_name;
             bool defined = false;
