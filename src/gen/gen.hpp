@@ -929,6 +929,11 @@ class CodeGen {
         if (value->getType()->isFloatingPointTy()) {
             return builder_.CreateFCmpUNE(value, llvm::ConstantFP::get(value->getType(), 0.0));
         }
+        // An array used as a condition is not an integer. Sema reports `type mismatch`.
+        // The comptime evaluator still compiles that body, and an icmp against `i32` aborts.
+        if (!value->getType()->isIntOrIntVectorTy()) {
+            return llvm::ConstantInt::getFalse(context_);
+        }
         return builder_.CreateICmpNE(value, typed_zero(value));
     }
     int value_bits(const TypedValue &slot) const {

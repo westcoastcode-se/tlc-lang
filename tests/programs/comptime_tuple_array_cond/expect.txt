@@ -1,0 +1,1 @@
+compile-error: type mismatch: expected bool, found [2]i32
