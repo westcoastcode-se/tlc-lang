@@ -1255,6 +1255,27 @@ std::optional<bool> Checker::file_scope_const_bool(const Expr &expr) {
     return symbol->const_value != 0;
 }
 
+const Expr *Checker::file_scope_const_float(const Expr &expr) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->is_auto || symbol->type.alias_id != 0 || symbol->type.kind != TypeKind::Float) {
+        return nullptr;
+    }
+    const VarDecl *var = global_var(named->text);
+    if (var == nullptr || !var->is_const_decl || var->init == nullptr) {
+        return nullptr;
+    }
+    std::unordered_set<std::string> seen;
+    const std::optional<FoldedNumber> number = fold_number(*var->init, seen);
+    if (!number || !number->is_float) {
+        return nullptr;
+    }
+    return var->init.get();
+}
+
 std::optional<int> Checker::folded_local_int(const Expr &expr) {
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr) {
@@ -1281,7 +1302,7 @@ bool Checker::argument_is_comptime(const Expr &arg) {
     }
     for (const auto &element : tuple->elements) {
         if (element == nullptr || (!argument_is_comptime(*element) && !file_scope_const_int(*element) &&
-                                   !file_scope_const_bool(*element))) {
+                                   !file_scope_const_bool(*element) && file_scope_const_float(*element) == nullptr)) {
             return false;
         }
     }
@@ -1453,7 +1474,8 @@ bool Checker::comptime_constant(const Expr &expr) {
                     continue;
                 }
                 if (!argument_is_comptime(*element) && !file_scope_const_int(*element) && !file_scope_const_bool(*element) &&
-                    !fold_switch_case(*element) && !comptime_constant(*element) && !address_element(*element) &&
+                    file_scope_const_float(*element) == nullptr && !fold_switch_case(*element) &&
+                    !comptime_constant(*element) && !address_element(*element) &&
                     !array_element(array_element, *element, 0)) {
                     return false;
                 }
@@ -1599,6 +1621,10 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
                         node.value = *flag;
                         literal->data = std::move(node);
                         element = std::move(literal);
+                        continue;
+                    }
+                    if (const Expr *init = file_scope_const_float(*element)) {
+                        element = clone_expr(*init);
                         continue;
                     }
                     if (auto *inner = std::get_if<Expr::Init>(&element->data);

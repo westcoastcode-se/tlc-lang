@@ -759,6 +759,8 @@ class Checker {
     std::optional<int> file_scope_const_int(const Expr &expr);
     // File-scope `const flag = true`. The literal stays `bool`, not `i32`.
     std::optional<bool> file_scope_const_bool(const Expr &expr);
+    // File-scope `const bias = 0.5`. The initializer is the float literal. A local `const` is not.
+    const Expr *file_scope_const_float(const Expr &expr);
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     // A `var`, a local `const`, and a tuple are not.
     bool comptime_constant(const Expr &expr);
