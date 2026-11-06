@@ -15,6 +15,23 @@ func nest(n i32) i32 {
     return mid();
 }
 
+func pair(t (i32, i32)) i32 {
+    func add() i32 {
+        return t[0] + t[1];
+    }
+    return add();
+}
+
+func deep(t (i32, i32)) i32 {
+    func mid() i32 {
+        func inner() i32 {
+            return t[0];
+        }
+        return inner();
+    }
+    return mid();
+}
+
 func main() i32 {
     var n = 40;
     func add(b i32) i32 {
@@ -36,6 +53,19 @@ func main() i32 {
     }
     if (sum() != 42) {
         return 4;
+    }
+    var t = (40, 2);
+    func both() i32 {
+        return t[0] + t[1];
+    }
+    if (both() != 42) {
+        return 5;
+    }
+    if (pair((20, 22)) != 42) {
+        return 6;
+    }
+    if (deep((40, 2)) != 40) {
+        return 7;
     }
     return 42;
 }

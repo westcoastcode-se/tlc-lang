@@ -362,7 +362,10 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
                 }
             } else {
                 // The argument is the outer slot. A load uses the same depth and type flags.
+                // A split tuple is packed into that one address at the call. The outer slots stay there.
                 binding.value = arg;
+                binding.tuple_elems.clear();
+                binding.tuple_forward.reset();
             }
             if (!item.name.empty()) {
                 scopes_.back()[item.name] = binding;
@@ -469,7 +472,7 @@ void CodeGen::append_captures(const FunctionDecl *decl, std::vector<llvm::Value 
         if (binding == nullptr) {
             binding = lookup(item.name);
         }
-        if (binding == nullptr || binding->value == nullptr) {
+        if (binding == nullptr) {
             error(loc, "not supported yet");
             args.push_back(null_ptr());
             continue;
@@ -484,8 +487,20 @@ void CodeGen::append_captures(const FunctionDecl *decl, std::vector<llvm::Value 
             args.push_back(value.value);
             continue;
         }
-        // A split tuple has one slot per element. The callee cannot reload that value.
-        if (binding->is_tuple || !binding->value->getType()->isPointerTy()) {
+        // A parameter tuple is one slot per element. The call packs those fields into one address.
+        if (binding->is_tuple && !binding->tuple_elems.empty()) {
+            const TypedValue made = materialize_tuple_param(*binding);
+            if (made.value == nullptr || !made.value->getType()->isStructTy()) {
+                error(loc, "not supported yet");
+                args.push_back(null_ptr());
+                continue;
+            }
+            llvm::AllocaInst *slot = alloca_typed(made.value->getType(), item.name.empty() ? "cap" : item.name);
+            builder_.CreateStore(made.value, slot);
+            args.push_back(slot);
+            continue;
+        }
+        if (binding->value == nullptr || !binding->value->getType()->isPointerTy()) {
             error(loc, "not supported yet");
             args.push_back(null_ptr());
             continue;

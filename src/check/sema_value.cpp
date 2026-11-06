@@ -186,10 +186,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 init_touch(*symbol, node.loc);
                 if (captured(*symbol)) {
                     // A direct call passes the address, or the loaded function pointer.
-                    // A tuple has no single slot the callee can reload. A template and a
-                    // comptime constant have no runtime address.
+                    // A template and a comptime constant have no runtime address.
                     if (checking_.empty() || symbol->is_function || symbol->is_template || symbol->is_package ||
-                        symbol->is_type || symbol->is_constant || symbol->type.kind == TypeKind::Tuple) {
+                        symbol->is_type || symbol->is_constant) {
                         error(node.loc, "not supported yet");
                         return type_invalid();
                     }

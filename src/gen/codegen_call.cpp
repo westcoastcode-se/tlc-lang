@@ -81,6 +81,22 @@ TypedValue CodeGen::load_tuple_elem(const Binding &binding, unsigned index) {
     return value_of_binding(elem);
 }
 
+llvm::StructType *CodeGen::tuple_aggregate(const std::vector<ResultSlot> &parts) const {
+    if (parts.empty()) {
+        return nullptr;
+    }
+    std::vector<llvm::Type *> fields;
+    fields.reserve(parts.size());
+    for (const ResultSlot &slot : parts) {
+        llvm::Type *stored = stored_type(lower_result(current_file_, slot));
+        if (stored == nullptr) {
+            return nullptr;
+        }
+        fields.push_back(stored);
+    }
+    return llvm::StructType::get(context_, fields);
+}
+
 TypedValue CodeGen::materialize_tuple_param(const Binding &binding) {
     TypedValue out;
     if (binding.tuple_elems.empty() || terminated()) {

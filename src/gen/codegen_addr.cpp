@@ -128,6 +128,10 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
                 aggregate_ptr = binding->value;
                 aggregate = llvm::dyn_cast_or_null<llvm::StructType>(object_type(binding->value));
                 parts = binding->tuple_parts;
+                // The capture is the outer address. The field types are `tuple_parts`.
+                if (aggregate == nullptr) {
+                    aggregate = tuple_aggregate(parts);
+                }
             } else if (index->base != nullptr) {
                 const TypedValue base = emit_addr(*index->base);
                 if (base.value != nullptr && base.is_tuple && !base.tuple_parts.empty()) {

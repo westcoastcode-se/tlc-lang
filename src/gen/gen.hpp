@@ -1181,6 +1181,10 @@ class CodeGen {
         }
         if (binding.is_tuple && binding.value != nullptr) {
             llvm::Type *ty = object_type(binding.value);
+            // A capture argument is the outer address. It is not an alloca, so the parts name the fields.
+            if (ty == nullptr) {
+                ty = tuple_aggregate(binding.tuple_parts);
+            }
             if (ty == nullptr) {
                 return {zero(), 0};
             }
@@ -1370,6 +1374,7 @@ class CodeGen {
     void keep_tuple_forward(const Binding *binding, const TypedValue &value);
     TypedValue addr_tuple_elem(const Binding &binding, unsigned index);
     TypedValue materialize_tuple_param(const Binding &binding);
+    llvm::StructType *tuple_aggregate(const std::vector<ResultSlot> &parts) const;
     bool infer_global(uint32_t file, const Expr &expr, Lowered &out) const;
     // One element of a file-scope `var a, b = expr`.
     bool lower_unpack(uint32_t file, const Expr &expr, int index, int count, Lowered &out) const;

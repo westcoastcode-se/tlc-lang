@@ -24,7 +24,7 @@ A method is an enclosing function in the same way.
 
 An anonymous function, used from `defer` or called directly, is that same kind of function.
 
-> **Warning:** The compiler reports `not supported yet` for `var f = pass` when `pass` reads a local or a parameter, and for passing that function as an argument. Assigning the captured name is `not supported yet`. `export`, `extern`, and a method on a function in a block are `not supported yet`. Reading a tuple is `not supported yet`.
+> **Warning:** The compiler reports `not supported yet` for `var f = pass` when `pass` reads a local or a parameter, and for passing that function as an argument. Assigning the captured name is `not supported yet`. `export`, `extern`, and a method on a function in a block are `not supported yet`.
 
 ## Reading a local
 
@@ -57,6 +57,38 @@ retq                             # return
 The program returns 42.
 
 A parameter is read the same way. `func outer(n i32) i32` with that `add` returns 42 from `outer(40)`.
+
+## Reading a tuple
+
+```c
+func main() i32 {
+    var t = (40, 2);
+    func add() i32 {
+        return t[0] + t[1];
+    }
+    return add();
+}
+```
+
+```asm
+main:
+movl $2, 20(%rsp)                # t[1] = 2
+movl $40, 16(%rsp)               # t[0] = 40
+# trace frame for the call, then the matching pop
+leaq 16(%rsp), %rdi              # t
+callq 1                          # call 1
+retq                             # return
+
+1:
+movl (%rdi), %eax                # t[0]
+movl 4(%rdi), %ecx               # t[1]
+addl %ecx, %eax                  # add
+retq                             # return
+```
+
+The program returns 42.
+
+The index is a constant. A parameter `(i32, i32)` is read the same way. `pair((20, 22))` returns 42.
 
 ## Several parameter lists
 

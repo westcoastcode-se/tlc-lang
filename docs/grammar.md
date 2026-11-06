@@ -738,7 +738,7 @@ An inner function uses the same `function` form inside a block, and it has a bod
 
 Called directly, it may read a local or a parameter of an enclosing function.
 
-Reading a tuple is `not supported yet`.
+That value may be a tuple. The index is a constant.
 
 Using that function as a value is `not supported yet`.
 
