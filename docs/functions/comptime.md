@@ -452,6 +452,8 @@ A `var` of the enum is `not supported yet` on that call.
 
 The result is the struct literal that call kept.
 
+A file-scope `const` may be that call. `const p = origin()` stores the literal. `p.x` and `p.y` read those fields.
+
 The body may be one `return` of a literal, or statements that build the value.
 
 `origin` is `Point{.x = 41, .y = 1}`.

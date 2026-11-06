@@ -1816,8 +1816,19 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 };
                 if (diags_.size() == before) {
                     // A folding call is the constant in the global. A store would write read-only memory.
+                    // An i32 or a bool folds to an integer. A struct is the kept literal. A string is the bytes.
                     if (var->is_const_decl && !var->is_comptime && !var->is_extern && runs_at_startup(*var->init)) {
-                        if (!fold_int(*var->init)) {
+                        const Expr *cursor = var->init.get();
+                        while (const auto *unary = std::get_if<Expr::Unary>(&cursor->data)) {
+                            if (unary->op != TokenKind::KwUnsafe || unary->expr == nullptr) {
+                                break;
+                            }
+                            cursor = unary->expr.get();
+                        }
+                        const auto *call = std::get_if<Expr::Call>(&cursor->data);
+                        const bool folded = fold_int(*var->init).has_value() ||
+                                            (call != nullptr && (call->comptime_struct != nullptr || call->comptime_text));
+                        if (!folded) {
                             error(var->loc, "global initializer is not a constant");
                         }
                     } else if (!(var->is_const_decl && var->is_comptime) && !var->is_extern &&

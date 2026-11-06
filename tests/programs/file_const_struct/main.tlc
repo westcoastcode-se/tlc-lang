@@ -1,0 +1,14 @@
+type Point struct {
+    x i32;
+    y i32;
+}
+
+comptime func origin() Point {
+    return Point{.x = 40, .y = 2};
+}
+
+const p = origin();
+
+func main() i32 {
+    return p.x + p.y;
+}
