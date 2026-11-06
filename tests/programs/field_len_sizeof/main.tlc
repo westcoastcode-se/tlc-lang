@@ -1,0 +1,23 @@
+comptime const Early = sizeof(Point);
+
+type Point struct {
+    x i32;
+    y i32;
+}
+
+comptime const Late = sizeof(Point);
+
+type Holder struct {
+    buf [Late]u8;
+}
+
+type Earlier struct {
+    buf [Early]u8;
+}
+
+func main() i32 {
+    if (i32(sizeof(Holder)) != 8) { return 1; }
+    if (i32(sizeof(Earlier)) != 8) { return 2; }
+    var row [Late]u8;
+    return row.len;
+}

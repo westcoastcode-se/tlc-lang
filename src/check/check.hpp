@@ -1091,6 +1091,8 @@ class Checker {
     bool mark_unused_parameters(const std::vector<TypeParam> &params, const std::unordered_set<std::string> &used);
     void reject_function_generics(const FunctionDecl &fn);
     void fold_early_consts(TranslationUnit &unit, uint32_t file_id);
+    // A `comptime const` whose initializer is `sizeof` of a struct. True when one value was stored.
+    bool fold_ready_consts();
     void bind_file_const(VarDecl &var);
     // The type of a file-scope `comptime const`. Sets `has_const` when the value folds.
     // Does not declare the name. Invalid means the constant was rejected.

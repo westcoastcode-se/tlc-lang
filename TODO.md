@@ -31,7 +31,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ### Parsing
 
-- An array length may be a name, `[N]i32`. The name is a file-scope `const` already folded, or a `const` inside a function whose initializer folds to a non-negative `i32`. A length that needs `sizeof` of a struct that is not complete yet does not fold.
+- An array length may be a name, `[N]i32`. The name is a file-scope `const` already folded, or a `const` inside a function whose initializer folds to a non-negative `i32`. `comptime const N = sizeof(Point)` is that length once `Point` is complete, including a field `buf [N]u8`. `sizeof` of the struct that contains the field stays `not supported yet`.
 
 ### Constant evaluation
 

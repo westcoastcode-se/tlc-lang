@@ -1515,6 +1515,44 @@ void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
     pop();
 }
 
+bool Checker::fold_ready_consts() {
+    bool any = false;
+    auto fold_unit = [&](TranslationUnit &unit, uint32_t file) {
+        const uint32_t saved = file_id_;
+        file_id_ = file;
+        for (TopDecl &decl : unit.decls) {
+            auto *var = std::get_if<VarDecl>(&decl.data);
+            if (var == nullptr || !var->is_comptime || var->has_const || var->name.empty() || var->init == nullptr ||
+                !var->owner.empty() || !early_int_const(*var) ||
+                !std::holds_alternative<Expr::Sizeof>(var->init->data)) {
+                continue;
+            }
+            // `sizeof(Point)` waits until that struct has a size. A failure stays quiet.
+            const bool saved_quiet = quiet_;
+            quiet_ = true;
+            const std::optional<int> value = fold_int(*var->init);
+            quiet_ = saved_quiet;
+            if (!value) {
+                continue;
+            }
+            var->has_const = true;
+            var->const_value = *value;
+            const_values_[file][var->name] = ConstBinding{*value, var->is_static};
+            any = true;
+        }
+        file_id_ = saved;
+    };
+    if (primary_unit_ != nullptr) {
+        fold_unit(*primary_unit_, 0);
+    }
+    if (graph_ != nullptr) {
+        for (const PackageNode &node : graph_->nodes) {
+            fold_unit(const_cast<TranslationUnit &>(node.unit), node.file_id);
+        }
+    }
+    return any;
+}
+
 std::optional<int> Checker::lookup_const_value(const std::string &name) {
     if (const Symbol *symbol = lookup(name)) {
         if (symbol->is_constant && plain_int_constant(symbol->type)) {

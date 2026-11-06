@@ -1260,6 +1260,65 @@ bool Checker::trait_is(int got, int want) const {
 }
 
 bool Checker::field_waits(const FieldDecl &field) const {
+    // `buf [N]u8` waits while `comptime const N = sizeof(Point)` still needs `Point`.
+    auto length_pending = [&](const std::string &name) {
+        if (name.empty()) {
+            return false;
+        }
+        auto known = [&](uint32_t file, bool allow_static) {
+            const auto table = const_values_.find(file);
+            if (table == const_values_.end()) {
+                return false;
+            }
+            const auto found = table->second.find(name);
+            if (found == table->second.end()) {
+                return false;
+            }
+            return allow_static || !found->second.is_static;
+        };
+        if (known(file_id_, true)) {
+            return false;
+        }
+        for (const uint32_t id : files_in_package(file_id_)) {
+            if (id != file_id_ && known(id, false)) {
+                return false;
+            }
+        }
+        auto pending_in = [&](const TranslationUnit &unit) {
+            for (const TopDecl &decl : unit.decls) {
+                const auto *var = std::get_if<VarDecl>(&decl.data);
+                if (var != nullptr && var->owner.empty() && var->name == name && var->is_comptime && !var->has_const &&
+                    var->init != nullptr) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        if (const PackageNode *node = find_node(file_id_)) {
+            if (pending_in(node->unit)) {
+                return true;
+            }
+        } else if (primary_unit_ != nullptr && file_id_ == 0 && pending_in(*primary_unit_)) {
+            return true;
+        }
+        for (const uint32_t id : files_in_package(file_id_)) {
+            if (id == file_id_) {
+                continue;
+            }
+            if (const PackageNode *node = find_node(id); node != nullptr && pending_in(node->unit)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (length_pending(field.array_len_name)) {
+        return true;
+    }
+    for (const TypeShell &shell : field.shells) {
+        if (shell.kind == TypeShell::Kind::Array && length_pending(shell.length_name)) {
+            return true;
+        }
+    }
     // A pointer or a slice does not store the struct, so it does not wait for that struct.
     bool hides = field.indirections > 0 || field.is_fn_ptr || field.is_enum || field.elem_slice ||
                  (field.is_array && field.array_len < 0);
@@ -2029,6 +2088,10 @@ void Checker::define_struct_fields() {
     bool progress = true;
     while (progress) {
         progress = false;
+        // `sizeof(Point)` folds once `Point` is complete, then `buf [N]u8` can use it.
+        if (fold_ready_consts()) {
+            progress = true;
+        }
         for (PendingStruct &pending : pending_structs_) {
             if (pending.id < 0 || pending.decl == nullptr || structs_[static_cast<std::size_t>(pending.id)].complete) {
                 continue;
