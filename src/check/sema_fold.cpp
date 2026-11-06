@@ -1466,6 +1466,13 @@ bool Checker::comptime_constant(const Expr &expr) {
             return init != nullptr && comptime_constant(*init);
         }
         if (!symbol->is_constant || symbol->is_auto) {
+            // `const origin = Point{.x = 2, .y = 0}` at file scope. A local const stays out.
+            if (!symbol->is_auto && symbol->type.kind == TypeKind::Struct) {
+                if (const VarDecl *var = global_var(named->text);
+                    var != nullptr && var->is_const_decl && var->init != nullptr) {
+                    return comptime_constant(*var->init);
+                }
+            }
             return false;
         }
         const Type &type = symbol->type;
@@ -1539,6 +1546,14 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
         }
         const Symbol *symbol = lookup(named->text);
         if (symbol == nullptr || !symbol->is_constant) {
+            // A file-scope const struct is its initializer. A local const is not.
+            if (symbol != nullptr && !symbol->is_auto && symbol->type.kind == TypeKind::Struct) {
+                if (const VarDecl *var = global_var(named->text);
+                    var != nullptr && var->is_const_decl && var->init != nullptr) {
+                    cursor = var->init.get();
+                    continue;
+                }
+            }
             break;
         }
         const Expr *init = symbol->const_init;

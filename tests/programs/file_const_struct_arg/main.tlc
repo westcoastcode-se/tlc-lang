@@ -1,0 +1,15 @@
+type Point struct {
+    x i32;
+    y i32;
+}
+
+func take(p comptime Point, n i32) i32 {
+    return n + p.x;
+}
+
+const origin = Point{.x = 2, .y = 0};
+
+func main() i32 {
+    var n = 40;
+    return take(origin, n);
+}
