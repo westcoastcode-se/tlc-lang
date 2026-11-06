@@ -7,23 +7,26 @@ func id(n i32) i32 {
 }
 
 func outer(op func (i32) i32) func (i32) i32 {
+    const fp = op;
     func pass() func (i32) i32 {
-        return op;
+        return fp;
     }
     return pass();
 }
 
 func apply(op func (i32) i32) i32 {
+    const fp = op;
     func inner(n i32) i32 {
-        return op(n);
+        return fp(n);
     }
     return inner(20);
 }
 
 func nested(op func (i32) i32) i32 {
+    const fp = op;
     func mid() i32 {
         func inner() func (i32) i32 {
-            return op;
+            return fp;
         }
         return inner()(1);
     }
@@ -31,7 +34,7 @@ func nested(op func (i32) i32) i32 {
 }
 
 func via_local(op func (i32) i32) i32 {
-    var fp = op;
+    const fp = op;
     func pass() func (i32) i32 {
         return fp;
     }
@@ -39,7 +42,8 @@ func via_local(op func (i32) i32) i32 {
 }
 
 func anon(op func (i32) i32) i32 {
-    return func () func (i32) i32 { return op; }()(0);
+    const fp = op;
+    return func () func (i32) i32 { return fp; }()(0);
 }
 
 type Box struct {
@@ -47,22 +51,26 @@ type Box struct {
 };
 
 func Box::wrap(self this, op func (i32) i32) i32 {
+    const fp = op;
     func pass() func (i32) i32 {
-        return op;
+        return fp;
     }
     return pass()(self.n);
 }
 
 func both(a func (i32) i32, b func (i32) i32) i32 {
+    const fa = a;
+    const fb = b;
     func pass() i32 {
-        return a(1) + b(2);
+        return fa(1) + fb(2);
     }
     return pass();
 }
 
 func shadow(op func (i32) i32) i32 {
+    const fp = op;
     func pass() func (i32) i32 {
-        return op;
+        return fp;
     }
     {
         var op = 1;

@@ -16,21 +16,23 @@ A body with no `return` is `void`, and so is a body that only writes `return;` o
 
 The function can call functions already in scope, and it can use globals.
 
-It can read a local or a parameter of an enclosing function. The call is direct.
+It can read a `const` or a `comptime const` of an enclosing function. The call is direct.
 
-It can read a function pointer from an enclosing function, either a parameter or a local that holds that pointer. The inner function returns that pointer or calls it.
+A `var` and a parameter are `not supported yet`.
+
+It can read a function pointer the same way when that name is a `const`. The inner function returns that pointer or calls it.
 
 A method is an enclosing function in the same way.
 
 An anonymous function, used from `defer` or called directly, is that same kind of function.
 
-> **Warning:** The compiler reports `not supported yet` for `var f = pass` when `pass` reads a local or a parameter, and for passing that function as an argument. Assigning the captured name is `not supported yet`. `export`, `extern`, and a method on a function in a block are `not supported yet`.
+> **Warning:** The compiler reports `not supported yet` for a `var` or a parameter from an enclosing function. It reports `not supported yet` for `var f = pass` when `pass` reads a `const`, and for passing that function as an argument. `export`, `extern`, and a method on a function in a block are `not supported yet`.
 
-## Reading a local
+## Reading a const
 
 ```c
 func main() i32 {
-    var n = 40;
+    const n = 40;
     func add(b i32) i32 {
         return n + b;
     }
@@ -56,13 +58,13 @@ retq                             # return
 
 The program returns 42.
 
-A parameter is read the same way. `func outer(n i32) i32` with that `add` returns 42 from `outer(40)`.
+`comptime const n = 40` is read the same way. A `var` is `not supported yet`.
 
 ## Reading a tuple
 
 ```c
 func main() i32 {
-    var t = (40, 2);
+    const t = (40, 2);
     func add() i32 {
         return t[0] + t[1];
     }
@@ -88,7 +90,7 @@ retq                             # return
 
 The program returns 42.
 
-The index is a constant. A parameter `(i32, i32)` is read the same way. `pair((20, 22))` returns 42.
+The index is a constant. A `var` tuple is `not supported yet`.
 
 ## Several parameter lists
 
@@ -127,8 +129,9 @@ func add(n i32) i32 {
 }
 
 func outer(op func (i32) i32) i32 {
+    const fp = op;
     func pass() func (i32) i32 {
-        return op;
+        return fp;
     }
     return pass()(41);
 }
@@ -136,8 +139,17 @@ func outer(op func (i32) i32) i32 {
 
 ```asm
 outer:
+movq %rdi, 40(%rsp)              # op
+movq 40(%rsp), %rax              # move
+movq %rax, 48(%rsp)              # fp = op
+movq 48(%rsp), %rax              # fp
+movq %rax, 24(%rsp)              # move
 # trace frame for the call, then the matching pop
+movq 24(%rsp), %rdi              # fp
 callq 1                          # call 1
+# trace frame for the call, then the matching pop
+movl $41, %edi                   # constant
+callq *%rax                      # call *%rax
 retq                             # return
 
 add:

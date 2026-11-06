@@ -1,108 +1,35 @@
-func outer(n i32) i32 {
-    func add(b i32) i32 {
-        return n + b;
-    }
-    return add(2);
-}
-
-func nest(n i32) i32 {
-    func mid() i32 {
-        func inner() i32 {
-            return n;
-        }
-        return inner();
-    }
-    return mid();
-}
-
-func pair(t (i32, i32)) i32 {
-    func add() i32 {
-        return t[0] + t[1];
-    }
-    return add();
-}
-
-func deep(t (i32, i32)) i32 {
-    func mid() i32 {
-        func inner() i32 {
-            return t[0];
-        }
-        return inner();
-    }
-    return mid();
-}
-
-func poke(t (i32, i32)) i32 {
-    func write() i32 {
-        t[0] = 40;
-        return t[1];
-    }
-    var y = write();
-    return t[0] + y;
-}
-
-func point(t (i32, i32)) i32 {
-    func addr() *i32 {
-        return &t[0];
-    }
-    var p = addr();
-    t[0] = 40;
-    return *p + t[1];
-}
-
-var slot i32;
-
-func later(t (i32, i32)) void {
-    defer func() {
-        slot = t[0];
-    }();
-    t[0] = 40;
+func inc(n i32) i32 {
+    return n + 1;
 }
 
 func main() i32 {
-    var n = 40;
+    const n = 40;
     func add(b i32) i32 {
         return n + b;
     }
-    var a = 20;
-    var b = 22;
-    func sum() i32 {
-        return a + b;
+    comptime const m = 20;
+    func addm(b i32) i32 {
+        return m + b;
+    }
+    const t = (40, 2);
+    func both() i32 {
+        return t[0] + t[1];
+    }
+    const fp = inc;
+    func pass() i32 {
+        return fp(41);
     }
     if (add(2) != 42) {
         return 1;
     }
-    if (outer(40) != 42) {
+    if (addm(22) != 42) {
         return 2;
     }
-    if (nest(7) != 7) {
+    if (both() != 42) {
         return 3;
     }
-    if (sum() != 42) {
+    if (pass() != 42) {
         return 4;
-    }
-    var t = (40, 2);
-    func both() i32 {
-        return t[0] + t[1];
-    }
-    if (both() != 42) {
-        return 5;
-    }
-    if (pair((20, 22)) != 42) {
-        return 6;
-    }
-    if (deep((40, 2)) != 40) {
-        return 7;
-    }
-    if (poke((1, 2)) != 42) {
-        return 8;
-    }
-    if (point((1, 2)) != 42) {
-        return 9;
-    }
-    later((1, 2));
-    if (slot != 40) {
-        return 10;
     }
     return 42;
 }

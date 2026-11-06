@@ -553,6 +553,6 @@ A named function with those parameters and that result is accepted as that argum
 
 A prototype, an overloaded name, `var f = name`, and an `unsafe func` stay rejected there. Used anywhere else, the compiler reports `type mismatch`. The compiler reports `type mismatch` when a short form's parameter count does not match.
 
-> **Warning:** A short form that reads a local or a parameter from the enclosing function is reported as `not supported yet`, including a function pointer. A full anonymous function that is called directly can read a local, a parameter, or a function pointer from that function, as an inner function can.
+> **Warning:** A short form that reads a name from the enclosing function is reported as `not supported yet`, including a function pointer. A full anonymous function that is called directly can read a `const` or a `comptime const` from that function, as an inner function can. A `var` and a parameter are `not supported yet`.
 
 [Index](../README.md) · [Previous: Tests](test.md) · [Next: Methods](../methods/method.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

@@ -4653,7 +4653,7 @@ int run_sema_tests() {
             "  func f() i32 { return x; }\n"
             "  return f();\n"
             "}\n");
-        EXPECT_EQ(check, errors, "");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -4744,7 +4744,7 @@ int run_sema_tests() {
             "  defer func() i32 { return x; }();\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_EQ(check, errors, "");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -5865,31 +5865,39 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func add(n i32) i32 { return n + 1; }\n"
             "func outer(op func (i32) i32) func (i32) i32 {\n"
-            "  func pass() func (i32) i32 { return op; }\n"
+            "  const fp = op;\n"
+            "  func pass() func (i32) i32 { return fp; }\n"
             "  return pass();\n"
             "}\n"
             "func apply(op func (i32) i32) i32 {\n"
-            "  func inner(n i32) i32 { return op(n); }\n"
+            "  const fp = op;\n"
+            "  func inner(n i32) i32 { return fp(n); }\n"
             "  return inner(1);\n"
             "}\n"
             "func nested(op func (i32) i32) i32 {\n"
+            "  const fp = op;\n"
             "  func mid() i32 {\n"
-            "    func inner() func (i32) i32 { return op; }\n"
+            "    func inner() func (i32) i32 { return fp; }\n"
             "    return inner()(1);\n"
             "  }\n"
             "  return mid();\n"
             "}\n"
             "type Box struct { n i32; };\n"
             "func Box::wrap(self this, op func (i32) i32) i32 {\n"
-            "  func pass() func (i32) i32 { return op; }\n"
+            "  const fp = op;\n"
+            "  func pass() func (i32) i32 { return fp; }\n"
             "  return pass()(self.n);\n"
+            "}\n"
+            "func bare(op func (i32) i32) i32 {\n"
+            "  func pass() func (i32) i32 { return op; }\n"
+            "  return pass()(1);\n"
             "}\n"
             "func main() i32 {\n"
             "  var box Box;\n"
             "  box.n = 0;\n"
-            "  return outer(add)(1) + apply(add) + nested(add) + box.wrap(add);\n"
+            "  return outer(add)(1) + apply(add) + nested(add) + box.wrap(add) + bare(add);\n"
             "}\n");
-        EXPECT_EQ(check, errors, "");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -5936,7 +5944,7 @@ int run_sema_tests() {
             "  return inner();\n"
             "}\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_EQ(check, errors, "");
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {

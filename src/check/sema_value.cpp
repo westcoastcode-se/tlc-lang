@@ -183,18 +183,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "undeclared identifier");
                     return type_invalid();
                 }
-                init_touch(*symbol, node.loc);
                 if (captured(*symbol)) {
-                    // A direct call passes the address, or the loaded function pointer.
-                    // A template and a comptime constant have no runtime address.
-                    if (checking_.empty() || symbol->is_function || symbol->is_template || symbol->is_package ||
-                        symbol->is_type || symbol->is_constant) {
+                    // A `var` and a parameter are not captured. A `const` and a `comptime const` are.
+                    const bool constant = symbol->runtime_const || symbol->is_constant;
+                    if (checking_.empty() || !constant || symbol->is_function || symbol->is_template ||
+                        symbol->is_package || symbol->is_type) {
                         error(node.loc, "not supported yet");
                         return type_invalid();
                     }
                     note_capture(*checking_.back(), node.text, symbol->function_id);
                     return symbol->type;
                 }
+                init_touch(*symbol, node.loc);
                 if (symbol->is_local_function && symbol->fn_captures && !direct_callee_) {
                     error(node.loc, "not supported yet");
                     return type_invalid();

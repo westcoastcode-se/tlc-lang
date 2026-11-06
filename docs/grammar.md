@@ -632,7 +632,7 @@ The returned value may be a function name or an anonymous function.
 
 `return func (a i32, b i32) i32 { return a + b; }` is one such value.
 
-An inner function called directly may return a function pointer taken from an enclosing function.
+An inner function called directly may return a function pointer taken from a `const` or a `comptime const` of an enclosing function.
 
 ### Methods
 
@@ -736,9 +736,11 @@ A slice alias uses `self this` or `self *this`.
 
 An inner function uses the same `function` form inside a block, and it has a body.
 
-Called directly, it may read a local or a parameter of an enclosing function.
+Called directly, it may read a `const` or a `comptime const` of an enclosing function.
 
-That value may be a tuple. The index is a constant.
+A `var` and a parameter are `not supported yet`.
+
+That `const` may be a tuple. The index is a constant.
 
 Using that function as a value is `not supported yet`.
 
