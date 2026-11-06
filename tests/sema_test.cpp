@@ -7090,10 +7090,10 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose_files({
-            {"main.tlc", "import \"math\";\nfunc main() i32 { var f = math.id; return 0; }\n"},
+            {"main.tlc", "import \"math\";\nfunc main() i32 { var f = math.id; return f(1); }\n"},
             {"math/id.tlc", "package math;\nexport func id[T type](value T) T { return value; }\n"},
         });
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT(check, errors.empty());
     }
 
     {

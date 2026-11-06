@@ -670,9 +670,9 @@ When the file is `main.tlc`, the symbol is `main.width.spec.4`.
 
 The name is one in this package.
 
-`var f = pkg.id` is `not supported yet`.
+`var f = pkg.id` names that generic too.
 
-The call stays `pkg.id(1)` or `pkg.id[i32](1)`.
+`f(1)` and `f[i32](1)` specialize it the same way as `pkg.id`.
 
 The binding is not a function pointer and has no storage.
 

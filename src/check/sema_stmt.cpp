@@ -2512,27 +2512,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (source != nullptr && source->is_template && source->is_function &&
                         (!source->fn_templates.empty() || source->fn_template != nullptr)) {
                         const SourceLoc loc = node.name_locs.empty() ? node.loc : node.name_locs.front();
-                        // A call of this alias is rewritten to a name in this package. Another package stays `pkg.id(...)`.
-                        const uint32_t owner = source->package_file != 0 ? source->package_file : file_id_;
-                        bool here = owner == file_id_;
-                        if (!here) {
-                            for (const uint32_t id : files_in_package(file_id_)) {
-                                if (id == owner) {
-                                    here = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!here) {
-                            SourceLoc at = loc;
-                            if (const auto *named = std::get_if<Expr::Name>(&node.value->data)) {
-                                at = named->loc;
-                            } else if (const auto *selector = std::get_if<Expr::Selector>(&node.value->data)) {
-                                at = selector->loc;
-                            }
-                            error(at, "not supported yet");
-                            return;
-                        }
+                        // A call is rewritten to `id.spec...` in this package, or to `pkg.id.spec...`.
                         if (scopes_.empty()) {
                             error(loc, "type mismatch");
                             return;

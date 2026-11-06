@@ -2116,6 +2116,65 @@ bool Checker::atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &
     return false;
 }
 
+bool Checker::rewrite_spec_callee(Expr &callee, const std::string &spec_name, uint32_t owner) {
+    if (auto *selector = std::get_if<Expr::Selector>(&callee.data)) {
+        selector->field = spec_name;
+        return true;
+    }
+    auto *named = std::get_if<Expr::Name>(&callee.data);
+    if (named == nullptr) {
+        return false;
+    }
+    bool here = owner == file_id_;
+    if (!here) {
+        for (const uint32_t id : files_in_package(file_id_)) {
+            if (id == owner) {
+                here = true;
+                break;
+            }
+        }
+    }
+    if (here) {
+        named->text = spec_name;
+        return true;
+    }
+    const auto same_package = [&](uint32_t file) {
+        if (file == owner) {
+            return true;
+        }
+        for (const uint32_t id : files_in_package(owner)) {
+            if (id == file) {
+                return true;
+            }
+        }
+        return false;
+    };
+    std::string package;
+    for (auto it = scopes_.rbegin(); it != scopes_.rend() && package.empty(); ++it) {
+        for (const auto &[name, symbol] : it->symbols) {
+            if (symbol.is_package && same_package(symbol.package_file)) {
+                package = name;
+                break;
+            }
+        }
+    }
+    if (package.empty()) {
+        error(named->loc, "not supported yet");
+        return false;
+    }
+    Expr::Selector selector;
+    selector.loc = named->loc;
+    selector.field = spec_name;
+    auto base = std::make_unique<Expr>();
+    Expr::Name package_name;
+    package_name.loc = named->loc;
+    package_name.text = package;
+    base->data = std::move(package_name);
+    selector.base = std::move(base);
+    callee.data = std::move(selector);
+    return true;
+}
+
 std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
     if (call_ptr == nullptr || call_ptr->callee == nullptr) {
@@ -2124,7 +2183,6 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     Expr::Call &call = *call_ptr;
     std::vector<const FunctionDecl *> candidates;
     uint32_t owner = file_id_;
-    bool selector_call = false;
     const auto take_template = [&](const Symbol *symbol) {
         if (symbol == nullptr || !symbol->is_template) {
             return false;
@@ -2168,17 +2226,16 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
                 }
                 return type_invalid();
             }
-            if (take_template(target.symbol)) {
-                selector_call = true;
-            } else if (!call.type_args.empty()) {
-                error(call.loc, "type mismatch");
-                for (const auto &arg : call.args) {
-                    if (arg) {
-                        check_expr(*arg, true);
+            if (!take_template(target.symbol)) {
+                if (!call.type_args.empty()) {
+                    error(call.loc, "type mismatch");
+                    for (const auto &arg : call.args) {
+                        if (arg) {
+                            check_expr(*arg, true);
+                        }
                     }
+                    return type_invalid();
                 }
-                return type_invalid();
-            } else {
                 return std::nullopt;
             }
         } else if (!call.type_args.empty()) {
@@ -2393,12 +2450,8 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     }
     const std::string key = std::to_string(owner) + "\n" + spec_name;
     auto rewrite = [&]() {
-        if (selector_call) {
-            std::get<Expr::Selector>(call.callee->data).field = spec_name;
-        } else {
-            std::get<Expr::Name>(call.callee->data).text = spec_name;
-        }
         call.type_args.clear();
+        return call.callee != nullptr && rewrite_spec_callee(*call.callee, spec_name, owner);
     };
     if (spec_ready_.contains(key) || spec_checking_.contains(key)) {
         const bool keep_atomic = is_std_builtin_file(owner) && atomic_builtin(templ->name) != AtomicBuiltin::None;
@@ -2411,7 +2464,9 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
                 return type_invalid();
             }
         }
-        rewrite();
+        if (!rewrite()) {
+            return type_invalid();
+        }
         return check_raw(expr, used);
     }
     if (generic_spec_depth_ >= 32) {
@@ -2510,7 +2565,9 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     spec_checking_.erase(key);
     spec_ready_.insert(key);
     queue_spec(owner, std::move(spec));
-    rewrite();
+    if (!rewrite()) {
+        return type_invalid();
+    }
     return check_raw(expr, used);
 }
 
@@ -2702,15 +2759,13 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         call.args = std::move(kept);
         call.selected = nullptr;
         call.type_args.clear();
-        if (auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
-            named->text = spec_name;
-        } else if (auto *selector = std::get_if<Expr::Selector>(&call.callee->data)) {
-            selector->field = spec_name;
+        if (call.callee == nullptr || !rewrite_spec_callee(*call.callee, spec_name, owner)) {
+            return false;
         }
+        return true;
     };
     if (spec_ready_.contains(key) || spec_checking_.contains(key)) {
-        rewrite();
-        return true;
+        return rewrite();
     }
     const std::size_t before = diags_.size();
     FunctionDecl spec = clone_function(fn);
@@ -2778,7 +2833,14 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
     bool publish = fn.exported && fn.method_struct.empty();
     if (!publish && fn.method_struct.empty()) {
         const auto file = exports_.find(owner);
-        publish = file != exports_.end() && file->second.contains(fn.name);
+        if (file != exports_.end()) {
+            publish = file->second.contains(fn.name);
+            // `id.spec.i32.spec.40` is a further copy. The export table has `id`.
+            if (!publish) {
+                const std::size_t dot = fn.name.find(".spec");
+                publish = dot != std::string::npos && file->second.contains(fn.name.substr(0, dot));
+            }
+        }
     }
     if (publish) {
         exports_[owner].insert_or_assign(spec_name, symbol);
@@ -2801,8 +2863,7 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
     spec_checking_.erase(key);
     spec_ready_.insert(key);
     queue_spec(owner, std::move(spec));
-    rewrite();
-    return true;
+    return rewrite();
 }
 
 bool Checker::comptime_arg_specializes(const Param &param, const Expr &arg) {

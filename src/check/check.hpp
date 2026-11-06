@@ -1138,6 +1138,8 @@ class Checker {
     const StructDecl *find_struct_template(const std::string &name, uint32_t &owner) const;
     const TraitDecl *find_trait_template(const std::string &name, uint32_t &owner) const;
     const TypedefDecl *find_tuple_alias_template(const std::string &name, uint32_t &owner) const;
+    // `f(1)` when `f` names `pkg.id` becomes `pkg.<spec>`. A name in this package stays a name.
+    bool rewrite_spec_callee(Expr &callee, const std::string &spec_name, uint32_t owner);
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
     // `func scale(n comptime i32, x i32)`. One copy per constant. `n` is inlined.
     std::optional<Type> maybe_comptime_param_call(Expr &expr, bool used);
