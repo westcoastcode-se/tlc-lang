@@ -394,6 +394,8 @@ In that file, `take(scale, n)` for `const scale = 0.5` calls `main.take.spec.d3f
 
 In that file, `take(other, 38)` for `const other = Integer(4)` calls `main.take.spec.4`.
 
+In that file, `take((other, 0), n)` calls `main.take.spec.t_4_0`. `field((other, 38))` folds when the body returns `i32(p[0]) + p[1]`.
+
 In that file, `take(add, n)` calls `main.take.spec.fnadd`.
 
 `BinOp(add)` and `(add, 1)` when `add` is a `comptime func` are that argument.

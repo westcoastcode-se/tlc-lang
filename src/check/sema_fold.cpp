@@ -1391,7 +1391,8 @@ bool Checker::argument_is_comptime(const Expr &arg) {
                                    !file_scope_const_bool(*element) && file_scope_const_float(*element) == nullptr &&
                                    file_scope_const_struct(*element) == nullptr &&
                                    file_scope_const_enum(*element) == nullptr &&
-                                   file_scope_const_array(*element) == nullptr)) {
+                                   file_scope_const_array(*element) == nullptr &&
+                                   file_scope_const_alias(*element) == nullptr)) {
             return false;
         }
     }
@@ -1562,13 +1563,10 @@ bool Checker::comptime_constant(const Expr &expr) {
                     }
                     continue;
                 }
-                // `const other = Integer(4)` is a comptime argument. It is not a tuple element.
-                if (file_scope_const_alias(*element) != nullptr) {
-                    return false;
-                }
                 if (!argument_is_comptime(*element) && !file_scope_const_int(*element) && !file_scope_const_bool(*element) &&
                     file_scope_const_float(*element) == nullptr && file_scope_const_struct(*element) == nullptr &&
                     file_scope_const_enum(*element) == nullptr && file_scope_const_array(*element) == nullptr &&
+                    file_scope_const_alias(*element) == nullptr &&
                     !fold_switch_case(*element) && !comptime_constant(*element) && !address_element(*element) &&
                     !array_element(array_element, *element, 0)) {
                     return false;
@@ -1734,6 +1732,10 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
                         continue;
                     }
                     if (const Expr *init = file_scope_const_array(*element)) {
+                        element = clone_expr(*init);
+                        continue;
+                    }
+                    if (const Expr *init = file_scope_const_alias(*element)) {
                         element = clone_expr(*init);
                         continue;
                     }

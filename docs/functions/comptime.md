@@ -1130,6 +1130,16 @@ An alias is that argument too.
 
 The copy adds `4`.
 
+`const other = Integer(4)` then `return field((other, 38))` folds.
+
+That `field` is `comptime func field(p (Integer, i32)) i32 { return i32(p[0]) + p[1]; }`.
+
+`main` is `movl $42, %eax` and `retq`.
+
+`take((other, 0), n)` calls `main.take.spec.t_4_0`.
+
+A local `const` and a `var` in that tuple are `not supported yet`.
+
 A function is that argument too.
 
 `take(add, n)`, `const op = add`, `BinOp(add)`, and `const wrapped = BinOp(add)` call `main.take.spec.fnadd`.

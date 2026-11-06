@@ -2660,8 +2660,20 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         if (got.kind == TypeKind::Invalid || diags_.size() != mark) {
             return false;
         }
+        // A file-scope `const` copies into the argument. `(other, 0)` is `(Integer, i32)`.
+        // The binding's `const` is not the element type.
+        const auto copied = [](const auto &self, Type type) -> Type {
+            type.is_const = false;
+            if (type.kind == TypeKind::Tuple) {
+                for (Type &part : type.results) {
+                    part = self(self, std::move(part));
+                }
+            }
+            return type;
+        };
         // `BinOp(add)` is that function. The alias sits on the pointer. The pointee is the parameter.
-        if (!same_type(got, want) && !accepts_pointer(got, want)) {
+        if (!same_type(got, want) && !same_type(copied(copied, got), copied(copied, want)) &&
+            !accepts_pointer(got, want)) {
             return false;
         }
         TypeParam slot;

@@ -768,7 +768,6 @@ class Checker {
     // File-scope `const row = [_]i32{2, 0}`. The initializer stays the array literal. A local `const` is not.
     const Expr *file_scope_const_array(const Expr &expr);
     // File-scope `const other = Integer(4)`. The initializer stays the cast. A local `const` is not.
-    // A tuple element is not this value.
     const Expr *file_scope_const_alias(const Expr &expr);
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     // A `var`, a local `const`, and a tuple are not.
