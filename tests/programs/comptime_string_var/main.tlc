@@ -1,8 +1,9 @@
-comptime func cut(text []const u8) []const u8 {
-    return text[0:5];
+comptime func len(text []const u8) i32 {
+    return text.len;
 }
 
+var text = "hi";
+
 func main() i32 {
-    var text = "Hello, world"b;
-    return cut(text).len;
+    return len(text);
 }

@@ -691,10 +691,16 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
         return std::nullopt;
     }
     const Symbol *symbol = lookup(named->text);
-    const VarDecl *var = symbol != nullptr && symbol->is_constant ? global_var(named->text) : nullptr;
+    // A local `const` and a `var` are not a compile-time string. A file-scope `const` is.
+    if (symbol == nullptr || symbol->is_auto || symbol->is_function || symbol->is_type || symbol->is_package) {
+        seen.erase(named->text);
+        return std::nullopt;
+    }
+    const VarDecl *var = global_var(named->text);
     std::optional<std::string> bytes;
-    // `const label = "hi"` is that slice. `const p *const u8 = "hi"` is a pointer, and a `var` can be reseated.
-    if (var != nullptr && var->is_comptime && var->indirections == 0 && var->init != nullptr) {
+    // `const label = "hi"` is that slice, with or without `comptime`.
+    // `const p *const u8 = "hi"` is a pointer.
+    if (var != nullptr && var->is_const_decl && var->indirections == 0 && var->init != nullptr) {
         bytes = constant_string(*var->init, seen);
     }
     seen.erase(named->text);
@@ -1992,6 +1998,8 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         std::unique_ptr<Expr> rewritten = clone_expr(*value);
         replace_names(rewritten, names, exprs);
         if (const std::optional<int> folded = fold_int(*rewritten)) {
+            call.comptime_ran = true;
+            call.comptime_value = *folded;
             return folded;
         }
     }
@@ -2009,7 +2017,9 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
             std::unique_ptr<Expr> rewritten = clone_expr(*value);
             replace_names(rewritten, names, exprs);
             if (const std::optional<int> folded = fold_int(*rewritten)) {
-                return *folded == 0 ? 0 : 1;
+                call.comptime_ran = true;
+                call.comptime_value = *folded == 0 ? 0 : 1;
+                return call.comptime_value;
             }
         }
     }

@@ -1,0 +1,8 @@
+comptime func len(text []const u8) i32 {
+    return text.len;
+}
+
+func main() i32 {
+    const text = "hi";
+    return len(text);
+}

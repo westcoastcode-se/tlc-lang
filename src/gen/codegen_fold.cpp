@@ -475,10 +475,16 @@ std::optional<std::string> CodeGen::constant_string(const Expr &expr, std::unord
     if (named == nullptr || !seen.insert(named->text).second) {
         return std::nullopt;
     }
+    // A local `const` and a `var` are not a compile-time string. A file-scope `const` is.
+    if (local_shadow(named->text)) {
+        seen.erase(named->text);
+        return std::nullopt;
+    }
     const VarDecl *var = global_decl(named->text);
     std::optional<std::string> bytes;
-    // `const label = "hi"` is that slice. `const p *const u8 = "hi"` is a pointer, and a `var` can be reseated.
-    if (var != nullptr && var->is_comptime && var->indirections == 0 && var->init != nullptr) {
+    // `const label = "hi"` is that slice, with or without `comptime`.
+    // `const p *const u8 = "hi"` is a pointer.
+    if (var != nullptr && var->is_const_decl && var->indirections == 0 && var->init != nullptr) {
         bytes = constant_string(*var->init, seen);
     }
     seen.erase(named->text);
