@@ -249,7 +249,7 @@ retq
 
 A bound that does not fold is `not supported yet`. It emits nothing.
 
-A `var` and a local `const` do not fold.
+A local `const` whose initializer folds to `i32` folds. A `var` does not.
 
 A length past 32 and a step that is not positive are `not supported yet`.
 

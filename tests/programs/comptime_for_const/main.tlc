@@ -1,0 +1,10 @@
+func main() i32 {
+    const start = 0;
+    const n = 1;
+    const step = 1;
+    var sum = 0;
+    comptime for (var i = start; i < n; i = i + step) {
+        sum = sum + 40;
+    }
+    return sum + 2;
+}

@@ -1345,7 +1345,8 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
         error(loop->loc, "not supported yet");
         return;
     }
-    const std::optional<int> low = fold_int(*low_expr);
+    // A local `const` folds here, as it does for `comptime if`. A `var` does not.
+    const std::optional<int> low = loop->comptime_for ? fold_runtime_const(*low_expr) : fold_int(*low_expr);
     const auto *cmp = std::get_if<Expr::Binary>(&loop->cond->data);
     const auto *step_assign = std::get_if<Expr::Assign>(&loop->step->data);
     if (!low || cmp == nullptr || cmp->op != TokenKind::Lt || !index_name_expr(cmp->lhs.get(), index) ||
@@ -1354,14 +1355,14 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
         error(loop->loc, "not supported yet");
         return;
     }
-    const std::optional<int> high = fold_int(*cmp->rhs);
+    const std::optional<int> high = loop->comptime_for ? fold_runtime_const(*cmp->rhs) : fold_int(*cmp->rhs);
     const auto *plus = std::get_if<Expr::Binary>(&step_assign->rhs->data);
     if (!high || plus == nullptr || plus->op != TokenKind::Plus || !index_name_expr(plus->lhs.get(), index) ||
         plus->rhs == nullptr) {
         error(loop->loc, "not supported yet");
         return;
     }
-    const std::optional<int> step = fold_int(*plus->rhs);
+    const std::optional<int> step = loop->comptime_for ? fold_runtime_const(*plus->rhs) : fold_int(*plus->rhs);
     if (!step || *step <= 0) {
         error(loop->loc, "not supported yet");
         return;
@@ -1461,7 +1462,8 @@ bool Checker::unroll_comptime_for(Stmt::For &loop) {
         if (name.empty() || low_expr == nullptr || loop.cond == nullptr || loop.step == nullptr) {
             return false;
         }
-        const std::optional<int> low = fold_int(*low_expr);
+        // A local `const` folds here, as it does for `comptime if`. A `var` does not.
+        const std::optional<int> low = fold_runtime_const(*low_expr);
         const auto *cmp = std::get_if<Expr::Binary>(&loop.cond->data);
         const auto *step_assign = std::get_if<Expr::Assign>(&loop.step->data);
         if (!low || cmp == nullptr || cmp->op != TokenKind::Lt || !index_name_expr(cmp->lhs.get(), name) ||
@@ -1469,13 +1471,13 @@ bool Checker::unroll_comptime_for(Stmt::For &loop) {
             step_assign->rhs == nullptr) {
             return false;
         }
-        const std::optional<int> high = fold_int(*cmp->rhs);
+        const std::optional<int> high = fold_runtime_const(*cmp->rhs);
         const auto *plus = std::get_if<Expr::Binary>(&step_assign->rhs->data);
         if (!high || plus == nullptr || plus->op != TokenKind::Plus || !index_name_expr(plus->lhs.get(), name) ||
             plus->rhs == nullptr) {
             return false;
         }
-        const std::optional<int> step = fold_int(*plus->rhs);
+        const std::optional<int> step = fold_runtime_const(*plus->rhs);
         if (!step || *step <= 0) {
             return false;
         }
