@@ -919,6 +919,12 @@ A local `comptime const` of that tuple is the same.
 
 A `comptime func` whose body is `return value[0][0] + value[0][1]` folds the same way.
 
+`const row = [_]i32{2, 0}` then `return field((row, 40))` folds the same way.
+
+That `field` is `comptime func field(p ([2]i32, i32)) i32 { return p[0][0] + p[1]; }`.
+
+A local `const` of that array is `not supported yet`.
+
 A `var` array in that tuple is `not supported yet`.
 
 `pair[0][0] = 1` on that comptime const is `type mismatch`.

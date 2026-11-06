@@ -1319,6 +1319,33 @@ const Expr *Checker::file_scope_const_enum(const Expr &expr) {
     return var->init.get();
 }
 
+const Expr *Checker::file_scope_const_array(const Expr &expr) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->is_auto || symbol->type.kind != TypeKind::Array || symbol->type.element == nullptr ||
+        is_slice(symbol->type) || symbol->type.length < 0) {
+        return nullptr;
+    }
+    const VarDecl *var = global_var(named->text);
+    if (var == nullptr || !var->is_const_decl || var->is_comptime || var->init == nullptr) {
+        return nullptr;
+    }
+    const auto *init = std::get_if<Expr::Init>(&var->init->data);
+    if (init == nullptr || !init->array_literal) {
+        return nullptr;
+    }
+    for (const auto &item : init->elements) {
+        if (item == nullptr || (!argument_is_comptime(*item) && !fold_int(*item) && !file_scope_const_int(*item) &&
+                                 !file_scope_const_bool(*item) && file_scope_const_float(*item) == nullptr)) {
+            return nullptr;
+        }
+    }
+    return var->init.get();
+}
+
 std::optional<int> Checker::folded_local_int(const Expr &expr) {
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr) {
@@ -1347,7 +1374,8 @@ bool Checker::argument_is_comptime(const Expr &arg) {
         if (element == nullptr || (!argument_is_comptime(*element) && !file_scope_const_int(*element) &&
                                    !file_scope_const_bool(*element) && file_scope_const_float(*element) == nullptr &&
                                    file_scope_const_struct(*element) == nullptr &&
-                                   file_scope_const_enum(*element) == nullptr)) {
+                                   file_scope_const_enum(*element) == nullptr &&
+                                   file_scope_const_array(*element) == nullptr)) {
             return false;
         }
     }
@@ -1520,8 +1548,8 @@ bool Checker::comptime_constant(const Expr &expr) {
                 }
                 if (!argument_is_comptime(*element) && !file_scope_const_int(*element) && !file_scope_const_bool(*element) &&
                     file_scope_const_float(*element) == nullptr && file_scope_const_struct(*element) == nullptr &&
-                    file_scope_const_enum(*element) == nullptr && !fold_switch_case(*element) &&
-                    !comptime_constant(*element) && !address_element(*element) &&
+                    file_scope_const_enum(*element) == nullptr && file_scope_const_array(*element) == nullptr &&
+                    !fold_switch_case(*element) && !comptime_constant(*element) && !address_element(*element) &&
                     !array_element(array_element, *element, 0)) {
                     return false;
                 }
@@ -1678,6 +1706,10 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
                         continue;
                     }
                     if (const Expr *init = file_scope_const_enum(*element)) {
+                        element = clone_expr(*init);
+                        continue;
+                    }
+                    if (const Expr *init = file_scope_const_array(*element)) {
                         element = clone_expr(*init);
                         continue;
                     }

@@ -214,6 +214,10 @@ An element may also be an enumerator, a tuple, a function, a pointer, or an arra
 
 `pair[0][0]` is `40`.
 
+A file-scope `const row = [_]i32{2, 0}` is that element. `field((row, 40))` folds when the body returns `p[0][0] + p[1]`.
+
+A local `const` of that array is `not supported yet`.
+
 A runtime `const` of a tuple is `type mismatch`.
 
 `return` leaves the function.
