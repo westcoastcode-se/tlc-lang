@@ -1,0 +1,9 @@
+const two = 2;
+
+comptime func field(p (i32, i32)) i32 {
+    return p[0] + p[1];
+}
+
+func main() i32 {
+    return field((two, 40));
+}

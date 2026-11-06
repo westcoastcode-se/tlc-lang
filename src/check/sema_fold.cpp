@@ -1222,6 +1222,22 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
         expr.data);
 }
 
+std::optional<int> Checker::file_scope_const_int(const Expr &expr) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return std::nullopt;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->is_auto || !symbol->folded_init || !plain_int_constant(symbol->type)) {
+        return std::nullopt;
+    }
+    const VarDecl *var = global_var(named->text);
+    if (var == nullptr || !var->is_const_decl) {
+        return std::nullopt;
+    }
+    return symbol->const_value;
+}
+
 std::optional<int> Checker::folded_local_int(const Expr &expr) {
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr) {
@@ -1247,7 +1263,7 @@ bool Checker::argument_is_comptime(const Expr &arg) {
         return false;
     }
     for (const auto &element : tuple->elements) {
-        if (element == nullptr || !argument_is_comptime(*element)) {
+        if (element == nullptr || (!argument_is_comptime(*element) && !file_scope_const_int(*element))) {
             return false;
         }
     }
@@ -1418,8 +1434,9 @@ bool Checker::comptime_constant(const Expr &expr) {
                     }
                     continue;
                 }
-                if (!argument_is_comptime(*element) && !fold_switch_case(*element) && !comptime_constant(*element) &&
-                    !address_element(*element) && !array_element(array_element, *element, 0)) {
+                if (!argument_is_comptime(*element) && !file_scope_const_int(*element) && !fold_switch_case(*element) &&
+                    !comptime_constant(*element) && !address_element(*element) &&
+                    !array_element(array_element, *element, 0)) {
                     return false;
                 }
             }
@@ -1539,6 +1556,34 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
             }
             cursor = target;
             continue;
+        }
+        if (const auto *init = std::get_if<Expr::Init>(&cursor->data); init != nullptr && init->is_tuple) {
+            std::unique_ptr<Expr> copy = clone_expr(*cursor);
+            auto *made = std::get_if<Expr::Init>(&copy->data);
+            const auto rewrite = [&](const auto &self, Expr::Init &tuple) -> void {
+                for (auto &element : tuple.elements) {
+                    if (element == nullptr) {
+                        continue;
+                    }
+                    if (const std::optional<int> value = file_scope_const_int(*element)) {
+                        auto literal = std::make_unique<Expr>();
+                        Expr::Int number;
+                        number.loc = expr_loc(*element);
+                        number.value = static_cast<uint64_t>(*value);
+                        literal->data = std::move(number);
+                        element = std::move(literal);
+                        continue;
+                    }
+                    if (auto *inner = std::get_if<Expr::Init>(&element->data);
+                        inner != nullptr && inner->is_tuple) {
+                        self(self, *inner);
+                    }
+                }
+            };
+            if (made != nullptr) {
+                rewrite(rewrite, *made);
+            }
+            return copy;
         }
         const auto *named = std::get_if<Expr::Name>(&cursor->data);
         if (named == nullptr || !seen.insert(named->text).second) {

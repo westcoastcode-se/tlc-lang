@@ -755,6 +755,8 @@ class Checker {
     // A bare local `const` whose initializer folded to `i32`. A `var` is not one.
     // `fold_int` does not see it, so `comptime if` and an array length stay unchanged.
     std::optional<int> folded_local_int(const Expr &expr);
+    // File-scope `const two = 2` inside a comptime tuple. A local `const` is not this value.
+    std::optional<int> file_scope_const_int(const Expr &expr);
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     // A `var`, a local `const`, and a tuple are not.
     bool comptime_constant(const Expr &expr);
