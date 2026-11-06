@@ -30,13 +30,15 @@ The entry directory and each `-P` root are searched first, using the path `vendo
 
 Standard packages live in `lib/tlc` beside that vendor directory.
 
-`import "std/testing"` loads `<prefix>/lib/tlc/std/testing`.
+`--lib <dir>` is searched before that directory. The flag may be repeated. The directories are used in the order written.
 
-`import "builtin"` is supplied by the compiler.
+`import "std/testing"` loads `<dir>/std/testing` from the first of those directories that contains that package, and otherwise `<prefix>/lib/tlc/std/testing`.
+
+`import "builtin"` and `import "std/mem"` use that same list. `import "builtin"` is the compiler package.
 
 `import "builtin/env/consts"` supplies `consts.family`.
 
-The entry directory and each `-P` root are searched first.
+The entry directory and each `-P` root are searched first. `vendor/<name>` stays the vendor directory.
 
 ```c
 func main() i32 {

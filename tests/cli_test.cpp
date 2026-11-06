@@ -33,6 +33,7 @@ int run_cli_tests() {
     EXPECT_HAS(check, help.out, "usage: tlc");
     EXPECT_HAS(check, help.out, "--emit-llvm");
     EXPECT_HAS(check, help.out, "-P <dir>");
+    EXPECT_HAS(check, help.out, "--lib <dir>");
     EXPECT_HAS(check, help.out, "-l <lib>");
     EXPECT_HAS(check, help.out, "-Bstatic");
     EXPECT_HAS(check, help.out, "-Bdynamic");
@@ -164,6 +165,62 @@ int run_cli_tests() {
     const tlc::test::Proc missing_dir = tlc::test::spawn({bin, "-L"});
     EXPECT(check, missing_dir.code != 0);
     EXPECT_HAS(check, missing_dir.err, "missing directory after -L");
+
+    const tlc::test::Proc missing_lib_dir = tlc::test::spawn({bin, "--lib"});
+    EXPECT(check, missing_lib_dir.code != 0);
+    EXPECT_HAS(check, missing_lib_dir.err, "missing directory after --lib");
+
+    const tlc::test::Proc missing_lsp_lib = tlc::test::spawn({bin, "lsp", "--lib"});
+    EXPECT(check, missing_lsp_lib.code != 0);
+    EXPECT_HAS(check, missing_lsp_lib.err, "missing directory after --lib");
+
+    const std::filesystem::path lib_root =
+        std::filesystem::temp_directory_path() / ("tlc-cli-lib-" + std::to_string(getpid()));
+    std::error_code lib_ec;
+    std::filesystem::remove_all(lib_root, lib_ec);
+    std::filesystem::create_directories(lib_root / "a" / "std" / "testing", lib_ec);
+    std::filesystem::create_directories(lib_root / "b" / "std" / "testing", lib_ec);
+    std::filesystem::create_directories(lib_root / "b" / "std" / "mem", lib_ec);
+    std::filesystem::create_directories(lib_root / "a" / "vendor" / "tlc_lib_probe", lib_ec);
+    std::filesystem::create_directories(lib_root / "a" / "builtin", lib_ec);
+    std::filesystem::create_directories(lib_root / "src", lib_ec);
+    auto write_lib = [&](const std::filesystem::path &path, const std::string &text) {
+        std::ofstream out(path);
+        out << text;
+    };
+    write_lib(lib_root / "a" / "std" / "testing" / "probe.tlc",
+              "package testing;\nexport func probe() i32 { return 7; }\n");
+    write_lib(lib_root / "b" / "std" / "testing" / "probe.tlc",
+              "package testing;\nexport func probe() i32 { return 9; }\n");
+    write_lib(lib_root / "b" / "std" / "mem" / "mem.tlc", "package mem;\nexport func probe() i32 { return 4; }\n");
+    write_lib(lib_root / "a" / "vendor" / "tlc_lib_probe" / "probe.tlc", "export func probe() i32 { return 1; }\n");
+    write_lib(lib_root / "a" / "builtin" / "stub.tlc", "package builtin;\n");
+    write_lib(lib_root / "src" / "main.tlc",
+              "import \"std/testing\";\nimport \"std/mem\";\nfunc main() i32 { return testing.probe() + mem.probe(); }\n");
+    write_lib(lib_root / "src" / "vendor.tlc",
+              "import \"vendor/tlc_lib_probe\";\nfunc main() i32 { return 0; }\n");
+    write_lib(lib_root / "src" / "builtin.tlc", "import \"builtin\";\nfunc main() i32 { return 0; }\n");
+    const std::string lib_a = (lib_root / "a").string();
+    const std::string lib_b = (lib_root / "b").string();
+    const std::string lib_main = (lib_root / "src" / "main.tlc").string();
+    const tlc::test::Proc lib_ab = tlc::test::spawn({bin, "--run", "--lib", lib_a, "--lib", lib_b, lib_main});
+    EXPECT(check, lib_ab.code == 11);
+    EXPECT(check, lib_ab.err.empty());
+    const tlc::test::Proc lib_ba = tlc::test::spawn({bin, "--run", "--lib", lib_b, "--lib", lib_a, lib_main});
+    EXPECT(check, lib_ba.code == 13);
+    EXPECT(check, lib_ba.err.empty());
+    const tlc::test::Proc lib_default = tlc::test::spawn({bin, "--check", lib_main});
+    EXPECT(check, lib_default.code != 0);
+    EXPECT_HAS(check, lib_default.err, "not exported");
+    const tlc::test::Proc lib_vendor =
+        tlc::test::spawn({bin, "--check", "--lib", lib_a, (lib_root / "src" / "vendor.tlc").string()});
+    EXPECT(check, lib_vendor.code != 0);
+    EXPECT_HAS(check, lib_vendor.err, "unknown package");
+    const tlc::test::Proc lib_builtin =
+        tlc::test::spawn({bin, "--check", "--lib", lib_a, (lib_root / "src" / "builtin.tlc").string()});
+    EXPECT(check, lib_builtin.code != 0);
+    EXPECT_HAS(check, lib_builtin.err, "type mismatch");
+    std::filesystem::remove_all(lib_root, lib_ec);
 
     const tlc::test::Proc check_with_lib = tlc::test::spawn({bin, "--check", ret_const, "-lm"});
     EXPECT(check, check_with_lib.code == 0);

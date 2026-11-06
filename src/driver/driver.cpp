@@ -45,6 +45,7 @@ std::string help_text() {
         "                  tlc --test uses debug.DebugAllocator unless this flag names a type.\n"
         "  -o <file>       output path\n"
         "  -P <dir>        package search root, after the entry directory\n"
+        "  --lib <dir>     library directory, before lib/tlc. Repeat to add another.\n"
         "  -l <lib>        link lib<lib> when producing an executable\n"
         "  -L <dir>        library search directory\n"
         "  -Bstatic        link later -l libraries from static archives\n"
@@ -65,7 +66,8 @@ std::string help_text() {
         "import \"vendor/name\" loads that package. Static and shared libraries beside its\n"
         ".tlc files are linked. A file named link in the package adds further linker arguments.\n"
         "link_unix or link_windows adds arguments for that OS family after link.\n"
-        "Standard packages live in lib/tlc. import \"std/unicode\" and import \"std/testing\" load those packages.\n"
+        "Standard packages live in lib/tlc. --lib names a directory searched before that one.\n"
+        "import \"std/unicode\" and import \"std/testing\" load those packages.\n"
         "import \"builtin\" is the compiler package in lib/tlc/builtin.\n"
         "import \"std/mem\" exports memeql and memcmp.\n"
         "import \"builtin/env/consts\" supplies consts.family, unix or windows.\n";
@@ -104,6 +106,19 @@ std::string std_library_root() {
     }
     return (prefix / "lib" / "tlc").string();
 }
+
+namespace {
+
+std::vector<std::string> &library_path_store() {
+    static std::vector<std::string> paths;
+    return paths;
+}
+
+} // namespace
+
+void set_library_paths(std::vector<std::string> paths) { library_path_store() = std::move(paths); }
+
+const std::vector<std::string> &library_paths() { return library_path_store(); }
 
 namespace {
 
@@ -254,6 +269,13 @@ Options parse_args(int argc, char **argv) {
                 break;
             }
             opt.package_paths.emplace_back(argv[++i]);
+        } else if (arg == "--lib") {
+            if (i + 1 >= argc || argv[i + 1][0] == '\0') {
+                opt.mode = Mode::Error;
+                opt.error = "missing directory after --lib";
+                break;
+            }
+            opt.lib_paths.emplace_back(argv[++i]);
         } else if (arg == "-l" || arg == "-L") {
             if (i + 1 >= argc) {
                 opt.mode = Mode::Error;
@@ -446,6 +468,7 @@ CompileOutput compile_source(const Options &opt) {
     ResolveRequest request;
     request.entry = opt.input;
     request.package_paths = opt.package_paths;
+    request.lib_roots = opt.lib_paths;
     request.vendor_root = vendor_library_root();
     request.std_root = std_library_root();
     std::string allocator = opt.allocator;
@@ -561,6 +584,7 @@ int execute(const Options &opt) {
         std::cerr << "error: " << opt.error << "\n" << help_text();
         return 1;
     case Mode::Lsp:
+        set_library_paths(opt.lib_paths);
         return run_lsp();
     case Mode::Check:
     case Mode::EmitLlvm:

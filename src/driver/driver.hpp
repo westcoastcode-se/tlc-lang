@@ -29,6 +29,8 @@ struct Options {
     std::string input;
     std::string output;
     std::vector<std::string> package_paths;
+    // `--lib`. Library directories searched before the default library directory.
+    std::vector<std::string> lib_paths;
     // Passed to cc after the object file, in the order given. Used when linking.
     std::vector<std::string> link_args;
     // `-g`. Emit DWARF line numbers and variable locations.
@@ -60,6 +62,10 @@ std::string help_text();
 std::string vendor_library_root();
 // `<prefix>/lib/tlc`, next to the vendor directory.
 std::string std_library_root();
+// The `--lib` directories this process was started with. The language server
+// reads the same list.
+void set_library_paths(std::vector<std::string> paths);
+const std::vector<std::string> &library_paths();
 Options parse_args(int argc, char **argv);
 CompileOutput compile_source(const Options &opt);
 int execute(const Options &opt);

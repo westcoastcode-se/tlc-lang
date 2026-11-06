@@ -160,10 +160,14 @@ struct ResolveRequest {
     // `<vendor_root>/<name>`. A package loaded from here contributes its
     // libraries to `PackageGraph::link_args`.
     std::string vendor_root;
-    // Directory of standard packages, `<prefix>/lib/tlc`. Searched after the
-    // entry directory and each `-P` root. `import "std/testing"` loads
-    // `<std_root>/std/testing`. A `link` file there is added to `link_args`,
-    // then `link_unix` or `link_windows` for this compiler's family.
+    // Directories from `--lib`, in the order written. Searched after the entry
+    // directory and each `-P` root, and before `std_root`. `import "std/testing"`
+    // loads `<dir>/std/testing`. `vendor/<name>` is not loaded from here.
+    std::vector<std::string> lib_roots;
+    // Directory of standard packages, `<prefix>/lib/tlc`. Searched after
+    // `lib_roots`. `import "std/testing"` loads `<std_root>/std/testing` when
+    // no earlier directory has that package. A `link` file there is added to
+    // `link_args`, then `link_unix` or `link_windows` for this compiler's family.
     std::string std_root;
     // Replacement text keyed by the path the loader opens. The language server
     // uses this for the unsaved buffer. A missing file is still loaded when its
@@ -188,8 +192,10 @@ inline bool is_std_mem_package(const PackageNode *node) {
 }
 
 // Loads the import graph of `request.entry`. The entry directory is the first
-// package root, followed by each path in `package_paths`, then `vendor_root`
-// when that directory exists. Returns false when any diagnostic was reported.
+// package root, followed by each path in `package_paths`. `vendor/<name>` is
+// then loaded from `vendor_root` when that directory exists. Each directory in
+// `lib_roots` is searched next, then `std_root`. Returns false when any
+// diagnostic was reported.
 // `graph` still contains every file that loaded.
 bool resolve_packages(const ResolveRequest &request, SourceSet &sources, DiagnosticEngine &diags,
                       PackageGraph &graph);

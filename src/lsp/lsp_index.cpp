@@ -1452,6 +1452,7 @@ Checked check_buffer(const std::string &path, const std::string &text, const std
     if (parent_ok) {
         ResolveRequest request;
         request.entry = path;
+        request.lib_roots = library_paths();
         request.vendor_root = vendor_library_root();
         request.std_root = std_library_root();
         request.overlays.emplace(path, text);

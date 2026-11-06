@@ -38,9 +38,9 @@ The other family is left out.
 
 The families are `unix` and `windows`, the same names as `*_unix.tlc`, `*_windows.tlc`, and `consts.family`.
 
-A package under `lib/tlc` uses that same reader.
+A package under `lib/tlc`, or loaded from a `--lib` directory, uses that same reader.
 
-A package outside the vendor directory and `lib/tlc` contributes no link file.
+A package outside the vendor directory, `lib/tlc`, and those `--lib` directories contributes no link file.
 
 Each line holds the same flags as the command line: `-l`, `-L`, `-Bstatic`, `-Bdynamic`, `-static`, `-Wl`, and library paths.
 

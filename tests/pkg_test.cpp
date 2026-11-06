@@ -64,7 +64,8 @@ struct Resolved {
 };
 
 Resolved resolve_at(const std::string &entry, const std::vector<std::string> &roots = {},
-                    const std::string &vendor = {}, const std::string &std_root = {}) {
+                    const std::string &vendor = {}, const std::string &std_root = {},
+                    const std::vector<std::string> &libs = {}) {
     tlc::SourceSet sources;
     tlc::DiagnosticEngine diags(sources);
     tlc::ResolveRequest request;
@@ -72,6 +73,7 @@ Resolved resolve_at(const std::string &entry, const std::vector<std::string> &ro
     request.package_paths = roots;
     request.vendor_root = vendor;
     request.std_root = std_root;
+    request.lib_roots = libs;
     Resolved result;
     result.ok = tlc::resolve_packages(request, sources, diags, result.graph);
     result.errors = diags.render();
@@ -667,6 +669,115 @@ int run_pkg_tests() {
         EXPECT(check, resolved.ok);
         EXPECT(check, find_suffix(resolved.graph, "/main_windows.tlc") != nullptr);
 #endif
+    }
+
+    {
+        TempTree entry;
+        TempTree first;
+        TempTree second;
+        TempTree fallback;
+        EXPECT(check, entry.ok() && first.ok() && second.ok() && fallback.ok());
+        entry.write("main.tlc", "import \"std/testing\";\nimport \"std/mem\";\nfunc main() i32 { return 0; }\n");
+        first.write("std/testing/probe.tlc", "package testing;\nexport func probe() i32 { return 7; }\n");
+        second.write("std/testing/probe.tlc", "package testing;\nexport func probe() i32 { return 9; }\n");
+        second.write("std/mem/mem.tlc", "package mem;\nexport func probe() i32 { return 4; }\n");
+        fallback.write("std/testing/probe.tlc", "package testing;\nexport func probe() i32 { return 1; }\n");
+        fallback.write("std/mem/mem.tlc", "package mem;\nexport func probe() i32 { return 2; }\n");
+        const Resolved resolved =
+            resolve_at(entry.file("main.tlc"), {}, {}, fallback.directory(), {first.directory(), second.directory()});
+        EXPECT(check, resolved.ok);
+        const tlc::PackageNode *testing = find_suffix(resolved.graph, "/std/testing/probe.tlc");
+        const tlc::PackageNode *mem = find_suffix(resolved.graph, "/std/mem/mem.tlc");
+        EXPECT(check, testing != nullptr && mem != nullptr);
+        if (testing != nullptr && mem != nullptr) {
+            EXPECT(check, testing->path.starts_with(first.directory()));
+            EXPECT(check, mem->path.starts_with(second.directory()));
+            EXPECT(check, !testing->compiler_builtin);
+        }
+    }
+
+    {
+        TempTree entry;
+        TempTree only;
+        TempTree fallback;
+        EXPECT(check, entry.ok() && only.ok() && fallback.ok());
+        entry.write("main.tlc", "import \"std/testing\";\nfunc main() i32 { return 0; }\n");
+        fallback.write("std/testing/probe.tlc", "package testing;\nexport func probe() i32 { return 1; }\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, {}, fallback.directory(), {only.directory()});
+        EXPECT(check, resolved.ok);
+        const tlc::PackageNode *testing = find_suffix(resolved.graph, "/std/testing/probe.tlc");
+        EXPECT(check, testing != nullptr && testing->path.starts_with(fallback.directory()));
+    }
+
+    {
+        TempTree entry;
+        TempTree lib;
+        EXPECT(check, entry.ok() && lib.ok());
+        entry.write("main.tlc", "import \"std/testing\";\nfunc main() i32 { return 0; }\n");
+        entry.write("std/testing/local.tlc", "package testing;\nexport func probe() i32 { return 3; }\n");
+        lib.write("std/testing/lib.tlc", "package testing;\nexport func probe() i32 { return 7; }\n");
+        const Resolved from_entry = resolve_at(entry.file("main.tlc"), {}, {}, {}, {lib.directory()});
+        EXPECT(check, from_entry.ok);
+        const tlc::PackageNode *local = find_suffix(from_entry.graph, "/std/testing/local.tlc");
+        EXPECT(check, local != nullptr && local->path.starts_with(entry.directory()));
+        EXPECT(check, find_suffix(from_entry.graph, "/std/testing/lib.tlc") == nullptr);
+    }
+
+    {
+        TempTree entry;
+        TempTree extra;
+        TempTree lib;
+        EXPECT(check, entry.ok() && extra.ok() && lib.ok());
+        entry.write("main.tlc", "import \"std/testing\";\nfunc main() i32 { return 0; }\n");
+        extra.write("std/testing/root.tlc", "package testing;\nexport func probe() i32 { return 5; }\n");
+        lib.write("std/testing/lib.tlc", "package testing;\nexport func probe() i32 { return 7; }\n");
+        const Resolved from_root = resolve_at(entry.file("main.tlc"), {extra.directory()}, {}, {}, {lib.directory()});
+        EXPECT(check, from_root.ok);
+        const tlc::PackageNode *rooted = find_suffix(from_root.graph, "/std/testing/root.tlc");
+        EXPECT(check, rooted != nullptr && rooted->path.starts_with(extra.directory()));
+        EXPECT(check, find_suffix(from_root.graph, "/std/testing/lib.tlc") == nullptr);
+    }
+
+    {
+        TempTree entry;
+        TempTree lib;
+        TempTree vendor;
+        EXPECT(check, entry.ok() && lib.ok() && vendor.ok());
+        entry.write("main.tlc", "import \"vendor/math\";\nfunc main() i32 { return 0; }\n");
+        lib.write("vendor/math/add.tlc", "export func add() i32 { return 1; }\n");
+        vendor.write("math/add.tlc", "export func add() i32 { return 2; }\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, vendor.directory(), {}, {lib.directory()});
+        EXPECT(check, resolved.ok);
+        const tlc::PackageNode *math = find_suffix(resolved.graph, "/math/add.tlc");
+        EXPECT(check, math != nullptr && math->path.starts_with(vendor.directory()));
+        const Resolved missing = resolve_at(entry.file("main.tlc"), {}, {}, {}, {lib.directory()});
+        EXPECT(check, !missing.ok);
+        EXPECT_HAS(check, missing.errors, "unknown package");
+    }
+
+    {
+        TempTree entry;
+        TempTree lib;
+        TempTree fallback;
+        EXPECT(check, entry.ok() && lib.ok() && fallback.ok());
+        entry.write("main.tlc", "import \"std/demo\";\nimport \"builtin\";\nimport \"std/seq\";\nfunc main() i32 { return 0; }\n");
+        lib.write("std/demo/demo.tlc", "package demo;\n");
+        lib.write("std/demo/link", "-lfromlib\n");
+        lib.write("builtin/stub.tlc", "package builtin;\n");
+        lib.write("std/seq/seq.tlc", "package seq;\n");
+        fallback.write("std/demo/demo.tlc", "package demo;\n");
+        fallback.write("std/demo/link", "-lfromstd\n");
+        fallback.write("builtin/real.tlc", "package builtin;\n");
+        fallback.write("std/seq/seq.tlc", "package seq;\n");
+        const Resolved resolved = resolve_at(entry.file("main.tlc"), {}, {}, fallback.directory(), {lib.directory()});
+        EXPECT(check, resolved.ok);
+        EXPECT(check, resolved.graph.link_args.size() == 1);
+        EXPECT_EQ(check, resolved.graph.link_args[0], "-lfromlib");
+        const tlc::PackageNode *builtin = find_suffix(resolved.graph, "/builtin/stub.tlc");
+        const tlc::PackageNode *seq = find_suffix(resolved.graph, "/std/seq/seq.tlc");
+        EXPECT(check, builtin != nullptr && builtin->compiler_builtin && builtin->path.starts_with(lib.directory()));
+        EXPECT(check, seq != nullptr && seq->iteration_package && seq->path.starts_with(lib.directory()));
+        EXPECT(check, find_suffix(resolved.graph, "/builtin/real.tlc") == nullptr);
     }
 
     return check.failed;

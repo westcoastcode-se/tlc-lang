@@ -26,6 +26,7 @@ tlc --help
 | `--allocator <type>` | Type that bare `new` and `delete` use. `Malloc` is the default and calls `malloc` and `free`. `pkg.Name` is a struct in that package, and it satisfies `Allocator`. `tlc --test` uses `debug.DebugAllocator` unless this flag names a type. |
 | `-o <file>` | Output path. |
 | `-P <dir>` | Extra package search root, after the entry file's directory. |
+| `--lib <dir>` | Library directory searched before the default `lib/tlc`. The flag may be repeated. |
 | `-l <lib>` | Link `lib<lib>` when producing an executable. |
 | `-L <dir>` | Directory searched for libraries. |
 | `-Bstatic` | Link later `-l` libraries from static archives (`.a`). |
@@ -38,6 +39,20 @@ tlc --help
 | `-O3` | LLVM's third optimization level. |
 | `-Wl,<opt>` | Pass `<opt>` through to the linker. |
 | `lsp` | Speak the language server protocol on standard input and output. |
+
+The entry directory and each `-P` root are searched before any `--lib` directory.
+
+The directories are used in the order written.
+
+`import "std/testing"` loads `<dir>/std/testing` from the first directory that contains that package, and otherwise `<prefix>/lib/tlc/std/testing`.
+
+`import "builtin"` and `import "std/mem"` use that same list.
+
+`vendor/<name>` stays `lib/tlc/vendor`, or the directory in `TLC_LIB`.
+
+A flag with no directory is `missing directory after --lib`.
+
+The language server uses the same list.
 
 `--check`, `--emit-llvm`, and `--emit-obj` accept the link flags and do not link.
 

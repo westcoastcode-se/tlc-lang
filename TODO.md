@@ -78,7 +78,7 @@ A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an
 
 ## Compiler
 
-- `--lib <dir>` names a library directory searched before the default library directory. The flag may be repeated. The directories are used in the order written. `import "std/testing"` loads `<dir>/std/testing` from the first of those directories that contains that package, and otherwise `<prefix>/lib/tlc/std/testing`. `import "builtin"` and `import "std/mem"` use that same list. The entry directory and each `-P` root are still searched first. `vendor/<name>` stays `lib/tlc/vendor`, or the directory in `TLC_LIB`. A flag with no directory is `missing directory after --lib`. The language server uses the same list.
+No open items.
 
 ## Inconsistencies
 

@@ -57,7 +57,15 @@ Search proceeds as follows.
 1. A path that starts with `./` or `../` is resolved from the importing file. It must name a directory.
 2. Every other path is searched in the entry file's directory, then in each `-P` root.
 3. A path `vendor/<name>` that is still missing is loaded from the vendor directory.
-4. A path that is still missing is loaded from the standard library, `lib/tlc` next to the compiler prefix.
+4. Each `--lib` directory is searched, in the order written.
+
+   `import "std/testing"` loads `<dir>/std/testing` from the first of those directories that contains that package.
+
+   `import "builtin"` and `import "std/mem"` use that same list.
+
+   A path `vendor/<name>` is not loaded from a `--lib` directory.
+
+5. A path that is still missing is loaded from the standard library, `lib/tlc` next to the compiler prefix.
 
    `import "std/testing"` loads `<prefix>/lib/tlc/std/testing`.
 

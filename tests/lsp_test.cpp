@@ -237,11 +237,73 @@ std::string semantic_summary(const std::string &message, const std::string &sour
     return out;
 }
 
+void check_lib_server(tlc::test::Check &check, const std::string &bin) {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / ("tlc-lsp-lib-" + std::to_string(getpid()));
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "lib" / "std" / "testing", ec);
+    fs::create_directories(root / "src", ec);
+    {
+        std::ofstream out(root / "lib" / "std" / "testing" / "probe.tlc");
+        out << "package testing;\nexport func marker() *const u8 { return \"no\"; }\n";
+    }
+    const fs::path file = root / "src" / "main.tlc";
+    {
+        std::ofstream out(file);
+        out << "import \"std/testing\";\nfunc main() i32 { return testing.marker(); }\n";
+    }
+    const std::string source = "import \"std/testing\";\nfunc main() i32 { return testing.marker(); }\n";
+
+    int to_child[2] = {-1, -1};
+    int from_child[2] = {-1, -1};
+    EXPECT(check, ::pipe(to_child) == 0);
+    EXPECT(check, ::pipe(from_child) == 0);
+    const pid_t pid = ::fork();
+    EXPECT(check, pid >= 0);
+    if (pid == 0) {
+        ::dup2(to_child[0], STDIN_FILENO);
+        ::dup2(from_child[1], STDOUT_FILENO);
+        ::close(to_child[0]);
+        ::close(to_child[1]);
+        ::close(from_child[0]);
+        ::close(from_child[1]);
+        const std::string lib = (root / "lib").string();
+        ::execl(bin.c_str(), bin.c_str(), "--lib", lib.c_str(), "lsp", nullptr);
+        _exit(127);
+    }
+    ::close(to_child[0]);
+    ::close(from_child[1]);
+
+    const std::string uri = std::string("file://") + file.string();
+    send_json(to_child[1],
+              R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"capabilities":{},"rootUri":null}})");
+    const std::string hello = read_message(from_child[0], 3000);
+    EXPECT_HAS(check, hello, "completionProvider");
+    send_json(to_child[1], R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") + uri +
+                  R"(","languageId":"tlc","version":1,"text":")" + json_escape(source) + R"("}}})");
+    const std::string opened = read_until(from_child[0], "expected i32, found *const u8", 4000);
+    EXPECT_HAS(check, opened, "expected i32, found *const u8");
+    EXPECT(check, opened.find("unknown package") == std::string::npos);
+    EXPECT(check, opened.find("not exported") == std::string::npos);
+
+    ::close(to_child[1]);
+    ::close(from_child[0]);
+    ::kill(pid, SIGKILL);
+    int status = 0;
+    ::waitpid(pid, &status, 0);
+    pending.clear();
+    fs::remove_all(root, ec);
+}
+
 } // namespace
 
 int run_lsp_tests() {
     tlc::test::Check check;
     const std::string bin = TLC_BIN;
+    check_lib_server(check, bin);
 
     char path[] = "/tmp/tlc-lsp-XXXXXX.tlc";
     const int file = ::mkstemps(path, 4);

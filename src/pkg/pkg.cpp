@@ -127,7 +127,8 @@ class Resolver {
   public:
     Resolver(const ResolveRequest &request, SourceSet &sources, DiagnosticEngine &diags, PackageGraph &graph)
         : sources_(sources), diags_(diags), graph_(graph), overlays_(request.overlays),
-          vendor_request_(request.vendor_root), std_request_(request.std_root), preload_(request.preload) {
+          vendor_request_(request.vendor_root), std_request_(request.std_root),
+          lib_requests_(request.lib_roots), preload_(request.preload) {
         for (const std::string &root : request.package_paths) {
             extra_roots_.emplace_back(root);
         }
@@ -156,6 +157,9 @@ class Resolver {
             roots_.push_back(extra);
         }
         add_vendor_root(vendor_request_);
+        for (const std::string &root : lib_requests_) {
+            add_lib_root(root);
+        }
         add_std_root(std_request_);
         const std::size_t index = load_new(canonical);
         if (index == kMissing) {
@@ -194,9 +198,11 @@ class Resolver {
     fs::path entry_;
     std::string vendor_request_;
     std::string std_request_;
+    std::vector<std::string> lib_requests_;
     std::string preload_;
     fs::path vendor_root_;
     fs::path std_root_;
+    std::vector<fs::path> lib_roots_;
     std::vector<fs::path> extra_roots_;
     std::vector<fs::path> roots_;
     std::unordered_map<std::string, std::size_t> by_path_;
@@ -280,18 +286,30 @@ class Resolver {
         return directory_is(dir, fs::path("std") / "seq");
     }
 
-    bool directory_is(const fs::path &dir, const fs::path &relative) const {
-        if (std_root_.empty() || dir.empty()) {
+    bool directory_matches(const fs::path &root, const fs::path &dir, const fs::path &relative) const {
+        if (root.empty() || dir.empty()) {
             return false;
         }
         std::error_code ec;
-        const fs::path wanted = fs::canonical(std_root_ / relative, ec);
+        const fs::path wanted = fs::canonical(root / relative, ec);
         if (ec) {
             return false;
         }
         std::error_code dir_ec;
         const fs::path canonical_dir = fs::canonical(dir, dir_ec);
         return !dir_ec && canonical_dir == wanted;
+    }
+
+    bool directory_is(const fs::path &dir, const fs::path &relative) const {
+        if (directory_matches(std_root_, dir, relative)) {
+            return true;
+        }
+        for (const fs::path &root : lib_roots_) {
+            if (directory_matches(root, dir, relative)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     std::string choose_qualifier(const std::vector<std::size_t> &indexes, const fs::path &dir, SourceLoc loc) {
@@ -339,6 +357,18 @@ class Resolver {
         return {HitKind::Found, std::move(canonical)};
     }
 
+    // A library root holds `std/testing` and `builtin`. `vendor/<name>` stays on `vendor_root_`.
+    Hit find_library(const fs::path &root, std::string_view spec) {
+        if (root.empty() || spec == "vendor" || spec.starts_with("vendor/")) {
+            return {};
+        }
+        const Hit hit = find_in_base(root, spec);
+        if (hit.kind == HitKind::Found && is_under(hit.path, root)) {
+            return hit;
+        }
+        return {};
+    }
+
     Hit locate(const fs::path &importer_dir, const ImportDecl &import) {
         const std::string_view spec = import.path;
         if (spec.empty()) {
@@ -381,11 +411,15 @@ class Resolver {
                 return hit;
             }
         }
-        if (!std_root_.empty() && spec != "vendor" && !spec.starts_with("vendor/")) {
-            const Hit hit = find_in_base(std_root_, spec);
-            if (hit.kind == HitKind::Found && is_under(hit.path, std_root_)) {
+        for (const fs::path &root : lib_roots_) {
+            const Hit hit = find_library(root, spec);
+            if (hit.kind == HitKind::Found) {
                 return hit;
             }
+        }
+        const Hit library = find_library(std_root_, spec);
+        if (library.kind == HitKind::Found) {
+            return library;
         }
         if (spec == "builtin") {
             return {HitKind::Found, fs::path("<builtin>")};
@@ -462,7 +496,7 @@ class Resolver {
         }
         by_package_.emplace(key, created.front());
         add_edge(from_file, key, import);
-        if (is_under(dir, vendor_root_) || is_under(dir, std_root_)) {
+        if (shipped_library(dir)) {
             append_vendor_libraries(dir, import.loc);
         }
         walk_package(key);
@@ -478,6 +512,30 @@ class Resolver {
             return;
         }
         vendor_root_ = std::move(canonical);
+    }
+
+    bool shipped_library(const fs::path &dir) const {
+        if (is_under(dir, vendor_root_) || is_under(dir, std_root_)) {
+            return true;
+        }
+        for (const fs::path &root : lib_roots_) {
+            if (is_under(dir, root)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void add_lib_root(const std::string &root) {
+        if (root.empty()) {
+            return;
+        }
+        std::error_code ec;
+        fs::path canonical = fs::canonical(root, ec);
+        if (ec || !fs::is_directory(canonical, ec)) {
+            return;
+        }
+        lib_roots_.push_back(std::move(canonical));
     }
 
     void add_std_root(const std::string &root) {
