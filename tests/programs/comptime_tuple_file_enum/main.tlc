@@ -1,0 +1,24 @@
+type Order enum {
+    relaxed,
+    acquire,
+}
+
+const op = Order.acquire;
+const other = Order.relaxed;
+
+comptime func field(p (Order, i32)) i32 {
+    if (p[0] == Order.acquire) {
+        return p[1];
+    }
+    return 0;
+}
+
+func main() i32 {
+    if (field((op, 42)) != 42) {
+        return 1;
+    }
+    if (field((other, 42)) != 0) {
+        return 2;
+    }
+    return 42;
+}

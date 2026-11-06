@@ -1873,6 +1873,22 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     if (const Binding *fn = function_designator(file, node)) {
                         return function_pointer_type(*fn);
                     }
+                    // `Order.acquire` is the enumerator. The global stores that value.
+                    if (item.base != nullptr) {
+                        const int enum_id = enum_type_designator(*item.base);
+                        if (enum_id >= 0 && enum_id < static_cast<int>(enums_.size()) &&
+                            enums_[static_cast<std::size_t>(enum_id)].values.contains(item.field)) {
+                            const EnumLayout &layout = enums_[static_cast<std::size_t>(enum_id)];
+                            Lowered low;
+                            low.enum_id = enum_id;
+                            low.elem_bool = layout.is_bool;
+                            low.elem_char = layout.is_char;
+                            low.elem_unsigned = layout.is_unsigned;
+                            low.elem_bits = layout.is_bool ? 0 : layout.bits;
+                            low.type = enum_mem_type(enum_id);
+                            return low;
+                        }
+                    }
                     return std::nullopt;
                 } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                     if (item.expr == nullptr) {

@@ -1300,6 +1300,25 @@ const Expr *Checker::file_scope_const_struct(const Expr &expr) {
     return var->init.get();
 }
 
+const Expr *Checker::file_scope_const_enum(const Expr &expr) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->is_auto || symbol->type.kind != TypeKind::Enum) {
+        return nullptr;
+    }
+    const VarDecl *var = global_var(named->text);
+    if (var == nullptr || !var->is_const_decl || var->init == nullptr) {
+        return nullptr;
+    }
+    if (!fold_switch_case(*var->init)) {
+        return nullptr;
+    }
+    return var->init.get();
+}
+
 std::optional<int> Checker::folded_local_int(const Expr &expr) {
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr) {
@@ -1327,7 +1346,8 @@ bool Checker::argument_is_comptime(const Expr &arg) {
     for (const auto &element : tuple->elements) {
         if (element == nullptr || (!argument_is_comptime(*element) && !file_scope_const_int(*element) &&
                                    !file_scope_const_bool(*element) && file_scope_const_float(*element) == nullptr &&
-                                   file_scope_const_struct(*element) == nullptr)) {
+                                   file_scope_const_struct(*element) == nullptr &&
+                                   file_scope_const_enum(*element) == nullptr)) {
             return false;
         }
     }
@@ -1500,7 +1520,8 @@ bool Checker::comptime_constant(const Expr &expr) {
                 }
                 if (!argument_is_comptime(*element) && !file_scope_const_int(*element) && !file_scope_const_bool(*element) &&
                     file_scope_const_float(*element) == nullptr && file_scope_const_struct(*element) == nullptr &&
-                    !fold_switch_case(*element) && !comptime_constant(*element) && !address_element(*element) &&
+                    file_scope_const_enum(*element) == nullptr && !fold_switch_case(*element) &&
+                    !comptime_constant(*element) && !address_element(*element) &&
                     !array_element(array_element, *element, 0)) {
                     return false;
                 }
@@ -1653,6 +1674,10 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
                         continue;
                     }
                     if (const Expr *init = file_scope_const_struct(*element)) {
+                        element = clone_expr(*init);
+                        continue;
+                    }
+                    if (const Expr *init = file_scope_const_enum(*element)) {
                         element = clone_expr(*init);
                         continue;
                     }

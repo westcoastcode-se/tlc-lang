@@ -763,6 +763,8 @@ class Checker {
     const Expr *file_scope_const_float(const Expr &expr);
     // File-scope `const origin = Point{.x = 2, .y = 0}`. A local `const` is not.
     const Expr *file_scope_const_struct(const Expr &expr);
+    // File-scope `const op = Order.acquire`. The initializer stays the enumerator. A local `const` is not.
+    const Expr *file_scope_const_enum(const Expr &expr);
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     // A `var`, a local `const`, and a tuple are not.
     bool comptime_constant(const Expr &expr);
