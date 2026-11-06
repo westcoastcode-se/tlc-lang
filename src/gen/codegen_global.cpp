@@ -192,7 +192,7 @@ void CodeGen::declare_globals(const PackageNode &node) {
         if (var == nullptr || var->name.empty() || !var->owner_params.empty()) {
             continue;
         }
-        if (var->generic_alias) {
+        if (var->generic_alias || var->spec_alias) {
             // `var f = id` is a name in this file. A call was rewritten to the specialization.
             const Binding *source = nullptr;
             if (var->init != nullptr) {
@@ -218,7 +218,9 @@ void CodeGen::declare_globals(const PackageNode &node) {
                     }
                 }
             }
-            if (source != nullptr && source->is_generic && source->decl != nullptr) {
+            if (source != nullptr && source->decl != nullptr &&
+                (source->is_generic ||
+                 (var->spec_alias && source->value == nullptr && comptime_param_template(*source->decl)))) {
                 Binding binding = *source;
                 binding.value = nullptr;
                 binding.immediate = false;

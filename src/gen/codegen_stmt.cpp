@@ -518,6 +518,32 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         }
         return nullptr;
     };
+    // `var f = fill`. The body is valid only after `n` is substituted, so there is no address.
+    auto spec_only = [&](const Expr &expr) -> const FunctionDecl * {
+        const std::string *text = nullptr;
+        if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+            text = &named->text;
+        }
+        if (text == nullptr || graph_ == nullptr) {
+            return nullptr;
+        }
+        for (const uint32_t id : package_files(current_file_)) {
+            for (const PackageNode &pkg : graph_->nodes) {
+                if (pkg.file_id != id) {
+                    continue;
+                }
+                for (const TopDecl &decl : pkg.unit.decls) {
+                    const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+                    if (fn == nullptr || fn->name != *text || fn->value_kept || !comptime_param_template(*fn) ||
+                        comptime_param_kept(*fn)) {
+                        continue;
+                    }
+                    return fn;
+                }
+            }
+        }
+        return nullptr;
+    };
     auto note = [&](const std::string &name, const Binding &binding) {
         SourceLoc loc = node.loc;
         for (std::size_t i = 0; i < node.names.size() && i < node.name_locs.size(); ++i) {
@@ -766,6 +792,19 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         return found == nullptr ? nullptr : found->value;
     };
     if (node.names.size() == 1) {
+        if (const FunctionDecl *spec = spec_only(*node.value)) {
+            bool create = false;
+            destination(node.names[0], create);
+            if (!create) {
+                error(node.loc, "not an lvalue");
+                return;
+            }
+            Binding binding;
+            binding.is_function = true;
+            binding.decl = spec;
+            scopes_.back()[node.names[0]] = binding;
+            return;
+        }
         if (const Binding *generic = generic_alias(*node.value)) {
             bool create = false;
             destination(node.names[0], create);

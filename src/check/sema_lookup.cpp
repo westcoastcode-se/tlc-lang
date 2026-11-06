@@ -6,6 +6,7 @@ namespace tlc {
 
 void Checker::error(SourceLoc loc, const std::string &message) {
     if (quiet_) {
+        ++quiet_errors_;
         return;
     }
     diags_.error(loc, message);

@@ -5,5 +5,8 @@ func fill(n comptime i32, value i32) i32 {
 
 func main() i32 {
     var f = fill;
+    if (fill(4, 38) != 42) {
+        return 1;
+    }
     return f(4, 38);
 }

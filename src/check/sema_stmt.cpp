@@ -407,6 +407,63 @@ const Symbol *Checker::generic_alias_source(const Expr &expr) {
     return source;
 }
 
+const Symbol *Checker::comptime_spec_alias_source(const Expr &expr) {
+    const Symbol *source = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        source = lookup(named->text);
+    } else if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+        if (package != nullptr && package->is_package) {
+            source = find_export(package->package_file, selector->field);
+        }
+    }
+    if (source == nullptr || !source->is_function || source->is_template || source->lists.size() != 1 ||
+        source->lists.front().decl == nullptr) {
+        return nullptr;
+    }
+    FunctionDecl &fn = const_cast<FunctionDecl &>(*source->lists.front().decl);
+    if (!comptime_param_template(fn) || comptime_param_kept(fn)) {
+        return nullptr;
+    }
+    // `var f = scale` still stores the address. This probe is the same check that use performs.
+    if (!fn.value_tried) {
+        fn.value_tried = true;
+        const bool saved = quiet_;
+        const int before = quiet_errors_;
+        quiet_ = true;
+        check_function(fn);
+        quiet_ = saved;
+        fn.value_kept = quiet_errors_ == before;
+    }
+    if (fn.value_kept) {
+        return nullptr;
+    }
+    return source;
+}
+
+Symbol Checker::comptime_spec_alias_symbol(const std::string &name, SourceLoc loc, const Symbol &source,
+                                           bool immutable) {
+    Symbol symbol;
+    symbol.name = name;
+    symbol.is_function = true;
+    symbol.spec_alias = true;
+    symbol.has_body = source.has_body;
+    symbol.unsafe_fn = source.unsafe_fn;
+    symbol.package_file = source.package_file != 0 ? source.package_file : file_id_;
+    symbol.loc = loc;
+    symbol.is_auto = true;
+    symbol.is_immutable = immutable;
+    if (!scopes_.empty()) {
+        symbol.function_id = scopes_.back().function_id;
+    }
+    if (!source.lists.empty() && source.lists.front().decl != nullptr) {
+        symbol.lists.push_back(source.lists.front());
+        symbol.type = function_signature(*source.lists.front().decl);
+    }
+    return symbol;
+}
+
 Symbol Checker::generic_alias_symbol(const std::string &name, SourceLoc loc, const Symbol &source,
                                      bool immutable) const {
     Symbol symbol;
@@ -2538,8 +2595,14 @@ void Checker::check_stmt(const Stmt &stmt) {
                     return;
                 }
                 // `var f = id` names the generic. The call specializes it. There is no slot.
+                // `var f = fill` is that name when `var out [n]i32` needs the substituted parameter.
                 if (node.names.size() == 1 && (node.is_var || node.is_define || node.is_const)) {
-                    if (const Symbol *source = generic_alias_source(*node.value)) {
+                    const Symbol *alias = generic_alias_source(*node.value);
+                    if (alias == nullptr) {
+                        alias = comptime_spec_alias_source(*node.value);
+                    }
+                    if (alias != nullptr && alias->is_template) {
+                        const Symbol *source = alias;
                         const SourceLoc loc = node.name_locs.empty() ? node.loc : node.name_locs.front();
                         if (scopes_.empty()) {
                             error(loc, "type mismatch");
@@ -2551,6 +2614,25 @@ void Checker::check_stmt(const Stmt &stmt) {
                             return;
                         }
                         Symbol symbol = generic_alias_symbol(node.names[0], loc, *source, node.is_const);
+                        if (exists) {
+                            shadow(std::move(symbol), loc);
+                        } else {
+                            declare(std::move(symbol), loc);
+                        }
+                        return;
+                    }
+                    if (alias != nullptr) {
+                        const SourceLoc loc = node.name_locs.empty() ? node.loc : node.name_locs.front();
+                        if (scopes_.empty()) {
+                            error(loc, "type mismatch");
+                            return;
+                        }
+                        const bool exists = scopes_.back().symbols.contains(node.names[0]);
+                        if (node.is_const && exists) {
+                            error(loc, "redefinition");
+                            return;
+                        }
+                        Symbol symbol = comptime_spec_alias_symbol(node.names[0], loc, *alias, node.is_const);
                         if (exists) {
                             shadow(std::move(symbol), loc);
                         } else {

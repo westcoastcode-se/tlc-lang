@@ -638,6 +638,8 @@ struct VarDecl {
     bool inferred = false;
     // `var f = id` at file scope. The name is that generic. There is no object.
     bool generic_alias = false;
+    // `var f = fill` at file scope when the body needs the substituted parameter. There is no object.
+    bool spec_alias = false;
     // `var a, b = expr` at file scope. `unpack_count` is 0 on an ordinary variable.
     // The first name owns `init`. `unpack_head` is that name.
     int unpack_index = 0;
@@ -894,7 +896,7 @@ struct FunctionDecl {
     bool generic_instance = false;
     // `var f = scale` uses this function. The comptime parameter is still passed.
     bool value_kept = false;
-    // The value use was tried. A body that is only valid after specialization stays unused.
+    // The value use was tried. A body that is only valid after specialization is a name, not a pointer.
     bool value_tried = false;
 };
 

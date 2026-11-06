@@ -99,6 +99,9 @@ struct Symbol {
     bool fixed_receiver = false;
     // A parameter marked `comptime`. A method or a generic call may forward the name.
     bool comptime_param = false;
+    // `var f = fill` when the body is valid only after `n` is substituted.
+    // A call specializes. There is no function pointer.
+    bool spec_alias = false;
     bool is_enum = false;
     bool is_typedef = false;
     bool is_struct_tag = false;
@@ -326,6 +329,8 @@ class Checker {
     Type return_type_ = type_invalid();
     // Set while folding `sizeof`, so a second lookup does not repeat a diagnostic.
     bool quiet_ = false;
+    // Errors suppressed while `quiet_` is set. A probe uses this to see a failure.
+    int quiet_errors_ = 0;
     // A generic specialization may learn an omitted result. File signatures stay pending until
     // every function in the file is registered.
     bool allow_lazy_infer_ = false;
@@ -1159,6 +1164,11 @@ class Checker {
     // `var f = id` and `var f = pkg.id`. Null when the initializer is not that generic.
     const Symbol *generic_alias_source(const Expr &expr);
     Symbol generic_alias_symbol(const std::string &name, SourceLoc loc, const Symbol &source, bool immutable) const;
+    // `var f = fill` when `var out [n]i32` does not typecheck until `n` is substituted.
+    // Null when the body is a real function pointer, as `var f = scale`.
+    const Symbol *comptime_spec_alias_source(const Expr &expr);
+    Symbol comptime_spec_alias_symbol(const std::string &name, SourceLoc loc, const Symbol &source,
+                                      bool immutable);
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
     // `func scale(n comptime i32, x i32)`. One copy per constant. `n` is inlined.
     std::optional<Type> maybe_comptime_param_call(Expr &expr, bool used);

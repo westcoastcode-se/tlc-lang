@@ -3043,6 +3043,11 @@ std::optional<Type> Checker::maybe_comptime_param_call(Expr &expr, bool used) {
     if (diags_.size() != before) {
         return type_invalid();
     }
+    // The body is valid only after substitution. A runtime argument is not that copy.
+    if (symbol->spec_alias) {
+        error(call.loc, "type mismatch");
+        return type_invalid();
+    }
     return std::nullopt;
 }
 

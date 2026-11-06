@@ -21,7 +21,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 - `var f = add` then `comptime const ops = (f, 1)` is `not supported yet`.
 - A `var` address is `not supported yet`. `null` is `type mismatch`. Passing `(&addr, 2)` to a `comptime` parameter is `not supported yet`. There is no spelling for the pointer. `&addr` alone on `p comptime *i32` is `type mismatch`.
 - A `var` array in a comptime tuple is `not supported yet`. Passing that tuple to a `comptime` parameter is `not supported yet`. There is no spelling for the array.
-- `var f = add` then `comptime const op = f` is `not supported yet`. A file-scope `var f = add` then `comptime const op = f` is `global initializer is not a constant`. Write `comptime const f = add`. A body that does not typecheck while `n` is still a parameter is `not supported yet` at that value. `var out [n]i32` is that body.
+- `var f = add` then `comptime const op = f` is `not supported yet`. A file-scope `var f = add` then `comptime const op = f` is `global initializer is not a constant`. Write `comptime const f = add`. Passing a function whose body does not typecheck while `n` is still a parameter, such as `call(fill, 38)` when the body is `var out [n]i32`, is `not supported yet`. `var f = fill` then `f(4, 38)` specializes.
 - More than 32 nested specializations of that function. A body that calls `scale(n + 1, x)` is `not supported yet`. A generic body `return width[add(N)]()` or `return Buf[add(N)].span()` is the same limit.
 - Debugging a `comptime func`. How that works is not decided. A folded call has no runtime symbol and no trace frame.
 - `count(U)`.

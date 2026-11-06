@@ -316,7 +316,7 @@ A `var` is `type mismatch`.
 
 A function nested in another function still passes the constant.
 
-`var f = scale` stores the address of `scale`. `f(2, x)` passes `2` and `x`. `scale(2, x)` still calls the specialized copy and does not pass `2`. `scale(n, x)` when `n` is a `var` is `type mismatch`. A body that does not typecheck while `n` is still a parameter is `not supported yet` at that value.
+`var f = scale` stores the address of `scale`. `f(2, x)` passes `2` and `x`. `scale(2, x)` still calls the specialized copy and does not pass `2`. `scale(n, x)` when `n` is a `var` is `type mismatch`. A body that does not typecheck while `n` is still a parameter is a name. `var f = fill` then `f(4, 38)` calls the specialized copy. Passing that function as an argument is `not supported yet`.
 
 More than 32 nested specializations are `not supported yet`.
 
@@ -1336,7 +1336,17 @@ A file-scope `var f = scale` stores it in `main.f` when the file is `main.tlc`.
 
 `comptime if` on `n` stays in that function. Both arms are typechecked, and the condition runs at run time. `scale(2, x)` still keeps one arm and leaves the other unchecked.
 
-A body that does not typecheck while `n` is still a parameter is `not supported yet` at the value use.
+A body that does not typecheck while `n` is still a parameter is a name. There is no function pointer.
+
+`var f = fill` then `f(4, 38)` calls `main.fill.spec.4` when the file is `main.tlc`. `4` is not passed. `out.len` is `4`.
+
+The program returns 42.
+
+`fill(4, value)` calls that same copy.
+
+Passing `fill` as an argument is `not supported yet`.
+
+`f(n, value)` when `n` is a `var` is `type mismatch`.
 
 ```c
 func fill(n comptime i32, value i32) i32 {
@@ -1350,9 +1360,24 @@ func main() i32 {
 }
 ```
 
-That program is `not supported yet`.
+```asm
+main.fill.spec.4:
+movl %edi, -20(%rsp)             # value
+movl -20(%rsp), %eax             # value
+addl $4, %eax                    # out.len + value
+retq                             # return
 
-`fill(4, value)` still calls the specialized copy.
+main:
+subq $24, %rsp                   # allocate
+# trace frame for the call, then the matching pop
+movl $38, %edi                   # constant
+callq main.fill.spec.4           # call f(4, 38)
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # return
+addq $24, %rsp                   # release
+retq                             # return
+```
 
 An ordinary function stored in a `var`, then `comptime const op = f`, is `not supported yet`.
 

@@ -1,0 +1,10 @@
+func fill(n comptime i32, value i32) i32 {
+    var out [n]i32;
+    return out.len + value;
+}
+
+var f = fill;
+
+func main() i32 {
+    return f(4, 38);
+}
