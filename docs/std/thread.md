@@ -32,7 +32,7 @@ The thread's writes happen before `join` reads them.
 
 A failed pthread call panics with `thread`.
 
-An inner function that uses a local or a parameter from an enclosing function is `not supported yet`.
+An inner function that reads a local or a parameter cannot be passed to `thread.spawn`. That use is `not supported yet`.
 
 The entry is a file-scope function.
 

@@ -736,6 +736,12 @@ A slice alias uses `self this` or `self *this`.
 
 An inner function uses the same `function` form inside a block, and it has a body.
 
+Called directly, it may read a local or a parameter of an enclosing function.
+
+Reading a tuple is `not supported yet`.
+
+Using that function as a value is `not supported yet`.
+
 A type-parameter list after the method name, `func Type::name[T type](self *this) T`, is a method template when that type is not a generic struct.
 
 `func Vec[T]::get[U type](self *this, value U) U` is that template on a generic struct.

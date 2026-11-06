@@ -7,9 +7,16 @@ namespace tlc {
 
 namespace {
 
-// Stable name for one captured function pointer. The id is the function that owns the name.
+// Stable name for one captured local. The id is the function that owns the name.
 std::string capture_key(int function_id, const std::string &name) {
     return ".cap." + std::to_string(function_id) + "." + name;
+}
+
+// A function pointer is passed as that pointer. The callee stores it.
+// Every other capture is the address of the local or the parameter.
+bool capture_loaded_pointer(const Binding &binding) {
+    return binding.fn_ty != nullptr && binding.depth > 0 && !binding.is_array && !binding.is_slice &&
+           !binding.is_tuple;
 }
 
 
@@ -340,17 +347,22 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
             if (!item.name.empty()) {
                 arg->setName(item.name);
             }
-            llvm::AllocaInst *slot = alloca_typed(ptr_type(), item.name.empty() ? "cap" : item.name);
-            builder_.CreateStore(arg, slot);
             Binding binding = (*captures)[index];
-            binding.value = slot;
             binding.is_function = false;
             binding.immediate = false;
-            binding.is_array = false;
-            binding.is_tuple = false;
             binding.decl = nullptr;
-            if (binding.depth < 1) {
-                binding.depth = 1;
+            if (capture_loaded_pointer(binding)) {
+                llvm::AllocaInst *slot = alloca_typed(ptr_type(), item.name.empty() ? "cap" : item.name);
+                builder_.CreateStore(arg, slot);
+                binding.value = slot;
+                binding.is_array = false;
+                binding.is_tuple = false;
+                if (binding.depth < 1) {
+                    binding.depth = 1;
+                }
+            } else {
+                // The argument is the outer slot. A load uses the same depth and type flags.
+                binding.value = arg;
             }
             if (!item.name.empty()) {
                 scopes_.back()[item.name] = binding;
@@ -462,13 +474,23 @@ void CodeGen::append_captures(const FunctionDecl *decl, std::vector<llvm::Value 
             args.push_back(null_ptr());
             continue;
         }
-        const TypedValue value = value_of_binding(*binding);
-        if (value.value == nullptr || !value.value->getType()->isPointerTy()) {
+        if (capture_loaded_pointer(*binding)) {
+            const TypedValue value = value_of_binding(*binding);
+            if (value.value == nullptr || !value.value->getType()->isPointerTy()) {
+                error(loc, "not supported yet");
+                args.push_back(null_ptr());
+                continue;
+            }
+            args.push_back(value.value);
+            continue;
+        }
+        // A split tuple has one slot per element. The callee cannot reload that value.
+        if (binding->is_tuple || !binding->value->getType()->isPointerTy()) {
             error(loc, "not supported yet");
             args.push_back(null_ptr());
             continue;
         }
-        args.push_back(value.value);
+        args.push_back(binding->value);
     }
 }
 

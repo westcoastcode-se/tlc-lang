@@ -16,13 +16,47 @@ A body with no `return` is `void`, and so is a body that only writes `return;` o
 
 The function can call functions already in scope, and it can use globals.
 
-It can also read a function pointer from an enclosing function, either a parameter or a local that holds that pointer. The inner function returns that pointer or calls it.
+It can read a local or a parameter of an enclosing function. The call is direct.
 
-The call of the inner function is direct. A method is an enclosing function in the same way.
+It can read a function pointer from an enclosing function, either a parameter or a local that holds that pointer. The inner function returns that pointer or calls it.
+
+A method is an enclosing function in the same way.
 
 An anonymous function, used from `defer` or called directly, is that same kind of function.
 
-> **Warning:** The compiler reports `not supported yet` for `var f = pass`, and for passing that inner function as an argument. It reports `not supported yet` for a local or a parameter that is not a function pointer.
+> **Warning:** The compiler reports `not supported yet` for `var f = pass` when `pass` reads a local or a parameter, and for passing that function as an argument. Assigning the captured name is `not supported yet`. `export`, `extern`, and a method on a function in a block are `not supported yet`. Reading a tuple is `not supported yet`.
+
+## Reading a local
+
+```c
+func main() i32 {
+    var n = 40;
+    func add(b i32) i32 {
+        return n + b;
+    }
+    return add(2);
+}
+```
+
+```asm
+main:
+movl $40, 20(%rsp)               # n = 40
+# trace frame for the call, then the matching pop
+movl $2, %edi                    # constant
+leaq 20(%rsp), %rsi              # n
+callq 1                          # call 1
+retq                             # return
+
+1:
+movl %edi, -4(%rsp)              # move
+movl (%rsi), %eax                # n
+addl -4(%rsp), %eax              # add
+retq                             # return
+```
+
+The program returns 42.
+
+A parameter is read the same way. `func outer(n i32) i32` with that `add` returns 42 from `outer(40)`.
 
 ## Several parameter lists
 

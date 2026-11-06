@@ -72,7 +72,7 @@ struct Symbol {
     bool is_local_function = false;
     // `unsafe func`. A call outside an unsafe context is `unsafe call`. A value use is `type mismatch`.
     bool unsafe_fn = false;
-    // The function reads a function pointer from an enclosing function. A direct call is fine.
+    // The function reads a name from an enclosing function. A direct call is fine.
     // Using the function as a value is not.
     bool fn_captures = false;
     bool is_auto = false;

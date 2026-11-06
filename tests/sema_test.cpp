@@ -4653,7 +4653,7 @@ int run_sema_tests() {
             "  func f() i32 { return x; }\n"
             "  return f();\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_EQ(check, errors, "");
     }
 
     {
@@ -4744,7 +4744,7 @@ int run_sema_tests() {
             "  defer func() i32 { return x; }();\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_EQ(check, errors, "");
     }
 
     {
@@ -5936,7 +5936,7 @@ int run_sema_tests() {
             "  return inner();\n"
             "}\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_EQ(check, errors, "");
     }
 
     {
