@@ -1337,9 +1337,29 @@ const Expr *Checker::file_scope_const_array(const Expr &expr) {
     if (init == nullptr || !init->array_literal) {
         return nullptr;
     }
+    // `{2, 0}` inside `[_][2]i32{{2, 0}, {40, 0}}` is a row. Only the outer list sets `array_literal`.
+    const auto element_ok = [&](const auto &self, const Expr &item, int depth) -> bool {
+        if (depth > 8 || std::holds_alternative<Expr::Nullptr>(item.data)) {
+            return false;
+        }
+        if (const auto *inner = std::get_if<Expr::Init>(&item.data)) {
+            const bool row = !inner->is_tuple && !inner->array_literal && inner->fields.empty() &&
+                             !inner->elements.empty();
+            if (!inner->array_literal && !row) {
+                return false;
+            }
+            for (const auto &child : inner->elements) {
+                if (child == nullptr || !self(self, *child, depth + 1)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return argument_is_comptime(item) || fold_int(item).has_value() || file_scope_const_int(item).has_value() ||
+               file_scope_const_bool(item).has_value() || file_scope_const_float(item) != nullptr;
+    };
     for (const auto &item : init->elements) {
-        if (item == nullptr || (!argument_is_comptime(*item) && !fold_int(*item) && !file_scope_const_int(*item) &&
-                                 !file_scope_const_bool(*item) && file_scope_const_float(*item) == nullptr)) {
+        if (item == nullptr || !element_ok(element_ok, *item, 0)) {
             return nullptr;
         }
     }

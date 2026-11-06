@@ -983,6 +983,14 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
+`const grid = [_][2]i32{{2, 0}, {40, 0}}` then `return field((grid, 0))` folds the same way.
+
+That `field` is `comptime func field(p ([2][2]i32, i32)) i32 { return p[0][0][0] + p[0][1][0]; }`.
+
+`main` is `movl $42, %eax` and `retq`.
+
+A local `const` and a `var` of that array are `not supported yet`.
+
 A `comptime func` folds the same indexes, and `pick(pair)` is `2 + 1`.
 
 ```c
