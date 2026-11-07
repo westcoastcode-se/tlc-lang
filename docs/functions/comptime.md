@@ -351,6 +351,8 @@ Inside a `comptime func`, a parameter is not a constant until the call substitut
 
 `comptime if`, `comptime switch`, and `comptime for` on that parameter wait for the call. The body typechecks every arm. The call keeps the selected arm, and `comptime for` unrolls.
 
+`value := n` and `comptime const k = n` are that parameter. A store into `value` makes a later use a runtime value.
+
 `pick(1)` returns 42.
 
 ```c

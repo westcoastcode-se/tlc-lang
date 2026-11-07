@@ -1,8 +1,11 @@
-comptime func add(a i32, b i32) i32 {
-    return a + b;
+comptime func pick(n i32) i32 {
+    comptime const k = n + 1;
+    comptime if (k == 2) {
+        return 40;
+    }
+    return 2;
 }
 
 func main() i32 {
-    const op = add;
-    return op(40, 2);
+    return pick(1) + pick(0);
 }

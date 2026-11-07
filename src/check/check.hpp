@@ -102,6 +102,8 @@ struct Symbol {
     // `name := expr` while `expr` is a comptime value. A later store or `&name` clears it.
     // The binding stays assignable. `is_constant` would reject that store.
     bool held_comptime = false;
+    // Bound from a parameter of a `comptime func`. The call substitutes that parameter.
+    bool pending_fold = false;
     // `var f = fill` when the body is valid only after `n` is substituted.
     // A call specializes. There is no function pointer.
     bool spec_alias = false;
@@ -1190,6 +1192,8 @@ class Checker {
     struct HeldSlot {
         std::size_t scope = 0;
         std::string name;
+        bool held = false;
+        bool pending = false;
         bool folded = false;
         int value = 0;
         const Expr *init = nullptr;

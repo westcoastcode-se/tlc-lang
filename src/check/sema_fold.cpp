@@ -2950,6 +2950,10 @@ void Checker::note_promotable(Symbol &symbol, const Expr *init) {
 void Checker::note_held(Symbol &symbol, const Expr &init) {
     // `var name = 10` and `const name = 10` stay runtime. Only `name := expr` calls this.
     if (!strict_comptime_expr(init) && !comptime_method_base(init)) {
+        // `value := n` inside a `comptime func`. The call substitutes `n`.
+        if (comptime_param_pending(&init)) {
+            symbol.pending_fold = true;
+        }
         return;
     }
     symbol.held_comptime = true;
@@ -2987,7 +2991,11 @@ void Checker::release_held_expr(const Expr &expr) {
         return;
     }
     Symbol *symbol = lookup(*root);
-    if (symbol == nullptr || !symbol->held_comptime) {
+    if (symbol == nullptr) {
+        return;
+    }
+    symbol->pending_fold = false;
+    if (!symbol->held_comptime) {
         return;
     }
     symbol->held_comptime = false;
@@ -3220,7 +3228,7 @@ void Checker::release_assigned(const Stmt *stmt, const std::string &hide_name) {
     std::vector<std::pair<std::size_t, std::string>> names;
     for (std::size_t scope = 0; scope < scopes_.size(); ++scope) {
         for (const auto &item : scopes_[scope].symbols) {
-            if (item.second.held_comptime) {
+            if (item.second.held_comptime || item.second.pending_fold) {
                 names.emplace_back(scope, item.first);
             }
         }
@@ -3236,7 +3244,8 @@ void Checker::release_assigned(const Stmt *stmt, const std::string &hide_name) {
             continue;
         }
         const auto found = scopes_[item.first].symbols.find(item.second);
-        if (found == scopes_[item.first].symbols.end() || !found->second.held_comptime) {
+        if (found == scopes_[item.first].symbols.end() ||
+            (!found->second.held_comptime && !found->second.pending_fold)) {
             continue;
         }
         // An inner binding of the same name is the one a store would change.
@@ -3246,6 +3255,7 @@ void Checker::release_assigned(const Stmt *stmt, const std::string &hide_name) {
         }
         visible->held_comptime = false;
         visible->folded_local = false;
+        visible->pending_fold = false;
     }
 }
 
@@ -3256,7 +3266,7 @@ void Checker::release_assigned_expr(const Expr *expr) {
     std::vector<std::pair<std::size_t, std::string>> names;
     for (std::size_t scope = 0; scope < scopes_.size(); ++scope) {
         for (const auto &item : scopes_[scope].symbols) {
-            if (item.second.held_comptime) {
+            if (item.second.held_comptime || item.second.pending_fold) {
                 names.emplace_back(scope, item.first);
             }
         }
@@ -3269,7 +3279,8 @@ void Checker::release_assigned_expr(const Expr *expr) {
             continue;
         }
         const auto found = scopes_[item.first].symbols.find(item.second);
-        if (found == scopes_[item.first].symbols.end() || !found->second.held_comptime) {
+        if (found == scopes_[item.first].symbols.end() ||
+            (!found->second.held_comptime && !found->second.pending_fold)) {
             continue;
         }
         Symbol *visible = lookup(item.second);
@@ -3278,6 +3289,7 @@ void Checker::release_assigned_expr(const Expr *expr) {
         }
         visible->held_comptime = false;
         visible->folded_local = false;
+        visible->pending_fold = false;
     }
 }
 
@@ -3335,12 +3347,14 @@ std::vector<Checker::HeldSlot> Checker::held_snapshot() const {
     std::vector<HeldSlot> out;
     for (std::size_t scope = 0; scope < scopes_.size(); ++scope) {
         for (const auto &item : scopes_[scope].symbols) {
-            if (!item.second.held_comptime) {
+            if (!item.second.held_comptime && !item.second.pending_fold) {
                 continue;
             }
             HeldSlot slot;
             slot.scope = scope;
             slot.name = item.first;
+            slot.held = item.second.held_comptime;
+            slot.pending = item.second.pending_fold;
             slot.folded = item.second.folded_local;
             slot.value = item.second.const_value;
             slot.init = item.second.const_init;
@@ -3359,7 +3373,8 @@ void Checker::held_restore(const std::vector<HeldSlot> &snap) {
         if (found == scopes_[slot.scope].symbols.end()) {
             continue;
         }
-        found->second.held_comptime = true;
+        found->second.held_comptime = slot.held;
+        found->second.pending_fold = slot.pending;
         found->second.folded_local = slot.folded;
         found->second.const_value = slot.value;
         found->second.const_init = slot.init;
@@ -3385,12 +3400,14 @@ void Checker::held_and(const std::vector<HeldSlot> &before, const std::vector<He
             continue;
         }
         if (kept(left, slot) && kept(right, slot)) {
-            found->second.held_comptime = true;
+            found->second.held_comptime = slot.held;
+            found->second.pending_fold = slot.pending;
             found->second.folded_local = slot.folded;
             found->second.const_value = slot.value;
             found->second.const_init = slot.init;
         } else {
             found->second.held_comptime = false;
+            found->second.pending_fold = false;
             found->second.folded_local = false;
         }
     }

@@ -2854,7 +2854,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                             bind.value = clone_expr(*src);
                         }
                         if (!strict_comptime_expr(*bind.value) && !comptime_address(*bind.value)) {
-                            error(loc, "not supported yet");
+                            // `comptime const k = n` waits until the call substitutes `n`.
+                            if (comptime_param_pending(bind.value.get())) {
+                                symbol.pending_fold = true;
+                            } else {
+                                error(loc, "not supported yet");
+                            }
                         } else if (plain_int_constant(parts[index]) ||
                                    (parts[index].kind == TypeKind::Bool && parts[index].alias_id == 0)) {
                             if (const std::optional<int> value = constant_index(*bind.value)) {
@@ -2940,6 +2945,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             if (Symbol *live = lookup(node.names[i]); live != nullptr) {
                                 live->held_comptime = false;
                                 live->folded_local = false;
+                                live->pending_fold = false;
                             }
                         }
                     }
@@ -3041,7 +3047,12 @@ void Checker::check_stmt(const Stmt &stmt) {
                                     written.init = clone_expr(*src);
                                 }
                                 if (!strict_comptime_expr(*written.init) && !comptime_address(*written.init)) {
-                                    error(var.loc, "not supported yet");
+                                    // `comptime const k = n` waits until the call substitutes `n`.
+                                    if (comptime_param_pending(written.init.get())) {
+                                        live->pending_fold = true;
+                                    } else {
+                                        error(var.loc, "not supported yet");
+                                    }
                                 } else if (plain_int_constant(live->type) ||
                                            (live->type.kind == TypeKind::Bool && live->type.alias_id == 0)) {
                                     if (const std::optional<int> value = constant_index(*written.init)) {
@@ -3158,6 +3169,22 @@ bool Checker::comptime_param_pending(const Expr *expr) const {
     }
     if (!pending_comptime_index_.empty() && expr_mentions_name(*expr, pending_comptime_index_)) {
         return true;
+    }
+    for (std::size_t scope = scopes_.size(); scope-- > 0;) {
+        for (const auto &item : scopes_[scope].symbols) {
+            if (!item.second.pending_fold || !expr_mentions_name(*expr, item.first)) {
+                continue;
+            }
+            bool hidden = false;
+            for (std::size_t inner = scope + 1; inner < scopes_.size(); ++inner) {
+                if (scopes_[inner].symbols.contains(item.first)) {
+                    hidden = true;
+                }
+            }
+            if (!hidden) {
+                return true;
+            }
+        }
     }
     if (checking_.empty() || checking_.back() == nullptr || !checking_.back()->is_comptime ||
         checking_.back()->is_macro) {
