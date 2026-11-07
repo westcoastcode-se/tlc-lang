@@ -1,4 +1,4 @@
-const two = 2;
+comptime const two = 2;
 
 comptime func field(p (i32, i32)) i32 {
     return p[0] + p[1];

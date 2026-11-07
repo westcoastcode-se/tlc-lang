@@ -25,7 +25,7 @@ macro func hello(comptime name []const u8, tail []const u8, comptime n i32) void
     emit printf("Hello %s %s %d\n", name, tail, n);
 }
 
-const label = "Per";
+comptime const label = "Per";
 
 func main() i32 {
     var tail = "Ada";
@@ -43,15 +43,15 @@ retq                             # return
 
 `hello(label, tail, 40 + 2)` emits `printf("Hello %s %s %d\n", "Per", tail, 42)`.
 
-The file-scope `const` string and the folded integer are comptime values.
+The `comptime const` string and the folded integer are comptime values.
 
 `tail` has no `comptime` mark.
 
 The argument expression is pasted and read when the statement runs.
 
-A `var` passed to a `comptime` parameter is `not supported yet`.
+A `var` or a `const` passed to a `comptime` parameter is `not supported yet`.
 
-A local `const` whose initializer folds to `i32` is that integer.
+A `comptime const` whose initializer folds to `i32` is that integer.
 
 Using one parameter in two `emit` statements evaluates that argument again.
 

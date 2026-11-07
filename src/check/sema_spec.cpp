@@ -2645,7 +2645,7 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         if (!param.is_comptime) {
             continue;
         }
-        if (call.args[i - skip] == nullptr) {
+        if (call.args[i - skip] == nullptr || unmarked_comptime_arg(*call.args[i - skip])) {
             return false;
         }
         const std::size_t mark = diags_.size();
@@ -2895,6 +2895,9 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
 }
 
 bool Checker::comptime_arg_specializes(const Param &param, const Expr &arg) {
+    if (unmarked_comptime_arg(arg)) {
+        return false;
+    }
     if (comptime_i32_param(param)) {
         return fold_int(arg).has_value() || folded_local_int(arg).has_value();
     }

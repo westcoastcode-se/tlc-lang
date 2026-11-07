@@ -1,4 +1,4 @@
-const row = [_]i32{2, 0};
+comptime const row = [_]i32{2, 0};
 
 comptime func field(p ([2]i32, i32)) i32 {
     return p[0][0] + p[1];

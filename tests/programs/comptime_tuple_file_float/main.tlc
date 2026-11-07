@@ -1,4 +1,4 @@
-const bias = 0.5;
+comptime const bias = 0.5;
 
 comptime func field(p (f64, i32)) i32 {
     if (p[0] == 0.5) {

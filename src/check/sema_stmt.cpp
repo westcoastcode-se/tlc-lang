@@ -828,6 +828,9 @@ std::unique_ptr<Stmt> as_arm(std::vector<std::unique_ptr<Stmt>> parts, SourceLoc
 } // namespace
 
 std::unique_ptr<Expr> Checker::comptime_argument(const Expr &arg, const Param &param) {
+    if (unmarked_comptime_arg(arg)) {
+        return nullptr;
+    }
     if (param.is_tuple) {
         if (!argument_is_comptime(arg)) {
             return nullptr;
@@ -2813,11 +2816,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     } else if (node.is_const && !node.is_comptime) {
                         note_promotable(symbol, node.value.get());
-                    } else if (node.value != nullptr && strict_comptime_expr(*node.value) &&
-                               !var_assigned(node.names[index])) {
-                        // A `var` is not a comptime value. A `comptime func` may still read this
-                        // initializer when the name is not stored.
-                        symbol.var_fold = node.value.get();
                     }
                     declare(std::move(symbol), loc);
                     if (!node.is_const && node.names.size() == 1 && node.value != nullptr) {
@@ -2996,9 +2994,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                                 }
                             } else if (var.is_const_decl && var.init != nullptr) {
                                 note_promotable(*live, var.init.get());
-                            } else if (!var.is_const_decl && var.init != nullptr && strict_comptime_expr(*var.init) &&
-                                       !var_assigned(var.name)) {
-                                live->var_fold = var.init.get();
                             }
                             init_cover(*live, var.init.get());
                             if (const auto *created = std::get_if<Expr::New>(&var.init->data);

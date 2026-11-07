@@ -182,17 +182,23 @@ Every argument is a comptime value, whether or not the parameter is marked `comp
 
 A comptime value is a folded integer, a constant `[]const u8`, or an enumerator.
 
-It is also a file-scope `const` of a struct, a float, an alias, or a function.
+It is also a `comptime const` of a struct, a float, an alias, or a function.
 
-A string is a literal, a constant range, or a same-file file-scope `const`.
+A string is a literal, a constant range, or a `comptime const` in the same file.
 
-A `var` is not.
+A `var` is not. A `const` is not, until `comptime const folded = name`.
 
-A local `const` whose initializer folds to `i32` is a comptime argument.
+A `var` or a `const` passed to a `comptime func` is `not supported yet`.
 
-A local `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` is not.
+A `var` or a `const` passed to a `comptime` parameter on an ordinary function is `type mismatch`.
 
-A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, or a file-scope `const` is.
+A `comptime const` whose initializer folds to `i32` is a comptime argument.
+
+A `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` is not.
+
+A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, or a `comptime const` is.
+
+A file-scope `const` in that tuple is `not supported yet`.
 
 A tuple element that is a local `const` is `type mismatch`.
 
@@ -264,13 +270,13 @@ A value that does not fit in `i32`, such as `3000000000u32`, is `not supported y
 
 A data pointer field and a union result are `global initializer is not a constant`.
 
-A `[]const u8` result is that string. `cut("Hello, world")` is `Hello` when the body keeps the bytes before `,`. `cut("Hello, world").len` is `movl $5, %eax` and `retq`. A `var` passed to that function is `not supported yet`.
+A `[]const u8` result is that string. `cut("Hello, world")` is `Hello` when the body keeps the bytes before `,`. `cut("Hello, world").len` is `movl $5, %eax` and `retq`. A `var` or a `const` passed to that function is `not supported yet`.
 
 A result that is not `i32`, not a `bool`, not a struct, and not a constant `[]const u8` is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`.
 
 `emit` is not valid in a `comptime func`.
 
-A `var` passed to a `comptime func` is `not supported yet`.
+A `var` or a `const` passed to a `comptime func` is `not supported yet`.
 
 A type parameter, a method, `extern`, and `export` are `not supported yet`.
 
@@ -286,13 +292,13 @@ A parameter without `comptime` is replaced by the argument expression, so `hello
 
 `comptime name []const u8` and `comptime n i32` are values known while compiling, and `emit` receives that value.
 
-`const label = "Per"` then `hello(label)` emits `printf("Hello %s\n", "Per")`.
+`comptime const label = "Per"` then `hello(label)` emits `printf("Hello %s\n", "Per")`.
 
 `show(40 + 2)` emits the integer `42`.
 
-A `var` passed to a `comptime` parameter is `not supported yet`.
+A `var` or a `const` passed to a `comptime` parameter is `not supported yet`.
 
-A local `const` whose initializer folds to `i32` is that integer.
+A `comptime const` whose initializer folds to `i32` is that integer.
 
 `emit while` and `emit do` paste that loop.
 
@@ -400,9 +406,9 @@ A struct, a float, an alias, and a function are that argument too.
 
 When the file is `main.tlc`, `take(Point{.x = 2, .y = 0}, n)` calls `main.take.spec.p_2_0`.
 
-In that file, `take(scale, n)` for `const scale = 0.5` calls `main.take.spec.d3fe0000000000000`.
+In that file, `take(scale, n)` for `comptime const scale = 0.5` calls `main.take.spec.d3fe0000000000000`.
 
-In that file, `take(other, 38)` for `const other = Integer(4)` calls `main.take.spec.4`.
+In that file, `take(other, 38)` for `comptime const other = Integer(4)` calls `main.take.spec.4`.
 
 In that file, `take((other, 0), n)` calls `main.take.spec.t_4_0`. `field((other, 38))` folds when the body returns `i32(p[0]) + p[1]`.
 
@@ -414,7 +420,7 @@ In that file, `take(add, n)` calls `main.take.spec.fnadd`.
 
 A `comptime func` folds those arguments when the body returns a constant `i32`.
 
-`return field(origin)` for `const origin = Point{.x = 40, .y = 2}` and `return p.x + p.y` is `movl $42, %eax` and `retq`.
+`return field(origin)` for `comptime const origin = Point{.x = 40, .y = 2}` and `return p.x + p.y` is `movl $42, %eax` and `retq`.
 
 A tuple is that argument too.
 
@@ -422,11 +428,11 @@ When the file is `main.tlc`, `take((2, 0), n)` calls `main.take.spec.t_2_0`, and
 
 `return field((40, 2))` when `field` is `comptime func field(p (i32, i32)) i32 { return p[0] + p[1]; }` is `movl $42, %eax` and `retq`.
 
-A `var` passed to a `comptime func` is `not supported yet`.
+A `var` or a `const` passed to a `comptime func` is `not supported yet`.
 
-A local `const` whose initializer folds to `i32` is a comptime argument.
+A `comptime const` whose initializer folds to `i32` is a comptime argument.
 
-A local `const` of a struct, a tuple, a float, an alias, or a function is `type mismatch`.
+A `const` of a struct, a tuple, a float, an alias, or a function is `type mismatch`.
 
 A parameter `[2]i32` is a pointer, so an array const is `type mismatch: expected *i32, found [2]i32`.
 

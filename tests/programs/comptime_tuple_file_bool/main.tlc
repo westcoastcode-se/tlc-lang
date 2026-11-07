@@ -1,5 +1,5 @@
-const flag = true;
-const off = false;
+comptime const flag = true;
+comptime const off = false;
 
 comptime func field(p (bool, i32)) i32 {
     if (p[0]) {

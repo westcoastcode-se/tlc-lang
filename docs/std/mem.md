@@ -82,7 +82,7 @@ An `i32` element is compared as that number, which is a different order from the
 
 `mem.memeql[u8]("", "")` is true.
 
-`mem.memeql[u8]("hello"[0:2], "he")` is true, and so is `mem.memeql[u8](label, label)` when `label` is a file-scope `const` string in the same file.
+`mem.memeql[u8]("hello"[0:2], "he")` is true, and so is `mem.memeql[u8](label, label)` when `label` is a `comptime const` string in the same file.
 
 A null in the middle is a byte.
 

@@ -26,9 +26,11 @@ A string is a literal, a constant range, or a `comptime const` in the same file.
 
 A `var` is not a comptime value.
 
-A `var` passed to a `comptime func` is that initializer when the initializer is a comptime value and the name is not assigned. A store to the name is `not supported yet`.
+A `const` is not a comptime value, until `comptime const folded = name`.
 
-A runtime `const` is not a comptime value, until `comptime const folded = name`.
+A `var` or a `const` passed to a `comptime func` is `not supported yet`.
+
+A `var` or a `const` passed to a `comptime` parameter on an ordinary function is `type mismatch`.
 
 A `comptime const` whose initializer folds to `i32` is a comptime argument, at file scope and inside a function.
 
@@ -36,7 +38,9 @@ That `comptime const` hides a `comptime const` of the same name.
 
 A runtime `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` is not a comptime value.
 
-A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, or a file-scope `const` is a comptime value.
+A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, or a `comptime const` is a comptime value.
+
+A file-scope `const` in that tuple is `not supported yet`.
 
 A tuple element that is a local `const` is `type mismatch`.
 
@@ -157,7 +161,7 @@ retq
 
 `label[0]` is `H`.
 
-A `var` whose initializer is that string, and which is not assigned, is that string. `var text = "hi"` then `len(text)` is `2`. A store to the name is `not supported yet`.
+A `var` or a `const` passed to that function is `not supported yet`. `comptime const text = "hi"` then `len(text)` is `2`.
 
 A `bool` result stays `bool`. `comptime if (pos(3))` keeps that arm. A body with statements is compiled and run, and the returned `bool` is that constant.
 
@@ -310,9 +314,9 @@ A `var` of the enum is `type mismatch`.
 
 A function nested in another function does not take an enumerator.
 
-A local `const` whose initializer folds to `i32` is the same specialization as that integer.
+A `comptime const` whose initializer folds to `i32` is the same specialization as that integer.
 
-A `var` is `type mismatch`.
+A `const` and a `var` are `type mismatch`.
 
 A function nested in another function still passes the constant.
 
@@ -401,11 +405,13 @@ The call passes `x` and adds `2`.
 
 ## A struct on a comptime function
 
-A file-scope const of a struct is that argument.
+A `comptime const` of a struct is that argument.
 
 The literal is the same value.
 
-`const origin = Point{.x = 40, .y = 2}` then `return field(origin)` folds.
+`comptime const origin = Point{.x = 40, .y = 2}` then `return field(origin)` folds.
+
+A `const` passed to that function is `not supported yet`.
 
 That `field` is `comptime func field(p Point) i32 { return p.x + p.y; }`.
 
@@ -417,7 +423,7 @@ type Point struct {
     y i32;
 };
 
-const origin = Point{.x = 40, .y = 2};
+comptime const origin = Point{.x = 40, .y = 2};
 
 comptime func field(p Point) i32 {
     return p.x + p.y;
@@ -444,7 +450,7 @@ An enumerator passed to a `comptime func` folds when the body returns a constant
 
 That `id` is `comptime func id(n Integer) i32 { return i32(n); }`.
 
-A `var` whose initializer is that struct, enumerator, or alias, and which is not assigned, folds the same way. `var p = Point{.x = 1, .y = 2}` then `field(p)` is `1` when `field` returns `p.x`. `var order = Order.acquire` then `rank(order)` is `42` when `rank` returns that constant. A store to the name is `not supported yet`.
+A `var` or a `const` of that struct, enumerator, or alias passed to that function is `not supported yet`.
 
 ## A struct returned from a comptime function
 
@@ -567,7 +573,7 @@ retq                             # return
 
 `p[0]` is `40` and `p[1]` is `2`.
 
-A `var` whose initializer is that tuple, and which is not assigned, folds the same way.
+A `var` or a `const` passed to that function is `not supported yet`.
 
 ```c
 func main() i32 {
@@ -576,15 +582,7 @@ func main() i32 {
 }
 ```
 
-```asm
-main:
-movl $42, %eax                   # constant
-retq                             # return
-```
-
-The program returns 42.
-
-A store to `pair` is `not supported yet`.
+That program emits nothing.
 
 ## A specialized struct parameter
 
@@ -592,7 +590,9 @@ A mix of a struct parameter and a runtime parameter stores the literal in the co
 
 When the file is `main.tlc`, `take(Point{.x = 2, .y = 0}, n)` calls `main.take.spec.p_2_0`.
 
-`const origin = Point{.x = 2, .y = 0}` calls that same copy.
+`comptime const origin = Point{.x = 2, .y = 0}` calls that same copy.
+
+A `const` in that position is `type mismatch`.
 
 The fields are named in source order.
 
@@ -1646,13 +1646,13 @@ That declaration emits nothing.
 
 ## A compile-time string
 
-A file-scope `const text = "hi"` is a comptime string.
+`comptime const text = "hi"` is a comptime string.
 
 `len(text)` folds to `2`.
 
 That `len` is `comptime func len(text []const u8) i32 { return text.len; }`.
 
-A local `const text = "hi"` passed to that function is `not supported yet`.
+A `var` or a `const` passed to that function is `not supported yet`.
 
 ## A comptime overload
 

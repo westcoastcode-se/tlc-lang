@@ -1,6 +1,6 @@
 type Integer i32;
 
-const other = Integer(4);
+comptime const other = Integer(4);
 
 comptime func field(p (Integer, i32)) i32 {
     return i32(p[0]) + p[1];
