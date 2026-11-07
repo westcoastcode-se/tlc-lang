@@ -1,0 +1,11 @@
+type Buf[N i32] struct { raw [N]u8; }
+
+comptime func from(n i32) i32 {
+    var k = n;
+    var buf Buf[k];
+    return buf.raw.len;
+}
+
+func main() i32 {
+    return from(4);
+}

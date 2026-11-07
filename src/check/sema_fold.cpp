@@ -2279,29 +2279,32 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     }
     // The call chain is the callers of this comptime func, newest first.
     ComptimeEval chain(*this, *fn, call);
-    if (const Expr *value = single_i32_return(*fn)) {
-        if (!comptime_folding_.insert(fn).second) {
-            return std::nullopt;
-        }
-        struct Leave {
-            std::unordered_set<const FunctionDecl *> &set;
-            const FunctionDecl *fn;
-            ~Leave() { set.erase(fn); }
-        } leave{comptime_folding_, fn};
-        std::unique_ptr<Expr> rewritten = clone_expr(*value);
-        replace_names(rewritten, names, exprs);
-        const std::size_t before_fold = diags_.size();
-        if (const std::optional<int> folded = fold_int(*rewritten)) {
-            call.comptime_ran = true;
-            call.comptime_value = *folded;
-            return folded;
-        }
-        if (diags_.size() != before_fold || take_comptime_fault(fn->name)) {
-            return std::nullopt;
+    // `Buf[n]` still has a stand-in length on this body. The copy below substitutes `n`.
+    if (!fn->pending_generic) {
+        if (const Expr *value = single_i32_return(*fn)) {
+            if (!comptime_folding_.insert(fn).second) {
+                return std::nullopt;
+            }
+            struct Leave {
+                std::unordered_set<const FunctionDecl *> &set;
+                const FunctionDecl *fn;
+                ~Leave() { set.erase(fn); }
+            } leave{comptime_folding_, fn};
+            std::unique_ptr<Expr> rewritten = clone_expr(*value);
+            replace_names(rewritten, names, exprs);
+            const std::size_t before_fold = diags_.size();
+            if (const std::optional<int> folded = fold_int(*rewritten)) {
+                call.comptime_ran = true;
+                call.comptime_value = *folded;
+                return folded;
+            }
+            if (diags_.size() != before_fold || take_comptime_fault(fn->name)) {
+                return std::nullopt;
+            }
         }
     }
     // `return n > 0` is 0 or 1. A body with statements is compiled below.
-    if (plain_bool_result(*fn)) {
+    if (!fn->pending_generic && plain_bool_result(*fn)) {
         if (const Expr *value = single_return_expr(*fn)) {
             if (!comptime_folding_.insert(fn).second) {
                 return std::nullopt;
@@ -3714,6 +3717,7 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
         }
     } file_scopes(*this);
     const bool saved_quiet = quiet_;
+    const int saved_errors = quiet_errors_;
     quiet_ = true;
     check_function(wrapper);
     quiet_ = saved_quiet;
@@ -3721,7 +3725,8 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
     self_loop_.erase(&wrapper);
     infer_running_.erase(&wrapper);
     infer_mismatch_.erase(&wrapper);
-    return true;
+    // `Buf[-1]` does not typecheck. The call is `not supported yet`.
+    return quiet_errors_ == saved_errors;
 }
 
 int Checker::explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name) {

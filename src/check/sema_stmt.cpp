@@ -3616,6 +3616,7 @@ bool Checker::bind_generic_values(Stmt &stmt, const std::vector<std::string> &na
                     }
                 } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                     for (VarDecl &var : item.vars) {
+                        rewrite_list(var.type_args, active, values);
                         if (var.init != nullptr) {
                             walk_expr(walk_expr, *var.init, active, values);
                         }

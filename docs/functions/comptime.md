@@ -357,6 +357,8 @@ Inside a `comptime func`, a parameter is not a constant until the call substitut
 
 `var buf [n]i32`, `var buf [k]i32`, and `var buf [value]i32` use that integer as the length. `buf.len` is `n`. A negative value is `not supported yet`. A `var` is not a length.
 
+`var buf Buf[n]`, `var buf Buf[k]`, and `var buf Buf[value]` write that integer as a type argument. `buf.raw.len` is `n` when `raw` is `[N]u8`. A negative value is `not supported yet`. A `var` is `type mismatch`.
+
 `width(4)` returns 4.
 
 ```c
@@ -398,6 +400,27 @@ retq                             # return
 ```
 
 A `var` in that condition does not fold.
+
+`from(4)` returns 4.
+
+```c
+type Buf[N i32] struct { raw [N]u8; }
+
+comptime func from(n i32) i32 {
+    var buf Buf[n];
+    return buf.raw.len;
+}
+
+func main() i32 {
+    return from(4);
+}
+```
+
+```asm
+main:
+movl $4, %eax                    # constant
+retq                             # return
+```
 
 A `comptime` parameter is comptime.
 

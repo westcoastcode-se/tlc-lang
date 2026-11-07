@@ -284,6 +284,45 @@ Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int in
     return type;
 }
 
+Type Checker::deferred_struct_type(const std::string &name, const std::string &package, const std::vector<TypeArg> &args,
+                                   SourceLoc loc) {
+    std::vector<TypeArg> concrete = args;
+    bool waited = false;
+    for (TypeArg &arg : concrete) {
+        if (arg.has_value || arg.is_value || arg.value_expr != nullptr || !arg.type_package.empty() ||
+            arg.indirections != 0 || !arg.args.empty() || arg.is_array || arg.is_tuple || !arg.shells.empty() ||
+            arg.type_name.empty() || !value_name_waits(arg.type_name)) {
+            continue;
+        }
+        // One element stands in until the call knows the integer. The copy stores that integer.
+        arg.is_value = true;
+        arg.has_value = true;
+        arg.value = 1;
+        arg.type_name.clear();
+        waited = true;
+    }
+    if (!waited) {
+        return type_invalid();
+    }
+    const std::string spec = specialize_type_app(package, name, concrete, loc);
+    if (spec.empty()) {
+        return type_invalid();
+    }
+    uint32_t owner = file_id_;
+    if (!package.empty()) {
+        if (const Symbol *symbol = lookup(package); symbol != nullptr && symbol->is_package) {
+            owner = symbol->package_file;
+        }
+    } else {
+        find_struct_template(name, owner);
+    }
+    const int id = find_tag(owner, spec);
+    if (id < 0) {
+        return type_invalid();
+    }
+    return type_struct(id);
+}
+
 Type Checker::type_of_var(const VarDecl &var) {
     Type type = type_invalid();
     if (var.is_tuple && var.is_array && var.array_len > 0 && var.indirections == 0) {
@@ -306,14 +345,25 @@ Type Checker::type_of_var(const VarDecl &var) {
         prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                         written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
                         written.loc);
+        if (!written.type_args.empty()) {
+            type = deferred_struct_type(written.type_name, written.type_package, written.type_args, written.loc);
+            if (type.kind == TypeKind::Invalid) {
+                error(var.loc, "not supported yet");
+            } else if (written.indirections > 0) {
+                type = with_indirections(std::move(type), written.indirections, written.loc, written.optional,
+                                         written.const_pointee);
+            }
+        }
         fold_shells(written.shells, written.loc);
-        type = var.is_fn_ptr
-                   ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
-                                    var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
-                                    var.ret_optional, var.ret_const_pointee)
-                   : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
-                                 var.type_package, var.is_struct, var.is_enum, false, var.optional, var.const_pointee,
-                                 false, var.elem_const, var.elem_slice, written.shells, true);
+        if (type.kind == TypeKind::Invalid && written.type_args.empty()) {
+            type = var.is_fn_ptr
+                       ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
+                                        var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
+                                        var.ret_optional, var.ret_const_pointee)
+                       : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
+                                     var.type_package, var.is_struct, var.is_enum, false, var.optional,
+                                     var.const_pointee, false, var.elem_const, var.elem_slice, written.shells, true);
+        }
         // A pointer shell is already applied. The flag is the flat spelling of `*[N]T`.
         if (written.shells.empty() && var.ptr_to_array && type.kind != TypeKind::Invalid) {
             if (type.kind != TypeKind::Array) {

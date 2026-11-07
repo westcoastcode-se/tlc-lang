@@ -2112,8 +2112,20 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
     if (type_args.empty()) {
         return;
     }
+    const std::size_t before = diags_.size();
+    const bool saved_deferred = value_arg_deferred_;
+    value_arg_deferred_ = false;
     const std::string spec = specialize_type_app(type_package, type_name, type_args, loc);
+    const bool deferred = value_arg_deferred_;
+    value_arg_deferred_ = saved_deferred;
     if (spec.empty()) {
+        // `Buf[n]` stays written as `n`. The call substitutes the integer and specializes then.
+        if (deferred && diags_.size() == before) {
+            if (!checking_.empty() && checking_.back() != nullptr) {
+                checking_.back()->pending_generic = true;
+            }
+            return;
+        }
         type_name = "invalid";
         type_package.clear();
         type_args.clear();
@@ -2209,10 +2221,10 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
                 return true;
             }
         }
-        // `repeat[n]` while `n` is still a parameter. The call writes the integer and instantiates then.
-        if (defer_value_args_ && arg.type_package.empty() && arg.indirections == 0 && arg.args.empty() &&
-            !arg.is_array && !arg.is_tuple && arg.shells.empty() && arg.value_expr == nullptr && !arg.has_value &&
-            !arg.type_name.empty() && value_name_waits(arg.type_name)) {
+        // `repeat[n]` and `Buf[n]` while `n` is still a parameter. The call writes the integer.
+        if (arg.type_package.empty() && arg.indirections == 0 && arg.args.empty() && !arg.is_array && !arg.is_tuple &&
+            arg.shells.empty() && arg.value_expr == nullptr && !arg.has_value && !arg.type_name.empty() &&
+            value_name_waits(arg.type_name)) {
             value_arg_deferred_ = true;
             return false;
         }
