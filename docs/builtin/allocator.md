@@ -93,6 +93,8 @@ The same call through a trait parameter is `unsafe a.malloc[i32]()` when `a` is 
 
 `new(alloc) T` and `delete(alloc) p` take that same `*Allocator`. The call that passes `alloc` names the struct. `Malloc` still calls `malloc` and `free` directly.
 
+Inside a `comptime func`, `Malloc` is `not supported yet`. The allocator written at the call does not call `malloc`, `realloc`, or `free`.
+
 The result is `?*T`, and the caller handles `null`.
 
 A struct method `unsafe func Arena::malloc[T type](self *this) ?*T` wins over that default.

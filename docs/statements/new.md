@@ -36,6 +36,8 @@ The compiler reports a `*const` pointer as `type mismatch: expected *Arena, foun
 
 `new(&builtin.allocator)` is `Malloc` and calls `malloc` directly.
 
+Inside a `comptime func`, a `new` or `delete` that uses the heap is `not supported yet`. The allocator is written at the call, and its `malloc`, `free`, and `realloc` do not call `malloc`, `realloc`, or `free`.
+
 `new(alloc) T` and `delete(alloc) p` are allowed when `alloc` has type `*Allocator`. The call that passes `alloc` names the struct, and that struct is used the same way as `new(&arena)`. Passing `&builtin.allocator` still calls `malloc` directly.
 
 ## Fields written after the block is reserved

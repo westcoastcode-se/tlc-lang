@@ -12,6 +12,53 @@ Every argument has to be a comptime value, even when the parameter is not marked
 
 A `comptime func` calls a `comptime func`. A call of any other function is `not supported yet`.
 
+A `new` or `delete` with no allocator uses the heap. That call is `not supported yet`. `new(&builtin.allocator)` and `delete(&builtin.allocator)` are that call.
+
+`new(&arena)` is allowed when `arena.malloc`, `arena.free`, and `arena.realloc` do not call `malloc`, `realloc`, or `free`. A call that reaches one of those functions is `not supported yet`.
+
+`from()` returns 42.
+
+```c
+type Point struct { x i32; y i32; }
+
+var slot Point;
+var used i32;
+
+type Arena struct { mark i32; }
+
+unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    if (used != 0) { return null; }
+    used = size;
+    return ?*u8(&slot);
+}
+
+func Arena::free(self *this, ptr *u8) void {}
+
+unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return null;
+}
+
+comptime func from() i32 {
+    var arena Arena;
+    var p = new(&arena) Point;
+    p.x = 40;
+    p.y = 2;
+    var sum = p.x + p.y;
+    delete(&arena) p;
+    return sum;
+}
+
+func main() i32 {
+    return from();
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
 A `return` leaves the `comptime func` and finishes the calculation for that call.
 
 The call is an expression in the caller.

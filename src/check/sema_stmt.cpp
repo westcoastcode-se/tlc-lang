@@ -376,6 +376,269 @@ void Checker::check_for_each(const Stmt::For &node) {
     pop();
 }
 
+bool Checker::function_is_heap(const FunctionDecl &fn) const {
+    const auto heap_name = [](const std::string &name) {
+        return name == "malloc" || name == "realloc" || name == "free";
+    };
+    if (fn.extern_c && (heap_name(fn.name) || heap_name(fn.link_name))) {
+        return true;
+    }
+    // `Malloc.malloc` is the compiler's call to libc.
+    return fn.method_struct == "Malloc" && heap_name(fn.name) &&
+           (fn.extern_compiler || is_std_builtin_file(fn.loc.file));
+}
+
+bool Checker::function_body_uses_heap(const FunctionDecl &fn, std::unordered_set<const FunctionDecl *> &seen) {
+    if (function_is_heap(fn)) {
+        return true;
+    }
+    if (fn.body == nullptr || !seen.insert(&fn).second) {
+        return false;
+    }
+    int home = -1;
+    if (!fn.method_struct.empty()) {
+        for (int id = 0; id < static_cast<int>(structs_.size()); ++id) {
+            const StructInfo &info = structs_[static_cast<std::size_t>(id)];
+            if (info.name == fn.method_struct && info.file_id == fn.loc.file) {
+                home = id;
+                break;
+            }
+        }
+    }
+    const auto call_uses = [&](const auto &self, const Expr::Call &call) -> bool {
+        if (call.callee == nullptr) {
+            return false;
+        }
+        const auto walk_decl = [&](const FunctionDecl *decl) {
+            return decl != nullptr && function_body_uses_heap(*decl, seen);
+        };
+        if (const auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
+            const Symbol *symbol = lookup(named->text);
+            if (symbol == nullptr || !symbol->is_function) {
+                return false;
+            }
+            for (const FnList &list : symbol->lists) {
+                if (walk_decl(list.decl)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        const auto *selector = std::get_if<Expr::Selector>(&call.callee->data);
+        if (selector == nullptr) {
+            return false;
+        }
+        if (selector->base != nullptr) {
+            if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
+                const Symbol *package = lookup(base->text);
+                if (package != nullptr && package->is_package) {
+                    const Symbol *member = find_export(package->package_file, selector->field);
+                    if (member != nullptr && member->is_function) {
+                        for (const FnList &list : member->lists) {
+                            if (walk_decl(list.decl)) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                }
+            }
+        }
+        if (home < 0) {
+            return false;
+        }
+        const MethodInfo *method = find_method(home, selector->field);
+        if (method == nullptr) {
+            return false;
+        }
+        if (walk_decl(method->decl)) {
+            return true;
+        }
+        for (const MethodInfo &extra : method->more) {
+            if (walk_decl(extra.decl)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto expr_uses = [&](const auto &self, const Expr &expr) -> bool {
+        return std::visit(
+            [&](const auto &node) -> bool {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Expr::Call>) {
+                    if (call_uses(call_uses, node)) {
+                        return true;
+                    }
+                    if (node.callee != nullptr && self(self, *node.callee)) {
+                        return true;
+                    }
+                    for (const auto &arg : node.args) {
+                        if (arg != nullptr && self(self, *arg)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                } else if constexpr (std::is_same_v<T, Expr::New> || std::is_same_v<T, Expr::Delete>) {
+                    // A bare `new` uses the heap. A named allocator is checked at the comptime call.
+                    if (node.allocator == nullptr || node.builtin_alloc) {
+                        return true;
+                    }
+                    return node.allocator != nullptr && self(self, *node.allocator);
+                } else if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                                     std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
+                    return node.expr != nullptr && self(self, *node.expr);
+                } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
+                    if (node.lhs != nullptr && self(self, *node.lhs)) {
+                        return true;
+                    }
+                    if (node.rhs != nullptr && self(self, *node.rhs)) {
+                        return true;
+                    }
+                    if constexpr (std::is_same_v<T, Expr::Binary>) {
+                        return node.mid != nullptr && self(self, *node.mid);
+                    }
+                    return false;
+                } else if constexpr (std::is_same_v<T, Expr::Selector> || std::is_same_v<T, Expr::Index>) {
+                    if (node.base != nullptr && self(self, *node.base)) {
+                        return true;
+                    }
+                    if constexpr (std::is_same_v<T, Expr::Index>) {
+                        if (node.index != nullptr && self(self, *node.index)) {
+                            return true;
+                        }
+                        return node.end != nullptr && self(self, *node.end);
+                    }
+                    return false;
+                } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                    for (const Expr::FieldInit &field : node.fields) {
+                        if (field.value != nullptr && self(self, *field.value)) {
+                            return true;
+                        }
+                    }
+                    for (const auto &element : node.elements) {
+                        if (element != nullptr && self(self, *element)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                return false;
+            },
+            expr.data);
+    };
+    const auto stmt_uses = [&](const auto &self, const Stmt &stmt) -> bool {
+        return std::visit(
+            [&](const auto &node) -> bool {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Stmt::Block>) {
+                    for (const auto &child : node.statements) {
+                        if (child != nullptr && self(self, *child)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                    if (node.value != nullptr && expr_uses(expr_uses, *node.value)) {
+                        return true;
+                    }
+                    for (const auto &extra : node.extra) {
+                        if (extra != nullptr && expr_uses(expr_uses, *extra)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                    return node.expr != nullptr && expr_uses(expr_uses, *node.expr);
+                } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                    return node.call != nullptr && expr_uses(expr_uses, *node.call);
+                } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                    return node.value != nullptr && expr_uses(expr_uses, *node.value);
+                } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                    return node.cond != nullptr && expr_uses(expr_uses, *node.cond);
+                } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                    return (node.cond != nullptr && expr_uses(expr_uses, *node.cond)) ||
+                           (node.then_arm != nullptr && self(self, *node.then_arm)) ||
+                           (node.else_arm != nullptr && self(self, *node.else_arm));
+                } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                    return (node.cond != nullptr && expr_uses(expr_uses, *node.cond)) ||
+                           (node.body != nullptr && self(self, *node.body));
+                } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                    return (node.init != nullptr && self(self, *node.init)) ||
+                           (node.cond != nullptr && expr_uses(expr_uses, *node.cond)) ||
+                           (node.step != nullptr && expr_uses(expr_uses, *node.step)) ||
+                           (node.each_expr != nullptr && expr_uses(expr_uses, *node.each_expr)) ||
+                           (node.body != nullptr && self(self, *node.body));
+                } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                    return (node.cond != nullptr && expr_uses(expr_uses, *node.cond)) ||
+                           (node.body != nullptr && self(self, *node.body));
+                } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                    return (node.value != nullptr && expr_uses(expr_uses, *node.value)) ||
+                           (node.stmt != nullptr && self(self, *node.stmt));
+                } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                    for (const VarDecl &var : node.vars) {
+                        if (var.init != nullptr && expr_uses(expr_uses, *var.init)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                return false;
+            },
+            stmt.data);
+    };
+    return stmt_uses(stmt_uses, *fn.body);
+}
+
+bool Checker::allocator_uses_heap(int struct_id) {
+    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+        return true;
+    }
+    std::unordered_set<const FunctionDecl *> seen;
+    for (const char *name : {"malloc", "free", "realloc"}) {
+        const MethodInfo *method = find_method(struct_id, name);
+        if (method == nullptr) {
+            continue;
+        }
+        const auto consider = [&](const MethodInfo &info) {
+            return info.decl != nullptr && function_body_uses_heap(*info.decl, seen);
+        };
+        if (consider(*method)) {
+            return true;
+        }
+        for (const MethodInfo &extra : method->more) {
+            if (consider(extra)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void Checker::reject_comptime_heap(SourceLoc loc, bool builtin, bool trait, uint32_t file, const std::string &name) {
+    if (!comptime_func_body()) {
+        return;
+    }
+    // Bare `new` and `Malloc` take the heap. A trait pointer does not name the struct.
+    if (builtin || trait) {
+        error(loc, "not supported yet");
+        return;
+    }
+    if (name.empty()) {
+        return;
+    }
+    int id = -1;
+    for (int index = 0; index < static_cast<int>(structs_.size()); ++index) {
+        const StructInfo &info = structs_[static_cast<std::size_t>(index)];
+        if (info.name == name && (file == 0 || info.file_id == file)) {
+            id = index;
+            break;
+        }
+    }
+    if (id < 0 || allocator_uses_heap(id)) {
+        error(loc, "not supported yet");
+    }
+}
+
 bool Checker::comptime_func_body() const {
     return !checking_.empty() && checking_.back() != nullptr && checking_.back()->is_comptime &&
            !checking_.back()->is_macro;

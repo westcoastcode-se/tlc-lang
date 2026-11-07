@@ -2375,6 +2375,8 @@ A `{` after a call, an index, or `value.field` is not this form.
 
 `new Point{.x = 1}` and `new(&arena) Point{.x = 1}` reserve a `Point` and write those fields.
 
+Inside a `comptime func`, a `new` or `delete` that uses the heap is `not supported yet`. The allocator written at the call does not call `malloc`, `realloc`, or `free`.
+
 The allocator argument is a pointer, and the pointee type is taken from that pointer.
 
 `new(alloc) T` also accepts `*Allocator`. The struct is the one passed for that parameter.

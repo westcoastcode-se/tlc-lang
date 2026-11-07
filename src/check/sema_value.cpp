@@ -2745,6 +2745,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if constexpr (std::is_same_v<T, Expr::Delete>) {
                     resolve_allocator(node.allocator.get(), node.builtin_alloc, node.alloc_file, node.alloc_name,
                                       node.alloc_is_pointer, node.alloc_is_trait);
+                    reject_comptime_heap(node.loc, node.builtin_alloc, node.alloc_is_trait, node.alloc_file,
+                                         node.alloc_name);
                     if (node.expr == nullptr) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
@@ -2757,6 +2759,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 } else {
                     resolve_allocator(node.allocator.get(), node.builtin_alloc, node.alloc_file, node.alloc_name,
                                       node.alloc_is_pointer, node.alloc_is_trait);
+                    reject_comptime_heap(node.loc, node.builtin_alloc, node.alloc_is_trait, node.alloc_file,
+                                         node.alloc_name);
                     if (node.type_name.empty()) {
                         error(node.loc, "expected a type");
                         return type_invalid();

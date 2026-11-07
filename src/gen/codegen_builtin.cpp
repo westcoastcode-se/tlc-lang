@@ -351,6 +351,11 @@ llvm::Function *CodeGen::panic_function() {
 }
 
 void CodeGen::abort_panic(SourceLoc loc, const char *message) {
+    // Comptime evaluation has no `tlc.panic` body. Record the fault and leave the call.
+    if (eval_) {
+        eval_fail(loc);
+        return;
+    }
     llvm::Function *panic = panic_function();
     if (panic == nullptr || message == nullptr) {
         abort_now();

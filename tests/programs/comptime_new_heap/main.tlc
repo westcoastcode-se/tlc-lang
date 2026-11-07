@@ -1,0 +1,8 @@
+comptime func from() i32 {
+    var p = new i32;
+    return 1;
+}
+
+func main() i32 {
+    return from();
+}

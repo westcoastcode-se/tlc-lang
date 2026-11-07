@@ -741,6 +741,13 @@ class Checker {
     enum class ComptimeCallee { Unknown, Comptime, Runtime };
     ComptimeCallee comptime_callee_kind(const Expr::Call &call);
     bool comptime_func_body() const;
+    // `malloc`, `realloc`, or `free`, including `Malloc`'s methods.
+    bool function_is_heap(const FunctionDecl &fn) const;
+    bool function_body_uses_heap(const FunctionDecl &fn, std::unordered_set<const FunctionDecl *> &seen);
+    // True when `malloc`, `free`, or `realloc` on this struct reaches the heap.
+    bool allocator_uses_heap(int struct_id);
+    // A `comptime func` may allocate only through an allocator that does not reach the heap.
+    void reject_comptime_heap(SourceLoc loc, bool builtin, bool trait, uint32_t file, const std::string &name);
     const FunctionDecl *macro_callee(const Expr::Call &call);
     const FunctionDecl *generic_macro(const Expr::Call &call);
     // An ordinary function whose every parameter is `comptime`. A `comptime func` is not this.

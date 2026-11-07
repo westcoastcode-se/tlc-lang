@@ -1,0 +1,23 @@
+extern(abi="c") func malloc(size i64) ?*u8;
+
+type Heap struct { mark i32; }
+
+unsafe func Heap::malloc(self *this, size i32, align i32) ?*u8 {
+    return malloc(i64(size));
+}
+
+func Heap::free(self *this, ptr *u8) void {}
+
+unsafe func Heap::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return malloc(i64(size));
+}
+
+comptime func from() i32 {
+    var heap Heap;
+    var p = new(&heap) i32;
+    return 0;
+}
+
+func main() i32 {
+    return from();
+}
