@@ -625,7 +625,7 @@ It also hides a const brought in with `import { n }`.
 
 A `var` is `type mismatch`.
 
-An ordinary function is `not supported yet`.
+A function in that argument must be a `comptime func`. An ordinary function is `not supported yet`.
 
 `add(3) + 1` is `expected ']'`.
 

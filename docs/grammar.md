@@ -1230,6 +1230,8 @@ The call `id(1)` infers `T`.
 
 `width[add(3)]()` when `add` is a `comptime func` is that same specialization.
 
+A function in that argument must be a `comptime func`. An ordinary function is `not supported yet`.
+
 A local `const` whose initializer folds to `i32` is that integer.
 
 `func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter is `not supported yet`.
@@ -1914,7 +1916,7 @@ A call of that function from a `comptime func` is `not supported yet`.
 
 A `var` is `type mismatch`.
 
-An ordinary function is `not supported yet`.
+A function in that argument must be a `comptime func`. An ordinary function is `not supported yet`.
 
 `add(3) + 1` is `expected ']'`.
 

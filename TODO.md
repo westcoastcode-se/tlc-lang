@@ -16,7 +16,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 `...` is only legal on `extern(abi="c")`. `func id[T type](value T, ...) T` is `not supported yet`. `extern(abi="c")` on a generic is `extern(abi="c") on a trait or a generic`. `any` is not a keyword. `...` in a type-parameter list is `expected an identifier`. A bare `extern` on a generic function declares a function the compiler implements. It emits nothing. A body on that declaration is `not supported yet`. A later function with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`. `extern(abi="tlc")` on a generic function is `not supported yet`. A parameter whose type is a trait, such as `s Shape` beside `[T type]`, stays `not supported yet`.
 
-- An ordinary function as a generic value argument is `not supported yet`. `add(3) + 1` is `expected ']'`. A `var` in that argument is `type mismatch`.
+- A function in a generic value argument must be a `comptime func`. An ordinary function is `not supported yet`. `add(3) + 1` is `expected ']'`. A `var` in that argument is `type mismatch`.
 - A `comptime func` calls a `comptime func`. A call of any other function is `not supported yet`.
 - A `new` or `delete` in a `comptime func` that uses the heap is `not supported yet`. That includes no allocator, `Malloc`, and an allocator whose `malloc`, `free`, or `realloc` calls `malloc`, `realloc`, or `free`.
 - A generic value argument whose result names that parameter, such as `repeat[n](1)` when the result is `[N]T`, is `not supported yet` on `func ordinary(comptime n i32)`.
