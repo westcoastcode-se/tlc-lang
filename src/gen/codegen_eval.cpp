@@ -468,9 +468,10 @@ std::optional<std::string> eval_comptime_string(
     return std::string(reinterpret_cast<const char *>(pool), static_cast<std::size_t>(len));
 }
 
-std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
-                                           SourceLoc *fault,
-                                           const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) {
+std::optional<int32_t> eval_comptime_i32(
+    const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault,
+    const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs,
+    const std::vector<std::pair<uint32_t, const StructDecl *>> &structs) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -497,6 +498,7 @@ std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const Functi
     module->setDataLayout(*layout_or);
     {
         CodeGen gen(*context, *module, diags);
+        gen.set_eval_structs(&structs);
         if (!gen.define_comptime(graph, fn, file, specs)) {
             return std::nullopt;
         }

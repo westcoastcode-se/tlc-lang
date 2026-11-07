@@ -490,6 +490,10 @@ class CodeGen {
     void enable_checks() { checks_ = true; }
     // Empty keeps `Malloc`. Another name is `pkg.Type`, used for bare `new` and `delete`.
     void set_allocator(std::string name) { allocator_name_ = std::move(name); }
+    // Specialized structs queued during checking. Evaluation sees them before they join the package.
+    void set_eval_structs(const std::vector<std::pair<uint32_t, const StructDecl *>> *structs) {
+        eval_structs_ = structs;
+    }
     // Emit `fn` as `tlc.comptime.eval` after the package is declared. False when that emission reports a diagnostic.
     bool define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
                          const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs);
@@ -551,6 +555,7 @@ class CodeGen {
     bool checks_ = false;
     // `--allocator`. Empty is `Malloc`, which calls `malloc` and `free`.
     std::string allocator_name_;
+    const std::vector<std::pair<uint32_t, const StructDecl *>> *eval_structs_ = nullptr;
     enum class DefaultAlloc { Malloc, Named };
     DefaultAlloc default_alloc_ = DefaultAlloc::Malloc;
     uint32_t default_alloc_file_ = 0;

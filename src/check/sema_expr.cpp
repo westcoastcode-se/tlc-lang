@@ -648,7 +648,24 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
         applied = true;
     }
     if (!init.type_name.empty()) {
-        if (applied && init.type_name == "invalid") {
+        if (applied && !init.type_args.empty()) {
+            // `Buf[n]{}` stays written as `n`. One element stands in until the call substitutes it.
+            dest = deferred_struct_type(init.type_name, init.type_package, init.type_args, init.loc);
+            if (dest.kind == TypeKind::Invalid) {
+                error(init.loc, "not supported yet");
+                for (const Expr::FieldInit &field : init.fields) {
+                    if (field.value) {
+                        check_expr(*field.value, true);
+                    }
+                }
+                for (const auto &element : init.elements) {
+                    if (element) {
+                        check_expr(*element, true);
+                    }
+                }
+                return type_invalid();
+            }
+        } else if (applied && init.type_name == "invalid") {
             for (const Expr::FieldInit &field : init.fields) {
                 if (field.value) {
                     check_expr(*field.value, true);
@@ -660,20 +677,21 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
                 }
             }
             return type_invalid();
-        }
-        dest = literal_struct_type(init);
-        if (dest.kind == TypeKind::Invalid) {
-            for (const Expr::FieldInit &field : init.fields) {
-                if (field.value) {
-                    check_expr(*field.value, true);
+        } else {
+            dest = literal_struct_type(init);
+            if (dest.kind == TypeKind::Invalid) {
+                for (const Expr::FieldInit &field : init.fields) {
+                    if (field.value) {
+                        check_expr(*field.value, true);
+                    }
                 }
-            }
-            for (const auto &element : init.elements) {
-                if (element) {
-                    check_expr(*element, true);
+                for (const auto &element : init.elements) {
+                    if (element) {
+                        check_expr(*element, true);
+                    }
                 }
+                return type_invalid();
             }
-            return type_invalid();
         }
     }
     if (!init.elements.empty()) {

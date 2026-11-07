@@ -2784,8 +2784,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             error(expr_loc(*node.count), "type mismatch");
                         }
                     }
-                    const Type object = spelled_type(node.type_name, node.type_package, node.is_struct, false,
-                                                     node.indirections, node.loc, node.optional, node.const_pointee);
+                    Type object = type_invalid();
+                    if (!written.type_args.empty()) {
+                        // `new(&arena) Buf[n]` stays written as `n`. One element stands in until the call.
+                        object = deferred_struct_type(written.type_name, written.type_package, written.type_args,
+                                                      written.loc);
+                        if (object.kind != TypeKind::Invalid && written.indirections > 0) {
+                            object = with_indirections(std::move(object), written.indirections, written.loc,
+                                                       written.optional, written.const_pointee);
+                        }
+                    } else {
+                        object = spelled_type(node.type_name, node.type_package, node.is_struct, false, node.indirections,
+                                              node.loc, node.optional, node.const_pointee);
+                    }
                     if (object.kind == TypeKind::Invalid) {
                         return type_invalid();
                     }

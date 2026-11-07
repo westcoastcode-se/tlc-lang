@@ -1,0 +1,14 @@
+type Buf[N i32] struct { raw [N]u8; }
+
+comptime func from(n i32) i32 {
+    comptime const k = n;
+    value := n;
+    var a = Buf[n]{};
+    var b = Buf[k]{};
+    var c = Buf[value]{};
+    return a.raw.len + b.raw.len + c.raw.len;
+}
+
+func main() i32 {
+    return from(4);
+}

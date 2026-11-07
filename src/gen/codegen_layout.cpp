@@ -146,6 +146,15 @@ void CodeGen::prepare_structs() {
             add_struct(node->file_id, node->qualifier, *item);
             break;
         }
+        if (tag_id(note.file_id, note.name) >= 0 || eval_structs_ == nullptr) {
+            continue;
+        }
+        for (const auto &extra : *eval_structs_) {
+            if (extra.first == note.file_id && extra.second != nullptr && extra.second->name == note.name) {
+                add_struct(note.file_id, node->qualifier, *extra.second);
+                break;
+            }
+        }
     }
     for (const PackageNode &node : graph_->nodes) {
         for (const TopDecl &decl : node.unit.decls) {
@@ -168,6 +177,18 @@ void CodeGen::prepare_structs() {
             if (id >= 0 && decls[static_cast<std::size_t>(id)] == nullptr) {
                 decls[static_cast<std::size_t>(id)] = item;
                 owners[static_cast<std::size_t>(id)] = node.file_id;
+            }
+        }
+    }
+    if (eval_structs_ != nullptr) {
+        for (const auto &extra : *eval_structs_) {
+            if (extra.second == nullptr || extra.second->name.empty() || !extra.second->type_params.empty()) {
+                continue;
+            }
+            const int id = tag_id(extra.first, extra.second->name);
+            if (id >= 0 && decls[static_cast<std::size_t>(id)] == nullptr) {
+                decls[static_cast<std::size_t>(id)] = extra.second;
+                owners[static_cast<std::size_t>(id)] = extra.first;
             }
         }
     }
