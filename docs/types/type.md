@@ -50,9 +50,13 @@ A function pointer is `Other`.
 
 ## `name`
 
-`typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `p.name()` on a `*builtin.Type` uses the `Type` `p` points at.
+`name`, `fields`, and `methods` are comptime methods.
 
-`name` is a method of `builtin.Type`. `t.name()` returns `*const u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box.spec.i32`, `func(i32, i32) i32`, `*func(i32, i32) i32`.
+`typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `comptime const t = typeof(n)` then `t.name()` calls it. A `var` or a `const` is `not supported yet`.
+
+`p.name()` on a `*builtin.Type` uses the `Type` `p` points at when `p` is a `comptime const`.
+
+`name` returns `*const u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box.spec.i32`, `func(i32, i32) i32`, `*func(i32, i32) i32`.
 
 The bytes are constant. `*text = 0` and `text[0] = 0` are reported as `type mismatch`.
 
@@ -66,7 +70,7 @@ Assigning `fields[i]`, or a field of that element, is `type mismatch`. `fields.l
 
 `fields[i].name` is that field's name as `[]const u8`. The length is the number of bytes in the spelling. It converts to `*const u8` where that pointer is expected.
 
-`fields[i].kind` is `builtin.Type`. `fields[i].kind == typeof(i32)` compares those pointers. `fields[i].kind.name()` spells the field's type and `fields[i].kind.fields()` reads a struct field's own fields.
+`fields[i].kind` is `builtin.Type`. `fields[i].kind == typeof(i32)` compares those pointers. `typeof(Point).fields()[i].kind.name()` spells the field's type and `typeof(Point).fields()[i].kind.fields()` reads a struct field's own fields.
 
 Storing through `fields[i].kind` is `type mismatch`. The field is `kind` because `type` is a keyword.
 
@@ -76,7 +80,7 @@ A generic struct lists the fields of that specialization. When `box` is `Box[i32
 
 Any other type has length 0, including `i32`, a pointer, an array, a slice, a function, an alias of a primitive, an anonymous struct, and a union.
 
-`fields` takes no arguments. Another argument is reported as `argument count`. `t.fields` without the call is reported as `undeclared identifier`. `p.fields()` on a `*builtin.Type` uses the `Type` `p` points at.
+`fields` takes no arguments. Another argument is reported as `argument count`. `t.fields` without the call is reported as `undeclared identifier`. `p.fields()` on a `*builtin.Type` uses the `Type` `p` points at when `p` is a `comptime const`.
 
 ## `methods`
 
@@ -88,7 +92,7 @@ A generic method is not listed. An alias lists the methods of the type it names.
 
 Any other type has length 0, including `i32`, a pointer, an array, a slice, a function, a tuple, an anonymous struct, and a union.
 
-`methods` takes no arguments. Another argument is reported as `argument count`. `t.methods` without the call is reported as `undeclared identifier`. `p.methods()` on a `*builtin.Type` uses the `Type` `p` points at.
+`methods` takes no arguments. Another argument is reported as `argument count`. `t.methods` without the call is reported as `undeclared identifier`. `p.methods()` on a `*builtin.Type` uses the `Type` `p` points at when `p` is a `comptime const`.
 
 ```c
 import "builtin";
@@ -163,7 +167,7 @@ type Point struct {
 
 func main() i32 {
     var n i32 = 1;
-    var t builtin.Type = typeof(n);
+    comptime const t = typeof(n);
     var text *const u8 = t.name();
     var fields = typeof(Point).fields();
     if (t == typeof(i32) && typeof('A') == typeof(u8) && text != null && fields.len == 2 &&
@@ -176,75 +180,87 @@ func main() i32 {
 
 ```asm
 main:
+subq $56, %rsp
 leaq (%rip), %rax                # typeof(n)
-movq %rax, -32(%rsp)             # t
-movq -32(%rsp), %rax             # t
+movq %rax, 24(%rsp)              # t
+movq 24(%rsp), %rax              # t
 movq (%rax), %rax                # desc
 movq (%rax), %rax                # name
-movq %rax, -24(%rsp)             # text
-movq (%rip), %rcx                # fields
-movq 8(%rcx), %rax               # fields data
+movq %rax, 32(%rsp)              # text
+movq (%rip), %rcx                # typeof(Point)
+movq 8(%rcx), %rax               # fields
 movl 16(%rcx), %ecx              # fields.len
-movl %ecx, -8(%rsp)              # len
-movq %rax, -16(%rsp)             # data
+movl %ecx, 48(%rsp)              # len
+movq %rax, 40(%rsp)              # data
 xorl %eax, %eax                  # zero the result
 leaq (%rip), %rcx                # typeof(i32)
-cmpq %rcx, -32(%rsp)             # t == typeof(i32)
-movb %al, -33(%rsp)              # move
+cmpq %rcx, 24(%rsp)              # t == typeof(i32)
+movb %al, 23(%rsp)               # move
 jne .L1                          # branch
-movb $1, %al                     # constant
-movb %al, -33(%rsp)              # move
+xorl %eax, %eax                  # zero the result
+movb %al, 23(%rsp)               # move
 jmp .L1                          # jump
 .L1:
-movb -33(%rsp), %cl              # move
+movb 23(%rsp), %cl               # move
 xorl %eax, %eax                  # zero the result
 testb $1, %cl                    # test
-movb %al, -34(%rsp)              # move
+movb %al, 22(%rsp)               # move
 jne .L2                          # branch
 jmp .L3                          # jump
 .L2:
-cmpq $0, -24(%rsp)               # text != null
+cmpq $0, 32(%rsp)                # text != null
 setne %al                        # flag to byte
-movb %al, -34(%rsp)              # move
+movb %al, 22(%rsp)               # move
 .L3:
-movb -34(%rsp), %cl              # move
+movb 22(%rsp), %cl               # move
 xorl %eax, %eax                  # zero the result
 testb $1, %cl                    # test
-movb %al, -35(%rsp)              # move
+movb %al, 21(%rsp)               # move
 jne .L4                          # branch
 jmp .L5                          # jump
 .L4:
-movl -8(%rsp), %eax              # fields.len
-movq -16(%rsp), %rcx             # fields
+movl 48(%rsp), %eax              # fields.len
+movq 40(%rsp), %rcx              # fields
 cmpl $2, %eax                    # len == 2
 sete %al                         # flag to byte
-movb %al, -35(%rsp)              # move
+movb %al, 21(%rsp)               # move
 .L5:
-movb -35(%rsp), %cl              # move
+movb 21(%rsp), %cl               # move
 xorl %eax, %eax                  # zero the result
 testb $1, %cl                    # test
-movb %al, -36(%rsp)              # move
+movb %al, 20(%rsp)               # move
 jne .L6                          # branch
 jmp .L7                          # jump
 .L6:
-movl -8(%rsp), %eax              # move
-movq -16(%rsp), %rax             # fields
+movl 48(%rsp), %ecx              # len
+movq 40(%rsp), %rax              # fields
+movq %rax, 8(%rsp)               # move
+xorl %eax, %eax                  # index
+cmpl %ecx, %eax                  # bounds
+setge %al                        # flag to byte
+testb $1, %al                    # test
+jne .L7                          # branch
+jmp .L8                          # jump
+.L8:
+# trace frame for the call, then the matching pop
+movq 8(%rsp), %rax               # fields
 leaq (%rip), %rcx                # typeof(i32)
 cmpq %rcx, 16(%rax)              # fields[0].kind
 sete %al                         # flag to byte
-movb %al, -36(%rsp)              # move
+movb %al, 20(%rsp)               # move
+jmp .L7                          # jump
 .L7:
-movb -36(%rsp), %al              # move
+movb 20(%rsp), %al               # move
 testb $1, %al                    # test
-jne .L8                          # branch
-jmp .L9                          # jump
-.L8:
-movl $1, %eax                    # constant
-retq                             # return
-.L9:
+jne .L9                          # branch
 jmp .L10                         # jump
+.L9:
+movl $1, %eax                    # constant
+addq $56, %rsp
+retq                             # return
 .L10:
 xorl %eax, %eax                  # zero the result
+addq $56, %rsp
 retq                             # return
 ```
 

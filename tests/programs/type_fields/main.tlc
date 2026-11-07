@@ -33,7 +33,7 @@ type Row struct {
 };
 
 func main() i32 {
-    var fields = typeof(Point).fields();
+    comptime const fields = typeof(Point).fields();
     var listed []const builtin.Field = fields;
     if (fields.len != 2 || listed.len != 2 || listed[0].kind != typeof(i32)) {
         return 1;
@@ -41,15 +41,15 @@ func main() i32 {
     if (fields[0].kind != typeof(i32) || fields[1].kind != typeof(f32)) {
         return 2;
     }
-    var kind builtin.Type = typeof(Point);
-    var through *builtin.Type = &kind;
+    comptime const kind = typeof(Point);
+    comptime const through = &kind;
     if (through.fields().len != 2 || through.fields()[0].kind != typeof(i32)) {
         return 3;
     }
     if (typeof(i32).fields().len != 0 || typeof(Empty).fields().len != 0 || typeof(Count).fields().len != 0) {
         return 4;
     }
-    var held = typeof(Holder).fields();
+    comptime const held = typeof(Holder).fields();
     if (held.len != 2 || held[0].kind != typeof(Point) || held[1].kind != typeof(*u8)) {
         return 5;
     }
@@ -78,7 +78,7 @@ func main() i32 {
     printf("%s %s\n"b, fields[1].name, fields[1].kind.name());
     printf("%s %s\n"b, held[0].name, held[1].name);
     printf("%s\n"b, typeof(box).fields()[0].name);
-    var described = typeof(builtin.Field).fields();
+    comptime const described = typeof(builtin.Field).fields();
     if (described.len != 2 || described[1].kind != typeof(builtin.Type)) {
         return 12;
     }

@@ -99,6 +99,9 @@ struct Symbol {
     bool fixed_receiver = false;
     // A parameter marked `comptime`. A method or a generic call may forward the name.
     bool comptime_param = false;
+    // `name := expr` while `expr` is a comptime value. A later store or `&name` clears it.
+    // The binding stays assignable. `is_constant` would reject that store.
+    bool held_comptime = false;
     // `var f = fill` when the body is valid only after `n` is substituted.
     // A call specializes. There is no function pointer.
     bool spec_alias = false;
@@ -759,6 +762,11 @@ class Checker {
     bool argument_is_comptime(const Expr &arg);
     // A `var` or a `const` that is not marked `comptime`. A comptime argument does not accept it.
     bool unmarked_comptime_arg(const Expr &expr);
+    // A comptime method is called on this value. `typeof` is one. A `comptime const`, a
+    // `comptime` parameter, and `name := expr` are too. A `var` and a `const` are not.
+    bool comptime_method_base(const Expr &expr);
+    // The receiver and the arguments of a comptime method. `fn` is null for `CompiledType`.
+    void require_comptime_method_call(const Expr::Call &call, const Expr *receiver, const FunctionDecl *fn);
     // A bare local `const` whose initializer folded to `i32`. A `var` is not one.
     // `fold_int` does not see it, so `comptime if` and an array length stay unchanged.
     std::optional<int> folded_local_int(const Expr &expr);
@@ -1129,6 +1137,30 @@ class Checker {
     // Fills checker struct ids on a literal produced by a comptime struct call.
     void stamp_kept_struct(Expr &expr, const Type &type);
     void note_promotable(Symbol &symbol, const Expr *init);
+    // `name := expr` keeps this value until a store or `&name`. A `var` and a `const` do not.
+    void note_held(Symbol &symbol, const Expr &init);
+    std::optional<std::string> held_root(const Expr &expr) const;
+    void release_held_expr(const Expr &expr);
+    // A name this statement assigns, ignoring a nested binding of that same name.
+    bool stmt_assigns(const Stmt &stmt, const std::string &name, bool hidden) const;
+    bool expr_assigns(const Expr &expr, const std::string &name, bool hidden) const;
+    // Drop `name := expr` when `stmt` stores that visible binding. `hide_name` is a `for` item.
+    void release_assigned(const Stmt *stmt, const std::string &hide_name = {});
+    void release_assigned_expr(const Expr *expr);
+    // Another function in this package stores `name`. A `static` name looks at this file only.
+    bool global_assigned(const TranslationUnit &unit, const std::string &name, bool file_only) const;
+    struct HeldSlot {
+        std::size_t scope = 0;
+        std::string name;
+        bool folded = false;
+        int value = 0;
+        const Expr *init = nullptr;
+    };
+    std::vector<HeldSlot> held_snapshot() const;
+    void held_restore(const std::vector<HeldSlot> &snap);
+    // Kept only when both arms still have the value from `before`.
+    void held_and(const std::vector<HeldSlot> &before, const std::vector<HeldSlot> &left,
+                  const std::vector<HeldSlot> &right);
     // `var row = [_]i32{1, 2}`, `var row [3]i32 = {1, 2, 3}`, and `const row = [_]i32{1}`.
     // `declared` is the symbol type when it was already stored.
     Type file_array_initializer(VarDecl &var, const Type *declared);

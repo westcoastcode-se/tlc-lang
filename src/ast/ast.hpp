@@ -161,6 +161,8 @@ struct Expr {
         mutable bool type_fields = false;
         // Set while checking when the callee is `Type.methods()`.
         mutable bool type_methods = false;
+        // A comptime method call whose receiver was a comptime value. The result stays comptime.
+        mutable bool comptime_call = false;
         // The parameter list selected for this call. Null when the name has one list.
         mutable const FunctionDecl *selected = nullptr;
         // `seq.Seq(items)` names that trait. The argument is the value, not a call.
@@ -636,6 +638,8 @@ struct VarDecl {
     std::string link_name;
     // `name := expr` at file scope. The type comes from the initializer.
     bool inferred = false;
+    // `name := expr`, not `var name = expr`. Both set `inferred`.
+    bool colon_eq = false;
     // `var f = id` at file scope. The name is that generic. There is no object.
     bool generic_alias = false;
     // `var f = fill` at file scope when the body needs the substituted parameter. There is no object.

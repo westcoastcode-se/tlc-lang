@@ -44,7 +44,7 @@ func main() i32 {
     if (builtin.TypeKind(*typeof(i32)) != builtin.TypeKind.Other) {
         return 2;
     }
-    var t builtin.Type = typeof(add);
+    comptime const t = typeof(add);
     if (builtin.TypeKind(*t) != builtin.TypeKind.Function || t.Function.has_this || t.Function.generic ||
         t.Function.variadic) {
         return 3;

@@ -278,7 +278,11 @@ A result that is not `i32`, not a `bool`, not a struct, and not a constant `[]co
 
 A `var` or a `const` passed to a `comptime func` is `not supported yet`.
 
-A type parameter, a method, `extern`, and `export` are `not supported yet`.
+`value := 10` and `value := comptime_func()` are comptime until a store or `&value`. `var value = 10` is not. A store in one `if` arm drops the value after the `if`. A store in a loop drops it for the whole loop. At file scope the name stays comptime when no function in the package stores it. `export value := 10` does not.
+
+A type parameter, `extern`, and `export` are `not supported yet`.
+
+A method is `comptime func Point::twice(self this) i32`. The receiver is a `comptime const`, a `comptime` parameter, `typeof`, or `name := expr`. A `var` or a `const` is `not supported yet`.
 
 A call that does not fold is `not supported yet`.
 
@@ -1379,6 +1383,8 @@ binding     = "var" name-list "=" expression ";"
 ```
 
 `name :=` and `var` each define a binding.
+
+`name := expr` is comptime when `expr` is a comptime value, until a store or `&name`. `var name = expr` is not. See [Comptime](functions/comptime.md).
 
 A later one in the same block hides the earlier binding.
 

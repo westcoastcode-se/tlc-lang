@@ -2142,6 +2142,9 @@ Type Checker::finish_static_call(Expr &expr, const MethodInfo &method, bool defe
     if (method.decl != nullptr && compiler_owned_extern(*method.decl)) {
         error(node.loc, "not supported yet");
     }
+    if (method.decl != nullptr && method.decl->is_comptime) {
+        require_comptime_method_call(node, nullptr, method.decl);
+    }
     require_unsafe_call(method.unsafe_fn, node.loc);
     if (deferring && method.type.variadic) {
         error(node.loc, "not supported yet");
@@ -2386,6 +2389,9 @@ Type Checker::finish_value_method(Expr &expr, const Expr::Selector &selector, co
     }
     if (method.decl != nullptr && compiler_owned_extern(*method.decl)) {
         error(node.loc, "not supported yet");
+    }
+    if (method.decl != nullptr && method.decl->is_comptime) {
+        require_comptime_method_call(node, selector.base.get(), method.decl);
     }
     require_unsafe_call(method.unsafe_fn, node.loc);
     if (checking_defer_ && method.type.variadic) {

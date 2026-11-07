@@ -1,0 +1,10 @@
+type Point struct { x i32; };
+
+comptime func Point::twice(self this) i32 {
+    return self.x * 2;
+}
+
+func main() i32 {
+    p := Point{.x = 21};
+    return p.twice();
+}

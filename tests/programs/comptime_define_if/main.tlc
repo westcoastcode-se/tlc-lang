@@ -1,0 +1,14 @@
+comptime func add(n i32) i32 {
+    return n + 32;
+}
+
+func main() i32 {
+    value := 10;
+    cond := 0;
+    if (cond != 0) {
+        value = 1;
+    } else {
+        return add(value);
+    }
+    return 0;
+}

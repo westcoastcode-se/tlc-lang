@@ -14,6 +14,8 @@ Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` 
 
 ## The name and the fields
 
+`name`, `fields`, and `methods` are comptime methods. `typeof(n).name()` calls `name`. `comptime const t = typeof(n)` then `t.name()` calls it. A `var` or a `const` is `not supported yet`.
+
 `t.name()` returns the diagnostic spelling as `*const u8`, and a store through that pointer is `type mismatch`.
 
 `t.fields()` returns `[]const Field`, the fields of a named struct.
@@ -71,7 +73,7 @@ import "builtin";
 
 func main() i32 {
     var n i32 = 1;
-    var t builtin.Type = typeof(n);
+    comptime const t = typeof(n);
     if (typeof(n) == typeof(i32) && t.name() != null) {
         return 1;
     }

@@ -1,0 +1,10 @@
+comptime func add(n i32) i32 {
+    return n + 32;
+}
+
+func main() i32 {
+    value := 10;
+    p := &value;
+    var sink = p;
+    return add(value) + (sink == null ? 0 : 0);
+}

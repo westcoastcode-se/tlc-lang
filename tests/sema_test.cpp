@@ -8013,7 +8013,7 @@ int run_sema_tests() {
             "import \"builtin\";\n"
             "func main() i32 {\n"
             "  var n i32 = 1;\n"
-            "  var t builtin.Type = typeof(n);\n"
+            "  comptime const t = typeof(n);\n"
             "  var text *const u8 = t.name();\n"
             "  if (t == typeof(i32) && typeof('A') == typeof(u8) && typeof('A') != typeof(i8)) {\n"
             "    return 0;\n"

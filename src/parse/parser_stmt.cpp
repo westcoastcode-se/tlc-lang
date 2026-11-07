@@ -831,6 +831,7 @@ void Parser::parse_inferred_global(TranslationUnit &unit, bool is_static, bool f
     VarDecl var;
     var.loc = peek().loc;
     var.inferred = true;
+    var.colon_eq = !from_var;
     var.is_static = is_static;
     var.exported = exported;
     if (from_var) {

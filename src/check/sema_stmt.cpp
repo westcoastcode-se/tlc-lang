@@ -360,6 +360,8 @@ void Checker::check_for_each(const Stmt::For &node) {
         }
     }
     if (node.body) {
+        // `for item : items` hides an outer `item`. A store of `item` is that loop binding.
+        release_assigned(node.body.get(), node.each_name);
         check_stmt(*node.body);
     }
     const FlowFrame done = std::move(flow_frames_.back());
@@ -1998,6 +2000,8 @@ void Checker::check_switch(const Stmt::Switch &node) {
         }
     }
     const bool has_default = init_has_default(node.body.get());
+    // A store in any case can be the one that runs. Uses in the switch are not comptime then.
+    release_assigned(node.body.get());
     FlowFrame frame;
     frame.kind = FlowFrame::Kind::Switch;
     frame.entry = assign_;
@@ -2275,16 +2279,22 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                 }
                 const std::optional<NullGuard> guard = null_guard(node.cond.get());
+                // A store in one arm drops the comptime value after the `if`. The other arm still sees it.
+                const std::vector<HeldSlot> held_before = held_snapshot();
                 if (!guard) {
                     assign_ = on_true;
                     if (node.then_arm) {
                         check_stmt(*node.then_arm);
                     }
+                    const std::vector<HeldSlot> held_then = held_snapshot();
                     const AssignState then_out = assign_;
+                    held_restore(held_before);
                     assign_ = on_false;
                     if (node.else_arm) {
                         check_stmt(*node.else_arm);
                     }
+                    const std::vector<HeldSlot> held_else = node.else_arm ? held_snapshot() : held_before;
+                    held_and(held_before, held_then, held_else);
                     const AssignState else_out = node.else_arm ? assign_ : on_false;
                     assign_ = init_merge(then_out, else_out);
                 } else if (guard->equal_null) {
@@ -2292,7 +2302,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (node.then_arm) {
                         check_stmt(*node.then_arm);
                     }
+                    const std::vector<HeldSlot> held_then = held_snapshot();
                     const AssignState then_out = assign_;
+                    held_restore(held_before);
                     assign_ = on_false;
                     if (node.else_arm) {
                         const bool narrowed = narrow_optional(guard->name);
@@ -2301,6 +2313,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                             restore_optional(guard->name);
                         }
                     }
+                    const std::vector<HeldSlot> held_else = node.else_arm ? held_snapshot() : held_before;
+                    held_and(held_before, held_then, held_else);
                     const AssignState else_out = node.else_arm ? assign_ : on_false;
                     assign_ = init_merge(then_out, else_out);
                     if (node.then_arm && always_exits(node.then_arm.get())) {
@@ -2315,11 +2329,15 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (narrowed) {
                         restore_optional(guard->name);
                     }
+                    const std::vector<HeldSlot> held_then = held_snapshot();
                     const AssignState then_out = assign_;
+                    held_restore(held_before);
                     assign_ = on_false;
                     if (node.else_arm) {
                         check_stmt(*node.else_arm);
                     }
+                    const std::vector<HeldSlot> held_else = node.else_arm ? held_snapshot() : held_before;
+                    held_and(held_before, held_then, held_else);
                     const AssignState else_out = node.else_arm ? assign_ : on_false;
                     assign_ = init_merge(then_out, else_out);
                     if (node.else_arm && always_exits(node.else_arm.get())) {
@@ -2344,6 +2362,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                 AssignState on_true = assign_;
                 AssignState on_false = assign_;
                 bool can_fail = false;
+                // A store in the condition or the body can run again. Drop the comptime value first.
+                release_assigned_expr(node.cond.get());
+                release_assigned(node.body.get());
                 if (node.cond) {
                     expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
                     on_true = cond_true_;
@@ -2392,6 +2413,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     int saved;
                     ~RestoreMacro() { slot = saved; }
                 } restore{macro_depth_, saved_macro};
+                // The body runs, then the condition. A store in either is visible on the next entry.
+                release_assigned(node.body.get());
+                release_assigned_expr(node.cond.get());
                 FlowFrame frame;
                 frame.kind = FlowFrame::Kind::Loop;
                 flow_frames_.push_back(std::move(frame));
@@ -2498,6 +2522,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_stmt(*node.init);
                     macro_depth_ = saved_macro;
                 }
+                // `i = i + 1` in the step stores the loop binding. The condition sees that store.
+                release_assigned_expr(node.cond.get());
+                release_assigned(node.body.get());
+                release_assigned_expr(node.step.get());
                 AssignState on_true = assign_;
                 AssignState on_false = assign_;
                 bool can_fail = false;
@@ -2816,6 +2844,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     } else if (node.is_const && !node.is_comptime) {
                         note_promotable(symbol, node.value.get());
+                    } else if (node.is_define && node.names.size() == 1 && node.value != nullptr) {
+                        note_held(symbol, *node.value);
                     }
                     declare(std::move(symbol), loc);
                     if (!node.is_const && node.names.size() == 1 && node.value != nullptr) {
@@ -2847,6 +2877,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.is_auto = true;
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     symbol.loc = loc;
+                    if (node.is_define && node.names.size() == 1 && node.value != nullptr) {
+                        note_held(symbol, *node.value);
+                    }
                     shadow(std::move(symbol), loc);
                     if (node.names.size() == 1 && node.value != nullptr) {
                         if (Symbol *live = in_current(node.names[index])) {
@@ -2879,6 +2912,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                             error(loc, "undeclared identifier");
                         } else {
                             assignable(*existing, loc, parts[i]);
+                            if (Symbol *live = lookup(node.names[i]); live != nullptr) {
+                                live->held_comptime = false;
+                                live->folded_local = false;
+                            }
                         }
                     }
                 }

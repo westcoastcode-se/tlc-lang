@@ -951,6 +951,7 @@ VarDecl clone_var(const VarDecl &var) {
     copy.extern_c = var.extern_c;
     copy.link_name = var.link_name;
     copy.inferred = var.inferred;
+    copy.colon_eq = var.colon_eq;
     copy.generic_alias = var.generic_alias;
     copy.spec_alias = var.spec_alias;
     copy.is_const_decl = var.is_const_decl;

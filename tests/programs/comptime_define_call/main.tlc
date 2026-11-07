@@ -1,0 +1,8 @@
+comptime func add(n i32) i32 {
+    return n + 32;
+}
+
+func main() i32 {
+    value := add(10);
+    return value;
+}

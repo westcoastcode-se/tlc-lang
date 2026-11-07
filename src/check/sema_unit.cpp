@@ -861,6 +861,12 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             if (var->is_const_decl && !var->is_comptime) {
                 note_promotable(symbol, var->init.get());
             }
+            // `name := 10` stays comptime when no function in the package stores it.
+            // `export` can be assigned from another package, so that name stays runtime.
+            if (var->colon_eq && !var->exported && !var->is_extern && var->owner.empty() && var->init != nullptr &&
+                symbol.type.kind != TypeKind::Invalid && !global_assigned(unit, var->name, var->is_static)) {
+                note_held(symbol, *var->init);
+            }
             symbol.link_name = var->link_name;
             bool defined = false;
             if (var->is_static) {
@@ -1518,6 +1524,12 @@ bool Checker::constant_operand(const Expr &expr) {
                 return number.has_value() && number->is_float;
             } else if constexpr (std::is_same_v<T, Expr::Name>) {
                 const Symbol *symbol = lookup(node.text);
+                if (symbol != nullptr && symbol->held_comptime && symbol->const_init != nullptr) {
+                    if (const auto *again = std::get_if<Expr::Name>(&symbol->const_init->data);
+                        again == nullptr || again->text != node.text) {
+                        return constant_operand(*symbol->const_init);
+                    }
+                }
                 return symbol != nullptr && (symbol->is_constant || symbol->is_function);
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
                 if (node.len_value >= 0) {
@@ -1629,10 +1641,14 @@ void Checker::check_globals(const TranslationUnit &unit) {
     };
     for (const TopDecl &decl : unit.decls) {
         if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
-            if (fn->is_comptime &&
-                (!fn->method_struct.empty() || fn->is_extern || !fn->type_params.empty() || fn->exported)) {
-                error(fn->loc, "not supported yet");
-                continue;
+            if (fn->is_comptime) {
+                // `extern(abi="compiler")` supplies `CompiledType.name` and the other type methods.
+                const bool compiler_method = fn->extern_compiler && !fn->method_struct.empty();
+                if (!fn->type_params.empty() || (fn->is_extern && !compiler_method) ||
+                    (fn->exported && !compiler_method)) {
+                    error(fn->loc, "not supported yet");
+                    continue;
+                }
             }
             // A macro may take a type parameter so a tuple argument can be `T`.
             if (fn->is_macro && (!fn->method_struct.empty() || fn->is_extern || fn->exported)) {

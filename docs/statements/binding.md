@@ -162,6 +162,12 @@ Assigning the local const is reported as `type mismatch`.
 
 `name := expr` defines a new name.
 
+When `expr` is a comptime value, the name stays comptime until a store or `&name`.
+
+`value := 10` passed to a `comptime func` folds. `value = 3` before that call is `not supported yet`.
+
+`var value = 10` does not fold. See [Comptime](../functions/comptime.md).
+
 A later `var` or `:=` in the same block hides the earlier binding for the rest of the block.
 
 > **Warning:** `var n = 1` then `var n = n + 1`, `n := n + 1`, and `var n i32 = n + 1` read the previous `n`.

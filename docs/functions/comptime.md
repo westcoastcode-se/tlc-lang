@@ -28,9 +28,74 @@ A `var` is not a comptime value.
 
 A `const` is not a comptime value, until `comptime const folded = name`.
 
+`value := 10` is a comptime value until a store or `&value` changes it.
+
+`value := comptime_func()` is that binding when the call folds.
+
+A use before the store stays a comptime value.
+
+`value = 1`, `value += 1`, `++value`, and `&value` make a later use a runtime value.
+
+A store in one arm of `if` drops the value after the `if`. The other arm still sees it.
+
+A store in a loop drops the value for the whole loop.
+
+At file scope, `value := 10` is comptime when no function in the package stores it.
+
+`export value := 10` is not a comptime value.
+
 A `var` or a `const` passed to a `comptime func` is `not supported yet`.
 
 A `var` or a `const` passed to a `comptime` parameter on an ordinary function is `type mismatch`.
+
+```c
+comptime func add(n i32) i32 {
+    return n + 32;
+}
+
+func main() i32 {
+    value := 10;
+    return add(value);
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
+```c
+comptime func add(n i32) i32 {
+    return n + 32;
+}
+
+func main() i32 {
+    value := 10;
+    value = 3;
+    return add(value);
+}
+```
+
+`value = 3` before `add(value)` emits nothing. The call is `not supported yet`.
+
+```c
+comptime func add(n i32) i32 {
+    return n + 32;
+}
+
+func main() i32 {
+    value := add(10);
+    return value;
+}
+```
+
+```asm
+main:
+movl $42, -4(%rsp)               # value
+movl -4(%rsp), %eax              # return
+retq                             # return
+```
 
 A `comptime const` whose initializer folds to `i32` is a comptime argument, at file scope and inside a function.
 
@@ -188,7 +253,7 @@ A result that is not `i32`, not a `bool`, not a struct, and not a constant `[]co
 
 `emit` is not valid in a `comptime func`.
 
-A type parameter, a method, `extern`, and `export` are `not supported yet`.
+A type parameter, `extern`, and `export` are `not supported yet`. A method is described below.
 
 A call that does not fold is `not supported yet`.
 
@@ -547,7 +612,65 @@ A data pointer field is `global initializer is not a constant`.
 
 A union result is `global initializer is not a constant`.
 
-A method, `extern`, and `export` on that `comptime func` are `not supported yet`.
+## A comptime method
+
+A method is `comptime func Point::twice(self this) i32`.
+
+The receiver is a `comptime const`, a `comptime` parameter, `typeof`, or `name := expr`. A type is known while compiling, so `typeof` is that value.
+
+A `var` or a `const` is `not supported yet`.
+
+`extern` and `export` on that method are `not supported yet`.
+
+```c
+type Point struct { x i32; };
+
+comptime func Point::twice(self this) i32 {
+    return self.x * 2;
+}
+
+func main() i32 {
+    comptime const p = Point{.x = 21};
+    return p.twice();
+}
+```
+
+```asm
+main:
+subq $40, %rsp
+movl $21, 24(%rsp)               # p.x
+movl 24(%rsp), %eax              # move
+movl %eax, 32(%rsp)              # move
+movl 32(%rsp), %eax              # move
+movl %eax, 12(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 12(%rsp), %edi              # move
+callq main.Point.twice           # call Point.twice
+movl 8(%rsp), %eax               # move
+addq $40, %rsp
+retq                             # return
+
+main.Point.twice:
+movl %edi, -8(%rsp)              # self.x
+movl -8(%rsp), %eax              # move
+shll %eax                        # shift
+retq                             # return
+```
+
+`self.x` is loaded and shifted left by one.
+
+The program returns 42.
+
+```c
+func main() i32 {
+    var p = Point{.x = 21};
+    return p.twice();
+}
+```
+
+That program emits nothing.
+
+`extern` and `export` on a `comptime func` are `not supported yet`.
 
 ## A tuple on a comptime function
 

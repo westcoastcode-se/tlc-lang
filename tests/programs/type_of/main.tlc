@@ -19,13 +19,13 @@ func id[T type](value T) i32 {
     return 0;
 }
 
-func take(value builtin.Type) *const u8 {
+func take(comptime value builtin.Type) *const u8 {
     return value.name();
 }
 
 func main() i32 {
     var n i32 = 1;
-    var t builtin.Type = typeof(n);
+    comptime const t = typeof(n);
     var p ?*i32 = null;
     var a [4]i32;
     var box Box[i32];
@@ -51,7 +51,7 @@ func main() i32 {
     if (take(typeof(i32)) != take(t)) {
         return 7;
     }
-    var through *builtin.Type = &t;
+    comptime const through = &t;
     if (through.name() != t.name()) {
         return 8;
     }

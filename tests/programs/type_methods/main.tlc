@@ -53,8 +53,8 @@ func main() i32 {
     if (typeof(i32).methods().len != 0 || typeof(Point).fields().len != 2) {
         return 4;
     }
-    var kind builtin.Type = typeof(Point);
-    var through *builtin.Type = &kind;
+    comptime const kind = typeof(Point);
+    comptime const through = &kind;
     if (through.methods().len != 2 || through.methods()[0].kind != typeof(Point.sum)) {
         return 5;
     }

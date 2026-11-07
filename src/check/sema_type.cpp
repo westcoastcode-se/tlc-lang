@@ -195,9 +195,9 @@ bool type_param_t(const FunctionDecl &fn) {
            param.constraint.empty();
 }
 
-bool compiler_header(const FunctionDecl &fn, bool want_body) {
+bool compiler_header(const FunctionDecl &fn, bool want_body, bool comptime = false) {
     return fn.extern_compiler && fn.is_extern && !fn.extern_c && fn.link_name.empty() && !fn.variadic && !fn.is_macro &&
-           !fn.is_comptime && !fn.is_static && fn.exported && (fn.body != nullptr) == want_body;
+           fn.is_comptime == comptime && !fn.is_static && fn.exported && (fn.body != nullptr) == want_body;
 }
 
 bool pointer_receiver(const FunctionDecl &fn, bool constant) {
@@ -433,8 +433,8 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
             continue;
         }
         if (fn->method_struct == "CompiledType") {
-            const bool head = compiler_header(*fn, false) && fn->type_params.empty() && pointer_receiver(*fn, true) &&
-                              value_count(*fn) == 0 && !fn->unsafe;
+            const bool head = compiler_header(*fn, false, true) && fn->type_params.empty() &&
+                              pointer_receiver(*fn, true) && value_count(*fn) == 0 && !fn->unsafe;
             if (fn->name == "name") {
                 keep("CompiledType.name", head && result_ptr(*fn, "u8", false, true), fn->loc);
             } else if (fn->name == "fields") {

@@ -342,7 +342,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
-                    return increment_operand(*node.expr);
+                    const Type got = increment_operand(*node.expr);
+                    // `++value` changes `value := expr`. Later uses are not comptime.
+                    release_held_expr(*node.expr);
+                    return got;
                 }
                 if (node.op == TokenKind::Bang && node.postfix) {
                     const Type inner = check_expr(*node.expr, true);
@@ -374,6 +377,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return *inner.pointee;
                 }
                 if (node.op == TokenKind::Amp) {
+                    // `&value` can change `value := expr` through that pointer. Later uses are not comptime.
+                    if (node.expr != nullptr) {
+                        release_held_expr(*node.expr);
+                    }
                     // `comptime const` has an address. `&name` is a comptime pointer when `name` is one.
                     if (const auto *selector = std::get_if<Expr::Selector>(&node.expr->data)) {
                         if (selector->base != nullptr && enum_designator(*selector->base) >= 0) {
@@ -507,16 +514,26 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     Type else_type;
                     AssignState then_out;
                     AssignState else_out;
+                    // One arm can store. The other arm still sees the value from before the `?`.
+                    const std::vector<HeldSlot> held_before = held_snapshot();
                     if (!have_guard || guard_null) {
                         then_type = check_arm(*node.mid, on_true, false);
                         then_out = assign_;
+                        const std::vector<HeldSlot> held_then = held_snapshot();
+                        held_restore(held_before);
                         else_type = check_arm(*node.rhs, on_false, have_guard);
                         else_out = assign_;
+                        const std::vector<HeldSlot> held_else = held_snapshot();
+                        held_and(held_before, held_then, held_else);
                     } else {
                         then_type = check_arm(*node.mid, on_true, true);
                         then_out = assign_;
+                        const std::vector<HeldSlot> held_then = held_snapshot();
+                        held_restore(held_before);
                         else_type = check_arm(*node.rhs, on_false, false);
                         else_out = assign_;
+                        const std::vector<HeldSlot> held_else = held_snapshot();
+                        held_and(held_before, held_then, held_else);
                     }
                     assign_ = init_merge(then_out, else_out);
                     cond_split_ = false;
@@ -743,6 +760,17 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return common;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                // The right side still sees `value := expr`. The store drops it afterwards.
+                struct ReleaseHeld {
+                    Checker *self;
+                    const Expr *lhs;
+                    ~ReleaseHeld() {
+                        if (self != nullptr && lhs != nullptr) {
+                            self->release_held_expr(*lhs);
+                        }
+                    }
+                } release{this, node.lhs.get()};
+                (void)release;
                 if (node.op != TokenKind::Eq) {
                     if (node.lhs == nullptr || node.rhs == nullptr) {
                         error(node.loc, "type mismatch");
@@ -1113,8 +1141,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             check_call_arg(*node.args[i], type_of_param(fn->params[i]));
                             if (diags_.size() == before &&
                                 (unmarked_comptime_arg(*node.args[i]) ||
-                                 (!argument_is_comptime(*node.args[i]) && !folded_local_int(*node.args[i]) &&
-                                  !comptime_constant(*node.args[i]) && !fold_switch_case(*node.args[i])))) {
+                                 (!comptime_method_base(*node.args[i]) && !argument_is_comptime(*node.args[i]) &&
+                                  !folded_local_int(*node.args[i]) && !comptime_constant(*node.args[i]) &&
+                                  !fold_switch_case(*node.args[i])))) {
                                 error(expr_loc(*node.args[i]), "not supported yet");
                             }
                         }
@@ -1477,6 +1506,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 return type_invalid();
                             }
+                            // `name`, `fields`, and `methods` are comptime methods. `typeof` is a type.
+                            const std::size_t base_mark = diags_.size();
+                            require_comptime_method_call(node, selector->base.get(), nullptr);
+                            if (diags_.size() != base_mark) {
+                                return type_invalid();
+                            }
                             if (selector->field == "fields" || selector->field == "methods") {
                                 const Type slice = selector->field == "fields" ? type_field_slice() : type_method_slice();
                                 if (slice.kind == TypeKind::Invalid) {
@@ -1699,6 +1734,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 selector->resolved_file = method->file_id;
                                 const std::size_t call_mark = diags_.size();
+                                if (method->decl != nullptr && method->decl->is_comptime) {
+                                    require_comptime_method_call(node, selector->base.get(), method->decl);
+                                }
                                 if (method->decl != nullptr && compiler_owned_extern(*method->decl)) {
                                     error(node.loc, "not supported yet");
                                 }

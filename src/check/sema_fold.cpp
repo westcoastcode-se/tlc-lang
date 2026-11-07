@@ -691,6 +691,12 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
         return std::nullopt;
     }
     const Symbol *symbol = lookup(named->text);
+    // `text := "hi"` is that string until a store. A `var` and a `const` are not.
+    if (symbol != nullptr && symbol->held_comptime && symbol->const_init != nullptr) {
+        std::optional<std::string> bytes = constant_string(*symbol->const_init, seen);
+        seen.erase(named->text);
+        return bytes;
+    }
     // A local `const` and a `var` are not a compile-time string. A file-scope `const` is.
     if (symbol == nullptr || symbol->is_auto || symbol->is_function || symbol->is_type || symbol->is_package) {
         seen.erase(named->text);
@@ -912,12 +918,14 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 return static_cast<int>(node.value);
             } else if constexpr (std::is_same_v<T, Expr::Name>) {
                 const Symbol *symbol = lookup(node.text);
-                if (symbol != nullptr && symbol->is_constant && plain_int_constant(symbol->type)) {
+                // `name := 10` folds until a store. A `var` and a `const` do not.
+                const bool held = symbol != nullptr && (symbol->is_constant || (symbol->held_comptime && symbol->folded_local));
+                if (held && plain_int_constant(symbol->type)) {
                     return symbol->const_value;
                 }
                 // `comptime const ok = yes()` when `yes` returns `bool`. The value is 0 or 1.
-                if (symbol != nullptr && symbol->is_constant && symbol->folded_local && symbol->type.alias_id == 0 &&
-                    symbol->type.kind == TypeKind::Bool) {
+                if (symbol != nullptr && (symbol->is_constant || symbol->held_comptime) && symbol->folded_local &&
+                    symbol->type.alias_id == 0 && symbol->type.kind == TypeKind::Bool) {
                     return symbol->const_value;
                 }
                 return std::nullopt;
@@ -1442,7 +1450,8 @@ const Expr *Checker::comptime_tuple_element(const Expr &expr) {
         }
         if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
             const Symbol *symbol = lookup(named->text);
-            const Expr *init_expr = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
+            const Expr *init_expr =
+                symbol != nullptr && (symbol->is_constant || symbol->held_comptime) ? symbol->const_init : nullptr;
             if (init_expr == nullptr) {
                 if (const VarDecl *var = global_var(named->text); var != nullptr && var->is_comptime) {
                     init_expr = var->init.get();
@@ -1623,6 +1632,13 @@ bool Checker::comptime_constant(const Expr &expr) {
         if (symbol == nullptr) {
             return false;
         }
+        // `name := Point{.x = 1}` is that literal until a store. The name is not `is_constant`.
+        if (symbol->held_comptime && symbol->const_init != nullptr) {
+            if (const auto *again = std::get_if<Expr::Name>(&symbol->const_init->data);
+                again == nullptr || again->text != named->text) {
+                return comptime_constant(*symbol->const_init);
+            }
+        }
         // `add`. A local function is not a file-scope constant.
         if (symbol->is_function && !symbol->is_local_function && symbol->function_id == 0) {
             return true;
@@ -1777,7 +1793,7 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
             break;
         }
         const Symbol *symbol = lookup(named->text);
-        if (symbol == nullptr || !symbol->is_constant) {
+        if (symbol == nullptr || (!symbol->is_constant && !symbol->held_comptime)) {
             // A file-scope const struct is its initializer. A local const is not.
             if (symbol != nullptr && !symbol->is_auto && symbol->type.kind == TypeKind::Struct) {
                 if (const VarDecl *var = global_var(named->text);
@@ -2186,10 +2202,11 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
         // a forwarded comptime name. An enumerator then builds a copy that drops the parameter.
         // A struct, a float, an alias, a function, or a tuple is `comptime_constant`. An enumerator is not.
         const bool accepted = !unmarked_comptime_arg(*call.args[i]) &&
-                              (fn.method_struct.empty()
-                                   ? argument_is_comptime(*call.args[i]) || folded_local_int(*call.args[i]) ||
-                                         comptime_constant(*call.args[i])
-                                   : comptime_kept_argument(*call.args[i]) || comptime_constant(*call.args[i]));
+                              (comptime_method_base(*call.args[i]) ||
+                               (fn.method_struct.empty()
+                                    ? argument_is_comptime(*call.args[i]) || folded_local_int(*call.args[i]) ||
+                                          comptime_constant(*call.args[i])
+                                    : comptime_kept_argument(*call.args[i]) || comptime_constant(*call.args[i])));
         if (!accepted) {
             error(expr_loc(*call.args[i]), "type mismatch");
         }
@@ -2666,6 +2683,14 @@ const Expr *Checker::comptime_pointee(const Expr &pointer, std::unordered_set<st
 }
 
 bool Checker::strict_comptime_expr(const Expr &expr) {
+    // Every type is known while compiling. `typeof` is that value.
+    if (std::holds_alternative<Expr::Typeof>(expr.data)) {
+        return true;
+    }
+    // A comptime method already checked its receiver. The result is that value.
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data); call != nullptr && call->comptime_call) {
+        return true;
+    }
     if (fold_int(expr) || fold_switch_case(expr)) {
         return true;
     }
@@ -2693,7 +2718,7 @@ bool Checker::unmarked_comptime_arg(const Expr &expr) {
                 if constexpr (std::is_same_v<T, Expr::Name>) {
                     const Symbol *symbol = lookup(item.text);
                     if (symbol == nullptr || symbol->is_package || symbol->is_type || symbol->is_function ||
-                        symbol->comptime_param || symbol->is_constant) {
+                        symbol->comptime_param || symbol->is_constant || symbol->held_comptime) {
                         return false;
                     }
                     return true;
@@ -2765,6 +2790,72 @@ bool Checker::unmarked_comptime_arg(const Expr &expr) {
     return walk(walk, expr, 0);
 }
 
+bool Checker::comptime_method_base(const Expr &expr) {
+    // `typeof` is a type, and every type is known while compiling. A `comptime const` and a
+    // `comptime` parameter are the variables a comptime method may use. A field or an index of
+    // one stays that value. A call marked `comptime_call` is the result of such a method.
+    const auto walk = [&](const auto &self, const Expr &node, int depth) -> bool {
+        if (depth > 32) {
+            return false;
+        }
+        return std::visit(
+            [&](const auto &item) -> bool {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                    return true;
+                } else if constexpr (std::is_same_v<T, Expr::Name>) {
+                    const Symbol *symbol = lookup(item.text);
+                    return symbol != nullptr && (symbol->is_constant || symbol->comptime_param || symbol->held_comptime);
+                } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    return item.base != nullptr && self(self, *item.base, depth + 1);
+                } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                    if (item.base == nullptr || !self(self, *item.base, depth + 1)) {
+                        return false;
+                    }
+                    const auto slot = [&](const Expr *bound) {
+                        return bound == nullptr || (!unmarked_comptime_arg(*bound) &&
+                                                    (fold_int(*bound) || folded_local_int(*bound) ||
+                                                     argument_is_comptime(*bound)));
+                    };
+                    return slot(item.index.get()) && slot(item.end.get());
+                } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                    return !item.postfix && item.op == TokenKind::Star && item.expr != nullptr &&
+                           self(self, *item.expr, depth + 1);
+                } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    return item.comptime_call;
+                } else {
+                    return false;
+                }
+            },
+            node.data);
+    };
+    return walk(walk, expr, 0);
+}
+
+void Checker::require_comptime_method_call(const Expr::Call &call, const Expr *receiver, const FunctionDecl *fn) {
+    const std::size_t before = diags_.size();
+    // `CompiledType.name` has a receiver and no `FunctionDecl` at this call. A static method does not.
+    const bool wants_receiver = fn == nullptr || (!fn->params.empty() && fn->params.front().is_receiver);
+    if (wants_receiver && (receiver == nullptr || !comptime_method_base(*receiver))) {
+        error(call.loc, "not supported yet");
+    }
+    if (fn != nullptr && fn->is_comptime) {
+        for (const auto &arg : call.args) {
+            if (arg == nullptr) {
+                continue;
+            }
+            if (unmarked_comptime_arg(*arg) ||
+                (!comptime_method_base(*arg) && !argument_is_comptime(*arg) && !folded_local_int(*arg) &&
+                 !comptime_constant(*arg) && !fold_switch_case(*arg))) {
+                error(expr_loc(*arg), "not supported yet");
+            }
+        }
+    }
+    if (diags_.size() == before) {
+        call.comptime_call = true;
+    }
+}
+
 void Checker::note_promotable(Symbol &symbol, const Expr *init) {
     if (init == nullptr || symbol.is_constant) {
         return;
@@ -2787,6 +2878,455 @@ void Checker::note_promotable(Symbol &symbol, const Expr *init) {
         symbol.promote_init = init;
         symbol.const_value = *value;
         symbol.folded_init = true;
+    }
+}
+
+void Checker::note_held(Symbol &symbol, const Expr &init) {
+    // `var name = 10` and `const name = 10` stay runtime. Only `name := expr` calls this.
+    if (!strict_comptime_expr(init) && !comptime_method_base(init)) {
+        return;
+    }
+    symbol.held_comptime = true;
+    symbol.const_init = &init;
+    if (plain_int_constant(symbol.type) || (symbol.type.kind == TypeKind::Bool && symbol.type.alias_id == 0)) {
+        if (const std::optional<int> value = constant_index(init)) {
+            symbol.folded_local = true;
+            symbol.const_value = symbol.type.kind == TypeKind::Bool ? (*value != 0 ? 1 : 0) : *value;
+        }
+    }
+}
+
+std::optional<std::string> Checker::held_root(const Expr &expr) const {
+    const Expr *cursor = &expr;
+    for (int depth = 0; cursor != nullptr && depth < 32; ++depth) {
+        if (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
+            return named->text;
+        }
+        if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
+            cursor = selector->base.get();
+            continue;
+        }
+        if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+            cursor = index->base.get();
+            continue;
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+void Checker::release_held_expr(const Expr &expr) {
+    const std::optional<std::string> root = held_root(expr);
+    if (!root) {
+        return;
+    }
+    Symbol *symbol = lookup(*root);
+    if (symbol == nullptr || !symbol->held_comptime) {
+        return;
+    }
+    symbol->held_comptime = false;
+    symbol->folded_local = false;
+}
+
+bool Checker::expr_assigns(const Expr &expr, const std::string &name, bool hidden) const {
+    if (hidden) {
+        return false;
+    }
+    const auto rooted = [&](const Expr &node) {
+        const std::optional<std::string> root = held_root(node);
+        return root && *root == name;
+    };
+    return std::visit(
+        [&](const auto &item) -> bool {
+            using T = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<T, Expr::Assign>) {
+                if (item.lhs != nullptr && rooted(*item.lhs)) {
+                    return true;
+                }
+                return (item.lhs != nullptr && expr_assigns(*item.lhs, name, false)) ||
+                       (item.rhs != nullptr && expr_assigns(*item.rhs, name, false));
+            } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (item.expr == nullptr) {
+                    return false;
+                }
+                if (!item.postfix &&
+                    (item.op == TokenKind::PlusPlus || item.op == TokenKind::MinusMinus || item.op == TokenKind::Amp) &&
+                    rooted(*item.expr)) {
+                    return true;
+                }
+                return expr_assigns(*item.expr, name, false);
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                return (item.lhs != nullptr && expr_assigns(*item.lhs, name, false)) ||
+                       (item.rhs != nullptr && expr_assigns(*item.rhs, name, false)) ||
+                       (item.mid != nullptr && expr_assigns(*item.mid, name, false));
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (item.callee != nullptr && expr_assigns(*item.callee, name, false)) {
+                    return true;
+                }
+                for (const auto &arg : item.args) {
+                    if (arg != nullptr && expr_assigns(*arg, name, false)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                return item.base != nullptr && expr_assigns(*item.base, name, false);
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof> ||
+                                 std::is_same_v<T, Expr::Cast>) {
+                return item.expr != nullptr && expr_assigns(*item.expr, name, false);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                return (item.base != nullptr && expr_assigns(*item.base, name, false)) ||
+                       (item.index != nullptr && expr_assigns(*item.index, name, false)) ||
+                       (item.end != nullptr && expr_assigns(*item.end, name, false));
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                for (const Expr::FieldInit &field : item.fields) {
+                    if (field.value != nullptr && expr_assigns(*field.value, name, false)) {
+                        return true;
+                    }
+                }
+                for (const auto &element : item.elements) {
+                    if (element != nullptr && expr_assigns(*element, name, false)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                return (item.allocator != nullptr && expr_assigns(*item.allocator, name, false)) ||
+                       (item.count != nullptr && expr_assigns(*item.count, name, false)) ||
+                       (item.init != nullptr && expr_assigns(*item.init, name, false));
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                return (item.allocator != nullptr && expr_assigns(*item.allocator, name, false)) ||
+                       (item.expr != nullptr && expr_assigns(*item.expr, name, false));
+            } else if constexpr (std::is_same_v<T, Expr::Func>) {
+                if (item.decl == nullptr || item.decl->body == nullptr) {
+                    return false;
+                }
+                bool hide = false;
+                for (const Param &param : item.decl->params) {
+                    if (param.name == name) {
+                        hide = true;
+                    }
+                }
+                return stmt_assigns(*item.decl->body, name, hide);
+            } else {
+                return false;
+            }
+        },
+        expr.data);
+}
+
+bool Checker::stmt_assigns(const Stmt &stmt, const std::string &name, bool hidden) const {
+    // A parameter or an inner `name :=` hides the outer binding. Its stores are not that outer name.
+    if (hidden) {
+        return false;
+    }
+    const auto defines = [&](const Stmt &node) {
+        if (const auto *bind = std::get_if<Stmt::Bind>(&node.data)) {
+            if (bind->is_var || bind->is_define || bind->is_const) {
+                for (const std::string &one : bind->names) {
+                    if (one == name) {
+                        return true;
+                    }
+                }
+            }
+        }
+        if (const auto *decl = std::get_if<Stmt::Decl>(&node.data)) {
+            for (const VarDecl &var : decl->vars) {
+                if (var.name == name) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                bool hide = false;
+                for (const auto &child : node.statements) {
+                    if (child == nullptr) {
+                        continue;
+                    }
+                    if (stmt_assigns(*child, name, hide)) {
+                        return true;
+                    }
+                    if (defines(*child)) {
+                        hide = true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                if (node.value != nullptr && expr_assigns(*node.value, name, false)) {
+                    return true;
+                }
+                if (node.is_var || node.is_define || node.is_const) {
+                    return false;
+                }
+                for (const std::string &one : node.names) {
+                    if (one == name) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                for (const VarDecl &var : node.vars) {
+                    if (var.init != nullptr && expr_assigns(*var.init, name, false)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                return node.expr != nullptr && expr_assigns(*node.expr, name, false);
+            } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                if (node.value != nullptr && expr_assigns(*node.value, name, false)) {
+                    return true;
+                }
+                for (const auto &extra : node.extra) {
+                    if (extra != nullptr && expr_assigns(*extra, name, false)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (node.cond != nullptr && expr_assigns(*node.cond, name, false)) {
+                    return true;
+                }
+                return (node.then_arm != nullptr && stmt_assigns(*node.then_arm, name, false)) ||
+                       (node.else_arm != nullptr && stmt_assigns(*node.else_arm, name, false));
+            } else if constexpr (std::is_same_v<T, Stmt::While>) {
+                return (node.cond != nullptr && expr_assigns(*node.cond, name, false)) ||
+                       (node.body != nullptr && stmt_assigns(*node.body, name, false));
+            } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
+                return (node.body != nullptr && stmt_assigns(*node.body, name, false)) ||
+                       (node.cond != nullptr && expr_assigns(*node.cond, name, false));
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.each) {
+                    if (node.each_expr != nullptr && expr_assigns(*node.each_expr, name, false)) {
+                        return true;
+                    }
+                    return node.body != nullptr && stmt_assigns(*node.body, name, node.each_name == name);
+                }
+                bool hide = false;
+                if (node.init != nullptr) {
+                    if (stmt_assigns(*node.init, name, false)) {
+                        return true;
+                    }
+                    if (defines(*node.init)) {
+                        hide = true;
+                    }
+                }
+                return (node.cond != nullptr && expr_assigns(*node.cond, name, hide)) ||
+                       (node.body != nullptr && stmt_assigns(*node.body, name, hide)) ||
+                       (node.step != nullptr && expr_assigns(*node.step, name, hide));
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                return (node.cond != nullptr && expr_assigns(*node.cond, name, false)) ||
+                       (node.body != nullptr && stmt_assigns(*node.body, name, false));
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                return (node.value != nullptr && expr_assigns(*node.value, name, false)) ||
+                       (node.stmt != nullptr && stmt_assigns(*node.stmt, name, false));
+            } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                return node.call != nullptr && expr_assigns(*node.call, name, false);
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                return node.cond != nullptr && expr_assigns(*node.cond, name, false);
+            } else if constexpr (std::is_same_v<T, Stmt::Func>) {
+                if (node.decl == nullptr || node.decl->body == nullptr) {
+                    return false;
+                }
+                bool hide = false;
+                for (const Param &param : node.decl->params) {
+                    if (param.name == name) {
+                        hide = true;
+                    }
+                }
+                return stmt_assigns(*node.decl->body, name, hide);
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+void Checker::release_assigned(const Stmt *stmt, const std::string &hide_name) {
+    if (stmt == nullptr) {
+        return;
+    }
+    std::vector<std::pair<std::size_t, std::string>> names;
+    for (std::size_t scope = 0; scope < scopes_.size(); ++scope) {
+        for (const auto &item : scopes_[scope].symbols) {
+            if (item.second.held_comptime) {
+                names.emplace_back(scope, item.first);
+            }
+        }
+    }
+    for (const auto &item : names) {
+        if (!hide_name.empty() && item.second == hide_name) {
+            continue;
+        }
+        if (!stmt_assigns(*stmt, item.second, false)) {
+            continue;
+        }
+        if (item.first >= scopes_.size()) {
+            continue;
+        }
+        const auto found = scopes_[item.first].symbols.find(item.second);
+        if (found == scopes_[item.first].symbols.end() || !found->second.held_comptime) {
+            continue;
+        }
+        // An inner binding of the same name is the one a store would change.
+        Symbol *visible = lookup(item.second);
+        if (visible != &found->second) {
+            continue;
+        }
+        visible->held_comptime = false;
+        visible->folded_local = false;
+    }
+}
+
+void Checker::release_assigned_expr(const Expr *expr) {
+    if (expr == nullptr) {
+        return;
+    }
+    std::vector<std::pair<std::size_t, std::string>> names;
+    for (std::size_t scope = 0; scope < scopes_.size(); ++scope) {
+        for (const auto &item : scopes_[scope].symbols) {
+            if (item.second.held_comptime) {
+                names.emplace_back(scope, item.first);
+            }
+        }
+    }
+    for (const auto &item : names) {
+        if (!expr_assigns(*expr, item.second, false)) {
+            continue;
+        }
+        if (item.first >= scopes_.size()) {
+            continue;
+        }
+        const auto found = scopes_[item.first].symbols.find(item.second);
+        if (found == scopes_[item.first].symbols.end() || !found->second.held_comptime) {
+            continue;
+        }
+        Symbol *visible = lookup(item.second);
+        if (visible != &found->second) {
+            continue;
+        }
+        visible->held_comptime = false;
+        visible->folded_local = false;
+    }
+}
+
+bool Checker::global_assigned(const TranslationUnit &unit, const std::string &name, bool file_only) const {
+    const auto scan = [&](const TranslationUnit &file) {
+        for (const TopDecl &decl : file.decls) {
+            if (const auto *fn = std::get_if<FunctionDecl>(&decl.data)) {
+                if (fn->body == nullptr) {
+                    continue;
+                }
+                bool hidden = false;
+                for (const Param &param : fn->params) {
+                    if (param.name == name) {
+                        hidden = true;
+                    }
+                }
+                if (stmt_assigns(*fn->body, name, hidden)) {
+                    return true;
+                }
+            } else if (const auto *test = std::get_if<TestDecl>(&decl.data)) {
+                if (test->body != nullptr && stmt_assigns(*test->body, name, false)) {
+                    return true;
+                }
+            } else if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
+                if (var->init != nullptr && expr_assigns(*var->init, name, false)) {
+                    return true;
+                }
+            } else if (const auto *item = std::get_if<AssertDecl>(&decl.data)) {
+                if (item->cond != nullptr && expr_assigns(*item->cond, name, false)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    if (scan(unit)) {
+        return true;
+    }
+    if (file_only || graph_ == nullptr) {
+        return false;
+    }
+    for (const uint32_t id : files_in_package(file_id_)) {
+        if (id == file_id_) {
+            continue;
+        }
+        const PackageNode *node = find_node(id);
+        if (node != nullptr && scan(node->unit)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<Checker::HeldSlot> Checker::held_snapshot() const {
+    std::vector<HeldSlot> out;
+    for (std::size_t scope = 0; scope < scopes_.size(); ++scope) {
+        for (const auto &item : scopes_[scope].symbols) {
+            if (!item.second.held_comptime) {
+                continue;
+            }
+            HeldSlot slot;
+            slot.scope = scope;
+            slot.name = item.first;
+            slot.folded = item.second.folded_local;
+            slot.value = item.second.const_value;
+            slot.init = item.second.const_init;
+            out.push_back(std::move(slot));
+        }
+    }
+    return out;
+}
+
+void Checker::held_restore(const std::vector<HeldSlot> &snap) {
+    for (const HeldSlot &slot : snap) {
+        if (slot.scope >= scopes_.size()) {
+            continue;
+        }
+        const auto found = scopes_[slot.scope].symbols.find(slot.name);
+        if (found == scopes_[slot.scope].symbols.end()) {
+            continue;
+        }
+        found->second.held_comptime = true;
+        found->second.folded_local = slot.folded;
+        found->second.const_value = slot.value;
+        found->second.const_init = slot.init;
+    }
+}
+
+void Checker::held_and(const std::vector<HeldSlot> &before, const std::vector<HeldSlot> &left,
+                       const std::vector<HeldSlot> &right) {
+    const auto kept = [](const std::vector<HeldSlot> &side, const HeldSlot &slot) {
+        for (const HeldSlot &item : side) {
+            if (item.scope == slot.scope && item.name == slot.name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    for (const HeldSlot &slot : before) {
+        if (slot.scope >= scopes_.size()) {
+            continue;
+        }
+        const auto found = scopes_[slot.scope].symbols.find(slot.name);
+        if (found == scopes_[slot.scope].symbols.end()) {
+            continue;
+        }
+        if (kept(left, slot) && kept(right, slot)) {
+            found->second.held_comptime = true;
+            found->second.folded_local = slot.folded;
+            found->second.const_value = slot.value;
+            found->second.const_init = slot.init;
+        } else {
+            found->second.held_comptime = false;
+            found->second.folded_local = false;
+        }
     }
 }
 
