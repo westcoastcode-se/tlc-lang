@@ -10,6 +10,8 @@ An array length is a decimal `i32` literal. `0` is a length.
 
 A `const` binding whose initializer folds to a non-negative `i32` is a length too.
 
+Inside a `comptime func`, a parameter is that length when the call substitutes it. `var buf [n]i32` then `buf.len` is `n`. `comptime const k = n` and `value := n` are the same length. A negative value is `not supported yet`.
+
 `[_]i32{10, 20, 12}` writes the values. `_` stands for the length, which is the number of values, so the type is `[3]i32`.
 
 A file-scope array takes the same lists, including a struct element. `var named [3]i32 = {10, 4, 1}`, `var row = [_]i32{10, 20, 12}`, and `var origin = [_]Point{Point{.x = 1, .y = 2}}` are those lists.

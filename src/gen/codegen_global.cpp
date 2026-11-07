@@ -5,6 +5,61 @@
 
 namespace tlc {
 
+namespace {
+
+bool length_name_left(const Stmt &stmt) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && length_name_left(*child)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                for (const VarDecl &var : node.vars) {
+                    if (!var.array_len_name.empty()) {
+                        return true;
+                    }
+                    for (const TypeShell &shell : var.shells) {
+                        if (shell.kind == TypeShell::Kind::Array && !shell.length_name.empty()) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                return (node.then_arm != nullptr && length_name_left(*node.then_arm)) ||
+                       (node.else_arm != nullptr && length_name_left(*node.else_arm));
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile> ||
+                                 std::is_same_v<T, Stmt::Switch>) {
+                return node.body != nullptr && length_name_left(*node.body);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.init != nullptr && length_name_left(*node.init)) {
+                    return true;
+                }
+                if (node.body != nullptr && length_name_left(*node.body)) {
+                    return true;
+                }
+                for (const auto &copy : node.unrolled) {
+                    if (copy != nullptr && length_name_left(*copy)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                return node.stmt != nullptr && length_name_left(*node.stmt);
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+} // namespace
+
 void CodeGen::declare_functions(const PackageNode &node) {
     current_file_ = node.file_id;
     struct Acc {
@@ -21,8 +76,10 @@ void CodeGen::declare_functions(const PackageNode &node) {
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
         // A comptime func is emitted so a specialized copy can call it. A folded direct call does not.
+        // A length that is still a parameter is chosen per call, so this body is not a symbol.
         if (fn == nullptr || fn->name.empty() || fn->is_macro || !fn->type_params.empty() ||
-            (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept)) {
+            (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept) ||
+            (fn->is_comptime && fn->body != nullptr && length_name_left(*fn->body))) {
             continue;
         }
         kinds[function_key(*fn)].insert(param_list_key(*fn));
@@ -31,7 +88,8 @@ void CodeGen::declare_functions(const PackageNode &node) {
     for (const TopDecl &decl : node.unit.decls) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
         if (fn == nullptr || fn->name.empty() || fn->is_macro ||
-            (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept)) {
+            (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept) ||
+            (fn->is_comptime && fn->body != nullptr && length_name_left(*fn->body))) {
             continue;
         }
         const std::string plain = function_key(*fn);
@@ -402,6 +460,10 @@ void CodeGen::emit_bodies(const PackageNode &node) {
         if (fn == nullptr || fn->body == nullptr || fn->is_macro ||
             (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept) ||
             function_is_generic(node.file_id, *fn)) {
+            continue;
+        }
+        // The length is chosen per call. The folded call does not use this body.
+        if (fn->is_comptime && length_name_left(*fn->body)) {
             continue;
         }
         std::string key = function_key(*fn);

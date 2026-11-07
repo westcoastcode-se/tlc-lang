@@ -2339,8 +2339,14 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         return std::nullopt;
     }
     replace_stmt_names(*wrapper.body, names, exprs);
-    // Parameters are literals. `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
-    if (!recheck_comptime_copy(wrapper, false)) {
+    // Parameters are literals. `[n]T` becomes that length. A negative length is rejected.
+    bool lengths = false;
+    if (!bind_array_lengths(*wrapper.body, names, exprs, lengths)) {
+        call.comptime_failed = true;
+        return std::nullopt;
+    }
+    // `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
+    if (!recheck_comptime_copy(wrapper, lengths)) {
         return std::nullopt;
     }
     wrapper.params.clear();
@@ -2460,8 +2466,14 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
         return false;
     }
     replace_stmt_names(*wrapper.body, names, exprs);
-    // Parameters are literals. `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
-    if (!recheck_comptime_copy(wrapper, false)) {
+    // Parameters are literals. `[n]T` becomes that length. A negative length is rejected.
+    bool lengths = false;
+    if (!bind_array_lengths(*wrapper.body, names, exprs, lengths)) {
+        call.comptime_failed = true;
+        return false;
+    }
+    // `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
+    if (!recheck_comptime_copy(wrapper, lengths)) {
         return false;
     }
     wrapper.params.clear();
@@ -2586,6 +2598,14 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
         return kept;
     }
     replace_stmt_names(*wrapper.body, names, exprs);
+    bool lengths = false;
+    if (!bind_array_lengths(*wrapper.body, names, exprs, lengths)) {
+        call.comptime_failed = true;
+        return kept;
+    }
+    if (!recheck_comptime_copy(wrapper, lengths)) {
+        return kept;
+    }
     wrapper.params.clear();
     wrapper.captures.clear();
     wrapper.captured_here.clear();

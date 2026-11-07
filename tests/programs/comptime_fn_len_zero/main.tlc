@@ -1,0 +1,8 @@
+comptime func width(n i32) i32 {
+    var buf [n]i32;
+    return buf.len;
+}
+
+func main() i32 {
+    return 40 + width(0);
+}

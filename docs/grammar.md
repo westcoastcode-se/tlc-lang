@@ -336,7 +336,7 @@ The other arm is not typechecked and not emitted.
 
 A condition that is not comptime is `not supported yet`.
 
-Inside a `comptime func`, a parameter is not a constant until the call substitutes it. `value := n` and `comptime const k = n` are that parameter. The body typechecks every arm. The call keeps the selected arm.
+Inside a `comptime func`, a parameter is not a constant until the call substitutes it. `value := n` and `comptime const k = n` are that parameter. `var buf [n]i32` uses it as the length, and `buf.len` is `n`. A negative length is `not supported yet`. The body typechecks every arm. The call keeps the selected arm.
 
 A `comptime` parameter is comptime.
 

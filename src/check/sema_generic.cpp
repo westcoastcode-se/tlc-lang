@@ -1593,9 +1593,13 @@ std::optional<int> Checker::array_length_value(const std::string &name) {
     if (const std::optional<int> value = lookup_const_value(name)) {
         return value;
     }
+    // `value := n` inside a `comptime func` is that integer once the call substitutes `n`.
+    const Symbol *symbol = lookup(name);
+    if (symbol != nullptr && symbol->held_comptime && symbol->folded_local && plain_int_constant(symbol->type)) {
+        return symbol->const_value;
+    }
     // `lookup_const_value` stops when any local hides the file-scope constant.
     // A runtime `const` whose initializer folds is still that length.
-    const Symbol *symbol = lookup(name);
     if (symbol == nullptr || !symbol->runtime_const || !plain_int_constant(symbol->type)) {
         return std::nullopt;
     }
@@ -2096,12 +2100,13 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
     (void)optional;
     if (!array_len_name.empty()) {
         const std::optional<int> value = array_length_value(array_len_name);
-        if (!value || *value < 0) {
-            error(loc, "not supported yet");
-        } else {
+        if (value && *value >= 0) {
             array_len = *value;
             array_len_name.clear();
             is_array = true;
+        } else if (!length_waits(array_len_name)) {
+            // A parameter of a `comptime func` is not a length until the call substitutes it.
+            error(loc, "not supported yet");
         }
     }
     if (type_args.empty()) {

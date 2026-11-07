@@ -3163,6 +3163,28 @@ bool Checker::expr_mentions_name(const Expr &expr, const std::string &name) cons
         expr.data);
 }
 
+bool Checker::length_waits(const std::string &name) {
+    if (name.empty()) {
+        return false;
+    }
+    if (!pending_comptime_index_.empty() && name == pending_comptime_index_) {
+        return true;
+    }
+    if (const Symbol *symbol = lookup(name); symbol != nullptr && symbol->pending_fold) {
+        return true;
+    }
+    if (checking_.empty() || checking_.back() == nullptr || !checking_.back()->is_comptime ||
+        checking_.back()->is_macro) {
+        return false;
+    }
+    for (const Param &param : checking_.back()->params) {
+        if (param.name == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Checker::comptime_param_pending(const Expr *expr) const {
     if (expr == nullptr) {
         return false;
@@ -3196,6 +3218,96 @@ bool Checker::comptime_param_pending(const Expr *expr) const {
         }
     }
     return false;
+}
+
+bool Checker::bind_array_lengths(Stmt &stmt, const std::vector<std::string> &names,
+                                 const std::vector<const Expr *> &exprs, bool &wrote) {
+    bool negative = false;
+    wrote = false;
+    auto apply = [&](int &length, std::string &length_name, SourceLoc loc) {
+        if (length_name.empty() || negative) {
+            return;
+        }
+        for (std::size_t i = 0; i < names.size() && i < exprs.size(); ++i) {
+            if (names[i] != length_name || exprs[i] == nullptr) {
+                continue;
+            }
+            const std::optional<int> value = fold_int(*exprs[i]);
+            if (!value) {
+                return;
+            }
+            if (*value < 0) {
+                error(loc, "not supported yet");
+                negative = true;
+                return;
+            }
+            length = *value;
+            length_name.clear();
+            wrote = true;
+            return;
+        }
+        // `comptime const k = n` then `[k]T`. The recheck folds `k`.
+        wrote = true;
+    };
+    auto walk = [&](auto &&self, Stmt &node) -> void {
+        if (negative) {
+            return;
+        }
+        std::visit(
+            [&](auto &item) {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Stmt::Block>) {
+                    for (auto &child : item.statements) {
+                        if (child != nullptr) {
+                            self(self, *child);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                    for (VarDecl &var : item.vars) {
+                        apply(var.array_len, var.array_len_name, var.loc);
+                        for (TypeShell &shell : var.shells) {
+                            if (shell.kind == TypeShell::Kind::Array) {
+                                apply(shell.length, shell.length_name, var.loc);
+                            }
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                    if (item.then_arm != nullptr) {
+                        self(self, *item.then_arm);
+                    }
+                    if (item.else_arm != nullptr) {
+                        self(self, *item.else_arm);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                    if (item.body != nullptr) {
+                        self(self, *item.body);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                    if (item.init != nullptr) {
+                        self(self, *item.init);
+                    }
+                    if (item.body != nullptr) {
+                        self(self, *item.body);
+                    }
+                    for (auto &copy : item.unrolled) {
+                        if (copy != nullptr) {
+                            self(self, *copy);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                    if (item.body != nullptr) {
+                        self(self, *item.body);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                    if (item.stmt != nullptr) {
+                        self(self, *item.stmt);
+                    }
+                }
+            },
+            node.data);
+    };
+    walk(walk, stmt);
+    return !negative;
 }
 
 bool Checker::comptime_for_pending(const Stmt::For &loop) const {

@@ -1171,6 +1171,10 @@ class Checker {
     // After the call substitutes parameters, fold `comptime if`, `comptime switch`, and `comptime for`.
     // True when that copy typechecks.
     bool recheck_comptime_copy(FunctionDecl &wrapper, bool force);
+    // `[n]T` becomes that integer. A negative value is `not supported yet`.
+    // False when that error was reported. `wrote` is true when a length was filled in.
+    bool bind_array_lengths(Stmt &stmt, const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
+                            bool &wrote);
     int explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name);
     std::string comptime_assert_message(const Stmt &stmt, SourceLoc loc) const;
     // `name := expr` keeps this value until a store or `&name`. A `var` and a `const` do not.
@@ -1229,6 +1233,8 @@ class Checker {
     // A file-scope constant, or a local `const` whose initializer folds.
     // A `var` and an unfolded `const` hide a file-scope constant.
     std::optional<int> array_length_value(const std::string &name);
+    // A parameter of the `comptime func` being checked, or a name bound from one.
+    bool length_waits(const std::string &name);
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                          int &indirections, uint32_t &optional, bool &is_array, int &array_len,
                          std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);

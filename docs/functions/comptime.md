@@ -353,6 +353,27 @@ Inside a `comptime func`, a parameter is not a constant until the call substitut
 
 `value := n` and `comptime const k = n` are that parameter. A store into `value` makes a later use a runtime value.
 
+`var buf [n]i32`, `var buf [k]i32`, and `var buf [value]i32` use that integer as the length. `buf.len` is `n`. A negative value is `not supported yet`. A `var` is not a length.
+
+`width(4)` returns 4.
+
+```c
+comptime func width(n i32) i32 {
+    var buf [n]i32;
+    return buf.len;
+}
+
+func main() i32 {
+    return width(4);
+}
+```
+
+```asm
+main:
+movl $4, %eax                    # constant
+retq                             # return
+```
+
 `pick(1)` returns 42.
 
 ```c

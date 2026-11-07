@@ -1,0 +1,9 @@
+comptime func width(n i32) i32 {
+    value := n;
+    var buf [value]i32;
+    return buf.len;
+}
+
+func main() i32 {
+    return width(4);
+}

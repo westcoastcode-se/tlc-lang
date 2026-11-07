@@ -3110,7 +3110,18 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         return pointer;
     }
     // Shells that are not ready still hold a name. Zero here is that name, not `[0]T`.
+    // A parameter of a `comptime func` becomes that length when the call substitutes it.
     if (array_len <= 0) {
+        bool waiting = false;
+        for (const TypeShell &shell : shells) {
+            if (shell.kind == TypeShell::Kind::Array && !shell.length_name.empty() && length_waits(shell.length_name)) {
+                waiting = true;
+            }
+        }
+        if (waiting) {
+            // One element stands in until the call knows the length. The copy stores that length.
+            return type_array(std::move(type), 1);
+        }
         error(loc, "not supported yet");
         return type_invalid();
     }
