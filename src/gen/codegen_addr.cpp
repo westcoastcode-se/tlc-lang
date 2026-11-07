@@ -1188,7 +1188,7 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
             error(node.loc, "type mismatch");
             return {zero(), 0};
         }
-        if (!eval_ && (emitting_fn_ == nullptr || !emitting_fn_->is_comptime)) {
+        if (eval_ || emitting_fn_ == nullptr || !emitting_fn_->is_comptime) {
             llvm::Value *low_bad = builder_.CreateICmpSLT(start_index, const_i32(0));
             llvm::Value *order_bad = builder_.CreateICmpSLT(end_index, start_index);
             llvm::Value *bad = builder_.CreateOr(low_bad, order_bad);
@@ -1196,7 +1196,11 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
             auto *ok = llvm::BasicBlock::Create(context_, "range.ok", function_);
             builder_.CreateCondBr(bad, fail, ok);
             builder_.SetInsertPoint(fail);
-            abort_panic(node.loc, "index out of range");
+            if (eval_) {
+                eval_fail(node.loc);
+            } else {
+                abort_panic(node.loc, "index out of range");
+            }
             builder_.SetInsertPoint(ok);
         }
         const int elem_depth = base.depth > 0 ? base.depth - 1 : 0;
@@ -1336,7 +1340,8 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
             error(node.loc, "type mismatch");
             return {zero(), 0};
         }
-        if (packed->getType() == slice_type() && !eval_ && (emitting_fn_ == nullptr || !emitting_fn_->is_comptime)) {
+        if (packed->getType() == slice_type() &&
+            (eval_ || emitting_fn_ == nullptr || !emitting_fn_->is_comptime)) {
             llvm::Value *old = builder_.CreateExtractValue(packed, 1);
             llvm::Value *start_at = low_omitted ? const_i32(0) : start_index;
             llvm::Value *end_at = high_omitted ? old : end_index;
@@ -1349,7 +1354,11 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
                 auto *ok = llvm::BasicBlock::Create(context_, "range.ok", function_);
                 builder_.CreateCondBr(bad, fail, ok);
                 builder_.SetInsertPoint(fail);
-                abort_panic(node.loc, "index out of range");
+                if (eval_) {
+                    eval_fail(node.loc);
+                } else {
+                    abort_panic(node.loc, "index out of range");
+                }
                 builder_.SetInsertPoint(ok);
             }
         }

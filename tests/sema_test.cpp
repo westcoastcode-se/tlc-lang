@@ -9948,5 +9948,28 @@ int run_sema_tests() {
         EXPECT_HAS(check, errors, "uninitialized");
     }
 
+    {
+        const std::string errors = check_program(
+            "comptime func add(n i32) i32 {\n"
+            "    assert(n > 0, \"positive\");\n"
+            "    return n;\n"
+            "}\n"
+            "comptime func mid(n i32) i32 {\n"
+            "    return add(n);\n"
+            "}\n"
+            "func main() i32 {\n"
+            "    return mid(0);\n"
+            "}\n");
+        EXPECT_HAS(check, errors, "positive");
+        EXPECT_HAS(check, errors, ": add\n");
+        EXPECT_HAS(check, errors, ": mid\n");
+        EXPECT_HAS(check, errors, ": main\n");
+        const auto add = errors.find(": add\n");
+        const auto mid = errors.find(": mid\n");
+        const auto main_name = errors.find(": main\n");
+        EXPECT(check, add != std::string::npos && mid != std::string::npos && main_name != std::string::npos &&
+                          add < mid && mid < main_name);
+    }
+
     return check.failed;
 }

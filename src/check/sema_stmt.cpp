@@ -27,6 +27,10 @@ void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &m
     }
     const std::optional<int> value = fold_int(*cond);
     if (!value) {
+        // A parameter is not a constant until the call substitutes it.
+        if (!checking_.empty() && checking_.back() != nullptr && checking_.back()->is_comptime) {
+            return;
+        }
         error(loc, "not supported yet");
         return;
     }

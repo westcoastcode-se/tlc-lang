@@ -367,10 +367,36 @@ void CodeGen::abort_out_of_memory(SourceLoc loc) {
     abort_panic(loc, "out of memory");
 }
 
+void CodeGen::install_eval_fault() {
+    if (!eval_ || eval_fail_file_ != nullptr) {
+        return;
+    }
+    eval_fail_file_ = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage,
+                                               const_i32(0), "tlc.comptime.fail_file");
+    eval_fail_off_ = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage, const_i32(0),
+                                              "tlc.comptime.fail_off");
+}
+
+void CodeGen::eval_fail(SourceLoc loc) {
+    if (terminated() || function_ == nullptr) {
+        return;
+    }
+    if (eval_fail_file_ != nullptr && eval_fail_off_ != nullptr) {
+        builder_.CreateStore(const_i32(static_cast<int>(loc.file)), eval_fail_file_);
+        builder_.CreateStore(const_i32(static_cast<int>(loc.offset)), eval_fail_off_);
+    }
+    llvm::Type *ret = function_->getReturnType();
+    if (ret->isVoidTy()) {
+        builder_.CreateRetVoid();
+        return;
+    }
+    builder_.CreateRet(llvm::Constant::getNullValue(ret));
+}
+
 void CodeGen::trap_index(llvm::Value *index, llvm::Value *length, SourceLoc loc) {
-    // A comptime function is evaluated by interpreting its body. The panic branch is not part of that.
-    // The evaluator clears `is_comptime` on its wrapper and sets `eval_` instead.
-    if (eval_ || (emitting_fn_ != nullptr && emitting_fn_->is_comptime)) {
+    // A comptime func that is emitted as a runtime call still has no bounds check here.
+    // The evaluator sets `eval_` and records the source location instead of panicking.
+    if (!eval_ && emitting_fn_ != nullptr && emitting_fn_->is_comptime) {
         return;
     }
     if (index == nullptr || length == nullptr || terminated() || function_ == nullptr) {
@@ -383,7 +409,11 @@ void CodeGen::trap_index(llvm::Value *index, llvm::Value *length, SourceLoc loc)
     auto *ok = llvm::BasicBlock::Create(context_, "index.ok", function_);
     builder_.CreateCondBr(bad, fail, ok);
     builder_.SetInsertPoint(fail);
-    abort_panic(loc, "index out of range");
+    if (eval_) {
+        eval_fail(loc);
+    } else {
+        abort_panic(loc, "index out of range");
+    }
     builder_.SetInsertPoint(ok);
 }
 

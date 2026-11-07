@@ -555,6 +555,9 @@ class CodeGen {
     llvm::GlobalVariable *default_alloc_global_ = nullptr;
     // Compiling a fragment to run during checking. Trace storage stays a normal global.
     bool eval_ = false;
+    // Set when that run hits an assert or an index check. The host reads them after the call.
+    llvm::GlobalVariable *eval_fail_file_ = nullptr;
+    llvm::GlobalVariable *eval_fail_off_ = nullptr;
     // `lower` is const. The struct is created the first time a slice is lowered.
     mutable llvm::StructType *slice_ty_ = nullptr;
     // `-g`. Line numbers and variable locations for a debugger.
@@ -1630,6 +1633,9 @@ class CodeGen {
     void abort_out_of_memory(SourceLoc loc);
     // `builtin.panic(message)`, then unreachable. The frame names `loc`.
     void abort_panic(SourceLoc loc, const char *message);
+    // Records `loc` and returns from the function being evaluated.
+    void install_eval_fault();
+    void eval_fail(SourceLoc loc);
     // `index < 0` or `index >= length` calls `panic("index out of range")`.
     void trap_index(llvm::Value *index, llvm::Value *length, SourceLoc loc);
     // `base[low:high]`. The result is a slice header.

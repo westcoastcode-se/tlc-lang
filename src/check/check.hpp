@@ -1137,6 +1137,35 @@ class Checker {
     // Fills checker struct ids on a literal produced by a comptime struct call.
     void stamp_kept_struct(Expr &expr, const Type &type);
     void note_promotable(Symbol &symbol, const Expr *init);
+    // A comptime call that fails. The message is the assert text or `index out of range`.
+    // The lines under it are the call chain, newest first, `file:line:column: name`.
+    struct ComptimeCall {
+        SourceLoc loc{};
+        std::string name;
+    };
+    struct ComptimeEval {
+        Checker *self = nullptr;
+        bool frame = false;
+        bool name = false;
+        bool explain = false;
+        bool node = false;
+        ComptimeEval(Checker &checker, const FunctionDecl &fn, const Expr::Call &call);
+        ~ComptimeEval();
+    };
+    std::vector<ComptimeCall> comptime_calls_;
+    std::vector<std::string> comptime_fn_;
+    std::vector<const Expr::Call *> comptime_call_nodes_;
+    int comptime_explain_ = 0;
+    bool comptime_fault_ = false;
+    SourceLoc comptime_fault_loc_{};
+    std::string trace_loc(SourceLoc loc) const;
+    void note_comptime_index(SourceLoc loc);
+    void report_comptime_fault(SourceLoc loc, const std::string &message, const std::string &here);
+    bool take_comptime_fault(const std::string &fn_name);
+    // Asserts and indexes in a substituted body. True when a fault was reported.
+    bool explain_comptime(const Stmt &stmt, const std::string &fn_name);
+    int explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name);
+    std::string comptime_assert_message(const Stmt &stmt, SourceLoc loc) const;
     // `name := expr` keeps this value until a store or `&name`. A `var` and a `const` do not.
     void note_held(Symbol &symbol, const Expr &init);
     std::optional<std::string> held_root(const Expr &expr) const;

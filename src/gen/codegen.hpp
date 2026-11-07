@@ -35,11 +35,13 @@ CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const 
 
 // Compile `fn` in `graph` and call it. `fn` returns `i32` and takes no parameters.
 // `file` is the file whose names the body resolves. Nullopt when emission or the call fails.
-std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
+std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
+                                       SourceLoc *fault = nullptr);
 
 // Compile `fn` and call it. `fn` returns `[]const u8` and takes no parameters.
 // The bytes are that slice. Nullopt when emission or the call fails.
-std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
+std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
+                                            SourceLoc *fault = nullptr);
 
 // One slot of a struct a comptime func returned. Offsets are relative to that slot.
 // Plain data: the module that measured them is already destroyed.
@@ -81,6 +83,7 @@ struct ComptimeStructValue {
 
 // Compile `fn` and call it. `fn` returns a struct and takes no parameters.
 // The literal is the result. `NotConstant` is a field that is not a constant.
-ComptimeStructValue eval_comptime_struct(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file);
+ComptimeStructValue eval_comptime_struct(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
+                                         SourceLoc *fault = nullptr);
 
 } // namespace tlc

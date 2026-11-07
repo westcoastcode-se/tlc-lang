@@ -28,6 +28,7 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
         return false;
     }
     eval_ = true;
+    install_eval_fault();
     graph_ = &graph;
     entry_file_ = graph.nodes.front().file_id;
     prepare_enums();
@@ -158,6 +159,7 @@ bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDe
         return false;
     }
     eval_ = true;
+    install_eval_fault();
     graph_ = &graph;
     entry_file_ = graph.nodes.front().file_id;
     prepare_enums();
@@ -307,7 +309,31 @@ bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDe
     return diags_.size() == prepared && !wrapper->isDeclaration();
 }
 
-std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file) {
+SourceLoc read_comptime_fault(llvm::orc::LLJIT &jit) {
+    SourceLoc loc;
+    auto file_or = jit.lookup("tlc.comptime.fail_file");
+    auto off_or = jit.lookup("tlc.comptime.fail_off");
+    if (!file_or || !off_or) {
+        if (!file_or) {
+            llvm::consumeError(file_or.takeError());
+        }
+        if (!off_or) {
+            llvm::consumeError(off_or.takeError());
+        }
+        return loc;
+    }
+    const int32_t file = *file_or->toPtr<int32_t *>();
+    const int32_t off = *off_or->toPtr<int32_t *>();
+    if (file <= 0) {
+        return loc;
+    }
+    loc.file = static_cast<uint32_t>(file);
+    loc.offset = static_cast<uint32_t>(off);
+    return loc;
+}
+
+std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
+                                                SourceLoc *fault) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -381,6 +407,12 @@ std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const
         return std::nullopt;
     }
     call();
+    if (fault != nullptr) {
+        *fault = read_comptime_fault(*jit);
+        if (fault->valid()) {
+            return std::nullopt;
+        }
+    }
     if (*fail_addr->toPtr<int32_t *>() != 0) {
         return std::nullopt;
     }
@@ -392,7 +424,8 @@ std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const
     return std::string(reinterpret_cast<const char *>(pool), static_cast<std::size_t>(len));
 }
 
-std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file) {
+std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
+                                           SourceLoc *fault) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -450,7 +483,14 @@ std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const Functi
     if (call == nullptr) {
         return std::nullopt;
     }
-    return call();
+    const int32_t value = call();
+    if (fault != nullptr) {
+        *fault = read_comptime_fault(*jit);
+        if (fault->valid()) {
+            return std::nullopt;
+        }
+    }
+    return value;
 }
 
 namespace {
@@ -751,6 +791,7 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         return false;
     }
     eval_ = true;
+    install_eval_fault();
     graph_ = &graph;
     entry_file_ = graph.nodes.front().file_id;
     prepare_enums();
@@ -1090,7 +1131,8 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
     return diags_.size() == prepared && !body->isDeclaration() && !wrapper->isDeclaration();
 }
 
-ComptimeStructValue eval_comptime_struct(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file) {
+ComptimeStructValue eval_comptime_struct(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
+                                         SourceLoc *fault) {
     ComptimeStructValue out;
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -1177,6 +1219,12 @@ ComptimeStructValue eval_comptime_struct(const PackageGraph &graph, const Functi
     const auto aligned = (start + static_cast<uintptr_t>(align - 1)) & ~static_cast<uintptr_t>(align - 1);
     auto *buffer = reinterpret_cast<uint8_t *>(aligned);
     call(buffer);
+    if (fault != nullptr) {
+        *fault = read_comptime_fault(*jit);
+        if (fault->valid()) {
+            return out;
+        }
+    }
     if (*fail_addr->toPtr<int32_t *>() != 0) {
         out.status = ComptimeStructValue::Status::NotConstant;
         return out;

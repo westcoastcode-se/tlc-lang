@@ -1147,6 +1147,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 const std::optional<int> at = node.tuple_index >= 0 ? std::optional<int>(node.tuple_index)
                                                                     : fold_int(*node.index);
                 if (!at || *at < 0) {
+                    if (comptime_explain_ > 0 && at && *at < 0) {
+                        note_comptime_index(node.loc);
+                    }
                     return std::nullopt;
                 }
                 // A tuple index selects that element. An array index counts only after one,
@@ -1217,9 +1220,19 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (const Expr *element = indexed(indexed, *node.base, *at, 0)) {
                     return fold_int(*element);
                 }
+                if (comptime_explain_ > 0 && !comptime_fault_ && node.base != nullptr) {
+                    if (const auto *init = std::get_if<Expr::Init>(&node.base->data);
+                        init != nullptr && !init->elements.empty() &&
+                        static_cast<std::size_t>(*at) >= init->elements.size()) {
+                        note_comptime_index(node.loc);
+                    }
+                }
                 std::unordered_set<std::string> seen;
                 const std::optional<std::string> bytes = constant_string(*node.base, seen);
                 if (!bytes || static_cast<std::size_t>(*at) >= bytes->size()) {
+                    if (comptime_explain_ > 0 && bytes && static_cast<std::size_t>(*at) >= bytes->size()) {
+                        note_comptime_index(node.loc);
+                    }
                     return std::nullopt;
                 }
                 return static_cast<int>(static_cast<unsigned char>((*bytes)[static_cast<std::size_t>(*at)]));
@@ -2214,6 +2227,9 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
 }
 
 std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
+    if (call.comptime_failed) {
+        return std::nullopt;
+    }
     if (call.comptime_ran) {
         return call.comptime_value;
     }
@@ -2261,6 +2277,8 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     for (const auto &item : owned) {
         exprs.push_back(item.get());
     }
+    // The call chain is the callers of this comptime func, newest first.
+    ComptimeEval chain(*this, *fn, call);
     if (const Expr *value = single_i32_return(*fn)) {
         if (!comptime_folding_.insert(fn).second) {
             return std::nullopt;
@@ -2272,10 +2290,14 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         } leave{comptime_folding_, fn};
         std::unique_ptr<Expr> rewritten = clone_expr(*value);
         replace_names(rewritten, names, exprs);
+        const std::size_t before_fold = diags_.size();
         if (const std::optional<int> folded = fold_int(*rewritten)) {
             call.comptime_ran = true;
             call.comptime_value = *folded;
             return folded;
+        }
+        if (diags_.size() != before_fold || take_comptime_fault(fn->name)) {
+            return std::nullopt;
         }
     }
     // `return n > 0` is 0 or 1. A body with statements is compiled below.
@@ -2291,10 +2313,14 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
             } leave{comptime_folding_, fn};
             std::unique_ptr<Expr> rewritten = clone_expr(*value);
             replace_names(rewritten, names, exprs);
+            const std::size_t before_fold = diags_.size();
             if (const std::optional<int> folded = fold_int(*rewritten)) {
                 call.comptime_ran = true;
                 call.comptime_value = *folded == 0 ? 0 : 1;
                 return call.comptime_value;
+            }
+            if (diags_.size() != before_fold || take_comptime_fault(fn->name)) {
+                return std::nullopt;
             }
         }
     }
@@ -2331,7 +2357,16 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
             }
         }
     }
-    const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file);
+    if (wrapper.body != nullptr && explain_comptime(*wrapper.body, fn->name)) {
+        return std::nullopt;
+    }
+    SourceLoc fault;
+    const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault);
+    if (fault.valid()) {
+        const std::string message = comptime_assert_message(*wrapper.body, fault);
+        report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
+        return std::nullopt;
+    }
     if (!ran) {
         return std::nullopt;
     }
@@ -2341,6 +2376,9 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
 }
 
 bool Checker::fold_comptime_string(const Expr::Call &call) {
+    if (call.comptime_failed) {
+        return false;
+    }
     if (call.comptime_text) {
         return true;
     }
@@ -2395,14 +2433,19 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
     for (const auto &item : owned) {
         exprs.push_back(item.get());
     }
+    ComptimeEval chain(*this, *fn, call);
     if (const Expr *value = single_return_expr(*fn)) {
         std::unique_ptr<Expr> rewritten = clone_expr(*value);
         replace_names(rewritten, names, exprs);
         std::unordered_set<std::string> seen;
+        const std::size_t before_fold = diags_.size();
         if (const std::optional<std::string> text = constant_string(*rewritten, seen)) {
             call.comptime_text = true;
             call.comptime_bytes = *text;
             return true;
+        }
+        if (diags_.size() != before_fold || take_comptime_fault(fn->name)) {
+            return false;
         }
     }
     if (!fn->is_comptime || graph_ == nullptr) {
@@ -2431,7 +2474,16 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
             }
         }
     }
-    const std::optional<std::string> ran = eval_comptime_string(*graph_, wrapper, file);
+    if (wrapper.body != nullptr && explain_comptime(*wrapper.body, fn->name)) {
+        return false;
+    }
+    SourceLoc fault;
+    const std::optional<std::string> ran = eval_comptime_string(*graph_, wrapper, file, &fault);
+    if (fault.valid()) {
+        const std::string message = comptime_assert_message(*wrapper.body, fault);
+        report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
+        return false;
+    }
     if (!ran) {
         return false;
     }
@@ -2463,6 +2515,9 @@ const Expr *Checker::comptime_struct_field(const Expr &object, const std::string
 
 Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
     KeptStruct kept;
+    if (call.comptime_failed) {
+        return kept;
+    }
     if (call.comptime_struct != nullptr) {
         kept.status = KeptStruct::Status::Value;
         kept.value = clone_expr(*call.comptime_struct);
@@ -2509,6 +2564,7 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
     for (const auto &item : owned) {
         exprs.push_back(item.get());
     }
+    ComptimeEval chain(*this, *fn, call);
     if (!fn->is_comptime || !comptime_folding_.insert(fn).second) {
         return kept;
     }
@@ -2553,7 +2609,16 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
             }
         }
     }
-    ComptimeStructValue ran = eval_comptime_struct(*graph_, wrapper, file);
+    if (wrapper.body != nullptr && explain_comptime(*wrapper.body, fn->name)) {
+        return kept;
+    }
+    SourceLoc fault;
+    ComptimeStructValue ran = eval_comptime_struct(*graph_, wrapper, file, &fault);
+    if (fault.valid()) {
+        const std::string message = comptime_assert_message(*wrapper.body, fault);
+        report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
+        return kept;
+    }
     if (ran.status == ComptimeStructValue::Status::NotConstant) {
         kept.status = KeptStruct::Status::NotConstant;
         return kept;
@@ -3328,6 +3393,292 @@ void Checker::held_and(const std::vector<HeldSlot> &before, const std::vector<He
             found->second.folded_local = false;
         }
     }
+}
+
+Checker::ComptimeEval::ComptimeEval(Checker &checker, const FunctionDecl &fn, const Expr::Call &call) : self(&checker) {
+    if (!fn.is_comptime) {
+        return;
+    }
+    checker.comptime_call_nodes_.push_back(&call);
+    node = true;
+    std::string caller;
+    if (!checker.comptime_fn_.empty()) {
+        caller = checker.comptime_fn_.back();
+    } else if (!checker.checking_.empty() && checker.checking_.back() != nullptr) {
+        caller = checker.checking_.back()->name;
+    }
+    if (!caller.empty()) {
+        if (checker.comptime_calls_.size() == 32) {
+            checker.comptime_calls_.erase(checker.comptime_calls_.begin());
+        }
+        checker.comptime_calls_.push_back(ComptimeCall{call.loc, std::move(caller)});
+        frame = true;
+    }
+    checker.comptime_fn_.push_back(fn.name);
+    name = true;
+    ++checker.comptime_explain_;
+    explain = true;
+}
+
+Checker::ComptimeEval::~ComptimeEval() {
+    if (self == nullptr) {
+        return;
+    }
+    if (explain) {
+        --self->comptime_explain_;
+    }
+    if (name && !self->comptime_fn_.empty()) {
+        self->comptime_fn_.pop_back();
+    }
+    if (frame && !self->comptime_calls_.empty()) {
+        self->comptime_calls_.pop_back();
+    }
+    if (node && !self->comptime_call_nodes_.empty()) {
+        self->comptime_call_nodes_.pop_back();
+    }
+}
+
+std::string Checker::trace_loc(SourceLoc loc) const {
+    const SourceFile *file = diags_.source(loc.file);
+    if (file == nullptr) {
+        return "unknown:1:1";
+    }
+    const LineCol at = file->line_col(loc.offset);
+    std::string path = file->path();
+    std::string dir;
+    if (graph_ != nullptr && !graph_->nodes.empty()) {
+        const std::string &entry = graph_->nodes.front().path;
+        const auto slash = entry.find_last_of("/\\");
+        if (slash != std::string::npos) {
+            dir = entry.substr(0, slash + 1);
+        }
+    }
+    if (!dir.empty() && path.starts_with(dir)) {
+        path = path.substr(dir.size());
+    } else {
+        const auto slash = path.find_last_of("/\\");
+        if (slash != std::string::npos) {
+            path = path.substr(slash + 1);
+        }
+    }
+    return path + ":" + std::to_string(at.line) + ":" + std::to_string(at.column);
+}
+
+void Checker::note_comptime_index(SourceLoc loc) {
+    if (comptime_fault_ || comptime_explain_ <= 0) {
+        return;
+    }
+    comptime_fault_ = true;
+    comptime_fault_loc_ = loc;
+}
+
+void Checker::report_comptime_fault(SourceLoc loc, const std::string &message, const std::string &here) {
+    for (const Expr::Call *call : comptime_call_nodes_) {
+        if (call != nullptr) {
+            call->comptime_failed = true;
+        }
+    }
+    std::string text = message;
+    const auto line = [&](SourceLoc at, const std::string &name) {
+        text += '\n';
+        text += trace_loc(at);
+        text += ": ";
+        text += name;
+    };
+    line(loc, here);
+    const std::size_t keep = comptime_calls_.size() > 31 ? 31 : comptime_calls_.size();
+    const std::size_t start = comptime_calls_.size() - keep;
+    for (std::size_t index = comptime_calls_.size(); index > start; --index) {
+        const ComptimeCall &call = comptime_calls_[index - 1];
+        line(call.loc, call.name);
+    }
+    error(loc, text);
+}
+
+bool Checker::take_comptime_fault(const std::string &fn_name) {
+    if (!comptime_fault_) {
+        return false;
+    }
+    const SourceLoc loc = comptime_fault_loc_;
+    comptime_fault_ = false;
+    report_comptime_fault(loc, "index out of range", fn_name);
+    return true;
+}
+
+std::string Checker::comptime_assert_message(const Stmt &stmt, SourceLoc loc) const {
+    const auto walk = [&](const auto &self, const Stmt &node) -> const Stmt::Assert * {
+        return std::visit(
+            [&](const auto &item) -> const Stmt::Assert * {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                    if (item.loc.file == loc.file && item.loc.offset == loc.offset) {
+                        return &item;
+                    }
+                    return nullptr;
+                } else if constexpr (std::is_same_v<T, Stmt::Block>) {
+                    for (const auto &child : item.statements) {
+                        if (child == nullptr) {
+                            continue;
+                        }
+                        if (const Stmt::Assert *found = self(self, *child)) {
+                            return found;
+                        }
+                    }
+                    return nullptr;
+                } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                    if (item.then_arm != nullptr) {
+                        if (const Stmt::Assert *found = self(self, *item.then_arm)) {
+                            return found;
+                        }
+                    }
+                    return item.else_arm == nullptr ? nullptr : self(self, *item.else_arm);
+                } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                    return item.body == nullptr ? nullptr : self(self, *item.body);
+                } else if constexpr (std::is_same_v<T, Stmt::For> || std::is_same_v<T, Stmt::Switch>) {
+                    if constexpr (std::is_same_v<T, Stmt::For>) {
+                        if (item.init != nullptr) {
+                            if (const Stmt::Assert *found = self(self, *item.init)) {
+                                return found;
+                            }
+                        }
+                    }
+                    if (item.body != nullptr) {
+                        if (const Stmt::Assert *found = self(self, *item.body)) {
+                            return found;
+                        }
+                    }
+                    if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                        return nullptr;
+                    }
+                    return nullptr;
+                } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                    return item.stmt == nullptr ? nullptr : self(self, *item.stmt);
+                } else {
+                    return nullptr;
+                }
+            },
+            node.data);
+    };
+    const Stmt::Assert *found = walk(walk, stmt);
+    if (found == nullptr) {
+        return {};
+    }
+    return found->message.empty() ? std::string("assert") : found->message;
+}
+
+int Checker::explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name) {
+    // 0 continues, 1 is a reported fault, 2 is a return.
+    const auto folded_fault = [&](const Expr *expr) {
+        if (expr == nullptr) {
+            return 0;
+        }
+        const std::size_t before = diags_.size();
+        fold_int(*expr);
+        if (diags_.size() != before || take_comptime_fault(fn_name)) {
+            return 1;
+        }
+        return 0;
+    };
+    return std::visit(
+        [&](const auto &node) -> int {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                push();
+                int status = 0;
+                for (const auto &child : node.statements) {
+                    if (child == nullptr) {
+                        continue;
+                    }
+                    status = explain_comptime_stmt(*child, fn_name);
+                    if (status != 0) {
+                        break;
+                    }
+                }
+                pop();
+                return status;
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                if (node.cond == nullptr) {
+                    return 0;
+                }
+                const std::optional<int> value = fold_condition(*node.cond);
+                if (!value) {
+                    if (folded_fault(node.cond.get())) {
+                        return 1;
+                    }
+                    return 0;
+                }
+                if (*value == 0) {
+                    report_comptime_fault(node.loc, node.message.empty() ? std::string("assert") : node.message, fn_name);
+                    return 1;
+                }
+                return 0;
+            } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                if (node.names.size() == 1 && node.value != nullptr &&
+                    (node.is_var || node.is_define || node.is_const)) {
+                    if (folded_fault(node.value.get())) {
+                        return 1;
+                    }
+                    if (const std::optional<int> value = fold_int(*node.value)) {
+                        Symbol symbol;
+                        symbol.name = node.names[0];
+                        symbol.type = type_int();
+                        symbol.is_auto = true;
+                        symbol.held_comptime = true;
+                        symbol.folded_local = true;
+                        symbol.const_value = *value;
+                        symbol.const_init = node.value.get();
+                        if (scopes_.empty()) {
+                            return 0;
+                        }
+                        if (scopes_.back().symbols.contains(symbol.name)) {
+                            shadow(std::move(symbol), node.loc);
+                        } else {
+                            declare(std::move(symbol), node.loc);
+                        }
+                    }
+                }
+                return 0;
+            } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                if (folded_fault(node.value.get())) {
+                    return 1;
+                }
+                for (const auto &extra : node.extra) {
+                    if (folded_fault(extra.get())) {
+                        return 1;
+                    }
+                }
+                return 2;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (node.cond == nullptr) {
+                    return 0;
+                }
+                if (folded_fault(node.cond.get())) {
+                    return 1;
+                }
+                const std::optional<int> cond = fold_condition(*node.cond);
+                if (!cond) {
+                    return 0;
+                }
+                Stmt *arm = *cond != 0 ? node.then_arm.get() : node.else_arm.get();
+                if (arm == nullptr) {
+                    return 0;
+                }
+                const int status = explain_comptime_stmt(*arm, fn_name);
+                return status == 2 ? 2 : status;
+            } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                return folded_fault(node.expr.get());
+            } else {
+                return 0;
+            }
+        },
+        stmt.data);
+}
+
+bool Checker::explain_comptime(const Stmt &stmt, const std::string &fn_name) {
+    push();
+    const int status = explain_comptime_stmt(stmt, fn_name);
+    pop();
+    return status == 1;
 }
 
 } // namespace tlc

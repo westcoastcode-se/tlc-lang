@@ -1127,6 +1127,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 // Inside a comptime func the call is ordinary code. The outer call is what runs.
                 if (const FunctionDecl *fn = node.callee != nullptr ? comptime_callee(node) : nullptr;
                     fn != nullptr && (comptime_depth_ == 0 || macro_depth_ != 0)) {
+                    if (node.comptime_failed) {
+                        return type_invalid();
+                    }
                     const std::size_t before = diags_.size();
                     if (!node.type_args.empty() || !fn->type_params.empty()) {
                         error(node.loc, "not supported yet");
@@ -1164,7 +1167,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             return type_invalid();
                         }
                         if (kept.status != KeptStruct::Status::Value || kept.value == nullptr) {
-                            error(node.loc, "not supported yet");
+                            if (diags_.size() == before) {
+                                error(node.loc, "not supported yet");
+                            }
                             return type_invalid();
                         }
                         stamp_kept_struct(*kept.value, result);
@@ -1173,7 +1178,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (slice_of_const_u8(result)) {
                         if (!fold_comptime_string(node)) {
-                            error(node.loc, "not supported yet");
+                            if (diags_.size() == before) {
+                                error(node.loc, "not supported yet");
+                            }
                             return type_invalid();
                         }
                         return result;
@@ -1181,13 +1188,17 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     // `comptime func yes() bool` stays `bool`. The folded value is 0 or 1.
                     if (result.kind == TypeKind::Bool) {
                         if (!fold_int(expr)) {
-                            error(node.loc, "not supported yet");
+                            if (diags_.size() == before) {
+                                error(node.loc, "not supported yet");
+                            }
                             return type_invalid();
                         }
                         return result;
                     }
                     if (!fold_int(expr)) {
-                        error(node.loc, "not supported yet");
+                        if (diags_.size() == before) {
+                            error(node.loc, "not supported yet");
+                        }
                         return type_invalid();
                     }
                     return type_int();

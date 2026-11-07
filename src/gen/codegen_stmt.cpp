@@ -1741,6 +1741,25 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
             } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
                 emit_bind(node);
             } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                // A comptime run stops on a false assert and keeps the source location.
+                if (!eval_ || node.cond == nullptr || terminated()) {
+                    return;
+                }
+                const TypedValue cond = emit_rvalue(*node.cond);
+                if (terminated() || cond.value == nullptr || !cond.value->getType()->isIntegerTy()) {
+                    return;
+                }
+                llvm::Value *flag = cond.value;
+                if (!flag->getType()->isIntegerTy(32)) {
+                    flag = builder_.CreateZExt(flag, i32());
+                }
+                llvm::Value *bad = builder_.CreateICmpEQ(flag, const_i32(0));
+                auto *fail = llvm::BasicBlock::Create(context_, "assert.fail", function_);
+                auto *ok = llvm::BasicBlock::Create(context_, "assert.ok", function_);
+                builder_.CreateCondBr(bad, fail, ok);
+                builder_.SetInsertPoint(fail);
+                eval_fail(node.loc);
+                builder_.SetInsertPoint(ok);
             } else if constexpr (std::is_same_v<T, Stmt::LocalType>) {
                 if (node.enumeration != nullptr) {
                     install_local_enum(*node.enumeration);

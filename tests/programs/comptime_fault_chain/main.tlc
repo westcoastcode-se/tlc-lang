@@ -1,0 +1,12 @@
+comptime func add(n i32) i32 {
+    assert(n > 0, "positive");
+    return n;
+}
+
+comptime func mid(n i32) i32 {
+    return add(n);
+}
+
+func main() i32 {
+    return mid(0);
+}

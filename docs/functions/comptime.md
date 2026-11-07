@@ -249,6 +249,46 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
+## When a comptime call fails
+
+A false `assert` is that message, on the `assert`.
+
+An index outside a known length is `index out of range`, on that index.
+
+The lines under the error are the call chain, newest first. A line is `file:line:column: name`. The name is the function that made the call. The first of those lines is the function that failed, at the `assert` or the index.
+
+A call that folds still has no runtime symbol and no trace frame.
+
+```c
+comptime func add(n i32) i32 {
+    assert(n > 0, "positive");
+    return n;
+}
+
+func main() i32 {
+    return add(0);
+}
+```
+
+`add(0)` emits nothing. The error is `positive` at the `assert`. The chain under it is:
+
+```text
+main.tlc:2:5: add
+main.tlc:7:12: main
+```
+
+```c
+comptime func at(n i32) i32 {
+    return "hi"[n];
+}
+
+func main() i32 {
+    return at(5);
+}
+```
+
+`at(5)` emits nothing. The error is `index out of range`, then `main.tlc:2:12: at` and `main.tlc:6:12: main`.
+
 A result that is not `i32`, not a `bool`, not a struct, and not a constant `[]const u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.

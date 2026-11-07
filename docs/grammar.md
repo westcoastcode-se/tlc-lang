@@ -242,7 +242,7 @@ A call used as a value folds when every argument is a comptime value and the res
 
 A body that is one `return` of a constant `i32` folds. A body with statements is compiled and run, and that integer is the constant.
 
-That call has no runtime symbol and pushes no trace frame.
+That call has no runtime symbol and pushes no trace frame. A false `assert` in the body is that message, on the `assert`. An index outside a known length is `index out of range`, on that index. The lines under the error are `file:line:column: name`, newest first.
 
 `return add(41)` when `add` is `comptime func add(n i32) i32 { return n + 1; }` is `movl $42, %eax` and `retq`.
 
