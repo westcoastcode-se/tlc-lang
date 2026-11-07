@@ -85,7 +85,7 @@ func Gpu::status(object u32, pname u32, linked bool) bool {
 }
 
 func Gpu::make_shader(kind u32, source *const u8) u32 {
-    var shader = CreateShader(kind);
+    const shader = CreateShader(kind);
     ShaderSource(shader, 1, &source, null);
     CompileShader(shader);
     if (!Gpu.status(shader, GLenum.COMPILE_STATUS, false)) {
@@ -117,12 +117,12 @@ void main() {
     frag = vec4(v_color, 1.0);
 }
 `b;
-    var vertex = Gpu.make_shader(GLenum.VERTEX_SHADER, vertex_source);
-    var fragment = Gpu.make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
+    const vertex = Gpu.make_shader(GLenum.VERTEX_SHADER, vertex_source);
+    const fragment = Gpu.make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
     if (vertex == 0 || fragment == 0) {
         return false;
     }
-    var program = CreateProgram();
+    const program = CreateProgram();
     AttachShader(program, vertex);
     AttachShader(program, fragment);
     LinkProgram(program);
@@ -170,14 +170,14 @@ func main() i32 {
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_PROFILE_MASK, SdlGlAttr.SDL_GL_CONTEXT_PROFILE_CORE);
 
-    var window = SDL_CreateWindow("Triangle"b, width, height, SdlWindow.SDL_WINDOW_OPENGL);
+    const window = SDL_CreateWindow("Triangle"b, width, height, SdlWindow.SDL_WINDOW_OPENGL);
     if (window == null) {
         printf("SDL_CreateWindow failed: %s\n"b, SDL_GetError());
         return 1;
     }
     defer SDL_DestroyWindow(window);
 
-    var context = SDL_GL_CreateContext(window);
+    const context = SDL_GL_CreateContext(window);
     if (context == null) {
         printf("SDL_GL_CreateContext failed: %s\n"b, SDL_GetError());
         return 1;

@@ -106,14 +106,12 @@ comptime const shapes = [_][4]Spot{
     {{.x = 2, .y = 0}, {.x = 0, .y = 1}, {.x = 1, .y = 1}, {.x = 2, .y = 1}},
 };
 
-func Spot::turn(self this, times i32) Spot {
+func Spot::turn(self this, times i32, span i32) Spot {
     var x = self.x;
     var y = self.y;
-    for (var i = 0; i < times; i = i + 1) {
-        nx := 3 - y;
-        ny := x;
-        x = nx;
-        y = ny;
+    const last = span - 1;
+    for (var i = 0; i < times; ++i) {
+        x, y = (last - y, x);
     }
     return Spot{.x = x, .y = y};
 }
@@ -208,11 +206,10 @@ type Game struct {
 }
 
 func Game::place(piece Cell, spot Spot, ox i32, oy i32, turn i32) (i32, i32) {
-    // The square is already in its box. Rotating it would walk around that box.
-    if (piece == Cell.O) {
-        return ox + spot.x, oy + spot.y;
-    }
-    var turned = spot.turn(turn);
+    // O is already square. I occupies a 4-cell box. The other pieces occupy the
+    // top-left 3 cells, and a 4-cell turn would slide them on every quarter turn.
+    const span = piece == Cell.I ? 4 : 3;
+    var turned = piece == Cell.O ? spot : spot.turn(turn, span);
     return ox + turned.x, oy + turned.y;
 }
 
@@ -231,8 +228,8 @@ func Game::fits(self *this, piece Cell, turn i32, ox i32, oy i32) bool {
 }
 
 func Game::wipe(self *this) void {
-    for (var y = 0; y < rows; y = y + 1) {
-        for (var x = 0; x < columns; x = x + 1) {
+    for (var y = 0; y < rows; ++y) {
+        for (var x = 0; x < columns; ++x) {
             self.board[y][x] = Cell.Empty;
         }
     }
@@ -243,33 +240,30 @@ func Game::clear_lines(self *this) i32 {
     var y = rows - 1;
     while (y >= 0) {
         var full = true;
-        for (var x = 0; x < columns; x = x + 1) {
+        for (var x = 0; x < columns; ++x) {
             if (self.board[y][x] == Cell.Empty) {
                 full = false;
             }
         }
         if (full) {
-            for (var yy = y; yy > 0; yy = yy - 1) {
-                for (var xx = 0; xx < columns; xx = xx + 1) {
+            for (var yy = y; yy > 0; --yy) {
+                for (var xx = 0; xx < columns; ++xx) {
                     self.board[yy][xx] = self.board[yy - 1][xx];
                 }
             }
-            for (var zx = 0; zx < columns; zx = zx + 1) {
+            for (var zx = 0; zx < columns; ++zx) {
                 self.board[0][zx] = Cell.Empty;
             }
-            cleared = cleared + 1;
+            ++cleared;
         } else {
-            y = y - 1;
+            --y;
         }
     }
     return cleared;
 }
 
 func Game::pace(self this) u64 {
-    if (self.lines >= 28) {
-        return 80u64;
-    }
-    return 500u64 - u64(self.lines) * 15u64;
+    return self.lines >= 28 ? 80u64 : 500u64 - u64(self.lines) * 15u64;
 }
 
 func Game::spawn(self *this) void {
@@ -309,10 +303,10 @@ func Game::settle(self *this) void {
         }
         return;
     }
-    var cleared = self.clear_lines();
+    const cleared = self.clear_lines();
     if (cleared != 0) {
-        self.lines = self.lines + cleared;
-        self.score = self.score + cleared * cleared * 100;
+        self.lines += cleared;
+        self.score += cleared * cleared * 100;
         printf("lines %d  score %d\n"b, self.lines, self.score);
     }
     self.spawn();
@@ -329,11 +323,11 @@ func Game::restart(self *this) void {
 }
 
 func Game::try_turn(self *this, dir i32) void {
-    var turn = (self.rot + 4 + dir) % 4;
+    const turn = (self.rot + 4 + dir) % 4;
     const kicks = [_]i32{0, -1, 1, -2, 2};
-    for (var dx : kicks) {
+    for (const dx : kicks) {
         if (self.fits(self.kind, turn, self.px + dx, self.py)) {
-            self.px = self.px + dx;
+            self.px += dx;
             self.rot = turn;
             return;
         }
@@ -342,60 +336,63 @@ func Game::try_turn(self *this, dir i32) void {
 
 func Game::hard_drop(self *this) void {
     while (self.fits(self.kind, self.rot, self.px, self.py + 1)) {
-        self.py = self.py + 1;
-        self.score = self.score + 2;
+        ++self.py;
+        self.score += 2;
     }
     self.settle();
     self.last = SDL_GetTicks();
 }
 
-func Game::on_key(self *this, code i32, again bool) void {
-    if (code == SdlScancode.SDL_SCANCODE_ESCAPE) {
+func Game::on_key(self *this, code SdlScancode, again bool) void {
+    switch (code) {
+    case SdlScancode.SDL_SCANCODE_ESCAPE:
         self.running = false;
         return;
-    }
-    if (!self.alive) {
-        if (!again && code == SdlScancode.SDL_SCANCODE_R) {
+    case SdlScancode.SDL_SCANCODE_R:
+        if (!self.alive && !again) {
             self.restart();
         }
         return;
-    }
-    if (code == SdlScancode.SDL_SCANCODE_LEFT) {
-        if (self.fits(self.kind, self.rot, self.px - 1, self.py)) {
-            self.px = self.px - 1;
+    case SdlScancode.SDL_SCANCODE_LEFT:
+        if (self.alive && self.fits(self.kind, self.rot, self.px - 1, self.py)) {
+            --self.px;
         }
         return;
-    }
-    if (code == SdlScancode.SDL_SCANCODE_RIGHT) {
-        if (self.fits(self.kind, self.rot, self.px + 1, self.py)) {
-            self.px = self.px + 1;
+    case SdlScancode.SDL_SCANCODE_RIGHT:
+        if (self.alive && self.fits(self.kind, self.rot, self.px + 1, self.py)) {
+            ++self.px;
         }
         return;
-    }
-    if (code == SdlScancode.SDL_SCANCODE_DOWN) {
+    case SdlScancode.SDL_SCANCODE_DOWN:
+        if (!self.alive) {
+            return;
+        }
         if (self.fits(self.kind, self.rot, self.px, self.py + 1)) {
-            self.py = self.py + 1;
-            self.score = self.score + 1;
+            ++self.py;
+            ++self.score;
             self.last = SDL_GetTicks();
         } else {
             self.settle();
             self.last = SDL_GetTicks();
         }
         return;
-    }
-    if (again) {
+    case SdlScancode.SDL_SCANCODE_UP:
+        if (self.alive && !again) {
+            self.try_turn(1);
+        }
         return;
-    }
-    if (code == SdlScancode.SDL_SCANCODE_UP) {
-        self.try_turn(1);
+    case SdlScancode.SDL_SCANCODE_Z:
+        if (self.alive && !again) {
+            self.try_turn(-1);
+        }
         return;
-    }
-    if (code == SdlScancode.SDL_SCANCODE_Z) {
-        self.try_turn(-1);
+    case SdlScancode.SDL_SCANCODE_SPACE:
+        if (self.alive && !again) {
+            self.hard_drop();
+        }
         return;
-    }
-    if (code == SdlScancode.SDL_SCANCODE_SPACE) {
-        self.hard_drop();
+    default:
+        return;
     }
 }
 
@@ -420,7 +417,7 @@ func Gpu::status(object u32, pname u32, linked bool) bool {
 }
 
 func Gpu::make_shader(kind u32, source *const u8) u32 {
-    var shader = CreateShader(kind);
+    const shader = CreateShader(kind);
     ShaderSource(shader, 1, &source, null);
     CompileShader(shader);
     if (!Gpu.status(shader, GLenum.COMPILE_STATUS, false)) {
@@ -450,12 +447,12 @@ void main() {
     frag = vec4(v_color, 1.0);
 }
 `b;
-    var vertex = Gpu.make_shader(GLenum.VERTEX_SHADER, vertex_source);
-    var fragment = Gpu.make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
+    const vertex = Gpu.make_shader(GLenum.VERTEX_SHADER, vertex_source);
+    const fragment = Gpu.make_shader(GLenum.FRAGMENT_SHADER, fragment_source);
     if (vertex == 0 || fragment == 0) {
         return false;
     }
-    var program = CreateProgram();
+    const program = CreateProgram();
     AttachShader(program, vertex);
     AttachShader(program, fragment);
     LinkProgram(program);
@@ -538,7 +535,7 @@ func Game::draw_lines(self *this) void {
         shown = rows;
     }
     var mark = Rgb{.r = 0.90f, .g = 0.90f, .b = 0.85f};
-    for (var i = 0; i < shown; i = i + 1) {
+    for (var i = 0; i < shown; ++i) {
         Game.rect(16, origin_y + (rows - 1 - i) * cell, 18, 18, mark);
     }
 }
@@ -546,7 +543,7 @@ func Game::draw_lines(self *this) void {
 func Game::ghost_y(self *this) i32 {
     var gy = self.py;
     while (self.fits(self.kind, self.rot, self.px, gy + 1)) {
-        gy = gy + 1;
+        ++gy;
     }
     return gy;
 }
@@ -555,8 +552,8 @@ func Game::draw(self *this) void {
     Clear(GLenum.COLOR_BUFFER_BIT);
     var well = Rgb{.r = 0.10f, .g = 0.11f, .b = 0.14f};
     Game.rect(origin_x, origin_y, columns * cell, rows * cell, well);
-    for (var row = 0; row < rows; row = row + 1) {
-        for (var col = 0; col < columns; col = col + 1) {
+    for (var row = 0; row < rows; ++row) {
+        for (var col = 0; col < columns; ++col) {
             var filled Cell = self.board[row][col];
             if (filled != Cell.Empty) {
                 var color Rgb = filled.rgb();
@@ -603,14 +600,14 @@ func Game::frame(self *this, window *SDL_Window) void {
             self.running = false;
         }
         if (event.kind == SdlEventKind.SDL_EVENT_KEY_DOWN) {
-            self.on_key(event.key.scancode, event.key.repeat);
+            self.on_key(SdlScancode(event.key.scancode), event.key.repeat);
         }
     }
     if (self.alive) {
-        var now = SDL_GetTicks();
+        const now = SDL_GetTicks();
         if (now - self.last >= self.pace()) {
             if (self.fits(self.kind, self.rot, self.px, self.py + 1)) {
-                self.py = self.py + 1;
+                ++self.py;
             } else {
                 self.settle();
             }
@@ -633,14 +630,14 @@ func main() i32 {
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SdlGlAttr.SDL_GL_CONTEXT_PROFILE_MASK, SdlGlAttr.SDL_GL_CONTEXT_PROFILE_CORE);
 
-    var window = SDL_CreateWindow("Tetris"b, window_w, window_h, SdlWindow.SDL_WINDOW_OPENGL);
+    const window = SDL_CreateWindow("Tetris"b, window_w, window_h, SdlWindow.SDL_WINDOW_OPENGL);
     if (window == null) {
         printf("SDL_CreateWindow failed: %s\n"b, SDL_GetError());
         return 1;
     }
     defer SDL_DestroyWindow(window);
 
-    var context = SDL_GL_CreateContext(window);
+    const context = SDL_GL_CreateContext(window);
     if (context == null) {
         printf("SDL_GL_CreateContext failed: %s\n"b, SDL_GetError());
         return 1;
