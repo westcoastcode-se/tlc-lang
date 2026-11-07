@@ -298,11 +298,11 @@ Outside a `macro`, an ordinary `if` and an ordinary `switch` run at run time.
 
 `comptime if` keeps one arm when the condition folds.
 
+The other arm is not typechecked and not emitted.
+
 A local `const` whose initializer folds to `i32` is that condition.
 
 A `var` does not fold.
-
-The other arm is not typechecked and not emitted.
 
 A condition that is not comptime is `not supported yet`.
 

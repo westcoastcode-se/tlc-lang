@@ -351,7 +351,7 @@ The copy that still receives it typechecks both arms.
 
 The copy that substitutes the value keeps one arm.
 
-An ordinary `if` typechecks both arms.
+An ordinary `if` typechecks both arms. It may use a comptime value, including `comptime const n = 1` and `value := 1`.
 
 `comptime switch` keeps the matching case and the statements that follow until `break` when the value folds.
 

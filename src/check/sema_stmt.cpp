@@ -2271,6 +2271,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             error(node.loc, "not supported yet");
                         }
                     } else {
+                        // One arm. The other is not typechecked.
                         Stmt::If &branch = const_cast<Stmt::If &>(node);
                         branch.folded = true;
                         branch.taken = *folded != 0;

@@ -1,0 +1,8 @@
+func main() i32 {
+    comptime const n = 1;
+    value := 41;
+    if (n == 1) {
+        return value + n;
+    }
+    return 0;
+}
