@@ -1,0 +1,14 @@
+comptime func add(n i32) i32 {
+    return n + 32;
+}
+
+func main() i32 {
+    value := 10;
+    n := 0;
+    switch (n) {
+    default:
+        value = 3;
+        break;
+    }
+    return add(value);
+}

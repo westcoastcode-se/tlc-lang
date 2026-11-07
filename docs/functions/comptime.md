@@ -40,6 +40,8 @@ A store in one arm of `if` drops the value after the `if`. The other arm still s
 
 A store in a loop drops the value for the whole loop.
 
+A store in a `switch` drops the value for the whole `switch` and after it.
+
 At file scope, `value := 10` is comptime when no function in the package stores it.
 
 `export value := 10` is not a comptime value.
@@ -359,7 +361,7 @@ A value that is not comptime is `not supported yet`.
 
 A `comptime` parameter leaves every case until a call substitutes it.
 
-An ordinary `switch` typechecks every case.
+An ordinary `switch` typechecks every case. It may use a comptime value, including `comptime const n = 1` and `value := 1`.
 
 A `var` does not fold for `comptime switch` or `comptime for`.
 
@@ -371,7 +373,7 @@ A local `const` whose initializer folds to `i32` is a `comptime if` condition, a
 
 In a macro, a plain `for` unrolls when the bounds fold and runs at run time when they do not. A plain `if` keeps one arm when the condition folds and runs at run time when it does not.
 
-A `switch` in a macro is `not supported yet`.
+A `switch` in a macro keeps the matching case and the statements that follow until `break` when the value folds. The other cases are not typechecked and not emitted. A value that does not fold runs at run time, and every case is typechecked.
 
 ## A comptime parameter on an ordinary function
 
