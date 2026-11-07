@@ -336,7 +336,7 @@ The other arm is not typechecked and not emitted.
 
 A condition that is not comptime is `not supported yet`.
 
-Inside a `comptime func`, a parameter is not a constant until the call substitutes it. `value := n` and `comptime const k = n` are that parameter. `var buf [n]i32` uses it as the length, and `buf.len` is `n`. A negative length is `not supported yet`. The body typechecks every arm. The call keeps the selected arm.
+Inside a `comptime func`, a parameter is not a constant until the call substitutes it. `value := n` and `comptime const k = n` are that parameter. `var buf [n]i32` uses it as the length, and `buf.len` is `n`. A negative length is `not supported yet`. A call of a function that is not `comptime` is `not supported yet`. The body typechecks every arm. The call keeps the selected arm.
 
 A `comptime` parameter is comptime.
 
@@ -1232,6 +1232,10 @@ The call `id(1)` infers `T`.
 
 A local `const` whose initializer folds to `i32` is that integer.
 
+`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter is `not supported yet`.
+
+A call of that function from a `comptime func` is `not supported yet`.
+
 A `var` is `type mismatch`.
 
 `id[i32](1)` and `zero[i32]()` write a type.
@@ -1903,6 +1907,10 @@ A call may be that integer.
 `width[math.add(3)]()` is that call.
 
 A local `const` whose initializer folds to `i32` is that integer.
+
+`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter is `not supported yet`.
+
+A call of that function from a `comptime func` is `not supported yet`.
 
 A `var` is `type mismatch`.
 

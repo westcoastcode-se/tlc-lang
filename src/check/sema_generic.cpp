@@ -2209,6 +2209,13 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
                 return true;
             }
         }
+        // `repeat[n]` while `n` is still a parameter. The call writes the integer and instantiates then.
+        if (defer_value_args_ && arg.type_package.empty() && arg.indirections == 0 && arg.args.empty() &&
+            !arg.is_array && !arg.is_tuple && arg.shells.empty() && arg.value_expr == nullptr && !arg.has_value &&
+            !arg.type_name.empty() && value_name_waits(arg.type_name)) {
+            value_arg_deferred_ = true;
+            return false;
+        }
         error(loc.valid() ? loc : arg.loc, "type mismatch");
         return false;
     }

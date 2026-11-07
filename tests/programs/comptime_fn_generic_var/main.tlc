@@ -1,0 +1,12 @@
+func bump[N i32](value i32) i32 {
+    return value + N;
+}
+
+comptime func from_var(n i32) i32 {
+    var k = n;
+    return bump[k](1);
+}
+
+func main() i32 {
+    return from_var(4);
+}

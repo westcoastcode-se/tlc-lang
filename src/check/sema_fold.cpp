@@ -2325,7 +2325,10 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         }
     }
     // A body with statements is compiled and called. The integer or bool is the constant.
-    if (!fn->is_comptime || (!plain_i32_result(*fn) && !plain_bool_result(*fn)) || graph_ == nullptr ||
+    // An ordinary function whose parameters are all comptime is compiled the same way when a generic
+    // value argument was still a parameter at the definition.
+    const bool run_body = fn->is_comptime || fn->pending_generic;
+    if (!run_body || (!plain_i32_result(*fn) && !plain_bool_result(*fn)) || graph_ == nullptr ||
         !comptime_folding_.insert(fn).second) {
         return std::nullopt;
     }
@@ -2345,8 +2348,15 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         call.comptime_failed = true;
         return std::nullopt;
     }
+    bool generic = false;
+    if (!bind_generic_values(*wrapper.body, names, exprs, generic)) {
+        call.comptime_failed = true;
+        return std::nullopt;
+    }
     // `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
-    if (!recheck_comptime_copy(wrapper, lengths)) {
+    // `repeat[n]` instantiates once `n` is the integer. A rejected call stays rejected.
+    (void)generic;
+    if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         return std::nullopt;
     }
     wrapper.params.clear();
@@ -2371,7 +2381,9 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         return std::nullopt;
     }
     SourceLoc fault;
-    const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault);
+    std::vector<std::pair<uint32_t, const FunctionDecl *>> specs;
+    comptime_pending_specs(wrapper.body.get(), specs);
+    const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault, specs);
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
         report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
@@ -2472,8 +2484,15 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
         call.comptime_failed = true;
         return false;
     }
+    bool generic = false;
+    if (!bind_generic_values(*wrapper.body, names, exprs, generic)) {
+        call.comptime_failed = true;
+        return false;
+    }
     // `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
-    if (!recheck_comptime_copy(wrapper, lengths)) {
+    // `repeat[n]` instantiates once `n` is the integer. A rejected call stays rejected.
+    (void)generic;
+    if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         return false;
     }
     wrapper.params.clear();
@@ -2498,7 +2517,9 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
         return false;
     }
     SourceLoc fault;
-    const std::optional<std::string> ran = eval_comptime_string(*graph_, wrapper, file, &fault);
+    std::vector<std::pair<uint32_t, const FunctionDecl *>> specs;
+    comptime_pending_specs(wrapper.body.get(), specs);
+    const std::optional<std::string> ran = eval_comptime_string(*graph_, wrapper, file, &fault, specs);
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
         report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
@@ -2603,7 +2624,13 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
         call.comptime_failed = true;
         return kept;
     }
-    if (!recheck_comptime_copy(wrapper, lengths)) {
+    bool generic = false;
+    if (!bind_generic_values(*wrapper.body, names, exprs, generic)) {
+        call.comptime_failed = true;
+        return kept;
+    }
+    (void)generic;
+    if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         return kept;
     }
     wrapper.params.clear();
@@ -2634,7 +2661,9 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
         return kept;
     }
     SourceLoc fault;
-    ComptimeStructValue ran = eval_comptime_struct(*graph_, wrapper, file, &fault);
+    std::vector<std::pair<uint32_t, const FunctionDecl *>> specs;
+    comptime_pending_specs(wrapper.body.get(), specs);
+    ComptimeStructValue ran = eval_comptime_struct(*graph_, wrapper, file, &fault, specs);
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
         report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);

@@ -1,0 +1,13 @@
+func bump[N i32](value i32) i32 {
+    return value + N;
+}
+
+comptime func from_store(n i32) i32 {
+    value := n;
+    value = 1;
+    return bump[value](1);
+}
+
+func main() i32 {
+    return from_store(4);
+}

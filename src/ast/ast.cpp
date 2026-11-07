@@ -1368,6 +1368,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.captured_here = fn.captured_here;
     copy.iteration_kind = fn.iteration_kind;
     copy.generic_instance = fn.generic_instance;
+    copy.pending_generic = fn.pending_generic;
     return copy;
 }
 

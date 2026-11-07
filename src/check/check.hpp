@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace tlc {
@@ -334,6 +335,9 @@ class Checker {
     Type return_type_ = type_invalid();
     // Set while folding `sizeof`, so a second lookup does not repeat a diagnostic.
     bool quiet_ = false;
+    // `repeat[n]` while `n` is not a constant yet. The call substitutes the integer.
+    bool defer_value_args_ = false;
+    bool value_arg_deferred_ = false;
     // Errors suppressed while `quiet_` is set. A probe uses this to see a failure.
     int quiet_errors_ = 0;
     // A generic specialization may learn an omitted result. File signatures stay pending until
@@ -733,6 +737,10 @@ class Checker {
     // The constant a `comptime` parameter denotes. Null when the argument is not that constant.
     std::unique_ptr<Expr> comptime_argument(const Expr &arg, const Param &param);
     const FunctionDecl *comptime_callee(const Expr::Call &call);
+    // A direct call while a `comptime func` is checked. `Runtime` is a function that is not `comptime`.
+    enum class ComptimeCallee { Unknown, Comptime, Runtime };
+    ComptimeCallee comptime_callee_kind(const Expr::Call &call);
+    bool comptime_func_body() const;
     const FunctionDecl *macro_callee(const Expr::Call &call);
     const FunctionDecl *generic_macro(const Expr::Call &call);
     // An ordinary function whose every parameter is `comptime`. A `comptime func` is not this.
@@ -1175,6 +1183,10 @@ class Checker {
     // False when that error was reported. `wrote` is true when a length was filled in.
     bool bind_array_lengths(Stmt &stmt, const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
                             bool &wrote);
+    // `repeat[n]` becomes `repeat[4]` when `n` was substituted. `wrote` is true when a later check
+    // has to instantiate that call. A negative integer stays.
+    bool bind_generic_values(Stmt &stmt, const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
+                             bool &wrote);
     int explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name);
     std::string comptime_assert_message(const Stmt &stmt, SourceLoc loc) const;
     // `name := expr` keeps this value until a store or `&name`. A `var` and a `const` do not.
@@ -1235,6 +1247,10 @@ class Checker {
     std::optional<int> array_length_value(const std::string &name);
     // A parameter of the `comptime func` being checked, or a name bound from one.
     bool length_waits(const std::string &name);
+    // That same name, or a `comptime` parameter of the ordinary function being checked.
+    bool value_name_waits(const std::string &name);
+    // Specializations the body calls that are still queued, not yet in the package.
+    void comptime_pending_specs(const Stmt *body, std::vector<std::pair<uint32_t, const FunctionDecl *>> &out) const;
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                          int &indirections, uint32_t &optional, bool &is_array, int &array_len,
                          std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);

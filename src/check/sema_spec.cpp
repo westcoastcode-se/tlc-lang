@@ -2175,6 +2175,82 @@ bool Checker::rewrite_spec_callee(Expr &callee, const std::string &spec_name, ui
     return true;
 }
 
+namespace {
+
+bool type_param_name(const std::vector<TypeParam> &params, const std::string &name) {
+    if (name.empty()) {
+        return false;
+    }
+    for (const TypeParam &param : params) {
+        if (param.name == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool type_arg_mentions_param(const TypeArg &arg, const std::vector<TypeParam> &params) {
+    if (type_param_name(params, arg.type_name) || type_param_name(params, arg.array_len_name)) {
+        return true;
+    }
+    for (const TypeShell &shell : arg.shells) {
+        if (type_param_name(params, shell.length_name)) {
+            return true;
+        }
+    }
+    for (const TypeArg &nested : arg.args) {
+        if (type_arg_mentions_param(nested, params)) {
+            return true;
+        }
+    }
+    for (const TypeArg &part : arg.tuple_parts) {
+        if (type_arg_mentions_param(part, params)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool result_mentions_param(const ResultSlot &slot, const std::vector<TypeParam> &params) {
+    if (type_param_name(params, slot.type_name) || type_param_name(params, slot.array_len_name)) {
+        return true;
+    }
+    for (const TypeShell &shell : slot.shells) {
+        if (type_param_name(params, shell.length_name)) {
+            return true;
+        }
+    }
+    for (const TypeArg &arg : slot.type_args) {
+        if (type_arg_mentions_param(arg, params)) {
+            return true;
+        }
+    }
+    for (const ResultSlot &part : slot.tuple_parts) {
+        if (result_mentions_param(part, params)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The written result does not name a type parameter, so the call has a type before the integer is known.
+bool generic_result_ready(const FunctionDecl &fn) {
+    if (fn.infer_result && fn.results.empty()) {
+        return false;
+    }
+    if (fn.results.empty()) {
+        return !type_param_name(fn.type_params, fn.return_type);
+    }
+    for (const ResultSlot &slot : fn.results) {
+        if (result_mentions_param(slot, fn.type_params)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
 std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
     if (call_ptr == nullptr || call_ptr->callee == nullptr) {
@@ -2434,8 +2510,35 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
     if (arg_invalid) {
         return type_invalid();
     }
+    const std::size_t before_infer = diags_.size();
+    const bool saved_defer = defer_value_args_;
+    const bool saved_deferred = value_arg_deferred_;
+    defer_value_args_ = true;
+    value_arg_deferred_ = false;
     const auto inferred = infer_generic_bounds(*templ, call, arg_types);
+    const bool deferred = value_arg_deferred_;
+    value_arg_deferred_ = saved_deferred;
+    defer_value_args_ = saved_defer;
     if (!inferred) {
+        // `repeat[n]` waits. A result that names `N` or `T` has no type until the call.
+        if (deferred && diags_.size() == before_infer && generic_result_ready(*templ)) {
+            const bool saved_quiet = quiet_;
+            const int saved_errors = quiet_errors_;
+            quiet_ = true;
+            Type result = function_result(*templ);
+            quiet_ = saved_quiet;
+            const bool bad = result.kind == TypeKind::Invalid || quiet_errors_ != saved_errors;
+            quiet_errors_ = saved_errors;
+            if (!bad) {
+                if (!checking_.empty() && checking_.back() != nullptr) {
+                    checking_.back()->pending_generic = true;
+                }
+                return result;
+            }
+        }
+        if (deferred && diags_.size() == before_infer) {
+            error(call.loc, "not supported yet");
+        }
         return type_invalid();
     }
     std::vector<SpecArg> bounds = *inferred;
@@ -4352,6 +4455,229 @@ void relocate_unit(TranslationUnit &unit, const std::unordered_map<const Functio
 }
 
 } // namespace
+
+void Checker::comptime_pending_specs(const Stmt *body,
+                                     std::vector<std::pair<uint32_t, const FunctionDecl *>> &out) const {
+    if (body == nullptr) {
+        return;
+    }
+    std::unordered_set<std::string> names;
+    auto note_callee = [&](const Expr &callee) {
+        if (const auto *named = std::get_if<Expr::Name>(&callee.data)) {
+            if (!named->text.empty()) {
+                names.insert(named->text);
+            }
+            return;
+        }
+        if (const auto *selector = std::get_if<Expr::Selector>(&callee.data)) {
+            if (!selector->field.empty()) {
+                names.insert(selector->field);
+            }
+        }
+    };
+    auto walk_expr = [&](auto &&self, const Expr &expr) -> void {
+        std::visit(
+            [&](const auto &node) {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                              std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
+                    if (node.expr != nullptr) {
+                        self(self, *node.expr);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
+                    if (node.lhs != nullptr) {
+                        self(self, *node.lhs);
+                    }
+                    if (node.rhs != nullptr) {
+                        self(self, *node.rhs);
+                    }
+                    if constexpr (std::is_same_v<T, Expr::Binary>) {
+                        if (node.mid != nullptr) {
+                            self(self, *node.mid);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    if (node.callee != nullptr) {
+                        note_callee(*node.callee);
+                        self(self, *node.callee);
+                    }
+                    for (const auto &arg : node.args) {
+                        if (arg != nullptr) {
+                            self(self, *arg);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    if (node.base != nullptr) {
+                        self(self, *node.base);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                    if (node.base != nullptr) {
+                        self(self, *node.base);
+                    }
+                    if (node.index != nullptr) {
+                        self(self, *node.index);
+                    }
+                    if (node.end != nullptr) {
+                        self(self, *node.end);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                    for (const Expr::FieldInit &field : node.fields) {
+                        if (field.value != nullptr) {
+                            self(self, *field.value);
+                        }
+                    }
+                    for (const auto &element : node.elements) {
+                        if (element != nullptr) {
+                            self(self, *element);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::New>) {
+                    if (node.allocator != nullptr) {
+                        self(self, *node.allocator);
+                    }
+                    if (node.count != nullptr) {
+                        self(self, *node.count);
+                    }
+                    if (node.init != nullptr) {
+                        self(self, *node.init);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                    if (node.allocator != nullptr) {
+                        self(self, *node.allocator);
+                    }
+                    if (node.expr != nullptr) {
+                        self(self, *node.expr);
+                    }
+                }
+            },
+            expr.data);
+    };
+    auto walk = [&](auto &&self, const Stmt &stmt) -> void {
+        std::visit(
+            [&](const auto &node) {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Stmt::Block>) {
+                    for (const auto &child : node.statements) {
+                        if (child != nullptr) {
+                            self(self, *child);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                    if (node.value != nullptr) {
+                        walk_expr(walk_expr, *node.value);
+                    }
+                    for (const auto &extra : node.extra) {
+                        if (extra != nullptr) {
+                            walk_expr(walk_expr, *extra);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                    if (node.expr != nullptr) {
+                        walk_expr(walk_expr, *node.expr);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                    if (node.call != nullptr) {
+                        walk_expr(walk_expr, *node.call);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                    if (node.cond != nullptr) {
+                        walk_expr(walk_expr, *node.cond);
+                    }
+                    if (node.then_arm != nullptr) {
+                        self(self, *node.then_arm);
+                    }
+                    if (node.else_arm != nullptr) {
+                        self(self, *node.else_arm);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                    if (node.cond != nullptr) {
+                        walk_expr(walk_expr, *node.cond);
+                    }
+                    if (node.body != nullptr) {
+                        self(self, *node.body);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                    if (node.init != nullptr) {
+                        self(self, *node.init);
+                    }
+                    if (node.cond != nullptr) {
+                        walk_expr(walk_expr, *node.cond);
+                    }
+                    if (node.step != nullptr) {
+                        walk_expr(walk_expr, *node.step);
+                    }
+                    if (node.each_expr != nullptr) {
+                        walk_expr(walk_expr, *node.each_expr);
+                    }
+                    if (node.body != nullptr) {
+                        self(self, *node.body);
+                    }
+                    for (const auto &copy : node.unrolled) {
+                        if (copy != nullptr) {
+                            self(self, *copy);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                    if (node.cond != nullptr) {
+                        walk_expr(walk_expr, *node.cond);
+                    }
+                    if (node.body != nullptr) {
+                        self(self, *node.body);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                    if (node.value != nullptr) {
+                        walk_expr(walk_expr, *node.value);
+                    }
+                    if (node.stmt != nullptr) {
+                        self(self, *node.stmt);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                    for (const VarDecl &var : node.vars) {
+                        if (var.init != nullptr) {
+                            walk_expr(walk_expr, *var.init);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                    if (node.value != nullptr) {
+                        walk_expr(walk_expr, *node.value);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                    if (node.cond != nullptr) {
+                        walk_expr(walk_expr, *node.cond);
+                    }
+                }
+            },
+            stmt.data);
+    };
+    walk(walk, *body);
+    if (names.empty()) {
+        return;
+    }
+    std::unordered_set<const FunctionDecl *> seen;
+    bool grew = true;
+    while (grew) {
+        grew = false;
+        auto consider = [&](uint32_t file, const FunctionDecl &fn) {
+            if (fn.name.empty() || fn.body == nullptr || !fn.type_params.empty() || fn.is_macro) {
+                return;
+            }
+            if (!names.contains(fn.name) || !seen.insert(&fn).second) {
+                return;
+            }
+            out.push_back({file, &fn});
+            walk(walk, *fn.body);
+            grew = true;
+        };
+        for (const PendingAppend &item : pending_appends_) {
+            if (const auto *fn = std::get_if<FunctionDecl>(&item.decl.data)) {
+                consider(item.file_id, *fn);
+            }
+        }
+        for (const OwnedFn &item : deferred_methods_) {
+            consider(item.file_id, item.fn);
+        }
+    }
+}
 
 void Checker::flush_appends() {
     // Specialized methods were addressed while they lived in `deferred_methods_`.

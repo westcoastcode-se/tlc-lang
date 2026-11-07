@@ -904,6 +904,9 @@ struct FunctionDecl {
     bool value_kept = false;
     // The value use was tried. A body that is only valid after specialization is a name, not a pointer.
     bool value_tried = false;
+    // A generic value argument is still a parameter name. The call substitutes the integer.
+    // This body is not a runtime symbol.
+    bool pending_generic = false;
 };
 
 // `mem.memeql` and `mem.memcmp` in `std/mem`. Both compare `[]const T`.

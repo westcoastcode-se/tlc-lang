@@ -4,6 +4,7 @@
 
 #include "check/detail.hpp"
 
+#include <cstddef>
 #include <cstdint>
 
 namespace tlc {
@@ -373,6 +374,59 @@ void Checker::check_for_each(const Stmt::For &node) {
     assign_ = init_loop_exit(done.breaks, before, true);
     --loop_depth_;
     pop();
+}
+
+bool Checker::comptime_func_body() const {
+    return !checking_.empty() && checking_.back() != nullptr && checking_.back()->is_comptime &&
+           !checking_.back()->is_macro;
+}
+
+Checker::ComptimeCallee Checker::comptime_callee_kind(const Expr::Call &call) {
+    if (call.callee == nullptr) {
+        return ComptimeCallee::Unknown;
+    }
+    const Symbol *symbol = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
+        symbol = lookup(named->text);
+    } else if (const auto *selector = std::get_if<Expr::Selector>(&call.callee->data)) {
+        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+        if (package == nullptr || !package->is_package) {
+            return ComptimeCallee::Unknown;
+        }
+        symbol = find_export(package->package_file, selector->field);
+    } else {
+        return ComptimeCallee::Unknown;
+    }
+    if (symbol == nullptr || !symbol->is_function) {
+        return ComptimeCallee::Unknown;
+    }
+    const auto comptime_decl = [](const FunctionDecl *fn) { return fn != nullptr && fn->is_comptime; };
+    if (symbol->is_template) {
+        if (comptime_decl(symbol->fn_template)) {
+            return ComptimeCallee::Comptime;
+        }
+        for (const FunctionDecl *fn : symbol->fn_templates) {
+            if (comptime_decl(fn)) {
+                return ComptimeCallee::Comptime;
+            }
+        }
+        if (symbol->fn_template != nullptr || !symbol->fn_templates.empty()) {
+            return ComptimeCallee::Runtime;
+        }
+        return ComptimeCallee::Unknown;
+    }
+    bool saw = false;
+    for (const FnList &list : symbol->lists) {
+        if (list.decl == nullptr) {
+            continue;
+        }
+        saw = true;
+        if (list.decl->is_comptime) {
+            return ComptimeCallee::Comptime;
+        }
+    }
+    return saw ? ComptimeCallee::Runtime : ComptimeCallee::Unknown;
 }
 
 const FunctionDecl *Checker::comptime_callee(const Expr::Call &call) {
@@ -3185,6 +3239,24 @@ bool Checker::length_waits(const std::string &name) {
     return false;
 }
 
+bool Checker::value_name_waits(const std::string &name) {
+    if (length_waits(name)) {
+        return true;
+    }
+    // `func ordinary(comptime n i32)` is checked before the call substitutes `n`.
+    // A mixed template is checked only after that substitution wrote the value.
+    if (name.empty() || checking_.empty() || checking_.back() == nullptr || checking_.back()->is_macro ||
+        checking_.back()->generic_instance) {
+        return false;
+    }
+    for (const Param &param : checking_.back()->params) {
+        if (param.is_comptime && param.name == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Checker::comptime_param_pending(const Expr *expr) const {
     if (expr == nullptr) {
         return false;
@@ -3308,6 +3380,264 @@ bool Checker::bind_array_lengths(Stmt &stmt, const std::vector<std::string> &nam
     };
     walk(walk, stmt);
     return !negative;
+}
+
+bool Checker::bind_generic_values(Stmt &stmt, const std::vector<std::string> &names,
+                                  const std::vector<const Expr *> &exprs, bool &wrote) {
+    wrote = false;
+    auto hide_one = [](std::vector<std::string> &active, std::vector<const Expr *> &values, const std::string &name) {
+        if (name.empty()) {
+            return;
+        }
+        for (std::size_t i = 0; i < active.size() && i < values.size(); ++i) {
+            if (active[i] == name) {
+                active.erase(active.begin() + static_cast<std::ptrdiff_t>(i));
+                values.erase(values.begin() + static_cast<std::ptrdiff_t>(i));
+                return;
+            }
+        }
+    };
+    auto rewrite_arg = [&](auto &&self, TypeArg &arg, const std::vector<std::string> &active,
+                           const std::vector<const Expr *> &values) -> void {
+        for (TypeArg &nested : arg.args) {
+            self(self, nested, active, values);
+        }
+        for (TypeArg &part : arg.tuple_parts) {
+            self(self, part, active, values);
+        }
+        if (arg.has_value || arg.value_expr != nullptr || !arg.type_package.empty() || arg.indirections != 0 ||
+            arg.is_array || arg.is_tuple || !arg.args.empty() || arg.type_name.empty()) {
+            return;
+        }
+        for (std::size_t i = 0; i < active.size() && i < values.size(); ++i) {
+            if (active[i] != arg.type_name || values[i] == nullptr) {
+                continue;
+            }
+            const std::optional<int> value = fold_int(*values[i]);
+            if (!value) {
+                return;
+            }
+            arg.is_value = true;
+            arg.has_value = true;
+            arg.value = *value;
+            arg.type_name.clear();
+            wrote = true;
+            return;
+        }
+    };
+    auto rewrite_list = [&](std::vector<TypeArg> &args, const std::vector<std::string> &active,
+                            const std::vector<const Expr *> &values) {
+        for (TypeArg &arg : args) {
+            rewrite_arg(rewrite_arg, arg, active, values);
+        }
+    };
+    auto walk_expr = [&](auto &&self, Expr &expr, const std::vector<std::string> &active,
+                         const std::vector<const Expr *> &values) -> void {
+        std::visit(
+            [&](auto &node) {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                              std::is_same_v<T, Expr::Typeof>) {
+                    if (node.expr != nullptr) {
+                        self(self, *node.expr, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                    rewrite_list(node.type_args, active, values);
+                    if (node.expr != nullptr) {
+                        self(self, *node.expr, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Binary> || std::is_same_v<T, Expr::Assign>) {
+                    if (node.lhs != nullptr) {
+                        self(self, *node.lhs, active, values);
+                    }
+                    if (node.rhs != nullptr) {
+                        self(self, *node.rhs, active, values);
+                    }
+                    if constexpr (std::is_same_v<T, Expr::Binary>) {
+                        if (node.mid != nullptr) {
+                            self(self, *node.mid, active, values);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    if (node.callee != nullptr) {
+                        self(self, *node.callee, active, values);
+                    }
+                    rewrite_list(node.type_args, active, values);
+                    for (auto &arg : node.args) {
+                        if (arg != nullptr) {
+                            self(self, *arg, active, values);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    if (node.base != nullptr) {
+                        self(self, *node.base, active, values);
+                    }
+                    rewrite_list(node.type_args, active, values);
+                } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                    if (node.base != nullptr) {
+                        self(self, *node.base, active, values);
+                    }
+                    if (node.index != nullptr) {
+                        self(self, *node.index, active, values);
+                    }
+                    if (node.end != nullptr) {
+                        self(self, *node.end, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                    rewrite_list(node.type_args, active, values);
+                    for (Expr::FieldInit &field : node.fields) {
+                        if (field.value != nullptr) {
+                            self(self, *field.value, active, values);
+                        }
+                    }
+                    for (auto &element : node.elements) {
+                        if (element != nullptr) {
+                            self(self, *element, active, values);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::New>) {
+                    rewrite_list(node.type_args, active, values);
+                    if (node.allocator != nullptr) {
+                        self(self, *node.allocator, active, values);
+                    }
+                    if (node.count != nullptr) {
+                        self(self, *node.count, active, values);
+                    }
+                    if (node.init != nullptr) {
+                        self(self, *node.init, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                    if (node.allocator != nullptr) {
+                        self(self, *node.allocator, active, values);
+                    }
+                    if (node.expr != nullptr) {
+                        self(self, *node.expr, active, values);
+                    }
+                }
+            },
+            expr.data);
+    };
+    auto walk = [&](auto &&self, Stmt &node, std::vector<std::string> active, std::vector<const Expr *> values) -> void {
+        std::visit(
+            [&](auto &item) {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Stmt::Block>) {
+                    for (auto &child : item.statements) {
+                        if (child == nullptr) {
+                            continue;
+                        }
+                        self(self, *child, active, values);
+                        if (const auto *decl = std::get_if<Stmt::Decl>(&child->data)) {
+                            for (const VarDecl &var : decl->vars) {
+                                hide_one(active, values, var.name);
+                            }
+                        } else if (const auto *bind = std::get_if<Stmt::Bind>(&child->data)) {
+                            for (const std::string &name : bind->names) {
+                                hide_one(active, values, name);
+                            }
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                    if (item.value != nullptr) {
+                        walk_expr(walk_expr, *item.value, active, values);
+                    }
+                    for (auto &extra : item.extra) {
+                        if (extra != nullptr) {
+                            walk_expr(walk_expr, *extra, active, values);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                    if (item.expr != nullptr) {
+                        walk_expr(walk_expr, *item.expr, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                    if (item.cond != nullptr) {
+                        walk_expr(walk_expr, *item.cond, active, values);
+                    }
+                    if (item.then_arm != nullptr) {
+                        self(self, *item.then_arm, active, values);
+                    }
+                    if (item.else_arm != nullptr) {
+                        self(self, *item.else_arm, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                    if (item.cond != nullptr) {
+                        walk_expr(walk_expr, *item.cond, active, values);
+                    }
+                    if (item.body != nullptr) {
+                        self(self, *item.body, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                    const std::vector<std::string> outer_names = active;
+                    const std::vector<const Expr *> outer_values = values;
+                    if (item.init != nullptr) {
+                        self(self, *item.init, active, values);
+                        if (const auto *decl = std::get_if<Stmt::Decl>(&item.init->data)) {
+                            for (const VarDecl &var : decl->vars) {
+                                hide_one(active, values, var.name);
+                            }
+                        } else if (const auto *bind = std::get_if<Stmt::Bind>(&item.init->data)) {
+                            for (const std::string &name : bind->names) {
+                                hide_one(active, values, name);
+                            }
+                        }
+                    }
+                    if (item.cond != nullptr) {
+                        walk_expr(walk_expr, *item.cond, active, values);
+                    }
+                    if (item.step != nullptr) {
+                        walk_expr(walk_expr, *item.step, active, values);
+                    }
+                    if (item.each_expr != nullptr) {
+                        walk_expr(walk_expr, *item.each_expr, active, values);
+                    }
+                    hide_one(active, values, item.each_name);
+                    if (item.body != nullptr) {
+                        self(self, *item.body, active, values);
+                    }
+                    for (auto &copy : item.unrolled) {
+                        if (copy != nullptr) {
+                            self(self, *copy, outer_names, outer_values);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                    if (item.cond != nullptr) {
+                        walk_expr(walk_expr, *item.cond, active, values);
+                    }
+                    if (item.body != nullptr) {
+                        self(self, *item.body, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                    if (item.value != nullptr) {
+                        walk_expr(walk_expr, *item.value, active, values);
+                    }
+                    if (item.stmt != nullptr) {
+                        self(self, *item.stmt, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                    for (VarDecl &var : item.vars) {
+                        if (var.init != nullptr) {
+                            walk_expr(walk_expr, *var.init, active, values);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                    if (item.call != nullptr) {
+                        walk_expr(walk_expr, *item.call, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                    if (item.value != nullptr) {
+                        walk_expr(walk_expr, *item.value, active, values);
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                    if (item.cond != nullptr) {
+                        walk_expr(walk_expr, *item.cond, active, values);
+                    }
+                }
+            },
+            node.data);
+    };
+    walk(walk, stmt, names, exprs);
+    return true;
 }
 
 bool Checker::comptime_for_pending(const Stmt::For &loop) const {

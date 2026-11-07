@@ -1,0 +1,13 @@
+func bump[N i32](value i32) i32 {
+    return value + N;
+}
+
+comptime func from_names(n i32) i32 {
+    comptime const k = n;
+    value := n;
+    return bump[n](1) + bump[k](1) + bump[value](1);
+}
+
+func main() i32 {
+    return from_names(4);
+}

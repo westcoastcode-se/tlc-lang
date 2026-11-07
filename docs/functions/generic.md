@@ -613,6 +613,10 @@ A local `const` whose initializer folds to `i32` may be that argument.
 
 `width[n]()` when `const n = 2` is `width[2]()`.
 
+`func ordinary(comptime n i32) i32 { return width[n](); }` writes that integer. A negative integer is that value. A result that names the parameter, such as `[N]T`, is `not supported yet`.
+
+A call of `width` from a `comptime func` is `not supported yet`.
+
 That local hides a file-scope `const` of the same name.
 
 It also hides a const brought in with `import { n }`.

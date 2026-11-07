@@ -23,7 +23,40 @@ constexpr uint32_t kPoolBytes = 65536;
 
 } // namespace
 
-bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file) {
+std::vector<PackageNode> CodeGen::take_comptime_specs(
+    const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) const {
+    std::vector<PackageNode> held;
+    std::unordered_map<uint32_t, std::size_t> index;
+    for (const auto &spec : specs) {
+        const FunctionDecl *fn = spec.second;
+        if (fn == nullptr || fn->name.empty() || fn->body == nullptr || !fn->type_params.empty() || fn->is_macro) {
+            continue;
+        }
+        const auto found = index.find(spec.first);
+        std::size_t at = 0;
+        if (found == index.end()) {
+            PackageNode node;
+            node.file_id = spec.first;
+            if (const PackageNode *home = find_node(spec.first)) {
+                node.qualifier = home->qualifier;
+                node.path = home->path;
+                node.package_key = home->package_key;
+            }
+            at = held.size();
+            index.emplace(spec.first, at);
+            held.push_back(std::move(node));
+        } else {
+            at = found->second;
+        }
+        TopDecl decl;
+        decl.data = clone_function(*fn);
+        held[at].unit.decls.push_back(std::move(decl));
+    }
+    return held;
+}
+
+bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
+                              const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) {
     if (graph.nodes.empty() || fn.body == nullptr) {
         return false;
     }
@@ -35,6 +68,11 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
     prepare_structs();
     prepare_traits();
     for (const PackageNode &node : graph.nodes) {
+        declare_functions(node);
+    }
+    // A specialization queued while checking is not in the package yet. Keep the copies alive for emission.
+    const std::vector<PackageNode> held_specs = take_comptime_specs(specs);
+    for (const PackageNode &node : held_specs) {
         declare_functions(node);
     }
     for (const PackageNode &node : graph.nodes) {
@@ -154,7 +192,8 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
     return diags_.size() == prepared && !function->isDeclaration();
 }
 
-bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file) {
+bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
+                                     const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) {
     if (graph.nodes.empty() || fn.body == nullptr) {
         return false;
     }
@@ -166,6 +205,10 @@ bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDe
     prepare_structs();
     prepare_traits();
     for (const PackageNode &node : graph.nodes) {
+        declare_functions(node);
+    }
+    const std::vector<PackageNode> held_specs = take_comptime_specs(specs);
+    for (const PackageNode &node : held_specs) {
         declare_functions(node);
     }
     for (const PackageNode &node : graph.nodes) {
@@ -332,8 +375,9 @@ SourceLoc read_comptime_fault(llvm::orc::LLJIT &jit) {
     return loc;
 }
 
-std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
-                                                SourceLoc *fault) {
+std::optional<std::string> eval_comptime_string(
+    const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault,
+    const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -360,7 +404,7 @@ std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const
     module->setDataLayout(*layout_or);
     {
         CodeGen gen(*context, *module, diags);
-        if (!gen.define_comptime_string(graph, fn, file)) {
+        if (!gen.define_comptime_string(graph, fn, file, specs)) {
             return std::nullopt;
         }
     }
@@ -425,7 +469,8 @@ std::optional<std::string> eval_comptime_string(const PackageGraph &graph, const
 }
 
 std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
-                                           SourceLoc *fault) {
+                                           SourceLoc *fault,
+                                           const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -452,7 +497,7 @@ std::optional<int32_t> eval_comptime_i32(const PackageGraph &graph, const Functi
     module->setDataLayout(*layout_or);
     {
         CodeGen gen(*context, *module, diags);
-        if (!gen.define_comptime(graph, fn, file)) {
+        if (!gen.define_comptime(graph, fn, file, specs)) {
             return std::nullopt;
         }
     }
@@ -785,7 +830,8 @@ bool slot_rejected(const ComptimeSlot &slot) {
 } // namespace
 
 bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
-                                     ComptimeStructImage &image) {
+                                     ComptimeStructImage &image,
+                                     const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) {
     image = ComptimeStructImage{};
     if (graph.nodes.empty() || fn.body == nullptr) {
         return false;
@@ -798,6 +844,10 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
     prepare_structs();
     prepare_traits();
     for (const PackageNode &node : graph.nodes) {
+        declare_functions(node);
+    }
+    const std::vector<PackageNode> held_specs = take_comptime_specs(specs);
+    for (const PackageNode &node : held_specs) {
         declare_functions(node);
     }
     for (const PackageNode &node : graph.nodes) {
@@ -1131,8 +1181,9 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
     return diags_.size() == prepared && !body->isDeclaration() && !wrapper->isDeclaration();
 }
 
-ComptimeStructValue eval_comptime_struct(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
-                                         SourceLoc *fault) {
+ComptimeStructValue eval_comptime_struct(
+    const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault,
+    const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) {
     ComptimeStructValue out;
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -1160,7 +1211,7 @@ ComptimeStructValue eval_comptime_struct(const PackageGraph &graph, const Functi
     ComptimeStructImage image;
     {
         CodeGen gen(*context, *module, diags);
-        if (!gen.define_comptime_struct(graph, fn, file, image)) {
+        if (!gen.define_comptime_struct(graph, fn, file, image, specs)) {
             if (image.not_constant) {
                 out.status = ComptimeStructValue::Status::NotConstant;
             }

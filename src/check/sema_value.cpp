@@ -1124,6 +1124,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return mem_compare_bool(mem_compare_kind(*fn)) ? type_bool() : type_int();
                     }
                 }
+                // A `comptime func` calls a `comptime func`. Another function is `not supported yet`.
+                if (comptime_func_body() && comptime_callee_kind(node) == ComptimeCallee::Runtime) {
+                    error(node.loc, "not supported yet");
+                    for (const auto &arg : node.args) {
+                        if (arg != nullptr) {
+                            check_expr(*arg, true);
+                        }
+                    }
+                    return type_invalid();
+                }
                 // Inside a comptime func the call is ordinary code. The outer call is what runs.
                 if (const FunctionDecl *fn = node.callee != nullptr ? comptime_callee(node) : nullptr;
                     fn != nullptr && (comptime_depth_ == 0 || macro_depth_ != 0)) {
@@ -1812,6 +1822,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 if (method->type.result == nullptr) {
                                     return type_invalid();
                                 }
+                                if (comptime_func_body() && (method->decl == nullptr || !method->decl->is_comptime)) {
+                                    error(node.loc, "not supported yet");
+                                    return type_invalid();
+                                }
                                 return *method->type.result;
                             }
                             if (hidden) {
@@ -1849,6 +1863,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                         }
                     }
+                }
+                // A function pointer is not a `comptime func`.
+                if (comptime_func_body() && comptime_callee_kind(node) != ComptimeCallee::Comptime) {
+                    error(node.loc, "not supported yet");
+                    for (const auto &arg : node.args) {
+                        if (arg != nullptr) {
+                            check_expr(*arg, true);
+                        }
+                    }
+                    return type_invalid();
                 }
                 const bool saved_direct = direct_callee_;
                 direct_callee_ = std::holds_alternative<Expr::Name>(node.callee->data) ||

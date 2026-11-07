@@ -79,7 +79,8 @@ void CodeGen::declare_functions(const PackageNode &node) {
         // A length that is still a parameter is chosen per call, so this body is not a symbol.
         if (fn == nullptr || fn->name.empty() || fn->is_macro || !fn->type_params.empty() ||
             (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept) ||
-            (fn->is_comptime && fn->body != nullptr && length_name_left(*fn->body))) {
+            (fn->is_comptime && fn->body != nullptr && length_name_left(*fn->body)) ||
+            (fn->pending_generic && !fn->generic_instance)) {
             continue;
         }
         kinds[function_key(*fn)].insert(param_list_key(*fn));
@@ -89,7 +90,8 @@ void CodeGen::declare_functions(const PackageNode &node) {
         const auto *fn = std::get_if<FunctionDecl>(&decl.data);
         if (fn == nullptr || fn->name.empty() || fn->is_macro ||
             (comptime_param_template(*fn) && !comptime_param_kept(*fn) && !fn->value_kept) ||
-            (fn->is_comptime && fn->body != nullptr && length_name_left(*fn->body))) {
+            (fn->is_comptime && fn->body != nullptr && length_name_left(*fn->body)) ||
+            (fn->pending_generic && !fn->generic_instance)) {
             continue;
         }
         const std::string plain = function_key(*fn);
@@ -463,7 +465,8 @@ void CodeGen::emit_bodies(const PackageNode &node) {
             continue;
         }
         // The length is chosen per call. The folded call does not use this body.
-        if (fn->is_comptime && length_name_left(*fn->body)) {
+        // A generic value argument is still a parameter name on this copy.
+        if ((fn->is_comptime && length_name_left(*fn->body)) || (fn->pending_generic && !fn->generic_instance)) {
             continue;
         }
         std::string key = function_key(*fn);

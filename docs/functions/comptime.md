@@ -10,6 +10,8 @@ A `comptime func` calculates while the compiler is still compiling the program.
 
 Every argument has to be a comptime value, even when the parameter is not marked `comptime`.
 
+A `comptime func` calls a `comptime func`. A call of any other function is `not supported yet`.
+
 A `return` leaves the `comptime func` and finishes the calculation for that call.
 
 The call is an expression in the caller.

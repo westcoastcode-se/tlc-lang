@@ -1,0 +1,14 @@
+func repeat[N i32, T type](value T) [N]T {
+    assert(N > 0, "empty");
+    var out [N]T;
+    out[0] = value;
+    return out;
+}
+
+comptime func from_param(n i32) i32 {
+    return repeat[n](1)[0];
+}
+
+func main() i32 {
+    return from_param(4);
+}

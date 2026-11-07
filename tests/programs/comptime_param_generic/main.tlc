@@ -1,0 +1,11 @@
+func bump[N i32](value i32) i32 {
+    return value + N;
+}
+
+func scale(comptime n i32, x i32) i32 {
+    return bump[n](x);
+}
+
+func main() i32 {
+    return scale(4, 1);
+}
