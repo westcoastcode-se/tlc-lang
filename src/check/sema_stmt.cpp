@@ -1974,7 +1974,8 @@ void Checker::check_switch(const Stmt::Switch &node) {
         }
         if (!folded) {
             // A `comptime` parameter is comptime. This copy still receives it, so every case stays.
-            if (node.cond == nullptr || !comptime_value(*node.cond)) {
+            // A parameter of a `comptime func` is not a constant until the call substitutes it.
+            if ((node.cond == nullptr || !comptime_value(*node.cond)) && !comptime_param_pending(node.cond.get())) {
                 error(node.loc, "not supported yet");
             }
         } else {
@@ -2267,7 +2268,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                         node.cond != nullptr ? fold_condition(*node.cond) : std::nullopt;
                     if (!folded) {
                         // A `comptime` parameter is comptime. This copy still receives it, so both arms stay.
-                        if (node.cond == nullptr || !comptime_value(*node.cond)) {
+                        // A parameter of a `comptime func` is not a constant until the call substitutes it.
+                        if ((node.cond == nullptr || !comptime_value(*node.cond)) &&
+                            !comptime_param_pending(node.cond.get())) {
                             error(node.loc, "not supported yet");
                         }
                     } else {
@@ -2493,6 +2496,17 @@ void Checker::check_stmt(const Stmt &stmt) {
                     int saved;
                     ~RestoreMacro() { slot = saved; }
                 } restore{macro_depth_, saved_macro};
+                // The index stays pending through the body. A nested `comptime if` on that name waits.
+                struct RestoreIndex {
+                    std::string &slot;
+                    std::string saved;
+                    bool active = false;
+                    ~RestoreIndex() {
+                        if (active) {
+                            slot = std::move(saved);
+                        }
+                    }
+                } hold_index{pending_comptime_index_, {}, false};
                 // The copies are chosen while expanding. The call site checks the statements that remain.
                 if (macro_depth_ > 0 && node.comptime_for && !node.emit) {
                     return;
@@ -2501,7 +2515,13 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (unroll_comptime_for(const_cast<Stmt::For &>(node))) {
                         return;
                     }
-                    error(node.loc, "not supported yet");
+                    if (comptime_for_pending(node)) {
+                        hold_index.saved = pending_comptime_index_;
+                        hold_index.active = true;
+                        pending_comptime_index_ = loop_index_name(node);
+                    } else {
+                        error(node.loc, "not supported yet");
+                    }
                 }
                 // A macro unrolls `for (var item : items)` at the call. The body is checked there.
                 if (macro_depth_ > 0 && node.each) {
@@ -3069,6 +3089,97 @@ void Checker::check_stmt(const Stmt &stmt) {
             }
         },
         stmt.data);
+}
+
+bool Checker::expr_mentions_name(const Expr &expr, const std::string &name) const {
+    if (name.empty()) {
+        return false;
+    }
+    return std::visit(
+        [&](const auto &item) -> bool {
+            using T = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<T, Expr::Name>) {
+                return item.text == name;
+            } else if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                                 std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
+                return item.expr != nullptr && expr_mentions_name(*item.expr, name);
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                return (item.lhs != nullptr && expr_mentions_name(*item.lhs, name)) ||
+                       (item.rhs != nullptr && expr_mentions_name(*item.rhs, name)) ||
+                       (item.mid != nullptr && expr_mentions_name(*item.mid, name));
+            } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                return (item.lhs != nullptr && expr_mentions_name(*item.lhs, name)) ||
+                       (item.rhs != nullptr && expr_mentions_name(*item.rhs, name));
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                if (item.callee != nullptr && expr_mentions_name(*item.callee, name)) {
+                    return true;
+                }
+                for (const auto &arg : item.args) {
+                    if (arg != nullptr && expr_mentions_name(*arg, name)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                return item.base != nullptr && expr_mentions_name(*item.base, name);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                return (item.base != nullptr && expr_mentions_name(*item.base, name)) ||
+                       (item.index != nullptr && expr_mentions_name(*item.index, name)) ||
+                       (item.end != nullptr && expr_mentions_name(*item.end, name));
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                for (const Expr::FieldInit &field : item.fields) {
+                    if (field.value != nullptr && expr_mentions_name(*field.value, name)) {
+                        return true;
+                    }
+                }
+                for (const auto &element : item.elements) {
+                    if (element != nullptr && expr_mentions_name(*element, name)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                return (item.allocator != nullptr && expr_mentions_name(*item.allocator, name)) ||
+                       (item.count != nullptr && expr_mentions_name(*item.count, name)) ||
+                       (item.init != nullptr && expr_mentions_name(*item.init, name));
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                return (item.allocator != nullptr && expr_mentions_name(*item.allocator, name)) ||
+                       (item.expr != nullptr && expr_mentions_name(*item.expr, name));
+            } else {
+                return false;
+            }
+        },
+        expr.data);
+}
+
+bool Checker::comptime_param_pending(const Expr *expr) const {
+    if (expr == nullptr) {
+        return false;
+    }
+    if (!pending_comptime_index_.empty() && expr_mentions_name(*expr, pending_comptime_index_)) {
+        return true;
+    }
+    if (checking_.empty() || checking_.back() == nullptr || !checking_.back()->is_comptime ||
+        checking_.back()->is_macro) {
+        return false;
+    }
+    for (const Param &param : checking_.back()->params) {
+        if (expr_mentions_name(*expr, param.name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Checker::comptime_for_pending(const Stmt::For &loop) const {
+    if (comptime_param_pending(loop.each_expr.get()) || comptime_param_pending(loop.cond.get()) ||
+        comptime_param_pending(loop.step.get())) {
+        return true;
+    }
+    if (loop.init == nullptr) {
+        return false;
+    }
+    return comptime_param_pending(bind_value(*loop.init));
 }
 
 void Checker::check_function(const FunctionDecl &fn) {

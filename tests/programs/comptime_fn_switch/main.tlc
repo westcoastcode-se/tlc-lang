@@ -1,0 +1,12 @@
+comptime func pick(n i32) i32 {
+    comptime switch (n) {
+    case 1:
+        return 40;
+    default:
+        return 2;
+    }
+}
+
+func main() i32 {
+    return pick(1) + pick(0);
+}

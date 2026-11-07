@@ -1,0 +1,15 @@
+comptime func sum(n i32) i32 {
+    var s = 0;
+    comptime for (var i = 0; i < n; i = i + 1) {
+        comptime if (i == 0) {
+            s = s + 10;
+        } else {
+            s = s + i;
+        }
+    }
+    return s;
+}
+
+func main() i32 {
+    return sum(4);
+}

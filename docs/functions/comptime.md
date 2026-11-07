@@ -347,6 +347,33 @@ An initializer that does not fold is `not supported yet`.
 
 A condition that is not comptime is `not supported yet`.
 
+Inside a `comptime func`, a parameter is not a constant until the call substitutes it.
+
+`comptime if`, `comptime switch`, and `comptime for` on that parameter wait for the call. The body typechecks every arm. The call keeps the selected arm, and `comptime for` unrolls.
+
+`pick(1)` returns 42.
+
+```c
+comptime func pick(n i32) i32 {
+    comptime if (n == 1) {
+        return 42;
+    }
+    return 0;
+}
+
+func main() i32 {
+    return pick(1);
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
+A `var` in that condition does not fold.
+
 A `comptime` parameter is comptime.
 
 The copy that still receives it typechecks both arms.

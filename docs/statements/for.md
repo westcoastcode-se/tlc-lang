@@ -249,6 +249,8 @@ retq
 
 A bound that does not fold is `not supported yet`. It emits nothing.
 
+Inside a `comptime func`, a bound that is a parameter waits for the call. The call unrolls.
+
 A local `const` whose initializer folds to `i32` folds. A `var` does not.
 
 A length past 32 and a step that is not positive are `not supported yet`.

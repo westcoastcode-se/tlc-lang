@@ -336,6 +336,8 @@ The other arm is not typechecked and not emitted.
 
 A condition that is not comptime is `not supported yet`.
 
+Inside a `comptime func`, a parameter is not a constant until the call substitutes it. The body typechecks every arm. The call keeps the selected arm.
+
 A `comptime` parameter is comptime.
 
 The copy that still receives it typechecks both arms.

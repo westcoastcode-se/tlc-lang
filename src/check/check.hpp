@@ -805,6 +805,8 @@ class Checker {
     std::unordered_set<const FunctionDecl *> comptime_folding_;
     // Nonzero while checking a `comptime func` or a `macro`. Nested calls are not expanded there.
     int comptime_depth_ = 0;
+    // Index of a `comptime for` whose bound is a parameter. Nested `comptime if` on that name waits.
+    std::string pending_comptime_index_;
     // Nonzero while checking a `macro`. `emit` is legal only then, and not inside a runtime loop.
     int macro_depth_ = 0;
     // Nonzero while a macro expands a folded `comptime switch`. `break` ends that path.
@@ -1164,6 +1166,9 @@ class Checker {
     bool take_comptime_fault(const std::string &fn_name);
     // Asserts and indexes in a substituted body. True when a fault was reported.
     bool explain_comptime(const Stmt &stmt, const std::string &fn_name);
+    // After the call substitutes parameters, fold `comptime if`, `comptime switch`, and `comptime for`.
+    // True when that copy typechecks.
+    bool recheck_comptime_copy(FunctionDecl &wrapper, bool force);
     int explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name);
     std::string comptime_assert_message(const Stmt &stmt, SourceLoc loc) const;
     // `name := expr` keeps this value until a store or `&name`. A `var` and a `const` do not.
@@ -1173,6 +1178,10 @@ class Checker {
     // A name this statement assigns, ignoring a nested binding of that same name.
     bool stmt_assigns(const Stmt &stmt, const std::string &name, bool hidden) const;
     bool expr_assigns(const Expr &expr, const std::string &name, bool hidden) const;
+    // A parameter of the `comptime func` being checked, or the index of a `comptime for` that is still waiting.
+    bool comptime_param_pending(const Expr *expr) const;
+    bool comptime_for_pending(const Stmt::For &loop) const;
+    bool expr_mentions_name(const Expr &expr, const std::string &name) const;
     // Drop `name := expr` when `stmt` stores that visible binding. `hide_name` is a `for` item.
     void release_assigned(const Stmt *stmt, const std::string &hide_name = {});
     void release_assigned_expr(const Expr *expr);

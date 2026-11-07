@@ -2339,6 +2339,10 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         return std::nullopt;
     }
     replace_stmt_names(*wrapper.body, names, exprs);
+    // Parameters are literals. `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
+    if (!recheck_comptime_copy(wrapper, false)) {
+        return std::nullopt;
+    }
     wrapper.params.clear();
     wrapper.captures.clear();
     wrapper.captured_here.clear();
@@ -2456,6 +2460,10 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
         return false;
     }
     replace_stmt_names(*wrapper.body, names, exprs);
+    // Parameters are literals. `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
+    if (!recheck_comptime_copy(wrapper, false)) {
+        return false;
+    }
     wrapper.params.clear();
     wrapper.captures.clear();
     wrapper.captured_here.clear();
@@ -2589,16 +2597,9 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
     wrapper.link_name.clear();
     // A file-scope const is bound before the body is checked, so `Point{.x = 10}` has no
     // `struct_id` yet. This walk stamps the copy. `is_comptime` stays set so a nested call
-    // remains ordinary code. The pointer must not stay in `loop_info_` after the copy dies.
-    {
-        const bool saved_quiet = quiet_;
-        quiet_ = true;
-        check_function(wrapper);
-        quiet_ = saved_quiet;
-        loop_info_.erase(&wrapper);
-        self_loop_.erase(&wrapper);
-        infer_running_.erase(&wrapper);
-        infer_mismatch_.erase(&wrapper);
+    // remains ordinary code.
+    if (!recheck_comptime_copy(wrapper, true)) {
+        return kept;
     }
     wrapper.is_comptime = false;
     uint32_t file = file_id_;
@@ -3564,6 +3565,97 @@ std::string Checker::comptime_assert_message(const Stmt &stmt, SourceLoc loc) co
         return {};
     }
     return found->message.empty() ? std::string("assert") : found->message;
+}
+
+namespace {
+
+bool deferred_comptime(const Stmt &stmt) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && deferred_comptime(*child)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (node.comptime_if && !node.folded) {
+                    return true;
+                }
+                return (node.then_arm != nullptr && deferred_comptime(*node.then_arm)) ||
+                       (node.else_arm != nullptr && deferred_comptime(*node.else_arm));
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                if (node.comptime_switch && !node.folded) {
+                    return true;
+                }
+                return node.body != nullptr && deferred_comptime(*node.body);
+            } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                return node.stmt != nullptr && deferred_comptime(*node.stmt);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.comptime_for && !node.folded) {
+                    return true;
+                }
+                if (node.body != nullptr && deferred_comptime(*node.body)) {
+                    return true;
+                }
+                for (const auto &copy : node.unrolled) {
+                    if (copy != nullptr && deferred_comptime(*copy)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                return node.body != nullptr && deferred_comptime(*node.body);
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+} // namespace
+
+bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
+    if (wrapper.body == nullptr) {
+        return true;
+    }
+    const bool deferred = deferred_comptime(*wrapper.body);
+    if (!force && !deferred) {
+        return true;
+    }
+    // The copy is checked from the call. Locals of the caller must not hide file-scope names.
+    struct FileScopes {
+        Checker &self;
+        std::vector<Scope> saved;
+        std::size_t prefix = 0;
+        explicit FileScopes(Checker &checker) : self(checker), saved(std::move(checker.scopes_)) {
+            while (prefix < saved.size() && saved[prefix].function_id == 0) {
+                ++prefix;
+            }
+            self.scopes_.reserve(prefix);
+            for (std::size_t i = 0; i < prefix; ++i) {
+                self.scopes_.push_back(std::move(saved[i]));
+            }
+        }
+        ~FileScopes() {
+            const std::size_t have = self.scopes_.size() < prefix ? self.scopes_.size() : prefix;
+            for (std::size_t i = 0; i < have; ++i) {
+                saved[i] = std::move(self.scopes_[i]);
+            }
+            self.scopes_ = std::move(saved);
+        }
+    } file_scopes(*this);
+    const bool saved_quiet = quiet_;
+    quiet_ = true;
+    check_function(wrapper);
+    quiet_ = saved_quiet;
+    loop_info_.erase(&wrapper);
+    self_loop_.erase(&wrapper);
+    infer_running_.erase(&wrapper);
+    infer_mismatch_.erase(&wrapper);
+    return true;
 }
 
 int Checker::explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name) {

@@ -1,0 +1,10 @@
+comptime func pick(n i32) i32 {
+    comptime if (n == 1) {
+        return 40;
+    }
+    return 2;
+}
+
+func main() i32 {
+    return pick(1) + pick(0);
+}

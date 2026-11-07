@@ -97,6 +97,8 @@ An ordinary `switch` runs at run time, even when the value is a file-scope `cons
 
 A value that is not comptime is `not supported yet`.
 
+Inside a `comptime func`, a parameter is not a constant until the call substitutes it. The body typechecks every case. The call keeps the matching case.
+
 A `comptime` parameter is comptime.
 
 The copy that still receives it typechecks every case.
