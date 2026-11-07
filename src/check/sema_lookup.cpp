@@ -317,10 +317,15 @@ Type Checker::deferred_struct_type(const std::string &name, const std::string &p
         find_struct_template(name, owner);
     }
     const int id = find_tag(owner, spec);
-    if (id < 0) {
-        return type_invalid();
+    if (id >= 0) {
+        return type_struct(id);
     }
-    return type_struct(id);
+    // `type Mine[N i32] Buf[N]`. The stand-in is that alias, not `Buf`.
+    Type alias;
+    if (package_typedef(owner, spec, alias)) {
+        return alias;
+    }
+    return type_invalid();
 }
 
 Type Checker::type_of_var(const VarDecl &var) {

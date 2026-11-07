@@ -1,0 +1,12 @@
+type Buf[N i32] struct { raw [N]u8; }
+type Mine[N i32] Buf[N];
+
+comptime func from(n i32) i32 {
+    var k = n;
+    var buf Mine[k];
+    return buf.raw.len;
+}
+
+func main() i32 {
+    return from(4);
+}

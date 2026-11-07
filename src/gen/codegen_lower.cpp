@@ -439,6 +439,14 @@ bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
         if (find_alias(target, type_name) != nullptr) {
             return true;
         }
+        // `type Wrap[N i32] Mine[N]` names another spec that is still queued.
+        if (eval_aliases_ != nullptr) {
+            for (const auto &extra : *eval_aliases_) {
+                if (extra.second != nullptr && extra.second->name == type_name && extra.second->type_params.empty()) {
+                    return false;
+                }
+            }
+        }
         // `type Point Point` names the struct tag. The alias is not waiting on itself.
         if (has_typedef(target, type_name) && !(self && type_package.empty())) {
             return false;

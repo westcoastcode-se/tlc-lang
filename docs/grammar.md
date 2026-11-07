@@ -336,7 +336,7 @@ The other arm is not typechecked and not emitted.
 
 A condition that is not comptime is `not supported yet`.
 
-Inside a `comptime func`, a parameter is not a constant until the call substitutes it. `value := n` and `comptime const k = n` are that parameter. `var buf [n]i32` uses it as the length, and `buf.len` is `n`. `var buf Buf[n]`, `Buf[n]{}`, and `new(&arena) Buf[n]` write it as a type argument. `new Buf[n]` uses the heap and is `not supported yet`. A negative length is `not supported yet`. A call of a function that is not `comptime` is `not supported yet`. The body typechecks every arm. The call keeps the selected arm.
+Inside a `comptime func`, a parameter is not a constant until the call substitutes it. `value := n` and `comptime const k = n` are that parameter. `var buf [n]i32` uses it as the length, and `buf.len` is `n`. `var buf Buf[n]`, `Buf[n]{}`, and `new(&arena) Buf[n]` write it as a type argument. `type Mine[N i32] Buf[N]` then `var buf Mine[n]`, `Mine[n]{}`, and `new(&arena) Mine[n]` are that alias. `new Buf[n]` uses the heap and is `not supported yet`. A negative length is `not supported yet`. A call of a function that is not `comptime` is `not supported yet`. The body typechecks every arm. The call keeps the selected arm.
 
 A `comptime` parameter is comptime.
 
@@ -1985,6 +1985,8 @@ A tuple does not convert to a slice, so `row[0:2]` on `[N]Duo` or `[N][M]Duo` is
 `type MyAlias[N i32] Buf[N]` is an alias of that specialization.
 
 `MyAlias[4]` is a different type from `Buf[4]` and from `MyAlias[8]`.
+
+Inside a `comptime func`, `var buf MyAlias[n]` writes that integer. `MyAlias[n]{}` and `new(&arena) MyAlias[n]` are that alias.
 
 `type MyAlias[T type] pkg.Vec[T]` names an exported type.
 

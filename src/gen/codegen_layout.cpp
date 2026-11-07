@@ -769,6 +769,16 @@ void CodeGen::prepare_aliases() {
             pending.push_back(Pending{node.file_id, item});
         }
     }
+    // A specialization queued while checking is not in the package yet.
+    if (eval_aliases_ != nullptr) {
+        for (const auto &extra : *eval_aliases_) {
+            if (extra.second == nullptr || extra.second->name.empty() || !extra.second->type_params.empty() ||
+                aliases_[extra.first].contains(extra.second->name)) {
+                continue;
+            }
+            pending.push_back(Pending{extra.first, extra.second});
+        }
+    }
     bool progress = true;
     while (progress) {
         progress = false;

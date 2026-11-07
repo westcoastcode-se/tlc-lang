@@ -1,0 +1,31 @@
+type Buf[N i32] struct { raw [N]u8; }
+type Mine[N i32] Buf[N];
+
+var slot [8]u8;
+var used i32;
+
+type Arena struct { mark i32; }
+
+unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+    if (used != 0) { return null; }
+    used = size;
+    return ?*u8(&slot);
+}
+
+func Arena::free(self *this, ptr *u8) void {}
+
+unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+    return null;
+}
+
+comptime func from(n i32) i32 {
+    var arena Arena;
+    var buf = new(&arena) Mine[n];
+    var len = buf.raw.len;
+    delete(&arena) buf;
+    return len;
+}
+
+func main() i32 {
+    return from(4);
+}

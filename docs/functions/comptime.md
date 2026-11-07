@@ -404,7 +404,7 @@ Inside a `comptime func`, a parameter is not a constant until the call substitut
 
 `var buf [n]i32`, `var buf [k]i32`, and `var buf [value]i32` use that integer as the length. `buf.len` is `n`. A negative value is `not supported yet`. A `var` is not a length.
 
-`var buf Buf[n]`, `var buf Buf[k]`, and `var buf Buf[value]` write that integer as a type argument. `buf.raw.len` is `n` when `raw` is `[N]u8`. `Buf[n]{}` and `new(&arena) Buf[n]` are that same type. `new Buf[n]` uses the heap and is `not supported yet`. A negative value is `not supported yet`. A `var` is `type mismatch`.
+`var buf Buf[n]`, `var buf Buf[k]`, and `var buf Buf[value]` write that integer as a type argument. `buf.raw.len` is `n` when `raw` is `[N]u8`. `Buf[n]{}` and `new(&arena) Buf[n]` are that same type. `type Mine[N i32] Buf[N]` then `var buf Mine[n]`, `Mine[n]{}`, and `new(&arena) Mine[n]` are that alias. `Mine` and `Buf` stay different types. `new Buf[n]` and `new Mine[n]` use the heap and are `not supported yet`. A negative value is `not supported yet`. A `var` is `type mismatch`.
 
 `width(4)` returns 4.
 
@@ -455,6 +455,29 @@ type Buf[N i32] struct { raw [N]u8; }
 
 comptime func from(n i32) i32 {
     var buf Buf[n];
+    return buf.raw.len;
+}
+
+func main() i32 {
+    return from(4);
+}
+```
+
+```asm
+main:
+movl $4, %eax                    # constant
+retq                             # return
+```
+
+`Mine[n]` is that alias. `from(4)` returns 4. `Mine[4]` is a different type from `Buf[4]`.
+
+```c
+type Buf[N i32] struct { raw [N]u8; }
+
+type Mine[N i32] Buf[N];
+
+comptime func from(n i32) i32 {
+    var buf Mine[n];
     return buf.raw.len;
 }
 

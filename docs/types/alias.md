@@ -165,6 +165,31 @@ retq                             # return
 
 The program returns 42. `raw` is `[4]u8`. `a.n` is the field of `Buf[4]`.
 
+Inside a `comptime func`, `var buf MyAlias[n]` writes that integer. `MyAlias[n]{}` and `new(&arena) MyAlias[n]` are that alias. `buf.raw.len` is `n`. A negative value is `not supported yet`. A `var` is `type mismatch`. `new MyAlias[n]` uses the heap and is `not supported yet`. Assigning `MyAlias[n]` to `Buf[n]` is `type mismatch`.
+
+```c
+type Buf[N i32] struct { raw [N]u8; }
+
+type MyAlias[N i32] Buf[N];
+
+comptime func from(n i32) i32 {
+    var buf MyAlias[n];
+    return buf.raw.len;
+}
+
+func main() i32 {
+    return from(4);
+}
+```
+
+```asm
+main:
+movl $4, %eax                    # constant
+retq                             # return
+```
+
+The program returns 4.
+
 ```c
 type Vec[T type] struct {
     n T;

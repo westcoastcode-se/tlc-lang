@@ -2394,7 +2394,15 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
             }
         }
     }
-    const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault, specs, structs);
+    std::vector<std::pair<uint32_t, const TypedefDecl *>> aliases;
+    for (const PendingAppend &item : pending_appends_) {
+        if (const auto *alias = std::get_if<TypedefDecl>(&item.decl.data)) {
+            if (!alias->name.empty() && alias->type_params.empty()) {
+                aliases.push_back({item.file_id, alias});
+            }
+        }
+    }
+    const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault, specs, structs, aliases);
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
         report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);

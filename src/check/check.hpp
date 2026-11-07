@@ -1261,7 +1261,8 @@ class Checker {
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                          int &indirections, uint32_t &optional, bool &is_array, int &array_len,
                          std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);
-    // `Buf[n]` while `n` waits. One element stands in so the fields typecheck. The call builds the real struct.
+    // `Buf[n]` and `Mine[n]` while `n` waits. One element stands in so the fields typecheck.
+    // The call builds the real struct. An alias stays that alias.
     Type deferred_struct_type(const std::string &name, const std::string &package, const std::vector<TypeArg> &args,
                               SourceLoc loc);
     const StructDecl *find_struct_template(const std::string &name, uint32_t &owner) const;

@@ -38,7 +38,8 @@ CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const 
 std::optional<int32_t> eval_comptime_i32(
     const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault = nullptr,
     const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs = {},
-    const std::vector<std::pair<uint32_t, const StructDecl *>> &structs = {});
+    const std::vector<std::pair<uint32_t, const StructDecl *>> &structs = {},
+    const std::vector<std::pair<uint32_t, const TypedefDecl *>> &aliases = {});
 
 // Compile `fn` and call it. `fn` returns `[]const u8` and takes no parameters.
 // The bytes are that slice. Nullopt when emission or the call fails.
