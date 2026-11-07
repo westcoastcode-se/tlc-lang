@@ -6,7 +6,7 @@ comptime func field(p (Integer, i32)) i32 {
     return i32(p[0]) + p[1];
 }
 
-func take(p comptime (Integer, i32), n i32) i32 {
+func take(comptime p (Integer, i32), n i32) i32 {
     return i32(p[0]) + n;
 }
 

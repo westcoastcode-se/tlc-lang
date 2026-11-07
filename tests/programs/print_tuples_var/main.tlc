@@ -1,6 +1,6 @@
 import "builtin";
 
-macro func print_with_tuples[T type](fmt comptime []const u8, values comptime T) void {
+macro func print_with_tuples[T type](comptime fmt []const u8, comptime values T) void {
     emit builtin.fmt(fmt, values);
 }
 

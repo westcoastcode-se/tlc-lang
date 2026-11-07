@@ -6,7 +6,7 @@ comptime func id(n Integer) i32 {
     return i32(n);
 }
 
-func take(n comptime Integer, k i32) i32 {
+func take(comptime n Integer, k i32) i32 {
     return i32(n) + k;
 }
 

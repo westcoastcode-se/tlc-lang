@@ -1,4 +1,4 @@
-comptime func id[T type](value comptime i32) i32 {
+comptime func id[T type](comptime value i32) i32 {
     return value;
 }
 

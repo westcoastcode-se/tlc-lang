@@ -21,7 +21,7 @@ comptime func field(p (Point, i32)) i32 {
     return p[0].x + p[0].y + p[1];
 }
 
-func text(p comptime ([]const u8, i32)) i32 {
+func text(comptime p ([]const u8, i32)) i32 {
     return p[0].len + p[1];
 }
 

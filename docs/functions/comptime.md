@@ -286,7 +286,7 @@ When the file is `main.tlc`, the symbol is `main.scale.spec.2`.
 
 A different constant builds a different copy.
 
-`name comptime []const u8` is that string in the copy.
+`comptime name []const u8` is that string in the copy.
 
 An enumerator is a comptime argument on that same parameter.
 
@@ -322,14 +322,14 @@ More than 32 nested specializations are `not supported yet`.
 
 A struct, a float, an alias, a function, and a tuple are comptime arguments.
 
-`comptime` is a keyword and sits directly after the argument name. `func add(comptime n i32)` is `expected an identifier`.
+`comptime` is a keyword and sits directly before the argument name. `func add(n comptime i32)` and `func Point::shift(self *this, n comptime i32)` are `expected a type`.
 
 ```c
-func add(n comptime i32) i32 {
+func add(comptime n i32) i32 {
     return n;
 }
 
-func scale(n comptime i32, x i32) i32 {
+func scale(comptime n i32, x i32) i32 {
     return x + n;
 }
 
@@ -367,7 +367,7 @@ A runtime `const` and a `var` are `type mismatch`.
 `scale(n + 1, x)` is `type mismatch`.
 
 ```c
-func scale(n comptime i32, x i32) i32 {
+func scale(comptime n i32, x i32) i32 {
     return x + n;
 }
 
@@ -519,7 +519,7 @@ That copy is `movl $42, %eax` and `retq`.
 
 `comptime if (made.bias == 0.5)` keeps one arm.
 
-When the file is `main.tlc`, `take(move(origin), n)` on `func take(p comptime Point, n i32)` calls `main.take.spec.p_42_1`.
+When the file is `main.tlc`, `take(move(origin), n)` on `func take(comptime p Point, n i32)` calls `main.take.spec.p_42_1`.
 
 `p.x` is the immediate `42`.
 
@@ -618,7 +618,7 @@ type Point struct {
     y i32;
 };
 
-func take(p comptime Point, n i32) i32 {
+func take(comptime p Point, n i32) i32 {
     return p.x + n;
 }
 
@@ -731,7 +731,7 @@ The compiler does not pass the parameter, and `p[0][1]` is the immediate `2`.
 A function nested in another function passes the tuple and does not specialize.
 
 ```c
-func take(p comptime (i32, i32), n i32) i32 {
+func take(comptime p (i32, i32), n i32) i32 {
     return p[0] + n;
 }
 
@@ -807,7 +807,7 @@ func add(a i32, b i32) i32 {
     return a + b;
 }
 
-func take(p comptime (func (i32, i32) i32, i32), n i32) i32 {
+func take(comptime p (func (i32, i32) i32, i32), n i32) i32 {
     return (p[0])(n, 2) + p[1];
 }
 
@@ -880,7 +880,7 @@ Passing the tuple to a `comptime` parameter is `not supported yet`.
 
 There is no spelling for the pointer.
 
-`&addr` alone on `p comptime *i32` is `type mismatch`.
+`&addr` alone on `comptime p *i32` is `type mismatch`.
 
 A pointer element is `&` of a `comptime const`.
 
@@ -910,7 +910,7 @@ A `var` address is `not supported yet`.
 
 Passing `(&addr, 2)` to a `comptime` parameter is `not supported yet`.
 
-`&addr` alone on `p comptime *i32` is `type mismatch`.
+`&addr` alone on `comptime p *i32` is `type mismatch`.
 
 ## An array stored in a tuple
 
@@ -950,7 +950,7 @@ That `field` is `comptime func field(p ([2]Point, i32)) i32 { return p[0][0].x +
 
 A local `const` and a `var` of that array are `not supported yet`.
 
-`take((row, 0), n)` with `p comptime ([2]Point, i32)` is `type mismatch`.
+`take((row, 0), n)` with `comptime p ([2]Point, i32)` is `type mismatch`.
 
 `pair[0][0] = 1` on that comptime const is `type mismatch`.
 
@@ -1102,7 +1102,7 @@ retq                             # return
 >
 > `var row = [_]i32{40, 2}` then `comptime const pair = (row, 0)` is `not supported yet`.
 >
-> `take(pair, 0)` with `p comptime ([2]i32, i32)` is `not supported yet`.
+> `take(pair, 0)` with `comptime p ([2]i32, i32)` is `not supported yet`.
 >
 > There is no spelling for the array.
 >
@@ -1121,7 +1121,7 @@ The other arm is not emitted.
 ```c
 const scale = 0.5;
 
-func take(v comptime f64, n i32) i32 {
+func take(comptime v f64, n i32) i32 {
     comptime if (v == 0.5) {
         return n + 2;
     }
@@ -1159,7 +1159,7 @@ The call passes `n` and does not pass `scale`.
 
 An alias is that argument too.
 
-`type Integer i32` then `const other = Integer(4)` on `n comptime Integer` calls `main.take.spec.4` when the file is `main.tlc`.
+`type Integer i32` then `const other = Integer(4)` on `comptime n Integer` calls `main.take.spec.4` when the file is `main.tlc`.
 
 The copy adds `4`.
 
@@ -1200,7 +1200,7 @@ comptime func add(a i32, b i32) i32 {
 
 comptime const op = add;
 
-func take(op comptime func (i32, i32) i32, n i32) i32 {
+func take(comptime op func (i32, i32) i32, n i32) i32 {
     return op(n, 2);
 }
 
@@ -1284,7 +1284,7 @@ A file-scope `var held = add` then `comptime const op = held` is `global initial
 `scale(n, x)` when `n` is a `var` is `type mismatch`.
 
 ```c
-func scale(n comptime i32, x i32) i32 {
+func scale(comptime n i32, x i32) i32 {
     return x + n;
 }
 
@@ -1364,7 +1364,7 @@ Passing `fill` as an argument is `not supported yet`.
 `f(n, value)` when `n` is a `var` is `type mismatch`.
 
 ```c
-func fill(n comptime i32, value i32) i32 {
+func fill(comptime n i32, value i32) i32 {
     var out [n]i32;
     return out.len + value;
 }
@@ -1403,7 +1403,7 @@ comptime func add(a i32, b i32) i32 {
 
 type BinOp func (i32, i32) i32;
 
-func take(op comptime func (i32, i32) i32, n i32) i32 {
+func take(comptime op func (i32, i32) i32, n i32) i32 {
     return op(n, 2);
 }
 
@@ -1488,7 +1488,7 @@ type Order enum {
     acquire,
 };
 
-func take(n i32, order comptime Order) i32 {
+func take(n i32, comptime order Order) i32 {
     comptime if (order == Order.acquire) {
         return n + 2;
     }
@@ -1544,7 +1544,7 @@ type Point struct {
     x i32;
 };
 
-func Point::id(self *this, order comptime Order) i32 {
+func Point::id(self *this, comptime order Order) i32 {
     comptime if (order == Order.acquire) {
         return self.x + 41;
     }
@@ -1596,7 +1596,7 @@ type Order enum {
     acquire,
 };
 
-func id[T type](value T, order comptime Order) T {
+func id[T type](value T, comptime order Order) T {
     comptime if (order == Order.acquire) {
         return value + 41;
     }
@@ -1631,7 +1631,7 @@ The call passes `1` and does not pass `order`.
 A bare `extern` and `extern(abi="tlc")` on that function are `not supported yet`.
 
 ```c
-extern(abi="tlc") func scale(n comptime i32, x i32) i32 {
+extern(abi="tlc") func scale(comptime n i32, x i32) i32 {
     return x + n;
 }
 

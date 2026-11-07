@@ -7227,7 +7227,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose(
-            "extern func scale[T type](n comptime i32, value T) T;\n"
+            "extern func scale[T type](comptime n i32, value T) T;\n"
             "func main() i32 { return scale(1, 2); }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }
@@ -7300,7 +7300,7 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Point struct { x i32; };\n"
-            "extern func Point::scale[T type](self *this, n comptime i32, value T) T;\n"
+            "extern func Point::scale[T type](self *this, comptime n i32, value T) T;\n"
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "not supported yet");
     }

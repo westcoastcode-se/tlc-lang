@@ -2037,7 +2037,7 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
         if (!same) {
             continue;
         }
-        // `n comptime i32` is viable only for a comptime argument, and it wins over `n i32`.
+        // `comptime n i32` is viable only for a comptime argument, and it wins over `n i32`.
         const int score = comptime_overload_score(list.decl, node, 0);
         if (score < 0) {
             continue;

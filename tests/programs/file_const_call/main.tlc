@@ -2,7 +2,7 @@ comptime func add(n i32) i32 {
     return n + 1;
 }
 
-func add2(n comptime i32) i32 {
+func add2(comptime n i32) i32 {
     return n + 1;
 }
 

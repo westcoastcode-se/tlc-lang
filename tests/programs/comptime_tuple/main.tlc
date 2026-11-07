@@ -1,4 +1,4 @@
-func take(p comptime (i32, i32), n i32) i32 {
+func take(comptime p (i32, i32), n i32) i32 {
     return p[0] + n;
 }
 
@@ -6,7 +6,7 @@ type Point struct {
     x i32;
 };
 
-func Point::shift(self *this, p comptime (i32, i32)) i32 {
+func Point::shift(self *this, comptime p (i32, i32)) i32 {
     return self.x + p[0];
 }
 

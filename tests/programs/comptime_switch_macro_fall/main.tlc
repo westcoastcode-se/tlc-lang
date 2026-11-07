@@ -1,4 +1,4 @@
-macro func pick(slot *i32, n comptime i32) void {
+macro func pick(slot *i32, comptime n i32) void {
     comptime switch (n) {
     case 1:
         emit *slot = 2;

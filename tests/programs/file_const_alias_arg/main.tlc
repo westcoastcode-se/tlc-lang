@@ -2,7 +2,7 @@ type Integer i32;
 
 const other = Integer(4);
 
-func take(n comptime Integer, x i32) i32 {
+func take(comptime n Integer, x i32) i32 {
     return i32(n) + x;
 }
 

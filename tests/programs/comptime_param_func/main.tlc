@@ -1,4 +1,4 @@
-func add(n comptime i32) i32 {
+func add(comptime n i32) i32 {
     return n;
 }
 

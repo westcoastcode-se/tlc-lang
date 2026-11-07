@@ -1,6 +1,6 @@
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-macro func show(n comptime i32) void {
+macro func show(comptime n i32) void {
     for (var i = 0; i < n; i = i + 1) {
         emit printf("%d\n"b, i);
     }

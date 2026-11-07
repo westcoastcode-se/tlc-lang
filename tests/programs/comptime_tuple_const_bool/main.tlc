@@ -11,7 +11,7 @@ func flag(value bool) i32 {
     return 0;
 }
 
-func widen(p comptime (bool, i32), n i32) i32 {
+func widen(comptime p (bool, i32), n i32) i32 {
     return i32(p[0]) + p[1] + n;
 }
 

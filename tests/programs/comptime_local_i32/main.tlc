@@ -4,16 +4,16 @@ func Buf[N]::span() i32 { return N; }
 comptime func add(n i32) i32 { return n + 1; }
 
 func width[N i32]() i32 { return N; }
-func scale(n comptime i32, x i32) i32 { return x + n; }
-func pick[T type](value comptime T) i32 {
+func scale(comptime n i32, x i32) i32 { return x + n; }
+func pick[T type](comptime value T) i32 {
     comptime if (value == 2) { return 40; }
     return 1;
 }
 func pick[T type](value T) i32 { return 2; }
-func only[T type](value comptime T) i32 { return 1; }
+func only[T type](comptime value T) i32 { return 1; }
 func id[T type](value T) T { return value; }
 
-macro func bump(n comptime i32) {
+macro func bump(comptime n i32) {
     emit x = x + n;
 }
 

@@ -38,6 +38,12 @@ A `*T` value is not passed to it.
 
 `this` is an ordinary identifier in every other position.
 
+A comptime parameter writes `comptime` before the name: `func Point::shift(self *this, comptime n i32)`.
+
+`func Point::shift(self *this, n comptime i32)` is `expected a type`.
+
+That parameter is described on [Comptime](../functions/comptime.md).
+
 On an enum, the receiver is that enum's value.
 
 On `type Integer i32`, the receiver is an `Integer`, not an `i32`.

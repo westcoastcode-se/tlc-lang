@@ -1,4 +1,4 @@
-func greet(label comptime []const u8, n i32) i32 {
+func greet(comptime label []const u8, n i32) i32 {
     return label.len + n;
 }
 

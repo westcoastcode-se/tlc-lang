@@ -3105,7 +3105,7 @@ void Checker::check_function(const FunctionDecl &fn) {
         quiet_ = true;
         Type type = type_of_param(param);
         quiet_ = saved_param_quiet;
-        // `p comptime (func (i32, i32) i32, i32)` stays. A runtime parameter is not that value.
+        // `comptime p (func (i32, i32) i32, i32)` stays. A runtime parameter is not that value.
         if (!param.is_comptime && tuple_holds_fn(type)) {
             error(param.loc, "type mismatch");
             type = type_invalid();

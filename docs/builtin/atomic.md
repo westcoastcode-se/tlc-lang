@@ -114,14 +114,14 @@ A `seq_cst` compare-exchange of an `f32` is `lock cmpxchgl` of those bits.
 
 ## Signatures
 
-`atomic_load[T](p *T, order comptime i32)` returns `T`.
+`atomic_load[T](p *T, comptime order i32)` returns `T`.
 
-`atomic_store[T](p *T, value T, order comptime i32)` has no result.
+`atomic_store[T](p *T, value T, comptime order i32)` has no result.
 
-`atomic_rmw[T](p *T, op comptime i32, value T, order comptime i32)` returns the previous `T`.
+`atomic_rmw[T](p *T, comptime op i32, value T, comptime order i32)` returns the previous `T`.
 
-`atomic_cmpxchg[T](p *T, expected T, desired T, success comptime i32, failure comptime i32)` returns `(T, bool)`.
+`atomic_cmpxchg[T](p *T, expected T, desired T, comptime success i32, comptime failure i32)` returns `(T, bool)`.
 
-`fence(order comptime i32)` has no result.
+`fence(comptime order i32)` has no result.
 
 [Index](../README.md) · [Previous: panic](panic.md) · [Next: builtin/env/consts](family.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

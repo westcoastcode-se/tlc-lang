@@ -4,7 +4,7 @@ comptime func add(a i32, b i32) i32 {
 
 comptime const op = add;
 
-func take(op comptime func (i32, i32) i32, n i32) i32 {
+func take(comptime op func (i32, i32) i32, n i32) i32 {
     return op(n, 2);
 }
 

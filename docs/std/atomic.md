@@ -48,7 +48,7 @@ A local integer starts uninitialized until a store.
 
 Each of those returns the previous value.
 
-`load_order` and `store_order`, and the `_order` forms of the updates, take `order comptime Order`.
+`load_order` and `store_order`, and the `_order` forms of the updates, take `comptime order Order`.
 
 The argument is an enumerator, such as `atomic.Order.acquire`.
 
@@ -72,7 +72,7 @@ There is no `consume`.
 
 `Op` is `xchg`, `add`, `sub`, `and`, `or`, and `xor`.
 
-An update passes that enumerator as `op comptime Op`.
+An update passes that enumerator as `comptime op Op`.
 
 The call is `n.load_order(atomic.Order.acquire)` or `n.add_order(1, atomic.Order.relaxed)`.
 

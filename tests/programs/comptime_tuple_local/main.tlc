@@ -1,4 +1,4 @@
-func take(p comptime (i32, i32), n i32) i32 {
+func take(comptime p (i32, i32), n i32) i32 {
     return p[0] + n;
 }
 

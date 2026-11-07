@@ -10,6 +10,10 @@ The receiver is implicit and is omitted from the trait type.
 
 A method inside the braces ends with `;`.
 
+A comptime parameter writes `comptime` before the name: `func grow(comptime n i32)`.
+
+`func grow(n comptime i32)` is `expected a type`.
+
 `func area() i32 { return 1; }` is reported as `expected ';'`.
 
 A field is a name and a type, and it ends with `;`.

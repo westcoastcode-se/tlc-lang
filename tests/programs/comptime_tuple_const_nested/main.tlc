@@ -6,7 +6,7 @@ comptime func take(p ((i32, i32), i32)) i32 {
     return p[0][1];
 }
 
-func widen(p comptime ((i32, i32), i32), n i32) i32 {
+func widen(comptime p ((i32, i32), i32), n i32) i32 {
     return p[0][0] + p[1] + n;
 }
 

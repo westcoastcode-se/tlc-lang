@@ -157,14 +157,18 @@ method-params = "[" identifier { "," identifier } "]" ;
 receiver    = identifier [ "*" ] "this" ;
 
 parameters  = parameter { "," parameter } [ "," "..." ] ;
-parameter   = identifier [ "comptime" ] placed-type
-            | identifier "const" placed-type ;
+parameter   = [ "comptime" ] identifier placed-type
+            | [ "comptime" ] identifier "const" placed-type ;
 
 result      = placed-type
             | "(" placed-type { "," placed-type } ")" ;
 ```
 
 A parameter may be `name const Type`.
+
+A function, a method, a `comptime func`, and a `macro func` write `comptime` before that name.
+
+An anonymous function does not take that parameter. `func (comptime n i32)` is `not supported yet`.
 
 Assigning that parameter is `type mismatch`.
 
@@ -220,7 +224,7 @@ A file-scope `const row = [_]i32{2, 0}` is that element. `field((row, 40))` fold
 
 `type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` is that element. `field((row, 0))` folds when the body returns `p[0][0].x + p[0][1].x`.
 
-`take((row, 0), n)` with `p comptime ([2]Point, i32)` is `type mismatch`.
+`take((row, 0), n)` with `comptime p ([2]Point, i32)` is `type mismatch`.
 
 A local `const` of that array is `not supported yet`.
 
@@ -280,7 +284,7 @@ A statement call is replaced by the statements written with `emit`.
 
 A parameter without `comptime` is replaced by the argument expression, so `hello(name)` emits `printf("Hello %s\n", name)`.
 
-`name comptime []const u8` and `n comptime i32` are values known while compiling, and `emit` receives that value.
+`comptime name []const u8` and `comptime n i32` are values known while compiling, and `emit` receives that value.
 
 `const label = "Per"` then `hello(label)` emits `printf("Hello %s\n", "Per")`.
 
@@ -354,7 +358,7 @@ A value call of a `macro` is `not supported yet`.
 
 A method, `extern`, and `export` are `not supported yet` on a `macro`.
 
-A type parameter is accepted, so `macro func show[T type](values comptime T)` can read that tuple.
+A type parameter is accepted, so `macro func show[T type](comptime values T)` can read that tuple.
 
 In a `macro`, `for (var i = low; i < high; i = i + step)` unrolls when `low`, `high`, and `step` fold to integers.
 
@@ -368,7 +372,7 @@ Those forms outside a `macro` are `not supported yet`.
 
 A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is `not supported yet`.
 
-`comptime` sits directly after the parameter name. `func add(comptime n i32)` is `expected an identifier`.
+`comptime` sits directly before the parameter name. `func add(n comptime i32)` and `func Point::shift(self *this, n comptime i32)` are `expected a type`.
 
 An ordinary function may mark a parameter `comptime`.
 
@@ -376,13 +380,13 @@ That argument has to be a comptime value, or the call is `type mismatch`.
 
 When every parameter is `comptime` and the body is one `return` of a constant `i32`, the call folds to that integer.
 
-`return add(1)` when `add` is `func add(n comptime i32) i32 { return n; }` is `movl $1, %eax` and `retq`.
+`return add(1)` when `add` is `func add(comptime n i32) i32 { return n; }` is `movl $1, %eax` and `retq`.
 
 A mix of a `comptime` parameter and a runtime parameter is specialized per constant.
 
 The comptime parameter is not passed, and each use of that name is the constant.
 
-When `scale` is `func scale(n comptime i32, x i32) i32 { return x + n; }`, `return scale(2, x)` calls that copy.
+When `scale` is `func scale(comptime n i32, x i32) i32 { return x + n; }`, `return scale(2, x)` calls that copy.
 
 That call adds `2`.
 
@@ -476,7 +480,7 @@ When the file is `main.tlc`, `id(2)` calls `main.id.spec.i32.spec.2` and does no
 
 A function of the wrong signature is reported as `type mismatch`.
 
-`func only[T type](value comptime T)` requires that argument.
+`func only[T type](comptime value T)` requires that argument.
 
 A `var` is `type mismatch`.
 
@@ -2238,6 +2242,8 @@ scalar-type = "void" | "bool" | integer-name | float-name ;
 ```
 
 An anonymous function with no result type has result `void`.
+
+A `comptime` parameter on that function is `not supported yet`.
 
 The short form is accepted where a function pointer is expected.
 

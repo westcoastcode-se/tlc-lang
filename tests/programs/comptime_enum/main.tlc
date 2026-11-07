@@ -3,7 +3,7 @@ type Order enum {
     acquire,
 };
 
-func take(n i32, order comptime Order) i32 {
+func take(n i32, comptime order Order) i32 {
     comptime if (order == Order.acquire) {
         return n + 1;
     }

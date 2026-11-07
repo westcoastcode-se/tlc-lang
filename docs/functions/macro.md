@@ -21,7 +21,7 @@ The values are the same ones a [`comptime func`](comptime.md) accepts.
 ```c
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-macro func hello(name comptime []const u8, tail []const u8, n comptime i32) void {
+macro func hello(comptime name []const u8, tail []const u8, comptime n i32) void {
     emit printf("Hello %s %s %d\n", name, tail, n);
 }
 
@@ -92,7 +92,7 @@ A condition or a bound that does not fold runs at run time.
 `pick(&n, 1)` stores 40.
 
 ```c
-macro func pick(slot *i32, n comptime i32) void {
+macro func pick(slot *i32, comptime n i32) void {
     comptime if (n == 1) {
         emit *slot = 40;
     } else {
@@ -153,7 +153,7 @@ A value that does not fold runs at run time, and every case is typechecked.
 `main` returns 42.
 
 ```c
-macro func pick(slot *i32, n comptime i32) void {
+macro func pick(slot *i32, comptime n i32) void {
     switch (n) {
     case 1:
         emit *slot = 2;
@@ -227,7 +227,7 @@ jmp .L3                          # break
 `main` returns 42.
 
 ```c
-macro func pick(slot *i32, n comptime i32) void {
+macro func pick(slot *i32, comptime n i32) void {
     comptime switch (n) {
     case 1:
         emit *slot = 2;
@@ -323,7 +323,7 @@ A `var` does not fold.
 `pick(&n, 1)` then `add3(&n)`, from `n` at 0, stores 40 and then adds `1`, `2`, and `3`.
 
 ```c
-macro func pick(slot *i32, n comptime i32) void {
+macro func pick(slot *i32, comptime n i32) void {
     if (n == 1) {
         emit *slot = 40;
     } else {
@@ -525,7 +525,7 @@ A type parameter is accepted.
 
 The parameter is the argument expression, so a tuple may contain a `var`.
 
-`values comptime T` does not: a tuple that contains a `var` is `not supported yet`.
+`comptime values T` does not: a tuple that contains a `var` is `not supported yet`.
 
 ```c
 import "builtin";

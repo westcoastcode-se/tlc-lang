@@ -1162,14 +1162,7 @@ std::vector<Param> Parser::parse_params(bool &variadic, const std::string &metho
             }
             Param param;
             param.loc = peek().loc;
-            if (check(TokenKind::Identifier)) {
-                param.name = peek().text;
-                param.loc = peek().loc;
-                ++pos_;
-            } else {
-                error_here("expected an identifier");
-                break;
-            }
+            // `comptime name Type`. The marker sits before the name.
             if (check(TokenKind::KwComptime)) {
                 const SourceLoc mark = peek().loc;
                 ++pos_;
@@ -1178,6 +1171,14 @@ std::vector<Param> Parser::parse_params(bool &variadic, const std::string &metho
                 } else {
                     diags_.error(mark, "not supported yet");
                 }
+            }
+            if (check(TokenKind::Identifier)) {
+                param.name = peek().text;
+                param.loc = peek().loc;
+                ++pos_;
+            } else {
+                error_here("expected an identifier");
+                break;
             }
             const PlacedType type = parse_placed_type(true);
             if (type.struct_definition || type.enum_definition) {

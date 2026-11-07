@@ -2,7 +2,7 @@ import "builtin";
 
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-macro func print_with_tuples[T type](fmt comptime []const u8, values comptime T) void {
+macro func print_with_tuples[T type](comptime fmt []const u8, comptime values T) void {
     emit printf(builtin.fmt(fmt, values));
 }
 

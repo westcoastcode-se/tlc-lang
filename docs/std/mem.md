@@ -48,9 +48,9 @@ Each name has two forms. Both take `[]const T`.
 A raw `*T` is not an argument. `p[0:n]` is the slice.
 
 ```c
-export func memeql[T type](lhs comptime []const T, rhs comptime []const T) bool;
+export func memeql[T type](comptime lhs []const T, comptime rhs []const T) bool;
 export func memeql[T type](lhs []const T, rhs []const T) bool;
-export func memcmp[T type](lhs comptime []const T, rhs comptime []const T) i32;
+export func memcmp[T type](comptime lhs []const T, comptime rhs []const T) i32;
 export func memcmp[T type](lhs []const T, rhs []const T) i32;
 ```
 

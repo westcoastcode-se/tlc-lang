@@ -11,7 +11,7 @@ comptime func move(p Point) Point {
     return copy;
 }
 
-func take(p comptime Point, n i32) i32 {
+func take(comptime p Point, n i32) i32 {
     return p.x + n;
 }
 

@@ -161,7 +161,7 @@ func print_i64(n i64) void {
     print_u64(u64(n));
 }
 
-macro func print[T type](text comptime []const u8, values T) void {
+macro func print[T type](comptime text []const u8, values T) void {
     comptime if (op_count(text) >= 0) {
         comptime for (var n = 0; n < op_count(text); n = n + 1) {
             comptime if (op_kind(op_at(text, n)) == 1) {

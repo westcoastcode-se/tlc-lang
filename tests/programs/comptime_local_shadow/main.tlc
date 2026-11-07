@@ -2,7 +2,7 @@ comptime const n = 9;
 
 comptime func add(k i32) i32 { return k + 1; }
 func width[N i32]() i32 { return N; }
-func scale(k comptime i32, x i32) i32 { return x + k; }
+func scale(comptime k i32, x i32) i32 { return x + k; }
 
 func main() i32 {
     comptime const n = 2;

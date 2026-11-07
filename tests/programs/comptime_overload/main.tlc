@@ -1,4 +1,4 @@
-func id(n comptime i32) i32 {
+func id(comptime n i32) i32 {
     return n + 1;
 }
 
@@ -6,7 +6,7 @@ func id(n i32) i32 {
     return n + 40;
 }
 
-func scale(n comptime i32, x i32) i32 {
+func scale(comptime n i32, x i32) i32 {
     return x + n;
 }
 
@@ -14,7 +14,7 @@ func scale(n i32, x i32) i32 {
     return x + n + 1;
 }
 
-func len_of(text comptime []const u8) i32 {
+func len_of(comptime text []const u8) i32 {
     return text.len;
 }
 

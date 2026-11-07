@@ -1178,7 +1178,7 @@ class Checker {
     Symbol comptime_spec_alias_symbol(const std::string &name, SourceLoc loc, const Symbol &source,
                                       bool immutable);
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
-    // `func scale(n comptime i32, x i32)`. One copy per constant. `n` is inlined.
+    // `func scale(comptime n i32, x i32)`. One copy per constant. `n` is inlined.
     std::optional<Type> maybe_comptime_param_call(Expr &expr, bool used);
     // `skip` is the receiver, which is not an argument. `owner_file` is the function's file
     // when the decl is a clone that `comptime_decl_file` cannot see.
@@ -1187,7 +1187,7 @@ class Checker {
     // `func id[T type](value T)`. A comptime argument drops `value`. A `var` still passes it.
     bool expand_generic_comptime_value(Expr::Call &call, const FunctionDecl &templ, const std::vector<SpecArg> &bounds,
                                        const std::string &spec_name, uint32_t owner);
-    // The substituted parameter can be dropped the way `n comptime i32` is.
+    // The substituted parameter can be dropped the way `comptime n i32` is.
     bool comptime_arg_specializes(const Param &param, const Expr &arg);
     // Specialize when every comptime argument is a constant. A forwarded name leaves the call.
     std::optional<Type> call_comptime_spec(Expr &expr, const FunctionDecl *fn, std::size_t skip, uint32_t owner,

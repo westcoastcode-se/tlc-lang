@@ -1,4 +1,4 @@
-func only[T type](value comptime T) i32 {
+func only[T type](comptime value T) i32 {
     return 1;
 }
 

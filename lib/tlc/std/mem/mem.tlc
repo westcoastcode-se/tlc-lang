@@ -5,7 +5,7 @@ package mem;
 
 // True when both slices are comptime values and hold the same elements.
 // Chosen instead of the runtime overload when both arguments are comptime.
-export func memeql[T type](lhs comptime []const T, rhs comptime []const T) bool {
+export func memeql[T type](comptime lhs []const T, comptime rhs []const T) bool {
     if (lhs.len != rhs.len) {
         return false;
     }
@@ -37,7 +37,7 @@ export func memeql[T type](lhs []const T, rhs []const T) bool {
 // Element order of two comptime slices. -1 when lhs is less, 1 when lhs is greater, 0 when they match.
 // A shared prefix takes the shorter length as less.
 // Chosen instead of the runtime overload when both arguments are comptime.
-export func memcmp[T type](lhs comptime []const T, rhs comptime []const T) i32 {
+export func memcmp[T type](comptime lhs []const T, comptime rhs []const T) i32 {
     var n i32 = lhs.len;
     if (rhs.len < n) {
         n = rhs.len;

@@ -1,4 +1,4 @@
-func pick(n comptime i32, x i32) i32 {
+func pick(comptime n i32, x i32) i32 {
     comptime if (n == 2) {
         return x + 2;
     }

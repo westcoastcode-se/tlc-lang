@@ -3,7 +3,7 @@ type Order enum {
     acquire,
 };
 
-func id[T type](value T, order comptime Order) T {
+func id[T type](value T, comptime order Order) T {
     comptime if (order == Order.acquire) {
         return value + 41;
     }

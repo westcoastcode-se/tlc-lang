@@ -819,7 +819,7 @@ struct Param {
     std::string array_len_name;
     std::vector<TypeArg> type_args;
     bool is_const = false;
-    // `name comptime []const u8`. The argument is a value known while compiling.
+    // `comptime name []const u8`. The argument is a value known while compiling.
     bool is_comptime = false;
     bool is_receiver = false;
     bool is_fn_ptr = false;

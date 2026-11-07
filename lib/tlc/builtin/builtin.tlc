@@ -154,7 +154,7 @@ extern(abi="compiler") export func CompiledType::methods(self *const this) []con
 
 // `{0}` and `{1}` read elements of a compile-time tuple. `{{` and `}}` are braces.
 // A string element is copied as text. An integer element is decimal. The call is that text.
-extern(abi="compiler") export func fmt[T type](text comptime []const u8, value comptime T) []const u8;
+extern(abi="compiler") export func fmt[T type](comptime text []const u8, comptime value T) []const u8;
 
 // One call that has not returned. file and name address the trace frame's bytes.
 // Those bytes are not owned. line and column are that call.
@@ -207,17 +207,17 @@ extern(abi="compiler") export unsafe func Malloc::realloc(self *this, ptr *u8, s
 // Another T is not supported yet.
 // On a float, add and sub are floating operations. and, or, xor, and cmpxchg use the bits.
 // A var order is type mismatch. An unknown order is type mismatch.
-extern(abi="compiler") export func atomic_load[T type](p *T, order comptime i32) T;
+extern(abi="compiler") export func atomic_load[T type](p *T, comptime order i32) T;
 
-extern(abi="compiler") export func atomic_store[T type](p *T, value T, order comptime i32) void;
+extern(abi="compiler") export func atomic_store[T type](p *T, value T, comptime order i32) void;
 
 // op is 0 xchg, 1 add, 2 sub, 3 and, 4 or, 5 xor. The result is the previous value.
-extern(abi="compiler") export func atomic_rmw[T type](p *T, op comptime i32, value T, order comptime i32) T;
+extern(abi="compiler") export func atomic_rmw[T type](p *T, comptime op i32, value T, comptime order i32) T;
 
 // Strong compare-exchange. The results are the previous value and whether the store happened.
 // success is the order when the values match. failure is the order when they do not.
-extern(abi="compiler") export func atomic_cmpxchg[T type](p *T, expected T, desired T, success comptime i32, failure comptime i32) (T, bool);
+extern(abi="compiler") export func atomic_cmpxchg[T type](p *T, expected T, desired T, comptime success i32, comptime failure i32) (T, bool);
 
 // A relaxed fence is no instruction. Another order is a fence.
 // The name is not a value. `var f = fence` is not supported yet.
-extern(abi="compiler") export func fence(order comptime i32) void;
+extern(abi="compiler") export func fence(comptime order i32) void;

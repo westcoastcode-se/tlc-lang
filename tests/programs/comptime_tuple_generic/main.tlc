@@ -1,4 +1,4 @@
-func id[T type](value T, p comptime (i32, i32)) T {
+func id[T type](value T, comptime p (i32, i32)) T {
     return value + p[0];
 }
 

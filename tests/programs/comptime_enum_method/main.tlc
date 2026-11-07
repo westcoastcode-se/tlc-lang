@@ -7,7 +7,7 @@ type Point struct {
     x i32;
 };
 
-func Point::id(self *this, order comptime Order) i32 {
+func Point::id(self *this, comptime order Order) i32 {
     comptime if (order == Order.acquire) {
         return self.x + 41;
     }

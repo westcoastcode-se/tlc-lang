@@ -5,11 +5,11 @@ type Point struct {
 
 comptime const origin = Point{.x = 2, .y = 0};
 
-func take(p comptime Point, n i32) i32 {
+func take(comptime p Point, n i32) i32 {
     return p.x + n;
 }
 
-func Point::shift(self *this, p comptime Point) i32 {
+func Point::shift(self *this, comptime p Point) i32 {
     return self.x + p.x;
 }
 

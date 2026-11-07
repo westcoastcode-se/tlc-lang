@@ -52,11 +52,11 @@ A pointer element has no spelling.
 
 `take((&addr, 2), n)` is `not supported yet`.
 
-`&addr` alone on `p comptime *i32` is `type mismatch`.
+`&addr` alone on `comptime p *i32` is `type mismatch`.
 
 An array element has no spelling.
 
-`take(pair, n)` when `pair` is `(row, 0)` and the parameter is `p comptime ([2]i32, i32)` is `not supported yet`.
+`take(pair, n)` when `pair` is `(row, 0)` and the parameter is `comptime p ([2]i32, i32)` is `not supported yet`.
 
 ## Method templates
 

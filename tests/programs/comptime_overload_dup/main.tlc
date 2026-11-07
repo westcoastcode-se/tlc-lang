@@ -1,8 +1,8 @@
-func id(n comptime i32) i32 {
+func id(comptime n i32) i32 {
     return n;
 }
 
-func id(n comptime i32) i32 {
+func id(comptime n i32) i32 {
     return n + 1;
 }
 

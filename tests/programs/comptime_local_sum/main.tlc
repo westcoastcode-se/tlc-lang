@@ -1,4 +1,4 @@
-func scale(n comptime i32, x i32) i32 { return x + n; }
+func scale(comptime n i32, x i32) i32 { return x + n; }
 func main() i32 {
     const n = 2;
     var x = 40;

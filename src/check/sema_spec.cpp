@@ -2580,7 +2580,7 @@ bool comptime_i32_param(const Param &param) {
            param.array_len == 0 && param.array_len_name.empty() && param.type_args.empty();
 }
 
-// `order comptime Order` is not marked `is_enum` by the parser. The checked type is the enum.
+// `comptime order Order` is not marked `is_enum` by the parser. The checked type is the enum.
 bool comptime_enum_arg(const Param &param) {
     return !param.is_array && param.indirections == 0 && param.optional == 0 && param.const_pointee == 0 &&
            !param.elem_const && !param.elem_slice && param.shells.empty() && !param.is_fn_ptr && !param.is_tuple &&

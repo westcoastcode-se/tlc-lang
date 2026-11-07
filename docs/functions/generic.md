@@ -135,7 +135,7 @@ A runtime `const` is that same error.
 
 `comptime const n = 2` is the comptime argument.
 
-`func only[T type](value comptime T)` requires a comptime argument.
+`func only[T type](comptime value T)` requires a comptime argument.
 
 A `var` is `type mismatch`.
 

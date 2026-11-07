@@ -1,4 +1,4 @@
-func pick[T type](value comptime T) i32 {
+func pick[T type](comptime value T) i32 {
     return 1;
 }
 
@@ -6,7 +6,7 @@ func pick[T type](value T) i32 {
     return 2;
 }
 
-func both[T type](lhs comptime T, rhs T) i32 {
+func both[T type](comptime lhs T, rhs T) i32 {
     return 1;
 }
 
@@ -14,7 +14,7 @@ func both[T type](lhs T, rhs T) i32 {
     return 2;
 }
 
-func side[T type](value comptime []const T) i32 {
+func side[T type](comptime value []const T) i32 {
     return 1;
 }
 

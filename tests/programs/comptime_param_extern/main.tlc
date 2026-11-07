@@ -1,4 +1,4 @@
-extern(abi="tlc") func scale(n comptime i32, x i32) i32 {
+extern(abi="tlc") func scale(comptime n i32, x i32) i32 {
     return x + n;
 }
 
