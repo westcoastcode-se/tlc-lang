@@ -252,6 +252,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             fn.value_kept = diags_.size() == before;
                         }
                         if (!fn.value_kept) {
+                            // `call(fill, 38)` specializes. The name is not a pointer.
+                            if (accept_spec_fn_) {
+                                continue;
+                            }
                             error(node.loc, "not supported yet");
                             return type_invalid();
                         }
@@ -1276,6 +1280,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (const std::optional<Type> specialized =
                             maybe_comptime_param_call(const_cast<Expr &>(expr), used)) {
                         return *specialized;
+                    }
+                    if (const std::optional<Type> passed = maybe_spec_fn_call(const_cast<Expr &>(expr), used)) {
+                        return *passed;
                     }
                 }
                 if (node.callee != nullptr && is_builtin_va_call(*node.callee)) {

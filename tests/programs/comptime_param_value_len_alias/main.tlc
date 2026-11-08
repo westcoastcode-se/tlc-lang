@@ -1,0 +1,13 @@
+func fill(comptime n i32, value i32) i32 {
+    var out [n]i32;
+    return out.len + value;
+}
+
+func call(op func (i32, i32) i32, value i32) i32 {
+    return op(4, value);
+}
+
+func main() i32 {
+    var f = fill;
+    return call(f, 38);
+}

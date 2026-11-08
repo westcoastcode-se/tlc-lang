@@ -2880,7 +2880,10 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         if (want.kind == TypeKind::Invalid || diags_.size() != mark) {
             return false;
         }
+        const bool saved_accept = accept_spec_fn_;
+        accept_spec_fn_ = true;
         const Type got = check_expr(*call.args[i - skip], true);
+        accept_spec_fn_ = saved_accept;
         if (got.kind == TypeKind::Invalid || diags_.size() != mark) {
             return false;
         }
@@ -3232,6 +3235,88 @@ std::optional<Type> Checker::call_comptime_spec(Expr &expr, const FunctionDecl *
     if (!apply_comptime_template(*call, *fn, false, skip, owner)) {
         if (diags_.size() != before) {
             return type_invalid();
+        }
+        return std::nullopt;
+    }
+    return check_raw(expr, used);
+}
+
+std::optional<Type> Checker::maybe_spec_fn_call(Expr &expr, bool used) {
+    auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
+    if (call_ptr == nullptr || call_ptr->callee == nullptr || !call_ptr->type_args.empty()) {
+        return std::nullopt;
+    }
+    Expr::Call &call = *call_ptr;
+    const Symbol *symbol = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&call.callee->data)) {
+        symbol = lookup(named->text);
+    } else if (const auto *selector = std::get_if<Expr::Selector>(&call.callee->data)) {
+        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
+        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+        if (package == nullptr || !package->is_package) {
+            return std::nullopt;
+        }
+        symbol = find_export(package->package_file, selector->field);
+    } else {
+        return std::nullopt;
+    }
+    if (symbol == nullptr || !symbol->is_function || symbol->is_template || symbol->lists.size() != 1 ||
+        symbol->lists.front().decl == nullptr) {
+        return std::nullopt;
+    }
+    const FunctionDecl &fn = *symbol->lists.front().decl;
+    if (fn.body == nullptr || comptime_param_template(fn) || call.args.size() != fn.params.size()) {
+        return std::nullopt;
+    }
+    struct Slot {
+        std::size_t index = 0;
+        std::string name;
+    };
+    std::vector<Slot> slots;
+    for (std::size_t i = 0; i < fn.params.size(); ++i) {
+        if (call.args[i] == nullptr) {
+            continue;
+        }
+        const Symbol *alias = comptime_spec_alias_source(*call.args[i]);
+        if (alias == nullptr || alias->lists.empty() || alias->lists.front().decl == nullptr) {
+            continue;
+        }
+        const FunctionDecl &target = *alias->lists.front().decl;
+        if (target.name.empty()) {
+            return std::nullopt;
+        }
+        Type got = function_signature(target);
+        if (got.kind == TypeKind::Function) {
+            got = type_pointer(std::move(got));
+        }
+        const Type want = type_of_param(fn.params[i]);
+        if (want.kind == TypeKind::Invalid || !same_type(got, want)) {
+            return std::nullopt;
+        }
+        slots.push_back(Slot{i, target.name});
+    }
+    if (slots.empty()) {
+        return std::nullopt;
+    }
+    std::vector<std::unique_ptr<Expr>> saved;
+    saved.reserve(slots.size());
+    for (const Slot &slot : slots) {
+        saved.push_back(std::move(call.args[slot.index]));
+        auto item = std::make_unique<Expr>();
+        Expr::Name name;
+        name.loc = expr_loc(*saved.back());
+        name.text = slot.name;
+        item->data = std::move(name);
+        call.args[slot.index] = std::move(item);
+    }
+    FunctionDecl spec = clone_function(fn);
+    for (const Slot &slot : slots) {
+        spec.params[slot.index].is_comptime = true;
+    }
+    const bool ok = apply_comptime_template(call, spec, false, 0, comptime_decl_file(fn));
+    if (!ok) {
+        for (std::size_t i = 0; i < slots.size(); ++i) {
+            call.args[slots[i].index] = std::move(saved[i]);
         }
         return std::nullopt;
     }

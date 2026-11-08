@@ -340,6 +340,8 @@ class Checker {
     Type return_type_ = type_invalid();
     // Set while folding `sizeof`, so a second lookup does not repeat a diagnostic.
     bool quiet_ = false;
+    // Set while the argument of a specialized call is checked. `fill` has no address.
+    bool accept_spec_fn_ = false;
     // `repeat[n]` while `n` is not a constant yet. The call substitutes the integer.
     bool defer_value_args_ = false;
     bool value_arg_deferred_ = false;
@@ -1305,6 +1307,9 @@ class Checker {
     std::optional<Type> maybe_generic_call(Expr &expr, bool used);
     // `func scale(comptime n i32, x i32)`. One copy per constant. `n` is inlined.
     std::optional<Type> maybe_comptime_param_call(Expr &expr, bool used);
+    // `call(fill, 38)` when `var out [n]i32` does not typecheck until `n` is substituted.
+    // The parameter becomes that function. `scale`, whose body is a pointer, stays a call.
+    std::optional<Type> maybe_spec_fn_call(Expr &expr, bool used);
     // `skip` is the receiver, which is not an argument. `owner_file` is the function's file
     // when the decl is a clone that `comptime_decl_file` cannot see.
     bool apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several, std::size_t skip = 0,

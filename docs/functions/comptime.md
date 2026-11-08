@@ -574,7 +574,7 @@ A `const` and a `var` are `type mismatch`.
 
 A function nested in another function still passes the constant.
 
-`var f = scale` stores the address of `scale`. `f(2, x)` passes `2` and `x`. `scale(2, x)` still calls the specialized copy and does not pass `2`. `scale(n, x)` when `n` is a `var` is `type mismatch`. A body that does not typecheck while `n` is still a parameter is a name. `var f = fill` then `f(4, 38)` calls the specialized copy. Passing that function as an argument is `not supported yet`.
+`var f = scale` stores the address of `scale`. `f(2, x)` passes `2` and `x`. `scale(2, x)` still calls the specialized copy and does not pass `2`. `scale(n, x)` when `n` is a `var` is `type mismatch`. A body that does not typecheck while `n` is still a parameter is a name. `var f = fill` then `f(4, 38)` calls the specialized copy. `call(fill, 38)` calls `main.call.spec.fnfill`, and that copy calls `main.fill.spec.4`.
 
 More than 32 nested specializations are `not supported yet`.
 
@@ -1671,7 +1671,13 @@ The program returns 42.
 
 `fill(4, value)` calls that same copy.
 
-Passing `fill` as an argument is `not supported yet`.
+`call(fill, 38)` calls `main.call.spec.fnfill` when the file is `main.tlc`.
+
+That copy calls `main.fill.spec.4`. `4` is not passed. `38` is.
+
+`var f = fill` then `call(f, 38)` is that copy.
+
+The program returns 42.
 
 `f(n, value)` when `n` is a `var` is `type mismatch`.
 
@@ -1705,6 +1711,58 @@ movl 12(%rsp), %eax              # return
 addq $24, %rsp                   # release
 retq                             # return
 ```
+
+```c
+func fill(comptime n i32, value i32) i32 {
+    var out [n]i32;
+    return out.len + value;
+}
+
+func call(op func (i32, i32) i32, value i32) i32 {
+    return op(4, value);
+}
+
+func main() i32 {
+    return call(fill, 38);
+}
+```
+
+```asm
+main.fill.spec.4:
+movl %edi, -20(%rsp)             # value
+movl -20(%rsp), %eax             # value
+addl $4, %eax                    # out.len + value
+retq                             # return
+
+main.call.spec.fnfill:
+subq $24, %rsp                   # allocate
+movl %edi, 20(%rsp)              # value
+movl 20(%rsp), %eax              # value
+movl %eax, 8(%rsp)               # move
+# trace frame for the call, then the matching pop
+movl 8(%rsp), %edi               # value
+callq main.fill.spec.4           # call fill(4, value)
+movl %eax, %ecx                  # move
+movl %ecx, 4(%rsp)               # move
+movl 4(%rsp), %eax               # return
+addq $24, %rsp                   # release
+retq                             # return
+
+main:
+subq $24, %rsp                   # allocate
+# trace frame for the call, then the matching pop
+movl $38, %edi                   # constant
+callq main.call.spec.fnfill      # call call(fill, 38)
+movl %eax, %ecx                  # move
+movl %ecx, 12(%rsp)              # move
+movl 12(%rsp), %eax              # return
+addq $24, %rsp                   # release
+retq                             # return
+```
+
+`38` is stored.
+
+The copy calls `main.fill.spec.4` with `38`, then returns `42`.
 
 A `var` is not promoted into a `comptime const`. An ordinary function stored in a `var`, then `comptime const op = f`, is `var is not a compile-time constant`.
 
