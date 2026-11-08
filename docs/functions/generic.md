@@ -615,7 +615,7 @@ A local `const` whose initializer folds to `i32` may be that argument.
 
 `func ordinary(comptime n i32) i32 { return width[n](); }` writes that integer. A negative integer is that value.
 
-A result that names the parameter is that type. `repeat[n](40)[0]` reads the element. `repeat[n](1).len` is `n`. A negative integer is `not supported yet`.
+A result that names the parameter is that type. `repeat[n](40)[0]` reads the element. `repeat[n](1).len` is `n`. A negative integer is `array length must be >= 0`.
 
 `ordinary(2)` returns 42.
 
@@ -642,7 +642,7 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
-`var buf Buf[n]` writes that same integer. `buf.raw.len` is `n` when `raw` is `[N]u8`. `type Mine[N i32] Buf[N]` then `var buf Mine[n]` is that alias. A negative value is `not supported yet`.
+`var buf Buf[n]` writes that same integer. `buf.raw.len` is `n` when `raw` is `[N]u8`. `type Mine[N i32] Buf[N]` then `var buf Mine[n]` is that alias. A negative value is `array length must be >= 0`.
 
 A call of `width` from a `comptime func` is `not supported yet`.
 

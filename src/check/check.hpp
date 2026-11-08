@@ -15,6 +15,9 @@
 
 namespace tlc {
 
+// A folded array length below zero. Zero is an empty array.
+inline constexpr const char kArrayLength[] = "array length must be >= 0";
+
 struct SpecArg {
     bool is_value = false;
     int value = 0;
@@ -346,6 +349,10 @@ class Checker {
     std::optional<WaitingGeneric> waiting_generic_;
     // Errors suppressed while `quiet_` is set. A probe uses this to see a failure.
     int quiet_errors_ = 0;
+    // The first diagnostic hidden by `quiet_`. A later region saves and restores it.
+    std::string quiet_note_;
+    // Set when a quiet recheck failed because an array length was negative.
+    std::string recheck_fault_;
     // A generic specialization may learn an omitted result. File signatures stay pending until
     // every function in the file is registered.
     bool allow_lazy_infer_ = false;
@@ -1194,7 +1201,7 @@ class Checker {
     // After the call substitutes parameters, fold `comptime if`, `comptime switch`, and `comptime for`.
     // True when that copy typechecks.
     bool recheck_comptime_copy(FunctionDecl &wrapper, bool force);
-    // `[n]T` becomes that integer. A negative value is `not supported yet`.
+    // `[n]T` becomes that integer. A negative value is `array length must be >= 0`.
     // False when that error was reported. `wrote` is true when a length was filled in.
     bool bind_array_lengths(Stmt &stmt, const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
                             bool &wrote);
@@ -1264,11 +1271,15 @@ class Checker {
     bool length_waits(const std::string &name);
     // That same name, or a `comptime` parameter of the ordinary function being checked.
     bool value_name_waits(const std::string &name);
+    // `func ordinary(comptime n i32)`. A mixed template still has a runtime parameter.
+    bool baked_comptime_params() const;
     // Specializations the body calls that are still queued, not yet in the package.
     void comptime_pending_specs(const Stmt *body, std::vector<std::pair<uint32_t, const FunctionDecl *>> &out) const;
+    // `local_length` is a `var` in the function being checked. A result still rejects the name.
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                          int &indirections, uint32_t &optional, bool &is_array, int &array_len,
-                         std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);
+                         std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
+                         bool local_length = false);
     // `Buf[n]` and `Mine[n]` while `n` waits. One element stands in so the fields typecheck.
     // The call builds the real struct. An alias stays that alias.
     Type deferred_struct_type(const std::string &name, const std::string &package, const std::vector<TypeArg> &args,

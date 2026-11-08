@@ -3520,6 +3520,22 @@ bool Checker::value_name_waits(const std::string &name) {
     return false;
 }
 
+bool Checker::baked_comptime_params() const {
+    if (checking_.empty() || checking_.back() == nullptr) {
+        return false;
+    }
+    const FunctionDecl &fn = *checking_.back();
+    if (fn.is_comptime || fn.is_macro || fn.generic_instance || fn.params.empty()) {
+        return false;
+    }
+    for (const Param &param : fn.params) {
+        if (!param.is_comptime) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool Checker::comptime_param_pending(const Expr *expr) const {
     if (expr == nullptr) {
         return false;
@@ -3572,7 +3588,7 @@ bool Checker::bind_array_lengths(Stmt &stmt, const std::vector<std::string> &nam
                 return;
             }
             if (*value < 0) {
-                error(loc, "not supported yet");
+                error(loc, kArrayLength);
                 negative = true;
                 return;
             }

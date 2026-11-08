@@ -837,7 +837,7 @@ int run_sema_tests() {
             "  var row [n]i32;\n"
             "  return 0;\n"
             "}\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_HAS(check, errors, "array length must be >= 0");
     }
 
     {

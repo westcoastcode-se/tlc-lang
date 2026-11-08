@@ -2094,7 +2094,8 @@ void Checker::disambiguate_bounds(uint32_t owner, std::vector<SpecArg> &bounds) 
 
 void Checker::prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                               int &indirections, uint32_t &optional, bool &is_array, int &array_len,
-                              std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc) {
+                              std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
+                              bool local_length) {
     (void)is_enum;
     (void)indirections;
     (void)optional;
@@ -2104,8 +2105,17 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
             array_len = *value;
             array_len_name.clear();
             is_array = true;
-        } else if (!length_waits(array_len_name)) {
+        } else if (value && *value < 0) {
+            // `fold_shells` reports this. The name stays until that walk retires the shell.
+        } else if (length_waits(array_len_name)) {
             // A parameter of a `comptime func` is not a length until the call substitutes it.
+        } else if (local_length && baked_comptime_params() && value_name_waits(array_len_name)) {
+            // `func ordinary(comptime n i32)` is checked before the call substitutes `n`.
+            // The call compiles this body once the integer is known.
+            if (!checking_.empty() && checking_.back() != nullptr) {
+                checking_.back()->pending_generic = true;
+            }
+        } else {
             error(loc, "not supported yet");
         }
     }
@@ -2276,8 +2286,12 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
     TypeArg concrete = arg;
     if (!concrete.array_len_name.empty()) {
         const std::optional<int> len = array_length_value(concrete.array_len_name);
-        if (!len || *len < 0) {
+        if (!len) {
             error(arg.loc, "not supported yet");
+            return false;
+        }
+        if (*len < 0) {
+            error(arg.loc, kArrayLength);
             return false;
         }
         concrete.array_len = *len;
@@ -2519,10 +2533,13 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
                               std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
                               std::vector<TypeShell> *shells, bool *elem_const, uint32_t *const_pointee) {
     (void)is_struct;
+    bool negative_length = false;
     if (!array_len_name.empty()) {
         if (const SpecArg *bound = find_arg(params, bounds, array_len_name); bound != nullptr && bound->is_value) {
             if (bound->value < 0) {
-                error(loc, "not supported yet");
+                error(loc, kArrayLength);
+                negative_length = true;
+                array_len_name.clear();
             } else {
                 array_len = bound->value;
                 array_len_name.clear();
@@ -2537,7 +2554,12 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
             }
             if (const SpecArg *bound = find_arg(params, bounds, shell.length_name); bound != nullptr && bound->is_value) {
                 if (bound->value < 0) {
-                    error(loc, "not supported yet");
+                    if (!negative_length) {
+                        error(loc, kArrayLength);
+                        negative_length = true;
+                    }
+                    shell.length = -2;
+                    shell.length_name.clear();
                 } else {
                     shell.length = bound->value;
                     shell.length_name.clear();
@@ -2553,7 +2575,8 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         if (!arg.array_len_name.empty()) {
             if (const SpecArg *bound = find_arg(params, bounds, arg.array_len_name); bound != nullptr && bound->is_value) {
                 if (bound->value < 0) {
-                    error(arg.loc, "not supported yet");
+                    error(arg.loc, kArrayLength);
+                    arg.array_len_name.clear();
                 } else {
                     arg.array_len = bound->value;
                     arg.array_len_name.clear();

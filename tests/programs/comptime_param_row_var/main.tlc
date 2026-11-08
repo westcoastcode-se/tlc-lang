@@ -1,0 +1,9 @@
+func ordinary(comptime n i32) i32 {
+    var k = n;
+    var row [k]i32;
+    return row.len;
+}
+
+func main() i32 {
+    return ordinary(4);
+}

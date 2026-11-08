@@ -2329,7 +2329,7 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     }
     // A body with statements is compiled and called. The integer or bool is the constant.
     // An ordinary function whose parameters are all comptime is compiled the same way when a generic
-    // value argument was still a parameter at the definition.
+    // value argument, or a local `[n]i32`, was still that parameter at the definition.
     const bool run_body = fn->is_comptime || fn->pending_generic;
     if (!run_body || (!plain_i32_result(*fn) && !plain_bool_result(*fn)) || graph_ == nullptr ||
         !comptime_folding_.insert(fn).second) {
@@ -2360,7 +2360,8 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     // `repeat[n]` instantiates once `n` is the integer. A rejected call stays rejected.
     (void)generic;
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
-        error(call.loc, "not supported yet");
+        error(call.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
+        recheck_fault_.clear();
         call.comptime_failed = true;
         return std::nullopt;
     }
@@ -3736,15 +3737,24 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
     } file_scopes(*this);
     const bool saved_quiet = quiet_;
     const int saved_errors = quiet_errors_;
+    const std::string saved_note = std::move(quiet_note_);
+    quiet_note_.clear();
     quiet_ = true;
     check_function(wrapper);
+    const std::string note = quiet_note_;
+    quiet_note_ = saved_note;
     quiet_ = saved_quiet;
     loop_info_.erase(&wrapper);
     self_loop_.erase(&wrapper);
     infer_running_.erase(&wrapper);
     infer_mismatch_.erase(&wrapper);
-    // `Buf[-1]` does not typecheck. The call is `not supported yet`.
-    return quiet_errors_ == saved_errors;
+    const bool failed = quiet_errors_ != saved_errors;
+    // A negative array length is that rule. Other quiet failures stay `not supported yet`.
+    recheck_fault_.clear();
+    if (failed && note == kArrayLength) {
+        recheck_fault_ = note;
+    }
+    return !failed;
 }
 
 int Checker::explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name) {

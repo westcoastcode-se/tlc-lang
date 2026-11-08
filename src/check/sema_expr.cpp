@@ -516,8 +516,13 @@ Type Checker::check_array_literal(Expr::Init &init) {
         if (!element_slice) {
             if (!init.elem_array_len_name.empty()) {
                 const std::optional<int> folded = array_length_value(init.elem_array_len_name);
-                if (!folded || *folded < 0) {
+                if (!folded) {
                     error(init.loc, "not supported yet");
+                    check_loose();
+                    return type_invalid();
+                }
+                if (*folded < 0) {
+                    error(init.loc, kArrayLength);
                     check_loose();
                     return type_invalid();
                 }
@@ -525,7 +530,7 @@ Type Checker::check_array_literal(Expr::Init &init) {
                 init.elem_array_len = length;
             }
             if (length < 0) {
-                error(init.loc, "not supported yet");
+                error(init.loc, kArrayLength);
                 check_loose();
                 return type_invalid();
             }

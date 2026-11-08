@@ -336,7 +336,7 @@ The other arm is not typechecked and not emitted.
 
 A condition that is not comptime is `not supported yet`.
 
-Inside a `comptime func`, a parameter is not a constant until the call substitutes it. `value := n` and `comptime const k = n` are that parameter. `var buf [n]i32` uses it as the length, and `buf.len` is `n`. `var buf Buf[n]`, `Buf[n]{}`, and `new(&arena) Buf[n]` write it as a type argument. `type Mine[N i32] Buf[N]` then `var buf Mine[n]`, `Mine[n]{}`, and `new(&arena) Mine[n]` are that alias. `new Buf[n]` uses the heap and is `not supported yet`. A negative length is `not supported yet`. A call of a function that is not `comptime` is `not supported yet`. The body typechecks every arm. The call keeps the selected arm.
+Inside a `comptime func`, a parameter is not a constant until the call substitutes it. `value := n` and `comptime const k = n` are that parameter. `var buf [n]i32` uses it as the length, and `buf.len` is `n`. `var buf Buf[n]`, `Buf[n]{}`, and `new(&arena) Buf[n]` write it as a type argument. `type Mine[N i32] Buf[N]` then `var buf Mine[n]`, `Mine[n]{}`, and `new(&arena) Mine[n]` are that alias. `new Buf[n]` uses the heap and is `not supported yet`. A negative length is `array length must be >= 0`. A call of a function that is not `comptime` is `not supported yet`. The body typechecks every arm. The call keeps the selected arm.
 
 A `comptime` parameter is comptime.
 
@@ -1234,7 +1234,7 @@ A function in that argument must be a `comptime func`. An ordinary function is `
 
 A local `const` whose initializer folds to `i32` is that integer.
 
-`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter, such as `[N]T`, is that array. A negative length is `not supported yet`.
+`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter, such as `[N]T`, is that array. A negative length is `array length must be >= 0`.
 
 A call of that function from a `comptime func` is `not supported yet`.
 
@@ -1910,7 +1910,7 @@ A call may be that integer.
 
 A local `const` whose initializer folds to `i32` is that integer.
 
-`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter, such as `[N]T`, is that array. A negative length is `not supported yet`.
+`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter, such as `[N]T`, is that array. A negative length is `array length must be >= 0`.
 
 A call of that function from a `comptime func` is `not supported yet`.
 
@@ -2178,7 +2178,9 @@ In a type they build an array or a slice: `[4]i32`, `[N]i32`, and `[]i32`.
 
 `const n = 0` is `[0]i32`.
 
-A `var`, `var n const i32`, an initializer that does not fold, and a negative length are `not supported yet`.
+A `var`, `var n const i32`, and an initializer that does not fold are `not supported yet`. A negative length is `array length must be >= 0`.
+
+`func ordinary(comptime n i32)` uses that parameter as the length. `var row [n]i32` then `row.len` is `n`. A negative value is `array length must be >= 0`. A `var` is not a length. The result `[n]i32` is `not supported yet`.
 
 After a name in an expression, the token after the matching `]` chooses.
 

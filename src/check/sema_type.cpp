@@ -2937,7 +2937,10 @@ void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
             shell.length = *value;
             shell.length_name.clear();
         } else if (value && *value < 0) {
-            error(loc, "not supported yet");
+            error(loc, kArrayLength);
+            // A later `object_type` sees this and does not report the length again.
+            shell.length = -2;
+            shell.length_name.clear();
         }
     }
 }
@@ -3033,6 +3036,12 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         }
         return type;
     }
+    // Length -2 means `fold_shells` already reported a negative length.
+    for (const TypeShell &shell : shells) {
+        if (shell.kind == TypeShell::Kind::Array && shell.length < -1) {
+            return type_invalid();
+        }
+    }
     // One empty `[]` makes the named type a slice. `[][][]T` and `[][]Row` stay rejected.
     if (elem_slice) {
         if (type.kind == TypeKind::Invalid) {
@@ -3110,16 +3119,26 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         return pointer;
     }
     // Shells that are not ready still hold a name. Zero here is that name, not `[0]T`.
-    // A parameter of a `comptime func` becomes that length when the call substitutes it.
+    // A parameter of a `comptime func`, or of `func ordinary(comptime n i32)`, becomes that
+    // length when the call substitutes it. One element stands in until then.
     if (array_len <= 0) {
         bool waiting = false;
+        bool ordinary = false;
         for (const TypeShell &shell : shells) {
-            if (shell.kind == TypeShell::Kind::Array && !shell.length_name.empty() && length_waits(shell.length_name)) {
+            if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
+                continue;
+            }
+            if (length_waits(shell.length_name)) {
                 waiting = true;
+            } else if (variable && baked_comptime_params() && value_name_waits(shell.length_name)) {
+                waiting = true;
+                ordinary = true;
             }
         }
         if (waiting) {
-            // One element stands in until the call knows the length. The copy stores that length.
+            if (ordinary && !checking_.empty() && checking_.back() != nullptr) {
+                checking_.back()->pending_generic = true;
+            }
             return type_array(std::move(type), 1);
         }
         error(loc, "not supported yet");

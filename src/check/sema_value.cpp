@@ -1178,7 +1178,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         if (kept.status != KeptStruct::Status::Value || kept.value == nullptr) {
                             if (diags_.size() == before) {
-                                error(node.loc, "not supported yet");
+                                error(node.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
+                                recheck_fault_.clear();
                             }
                             return type_invalid();
                         }
@@ -1189,7 +1190,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (slice_of_const_u8(result)) {
                         if (!fold_comptime_string(node)) {
                             if (diags_.size() == before) {
-                                error(node.loc, "not supported yet");
+                                error(node.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
+                                recheck_fault_.clear();
                             }
                             return type_invalid();
                         }
@@ -1961,8 +1963,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (diags_.size() == before && atomic_builtin_rejected(*ordinary, node, nullptr)) {
                             return type_invalid();
                         }
-                        // `repeat[n]` waited while `n` was a parameter. The call writes the integer.
-                        // A negative length is `not supported yet` here, not at code generation.
+                        // `repeat[n]` and `var row [n]i32` waited while `n` was a parameter.
+                        // The call writes the integer. A negative length is `not supported yet` here.
                         bool only_comptime = ordinary->pending_generic && !ordinary->params.empty();
                         for (const Param &param : ordinary->params) {
                             if (!param.is_comptime) {

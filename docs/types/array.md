@@ -10,7 +10,7 @@ An array length is a decimal `i32` literal. `0` is a length.
 
 A `const` binding whose initializer folds to a non-negative `i32` is a length too.
 
-Inside a `comptime func`, a parameter is that length when the call substitutes it. `var buf [n]i32` then `buf.len` is `n`. `comptime const k = n` and `value := n` are the same length. A negative value is `not supported yet`.
+Inside a `comptime func`, a parameter is that length when the call substitutes it. `var buf [n]i32` then `buf.len` is `n`. `comptime const k = n` and `value := n` are the same length. A negative value is `array length must be >= 0`.
 
 `[_]i32{10, 20, 12}` writes the values. `_` stands for the length, which is the number of values, so the type is `[3]i32`.
 
@@ -188,7 +188,35 @@ A `var` is `not supported yet`.
 
 An initializer that does not fold, such as `const n = give()`, is `not supported yet`.
 
-A negative length, `const n = -1`, is `not supported yet`.
+A negative length, `const n = -1`, is `array length must be >= 0`.
+
+`func ordinary(comptime n i32)` uses that parameter as the length. `var row [n]i32` then `row.len` is `n`. The call substitutes the integer.
+
+`ordinary(2)` returns 42.
+
+```c
+func ordinary(comptime n i32) i32 {
+    var row [n]i32;
+    row[0] = 40;
+    return row.len + row[0];
+}
+
+func main() i32 {
+    return ordinary(2);
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
+A negative value is `array length must be >= 0`.
+
+A `var` is not a length.
+
+The result `[n]i32` on that function is `not supported yet`.
 
 ## Length 0
 
@@ -213,7 +241,7 @@ func buf[M i32]() i32 {
 
 `buf[0]()` is 0. `buf[2]()` is 8.
 
-A negative length, `comptime const N = -1` then `[N]i32`, is `not supported yet`.
+A negative length, `comptime const N = -1` then `[N]i32`, is `array length must be >= 0`.
 
 `const n = -1` inside a function is that same error.
 

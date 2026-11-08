@@ -402,9 +402,11 @@ Inside a `comptime func`, a parameter is not a constant until the call substitut
 
 `value := n` and `comptime const k = n` are that parameter. A store into `value` makes a later use a runtime value.
 
-`var buf [n]i32`, `var buf [k]i32`, and `var buf [value]i32` use that integer as the length. `buf.len` is `n`. A negative value is `not supported yet`. A `var` is not a length.
+`var buf [n]i32`, `var buf [k]i32`, and `var buf [value]i32` use that integer as the length. `buf.len` is `n`. A negative value is `array length must be >= 0`. A `var` is not a length.
 
-`var buf Buf[n]`, `var buf Buf[k]`, and `var buf Buf[value]` write that integer as a type argument. `buf.raw.len` is `n` when `raw` is `[N]u8`. `Buf[n]{}` and `new(&arena) Buf[n]` are that same type. `type Mine[N i32] Buf[N]` then `var buf Mine[n]`, `Mine[n]{}`, and `new(&arena) Mine[n]` are that alias. `Mine` and `Buf` stay different types. `new Buf[n]` and `new Mine[n]` use the heap and are `not supported yet`. A negative value is `not supported yet`. A `var` is `type mismatch`.
+`func ordinary(comptime n i32)` uses that parameter as `var row [n]i32`. `row.len` is `n`. A negative value is `array length must be >= 0`. A `var` is not a length. The result `[n]i32` is `not supported yet`.
+
+`var buf Buf[n]`, `var buf Buf[k]`, and `var buf Buf[value]` write that integer as a type argument. `buf.raw.len` is `n` when `raw` is `[N]u8`. `Buf[n]{}` and `new(&arena) Buf[n]` are that same type. `type Mine[N i32] Buf[N]` then `var buf Mine[n]`, `Mine[n]{}`, and `new(&arena) Mine[n]` are that alias. `Mine` and `Buf` stay different types. `new Buf[n]` and `new Mine[n]` use the heap and are `not supported yet`. A negative value is `array length must be >= 0`. A `var` is `type mismatch`.
 
 `width(4)` returns 4.
 

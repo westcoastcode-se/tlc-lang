@@ -6,6 +6,9 @@ namespace tlc {
 
 void Checker::error(SourceLoc loc, const std::string &message) {
     if (quiet_) {
+        if (quiet_note_.empty()) {
+            quiet_note_ = message;
+        }
         ++quiet_errors_;
         return;
     }
@@ -349,7 +352,7 @@ Type Checker::type_of_var(const VarDecl &var) {
         VarDecl &written = const_cast<VarDecl &>(var);
         prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                         written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
-                        written.loc);
+                        written.loc, true);
         if (!written.type_args.empty()) {
             type = deferred_struct_type(written.type_name, written.type_package, written.type_args, written.loc);
             if (type.kind == TypeKind::Invalid) {
