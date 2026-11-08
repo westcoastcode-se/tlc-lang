@@ -1259,8 +1259,102 @@ bool pack_suffix_fits(const FunctionDecl &fn, std::size_t arg_count) {
 
 } // namespace
 
+bool Checker::waiting_value_arg(const TypeArg &arg) {
+    // `repeat[n]` and `Buf[n]` while `n` is still a parameter. A literal is not waiting.
+    return arg.type_package.empty() && arg.indirections == 0 && arg.args.empty() && !arg.is_array && !arg.is_tuple &&
+           arg.shells.empty() && arg.value_expr == nullptr && !arg.has_value && !arg.type_name.empty() &&
+           value_name_waits(arg.type_name);
+}
+
+Type Checker::waiting_generic_result(const FunctionDecl &templ) {
+    if (!waiting_generic_ || templ.results.empty()) {
+        return type_invalid();
+    }
+    const WaitingGeneric &partial = *waiting_generic_;
+    std::vector<TypeParam> params;
+    std::vector<SpecArg> bounds;
+    std::vector<std::string> waiting_names;
+    for (std::size_t i = 0; i < templ.type_params.size(); ++i) {
+        const bool known = i < partial.known.size() && partial.known[i] != 0;
+        if (known && i < partial.bounds.size()) {
+            params.push_back(templ.type_params[i]);
+            bounds.push_back(partial.bounds[i]);
+            continue;
+        }
+        if (!templ.type_params[i].is_value) {
+            return type_invalid();
+        }
+        waiting_names.push_back(templ.type_params[i].name);
+    }
+    auto waiting_name = [&](const std::string &name) {
+        for (const std::string &item : waiting_names) {
+            if (item == name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    auto integer_name = [](const std::string &name) {
+        return name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" ||
+               name == "i64" || name == "u64";
+    };
+    auto stand_in = [&](auto &&self, ResultSlot &slot) -> bool {
+        if (slot.is_tuple) {
+            for (ResultSlot &part : slot.tuple_parts) {
+                if (!self(self, part)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (waiting_name(slot.type_name) && slot.type_package.empty() && slot.type_args.empty()) {
+            const std::string *constraint = nullptr;
+            for (const TypeParam &param : templ.type_params) {
+                if (param.is_value && param.name == slot.type_name) {
+                    constraint = &param.constraint;
+                    break;
+                }
+            }
+            if (constraint == nullptr || !integer_name(*constraint)) {
+                return false;
+            }
+            slot.type_name = *constraint;
+        }
+        for (const TypeArg &arg : slot.type_args) {
+            if (waiting_name(arg.type_name) || waiting_name(arg.array_len_name)) {
+                return false;
+            }
+        }
+        if (waiting_name(slot.array_len_name)) {
+            // One element stands in until the call knows the length.
+            slot.array_len = 1;
+            slot.array_len_name.clear();
+            slot.is_array = true;
+        }
+        for (TypeShell &shell : slot.shells) {
+            if (shell.kind == TypeShell::Kind::Array && waiting_name(shell.length_name)) {
+                shell.length = 1;
+                shell.length_name.clear();
+            }
+        }
+        return true;
+    };
+    std::vector<ResultSlot> slots = templ.results;
+    for (ResultSlot &slot : slots) {
+        substitute_slot(params, bounds, slot, templ.loc);
+        if (!stand_in(stand_in, slot)) {
+            return type_invalid();
+        }
+    }
+    FunctionDecl probe;
+    probe.loc = templ.loc;
+    probe.results = std::move(slots);
+    return function_result(probe);
+}
+
 std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const FunctionDecl &templ, const Expr::Call &call,
                                                                   const std::vector<Type> &arg_types) {
+    waiting_generic_.reset();
     int pack_at = -1;
     for (std::size_t i = 0; i < templ.type_params.size(); ++i) {
         if (!templ.type_params[i].is_pack) {
@@ -1314,6 +1408,10 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         set[static_cast<std::size_t>(pack_at)] = 1;
     } else {
         for (std::size_t i = 0; i < call.type_args.size(); ++i) {
+            // `repeat[n]` while `n` is still a parameter. The other arguments still bind.
+            if (templ.type_params[i].is_value && waiting_value_arg(call.type_args[i])) {
+                continue;
+            }
             if (!bind_type_arg(templ.type_params[i], call.type_args[i], bounds[i], call.type_args[i].loc)) {
                 return std::nullopt;
             }
@@ -1600,8 +1698,13 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
             return std::nullopt;
         }
     }
+    bool waiting = false;
     for (std::size_t i = 0; i < set.size(); ++i) {
         if (!set[i]) {
+            if (templ.type_params[i].is_value && i < call.type_args.size() && waiting_value_arg(call.type_args[i])) {
+                waiting = true;
+                continue;
+            }
             error(call.loc, "type mismatch");
             return std::nullopt;
         }
@@ -1642,6 +1745,11 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         if (!require_satisfies(struct_id, trait_id, through_pointer, call.loc, home)) {
             return std::nullopt;
         }
+    }
+    if (waiting) {
+        value_arg_deferred_ = true;
+        waiting_generic_ = WaitingGeneric{std::move(bounds), std::move(set)};
+        return std::nullopt;
     }
     return bounds;
 }
@@ -2537,6 +2645,19 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
             }
         }
         if (deferred && diags_.size() == before_infer) {
+            const bool saved_quiet = quiet_;
+            const int saved_errors = quiet_errors_;
+            quiet_ = true;
+            Type result = waiting_generic_result(*templ);
+            quiet_ = saved_quiet;
+            const bool bad = result.kind == TypeKind::Invalid || quiet_errors_ != saved_errors;
+            quiet_errors_ = saved_errors;
+            if (!bad) {
+                if (!checking_.empty() && checking_.back() != nullptr) {
+                    checking_.back()->pending_generic = true;
+                }
+                return result;
+            }
             error(call.loc, "not supported yet");
         }
         return type_invalid();

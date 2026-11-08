@@ -2222,9 +2222,7 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
             }
         }
         // `repeat[n]` and `Buf[n]` while `n` is still a parameter. The call writes the integer.
-        if (arg.type_package.empty() && arg.indirections == 0 && arg.args.empty() && !arg.is_array && !arg.is_tuple &&
-            arg.shells.empty() && arg.value_expr == nullptr && !arg.has_value && !arg.type_name.empty() &&
-            value_name_waits(arg.type_name)) {
+        if (waiting_value_arg(arg)) {
             value_arg_deferred_ = true;
             return false;
         }

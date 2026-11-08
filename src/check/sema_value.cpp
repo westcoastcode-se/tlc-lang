@@ -1961,6 +1961,17 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (diags_.size() == before && atomic_builtin_rejected(*ordinary, node, nullptr)) {
                             return type_invalid();
                         }
+                        // `repeat[n]` waited while `n` was a parameter. The call writes the integer.
+                        // A negative length is `not supported yet` here, not at code generation.
+                        bool only_comptime = ordinary->pending_generic && !ordinary->params.empty();
+                        for (const Param &param : ordinary->params) {
+                            if (!param.is_comptime) {
+                                only_comptime = false;
+                            }
+                        }
+                        if (only_comptime && diags_.size() == before) {
+                            fold_comptime_call(node);
+                        }
                     }
                 }
                 return *signature->result;

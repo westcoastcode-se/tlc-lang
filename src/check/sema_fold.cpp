@@ -2360,6 +2360,8 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     // `repeat[n]` instantiates once `n` is the integer. A rejected call stays rejected.
     (void)generic;
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
+        error(call.loc, "not supported yet");
+        call.comptime_failed = true;
         return std::nullopt;
     }
     wrapper.params.clear();

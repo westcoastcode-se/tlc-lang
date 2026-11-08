@@ -338,6 +338,12 @@ class Checker {
     // `repeat[n]` while `n` is not a constant yet. The call substitutes the integer.
     bool defer_value_args_ = false;
     bool value_arg_deferred_ = false;
+    // Bounds learned while a value argument is still a parameter. Known slots are filled.
+    struct WaitingGeneric {
+        std::vector<SpecArg> bounds;
+        std::vector<char> known;
+    };
+    std::optional<WaitingGeneric> waiting_generic_;
     // Errors suppressed while `quiet_` is set. A probe uses this to see a failure.
     int quiet_errors_ = 0;
     // A generic specialization may learn an omitted result. File signatures stay pending until
@@ -582,6 +588,8 @@ class Checker {
     void generic_method_clash(const FunctionDecl &fn);
     std::optional<std::vector<SpecArg>> infer_generic_bounds(const FunctionDecl &templ, const Expr::Call &call,
                                                             const std::vector<Type> &arg_types);
+    bool waiting_value_arg(const TypeArg &arg);
+    Type waiting_generic_result(const FunctionDecl &templ);
     bool generic_candidate_matches(const FunctionDecl &templ, const Expr::Call &call, const std::vector<Type> &arg_types,
                                    uint32_t owner);
     // `extern func use[T type](s Shape, n T)` still takes a trait. `T Shape` does not.

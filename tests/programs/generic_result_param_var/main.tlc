@@ -1,0 +1,14 @@
+func repeat[N i32, T type](value T) [N]T {
+    var out [N]T;
+    out[0] = value;
+    return out;
+}
+
+func ordinary(comptime n i32) i32 {
+    var k = n;
+    return repeat[k](1)[0];
+}
+
+func main() i32 {
+    return ordinary(4);
+}

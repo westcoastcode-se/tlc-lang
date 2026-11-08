@@ -1234,7 +1234,7 @@ A function in that argument must be a `comptime func`. An ordinary function is `
 
 A local `const` whose initializer folds to `i32` is that integer.
 
-`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter is `not supported yet`.
+`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter, such as `[N]T`, is that array. A negative length is `not supported yet`.
 
 A call of that function from a `comptime func` is `not supported yet`.
 
@@ -1910,7 +1910,7 @@ A call may be that integer.
 
 A local `const` whose initializer folds to `i32` is that integer.
 
-`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter is `not supported yet`.
+`func ordinary(comptime n i32)` writes that integer. A negative integer is that value. A result that names the parameter, such as `[N]T`, is that array. A negative length is `not supported yet`.
 
 A call of that function from a `comptime func` is `not supported yet`.
 
