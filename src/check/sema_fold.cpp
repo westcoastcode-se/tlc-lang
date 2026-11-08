@@ -2843,6 +2843,72 @@ bool Checker::strict_comptime_expr(const Expr &expr) {
     return comptime_constant(expr) || comptime_address(expr);
 }
 
+bool Checker::mentions_var(const Expr &expr) {
+    // A `var` is not promoted into a `comptime const`.
+    const auto walk = [&](const auto &self, const Expr &node, int depth) -> bool {
+        if (depth > 32) {
+            return false;
+        }
+        return std::visit(
+            [&](const auto &item) -> bool {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Expr::Name>) {
+                    const Symbol *symbol = lookup(item.text);
+                    return symbol != nullptr && symbol->is_var;
+                } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    return item.base != nullptr && self(self, *item.base, depth + 1);
+                } else if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                                     std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
+                    return item.expr != nullptr && self(self, *item.expr, depth + 1);
+                } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    return (item.lhs != nullptr && self(self, *item.lhs, depth + 1)) ||
+                           (item.rhs != nullptr && self(self, *item.rhs, depth + 1)) ||
+                           (item.mid != nullptr && self(self, *item.mid, depth + 1));
+                } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                    return (item.lhs != nullptr && self(self, *item.lhs, depth + 1)) ||
+                           (item.rhs != nullptr && self(self, *item.rhs, depth + 1));
+                } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    if (item.callee != nullptr && self(self, *item.callee, depth + 1)) {
+                        return true;
+                    }
+                    for (const auto &arg : item.args) {
+                        if (arg != nullptr && self(self, *arg, depth + 1)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                    return (item.base != nullptr && self(self, *item.base, depth + 1)) ||
+                           (item.index != nullptr && self(self, *item.index, depth + 1)) ||
+                           (item.end != nullptr && self(self, *item.end, depth + 1));
+                } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                    for (const Expr::FieldInit &field : item.fields) {
+                        if (field.value != nullptr && self(self, *field.value, depth + 1)) {
+                            return true;
+                        }
+                    }
+                    for (const auto &element : item.elements) {
+                        if (element != nullptr && self(self, *element, depth + 1)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                } else if constexpr (std::is_same_v<T, Expr::New>) {
+                    return (item.allocator != nullptr && self(self, *item.allocator, depth + 1)) ||
+                           (item.count != nullptr && self(self, *item.count, depth + 1)) ||
+                           (item.init != nullptr && self(self, *item.init, depth + 1));
+                } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                    return (item.allocator != nullptr && self(self, *item.allocator, depth + 1)) ||
+                           (item.expr != nullptr && self(self, *item.expr, depth + 1));
+                } else {
+                    return false;
+                }
+            },
+            node.data);
+    };
+    return walk(walk, expr, 0);
+}
+
 bool Checker::unmarked_comptime_arg(const Expr &expr) {
     // A `var` or a `const` is not a comptime argument. `comptime const` and a `comptime` parameter are.
     const auto walk = [&](const auto &self, const Expr &node, int depth) -> bool {

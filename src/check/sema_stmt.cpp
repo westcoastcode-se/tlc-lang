@@ -352,6 +352,7 @@ void Checker::check_for_each(const Stmt::For &node) {
     symbol.name = node.each_name;
     symbol.type = bound;
     symbol.is_auto = true;
+    symbol.is_var = !node.each_const;
     symbol.is_immutable = node.each_const;
     if (node.each_const) {
         symbol.type.is_const = true;
@@ -2987,6 +2988,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             return;
                         }
                         Symbol symbol = generic_alias_symbol(node.names[0], loc, *source, node.is_const);
+                        symbol.is_var = node.is_var && !node.is_const;
                         if (exists) {
                             shadow(std::move(symbol), loc);
                         } else {
@@ -3006,6 +3008,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             return;
                         }
                         Symbol symbol = comptime_spec_alias_symbol(node.names[0], loc, *alias, node.is_const);
+                        symbol.is_var = node.is_var && !node.is_const;
                         if (exists) {
                             shadow(std::move(symbol), loc);
                         } else {
@@ -3158,6 +3161,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.name = node.names[index];
                     symbol.type = parts[index];
                     symbol.is_auto = true;
+                    symbol.is_var = node.is_var && !node.is_const;
                     symbol.is_immutable = node.is_const;
                     if (node.is_const) {
                         symbol.type.is_const = true;
@@ -3174,6 +3178,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                             // `comptime const k = n` waits until the call substitutes `n`.
                             if (comptime_param_pending(bind.value.get())) {
                                 symbol.pending_fold = true;
+                            } else if (mentions_var(*bind.value)) {
+                                error(loc, "var is not a compile-time constant");
                             } else {
                                 error(loc, "not supported yet");
                             }
@@ -3222,6 +3228,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.name = node.names[index];
                     symbol.type = parts[index];
                     symbol.is_auto = true;
+                    symbol.is_var = node.is_var;
                     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                     symbol.loc = loc;
                     if (node.is_define && node.names.size() == 1 && node.value != nullptr) {
@@ -3318,6 +3325,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.name = var.name;
                     symbol.type = type;
                     symbol.is_auto = true;
+                    symbol.is_var = !var.is_const_decl && !var.colon_eq;
                     if (var.is_const_decl) {
                         symbol.type.is_const = true;
                     }
@@ -3367,6 +3375,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                                     // `comptime const k = n` waits until the call substitutes `n`.
                                     if (comptime_param_pending(written.init.get())) {
                                         live->pending_fold = true;
+                                    } else if (mentions_var(*written.init)) {
+                                        error(var.loc, "var is not a compile-time constant");
                                     } else {
                                         error(var.loc, "not supported yet");
                                     }

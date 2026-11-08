@@ -1106,9 +1106,9 @@ A parameter that is not `comptime` is `type mismatch`.
 
 `null` is `type mismatch`.
 
-`var f = add` then `comptime const ops = (f, 1)` is `not supported yet`.
+A `var` is not promoted into a `comptime const`. `var f = add` then `comptime const ops = (f, 1)` is `var is not a compile-time constant`.
 
-A `comptime func` in that `var` is that error.
+A `comptime func` in that `var` is that error. Write `comptime const f = add`.
 
 A function element is called through that pointer.
 
@@ -1184,7 +1184,7 @@ A local `comptime const` of that tuple is the same.
 
 A `comptime func` whose body is `return *value[0] + value[1]` folds the same way.
 
-A `var` address, `comptime const pair = (&n, 2)`, is `not supported yet`.
+A `var` address, `comptime const pair = (&n, 2)`, is `var is not a compile-time constant`.
 
 `null` is `type mismatch`.
 
@@ -1218,7 +1218,7 @@ retq                             # return
 
 `pair[0].x` reads a field when the pointer addresses a struct.
 
-A `var` address is `not supported yet`.
+A `var` address is `var is not a compile-time constant`.
 
 Passing `(&addr, 2)` to a `comptime` parameter is `not supported yet`.
 
@@ -1252,7 +1252,7 @@ That `field` is `comptime func field(p ([2]i32, i32)) i32 { return p[0][0] + p[1
 
 A local `const` of that array is `not supported yet`.
 
-A `var` array in that tuple is `not supported yet`.
+A `var` array in that tuple is `var is not a compile-time constant`.
 
 `type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` folds the same way.
 
@@ -1260,7 +1260,7 @@ That `field` is `comptime func field(p ([2]Point, i32)) i32 { return p[0][0].x +
 
 `return field((row, 0))` is `movl $42, %eax` and `retq`.
 
-A local `const` and a `var` of that array are `not supported yet`.
+A local `const` of that array is `not supported yet`. A `var` of that array is `var is not a compile-time constant`.
 
 `take((row, 0), n)` with `comptime p ([2]Point, i32)` is `type mismatch`.
 
@@ -1326,7 +1326,7 @@ That `field` is `comptime func field(p ([2][2]i32, i32)) i32 { return p[0][0][0]
 
 `main` is `movl $42, %eax` and `retq`.
 
-A local `const` and a `var` of that array are `not supported yet`.
+A local `const` of that array is `not supported yet`. A `var` of that array is `var is not a compile-time constant`.
 
 A `comptime func` folds the same indexes, and `pick(pair)` is `2 + 1`.
 
@@ -1412,7 +1412,7 @@ retq                             # return
 >
 > A lone array index does not fold.
 >
-> `var row = [_]i32{40, 2}` then `comptime const pair = (row, 0)` is `not supported yet`.
+> `var row = [_]i32{40, 2}` then `comptime const pair = (row, 0)` is `var is not a compile-time constant`.
 >
 > `take(pair, 0)` with `comptime p ([2]i32, i32)` is `not supported yet`.
 >
@@ -1483,7 +1483,7 @@ That `field` is `comptime func field(p (Integer, i32)) i32 { return i32(p[0]) + 
 
 `take((other, 0), n)` calls `main.take.spec.t_4_0`.
 
-A local `const` and a `var` in that tuple are `not supported yet`.
+A local `const` in that tuple is `not supported yet`. A `var` in that tuple is `var is not a compile-time constant`.
 
 A function is that argument too.
 
@@ -1579,7 +1579,7 @@ That copy calls `main.add` with `n` and `2`, then adds `1`.
 
 `add(1, 0)` still folds. The call is `addl $1`.
 
-`var f = add` then `comptime const named = f` is `not supported yet`.
+A `var` is not promoted into a `comptime const`. `var f = add` then `comptime const named = f` is `var is not a compile-time constant`.
 
 `f` stays a `var`. Write `comptime const f = add`.
 
@@ -1706,7 +1706,7 @@ addq $24, %rsp                   # release
 retq                             # return
 ```
 
-An ordinary function stored in a `var`, then `comptime const op = f`, is `not supported yet`.
+A `var` is not promoted into a `comptime const`. An ordinary function stored in a `var`, then `comptime const op = f`, is `var is not a compile-time constant`.
 
 ```c
 comptime func add(a i32, b i32) i32 {

@@ -1320,7 +1320,7 @@ The expression has to be a compile-time constant.
 
 A runtime `const` whose initializer is a compile-time constant can be promoted with `comptime const folded = name`.
 
-A `var` is not promoted. `var n = 2` and `var n const i32 = 2` then `comptime const folded = n` are `not supported yet`.
+A `var` is not promoted. `var n = 2` and `var n const i32 = 2` then `comptime const folded = n` are `var is not a compile-time constant`.
 
 A file-scope `var` or `const i32 n` then `comptime const folded = n` is `global initializer is not a constant`.
 

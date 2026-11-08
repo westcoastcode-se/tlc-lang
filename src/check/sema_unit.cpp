@@ -789,6 +789,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 } else if (!var->is_extern && comptime_spec_alias_source(*var->init) != nullptr) {
                     const Symbol *source = comptime_spec_alias_source(*var->init);
                     Symbol symbol = comptime_spec_alias_symbol(var->name, var->loc, *source, var->is_const_decl);
+                    symbol.is_var = !var->is_const_decl && !var->colon_eq && !var->is_comptime;
                     bool defined = false;
                     if (var->is_static) {
                         statics_[file_id_].insert_or_assign(var->name, symbol);
@@ -811,6 +812,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     const Symbol *source = generic_alias_source(*var->init);
                     // `var f = id` names the generic. The call specializes it. There is no object.
                     Symbol symbol = generic_alias_symbol(var->name, var->loc, *source, var->is_const_decl);
+                    symbol.is_var = !var->is_const_decl && !var->colon_eq && !var->is_comptime;
                     bool defined = false;
                     if (var->is_static) {
                         statics_[file_id_].insert_or_assign(var->name, symbol);
@@ -853,6 +855,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             symbol.type = std::move(type);
             // `const name = expr` is runtime storage that cannot be assigned. `var name const Type` is too.
             symbol.is_immutable = symbol.type.is_const || var->is_const_decl;
+            symbol.is_var = !var->is_const_decl && !var->colon_eq && !var->is_comptime;
             if (var->is_const_decl && symbol.type.kind != TypeKind::Invalid) {
                 symbol.type.is_const = true;
             }

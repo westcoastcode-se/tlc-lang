@@ -595,7 +595,7 @@ The element is a function pointer, the same type as `comptime const op = add`.
 
 A runtime `var` of a tuple that holds a function is `type mismatch`.
 
-`var f = add` then `comptime const ops = (f, 1)` is `not supported yet`.
+A `var` is not promoted into a `comptime const`. `var f = add` then `comptime const ops = (f, 1)` is `var is not a compile-time constant`.
 
 A `comptime func` in that `var` is that error. Write `comptime const f = add`.
 
@@ -607,7 +607,7 @@ A `comptime func` in that `var` is that error. Write `comptime const f = add`.
 
 `pair[0].x` reads a field of a struct.
 
-A `var` address is `not supported yet`.
+A `var` address is `var is not a compile-time constant`.
 
 `null` is `type mismatch`.
 
@@ -617,7 +617,7 @@ A `var` address is `not supported yet`.
 
 The element stays `[2]i32`.
 
-A `var` array in that tuple is `not supported yet`.
+A `var` array in that tuple is `var is not a compile-time constant`.
 
 `pair[0][0] = 1` on that comptime const is `type mismatch`.
 
@@ -629,7 +629,7 @@ A runtime `const` whose initializer is a compile-time constant can be promoted: 
 
 That is the explicit `comptime`.
 
-A `var` is not promoted. `var n = 2` then `comptime const folded = n` is `not supported yet`.
+A `var` is not promoted. `var n = 2` then `comptime const folded = n` is `var is not a compile-time constant`.
 
 `comptime const sum = name + other` is `global initializer is not a constant` when `name` is only `const` and `other` is `comptime const`.
 
@@ -775,7 +775,7 @@ The variable has an address, the same as `const name = expr`.
 
 It is not a compiler constant.
 
-`var n const i32 = 2` then `comptime const folded = n` is `not supported yet`.
+`var n const i32 = 2` then `comptime const folded = n` is `var is not a compile-time constant`.
 
 A file-scope `var n const i32 = 2` or `const i32 n = 2` then `comptime const folded = n` is `global initializer is not a constant`.
 

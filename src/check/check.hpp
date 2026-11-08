@@ -91,6 +91,8 @@ struct Symbol {
     // `const name = expr` or `const name Type = expr` inside a function.
     // `var name const Type` is not this binding.
     bool runtime_const = false;
+    // `var name` and `var name const Type`. `const` and `:=` are not this binding.
+    bool is_var = false;
     // Set with `promote_init` when `comptime const folded = name` may copy this initializer.
     // The name is not itself a compiler constant.
     bool promotable = false;
@@ -1168,6 +1170,8 @@ class Checker {
     const Expr *comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen);
     // Literals, `comptime const` names, and expressions built from those. A runtime `const` is not.
     bool strict_comptime_expr(const Expr &expr);
+    // The expression reads a `var`. A `const` and `:=` do not.
+    bool mentions_var(const Expr &expr);
     // Fills checker struct ids on a literal produced by a comptime struct call.
     void stamp_kept_struct(Expr &expr, const Type &type);
     void note_promotable(Symbol &symbol, const Expr *init);
