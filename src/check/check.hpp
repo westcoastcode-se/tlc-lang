@@ -1275,9 +1275,12 @@ class Checker {
     bool baked_comptime_params() const;
     // Specializations the body calls that are still queued, not yet in the package.
     void comptime_pending_specs(const Stmt *body, std::vector<std::pair<uint32_t, const FunctionDecl *>> &out) const;
+    // `result_length` is the result of the function being signed. A mixed template may name
+    // its comptime parameter there. A local still waits only when every parameter is comptime.
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                          int &indirections, uint32_t &optional, bool &is_array, int &array_len,
-                         std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc);
+                         std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
+                         bool result_length = false);
     // `Buf[n]` and `Mine[n]` while `n` waits. One element stands in so the fields typecheck.
     // The call builds the real struct. An alias stays that alias.
     Type deferred_struct_type(const std::string &name, const std::string &package, const std::vector<TypeArg> &args,

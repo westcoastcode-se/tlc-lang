@@ -3134,6 +3134,11 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
                 // A local and the result `[n]i32` both stand in until the call.
                 waiting = true;
                 ordinary = true;
+            } else if (!variable && value_name_waits(shell.length_name) && !checking_.empty() &&
+                       checking_.back() != nullptr && comptime_param_template(*checking_.back())) {
+                // `func fill(comptime n i32, value i32) [n]i32`. One element stands in.
+                // The copy has the real length. This function is not folded.
+                waiting = true;
             }
         }
         if (waiting) {

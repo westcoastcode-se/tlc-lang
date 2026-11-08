@@ -521,7 +521,8 @@ Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_i
     }
     ResultSlot &written = const_cast<ResultSlot &>(slot);
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
-                    written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args, loc);
+                    written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args, loc,
+                    true);
     fold_shells(written.shells, loc);
     if (slot.is_fn_ptr) {
         return type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,

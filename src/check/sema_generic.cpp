@@ -2094,7 +2094,8 @@ void Checker::disambiguate_bounds(uint32_t owner, std::vector<SpecArg> &bounds) 
 
 void Checker::prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                               int &indirections, uint32_t &optional, bool &is_array, int &array_len,
-                              std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc) {
+                              std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
+                              bool result_length) {
     (void)is_enum;
     (void)indirections;
     (void)optional;
@@ -2114,6 +2115,9 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
             if (!checking_.empty() && checking_.back() != nullptr) {
                 checking_.back()->pending_generic = true;
             }
+        } else if (result_length && value_name_waits(array_len_name)) {
+            // `func fill(comptime n i32, value i32) [n]i32`. The copy writes `n`.
+            // A local in that body still rejects the name until the copy is checked.
         } else {
             error(loc, "not supported yet");
         }

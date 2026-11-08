@@ -250,6 +250,43 @@ A length whose other elements are not stored is `uninitialized`.
 
 A negative value is `array length must be >= 0`.
 
+A runtime parameter beside that length is the same array. `fill(1, 40)[0]` is 40. The copy is `main.fill.spec.1` when the file is `main.tlc`. `1` is not passed. `40` is.
+
+```c
+func fill(comptime n i32, value i32) [n]i32 {
+    var row [n]i32;
+    row[0] = value;
+    return row;
+}
+
+func main() i32 {
+    return fill(1, 40)[0];
+}
+```
+
+```asm
+fill.spec.1:
+subq $24, %rsp                   # frame
+movl %edi, 16(%rsp)              # value
+movl 16(%rsp), %eax              # value
+movl %eax, 20(%rsp)              # row[0]
+movl 20(%rsp), %eax              # row
+addq $24, %rsp                   # release
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+movl $40, %edi                   # value
+callq fill.spec.1                # call fill
+retq                             # return
+```
+
+A length whose other elements are not stored is `uninitialized`.
+
+`return {value, 0...}` fills the rest. `var row = fill(2, 40)` then `row[0] + row.len` is 42.
+
+A negative value is `array length must be >= 0`.
+
 ## Length 0
 
 `var row [0]i32` is an empty array. `sizeof(row)` is 0 and `row.len` is 0.

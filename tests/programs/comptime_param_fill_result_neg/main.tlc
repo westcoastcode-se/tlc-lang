@@ -1,0 +1,9 @@
+func fill(comptime n i32, value i32) [n]i32 {
+    var row [n]i32;
+    row[0] = value;
+    return row;
+}
+
+func main() i32 {
+    return fill(-1, 40)[0];
+}
