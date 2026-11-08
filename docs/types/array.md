@@ -216,7 +216,39 @@ A negative value is `array length must be >= 0`.
 
 A `var` is not a length.
 
-The result `[n]i32` on that function is `not supported yet`.
+The result may be that array. `ordinary(1)[0]` is 40. Each call is its own copy. When the file is `main.tlc`, the symbol is `main.ordinary.spec.1`.
+
+```c
+func ordinary(comptime n i32) [n]i32 {
+    var row [n]i32;
+    row[0] = 40;
+    return row;
+}
+
+func main() i32 {
+    return ordinary(1)[0];
+}
+```
+
+```asm
+ordinary.spec.1:
+pushq %rax                       # frame
+movl $40, 4(%rsp)                # row[0]
+movl 4(%rsp), %eax               # row
+popq %rcx                        # release
+retq                             # return
+
+main:
+# trace frame for the call, then the matching pop
+callq ordinary.spec.1            # call ordinary
+retq                             # return
+```
+
+A length whose other elements are not stored is `uninitialized`.
+
+`return {40, 0...}` fills the rest. `var row = ordinary(2)` then `row[0] + row.len` is 42.
+
+A negative value is `array length must be >= 0`.
 
 ## Length 0
 

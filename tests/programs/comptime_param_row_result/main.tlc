@@ -5,5 +5,5 @@ func ordinary(comptime n i32) [n]i32 {
 }
 
 func main() i32 {
-    return ordinary(2)[0];
+    return ordinary(1)[0];
 }

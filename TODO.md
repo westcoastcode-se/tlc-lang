@@ -34,7 +34,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ### Parsing
 
-- An array length may be a name, `[N]i32`. The name is a file-scope `const` already folded, a `const` inside a function whose initializer folds to a non-negative `i32`, or a `comptime` parameter of `func ordinary(comptime n i32)` once the call substitutes it. `var row [n]i32` then `row.len` is `n`. The result `[n]i32` on that function is `not supported yet`. `comptime const N = sizeof(Point)` is that length once `Point` is complete, including a field `buf [N]u8`. `sizeof` of the struct that contains the field stays `not supported yet`. A `var`, `var n const i32`, and an initializer that does not fold are `not supported yet`. A negative length is `array length must be >= 0`.
+- An array length may be a name, `[N]i32`. The name is a file-scope `const` already folded, a `const` inside a function whose initializer folds to a non-negative `i32`, or a `comptime` parameter of `func ordinary(comptime n i32)` once the call substitutes it. `var row [n]i32` then `row.len` is `n`. The result `[n]i32` is that array. `ordinary(1)[0]` is 40. A length whose other elements are not stored is `uninitialized`. `comptime const N = sizeof(Point)` is that length once `Point` is complete, including a field `buf [N]u8`. `sizeof` of the struct that contains the field stays `not supported yet`. A `var`, `var n const i32`, and an initializer that does not fold are `not supported yet`. A negative length is `array length must be >= 0`.
 
 ### Constant evaluation
 

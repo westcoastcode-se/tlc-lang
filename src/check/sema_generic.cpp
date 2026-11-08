@@ -2094,8 +2094,7 @@ void Checker::disambiguate_bounds(uint32_t owner, std::vector<SpecArg> &bounds) 
 
 void Checker::prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
                               int &indirections, uint32_t &optional, bool &is_array, int &array_len,
-                              std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
-                              bool local_length) {
+                              std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc) {
     (void)is_enum;
     (void)indirections;
     (void)optional;
@@ -2109,9 +2108,9 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
             // `fold_shells` reports this. The name stays until that walk retires the shell.
         } else if (length_waits(array_len_name)) {
             // A parameter of a `comptime func` is not a length until the call substitutes it.
-        } else if (local_length && baked_comptime_params() && value_name_waits(array_len_name)) {
+        } else if (baked_comptime_params() && value_name_waits(array_len_name)) {
             // `func ordinary(comptime n i32)` is checked before the call substitutes `n`.
-            // The call compiles this body once the integer is known.
+            // A local `[n]i32` and the result `[n]i32` both wait. The call writes the integer.
             if (!checking_.empty() && checking_.back() != nullptr) {
                 checking_.back()->pending_generic = true;
             }

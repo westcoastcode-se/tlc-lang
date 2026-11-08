@@ -3130,7 +3130,8 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             }
             if (length_waits(shell.length_name)) {
                 waiting = true;
-            } else if (variable && baked_comptime_params() && value_name_waits(shell.length_name)) {
+            } else if (baked_comptime_params() && value_name_waits(shell.length_name)) {
+                // A local and the result `[n]i32` both stand in until the call.
                 waiting = true;
                 ordinary = true;
             }

@@ -352,7 +352,7 @@ Type Checker::type_of_var(const VarDecl &var) {
         VarDecl &written = const_cast<VarDecl &>(var);
         prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                         written.optional, written.is_array, written.array_len, written.array_len_name, written.type_args,
-                        written.loc, true);
+                        written.loc);
         if (!written.type_args.empty()) {
             type = deferred_struct_type(written.type_name, written.type_package, written.type_args, written.loc);
             if (type.kind == TypeKind::Invalid) {
@@ -572,6 +572,13 @@ Type Checker::function_result(const FunctionDecl &fn) {
 }
 
 Type Checker::function_signature(const FunctionDecl &fn) {
+    // `[n]i32` on `func ordinary(comptime n i32)` names that parameter. The call
+    // substitutes it. The parameter list is visible while the result is resolved.
+    checking_.push_back(const_cast<FunctionDecl *>(&fn));
+    struct Pop {
+        std::vector<FunctionDecl *> &stack;
+        ~Pop() { stack.pop_back(); }
+    } pop{checking_};
     std::vector<Type> params;
     params.reserve(fn.params.size());
     for (const Param &param : fn.params) {

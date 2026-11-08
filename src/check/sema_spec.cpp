@@ -3028,6 +3028,8 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
     spec.exported = false;
     // The dynamic symbol is the unspecialized function. This copy is local.
     spec.is_extern = false;
+    // The source function waited on `[n]i32`. This copy has the integer.
+    spec.pending_generic = false;
     const uint32_t saved_file = file_id_;
     file_id_ = owner;
     substitute_function(spec, names, bounds);
@@ -3260,7 +3262,41 @@ std::optional<Type> Checker::maybe_comptime_param_call(Expr &expr, bool used) {
         return std::nullopt;
     }
     const FunctionDecl &fn = *symbol->lists.front().decl;
-    if (!comptime_param_template(fn) || call.args.size() != fn.params.size()) {
+    // `func ordinary(comptime n i32) [n]i32`. Every parameter is comptime. The result
+    // length is that parameter. Each call is its own copy, the same as a mixed template.
+    const bool result_array = [&] {
+        if (fn.is_comptime || fn.is_macro || fn.extern_c || fn.variadic || fn.body == nullptr ||
+            fn.generic_instance || !fn.type_params.empty() || fn.params.empty() || fn.results.size() != 1) {
+            return false;
+        }
+        for (const Param &param : fn.params) {
+            if (!param.is_comptime) {
+                return false;
+            }
+        }
+        const ResultSlot &slot = fn.results.front();
+        auto names_param = [&](const std::string &name) {
+            if (name.empty()) {
+                return false;
+            }
+            for (const Param &param : fn.params) {
+                if (param.name == name) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        if (names_param(slot.array_len_name)) {
+            return true;
+        }
+        for (const TypeShell &shell : slot.shells) {
+            if (shell.kind == TypeShell::Kind::Array && names_param(shell.length_name)) {
+                return true;
+            }
+        }
+        return false;
+    }();
+    if ((!comptime_param_template(fn) && !result_array) || call.args.size() != fn.params.size()) {
         return std::nullopt;
     }
     const std::size_t before = diags_.size();

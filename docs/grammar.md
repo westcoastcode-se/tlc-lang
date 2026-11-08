@@ -2180,7 +2180,7 @@ In a type they build an array or a slice: `[4]i32`, `[N]i32`, and `[]i32`.
 
 A `var`, `var n const i32`, and an initializer that does not fold are `not supported yet`. A negative length is `array length must be >= 0`.
 
-`func ordinary(comptime n i32)` uses that parameter as the length. `var row [n]i32` then `row.len` is `n`. A negative value is `array length must be >= 0`. A `var` is not a length. The result `[n]i32` is `not supported yet`.
+`func ordinary(comptime n i32)` uses that parameter as the length. `var row [n]i32` then `row.len` is `n`. The result `[n]i32` is that array. `ordinary(1)[0]` is 40. A negative value is `array length must be >= 0`. A `var` is not a length. A length whose other elements are not stored is `uninitialized`.
 
 After a name in an expression, the token after the matching `]` chooses.
 
