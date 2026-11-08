@@ -33,7 +33,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ### Parsing
 
-- An array length may be a name, `[N]i32`. The name is a file-scope `const` already folded, a `const` inside a function whose initializer folds to a non-negative `i32`, or a `comptime` parameter of `func ordinary(comptime n i32)` once the call substitutes it. `var row [n]i32` then `row.len` is `n`. The result `[n]i32` is that array. `ordinary(1)[0]` is 40. `func fill(comptime n i32, value i32) [n]i32` is that array too. `fill(1, 40)[0]` is 40. A length whose other elements are not stored is `uninitialized`. `comptime const N = sizeof(Point)` is that length once `Point` is complete, including a field `buf [N]u8`. `sizeof` of the struct that contains the field stays `not supported yet`. A `var`, `var n const i32`, and an initializer that does not fold are `not supported yet`. A negative length is `array length must be >= 0`.
+- An array length may be a name, `[N]i32`. The name is a file-scope `const` already folded, a `const` inside a function whose initializer folds to a non-negative `i32`, or a `comptime` parameter of `func ordinary(comptime n i32)` once the call substitutes it. `var row [n]i32` then `row.len` is `n`. The result `[n]i32` is that array. `ordinary(1)[0]` is 40. `func fill(comptime n i32, value i32) [n]i32` is that array too. `fill(1, 40)[0]` is 40. A length whose other elements are not stored is `uninitialized`. `comptime const N = sizeof(Point)` is that length once `Point` is complete, including a field `buf [N]u8`. `buf [sizeof(Point)]u8` is that length. Inside the struct, that length is the size of the other fields. A `var`, `var n const i32`, and an initializer that does not fold are `not supported yet`. A negative length is `array length must be >= 0`.
 
 ### Constant evaluation
 
@@ -41,7 +41,7 @@ In a `macro`, a condition or a bound that does not fold runs at run time. `compt
 
 ## Reflection
 
-A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is `not supported yet`. A `var` passed to a `comptime func`, `comptime { ... }` inside an ordinary function, `emit` outside a `macro`, `comptime for` whose bounds do not fold, `comptime if` whose condition is not comptime, `comptime switch` whose value is not comptime, a method, `extern`, `export`, a value call of a `macro`, a value call that does not fold, and `const for` are `not supported yet`.
+A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is not pasted. A `var` passed to a `comptime func`, `comptime { ... }` inside an ordinary function, `emit` outside a `macro`, `comptime for` whose bounds do not fold, `comptime if` whose condition is not comptime, `comptime switch` whose value is not comptime, a method, `extern`, `export`, a value call of a `macro`, a value call that does not fold, and `const for` are `not supported yet`.
 
 ## Types and operators
 
@@ -49,7 +49,6 @@ A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an
 - A slice is not a C type. A parameter, a result, or a field of `extern(abi="c")` is `extern(abi="c") cannot use a slice`. `*T(items)` is the data pointer and `items.len` is the length.
 - A file-scope slice whose initializer is not the name of an array, a slice of one of those constants, a string, a constant range of one of those, or a call. A bound that does not fold is `global initializer is not a constant`. An array literal is `global initializer is not a constant`. A range, a literal, or a call used as the initializer of a `const` slice is `global initializer is not a constant` when it is not one of those constant ranges.
 - A cast to `void`.
-- Using `builtin.fence` as a value, and `defer builtin.fence(order)`. Both are `not supported yet`. A direct call is replaced with a fence.
 - An atomic value wider than 64 bits is `not supported yet`. `atomic.Bool` stores a `u8`.
 - `goto`.
 
@@ -63,7 +62,7 @@ A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an
 ## Functions
 
 - A function has a body. `func add(a i32, b i32) i32;`, `export func add(a i32, b i32) i32;`, and `func id[T type](value T) T;` are `not supported yet`. `extern(abi="c")` may end with `;`. A call of that function with no body is accepted by `--check`. A bare `extern` on a generic function declares a function the compiler implements. It emits nothing. A later TLC body is `redefinition`. A call the compiler does not implement is `not supported yet`. `extern(abi="c")` on that generic is `extern(abi="c") on a trait or a generic`. `extern(abi="tlc")` is `not supported yet`. A comptime parameter on the bare `extern` is `not supported yet`.
-- An overloaded name used as a value, `var f = show` when `show` has several parameter lists, is `not supported yet`. A call selects the list.
+- An overloaded name used as a value without a written type, `var f = show` when `show` has several parameter lists, is `not supported yet`. `var f func (i32, f32) void = show` chooses that list. A call selects the list.
 - A struct argument to `testing.error`.
 - `builtin.va` outside a variadic function.
 - `...` is only legal on `extern(abi="c")`. A function with a body may use `...` today, and `builtin.va()` reads the extra arguments. That body is not the TLC form. A variadic prototype with no body, and `...` on a bare `extern` or `extern(abi="tlc")`, stay `not supported yet`. Further TLC arguments are a generic, not `...`. `any` is not a keyword.

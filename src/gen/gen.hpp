@@ -567,6 +567,8 @@ class CodeGen {
     llvm::GlobalVariable *default_alloc_global_ = nullptr;
     // Compiling a fragment to run during checking. Trace storage stays a normal global.
     bool eval_ = false;
+    // `defer builtin.fence(order)` records the fence. It runs when the block is left.
+    bool recording_defer_ = false;
     // Set when that run hits an assert or an index check. The host reads them after the call.
     llvm::GlobalVariable *eval_fail_file_ = nullptr;
     llvm::GlobalVariable *eval_fail_off_ = nullptr;
@@ -607,6 +609,8 @@ class CodeGen {
         llvm::AllocaInst *flag = nullptr;
         llvm::Function *function = nullptr;
         std::vector<llvm::AllocaInst *> args;
+        // Negative when this defer is a call. Otherwise the fence order.
+        int fence_order = -1;
     };
     struct DeferFrame {
         int loop_index = 0;
@@ -642,6 +646,8 @@ class CodeGen {
         // `items.len()` on an array or a slice. The value is the length, the element, or its address.
         bool yielded = false;
         TypedValue yield;
+        // Set while recording `defer builtin.fence`. Negative when this call is not that fence.
+        int fence_order = -1;
     };
     struct AbiLeaf {
         uint64_t offset = 0;

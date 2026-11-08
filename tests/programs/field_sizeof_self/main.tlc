@@ -1,0 +1,24 @@
+type Point struct {
+    x i32;
+    y i32;
+    buf [sizeof(Point)]u8;
+}
+
+type Holder struct {
+    buf [sizeof(Point)]u8;
+}
+
+func main() i32 {
+    var row [sizeof(Point)]u8;
+    if (row.len != 16) {
+        return 1;
+    }
+    if (i32(sizeof(Holder)) != 16) {
+        return 2;
+    }
+    if (i32(sizeof(Point)) != 16) {
+        return 3;
+    }
+    var point Point;
+    return point.buf.len;
+}

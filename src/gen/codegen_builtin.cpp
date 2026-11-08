@@ -1213,7 +1213,14 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
         }
     };
     if (kind == AtomicBuiltin::Fence) {
-        const std::optional<int> order = order_at(0);
+        std::optional<int> order = order_at(0);
+        // `fence.spec.4` has already dropped the comptime argument.
+        if (!order && prepared.decl != nullptr && prepared.decl->name.starts_with("fence.spec.")) {
+            const std::string tail = prepared.decl->name.substr(std::string("fence.spec.").size());
+            if (!tail.empty() && std::all_of(tail.begin(), tail.end(), [](char ch) { return ch >= '0' && ch <= '9'; })) {
+                order = std::stoi(tail);
+            }
+        }
         const std::optional<llvm::AtomicOrdering> mapped = order ? llvm_order(*order) : std::nullopt;
         if (!order || !atomic_order_ok(*order, kind) || !mapped) {
             fail("type mismatch");
@@ -1221,6 +1228,12 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
         }
         prepared.yielded = true;
         prepared.yield = {zero(), 0};
+        // `defer builtin.fence(order)` runs when the block is left.
+        if (recording_defer_) {
+            prepared.fence_order = *order;
+            prepared.function = nullptr;
+            return;
+        }
         // A relaxed fence has no effect. The other orders are one fence.
         if (*order != 0) {
             builder_.CreateFence(*mapped);

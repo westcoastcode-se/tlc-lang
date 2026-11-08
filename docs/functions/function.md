@@ -153,7 +153,7 @@ The compiler reports `type mismatch` or `argument count` when a call matches non
 
 When only one list has the call's argument count, a trait parameter matches a struct that satisfies it. `&builtin.allocator` matches `*Allocator`. Two lists of that count stay an exact match, and `Drawable(value)` names the trait.
 
-Using the name as a value when several lists exist is `not supported yet`.
+Using the name as a value when several lists exist is `not supported yet`. A written type chooses the list: `var f func (i32, f32) void = show`.
 
 [`unsafe func`](../expressions/unsafe.md) makes the body an unsafe context. The caller writes `unsafe name(...)`.
 

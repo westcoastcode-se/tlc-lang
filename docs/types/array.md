@@ -144,7 +144,7 @@ At file scope, `const N = row.len` is an array length.
 
 Inside a function, `const n = 4` then `var row [n]i32` is `[4]i32`.
 
-`comptime const N = sizeof(Point)` is a field length once `Point` is complete. `type Holder struct { buf [N]u8; }` is 8 bytes when `Point` holds two `i32` fields. `sizeof` of the struct that contains the field is `not supported yet`.
+`comptime const N = sizeof(Point)` is a field length once `Point` is complete. `type Holder struct { buf [N]u8; }` is 8 bytes when `Point` holds two `i32` fields. `buf [sizeof(Point)]u8` is that same length. Inside `Point`, `buf [sizeof(Point)]u8` is the size of the other fields. `sizeof(Point)` after that struct is complete includes `buf`.
 
 ```c
 func main() i32 {

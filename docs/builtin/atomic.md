@@ -70,7 +70,7 @@ The results are the previous value and whether the store happened.
 
 Another accepted order emits one fence.
 
-`var f = builtin.fence`, `builtin.fence` without a call, and `defer builtin.fence(4)` are `not supported yet` and emit nothing.
+`var f = builtin.fence` names that fence. `f(4)` is the same fence as `builtin.fence(4)`. `defer builtin.fence(4)` runs the fence when the block is left. `builtin.fence` without a call is `not supported yet`.
 
 A direct call is replaced.
 

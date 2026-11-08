@@ -471,7 +471,7 @@ A plain `while` or `do` in a `macro` runs at run time.
 
 The body is expanded first, so `emit` there is an ordinary statement.
 
-A statement in that body without `emit` is `not supported yet`.
+A statement in that body without `emit` is not pasted. The macro does nothing with it.
 
 `until(&n, limit)` with `n` at 0 and `limit` at 3 stores 3.
 

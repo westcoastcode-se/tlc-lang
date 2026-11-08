@@ -1335,7 +1335,31 @@ llvm::AllocaInst *CodeGen::defer_flag() {
 }
 
 void CodeGen::emit_one_defer(const DeferredCall &call) {
-    if (terminated() || call.function == nullptr || call.flag == nullptr) {
+    if (terminated() || call.flag == nullptr) {
+        return;
+    }
+    if (call.fence_order >= 0) {
+        llvm::BasicBlock *call_block = llvm::BasicBlock::Create(context_, "defer.fence", function_);
+        llvm::BasicBlock *skip_block = llvm::BasicBlock::Create(context_, "defer.skip", function_);
+        llvm::Value *flag = builder_.CreateLoad(i1(), call.flag);
+        builder_.CreateCondBr(flag, call_block, skip_block);
+        builder_.SetInsertPoint(call_block);
+        if (call.fence_order != 0) {
+            llvm::AtomicOrdering order = llvm::AtomicOrdering::SequentiallyConsistent;
+            switch (call.fence_order) {
+            case 1: order = llvm::AtomicOrdering::Acquire; break;
+            case 2: order = llvm::AtomicOrdering::Release; break;
+            case 3: order = llvm::AtomicOrdering::AcquireRelease; break;
+            default: break;
+            }
+            builder_.CreateFence(order);
+        }
+        builder_.CreateStore(llvm::ConstantInt::getFalse(context_), call.flag);
+        builder_.CreateBr(skip_block);
+        builder_.SetInsertPoint(skip_block);
+        return;
+    }
+    if (call.function == nullptr) {
         return;
     }
     llvm::BasicBlock *call_block = llvm::BasicBlock::Create(context_, "defer.call", function_);

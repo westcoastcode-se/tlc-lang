@@ -219,5 +219,5 @@ extern(abi="compiler") export func atomic_rmw[T type](p *T, comptime op i32, val
 extern(abi="compiler") export func atomic_cmpxchg[T type](p *T, expected T, desired T, comptime success i32, comptime failure i32) (T, bool);
 
 // A relaxed fence is no instruction. Another order is a fence.
-// The name is not a value. `var f = fence` is not supported yet.
+// `var f = fence` names it. `f(order)` is that fence. `defer fence(order)` runs when the block is left.
 extern(abi="compiler") export func fence(comptime order i32) void;

@@ -382,7 +382,7 @@ The index in the body is that integer.
 
 Those forms outside a `macro` are `not supported yet`.
 
-A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is `not supported yet`.
+A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is not pasted.
 
 `comptime` sits directly before the parameter name. `func add(n comptime i32)` and `func Point::shift(self *this, n comptime i32)` are `expected a type`.
 

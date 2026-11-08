@@ -14,6 +14,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
         [&](const auto &node) -> TypedValue {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Expr::Name>) {
+                if (node.overload != nullptr) {
+                    const Binding *chosen = binding_for_decl(node.overload);
+                    if (chosen == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    return value_of_binding(*chosen);
+                }
                 const Binding *binding = lookup(node.text);
                 if (binding == nullptr) {
                     error(node.loc, "undeclared identifier");
@@ -971,6 +979,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return emit_prepared(prepare_call(node));
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                if (node.overload != nullptr) {
+                    const Binding *chosen = binding_for_decl(node.overload);
+                    if (chosen == nullptr) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    return value_of_binding(*chosen);
+                }
                 // `move(origin).x` is the field of the literal that call kept. A handwritten name still loads.
                 if (node.base != nullptr) {
                     if (const Expr *field = comptime_struct_field(*node.base, node.field)) {

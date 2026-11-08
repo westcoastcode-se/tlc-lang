@@ -265,7 +265,7 @@ A bound that does not fold emits nothing.
 
 `emit while` and `emit do` paste those loops the same way.
 
-A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is `not supported yet`.
+A plain `while` or `do` in a `macro` runs at run time. `emit` in that body is an ordinary statement. A statement there without `emit` is not pasted.
 
 `emit for` in a `macro` pastes that loop into the caller.
 

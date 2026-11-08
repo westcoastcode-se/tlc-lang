@@ -14,6 +14,7 @@
 namespace tlc {
 
 struct FunctionDecl;
+struct Expr;
 
 // One constructor outside a leaf. `shells.front()` is the outermost.
 // A slice is `{ ptr, i32 }`. An array is N of the inner type. A pointer points at the inner type.
@@ -25,6 +26,8 @@ struct TypeShell {
     // Array length. Zero with `length_name` set is not folded yet. A slice leaves this at 0.
     int length = 0;
     std::string length_name;
+    // `[sizeof(Point)]`. Folded into `length` once that type has a size.
+    std::shared_ptr<Expr> length_expr;
 };
 
 // One slot of `func id[T type, N int]`. `T type` is a type. `T Shape` is a trait.
@@ -118,6 +121,8 @@ struct Expr {
         std::string text;
         // A specialized copy calls this comptime func. A direct call still folds.
         mutable bool runtime_body = false;
+        // The list chosen when this overloaded name is stored in a written function type.
+        mutable const FunctionDecl *overload = nullptr;
     };
     struct Int {
         SourceLoc loc{};
@@ -194,6 +199,8 @@ struct Expr {
         mutable bool slice_len = false;
         // A sized array's or a tuple's `.len`. Negative when the length is loaded from a slice.
         mutable int len_value = -1;
+        // The list chosen when this overloaded name is stored in a written function type.
+        mutable const FunctionDecl *overload = nullptr;
     };
     struct String {
         SourceLoc loc{};

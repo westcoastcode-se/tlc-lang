@@ -1,11 +1,9 @@
-macro func until(slot *i32, limit i32) void {
-    while (*slot < limit) {
-        *slot = *slot + 1;
-    }
+macro func bump(slot *i32) void {
+    *slot = *slot + 1;
 }
 
 func main() i32 {
-    var n = 0;
-    until(&n, 3);
+    var n = 40;
+    bump(&n);
     return n;
 }

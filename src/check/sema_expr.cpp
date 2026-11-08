@@ -1282,6 +1282,65 @@ bool Checker::adopt_one_tuple(Expr &expr, const Type &want) {
     return true;
 }
 
+bool Checker::pick_overload(Expr &expr, const Type &signature) {
+    const auto choose = [&](const Symbol &symbol, SourceLoc loc) -> const FunctionDecl * {
+        if (!symbol.is_function || symbol.lists.size() <= 1) {
+            return nullptr;
+        }
+        const FunctionDecl *chosen = nullptr;
+        int matches = 0;
+        for (const FnList &list : symbol.lists) {
+            if (list.type.kind != TypeKind::Function || list.type.result == nullptr || list.decl == nullptr) {
+                continue;
+            }
+            if (!same_type(list.type, signature)) {
+                continue;
+            }
+            chosen = list.decl;
+            ++matches;
+        }
+        if (matches != 1) {
+            error(loc, "type mismatch");
+            return nullptr;
+        }
+        if (!allow_unsafe_fn(chosen->unsafe, loc)) {
+            return nullptr;
+        }
+        return chosen;
+    };
+    if (auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        Symbol *symbol = lookup(named->text);
+        if (symbol == nullptr || !symbol->is_function || symbol->lists.size() <= 1) {
+            return false;
+        }
+        const FunctionDecl *chosen = choose(*symbol, named->loc);
+        if (chosen == nullptr) {
+            return true;
+        }
+        named->overload = chosen;
+        return true;
+    }
+    auto *selector = std::get_if<Expr::Selector>(&expr.data);
+    if (selector == nullptr || selector->base == nullptr) {
+        return false;
+    }
+    const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+    const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+    if (package == nullptr || !package->is_package) {
+        return false;
+    }
+    const Symbol *symbol = find_export(package->package_file, selector->field);
+    if (symbol == nullptr || !symbol->is_function || symbol->lists.size() <= 1) {
+        return false;
+    }
+    const FunctionDecl *chosen = choose(*symbol, selector->loc);
+    if (chosen == nullptr) {
+        return true;
+    }
+    selector->overload = chosen;
+    return true;
+}
+
 Type Checker::check_against(const Expr &expr, const Type &want) {
     if (want.kind == TypeKind::Tuple && want.alias_id == 0 && want.results.size() == 1) {
         adopt_one_tuple(const_cast<Expr &>(expr), want);
@@ -1364,6 +1423,10 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
     // A written `*T` does the same when `T` is the element. `*[N]T` does not:
     // that argument is `&array`. The cast `*T(array)` is the same address.
     if (want.kind == TypeKind::Pointer && want.pointee != nullptr) {
+        if (want.pointee->kind == TypeKind::Function &&
+            pick_overload(const_cast<Expr &>(expr), *want.pointee)) {
+            return want;
+        }
         const bool decayed_param = !want.optional && want.decayed_len > 0;
         // `var q ?*i32 = row` stays rejected. `row` is an array, not `*i32`.
         const bool element_pointer =
@@ -1399,6 +1462,10 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
             expect_value(got, want, expr, expr_loc(expr));
         }
         return got;
+    }
+    if (fn_pointer(want) && want.pointee != nullptr &&
+        pick_overload(const_cast<Expr &>(expr), *want.pointee)) {
+        return want;
     }
     const Type got = check_expr(expr, true);
     expect_value(got, want, expr, expr_loc(expr));

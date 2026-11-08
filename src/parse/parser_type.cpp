@@ -964,6 +964,13 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
             expect(TokenKind::RBracket, "expected ']'");
             return;
         }
+        // `[sizeof(Point)]`. The length is that size once the type is complete.
+        if (check(TokenKind::KwSizeof)) {
+            shell.kind = TypeShell::Kind::Array;
+            shell.length_expr = std::shared_ptr<Expr>(parse_unary());
+            expect(TokenKind::RBracket, "expected ']'");
+            return;
+        }
         diags_.error(loc, "not supported yet");
         while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::Comma) &&
                !check(TokenKind::RParen) && !check(TokenKind::Eq) && !check(TokenKind::LBrace) && !eof()) {

@@ -1721,7 +1721,17 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     }
                 }
                 // Arguments and the receiver are evaluated here. The call runs when the block is left.
+                recording_defer_ = true;
                 const PreparedCall prepared = prepare_call(*call);
+                recording_defer_ = false;
+                if (prepared.fence_order >= 0 && !defers_.empty()) {
+                    DeferredCall item;
+                    item.flag = defer_flag();
+                    item.fence_order = prepared.fence_order;
+                    builder_.CreateStore(llvm::ConstantInt::getTrue(context_), item.flag);
+                    defers_.back().calls.push_back(std::move(item));
+                    return;
+                }
                 if (prepared.function == nullptr || terminated() || defers_.empty()) {
                     return;
                 }

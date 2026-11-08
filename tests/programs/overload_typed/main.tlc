@@ -1,0 +1,12 @@
+func show(n i32) i32 {
+    return n;
+}
+
+func show(a i32, b f32) i32 {
+    return a + i32(b);
+}
+
+func main() i32 {
+    var f func (i32, f32) i32 = show;
+    return f(40, 2.0);
+}

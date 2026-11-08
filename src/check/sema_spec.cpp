@@ -3347,6 +3347,31 @@ std::optional<Type> Checker::maybe_comptime_param_call(Expr &expr, bool used) {
         return std::nullopt;
     }
     const FunctionDecl &fn = *symbol->lists.front().decl;
+    // `var f = builtin.fence` then `f(4)` is the direct call `builtin.fence(4)`.
+    if (symbol->spec_alias && fn.name == "fence" && fn.extern_compiler && call.callee != nullptr) {
+        std::string package;
+        for (auto it = scopes_.rbegin(); it != scopes_.rend() && package.empty(); ++it) {
+            for (const auto &[name, visible] : it->symbols) {
+                if (visible.is_package && visible.package_file == fn.loc.file) {
+                    package = name;
+                    break;
+                }
+            }
+        }
+        if (!package.empty()) {
+            Expr::Selector selector;
+            selector.loc = expr_loc(*call.callee);
+            selector.field = "fence";
+            auto base = std::make_unique<Expr>();
+            Expr::Name package_name;
+            package_name.loc = selector.loc;
+            package_name.text = package;
+            base->data = std::move(package_name);
+            selector.base = std::move(base);
+            call.callee->data = std::move(selector);
+            return check_raw(expr, used);
+        }
+    }
     // `func ordinary(comptime n i32) [n]i32`. Every parameter is comptime. The result
     // length is that parameter. Each call is its own copy, the same as a mixed template.
     const bool result_array = [&] {

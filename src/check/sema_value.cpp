@@ -274,7 +274,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 const bool uns = node.suffix.is_unsigned;
                 const auto fits = [&](uint64_t limit) {
                     if (node.value > limit) {
-                        error(node.loc, "type mismatch");
+                        // A suffix such as `256u8` does not fit in that type. An unsuffixed
+                        // number above `2147483647` stays `type mismatch`.
+                        error(node.loc, bits == 0 ? "type mismatch" : "value does not fit");
                         return false;
                     }
                     return true;

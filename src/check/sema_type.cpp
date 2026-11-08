@@ -1259,7 +1259,7 @@ bool Checker::trait_is(int got, int want) const {
     return false;
 }
 
-bool Checker::field_waits(const FieldDecl &field) const {
+bool Checker::field_waits(const FieldDecl &field, int self_id) const {
     // `buf [N]u8` waits while `comptime const N = sizeof(Point)` still needs `Point`.
     auto length_pending = [&](const std::string &name) {
         if (name.empty()) {
@@ -1316,6 +1316,29 @@ bool Checker::field_waits(const FieldDecl &field) const {
     }
     for (const TypeShell &shell : field.shells) {
         if (shell.kind == TypeShell::Kind::Array && length_pending(shell.length_name)) {
+            return true;
+        }
+        // `[sizeof(Point)]` waits until `Point` is complete. `sizeof` of this struct does not.
+        if (shell.kind != TypeShell::Kind::Array || shell.length_expr == nullptr) {
+            continue;
+        }
+        const auto *measured = std::get_if<Expr::Sizeof>(&shell.length_expr->data);
+        const std::string *operand = nullptr;
+        if (measured != nullptr && measured->on_type && measured->type_package.empty() && !measured->type_name.empty()) {
+            operand = &measured->type_name;
+        } else if (measured != nullptr && !measured->on_type && measured->expr != nullptr) {
+            if (const auto *named = std::get_if<Expr::Name>(&measured->expr->data)) {
+                operand = &named->text;
+            }
+        }
+        if (operand == nullptr) {
+            return true;
+        }
+        const int id = find_tag(file_id_, *operand);
+        if (id == self_id) {
+            continue;
+        }
+        if (id < 0 || id >= static_cast<int>(structs_.size()) || !structs_[static_cast<std::size_t>(id)].complete) {
             return true;
         }
     }
@@ -1973,9 +1996,30 @@ void Checker::define_struct_fields() {
     auto type_fields = [&](PendingStruct &pending, bool complain_waiting) {
         file_id_ = pending.file_id;
         StructInfo &info = structs_[static_cast<std::size_t>(pending.id)];
-        for (const FieldDecl &field : pending.decl->fields) {
+        auto sizeof_self = [&](const FieldDecl &field) {
+            for (const TypeShell &shell : field.shells) {
+                if (shell.kind != TypeShell::Kind::Array || shell.length_expr == nullptr) {
+                    continue;
+                }
+                const auto *measured = std::get_if<Expr::Sizeof>(&shell.length_expr->data);
+                const std::string *operand = nullptr;
+                if (measured != nullptr && measured->on_type && measured->type_package.empty() &&
+                    !measured->type_name.empty()) {
+                    operand = &measured->type_name;
+                } else if (measured != nullptr && !measured->on_type && measured->expr != nullptr) {
+                    if (const auto *named = std::get_if<Expr::Name>(&measured->expr->data)) {
+                        operand = &named->text;
+                    }
+                }
+                if (operand != nullptr && find_tag(file_id_, *operand) == pending.id) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        auto add_field = [&](const FieldDecl &field) {
             if (field.name.empty()) {
-                continue;
+                return;
             }
             for (const StructInfo::Field &existing : info.fields) {
                 if (existing.name == field.name) {
@@ -2002,12 +2046,12 @@ void Checker::define_struct_fields() {
             if (!cycle.empty()) {
                 error(field.loc, recursive_message(cycle));
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
-                continue;
+                return;
             }
             if (complain_waiting && field_waits(field)) {
                 error(field.loc, "not supported yet");
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
-                continue;
+                return;
             }
             Type field_type =
                 field.is_tuple
@@ -2028,7 +2072,7 @@ void Checker::define_struct_fields() {
             if (is_slice(field_type) && info.extern_c) {
                 error(field.loc, "extern(abi=\"c\") cannot use a slice");
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
-                continue;
+                return;
             }
             if (info.extern_c) {
                 // A tagged union is not a C layout, and it cannot be marked `extern(abi="c")`.
@@ -2062,6 +2106,48 @@ void Checker::define_struct_fields() {
                     info.fields.back().has_init = true;
                     info.fields.back().init = field.init.get();
                 }
+            }
+        };
+        std::vector<const FieldDecl *> self_len;
+        for (const FieldDecl &field : pending.decl->fields) {
+            if (sizeof_self(field)) {
+                self_len.push_back(&field);
+                continue;
+            }
+            add_field(field);
+        }
+        // `buf [sizeof(Point)]u8` inside `Point` is the size of the other fields.
+        if (!self_len.empty()) {
+            info.complete = true;
+            const std::optional<int> prefix = type_size(type_struct(pending.id));
+            info.complete = false;
+            for (const FieldDecl *field : self_len) {
+                FieldDecl &written = const_cast<FieldDecl &>(*field);
+                for (TypeShell &shell : written.shells) {
+                    if (shell.kind != TypeShell::Kind::Array || shell.length_expr == nullptr) {
+                        continue;
+                    }
+                    const auto *measured = std::get_if<Expr::Sizeof>(&shell.length_expr->data);
+                    const std::string *operand = nullptr;
+                    if (measured != nullptr && measured->on_type && !measured->type_name.empty()) {
+                        operand = &measured->type_name;
+                    } else if (measured != nullptr && measured->expr != nullptr) {
+                        if (const auto *named = std::get_if<Expr::Name>(&measured->expr->data)) {
+                            operand = &named->text;
+                        }
+                    }
+                    if (operand == nullptr || find_tag(file_id_, *operand) != pending.id) {
+                        continue;
+                    }
+                    if (!prefix || *prefix < 0) {
+                        error(field->loc, "not supported yet");
+                        shell.length_expr.reset();
+                        continue;
+                    }
+                    shell.length = *prefix;
+                    shell.length_expr.reset();
+                }
+                add_field(*field);
             }
         }
         if (pending.decl->align > 0) {
@@ -2099,7 +2185,7 @@ void Checker::define_struct_fields() {
             file_id_ = pending.file_id;
             bool waits = false;
             for (const FieldDecl &field : pending.decl->fields) {
-                if (!field_waits(field)) {
+                if (!field_waits(field, pending.id)) {
                     continue;
                 }
                 // `next Node` is rejected below. It does not keep this struct incomplete.
@@ -2929,6 +3015,17 @@ Type Checker::spelled_type(const std::string &name, const std::string &package, 
 
 void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
     for (TypeShell &shell : shells) {
+        if (shell.kind == TypeShell::Kind::Array && shell.length_expr != nullptr) {
+            const std::optional<int> measured = fold_int(*shell.length_expr);
+            if (measured && *measured >= 0) {
+                shell.length = *measured;
+                shell.length_expr.reset();
+            } else if (measured && *measured < 0) {
+                error(loc, kArrayLength);
+                shell.length = -2;
+                shell.length_expr.reset();
+            }
+        }
         if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
             continue;
         }
@@ -3016,7 +3113,8 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     bool shells_ready = !shells.empty();
     for (const TypeShell &shell : shells) {
         // Length 0 with the name still set is not folded. A folded 0 has an empty name.
-        if (shell.kind == TypeShell::Kind::Array && (shell.length < 0 || !shell.length_name.empty())) {
+        if (shell.kind == TypeShell::Kind::Array &&
+            (shell.length < 0 || !shell.length_name.empty() || shell.length_expr != nullptr)) {
             shells_ready = false;
         }
     }

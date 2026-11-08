@@ -2676,7 +2676,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("func main() i32 { var n i8 = 200i8; return n; }\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "value does not fit");
     }
 
     {
@@ -2686,7 +2686,7 @@ int run_sema_tests() {
 
     {
         const std::string errors = diagnose("func main() i32 { return 5000000000u32; }\n");
-        EXPECT_HAS(check, errors, "type mismatch");
+        EXPECT_HAS(check, errors, "value does not fit");
     }
 
     {

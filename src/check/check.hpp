@@ -474,7 +474,8 @@ class Checker {
     bool exported_elsewhere(const std::string &name) const;
     bool typedef_target_ready(const TypedefDecl &item) const;
     void register_one_typedef(const TypedefDecl &item);
-    bool field_waits(const FieldDecl &field) const;
+    // `self_id` is the struct being defined. `sizeof` of that struct does not wait on it.
+    bool field_waits(const FieldDecl &field, int self_id = -1) const;
     int min_align_of(const Type &type) const;
     std::optional<int> type_size(const Type &type) const;
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);
@@ -734,6 +735,8 @@ class Checker {
     FunctionDecl *inferred_function(const Expr &expr) const;
     Type elaborate_inferred(FunctionDecl &fn, const Type &want);
     Type check_against(const Expr &expr, const Type &want);
+    // `var f func (i32, f32) void = show`. One list matches that type. No written type stays rejected.
+    bool pick_overload(Expr &expr, const Type &signature);
     // `(value)` becomes a tuple of one element when `want` is that tuple.
     bool adopt_one_tuple(Expr &expr, const Type &want);
     void check_stmt(const Stmt &stmt);

@@ -30,7 +30,7 @@ A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`.
 
 The compiler reports `1u` and `1l` as `invalid integer suffix`.
 
-The compiler reports a value that does not fit in the suffix as `type mismatch`.
+The compiler reports a value that does not fit in the suffix as `value does not fit`. `256u8` and `4294967296u32` are that error.
 
 ## Character literals
 

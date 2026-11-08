@@ -747,6 +747,10 @@ const Symbol *Checker::comptime_spec_alias_source(const Expr &expr) {
         return nullptr;
     }
     FunctionDecl &fn = const_cast<FunctionDecl &>(*source->lists.front().decl);
+    // `builtin.fence` is not a mixed template. It still has no address.
+    if (fn.name == "fence" && fn.extern_compiler && fn.type_params.empty()) {
+        return source;
+    }
     if (!comptime_param_template(fn) || comptime_param_kept(fn)) {
         return nullptr;
     }
@@ -1306,6 +1310,10 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         return;
     }
     if (auto *expr = std::get_if<Stmt::Expression>(&stmt->data)) {
+        // No `emit`: the statement is not pasted.
+        if (!expr->emit) {
+            return;
+        }
         if (expr->emit && expr->expr != nullptr) {
             const std::size_t before = diags_.size();
             fold_format_expr(expr->expr);
@@ -2346,7 +2354,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if constexpr (std::is_same_v<T, Stmt::Block> || std::is_same_v<T, Stmt::Return>) {
                     return true;
                 } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
-                    return node.emit && node.expr != nullptr;
+                    // A statement without `emit` is kept and then dropped. The macro does nothing with it.
+                    return node.expr != nullptr;
                 } else if constexpr (std::is_same_v<T, Stmt::For> || std::is_same_v<T, Stmt::If>) {
                     return true;
                 } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
@@ -2936,27 +2945,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     error(node.loc, "type mismatch");
                 } else {
-                    // A deferred call is indirect. `builtin.fence` is replaced only at a direct call.
-                    const auto *deferred = std::get_if<Expr::Call>(&call->data);
-                    bool fence = false;
-                    if (deferred != nullptr && deferred->callee != nullptr) {
-                        if (const auto *selector = std::get_if<Expr::Selector>(&deferred->callee->data)) {
-                            if (selector->field == "fence" && selector->base != nullptr) {
-                                if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {
-                                    const Symbol *symbol = lookup(base->text);
-                                    fence = symbol != nullptr && symbol->is_package &&
-                                            is_std_builtin_file(symbol->package_file);
-                                }
-                            }
-                        } else if (const auto *named = std::get_if<Expr::Name>(&deferred->callee->data)) {
-                            const Symbol *symbol = lookup(named->text);
-                            fence = symbol != nullptr && symbol->is_function && symbol->name == "fence" &&
-                                    is_std_builtin_file(symbol->package_file);
-                        }
-                    }
-                    if (fence) {
-                        error(expr_loc(*call), "not supported yet");
-                    }
                     unsafe_depth_ += extra;
                     checking_defer_ = true;
                     check_expr(*call, false);
