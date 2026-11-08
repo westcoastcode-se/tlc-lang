@@ -16,23 +16,23 @@ A body with no `return` is `void`, and so is a body that only writes `return;` o
 
 The function can call functions already in scope, and it can use globals.
 
-It can read a `const` or a `comptime const` of an enclosing function. The call is direct.
+It can read a `comptime const` of an enclosing function. The call is direct.
 
-A `var` and a parameter are `not supported yet`.
+A `var`, a runtime `const`, and a parameter are `not supported yet`.
 
-It can read a function pointer the same way when that name is a `const`. The inner function returns that pointer or calls it.
+It can read a function pointer the same way when that name is a `comptime const`. The inner function returns that pointer or calls it.
 
 A method is an enclosing function in the same way.
 
 An anonymous function, used from `defer` or called directly, is that same kind of function.
 
-> **Warning:** The compiler reports `not supported yet` for a `var` or a parameter from an enclosing function. It reports `not supported yet` for `var f = pass` when `pass` reads a `const`, and for passing that function as an argument. `export`, `extern`, and a method on a function in a block are `not supported yet`.
+> **Warning:** The compiler reports `not supported yet` for a `var`, a runtime `const`, or a parameter from an enclosing function. It reports `not supported yet` for `var f = pass` when `pass` reads a `comptime const`, and for passing that function as an argument. `func` is not a lambda. `export`, `extern`, and a method on a function in a block are `not supported yet`.
 
-## Reading a const
+## Reading a comptime const
 
 ```c
 func main() i32 {
-    const n = 40;
+    comptime const n = 40;
     func add(b i32) i32 {
         return n + b;
     }
@@ -58,13 +58,13 @@ retq                             # return
 
 The program returns 42.
 
-`comptime const n = 40` is read the same way. A `var` is `not supported yet`.
+A runtime `const` and a `var` are `not supported yet`.
 
 ## Reading a tuple
 
 ```c
 func main() i32 {
-    const t = (40, 2);
+    comptime const t = (40, 2);
     func add() i32 {
         return t[0] + t[1];
     }
@@ -82,15 +82,13 @@ callq 1                          # call 1
 retq                             # return
 
 1:
-movl (%rdi), %eax                # t[0]
-movl 4(%rdi), %ecx               # t[1]
-addl %ecx, %eax                  # add
+movl $42, %eax                   # 40 + 2
 retq                             # return
 ```
 
 The program returns 42.
 
-The index is a constant. A `var` tuple is `not supported yet`.
+The index is a constant. A runtime `const` tuple and a `var` tuple are `not supported yet`.
 
 ## Several parameter lists
 
@@ -128,8 +126,8 @@ func add(n i32) i32 {
     return n + 1;
 }
 
-func outer(op func (i32) i32) i32 {
-    const fp = op;
+func outer() i32 {
+    comptime const fp = add;
     func pass() func (i32) i32 {
         return fp;
     }
@@ -139,13 +137,12 @@ func outer(op func (i32) i32) i32 {
 
 ```asm
 outer:
-movq %rdi, 40(%rsp)              # op
-movq 40(%rsp), %rax              # move
-movq %rax, 48(%rsp)              # fp = op
+leaq add(%rip), %rax             # add
+movq %rax, 48(%rsp)              # fp = add
 movq 48(%rsp), %rax              # fp
-movq %rax, 24(%rsp)              # move
+movq %rax, 32(%rsp)              # move
 # trace frame for the call, then the matching pop
-movq 24(%rsp), %rdi              # fp
+movq 32(%rsp), %rdi              # fp
 callq 1                          # call 1
 # trace frame for the call, then the matching pop
 movl $41, %edi                   # constant

@@ -1,0 +1,6 @@
+func main() i32 {
+    var row [2][4]i32;
+    row[0][0] = 40;
+    var s []const [4]i32 = row[:];
+    return s[0][0] + s.len;
+}

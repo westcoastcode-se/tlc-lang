@@ -158,7 +158,9 @@ A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, o
 
 A file-scope `const` in that tuple is `not supported yet`.
 
-A tuple element that is a local `const` is `type mismatch`.
+A tuple element that is a local runtime `const` is `type mismatch`.
+
+A local `comptime const` in that tuple is that value. That includes an array, `comptime const row = [_]i32{2, 0}`, and an alias, `comptime const other = Integer(4)`.
 
 An element may be a `bool`, an `f64`, an `f32`, a struct, or a `[]const u8`.
 
@@ -1013,7 +1015,7 @@ A `var` tuple is `type mismatch`.
 
 A local `const` of a tuple is `type mismatch`.
 
-A tuple element that is a local `const` is `type mismatch`.
+A tuple element that is a local runtime `const` is `type mismatch`.
 
 An element that is a `var` is `type mismatch`.
 

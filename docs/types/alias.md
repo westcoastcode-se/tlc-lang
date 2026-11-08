@@ -92,7 +92,7 @@ A field may be written `value (i32, i32)`, and `box.value = (40, 2)` stores it. 
 
 `[2][2]Duo` indexes the same way, and `grid[1][1][0]` reads one field. `p[0][0]` on `var p *[2]Duo = &row` reads one field.
 
-A tuple does not convert to a slice. `row[0:2]`, `row[:]`, the same range of a parameter `[N]Duo` or `[N][M]Duo`, and `p[0:2]` on `*[N]Duo` are `type mismatch`. `[]Duo` and `[][N]Duo` are `not supported yet`.
+A tuple value does not convert to a slice. `row[0:2]`, `row[:]`, the same range of a parameter `[N]Duo`, and `p[0:2]` on `*[N]Duo` are `[]Duo`. The same range of `[N][M]Duo` is `type mismatch`. `[]Duo` is that slice. `[][N]Duo` is `not supported yet`.
 
 A field may also use the alias name: `value Duo`.
 

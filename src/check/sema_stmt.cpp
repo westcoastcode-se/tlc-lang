@@ -3243,6 +3243,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                                 symbol.pending_fold = true;
                             } else if (mentions_var(*bind.value)) {
                                 error(loc, "var is not a compile-time constant");
+                            } else if (comptime_array_literal(*bind.value)) {
+                                // The array is only a tuple element. The name is that literal.
+                                symbol.is_constant = true;
+                                symbol.const_init = bind.value.get();
                             } else {
                                 error(loc, "not supported yet");
                             }
@@ -3441,6 +3445,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                                         live->pending_fold = true;
                                     } else if (mentions_var(*written.init)) {
                                         error(var.loc, "var is not a compile-time constant");
+                                    } else if (comptime_array_literal(*written.init)) {
+                                        live->is_constant = true;
+                                        live->const_init = written.init.get();
                                     } else {
                                         error(var.loc, "not supported yet");
                                     }

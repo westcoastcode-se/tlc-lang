@@ -184,8 +184,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 if (captured(*symbol)) {
-                    // A `var` and a parameter are not captured. A `const` and a `comptime const` are.
-                    const bool constant = symbol->runtime_const || symbol->is_constant;
+                    // A `var`, a parameter, and a runtime `const` are not captured. A `comptime const` is.
+                    const bool constant = symbol->is_constant;
                     if (checking_.empty() || !constant || symbol->is_function || symbol->is_template ||
                         symbol->is_package || symbol->is_type) {
                         error(node.loc, "not supported yet");
@@ -2171,9 +2171,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (base.kind == TypeKind::Invalid) {
                         return type_invalid();
                     }
-                    // A tuple is not a slice element. `[N]Duo` and `[N][M]Duo` stay arrays.
+                    // `[N][M]Duo` is not a slice. A range of `[N]Duo` is `[]Duo`.
                     auto tuple_element = [&](const Type &element) -> bool {
-                        if (!array_of_tuple(element)) {
+                        if (element.kind == TypeKind::Tuple || !array_of_tuple(element)) {
                             return false;
                         }
                         error(node.loc, "type mismatch");

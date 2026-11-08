@@ -1,0 +1,7 @@
+func main() i32 {
+    const n = 40;
+    func add(b i32) i32 {
+        return n + b;
+    }
+    return add(2);
+}

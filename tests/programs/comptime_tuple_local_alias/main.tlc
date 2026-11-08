@@ -1,0 +1,15 @@
+type Integer i32;
+
+comptime func field(p (Integer, i32)) i32 {
+    return i32(p[0]) + p[1];
+}
+
+func take(comptime p (Integer, i32), n i32) i32 {
+    return i32(p[0]) + n;
+}
+
+func main() i32 {
+    comptime const other = Integer(4);
+    var n = 38;
+    return field((other, 38)) + take((other, 0), n) - 42;
+}

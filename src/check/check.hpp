@@ -1186,6 +1186,8 @@ class Checker {
     const Expr *comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen);
     // Literals, `comptime const` names, and expressions built from those. A runtime `const` is not.
     bool strict_comptime_expr(const Expr &expr);
+    // `[_]T{...}` whose elements are compile-time values. A lone array is not `comptime_constant`.
+    bool comptime_array_literal(const Expr &expr);
     // The expression reads a `var`. A `const` and `:=` do not.
     bool mentions_var(const Expr &expr);
     // Fills checker struct ids on a literal produced by a comptime struct call.

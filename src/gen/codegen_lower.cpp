@@ -598,6 +598,16 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
     peel(leaf, shells);
     // `[2]Duo` stores the tuple. The array itself is not a tuple. `tuple_parts` describes one element.
     if (leaf.is_tuple && leaf.type != nullptr && leaf.type->isStructTy() && leaf.type->isSized()) {
+        // `[]Duo` is a slice whose element is the tuple. `[][N]Duo` stays rejected.
+        if (shells.size() == 1 && shells.front().kind == TypeShell::Kind::Slice) {
+            Lowered out;
+            out.is_slice = true;
+            out.array_len = -1;
+            out.tuple_parts = leaf.tuple_parts;
+            out.shells = shells;
+            out.type = slice_type();
+            return out;
+        }
         for (const TypeShell &shell : shells) {
             if (shell.kind == TypeShell::Kind::Slice) {
                 Lowered bad;

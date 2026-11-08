@@ -180,7 +180,7 @@ The result is not an lvalue. `row[0:2] = row`, `row[1:] = row`, and `&row[0:2]` 
 
 `*p` is the array, so `var s []i32 = *p` is `[]i32`.
 
-A range of `[N]Duo`, of `[N][M]Duo`, of a parameter `[N]Duo`, and of `*[N]Duo` is `type mismatch`. `[]Duo` and `[][N]Duo` are `not supported yet`.
+A range of `[N]Duo`, of a parameter `[N]Duo`, and of `*[N]Duo` is `[]Duo`. A range of `[N][M]Duo` is `type mismatch`. `[][N]Duo` is `not supported yet`. `[](i32, i32)` is `expected a type`.
 
 `*i32` and a still-optional `?*[N]T` are reported as `type mismatch`.
 

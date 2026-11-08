@@ -611,6 +611,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.enum_id = got.enum_id;
             binding.inner_array_len = got.inner_array_len;
             binding.elem_slice = got.elem_slice;
+            binding.tuple_parts = got.tuple_parts;
             binding.alias_owner = got.alias_owner;
             binding.alias_file = got.alias_file;
             scopes_.back()[name] = binding;

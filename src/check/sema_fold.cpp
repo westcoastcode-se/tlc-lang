@@ -1599,6 +1599,41 @@ const Expr *Checker::file_scope_const_array(const Expr &expr) {
     return var->init.get();
 }
 
+bool Checker::comptime_array_literal(const Expr &expr) {
+    const auto *init = std::get_if<Expr::Init>(&expr.data);
+    if (init == nullptr || !init->array_literal) {
+        return false;
+    }
+    // Same elements as a file-scope const array. A `var` is rejected by the caller.
+    const auto element_ok = [&](const auto &self, const Expr &item, int depth) -> bool {
+        if (depth > 8 || std::holds_alternative<Expr::Nullptr>(item.data)) {
+            return false;
+        }
+        if (const auto *inner = std::get_if<Expr::Init>(&item.data)) {
+            const bool row = !inner->is_tuple && !inner->array_literal && inner->fields.empty() &&
+                             !inner->elements.empty();
+            if (inner->array_literal || row) {
+                for (const auto &child : inner->elements) {
+                    if (child == nullptr || !self(self, *child, depth + 1)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            return !inner->is_tuple && !inner->fields.empty() && comptime_constant(item);
+        }
+        return argument_is_comptime(item) || fold_int(item).has_value() || file_scope_const_int(item).has_value() ||
+               file_scope_const_bool(item).has_value() || file_scope_const_float(item) != nullptr ||
+               file_scope_const_struct(item) != nullptr;
+    };
+    for (const auto &item : init->elements) {
+        if (item == nullptr || !element_ok(element_ok, *item, 0)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 const Expr *Checker::file_scope_const_alias(const Expr &expr) {
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr) {
@@ -1875,23 +1910,25 @@ bool Checker::comptime_constant(const Expr &expr) {
             }
             return init != nullptr && comptime_constant(*init);
         }
-        if (!symbol->is_constant || symbol->is_auto) {
-            // `const origin = Point{.x = 2, .y = 0}` at file scope. A local const stays out.
-            if (!symbol->is_auto && symbol->type.kind == TypeKind::Struct) {
-                if (const VarDecl *var = global_var(named->text);
-                    var != nullptr && var->is_const_decl && var->init != nullptr) {
-                    return comptime_constant(*var->init);
-                }
-            }
-            // `const other = Integer(4)` at file scope. A local const stays out.
-            if (const Expr *init = file_scope_const_alias(expr)) {
-                return comptime_constant(*init);
+        // A local `comptime const` is `is_auto`. A runtime `const` is not `is_constant`.
+        if (symbol->is_constant) {
+            const Type &type = symbol->type;
+            if (type.kind == TypeKind::Float || type.kind == TypeKind::Struct || type.alias_id != 0 ||
+                fn_pointer(type)) {
+                return true;
             }
             return false;
         }
-        const Type &type = symbol->type;
-        if (type.kind == TypeKind::Float || type.kind == TypeKind::Struct || type.alias_id != 0 || fn_pointer(type)) {
-            return true;
+        // `const origin = Point{.x = 2, .y = 0}` at file scope. A local const stays out.
+        if (!symbol->is_auto && symbol->type.kind == TypeKind::Struct) {
+            if (const VarDecl *var = global_var(named->text);
+                var != nullptr && var->is_const_decl && var->init != nullptr) {
+                return comptime_constant(*var->init);
+            }
+        }
+        // `const other = Integer(4)` at file scope. A local const stays out.
+        if (const Expr *init = file_scope_const_alias(expr)) {
+            return comptime_constant(*init);
         }
         return false;
     }
@@ -1961,6 +1998,19 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
                 for (auto &element : tuple.elements) {
                     if (element == nullptr) {
                         continue;
+                    }
+                    // A local `comptime const` is its initializer. The specialized copy has no local.
+                    if (const auto *named = std::get_if<Expr::Name>(&element->data)) {
+                        const Symbol *symbol = lookup(named->text);
+                        const Expr *init = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
+                        if (init != nullptr && init != element.get()) {
+                            element = clone_expr(*init);
+                            if (auto *inner = std::get_if<Expr::Init>(&element->data);
+                                inner != nullptr && inner->is_tuple) {
+                                self(self, *inner);
+                            }
+                            continue;
+                        }
                     }
                     if (const std::optional<int> value = file_scope_const_int(*element)) {
                         auto literal = std::make_unique<Expr>();
@@ -2147,6 +2197,13 @@ std::optional<std::string> Checker::comptime_spec_piece(const Expr &expr) {
                 return "fn" + named->text;
             }
             if (symbol != nullptr && symbol->is_constant && seen.insert(named->text).second) {
+                if (symbol->const_init != nullptr) {
+                    const std::optional<std::string> inner = self(self, *symbol->const_init);
+                    seen.erase(named->text);
+                    if (inner) {
+                        return inner;
+                    }
+                }
                 const VarDecl *var = global_var(named->text);
                 if (var != nullptr && var->init != nullptr) {
                     const std::optional<std::string> inner = self(self, *var->init);

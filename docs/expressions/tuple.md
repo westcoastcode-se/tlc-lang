@@ -212,11 +212,11 @@ A field may be written `value (i32, i32)`.
 
 `row[0] = Duo((40, 2))` stores one element, and `row[0][0]` reads one field.
 
-A tuple does not convert to a slice.
+A tuple value does not convert to a slice.
 
-`row[0:2]`, `row[:]`, the same range of a parameter `[N]Duo` or `[N][M]Duo`, and `p[0:2]` on `*[N]Duo` are `type mismatch`.
+`row[0:2]`, `row[:]`, the same range of a parameter `[N]Duo`, and `p[0:2]` on `*[N]Duo` are `[]Duo`. The same range of `[N][M]Duo` is `type mismatch`.
 
-`[]Duo` and `[][N]Duo` are `not supported yet`.
+`[]Duo` is that slice. `s[0] = Duo((40, 2))` stores one element. `s[0][0]` reads one field. `[][N]Duo` is `not supported yet`. `[](i32, i32)` is `expected a type`.
 
 ## Binding and indexing
 

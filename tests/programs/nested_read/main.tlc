@@ -3,7 +3,7 @@ func inc(n i32) i32 {
 }
 
 func main() i32 {
-    const n = 40;
+    comptime const n = 40;
     func add(b i32) i32 {
         return n + b;
     }
@@ -11,11 +11,11 @@ func main() i32 {
     func addm(b i32) i32 {
         return m + b;
     }
-    const t = (40, 2);
+    comptime const t = (40, 2);
     func both() i32 {
         return t[0] + t[1];
     }
-    const fp = inc;
+    comptime const fp = inc;
     func pass() i32 {
         return fp(41);
     }

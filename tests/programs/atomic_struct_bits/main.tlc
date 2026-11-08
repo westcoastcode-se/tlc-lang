@@ -1,0 +1,45 @@
+import "builtin";
+
+type Byte struct {
+    bit u8;
+}
+
+type Pair struct(align=4) {
+    a i16;
+    b i16;
+}
+
+type Wide struct(align=8) {
+    a i32;
+    b i32;
+}
+
+func main() i32 {
+    var byte Byte;
+    var one Byte = {.bit = 1};
+    builtin.atomic_store[Byte](&byte, one, 0);
+    if (builtin.atomic_load[Byte](&byte, 0).bit != 1) {
+        return 1;
+    }
+    var pair Pair;
+    var first Pair = {.a = 1, .b = 2};
+    builtin.atomic_store[Pair](&pair, first, 0);
+    var got = builtin.atomic_load[Pair](&pair, 0);
+    if (got.a != 1 || got.b != 2) {
+        return 2;
+    }
+    var next Pair = {.a = 3, .b = 4};
+    var prev = builtin.atomic_rmw[Pair](&pair, 0, next, 0);
+    if (prev.a != 1 || prev.b != 2) {
+        return 3;
+    }
+    var wide Wide = {.a = 0, .b = 0};
+    var zero Wide = {.a = 0, .b = 0};
+    var want Wide = {.a = 40, .b = 2};
+    var old, ok = builtin.atomic_cmpxchg[Wide](&wide, zero, want, 4, 4);
+    if (!ok || old.a != 0 || old.b != 0) {
+        return 4;
+    }
+    var now = builtin.atomic_load[Wide](&wide, 4);
+    return now.a + now.b;
+}

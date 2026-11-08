@@ -352,7 +352,7 @@ The function is passed directly.
 
 `Type.name` is that named function when it is a static function with the method's signature.
 
-A function written inside another function is the same argument when it does not read a `const` or a `comptime const` from the enclosing function.
+A function written inside another function is the same argument when it does not read a `comptime const` from the enclosing function.
 
 A trait with a field, with no methods, or with several methods, is reported as `type mismatch`.
 
@@ -366,7 +366,7 @@ A prototype with no body is reported as `type mismatch`.
 
 An `unsafe func` used as the argument is reported as `type mismatch`.
 
-An inner function that reads an enclosing `const` is reported as `not supported yet`.
+An inner function that reads an enclosing `comptime const`, or a runtime `const`, is reported as `not supported yet` when it is passed as a value. A direct call may read the `comptime const`. A runtime `const` is `not supported yet` in that call too.
 
 ```c
 type Adder trait {

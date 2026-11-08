@@ -2156,7 +2156,21 @@ bool Checker::atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &
     if (kind == AtomicBuiltin::None || !is_std_builtin_file(comptime_decl_file(fn))) {
         return false;
     }
-    if (bound != nullptr && !atomic_type_ok(*bound) && !atomic_load_store_type(*bound)) {
+    // A struct atomic is the whole value, when that value is 1, 2, 4, or 8 bytes and aligned to that size.
+    const auto struct_ok = [&](const SpecArg &item) {
+        if (!item.is_struct || item.is_enum || item.is_pack || item.is_array || item.elem_slice || item.array_len != 0 ||
+            item.indirections > 0 || !item.shells.empty() || item.struct_id < 0) {
+            return false;
+        }
+        const Type type = type_struct(item.struct_id);
+        const std::optional<int> size = type_size(type);
+        if (!size || (*size != 1 && *size != 2 && *size != 4 && *size != 8)) {
+            return false;
+        }
+        return min_align_of(type) >= *size;
+    };
+    const bool struct_value = bound != nullptr && struct_ok(*bound);
+    if (bound != nullptr && !atomic_type_ok(*bound) && !atomic_load_store_type(*bound) && !struct_value) {
         error(call.loc, "not supported yet");
         return true;
     }
@@ -2205,7 +2219,7 @@ bool Checker::atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &
         const bool pointer = bound != nullptr ? atomic_pointer(*bound)
                                               : (!fn.params.empty() && (fn.params.front().indirections >= 2 ||
                                                                         !fn.params.front().shells.empty()));
-        if (pointer && op != 0) {
+        if ((pointer || struct_value) && op != 0) {
             error(call.loc, "not supported yet");
             return true;
         }

@@ -20,13 +20,15 @@ The call does not record a trace frame.
 
 ## Types, orders, and operations
 
-`T` is `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, or a pointer.
+`T` is `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, a pointer, or a struct whose size is 1, 2, 4, or 8 bytes and whose alignment is at least that size.
 
 `atomic_load`, `atomic_store`, `atomic_rmw`, and `atomic_cmpxchg` also take `f32`, `f64`, and `bool`.
 
 On a float, add and sub are floating operations. `and`, `or`, `xor`, and `atomic_cmpxchg` use the bits.
 
-A struct is `not supported yet`.
+A struct load, store, exchange, or compare-exchange uses the bits of the whole value. `add`, `sub`, `and`, `or`, and `xor` on a struct are `not supported yet`.
+
+A struct whose size is not 1, 2, 4, or 8 bytes, or whose alignment is lower than that size, is `not supported yet`. Two `i32` fields in a plain struct are 8 bytes aligned to 4, so that struct is `not supported yet`. `struct(align=8)` with those fields is the 8-byte value.
 
 A value wider than 64 bits is `not supported yet`.
 
@@ -52,7 +54,7 @@ A store rejects acquire and acq_rel.
 
 `atomic_rmw` returns the previous value.
 
-On a pointer, an `op` other than xchg is `not supported yet`.
+On a pointer, an `op` other than xchg is `not supported yet`. On a struct, an `op` other than xchg is `not supported yet`.
 
 ## Compare-exchange and fences
 

@@ -1039,7 +1039,7 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
         }
         // `[]const u8` marks the element. `kind const Type` marks the field value.
         // `var name const Type` marks the value when `allow_value_const` is set.
-        // `[]const [4]T` is not a form.
+        // `[]const [4]T` marks the leaf. The next `[4]` is another shell.
         if (check(TokenKind::KwConst)) {
             if (type.shells.empty()) {
                 if (!allow_value_const) {
@@ -1052,13 +1052,7 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
                 type.elem_const = true;
                 ++pos_;
                 if (check(TokenKind::LBracket)) {
-                    diags_.error(peek().loc, "not supported yet");
-                    while (eat(TokenKind::LBracket)) {
-                        while (!check(TokenKind::RBracket) && !eof()) {
-                            ++pos_;
-                        }
-                        eat(TokenKind::RBracket);
-                    }
+                    continue;
                 }
             }
         }

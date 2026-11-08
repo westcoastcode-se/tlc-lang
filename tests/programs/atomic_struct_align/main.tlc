@@ -1,0 +1,11 @@
+import "builtin";
+
+type Point struct {
+    a i32;
+    b i32;
+}
+
+func main() i32 {
+    var point Point;
+    return builtin.atomic_load[Point](&point, 0).a;
+}

@@ -660,7 +660,7 @@ The returned value may be a function name or an anonymous function.
 
 `return func (a i32, b i32) i32 { return a + b; }` is one such value.
 
-An inner function called directly may return a function pointer taken from a `const` or a `comptime const` of an enclosing function.
+An inner function called directly may return a function pointer taken from a `comptime const` of an enclosing function. A runtime `const` is `not supported yet`.
 
 ### Methods
 
@@ -764,11 +764,11 @@ A slice alias uses `self this` or `self *this`.
 
 An inner function uses the same `function` form inside a block, and it has a body.
 
-Called directly, it may read a `const` or a `comptime const` of an enclosing function.
+Called directly, it may read a `comptime const` of an enclosing function.
 
-A `var` and a parameter are `not supported yet`.
+A `var`, a runtime `const`, and a parameter are `not supported yet`.
 
-That `const` may be a tuple. The index is a constant.
+That `comptime const` may be a tuple. The index is a constant.
 
 Using that function as a value is `not supported yet`.
 
@@ -1346,7 +1346,7 @@ The variable has an address.
 
 `const [4]i32 row` and `const n const i32` are `not supported yet`.
 
-`var row const [4]i32` is `expected a type`.
+`var row const [4]i32` is `expected a type`. `[]const [4]T` is a slice of `[4]T` whose leaf is const.
 
 `type Count const i32` is that alias.
 
@@ -1964,9 +1964,9 @@ A field may be written `value (i32, i32)`.
 
 `[N]Duo` is an array of it.
 
-A tuple does not convert to a slice, so `row[0:2]` on `[N]Duo` or `[N][M]Duo` is `type mismatch`.
+A tuple value does not convert to a slice. `row[0:2]` on `[N]Duo` is `[]Duo`. The same range of `[N][M]Duo` is `type mismatch`.
 
-`[]Duo` and `[][N]Duo` are `not supported yet`.
+`[]Duo` is that slice. `[][N]Duo` is `not supported yet`.
 
 `type Something[K type, V type] (K, V)` is an alias of that tuple.
 

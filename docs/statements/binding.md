@@ -870,7 +870,7 @@ The compiler reports `var row const [4]i32` as `expected a type`.
 
 The compiler reports `type Name[T type] const T` as `expected ']'`.
 
-`[]const [4]T` is `not supported yet`.
+`[]const [4]T` is a slice of `[4]T`. `const` applies to the leaf, so `s[i][j] = 1` is `type mismatch`.
 
 `*const T` and `kind const Type` are unchanged.
 

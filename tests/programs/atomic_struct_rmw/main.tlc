@@ -1,0 +1,12 @@
+import "builtin";
+
+type Pair struct(align=4) {
+    a i16;
+    b i16;
+}
+
+func main() i32 {
+    var pair Pair;
+    var step Pair = {.a = 1, .b = 0};
+    return builtin.atomic_rmw[Pair](&pair, 1, step, 0).a;
+}

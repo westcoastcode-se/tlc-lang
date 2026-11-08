@@ -1170,6 +1170,7 @@ class CodeGen {
             loaded.inner_array_len = binding.inner_array_len;
             loaded.elem_slice = binding.elem_slice;
             loaded.shells = binding.shells;
+            loaded.tuple_parts = binding.tuple_parts;
             loaded.alias_owner = binding.alias_owner;
             loaded.alias_file = binding.alias_file;
             return loaded;

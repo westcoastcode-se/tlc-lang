@@ -207,15 +207,16 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
             type.optional = shell.optional;
             continue;
         }
-        // A tuple is an array element. A slice or any other shell around it stays rejected.
+        // A tuple is an array element or a slice element. Any other shell around it stays rejected.
         const bool aggregate = type.kind == TypeKind::Void || type.kind == TypeKind::Function ||
                                type.kind == TypeKind::Meta ||
-                               (type.kind == TypeKind::Tuple && shell.kind != TypeShell::Kind::Array);
+                               (type.kind == TypeKind::Tuple && shell.kind != TypeShell::Kind::Array &&
+                                shell.kind != TypeShell::Kind::Slice);
         if (aggregate) {
             rejected = true;
             return type_invalid();
         }
-        if (type.kind == TypeKind::Tuple && shell.length < 0) {
+        if (type.kind == TypeKind::Tuple && shell.kind == TypeShell::Kind::Array && shell.length < 0) {
             rejected = true;
             return type_invalid();
         }
@@ -223,8 +224,8 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
         if (is_slice(type)) {
             type.alias_id = 0;
         }
-        // `[][N]Duo` would store tuples in a slice. A sized `[N]Duo` stays an array.
-        if (shell.kind == TypeShell::Kind::Slice && array_of_tuple(type)) {
+        // `[][N]Duo` would store an array of tuples in a slice. `[]Duo` is that slice.
+        if (shell.kind == TypeShell::Kind::Slice && type.kind != TypeKind::Tuple && array_of_tuple(type)) {
             rejected = true;
             return type_invalid();
         }

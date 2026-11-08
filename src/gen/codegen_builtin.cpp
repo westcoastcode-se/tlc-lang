@@ -1264,10 +1264,51 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
         // `bool` is `i1` in a register and one byte in memory.
         return bits == 1 || bits == 8 || bits == 16 || bits == 32 || bits == 64;
     };
+    // A struct of 1, 2, 4, or 8 bytes, aligned to that size, is that integer.
+    llvm::Type *value_struct = nullptr;
+    if (ty != nullptr && ty->isStructTy() && ty->isSized()) {
+        const llvm::DataLayout &layout = module_.getDataLayout();
+        const uint64_t bytes = layout.getTypeStoreSize(ty).getFixedValue();
+        const uint64_t aligned = layout.getABITypeAlign(ty).value();
+        if ((bytes == 1 || bytes == 2 || bytes == 4 || bytes == 8) && aligned >= bytes) {
+            value_struct = ty;
+            ty = llvm::IntegerType::get(context_, static_cast<unsigned>(bytes * 8));
+            if (prepared.struct_id < 0) {
+                for (int index = 0; index < static_cast<int>(structs_.size()); ++index) {
+                    if (structs_[static_cast<std::size_t>(index)].type == value_struct) {
+                        prepared.struct_id = index;
+                        break;
+                    }
+                }
+            }
+        }
+    }
     if (!supported(ty) || prepared.args.empty() || prepared.args[0] == nullptr) {
         fail(ty != nullptr && ty->isStructTy() ? "not supported yet" : "type mismatch");
         return;
     }
+    const auto to_struct_bits = [&](llvm::Value *value) -> llvm::Value * {
+        if (value_struct == nullptr || value == nullptr || value->getType() == ty) {
+            return value;
+        }
+        llvm::AllocaInst *slot = builder_.CreateAlloca(value_struct);
+        slot->setAlignment(llvm::Align(module_.getDataLayout().getTypeStoreSize(value_struct).getFixedValue()));
+        if (value->getType() == value_struct) {
+            builder_.CreateStore(value, slot);
+        } else {
+            builder_.CreateStore(llvm::ConstantAggregateZero::get(value_struct), slot);
+        }
+        return builder_.CreateLoad(ty, slot);
+    };
+    const auto from_struct_bits = [&](llvm::Value *value) -> llvm::Value * {
+        if (value_struct == nullptr || value == nullptr) {
+            return value;
+        }
+        llvm::AllocaInst *slot = builder_.CreateAlloca(ty);
+        slot->setAlignment(llvm::Align(module_.getDataLayout().getTypeStoreSize(ty).getFixedValue()));
+        builder_.CreateStore(value, slot);
+        return builder_.CreateLoad(value_struct, slot);
+    };
     // An atomic `i1` is not a byte. `bool` occupies one byte, so the access is `i8`.
     const bool bool_byte = ty->isIntegerTy(1);
     llvm::Type *access = bool_byte ? i8() : ty;
@@ -1328,6 +1369,8 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
         llvm::Value *result = load;
         if (bool_byte) {
             result = builder_.CreateTrunc(load, i1());
+        } else if (value_struct != nullptr) {
+            result = from_struct_bits(load);
         }
         prepared.yielded = true;
         scalar(result);
@@ -1341,6 +1384,9 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
             return;
         }
         llvm::Value *stored = prepared.args[1];
+        if (value_struct != nullptr) {
+            stored = to_struct_bits(stored);
+        }
         if (bool_byte && stored->getType() != i8()) {
             if (!stored->getType()->isIntegerTy(1)) {
                 stored = builder_.CreateTrunc(stored, i1());
@@ -1362,7 +1408,7 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
             fail("type mismatch");
             return;
         }
-        if (ty->isPointerTy() && *op != 0) {
+        if ((ty->isPointerTy() || value_struct != nullptr) && *op != 0) {
             fail("not supported yet");
             return;
         }
@@ -1383,12 +1429,16 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
             operand = as_byte(operand);
         } else if (float_bits) {
             operand = as_bits(operand);
+        } else if (value_struct != nullptr) {
+            operand = to_struct_bits(operand);
         }
         llvm::Value *previous = builder_.CreateAtomicRMW(bin, pointer, operand, align, *mapped);
         if (bool_byte) {
             previous = from_byte(previous);
         } else if (float_bits) {
             previous = from_bits(previous);
+        } else if (value_struct != nullptr) {
+            previous = from_struct_bits(previous);
         }
         prepared.yielded = true;
         scalar(previous);
@@ -1413,23 +1463,28 @@ void CodeGen::yield_atomic(const Expr::Call &node, PreparedCall &prepared) {
         // Compare-exchange matches the bits, not a floating equality.
         expected = as_bits(expected);
         desired = as_bits(desired);
+    } else if (value_struct != nullptr) {
+        expected = to_struct_bits(expected);
+        desired = to_struct_bits(desired);
     }
     llvm::Value *pair = builder_.CreateAtomicCmpXchg(pointer, expected, desired, align, *success_order, *failure_order);
     llvm::Type *ret = aggregate_return(*prepared.decl, current_file_);
-    auto *struct_ty = llvm::dyn_cast<llvm::StructType>(ret);
+    auto *pair_ty = llvm::dyn_cast<llvm::StructType>(ret);
     llvm::Value *previous = builder_.CreateExtractValue(pair, 0);
     llvm::Value *flag = builder_.CreateExtractValue(pair, 1);
     if (bool_byte) {
         previous = from_byte(previous);
     } else if (ty->isFloatingPointTy()) {
         previous = from_bits(previous);
+    } else if (value_struct != nullptr) {
+        previous = from_struct_bits(previous);
     }
-    if (struct_ty == nullptr || struct_ty->getNumElements() != 2 || previous->getType() != struct_ty->getElementType(0) ||
-        flag->getType() != struct_ty->getElementType(1)) {
+    if (pair_ty == nullptr || pair_ty->getNumElements() != 2 || previous->getType() != pair_ty->getElementType(0) ||
+        flag->getType() != pair_ty->getElementType(1)) {
         fail("type mismatch");
         return;
     }
-    llvm::Value *aggregate = llvm::ConstantAggregateZero::get(struct_ty);
+    llvm::Value *aggregate = llvm::ConstantAggregateZero::get(pair_ty);
     aggregate = builder_.CreateInsertValue(aggregate, previous, 0);
     aggregate = builder_.CreateInsertValue(aggregate, flag, 1);
     prepared.yielded = true;

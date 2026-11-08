@@ -32,7 +32,7 @@ The thread's writes happen before `join` reads them.
 
 A failed pthread call panics with `thread`.
 
-An inner function that reads a `const` or a `comptime const` cannot be passed to `thread.spawn`. That use is `not supported yet`.
+An inner function that reads a `comptime const` cannot be passed to `thread.spawn`. That use is `not supported yet`. A runtime `const` is `not supported yet` in the inner function.
 
 The entry is a file-scope function.
 

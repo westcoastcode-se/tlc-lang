@@ -329,6 +329,21 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
             out.enum_id = base.enum_id;
             return out;
         }
+        // `[]Duo` steps by the tuple. The address is that element.
+        if (!base.tuple_parts.empty() && !base.elem_slice) {
+            const Lowered elem = lower_tuple_parts(current_file_, base.tuple_parts);
+            if (!elem.is_tuple || elem.type == nullptr) {
+                error(loc, "not an lvalue");
+                return {};
+            }
+            llvm::Value *slot =
+                builder_.CreateInBoundsGEP(elem.type, data, llvm::ArrayRef<llvm::Value *>{subscript});
+            TypedValue out;
+            out.value = slot;
+            out.is_tuple = true;
+            out.tuple_parts = base.tuple_parts;
+            return out;
+        }
         llvm::Value *slot =
             builder_.CreateInBoundsGEP(element, data, llvm::ArrayRef<llvm::Value *>{subscript});
         TypedValue out{slot,       elem_depth, base.elem_char, base.struct_id, false,          base.elem_void,
@@ -1073,6 +1088,7 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         loaded.elem_bits = addr.elem_bits;
         loaded.elem_unsigned = addr.elem_unsigned;
         loaded.elem_float = addr.elem_float;
+        loaded.tuple_parts = addr.tuple_parts;
         return loaded;
     }
     // An array field decays to a pointer to its first element. The length stays so a range can use it.
@@ -1226,11 +1242,6 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         result.enum_id = base.enum_id;
         return result;
     }
-    // `[N]Duo` keeps the tuple slots on the element. That element is not a slice.
-    if (!base.tuple_parts.empty() && base.shells.empty() && !base.elem_slice && base.inner_array_len <= 0) {
-        error(node.loc, "type mismatch");
-        return {zero(), 0};
-    }
     // An omitted low bound is 0. An omitted high bound is the length already in the slice.
     const bool low_omitted = node.index == nullptr;
     const bool high_omitted = node.end == nullptr;
@@ -1318,6 +1329,10 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
             element = slice_type();
         } else if (base.inner_array_len > 0) {
             element = llvm::ArrayType::get(element, static_cast<uint64_t>(base.inner_array_len));
+        } else if (!base.tuple_parts.empty() && base.shells.empty() && !base.elem_slice) {
+            if (llvm::Type *tuple = tuple_shell_type(base.tuple_parts, {})) {
+                element = tuple;
+            }
         }
         if (low_omitted) {
             len = as_bound(high);
@@ -1391,6 +1406,9 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     result.fn_ret_bool = base.fn_ret_bool;
     result.fn_ret_struct = base.fn_ret_struct;
     result.fn_results = base.fn_results;
+    if (!base.tuple_parts.empty() && base.shells.empty() && !base.elem_slice && base.inner_array_len <= 0) {
+        result.tuple_parts = base.tuple_parts;
+    }
     return result;
 }
 
