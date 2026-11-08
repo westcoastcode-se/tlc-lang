@@ -682,6 +682,8 @@ struct Stmt {
         std::vector<std::unique_ptr<Stmt>> statements;
         // `unsafe { ... }`. The statements are an unsafe context. A nested function does not inherit it.
         bool unsafe_block = false;
+        // `comptime { ... }`. A runtime statement inside is `not supported yet`.
+        bool comptime_block = false;
     };
     struct Return {
         SourceLoc loc{};

@@ -1,0 +1,3 @@
+exit: 1
+stdout:
+main.tlc:12:12: main: 40

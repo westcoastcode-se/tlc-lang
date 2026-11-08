@@ -1496,6 +1496,8 @@ class CodeGen {
     void emit_builtin_heap();
     void prepare_default_allocator();
     llvm::Value *variadic_arg(const TypedValue &value);
+    // A variadic struct uses the same x86-64 pieces as an `extern(abi="c")` parameter.
+    int append_variadic_struct(std::vector<llvm::Value *> &args, const TypedValue &value);
     void apply_initializer(const VarDecl &var);
     // Pointer to the first element, the element type a further range steps by, and the length.
     struct SlicePieces {

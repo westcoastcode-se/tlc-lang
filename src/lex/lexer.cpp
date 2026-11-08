@@ -43,7 +43,6 @@ constexpr std::pair<std::string_view, TokenKind> kKeywords[] = {
     {"false", TokenKind::KwFalse},
     {"for", TokenKind::KwFor},
     {"func", TokenKind::KwFunc},
-    {"goto", TokenKind::KwGoto},
     {"if", TokenKind::KwIf},
     {"import", TokenKind::KwImport},
     {"inline", TokenKind::KwInline},
@@ -144,7 +143,6 @@ const char *token_kind_name(TokenKind kind) {
     case TokenKind::KwFloat: return "float-kw";
     case TokenKind::KwFor: return "for";
     case TokenKind::KwFunc: return "func";
-    case TokenKind::KwGoto: return "goto";
     case TokenKind::KwIf: return "if";
     case TokenKind::KwImport: return "import";
     case TokenKind::KwInline: return "inline";

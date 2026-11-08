@@ -6443,10 +6443,12 @@ int run_sema_tests() {
             "type Point struct { x i32; y i32; }\n"
             "test \"t\" {\n"
             "  var p Point;\n"
+            "  p.x = 40;\n"
+            "  p.y = 2;\n"
             "  return testing.error(\"%d\", p);\n"
             "}\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        EXPECT_EQ(check, errors, "");
     }
 
     {

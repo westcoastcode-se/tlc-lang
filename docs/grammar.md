@@ -468,7 +468,7 @@ A bare `extern` and `extern(abi="tlc")` on that function are `not supported yet`
 
 `extern(abi="c")` passes the constant.
 
-`comptime { ... }` inside an ordinary function is `not supported yet`.
+`comptime { ... }` inside an ordinary function keeps compile-time statements. A `return` of a compile-time value ends the function. A `var` inside that block is `not supported yet`. A local `comptime func` is `not supported yet`.
 
 A function, a method, or a generic function may declare the same name and the same number of arguments again, one list with `comptime` and one without.
 
@@ -2486,7 +2486,9 @@ return sizeof struct switch test trait true type typeof union unsafe var void wh
 
 C keywords that tlc reserves but does not use are also keywords.
 
-They are `alignas`, `auto`, `constexpr`, `goto`, `inline`, and `register`.
+They are `alignas`, `auto`, `constexpr`, `inline`, and `register`.
+
+`goto` is not a keyword. `var goto = 42` is that name.
 
 They are also `restrict`, `static_assert`, `thread_local`, `typeof_unqual`, and `volatile`.
 

@@ -18,7 +18,49 @@ The compiler reports `type mismatch` for `return;`. The compiler reports `redefi
 
 It returns `1`.
 
-The first argument is a string. Further arguments are integers, floating-point values, pointers, or enums, and the string is a `printf` format. A floating-point argument is passed as `f64`.
+The first argument is a string. Further arguments are integers, floating-point values, pointers, enums, or structs, and the string is a `printf` format. A floating-point argument is passed as `f64`.
+
+A struct is passed by the C ABI, the same pieces an `extern(abi="c")` parameter of that struct uses. A struct of at most 16 bytes is passed in registers. A larger struct is passed as a pointer.
+
+`Point` with two `i32` fields is one integer. `%d` reads `x`.
+
+```c
+import "std/testing";
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func main() i32 {
+    var p Point;
+    p.x = 40;
+    p.y = 2;
+    return testing.error("%d"b, p);
+}
+```
+
+```asm
+main:
+subq $40, %rsp
+movl $40, 24(%rsp)               # p.x
+movl $2, 28(%rsp)                # p.y
+movl 24(%rsp), %eax              # move
+movl 28(%rsp), %ecx              # move
+movl %ecx, 36(%rsp)              # move
+movl %eax, 32(%rsp)              # move
+movq 32(%rsp), %rax              # move
+movq %rax, 8(%rsp)               # move
+# trace frame for the call, then the matching pop
+movq 8(%rsp), %rsi               # p
+leaq (%rip), %rdi                # "%d"
+xorl %eax, %eax                  # constant
+callq testing.error              # call testing.error
+movl %eax, 4(%rsp)               # move
+movl 4(%rsp), %eax               # move
+addq $40, %rsp
+retq                             # return
+```
 
 `testing.error` prints the frames from `builtin.StackTrace.get()`, then the message. The frames are the tlc calls that have not returned. `error` frees that copy.
 

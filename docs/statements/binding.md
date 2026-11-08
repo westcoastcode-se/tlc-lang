@@ -543,7 +543,32 @@ It may be an index of a constant `[]const u8`, another `comptime const`, or a ca
 
 A suffix whose value fits in `i32`, such as `1u32`, folds too.
 
-A suffix that does not fit in `i32` keeps that type. `comptime const n = 3000000000u32` is that `u32`. `9223372036854775807i64` and `18446744073709551615u64` are those types. The name is not an `i32`, so `[n]i32`, a generic value argument, and `comptime if (n == 1)` stay `not supported yet` or `type mismatch`. `comptime const m = n + 1u32` is `not supported yet`.
+A suffix that does not fit in `i32` keeps that type. `comptime const n = 3000000000u32` is that `u32`. `9223372036854775807i64` and `18446744073709551615u64` are those types. The name is not an `i32`, so `[n]i32`, a generic value argument, and `comptime if (n == 1)` stay `not supported yet` or `type mismatch`.
+
+`comptime const m = n + 1u32` is that sum, wrapped in `u32`. `3000000000u32 + 1u32` is `3000000001u32`.
+
+```c
+func main() i32 {
+    comptime const n = 3000000000u32;
+    comptime const m = n + 1u32;
+    if (m == 3000000001u32) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movl $3000000001, -4(%rsp)       # m
+cmpl $3000000001, -4(%rsp)       # m == 3000000001u32
+jne .L1                          # branch
+movl $42, %eax                   # constant
+retq                             # return
+.L1:
+xorl %eax, %eax                  # constant
+retq                             # return
+```
 
 > **Warning:** `comptime const N = 4` can be an array length, `[N]i32`. `comptime const N = 0` is the empty array `[0]i32`. A `const` whose initializer folds to a non-negative `i32` is that length, including one inside a function. A negative length is `array length must be >= 0`. A `var` cannot.
 

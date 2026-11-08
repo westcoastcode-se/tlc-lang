@@ -2217,6 +2217,8 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
             }
             if (arg.alias_id != 0) {
                 error(expr_loc(*node.args[i]), "type mismatch");
+            } else if (arg.kind == TypeKind::Struct) {
+                // A struct is passed by the C ABI, the same pieces an `extern(abi="c")` parameter uses.
             } else if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&
                        arg.kind != TypeKind::Enum && arg.kind != TypeKind::Nullptr) {
                 error(expr_loc(*node.args[i]), "not supported yet");
@@ -2270,6 +2272,8 @@ Type Checker::finish_static_call(Expr &expr, const MethodInfo &method, bool defe
             }
             if (arg.alias_id != 0) {
                 error(expr_loc(*node.args[i]), "type mismatch");
+            } else if (arg.kind == TypeKind::Struct) {
+                // A struct is passed by the C ABI, the same pieces an `extern(abi="c")` parameter uses.
             } else if (arg.kind != TypeKind::Invalid && !is_numeric(arg) && arg.kind != TypeKind::Pointer &&
                        arg.kind != TypeKind::Enum && arg.kind != TypeKind::Nullptr) {
                 error(expr_loc(*node.args[i]), "not supported yet");

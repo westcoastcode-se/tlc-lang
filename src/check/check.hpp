@@ -844,6 +844,8 @@ class Checker {
     std::unordered_set<const FunctionDecl *> comptime_folding_;
     // Nonzero while checking a `comptime func` or a `macro`. Nested calls are not expanded there.
     int comptime_depth_ = 0;
+    // Nonzero while checking `comptime { ... }` in an ordinary function.
+    int comptime_block_depth_ = 0;
     // Index of a `comptime for` whose bound is a parameter. Nested `comptime if` on that name waits.
     std::string pending_comptime_index_;
     // Nonzero while checking a `macro`. `emit` is legal only then, and not inside a runtime loop.
@@ -878,6 +880,15 @@ class Checker {
         bool wide = false;
     };
     std::optional<int> fold_int(const Expr &expr);
+    // `3000000000u32 + 1u32`. The width is the suffix. A value `fold_int` holds is not one.
+    struct WideInt {
+        uint64_t value = 0;
+        int bits = 32;
+        bool is_unsigned = false;
+    };
+    std::optional<WideInt> fold_wide_int(const Expr &expr);
+    // Replace that sum with the wrapped literal. False when `fold_int` already holds it.
+    bool rewrite_wide_int(std::unique_ptr<Expr> &expr);
     // A condition whose values are comptime, including an enumerator compare.
     // A local `const` whose initializer folds to `i32` does too. A `var` does not.
     std::optional<int> fold_condition(const Expr &expr);

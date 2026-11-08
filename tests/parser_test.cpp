@@ -924,7 +924,7 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source("func main() i32 { goto end; return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT_HAS(check, parsed.errors, "expected var");
     }
 
     {

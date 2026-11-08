@@ -281,7 +281,7 @@ void dump_stmt(const Stmt &stmt, std::string &out, int indent) {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Stmt::Block>) {
                 append_indent(out, indent);
-                out += node.unsafe_block ? "(block unsafe\n" : "(block\n";
+                out += node.comptime_block ? "(block comptime\n" : node.unsafe_block ? "(block unsafe\n" : "(block\n";
                 for (const auto &child : node.statements) {
                     if (child) {
                         dump_stmt(*child, out, indent + 1);
@@ -1195,6 +1195,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 Stmt::Block copy;
                 copy.loc = node.loc;
                 copy.unsafe_block = node.unsafe_block;
+                copy.comptime_block = node.comptime_block;
                 for (const auto &child : node.statements) {
                     copy.statements.push_back(child ? clone_stmt(*child) : nullptr);
                 }

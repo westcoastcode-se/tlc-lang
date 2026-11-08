@@ -1249,6 +1249,10 @@ Type Checker::check_file_const(VarDecl &written) {
         return type_invalid();
     }
     if (integer_const_type(got)) {
+        // `n + 1u32` when `n` is `3000000000u32` keeps that `u32`. It is not an `i32`.
+        if (written.init != nullptr && rewrite_wide_int(written.init)) {
+            return got;
+        }
         const std::optional<int> value = fold_int(*written.init);
         if (!value) {
             // `3000000000u32` keeps `u32`. It is not the compile-time `i32`.

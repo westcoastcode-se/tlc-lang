@@ -1036,18 +1036,6 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         eat(TokenKind::Semicolon);
         return make_stmt(Stmt::Expression{});
     }
-    if (check(TokenKind::KwGoto)) {
-        error_here("not supported yet");
-        ++pos_;
-        while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
-            if (check(TokenKind::LBrace)) {
-                break;
-            }
-            ++pos_;
-        }
-        eat(TokenKind::Semicolon);
-        return make_stmt(Stmt::Expression{});
-    }
     if (check(TokenKind::KwTest)) {
         error_here("test is only valid at file scope");
         parse_test();
@@ -1094,7 +1082,7 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
         return parse_const_local(true);
     }
     if (check(TokenKind::KwComptime)) {
-        // `comptime if`, `comptime switch`, and `comptime for` fold when the value does. `comptime { ... }` stays out.
+        // `comptime if`, `comptime switch`, and `comptime for` fold when the value does. `comptime { ... }` is that block.
         if (pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == TokenKind::KwIf) {
             const SourceLoc loc = peek().loc;
             ++pos_;
@@ -1131,7 +1119,19 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
             }
             return stmt;
         }
-        // `comptime { ... }` inside a function is reserved. A local `comptime func` is too.
+        // `comptime { ... }` runs at compile time. A local `comptime func` stays out.
+        if (pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == TokenKind::LBrace) {
+            const SourceLoc loc = peek().loc;
+            ++pos_;
+            std::unique_ptr<Stmt> stmt = parse_block();
+            if (stmt != nullptr) {
+                if (auto *block = std::get_if<Stmt::Block>(&stmt->data)) {
+                    block->comptime_block = true;
+                    block->loc = loc;
+                }
+            }
+            return stmt;
+        }
         diags_.error(peek().loc, "not supported yet");
         ++pos_;
         if (check(TokenKind::KwFunc)) {

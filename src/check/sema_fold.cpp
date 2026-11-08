@@ -899,6 +899,216 @@ std::optional<int> Checker::constant_index(const Expr &expr) {
     return walk(walk, expr, 0);
 }
 
+namespace {
+
+uint64_t wide_mask(int bits) {
+    if (bits >= 64) {
+        return ~uint64_t{0};
+    }
+    return (uint64_t{1} << static_cast<unsigned>(bits)) - 1u;
+}
+
+} // namespace
+
+std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
+    // `fold_int` owns a value that fits in signed `i32`. This walk keeps a wider suffix.
+    const auto walk = [&](const auto &self, const Expr &node, int depth,
+                          std::unordered_set<std::string> &seen) -> std::optional<WideInt> {
+        if (depth > 32) {
+            return std::nullopt;
+        }
+        return std::visit(
+            [&](const auto &item) -> std::optional<WideInt> {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Expr::Int>) {
+                    const int bits = item.suffix.bits == 0 ? 32 : item.suffix.bits;
+                    if (bits != 8 && bits != 16 && bits != 32 && bits != 64) {
+                        return std::nullopt;
+                    }
+                    if (item.value > wide_mask(bits)) {
+                        return std::nullopt;
+                    }
+                    // An unsuffixed number past `i32` is `type mismatch`, not a wide constant.
+                    if (item.suffix.bits == 0 && item.value > 2147483647ULL) {
+                        return std::nullopt;
+                    }
+                    WideInt wide;
+                    wide.value = item.value;
+                    wide.bits = bits;
+                    wide.is_unsigned = item.suffix.bits != 0 && item.suffix.is_unsigned;
+                    return wide;
+                } else if constexpr (std::is_same_v<T, Expr::Name>) {
+                    if (!seen.insert(item.text).second) {
+                        return std::nullopt;
+                    }
+                    const Symbol *symbol = lookup(item.text);
+                    std::optional<WideInt> folded;
+                    if (symbol != nullptr && symbol->is_constant && symbol->const_init != nullptr) {
+                        folded = self(self, *symbol->const_init, depth + 1, seen);
+                    }
+                    if (!folded && symbol != nullptr && plain_int_constant(symbol->type) &&
+                        (symbol->is_constant || symbol->folded_local)) {
+                        WideInt wide;
+                        wide.value = static_cast<uint32_t>(symbol->const_value);
+                        wide.bits = 32;
+                        wide.is_unsigned = false;
+                        folded = wide;
+                    }
+                    seen.erase(item.text);
+                    return folded;
+                } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                    if (item.postfix || item.expr == nullptr) {
+                        return std::nullopt;
+                    }
+                    const std::optional<WideInt> inner = self(self, *item.expr, depth + 1, seen);
+                    if (!inner) {
+                        return std::nullopt;
+                    }
+                    const uint64_t mask = wide_mask(inner->bits);
+                    WideInt wide = *inner;
+                    switch (item.op) {
+                    case TokenKind::Plus: return wide;
+                    case TokenKind::Minus: wide.value = (0u - inner->value) & mask; return wide;
+                    case TokenKind::Tilde: wide.value = (~inner->value) & mask; return wide;
+                    default: return std::nullopt;
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    if (item.lhs == nullptr || item.rhs == nullptr) {
+                        return std::nullopt;
+                    }
+                    switch (item.op) {
+                    case TokenKind::Plus:
+                    case TokenKind::Minus:
+                    case TokenKind::Star:
+                    case TokenKind::Slash:
+                    case TokenKind::Percent:
+                    case TokenKind::Amp:
+                    case TokenKind::Pipe:
+                    case TokenKind::Caret:
+                    case TokenKind::LtLt:
+                    case TokenKind::GtGt:
+                        break;
+                    default:
+                        return std::nullopt;
+                    }
+                    const auto piece = [&](const Expr &side) -> std::optional<WideInt> {
+                        if (const std::optional<WideInt> wide = self(self, side, depth + 1, seen)) {
+                            return wide;
+                        }
+                        if (const std::optional<int> narrow = fold_int(side)) {
+                            WideInt wide;
+                            wide.value = static_cast<uint32_t>(*narrow);
+                            wide.bits = 32;
+                            wide.is_unsigned = false;
+                            return wide;
+                        }
+                        return std::nullopt;
+                    };
+                    const std::optional<WideInt> left = piece(*item.lhs);
+                    const std::optional<WideInt> right = piece(*item.rhs);
+                    if (!left || !right) {
+                        return std::nullopt;
+                    }
+                    // Same suffix, or a signed `i32` converted into the wider operand.
+                    const WideInt *kept = nullptr;
+                    if (left->bits == right->bits && left->is_unsigned == right->is_unsigned) {
+                        kept = &*left;
+                    } else if (left->bits == 32 && !left->is_unsigned && (right->bits > 32 || right->is_unsigned)) {
+                        kept = &*right;
+                    } else if (right->bits == 32 && !right->is_unsigned && (left->bits > 32 || left->is_unsigned)) {
+                        kept = &*left;
+                    } else {
+                        return std::nullopt;
+                    }
+                    const auto as_kept = [&](const WideInt &from) -> uint64_t {
+                        if (kept->bits == 64 && !kept->is_unsigned && from.bits <= 32 && !from.is_unsigned) {
+                            return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(from.value)));
+                        }
+                        return from.value & wide_mask(kept->bits);
+                    };
+                    const uint64_t a = as_kept(*left);
+                    const uint64_t b = as_kept(*right);
+                    const uint64_t mask = wide_mask(kept->bits);
+                    const bool signed64 = kept->bits == 64 && !kept->is_unsigned;
+                    WideInt wide = *kept;
+                    switch (item.op) {
+                    case TokenKind::Plus: wide.value = (a + b) & mask; break;
+                    case TokenKind::Minus: wide.value = (a - b) & mask; break;
+                    case TokenKind::Star: wide.value = (a * b) & mask; break;
+                    case TokenKind::Amp: wide.value = (a & b) & mask; break;
+                    case TokenKind::Pipe: wide.value = (a | b) & mask; break;
+                    case TokenKind::Caret: wide.value = (a ^ b) & mask; break;
+                    case TokenKind::Slash:
+                    case TokenKind::Percent: {
+                        if (b == 0) {
+                            return std::nullopt;
+                        }
+                        if (signed64) {
+                            const int64_t sa = static_cast<int64_t>(a);
+                            const int64_t sb = static_cast<int64_t>(b);
+                            if (sa == static_cast<int64_t>(uint64_t{1} << 63) && sb == -1) {
+                                wide.value = item.op == TokenKind::Slash ? static_cast<uint64_t>(sa) : 0;
+                                break;
+                            }
+                            const int64_t result = item.op == TokenKind::Slash ? sa / sb : sa % sb;
+                            wide.value = static_cast<uint64_t>(result);
+                            break;
+                        }
+                        wide.value = (item.op == TokenKind::Slash ? a / b : a % b) & mask;
+                        break;
+                    }
+                    case TokenKind::LtLt:
+                        if (b >= static_cast<uint64_t>(kept->bits)) {
+                            return std::nullopt;
+                        }
+                        wide.value = (a << b) & mask;
+                        break;
+                    case TokenKind::GtGt:
+                        if (b >= static_cast<uint64_t>(kept->bits)) {
+                            return std::nullopt;
+                        }
+                        if (signed64) {
+                            wide.value = static_cast<uint64_t>(static_cast<int64_t>(a) >> static_cast<unsigned>(b));
+                        } else if (!kept->is_unsigned) {
+                            const uint64_t sign = uint64_t{1} << static_cast<unsigned>(kept->bits - 1);
+                            const int64_t sa = (a & sign) != 0 ? static_cast<int64_t>(a | ~mask) : static_cast<int64_t>(a);
+                            wide.value = static_cast<uint64_t>(sa >> static_cast<unsigned>(b)) & mask;
+                        } else {
+                            wide.value = (a >> static_cast<unsigned>(b)) & mask;
+                        }
+                        break;
+                    default: return std::nullopt;
+                    }
+                    return wide;
+                } else {
+                    return std::nullopt;
+                }
+            },
+            node.data);
+    };
+    std::unordered_set<std::string> seen;
+    return walk(walk, expr, 0, seen);
+}
+
+bool Checker::rewrite_wide_int(std::unique_ptr<Expr> &expr) {
+    if (expr == nullptr || fold_int(*expr)) {
+        return false;
+    }
+    const std::optional<WideInt> wide = fold_wide_int(*expr);
+    if (!wide) {
+        return false;
+    }
+    auto replaced = std::make_unique<Expr>();
+    Expr::Int number;
+    number.loc = expr_loc(*expr);
+    number.value = wide->value;
+    number.suffix.bits = wide->bits;
+    number.suffix.is_unsigned = wide->is_unsigned;
+    replaced->data = std::move(number);
+    expr = std::move(replaced);
+    return true;
+}
+
 std::optional<int> Checker::fold_int(const Expr &expr) {
     auto wrap = [](int64_t value) { return static_cast<int>(static_cast<uint32_t>(value)); };
     return std::visit(

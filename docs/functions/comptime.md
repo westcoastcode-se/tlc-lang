@@ -350,7 +350,28 @@ A call that does not fold is `not supported yet`.
 
 ## Conditions and switches
 
-`comptime { ... }` inside an ordinary function is `not supported yet`.
+`comptime { ... }` inside an ordinary function keeps the statements that are compile-time.
+
+A `return` of a compile-time value ends the function. A later statement is not emitted.
+
+A `var`, a runtime `const`, a call, and a loop inside that block are `not supported yet`. A local `comptime func` is `not supported yet`.
+
+```c
+func main() i32 {
+    comptime {
+        return 1;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movl $1, %eax                    # constant
+retq                             # return
+```
+
+`return 0` is not emitted.
 
 `comptime for` unrolls when the bounds fold, inside a [macro](macro.md) and outside one.
 

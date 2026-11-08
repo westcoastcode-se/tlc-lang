@@ -39,7 +39,6 @@ enum class TokenKind {
     KwFloat,
     KwFor,
     KwFunc,
-    KwGoto,
     KwIf,
     KwImport,
     KwInline,

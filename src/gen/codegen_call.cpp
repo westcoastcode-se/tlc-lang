@@ -341,6 +341,42 @@ bool CodeGen::expand_tuple_arg(std::vector<llvm::Value *> &args, const Expr &exp
     return true;
 }
 
+int CodeGen::append_variadic_struct(std::vector<llvm::Value *> &args, const TypedValue &value) {
+    if (value.value == nullptr || !value.value->getType()->isStructTy() || value.struct_id < 0 ||
+        value.struct_id >= static_cast<int>(structs_.size())) {
+        args.push_back(variadic_arg(value));
+        return 1;
+    }
+    auto *struct_ty = llvm::cast<llvm::StructType>(value.value->getType());
+    const StructLayout &layout = structs_[static_cast<std::size_t>(value.struct_id)];
+    const bool untagged = layout.is_union && layout.tag_enum < 0;
+    const CAbi abi = untagged ? c_abi_union(value.struct_id) : c_abi(struct_ty);
+    llvm::AllocaInst *slot = aligned_slot(struct_ty, std::max(abi.natural_align, 1u), "varg");
+    builder_.CreateStore(value.value, slot);
+    if (abi.memory || abi.parts.empty()) {
+        TypedValue pointer;
+        pointer.value = slot;
+        pointer.depth = 1;
+        args.push_back(variadic_arg(pointer));
+        return 1;
+    }
+    for (std::size_t index = 0; index < abi.parts.size(); ++index) {
+        llvm::Type *part = abi.parts[index];
+        const uint64_t offset = index < abi.offsets.size() ? abi.offsets[index] : 0;
+        TypedValue piece;
+        piece.value = load_at(slot, part, offset);
+        if (part->isFloatingPointTy()) {
+            piece.elem_float = true;
+            piece.elem_bits = part->getPrimitiveSizeInBits() >= 64 ? 64 : 32;
+        } else if (part->isIntegerTy()) {
+            piece.elem_bits = static_cast<int>(part->getIntegerBitWidth());
+            piece.elem_unsigned = true;
+        }
+        args.push_back(variadic_arg(piece));
+    }
+    return static_cast<int>(abi.parts.size());
+}
+
 void CodeGen::push_call_args(std::vector<llvm::Value *> &args, const std::vector<std::unique_ptr<Expr>> &exprs,
                              const FunctionDecl *decl, llvm::FunctionType *fty, unsigned &index, SourceLoc loc,
                              bool variadic) {
@@ -406,6 +442,10 @@ void CodeGen::push_call_args(std::vector<llvm::Value *> &args, const std::vector
         if (!past && value.is_tuple && !value.tuple_parts.empty() && value.value != nullptr && fty != nullptr &&
             index < fty->getNumParams() && fty->getParamType(index) != value.value->getType() &&
             split_tuple_value(args, value, value.tuple_parts, fty, index, loc)) {
+            continue;
+        }
+        if (past && variadic && value.struct_id >= 0 && value.value != nullptr && value.value->getType()->isStructTy()) {
+            index += static_cast<unsigned>(append_variadic_struct(args, value));
             continue;
         }
         llvm::Type *slot = !past && fty != nullptr && index < fty->getNumParams() ? fty->getParamType(index) : nullptr;
@@ -496,6 +536,9 @@ std::vector<llvm::Value *> CodeGen::pack_extern_args(llvm::Function *function, c
                     ++attr_index;
                 }
             }
+        } else if (attr_index >= function->getFunctionType()->getNumParams() && value.struct_id >= 0 &&
+                   value.value != nullptr && value.value->getType()->isStructTy()) {
+            attr_index += static_cast<unsigned>(append_variadic_struct(args, value));
         } else {
             llvm::Type *param = attr_index < function->getFunctionType()->getNumParams()
                                     ? function->getFunctionType()->getParamType(attr_index)

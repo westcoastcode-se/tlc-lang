@@ -2347,6 +2347,55 @@ void Checker::check_switch(const Stmt::Switch &node) {
 }
 
 void Checker::check_stmt(const Stmt &stmt) {
+    if (comptime_block_depth_ > 0) {
+        // `comptime { ... }` keeps compile-time statements. A `var` stays out.
+        const bool allowed = std::visit(
+            [](const auto &node) {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Stmt::Block> || std::is_same_v<T, Stmt::Return> ||
+                              std::is_same_v<T, Stmt::Assert> || std::is_same_v<T, Stmt::Break> ||
+                              std::is_same_v<T, Stmt::Continue> || std::is_same_v<T, Stmt::Case>) {
+                    return true;
+                } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                    return node.comptime_if;
+                } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                    return node.comptime_switch;
+                } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                    return node.comptime_for;
+                } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                    return node.is_comptime && node.is_const;
+                } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                    if (node.vars.empty()) {
+                        return false;
+                    }
+                    for (const VarDecl &var : node.vars) {
+                        if (!var.is_comptime) {
+                            return false;
+                        }
+                    }
+                    return true;
+                } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                    return node.expr == nullptr;
+                } else {
+                    return false;
+                }
+            },
+            stmt.data);
+        if (!allowed) {
+            const SourceLoc loc = std::visit(
+                [](const auto &node) -> SourceLoc {
+                    using Node = std::decay_t<decltype(node)>;
+                    if constexpr (std::is_same_v<Node, Stmt::Func>) {
+                        return node.decl != nullptr ? node.decl->loc : SourceLoc{};
+                    } else {
+                        return node.loc;
+                    }
+                },
+                stmt.data);
+            error(loc, "not supported yet");
+            return;
+        }
+    }
     if (macro_depth_ > 0) {
         const bool allowed = std::visit(
             [](const auto &node) {
@@ -2388,13 +2437,38 @@ void Checker::check_stmt(const Stmt &stmt) {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Stmt::Block>) {
                 // `unsafe { ... }` covers the statements. A nested function sets its own depth.
+                // `comptime { ... }` rejects a runtime statement in those statements.
                 const int extra = node.unsafe_block ? 1 : 0;
+                const int comptime_extra = node.comptime_block ? 1 : 0;
                 unsafe_depth_ += extra;
+                comptime_block_depth_ += comptime_extra;
                 push();
                 check_statements(const_cast<Stmt::Block &>(node).statements);
                 pop();
+                comptime_block_depth_ -= comptime_extra;
                 unsafe_depth_ -= extra;
             } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                if (comptime_block_depth_ > 0) {
+                    const auto block_value = [&](const Expr &value) {
+                        if (strict_comptime_expr(value)) {
+                            return true;
+                        }
+                        if (const auto *named = std::get_if<Expr::Name>(&value.data)) {
+                            const Symbol *symbol = lookup(named->text);
+                            return symbol != nullptr && symbol->is_constant;
+                        }
+                        return false;
+                    };
+                    bool ok = node.value == nullptr || block_value(*node.value);
+                    for (const auto &extra : node.extra) {
+                        if (extra != nullptr && !block_value(*extra)) {
+                            ok = false;
+                        }
+                    }
+                    if (!ok) {
+                        error(node.loc, "not supported yet");
+                    }
+                }
                 // Learning an omitted result. The real check of this body matches the type afterwards.
                 if (collect_returns_) {
                     // A `return` that is not reached does not choose the type.
@@ -3162,6 +3236,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         if (const Expr *src = promotable_init(*bind.value)) {
                             bind.value = clone_expr(*src);
                         }
+                        rewrite_wide_int(bind.value);
                         if (!strict_comptime_expr(*bind.value) && !comptime_address(*bind.value)) {
                             // `comptime const k = n` waits until the call substitutes `n`.
                             if (comptime_param_pending(bind.value.get())) {
@@ -3359,6 +3434,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                                 if (const Expr *src = promotable_init(*written.init)) {
                                     written.init = clone_expr(*src);
                                 }
+                                rewrite_wide_int(written.init);
                                 if (!strict_comptime_expr(*written.init) && !comptime_address(*written.init)) {
                                     // `comptime const k = n` waits until the call substitutes `n`.
                                     if (comptime_param_pending(written.init.get())) {
