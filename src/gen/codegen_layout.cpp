@@ -32,10 +32,48 @@ bool CodeGen::addressable(const Expr &expr) const {
 }
 
 const TraitDecl *CodeGen::trait_parent(uint32_t file, const TraitDecl *trait) const {
-    if (trait == nullptr || trait->parent_name.empty() || !trait->parent_package.empty()) {
+    if (trait == nullptr || trait->parent_name.empty()) {
         return nullptr;
     }
-    const int id = trait_named(file, trait->parent_name);
+    uint32_t home = file;
+    if (!trait->parent_package.empty()) {
+        if (graph_ == nullptr) {
+            return nullptr;
+        }
+        uint32_t declared = file;
+        for (const PackageNode &node : graph_->nodes) {
+            for (const TopDecl &decl : node.unit.decls) {
+                const auto *item = std::get_if<TraitDecl>(&decl.data);
+                if (item == trait) {
+                    declared = node.file_id;
+                }
+            }
+        }
+        const PackageNode *node = find_node(declared);
+        if (node == nullptr) {
+            return nullptr;
+        }
+        const PackageNode *target = nullptr;
+        for (const ImportDecl &import : node->unit.imports) {
+            if (import.form == ImportDecl::Form::Selective) {
+                continue;
+            }
+            const PackageNode *candidate = import_target(graph_, declared, import);
+            if (candidate == nullptr) {
+                continue;
+            }
+            const std::string binding = import.form == ImportDecl::Form::Alias ? import.alias : candidate->qualifier;
+            if (binding == trait->parent_package) {
+                target = candidate;
+                break;
+            }
+        }
+        if (target == nullptr) {
+            return nullptr;
+        }
+        home = target->file_id;
+    }
+    const int id = trait_named(home, trait->parent_name);
     if (id < 0 || id >= static_cast<int>(trait_decls_.size())) {
         return nullptr;
     }
@@ -990,7 +1028,10 @@ void CodeGen::prepare_enums() {
 }
 
 void CodeGen::install_local_struct(const StructDecl &item) {
-    if (local_tags_.empty() || item.name.empty() || !item.type_params.empty() || item.is_union) {
+    if (local_tags_.empty() || item.name.empty() || !item.type_params.empty()) {
+        return;
+    }
+    if (item.is_union && (!item.tag_name.empty() || item.fields.empty())) {
         return;
     }
     if (local_tags_.back().contains(item.name)) {
@@ -1000,11 +1041,13 @@ void CodeGen::install_local_struct(const StructDecl &item) {
     StructLayout layout;
     layout.name = item.name;
     layout.file_id = current_file_;
+    layout.is_union = item.is_union;
     layout.type = llvm::StructType::create(context_, "local." + item.name);
     structs_.push_back(std::move(layout));
     local_tags_.back()[item.name] = id;
     std::vector<llvm::Type *> body;
     std::vector<FieldLayout> fields;
+    bool union_took_init = false;
     for (const FieldDecl &field : item.fields) {
         const Lowered low = lower(current_file_, field.type_name, field.type_package, field.is_struct, field.indirections,
                                   field.is_array, field.array_len, false, field.elem_slice, field.shells);
@@ -1030,9 +1073,46 @@ void CodeGen::install_local_struct(const StructDecl &item) {
         slot.shells = low.shells;
         slot.is_tuple = low.is_tuple;
         slot.tuple_parts = low.tuple_parts;
-        slot.init = field.init.get();
+        if (!item.is_union) {
+            slot.init = field.init.get();
+        } else if (field.init != nullptr && item.tag_name.empty() && !union_took_init) {
+            slot.init = field.init.get();
+            union_took_init = true;
+        }
         body.push_back(slot.type);
         fields.push_back(std::move(slot));
+    }
+    if (item.is_union && !fields.empty()) {
+        // Same payload as a file-scope untagged union: alignment from the widest field, bytes at offset 0.
+        const llvm::DataLayout &data_layout = module_.getDataLayout();
+        int prefix = 0;
+        uint64_t prefix_size = 0;
+        unsigned best_align = 1;
+        uint64_t union_size = 0;
+        for (int index = 0; index < static_cast<int>(fields.size()); ++index) {
+            llvm::Type *field_type = fields[static_cast<std::size_t>(index)].type;
+            if (field_type == nullptr || !field_type->isSized()) {
+                continue;
+            }
+            const uint64_t field_size = data_layout.getTypeAllocSize(field_type).getFixedValue();
+            unsigned field_align = static_cast<unsigned>(data_layout.getABITypeAlign(field_type).value());
+            if (field_align == 0) {
+                field_align = 1;
+            }
+            union_size = std::max(union_size, field_size);
+            if (index == 0 || field_align > best_align || (field_align == best_align && field_size > prefix_size)) {
+                prefix = index;
+                prefix_size = field_size;
+                best_align = field_align;
+            }
+        }
+        llvm::Type *prefix_type = fields[static_cast<std::size_t>(prefix)].type;
+        if (prefix_type != nullptr) {
+            const uint64_t rounded = (union_size + best_align - 1) / best_align * best_align;
+            body.clear();
+            body.push_back(llvm::ArrayType::get(prefix_type, 0));
+            body.push_back(llvm::ArrayType::get(i8(), rounded == 0 ? 1 : rounded));
+        }
     }
     structs_[static_cast<std::size_t>(id)].type->setBody(body);
     structs_[static_cast<std::size_t>(id)].fields = std::move(fields);

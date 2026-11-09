@@ -1,0 +1,11 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func main() i32 {
+    var p Point;
+    p.x = 40;
+    assert(p.x == 40, "x");
+    return p.x + 2;
+}

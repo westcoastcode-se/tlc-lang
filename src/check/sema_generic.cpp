@@ -1886,6 +1886,14 @@ const TypedefDecl *Checker::find_tuple_alias_template(const std::string &name, u
 }
 
 const StructDecl *Checker::find_struct_template(const std::string &name, uint32_t &owner) const {
+    for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
+        const auto found = scope->generic_structs.find(name);
+        if (found == scope->generic_structs.end() || found->second == nullptr) {
+            continue;
+        }
+        owner = file_id_;
+        return found->second;
+    }
     for (const uint32_t id : files_in_package(file_id_)) {
         const auto file = struct_templates_.find(id);
         if (file == struct_templates_.end()) {
@@ -2031,6 +2039,13 @@ void Checker::instantiate_assoc(uint32_t owner_file, const StructDecl &templ, co
 }
 
 bool Checker::generic_struct_name(uint32_t file, const std::string &name) const {
+    if (file == file_id_) {
+        for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
+            if (scope->generic_structs.contains(name)) {
+                return true;
+            }
+        }
+    }
     for (const uint32_t id : files_in_package(file)) {
         const auto found = struct_templates_.find(id);
         if (found != struct_templates_.end() && found->second.contains(name)) {

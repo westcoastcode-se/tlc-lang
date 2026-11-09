@@ -688,7 +688,11 @@ The literal is the same value.
 
 `comptime const origin = Point{.x = 40, .y = 2}` then `return field(origin)` folds.
 
-A `const` passed to that function is `not supported yet`.
+`comptime const n = origin.x` is that field. `assert(origin.x == 40, "x")` folds. `comptime if (origin.x == 40)` and `comptime switch (origin.x)` keep that arm.
+
+`assert(row[0].x == 40, "x")` folds when `row` is a `comptime const` array of those structs.
+
+A `var` does not fold. `assert(p.x == 40, "x")` on `var p Point` is `not supported yet`. A `const` that is not `comptime` is `not supported yet` as that field and as an argument.
 
 That `field` is `comptime func field(p Point) i32 { return p.x + p.y; }`.
 
@@ -1433,7 +1437,7 @@ retq                             # return
 
 > **Warning:** A `var` array still loads.
 >
-> `comptime const n = row[0]` is 40. `assert(row[1] == 2, "x")` folds when `row` is `[_]i32{40, 2}`.
+> `comptime const n = row[0]` is 40. `assert(row[1] == 2, "x")` folds when `row` is `[_]i32{40, 2}`. `assert(row[0].x == 40, "x")` folds when `row` is a `comptime const` array of structs.
 >
 > An index outside that array is `index out of range`. A lone index of a `var` array still loads.
 >

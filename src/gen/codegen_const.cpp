@@ -853,8 +853,8 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
     if (array_ty == nullptr || !init.fields.empty() || init.elements.size() > array_ty->getNumElements()) {
         return nullptr;
     }
-    // `{4, 0...}` on a struct field zero-fills the elements the list does not name.
-    // A short list without `0...`, and a file-scope array, stay uninitialized.
+    // `{4, 0...}` zero-fills the elements the list does not name.
+    // A short list without `0...` stays uninitialized.
     const bool pad = zero_pad && init.zero_rest;
     if (init.elements.size() != array_ty->getNumElements() && !pad) {
         return nullptr;
@@ -914,7 +914,7 @@ llvm::Constant *CodeGen::const_array(const Expr::Init &init, const Binding &dest
     if (array_ty == nullptr) {
         return nullptr;
     }
-    return fill_array(init, array_ty, dest);
+    return fill_array(init, array_ty, dest, true);
 }
 
 llvm::Constant *CodeGen::const_array_base(const Expr &expr) {

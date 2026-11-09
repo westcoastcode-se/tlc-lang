@@ -209,7 +209,12 @@ std::unique_ptr<Stmt> Parser::parse_local_type() {
     bool kept = false;
     for (TopDecl &decl : scratch.decls) {
         if (auto *item = std::get_if<StructDecl>(&decl.data)) {
-            if (!item->type_params.empty() || item->is_union || item->is_extern) {
+            // An untagged union and a generic struct stay in the block. A tagged union,
+            // a generic union, an empty union, and `extern` do not.
+            const bool generic_union = !item->type_params.empty() && item->is_union;
+            const bool tagged = item->is_union && !item->tag_name.empty();
+            const bool empty_union = item->is_union && item->fields.empty() && item->tag_name.empty();
+            if (item->is_extern || generic_union || tagged || empty_union) {
                 diags_.error(item->loc, "not supported yet");
                 continue;
             }

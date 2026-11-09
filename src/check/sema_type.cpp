@@ -835,9 +835,12 @@ void Checker::inherit_traits() {
         }
         file_id_ = info.file_id;
         if (!info.parent_package.empty()) {
-            // `trait(pkg.Parent)` is not the qualified constraint `T pkg.Shape`.
-            error(info.parent_loc, "not supported yet");
-            info.parent_name.clear();
+            const int parent = imported_trait(info.file_id, info.parent_package, info.parent_name, info.parent_loc);
+            if (parent < 0) {
+                info.parent_name.clear();
+                continue;
+            }
+            info.parent_id = parent;
             continue;
         }
         if (info.parent_name == info.name) {
@@ -2225,13 +2228,35 @@ void Checker::install_local_type(const Stmt::LocalType &local) {
     }
     if (local.structure != nullptr) {
         const StructDecl &item = *local.structure;
-        if (item.name.empty() || !item.type_params.empty() || item.is_union || item.is_extern) {
+        const bool generic = !item.type_params.empty();
+        const bool tagged = item.is_union && !item.tag_name.empty();
+        const bool empty_union = item.is_union && item.fields.empty();
+        if (item.name.empty() || item.is_extern || (generic && item.is_union) || tagged || empty_union) {
             error(item.loc, "not supported yet");
             return;
         }
-        if (scopes_.back().symbols.contains(item.name)) {
+        if (scopes_.back().symbols.contains(item.name) || scopes_.back().generic_structs.contains(item.name)) {
             error(item.loc, "redefinition");
             return;
+        }
+        if (generic) {
+            owned_structs_.push_back(item);
+            StructDecl &stored = owned_structs_.back();
+            stored.name = item.name + ".local." + std::to_string(++local_generic_seq_);
+            scopes_.back().generic_structs.emplace(item.name, &stored);
+            return;
+        }
+        if (item.is_union) {
+            int inits = 0;
+            for (const FieldDecl &field : item.fields) {
+                if (field.init == nullptr) {
+                    continue;
+                }
+                if (inits > 0) {
+                    error(field.loc, "not supported yet");
+                }
+                ++inits;
+            }
         }
         const int id = static_cast<int>(structs_.size());
         StructInfo created;
@@ -2239,6 +2264,7 @@ void Checker::install_local_type(const Stmt::LocalType &local) {
         created.file_id = file_id_;
         created.loc = item.loc;
         created.align = item.align;
+        created.is_union = item.is_union;
         structs_.push_back(std::move(created));
         Symbol symbol;
         symbol.name = item.name;
@@ -2308,7 +2334,7 @@ void Checker::install_local_type(const Stmt::LocalType &local) {
             error(item.loc, "not supported yet");
             return;
         }
-        if (scopes_.back().symbols.contains(item.name)) {
+        if (scopes_.back().symbols.contains(item.name) || scopes_.back().generic_structs.contains(item.name)) {
             error(item.loc, "redefinition");
             return;
         }
@@ -2362,7 +2388,7 @@ void Checker::install_local_type(const Stmt::LocalType &local) {
             error(item.loc, "not supported yet");
             return;
         }
-        if (scopes_.back().symbols.contains(item.name)) {
+        if (scopes_.back().symbols.contains(item.name) || scopes_.back().generic_structs.contains(item.name)) {
             error(item.loc, "redefinition");
             return;
         }

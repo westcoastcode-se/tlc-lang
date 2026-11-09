@@ -125,7 +125,9 @@ A missing parent is `undeclared identifier`.
 
 A parent that is not a trait, or a cycle, is `type mismatch`.
 
-`trait(pkg.Parent)` is `not supported yet`.
+`trait(pkg.Parent)` copies that parent when the package is imported and `Parent` is exported.
+
+A missing package is `undeclared identifier`. A parent that is not exported is `Parent is not exported`.
 
 ## How a struct satisfies a trait
 

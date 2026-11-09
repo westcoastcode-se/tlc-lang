@@ -1,0 +1,9 @@
+import "geom";
+
+type Shape trait(geom.Parent) {
+    func extra() i32;
+}
+
+func main() i32 {
+    return 0;
+}

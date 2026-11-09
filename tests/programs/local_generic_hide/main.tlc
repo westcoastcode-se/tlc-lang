@@ -1,0 +1,18 @@
+type Box[T type] struct {
+    value T;
+};
+
+func main() i32 {
+    var outer i32 = 0;
+    {
+        type Box[T type] struct {
+            n T;
+        };
+        var b Box[i32];
+        b.n = 2;
+        outer = b.n;
+    }
+    var b Box[i32];
+    b.value = 40;
+    return b.value + outer;
+}

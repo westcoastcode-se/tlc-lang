@@ -1544,7 +1544,7 @@ class CodeGen {
     void store_each_element(llvm::Value *raw, llvm::Value *count, llvm::Type *elem, llvm::Constant *image);
     std::optional<int32_t> folded_sizeof(const Expr::Sizeof &node) const;
     llvm::Constant *const_array(const Expr::Init &init, const Binding &dest);
-    // `zero_pad` stores 0 for a short `{4, 0...}` on a struct array field. A file-scope array does not.
+    // `zero_pad` stores 0 for a short `{4, 0...}`. A list without `0...` does not.
     llvm::Constant *fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags,
                                bool zero_pad = false);
     // The constant array stored by `expr`, using that array's own global when `expr` is a name.

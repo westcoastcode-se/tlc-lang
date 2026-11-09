@@ -1,0 +1,14 @@
+func main() i32 {
+    type Num union {
+        n i32;
+        m i32;
+    };
+    var u Num;
+    u.n = 2;
+    type Held union {
+        n i32 = 40;
+        m i32;
+    };
+    var h Held;
+    return u.m + h.m;
+}

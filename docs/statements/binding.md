@@ -92,7 +92,7 @@ An array list may be shorter than the array.
 
 The elements it does not name stay uninitialized, unless the list ends with `0...`.
 
-> **Warning:** At file scope, a shorter list and a list that ends with `0...` are reported as `global initializer is not a constant` when code is emitted. `--check` accepts that list.
+> **Warning:** At file scope, a shorter list without `0...` is reported as `global initializer is not a constant` when code is emitted. `--check` accepts that list. A list that ends with `0...` stores 0.
 
 `const` is fully set by its initializer.
 

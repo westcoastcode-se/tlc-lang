@@ -3339,7 +3339,6 @@ int run_sema_tests() {
             "func main() i32 { return 0; }\n");
         EXPECT_HAS(check, errors, "undeclared identifier");
         EXPECT_HAS(check, errors, "type mismatch");
-        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {

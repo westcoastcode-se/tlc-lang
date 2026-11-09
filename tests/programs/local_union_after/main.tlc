@@ -1,0 +1,10 @@
+func main() i32 {
+    {
+        type Num union {
+            n i32;
+            m i32;
+        };
+    }
+    var u Num;
+    return 0;
+}

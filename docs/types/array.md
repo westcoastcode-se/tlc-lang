@@ -28,7 +28,9 @@ A complete list stores only the values it names.
 
 A file-scope array with no initializer is zero.
 
-The compiler reports a file-scope shorter list, and a file-scope list that ends with `0...`, as `global initializer is not a constant` when code is emitted. `--check` accepts that list.
+A file-scope list that ends with `0...` stores 0 in every element the list does not name.
+
+The compiler reports a file-scope shorter list, without `0...`, as `global initializer is not a constant` when code is emitted. `--check` accepts that list.
 
 ## Arrays of arrays
 

@@ -132,8 +132,8 @@ std::unique_ptr<Expr> folded_int(int value, SourceLoc loc) {
     return expr;
 }
 
-// A field of a struct literal, including `literal.inner.x`. A plain name is not a literal.
-// `resolve` yields a kept struct only when the name's initializer is a comptime call.
+// A field of a struct literal, including `literal.inner.x` and `row[0].x`.
+// `resolve` yields a comptime const struct or array, or a call that kept a literal.
 template <typename Resolve>
 const Expr *const_struct_field(const Expr &object, const std::string &field, Resolve &&resolve) {
     const Expr *cursor = &object;
@@ -156,11 +156,20 @@ const Expr *const_struct_field(const Expr &object, const std::string &field, Res
             return nullptr;
         }
         const auto at = static_cast<std::size_t>(number->value);
-        const auto *tuple = std::get_if<Expr::Init>(&index->base->data);
-        if (tuple == nullptr || !tuple->is_tuple || at >= tuple->elements.size() || tuple->elements[at] == nullptr) {
+        const Expr *base = index->base.get();
+        if (const auto *named = std::get_if<Expr::Name>(&base->data)) {
+            base = resolve(named->text);
+            if (base == nullptr) {
+                return nullptr;
+            }
+        }
+        const auto *list = std::get_if<Expr::Init>(&base->data);
+        // A tuple literal or a comptime const array. A struct field list is not indexed.
+        if (list == nullptr || (!list->is_tuple && !list->array_literal) || at >= list->elements.size() ||
+            list->elements[at] == nullptr) {
             return nullptr;
         }
-        cursor = tuple->elements[at].get();
+        cursor = list->elements[at].get();
     }
     if (const auto *call = std::get_if<Expr::Call>(&cursor->data)) {
         if (call->comptime_struct == nullptr) {
@@ -2946,7 +2955,7 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
 }
 
 const Expr *Checker::comptime_struct_field(const Expr &object, const std::string &field) {
-    // A handwritten `comptime const origin = Point{...}` is still loaded. Only a call that kept a literal folds.
+    // A `comptime const` struct or array folds. A `var` and a runtime `const` stay loaded.
     return const_struct_field(object, field, [&](const std::string &name) -> const Expr * {
         const Symbol *symbol = lookup(name);
         const Expr *init = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
@@ -2958,11 +2967,20 @@ const Expr *Checker::comptime_struct_field(const Expr &object, const std::string
         if (init == nullptr) {
             return nullptr;
         }
-        const auto *call = std::get_if<Expr::Call>(&init->data);
-        if (call == nullptr || call->comptime_struct == nullptr) {
+        if (const auto *call = std::get_if<Expr::Call>(&init->data)) {
+            if (call->comptime_struct == nullptr) {
+                return nullptr;
+            }
+            return call->comptime_struct.get();
+        }
+        const auto *literal = std::get_if<Expr::Init>(&init->data);
+        if (literal == nullptr || literal->is_tuple) {
             return nullptr;
         }
-        return call->comptime_struct.get();
+        if (!literal->fields.empty() || literal->array_literal) {
+            return init;
+        }
+        return nullptr;
     });
 }
 

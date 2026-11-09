@@ -1,0 +1,12 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+var row [4]i32 = {10, 0...};
+var spots [2]Point = {Point{.x = 20, .y = 2}, 0...};
+var grid [2][2]i32 = {{1, 0...}, {4, 5}};
+
+func main() i32 {
+    return row[0] + row[1] + row[2] + row[3] + spots[0].x + spots[0].y + spots[1].x + spots[1].y + grid[0][0] + grid[0][1] + grid[1][0] + grid[1][1];
+}

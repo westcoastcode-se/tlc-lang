@@ -1,0 +1,8 @@
+func main() i32 {
+    type Box[T type] struct {
+        value T;
+    };
+    var b Box[i32];
+    b.value = 40;
+    return b.value + 2;
+}

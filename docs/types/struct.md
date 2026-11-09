@@ -28,7 +28,11 @@ A pointer is written `*Point` and `*i32`, in a parameter, a result, and every ot
 
 A later `Point` is `not supported yet`. The same name in that block is `redefinition`. A nested block may declare `Point` again, and that name hides the outer one until the nested block ends.
 
-`type Box[T type] struct`, a union, a trait, and `export` or `extern` on the local type are `not supported yet`.
+`type Box[T type] struct` inside that block is that generic until the block ends. `var b Box[i32]` is one specialization. A later `Box[i32]` is `type mismatch`.
+
+An untagged `type Num union` inside that block is that union until the block ends. Its fields share one address. One field may carry a value. A second value is `not supported yet`.
+
+A tagged union, a generic union, an empty union, a trait, and `export` or `extern` on the local type are `not supported yet`.
 
 ```c
 func main() i32 {

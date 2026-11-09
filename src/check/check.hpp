@@ -136,6 +136,9 @@ struct Symbol {
 
 struct Scope {
     std::unordered_map<std::string, Symbol> symbols;
+    // `type Box[T type] struct` in this block. The decl lives in `owned_structs_`.
+    // The map dies with the scope, so a later `Box` is not this template.
+    std::unordered_map<std::string, StructDecl *> generic_structs;
     int function_id = 0;
 };
 
@@ -272,6 +275,8 @@ class Checker {
 
     std::vector<Scope> scopes_;
     int function_seq_ = 0;
+    // Disambiguates `type Box[T] struct` inside a function from a file-scope `Box`.
+    int local_generic_seq_ = 0;
     std::vector<StructInfo> structs_;
     // `fields()` yields `[]const Field`: `name []const u8` and `kind Type`.
     // Negative until `ensure_field_info` runs. `builtin.Field` replaces it when that struct is declared.

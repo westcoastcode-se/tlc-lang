@@ -1,0 +1,6 @@
+func main() i32 {
+    type Area trait {
+        func area() i32;
+    };
+    return 0;
+}

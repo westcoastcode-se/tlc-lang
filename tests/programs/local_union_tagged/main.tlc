@@ -1,0 +1,9 @@
+type Kind enum { A, B }
+
+func main() i32 {
+    type Num union(Kind) {
+        A struct { n i32; };
+        B struct { n i32; };
+    };
+    return 0;
+}

@@ -1,0 +1,10 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func main() i32 {
+    const p = Point{.x = 40, .y = 2};
+    comptime const n = p.x;
+    return n + 2;
+}

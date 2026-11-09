@@ -1,0 +1,28 @@
+type Point struct {
+    x i32;
+    y i32;
+};
+
+comptime const p = Point{.x = 40, .y = 2};
+comptime const n = p.x;
+
+comptime const row = [_]Point{
+    Point{.x = 40, .y = 1},
+    Point{.x = 1, .y = 1},
+};
+
+func main() i32 {
+    comptime const local = p.y;
+    assert(p.x == 40, "x");
+    assert(row[0].x == 40, "x");
+    assert(row[1].x == 1, "x");
+    comptime if (p.x != 40) {
+        return 0;
+    }
+    comptime switch (p.y) {
+    case 2:
+        return n + local;
+    default:
+        return 0;
+    }
+}
