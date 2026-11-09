@@ -532,6 +532,16 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 if (!known_type || (!fn->static_method && !receiver_ok)) {
                     error(fn->loc, "type mismatch");
                 }
+                // A slice alias is a view. A `const` alias is a constant value.
+                // Both take `self this` or `self *const this`. `self *this` is rejected.
+                if (!fn->static_method && receiver_shape && fn->params.front().indirections == 1 &&
+                    (fn->params.front().const_pointee & 1u) == 0) {
+                    Type alias;
+                    if (package_typedef(file_id_, fn->method_struct, alias) && alias.alias_id != 0 &&
+                        (is_slice(alias) || alias.is_const)) {
+                        error(fn->loc, "type mismatch");
+                    }
+                }
                 // The function is written beside its struct, enum, primitive alias, or slice alias.
                 // A static function may also sit beside a pointer alias, a sized-array alias, or a struct alias.
                 // Other files in the package can still call it.
@@ -2479,6 +2489,7 @@ void Checker::analyze_graph(const PackageGraph &graph, std::string_view default_
     flush_appends();
     publish_reflected_fields();
     publish_reflected_methods();
+    publish_reflected_aliases();
     if (!default_allocator.empty()) {
         validate_default_allocator(default_allocator);
     }

@@ -89,6 +89,7 @@ extern(abi="compiler") type Desc struct {
     name *const u8;
     fields []const Field;
     methods []const Method;
+    alias Type;
 }
 
 extern(abi="compiler") export type Function struct {
@@ -113,8 +114,8 @@ extern(abi="compiler") export type Other struct {
 // Function is a function. has_this is true when it has a receiver. generic is true
 // when it has type parameters. variadic is true when the parameter list ends with `...`.
 // Struct is a struct. generic is true when that struct is a specialization.
-// desc holds the spelling and the fields. Another package cannot name desc.
-// name, fields, and methods are comptime methods. The compiler supplies their bodies.
+// desc holds the spelling, the fields, and the alias target. Another package cannot name desc.
+// name, fields, methods, and alias are comptime methods. The compiler supplies their bodies.
 extern(abi="compiler") export type CompiledType union(TypeKind) {
     Other Other;
     Function Function;
@@ -151,6 +152,10 @@ extern(abi="compiler") export type Method struct {
 // Each parameter list is one element. A generic method is not listed.
 // A type with no methods has length 0.
 extern(abi="compiler") export comptime func CompiledType::methods(self *const this) []const Method;
+
+// The type this alias names, one step, not the fully expanded type.
+// Null when this type is not an alias. `typeof(Row)` stays `Row`.
+extern(abi="compiler") export comptime func CompiledType::alias(self *const this) Type;
 
 // `{0}` and `{1}` read elements of a compile-time tuple. `{{` and `}}` are braces.
 // A string element is copied as text. An integer element is decimal. The call is that text.

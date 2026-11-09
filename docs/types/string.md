@@ -58,13 +58,11 @@ An escape above 255 does not fit in that byte. `"\x100"` is `hex escape out of r
 
 A raw string is the same index.
 
-An index below 0 or past the last byte does not fold.
+An index below 0 or past the last byte is `index out of range`.
 
 The length does not include the terminating null, so `"hi"[2]` is not that null.
 
-The compiler reports `const n = "hi"[2]` as `global initializer is not a constant`.
-
-The same index in `assert` is `not supported yet`.
+The compiler reports `const n = "hi"[2]` and `assert("hi"[2] == 0)` as `index out of range`.
 
 A `var` used as the index at file scope is `global initializer is not a constant`.
 
@@ -102,9 +100,11 @@ A high bound below the low bound, or a bound past the last byte, does not fold.
 
 The length does not include the terminating null, so `"hello"[1:6]` is not a slice through that null.
 
-The compiler reports `const n = "hello"[1:4][3]`, `const n = "hello"[2:2][0]`, `const n = "hello"[3:1][0]`, and `const n = "hello"[1:9][0]` as `global initializer is not a constant`.
+An index of that slice outside its length is `index out of range`. `const n = "hello"[1:4][3]`, `const n = "hello"[2:2][0]`, and `assert("hello"[1:4][3] == 0)` are that error.
 
-The same index in `assert` is `not supported yet`.
+The compiler reports `const n = "hello"[3:1][0]` and `const n = "hello"[1:9][0]` as `global initializer is not a constant`.
+
+The same bound in `assert` is `not supported yet`.
 
 `.len` of a constant range folds, so `const n = "hello"[1:4].len` is 3.
 

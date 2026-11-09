@@ -68,7 +68,9 @@ A primitive alias can have methods, static functions, and `var Integer::ten`. A 
 
 A method on those aliases, and `var Ptr::name`, are reported as `type mismatch`. The builtin name `i32` cannot have a method or a static function either.
 
-`self *this` on a slice alias is reported as `not supported yet`.
+A slice alias is a view. Its methods are `self this` or `self *const this`. `self *this` is `type mismatch`.
+
+A `const` alias, such as `type C const i32`, follows that rule. `self *this` on `C` is `type mismatch`. `type Integer i32` is not constant, so `self *this` stays a pointer to that alias.
 
 ## Tuple aliases
 

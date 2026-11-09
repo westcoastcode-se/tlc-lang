@@ -2928,6 +2928,9 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
                 number = folded_local_int(*call.args[i - skip]);
             }
             if (!number) {
+                if (fold_wide_int(*call.args[i - skip])) {
+                    error(expr_loc(*call.args[i - skip]), "value does not fit");
+                }
                 return false;
             }
             bound.is_value = true;

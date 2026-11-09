@@ -68,7 +68,7 @@ A slice alias such as `type string_view []const u8` is a different owner.
 
 Its value methods are library source in [`std/unicode`](../std/unicode.md) and [`std/ascii`](../std/ascii.md).
 
-`self *this` on that alias is a pointer to the slice.
+`self *this` on that alias is `type mismatch`. The receiver is `self this` or `self *const this`. A `const` alias follows that rule.
 
 ## Templates on the alias
 

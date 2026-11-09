@@ -1901,6 +1901,18 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     }
                     return std::nullopt;
                 } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    // `const N = row.len` is that array's length. A string's `.len` folds the same way.
+                    if (item.field == "len" && item.base != nullptr) {
+                        if (const auto *named = std::get_if<Expr::Name>(&item.base->data)) {
+                            if (const Binding *global = find_global(named->text);
+                                global != nullptr && global->is_array && !global->is_slice && global->array_len >= 0) {
+                                return as_int(32, false);
+                            }
+                        }
+                        if (fold(node)) {
+                            return as_int(32, false);
+                        }
+                    }
                     if (const Binding *fn = function_designator(file, node)) {
                         return function_pointer_type(*fn);
                     }
@@ -1961,6 +1973,13 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                         low.depth = 1;
                         low.elem_bits = 8;
                         low.elem_unsigned = true;
+                        low.type = ptr_type();
+                        return low;
+                    }
+                    if (item.type_alias) {
+                        Lowered low;
+                        low.depth = 1;
+                        low.struct_id = type_struct_id_ >= 0 ? type_struct_id_ : synthetic_type_id;
                         low.type = ptr_type();
                         return low;
                     }

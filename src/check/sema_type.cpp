@@ -262,9 +262,10 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
             }
             const bool marked = item->extern_compiler && item->is_extern && !item->extern_c;
             if (item->name == "Desc") {
-                const bool fields = item->fields.size() == 3 && named_ptr_field(item->fields[0], "name", "u8", true, false) &&
+                const bool fields = item->fields.size() == 4 && named_ptr_field(item->fields[0], "name", "u8", true, false) &&
                                     named_slice_field(item->fields[1], "fields", "Field", true, false) &&
-                                    named_slice_field(item->fields[2], "methods", "Method", true, false);
+                                    named_slice_field(item->fields[2], "methods", "Method", true, false) &&
+                                    named_plain_field(item->fields[3], "alias", "Type", false);
                 keep("Desc", marked && !item->exported && !item->is_union && item->tag_name.empty() && fields, item->loc);
             } else if (item->name == "Function") {
                 const bool fields = item->fields.size() == 4 &&
@@ -441,6 +442,11 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                 keep("CompiledType.fields", head && result_slice(*fn, "Field", true), fn->loc);
             } else if (fn->name == "methods") {
                 keep("CompiledType.methods", head && result_slice(*fn, "Method", true), fn->loc);
+            } else if (fn->name == "alias") {
+                const bool as_type = fn->results.size() == 1 && fn->results[0].type_name == "Type" &&
+                                     fn->results[0].type_package.empty() && fn->results[0].indirections == 0 &&
+                                     fn->results[0].optional == 0 && !fn->results[0].is_array && !fn->results[0].is_tuple;
+                keep("CompiledType.alias", head && as_type, fn->loc);
             } else if (fn->extern_compiler) {
                 fail(fn->loc);
             }
@@ -569,6 +575,7 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                               "TypeKind",    "Type",             "Allocator",      "allocator",
                               "malloc[T]",   "alloc[T]",         "alloc[T,n]",     "realloc[T]",
                               "realloc[T,n]", "CompiledType.name", "CompiledType.fields", "CompiledType.methods",
+                              "CompiledType.alias",
                               "Malloc.malloc", "Malloc.free",
                               "Malloc.realloc", "Frame",          "StackTrace",
                               "StackTrace.get", "StackTrace.free", "va",          "panic",
@@ -2836,14 +2843,19 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         type.is_const = true;
     }
     // The name is a different type from its representation. A cast confirms either side.
+    // The target keeps one step: `type B A` names `A`, and `type Grid [4]Row` names `[4]Row`.
     Type distinct = type;
     if (reserved_id == 0) {
         distinct.alias_id = next_alias_id_++;
         alias_names_.push_back(item.name);
         alias_file_.push_back(file_id_);
+        alias_targets_.emplace(distinct.alias_id, type);
         typedefs_[file_id_].emplace(item.name, distinct);
     } else {
         distinct.alias_id = reserved_id;
+        Type peeled = distinct;
+        peeled.alias_id = 0;
+        alias_targets_.insert_or_assign(reserved_id, std::move(peeled));
         typedefs_[file_id_][item.name] = distinct;
     }
     // `type Type *const CompiledType`. typeof returns this alias, not a copy of the union.
@@ -3736,6 +3748,119 @@ void Checker::publish_reflected_methods() {
         }
     }
     const_cast<PackageGraph *>(graph_)->reflected_methods = std::move(table);
+}
+
+ReflectedField Checker::reflect_alias_type(const Type &type) const {
+    ReflectedField out;
+    out.type = type_desc(type);
+    // A pointer and an array already spell const on the child. `const i32` does not.
+    if (type.is_const && type.kind != TypeKind::Pointer && type.kind != TypeKind::Array &&
+        type.kind != TypeKind::Invalid && out.type != "invalid") {
+        out.type = "const " + out.type;
+    }
+    const TypeFacts facts = classify_type_facts(type);
+    out.arm = facts.arm;
+    out.generic = facts.generic;
+    out.variadic = facts.variadic;
+    return out;
+}
+
+bool Checker::alias_of_spelling(const std::string &spelling, ReflectedField &out) const {
+    if (spelling.empty()) {
+        return false;
+    }
+    bool found = false;
+    for (const auto &file : typedefs_) {
+        for (const auto &item : file.second) {
+            if (item.second.alias_id <= 0 || type_desc(item.second) != spelling) {
+                continue;
+            }
+            const auto target = alias_targets_.find(item.second.alias_id);
+            if (target == alias_targets_.end()) {
+                continue;
+            }
+            const ReflectedField reflected = reflect_alias_type(target->second);
+            if (reflected.type.empty() || reflected.type == "invalid") {
+                continue;
+            }
+            if (!found) {
+                out = reflected;
+                found = true;
+                continue;
+            }
+            if (out.type != reflected.type || out.arm != reflected.arm || out.generic != reflected.generic ||
+                out.variadic != reflected.variadic || out.has_this != reflected.has_this) {
+                return false;
+            }
+        }
+    }
+    return found;
+}
+
+bool Checker::alias_target_expr(const Expr &expr, ReflectedField &out) {
+    const Expr *cursor = &expr;
+    for (int depth = 0; cursor != nullptr && depth < 8; ++depth) {
+        if (const auto *info = std::get_if<Expr::Typeof>(&cursor->data)) {
+            return alias_of_spelling(info->canonical, out);
+        }
+        if (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
+            const Symbol *symbol = lookup(named->text);
+            if (symbol == nullptr || symbol->const_init == nullptr || symbol->const_init == cursor) {
+                return false;
+            }
+            cursor = symbol->const_init;
+            continue;
+        }
+        if (const auto *star = std::get_if<Expr::Unary>(&cursor->data)) {
+            if (star->postfix || star->expr == nullptr ||
+                (star->op != TokenKind::Star && star->op != TokenKind::Amp)) {
+                return false;
+            }
+            cursor = star->expr.get();
+            continue;
+        }
+        return false;
+    }
+    return false;
+}
+
+void Checker::publish_reflected_aliases() {
+    if (graph_ == nullptr) {
+        return;
+    }
+    std::unordered_map<std::string, ReflectedField> table;
+    std::unordered_set<std::string> ambiguous;
+    for (const auto &file : typedefs_) {
+        for (const auto &item : file.second) {
+            if (item.second.alias_id <= 0) {
+                continue;
+            }
+            const std::string spelling = type_desc(item.second);
+            if (spelling.empty() || spelling == "invalid" || ambiguous.contains(spelling)) {
+                continue;
+            }
+            const auto target = alias_targets_.find(item.second.alias_id);
+            if (target == alias_targets_.end()) {
+                continue;
+            }
+            ReflectedField reflected = reflect_alias_type(target->second);
+            if (reflected.type.empty() || reflected.type == "invalid") {
+                continue;
+            }
+            const auto have = table.find(spelling);
+            if (have == table.end()) {
+                table.emplace(spelling, std::move(reflected));
+                continue;
+            }
+            const ReflectedField &old = have->second;
+            if (old.type != reflected.type || old.arm != reflected.arm || old.generic != reflected.generic ||
+                old.variadic != reflected.variadic || old.has_this != reflected.has_this) {
+                table.erase(have);
+                ambiguous.insert(spelling);
+            }
+        }
+    }
+    const_cast<PackageGraph *>(graph_)->reflected_aliases = std::move(table);
 }
 
 } // namespace tlc

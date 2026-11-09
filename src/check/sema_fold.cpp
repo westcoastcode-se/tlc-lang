@@ -1286,6 +1286,72 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (node.lhs == nullptr || node.rhs == nullptr) {
                     return std::nullopt;
                 }
+                if (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) {
+                    const auto *left_call = std::get_if<Expr::Call>(&node.lhs->data);
+                    const auto *right_call = std::get_if<Expr::Call>(&node.rhs->data);
+                    const bool alias_cmp = (left_call != nullptr && left_call->type_alias) ||
+                                           (right_call != nullptr && right_call->type_alias);
+                    if (alias_cmp) {
+                        struct TypeId {
+                            bool null_type = false;
+                            std::string spelling;
+                            int arm = 0;
+                            bool has_this = false;
+                            bool generic = false;
+                            bool variadic = false;
+                        };
+                        const auto identity = [&](const Expr &side) -> std::optional<TypeId> {
+                            if (std::holds_alternative<Expr::Nullptr>(side.data)) {
+                                TypeId id;
+                                id.null_type = true;
+                                return id;
+                            }
+                            if (const auto *info = std::get_if<Expr::Typeof>(&side.data)) {
+                                if (info->canonical.empty()) {
+                                    return std::nullopt;
+                                }
+                                TypeId id;
+                                id.spelling = info->canonical;
+                                id.arm = info->type_arm;
+                                id.has_this = info->type_has_this;
+                                id.generic = info->type_generic;
+                                id.variadic = info->type_variadic;
+                                return id;
+                            }
+                            if (const auto *call = std::get_if<Expr::Call>(&side.data)) {
+                                if (!call->type_alias) {
+                                    return std::nullopt;
+                                }
+                                TypeId id;
+                                if (call->alias_null || call->alias_canonical.empty()) {
+                                    id.null_type = true;
+                                    return id;
+                                }
+                                id.spelling = call->alias_canonical;
+                                id.arm = call->alias_arm;
+                                id.has_this = call->alias_has_this;
+                                id.generic = call->alias_generic;
+                                id.variadic = call->alias_variadic;
+                                return id;
+                            }
+                            return std::nullopt;
+                        };
+                        if (const std::optional<TypeId> left = identity(*node.lhs)) {
+                            if (const std::optional<TypeId> right = identity(*node.rhs)) {
+                                const bool same = left->null_type == right->null_type &&
+                                                  (left->null_type ||
+                                                   (left->spelling == right->spelling && left->arm == right->arm &&
+                                                    left->has_this == right->has_this &&
+                                                    left->generic == right->generic &&
+                                                    left->variadic == right->variadic));
+                                if (node.op == TokenKind::EqEq) {
+                                    return same ? 1 : 0;
+                                }
+                                return same ? 0 : 1;
+                            }
+                        }
+                    }
+                }
                 if (const auto *left_of = std::get_if<Expr::Typeof>(&node.lhs->data)) {
                     if (const auto *right_of = std::get_if<Expr::Typeof>(&node.rhs->data)) {
                         if (const std::optional<std::string> left_type = type_constant(*node.lhs)) {
@@ -1667,7 +1733,7 @@ bool Checker::argument_is_comptime(const Expr &arg) {
     if (constant_string(arg, seen)) {
         return true;
     }
-    if (fold_int(arg)) {
+    if (fold_int(arg) || fold_wide_int(arg)) {
         return true;
     }
     const auto *tuple = std::get_if<Expr::Init>(&arg.data);
@@ -2130,6 +2196,13 @@ std::optional<std::string> Checker::comptime_spec_piece(const Expr &expr) {
         }
         if (const std::optional<int> number = fold_int(value)) {
             return spec_int_piece(*number);
+        }
+        // `3000000000u32` does not fit in the compile-time `i32`. The suffix stays in the spelling.
+        if (const std::optional<WideInt> wide = fold_wide_int(value)) {
+            std::string piece = wide->is_unsigned ? "u" : "i";
+            piece += std::to_string(wide->bits);
+            piece += spec_hex(wide->value, wide->bits >= 4 ? wide->bits / 4 : 1);
+            return piece;
         }
         if (const std::optional<FoldedNumber> number = fold_number(value); number && number->is_float) {
             if (number->wide) {

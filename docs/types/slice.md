@@ -26,7 +26,7 @@ A const array converts to `[]const T`, and `row[:]` is that slice. `[]const T` d
 
 `type Pair [2]i32` does not convert to `[]i32`.
 
-`Row` can have value methods, written `func Row::first(self this) i32`. `self *this` on that alias is a pointer to the slice.
+`Row` can have methods, written `func Row::first(self this) i32` or `func Row::at(self *const this, i i32) i32`. `self *this` on that alias is `type mismatch`.
 
 The library type [`string_view`](../std/unicode.md) is `type string_view []const u8` in `lib/tlc/std/unicode` and in `lib/tlc/std/ascii`.
 

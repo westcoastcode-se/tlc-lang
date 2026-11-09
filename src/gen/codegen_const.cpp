@@ -1309,7 +1309,7 @@ llvm::StructType *CodeGen::type_desc_type() {
     if (type_desc_ty_ != nullptr) {
         return type_desc_ty_;
     }
-    // `builtin.Desc` is `{ name *const u8, fields []const Field, methods []const Method }`.
+    // `builtin.Desc` is `{ name *const u8, fields []const Field, methods []const Method, alias Type }`.
     // The synthetic struct is that same shape when Desc has not been laid out.
     if (desc_struct_id_ >= 0 && desc_struct_id_ < static_cast<int>(structs_.size())) {
         llvm::StructType *desc = structs_[static_cast<std::size_t>(desc_struct_id_)].type;
@@ -1319,7 +1319,7 @@ llvm::StructType *CodeGen::type_desc_type() {
         }
     }
     auto *type = llvm::StructType::create(context_, "tlc.type");
-    type->setBody({ptr_type(), slice_type(), slice_type()});
+    type->setBody({ptr_type(), slice_type(), slice_type(), ptr_type()});
     type_desc_ty_ = type;
     return type;
 }
@@ -1384,8 +1384,21 @@ llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
             }
         }
     }
+    llvm::Constant *alias = llvm::ConstantPointerNull::get(ptr_type());
+    if (graph_ != nullptr) {
+        const auto reflected = graph_->reflected_aliases.find(text);
+        if (reflected != graph_->reflected_aliases.end()) {
+            llvm::Constant *kind = type_kind_ptr(reflected->second.type, reflected->second.arm, reflected->second.has_this,
+                                                 reflected->second.generic, reflected->second.variadic);
+            if (kind != nullptr) {
+                alias = kind;
+            }
+        }
+    }
     llvm::StructType *desc_ty = type_desc_type();
-    if (desc_ty->getNumElements() >= 3) {
+    if (desc_ty->getNumElements() >= 4) {
+        global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(text), fields, methods, alias}));
+    } else if (desc_ty->getNumElements() >= 3) {
         global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(text), fields, methods}));
     } else {
         global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(text), fields}));

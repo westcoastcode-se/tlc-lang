@@ -301,6 +301,8 @@ class Checker {
     std::vector<std::string> alias_names_{""};
     // alias_file_[id] is the file that wrote that alias. Index 0 is unused.
     std::vector<uint32_t> alias_file_{0};
+    // The type an alias names, one step. The outer alias id is not on this type.
+    std::unordered_map<int, Type> alias_targets_;
     int next_alias_id_ = 1;
     struct EnumInfo {
         std::string name;
@@ -561,6 +563,13 @@ class Checker {
     void publish_reflected_fields();
     // Writes `reflected_methods` after every method is registered.
     void publish_reflected_methods();
+    // Writes `reflected_aliases` after every alias is registered.
+    void publish_reflected_aliases();
+    // The one-step target of an alias spelling. False when that type is not an alias.
+    bool alias_of_spelling(const std::string &spelling, ReflectedField &out) const;
+    // `typeof` and a comptime name of one. False when the expression is not an alias.
+    bool alias_target_expr(const Expr &expr, ReflectedField &out);
+    ReflectedField reflect_alias_type(const Type &type) const;
     // `typeof` of a tuple. Element `i` is a field named `"i"` whose kind is that element's type.
     void note_tuple_fields(const Type &type);
     bool is_builtin_fmt(const Expr::Call &call);

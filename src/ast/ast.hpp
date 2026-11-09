@@ -166,6 +166,15 @@ struct Expr {
         mutable bool type_fields = false;
         // Set while checking when the callee is `Type.methods()`.
         mutable bool type_methods = false;
+        // Set while checking when the callee is `Type.alias()`.
+        mutable bool type_alias = false;
+        // True when `alias()` is null. The spelling below is the one-step target.
+        mutable bool alias_null = true;
+        mutable std::string alias_canonical;
+        mutable int alias_arm = 0;
+        mutable bool alias_has_this = false;
+        mutable bool alias_generic = false;
+        mutable bool alias_variadic = false;
         // A comptime method call whose receiver was a comptime value. The result stays comptime.
         mutable bool comptime_call = false;
         // The parameter list selected for this call. Null when the name has one list.
@@ -222,6 +231,8 @@ struct Expr {
         mutable int tuple_index = -1;
         // The base is a slice. The element is readonly.
         mutable bool slice_element = false;
+        // A constant string index outside the length was already reported.
+        mutable bool range_reported = false;
     };
     struct Sizeof {
         SourceLoc loc{};

@@ -14,13 +14,15 @@ Two `typeof` expressions are constants, so `assert(typeof(i32) == typeof(i32))` 
 
 ## The name and the fields
 
-`name`, `fields`, and `methods` are comptime methods. `typeof(n).name()` calls `name`. `comptime const t = typeof(n)` then `t.name()` calls it. A `var` or a `const` is `not supported yet`.
+`name`, `fields`, `methods`, and `alias` are comptime methods. `typeof(n).name()` calls `name`. `comptime const t = typeof(n)` then `t.name()` calls it. A `var` or a `const` is `not supported yet`.
 
 `t.name()` returns the diagnostic spelling as `*const u8`, and a store through that pointer is `type mismatch`.
 
 `t.fields()` returns `[]const Field`, the fields of a named struct.
 
 `t.methods()` returns `[]const Method`, the methods of a named struct, an enum, or an alias, in the order they are written. A generic method is not listed.
+
+`t.alias()` returns the type an alias names, one step. It is null when the type is not an alias. `typeof(Row)` for `type Row [4]i32` stays `Row`, and `typeof(Row).alias()` is `typeof([4]i32)`. `type Next Count` names `Count`, not `i32`. `type Grid [4]Row` names `[4]Row`, not `[4][4]i32`.
 
 A tuple is that same list, one element per value, and `fields[i].name` is the index `"0"`, `"1"`, and so on.
 
@@ -34,7 +36,9 @@ Assigning an element is `type mismatch`.
 
 ## Arrays
 
-`typeof(T)` when `T` is an array is that array, the same value as `typeof([4]i32)`.
+`typeof([4]i32)` is that array. `typeof` does not decay it.
+
+`typeof(Row)` for `type Row [4]i32` is `Row`. It is not the same value as `typeof([4]i32)`. `typeof(Row).alias()` is that array.
 
 `typeof(*T)` when `T` is an array, and `typeof([4]T)`, are `not supported yet`.
 

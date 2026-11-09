@@ -818,7 +818,7 @@ retq                             # return
 
 A `var` of the struct is `not supported yet`.
 
-A value that does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
+A field or a tuple element may be `3000000000u32`. That value keeps the suffix. The same bits passed to a comptime `i32`, or written as `3000000000i32`, are `value does not fit`.
 
 A data pointer field is `global initializer is not a constant`.
 

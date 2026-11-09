@@ -63,6 +63,9 @@ struct PackageGraph {
     // Methods of that spelling, in source order. One entry per parameter list.
     // Absent or empty means the type has no methods. `generic` stays false.
     std::unordered_map<std::string, std::vector<ReflectedField>> reflected_methods;
+    // One-step target of an alias spelling. Absent means the type is not an alias.
+    // `name` is unused. `type` is the spelling `typeof` uses for that target.
+    std::unordered_map<std::string, ReflectedField> reflected_aliases;
     // Specialized structs in checker id order. Concrete structs are numbered first.
     std::vector<StructSpecNote> struct_specs;
     // Linker arguments from packages loaded out of the vendor root or the

@@ -1,0 +1,38 @@
+import "builtin";
+
+type Point struct {
+    x i32;
+    y i32;
+};
+
+type Row [4]i32;
+type Grid [4]Row;
+type Count i32;
+type Alias Point;
+type Next Count;
+
+func main() i32 {
+    assert(typeof(Row) != typeof([4]i32), "row");
+    assert(typeof(Row).alias() == typeof([4]i32), "under");
+    assert(typeof(i32).alias() == null, "plain");
+    assert(typeof(Count).alias() == typeof(i32), "count");
+    assert(typeof(Count).fields().len == 0, "count fields");
+    assert(typeof(Alias) != typeof(Point), "alias");
+    assert(typeof(Alias).alias() == typeof(Point), "alias under");
+    assert(typeof(Alias).fields().len == 2, "alias fields");
+    assert(typeof(Next).alias() == typeof(Count), "next");
+    assert(typeof(Next).alias() != typeof(i32), "next leaf");
+    assert(typeof(Grid).alias() != typeof(Grid), "grid");
+    assert(typeof(Grid).alias() != typeof([4][4]i32), "grid leaf");
+    assert(typeof(Grid).alias() != null, "grid null");
+    if (typeof(Row).alias() != typeof([4]i32)) {
+        return 1;
+    }
+    if (typeof(i32).alias() != null) {
+        return 2;
+    }
+    if (typeof(Alias).fields().len != 2) {
+        return 3;
+    }
+    return 42;
+}

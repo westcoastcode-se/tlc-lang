@@ -1003,6 +1003,13 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.type_name = node.type_name;
                 copy.type_fields = node.type_fields;
                 copy.type_methods = node.type_methods;
+                copy.type_alias = node.type_alias;
+                copy.alias_null = node.alias_null;
+                copy.alias_canonical = node.alias_canonical;
+                copy.alias_arm = node.alias_arm;
+                copy.alias_has_this = node.alias_has_this;
+                copy.alias_generic = node.alias_generic;
+                copy.alias_variadic = node.alias_variadic;
                 copy.selected = node.selected;
                 copy.trait_cast = node.trait_cast;
                 copy.trait_method = node.trait_method;
@@ -1032,6 +1039,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.loc = node.loc;
                 copy.tuple_index = node.tuple_index;
                 copy.slice_element = node.slice_element;
+                copy.range_reported = node.range_reported;
                 copy.is_range = node.is_range;
                 copy.base = node.base ? clone_expr(*node.base) : nullptr;
                 copy.index = node.index ? clone_expr(*node.index) : nullptr;

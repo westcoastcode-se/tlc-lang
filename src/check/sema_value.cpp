@@ -1158,6 +1158,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 continue;
                             }
                             check_call_arg(*node.args[i], type_of_param(fn->params[i]));
+                            // `3000000000u32` does not fit in a comptime `i32`. The suffix already said so
+                            // when the literal itself was `i32`.
+                            const Param &param = fn->params[i];
+                            // A `comptime func` takes every parameter as a compile-time value.
+                            // `comptime n i32` on an ordinary function is the same slot.
+                            const bool i32_param = (fn->is_comptime || param.is_comptime) && param.type_name == "i32" &&
+                                                   param.type_package.empty() && param.indirections == 0 &&
+                                                   param.optional == 0 && !param.is_array && !param.is_tuple &&
+                                                   !param.is_struct && !param.is_enum && param.shells.empty();
+                            if (diags_.size() == before && i32_param && !fold_int(*node.args[i]) &&
+                                !folded_local_int(*node.args[i]) && fold_wide_int(*node.args[i])) {
+                                error(expr_loc(*node.args[i]), "value does not fit");
+                            }
                             if (diags_.size() == before &&
                                 (unmarked_comptime_arg(*node.args[i]) ||
                                  (!comptime_method_base(*node.args[i]) && !argument_is_comptime(*node.args[i]) &&
@@ -1524,7 +1537,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 return type_invalid();
                             }
-                            if (selector->field != "name" && selector->field != "fields" && selector->field != "methods") {
+                            if (selector->field != "name" && selector->field != "fields" && selector->field != "methods" &&
+                                selector->field != "alias") {
                                 error(node.loc, "undeclared identifier");
                                 for (const auto &arg : node.args) {
                                     check_expr(*arg, true);
@@ -1538,11 +1552,30 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 }
                                 return type_invalid();
                             }
-                            // `name`, `fields`, and `methods` are comptime methods. `typeof` is a type.
+                            // `name`, `fields`, `methods`, and `alias` are comptime methods. `typeof` is a type.
                             const std::size_t base_mark = diags_.size();
                             require_comptime_method_call(node, selector->base.get(), nullptr);
                             if (diags_.size() != base_mark) {
                                 return type_invalid();
+                            }
+                            if (selector->field == "alias") {
+                                node.type_alias = true;
+                                node.alias_null = true;
+                                ReflectedField target;
+                                if (selector->base != nullptr && alias_target_expr(*selector->base, target)) {
+                                    node.alias_null = false;
+                                    node.alias_canonical = std::move(target.type);
+                                    node.alias_arm = target.arm;
+                                    node.alias_has_this = target.has_this;
+                                    node.alias_generic = target.generic;
+                                    node.alias_variadic = target.variadic;
+                                }
+                                const Type result = this->type_value();
+                                if (result.kind == TypeKind::Invalid) {
+                                    error(node.loc, "type mismatch");
+                                    return type_invalid();
+                                }
+                                return result;
                             }
                             if (selector->field == "fields" || selector->field == "methods") {
                                 const Type slice = selector->field == "fields" ? type_field_slice() : type_method_slice();
@@ -2256,6 +2289,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 {
                     InitPush push(*this, std::move(step));
                     base = check_raw(*node.base, true);
+                }
+                // `"hi"[2]` and `"hello"[1:4][3]` are outside the constant bytes.
+                // A `var` index still loads. A quiet probe does not record the diagnostic.
+                if (!quiet_ && !node.range_reported && node.base != nullptr && node.index != nullptr) {
+                    if (const std::optional<int> at = fold_int(*node.index)) {
+                        std::unordered_set<std::string> seen;
+                        if (const std::optional<std::string> bytes = constant_string(*node.base, seen)) {
+                            if (*at < 0 || static_cast<std::size_t>(*at) >= bytes->size()) {
+                                node.range_reported = true;
+                                error(expr_loc(*node.index), "index out of range");
+                                return type_invalid();
+                            }
+                        }
+                    }
                 }
                 if (base.kind == TypeKind::Array && base.element != nullptr) {
                     Type element = *base.element;

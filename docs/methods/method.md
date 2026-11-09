@@ -58,9 +58,9 @@ A static function on those aliases is `Ptr.from(...)`, described in [Static func
 
 A slice alias such as `type string_view []const u8` can.
 
-The receiver is the value `self this`.
+The receiver is the value `self this`, or `self *const this`.
 
-`self *this` on a slice alias is a pointer to that slice.
+`self *this` on a slice alias is `type mismatch`. A `const` alias follows that rule.
 
 The functions on that alias live in [`std/unicode`](../std/unicode.md) and [`std/ascii`](../std/ascii.md).
 

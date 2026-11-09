@@ -266,7 +266,7 @@ A field may be an integer, a `bool`, an `f32`, an `f64`, an enumerator, a nested
 
 A `var` of the struct is `not supported yet`.
 
-A value that does not fit in `i32`, such as `3000000000u32`, is `not supported yet`.
+A field or a tuple element may be `3000000000u32`. That value keeps the suffix. The same bits passed to a comptime `i32`, or written as `3000000000i32`, are `value does not fit`.
 
 A data pointer field and a union result are `global initializer is not a constant`.
 
@@ -758,9 +758,9 @@ Without `export`, that call is `name is not exported`.
 
 An unexported struct is `Vec is not exported`.
 
-A slice alias uses `self this` or `self *this`.
+A slice alias uses `self this` or `self *const this`.
 
-`self *this` is a pointer to that slice.
+`self *this` on that alias is `type mismatch`. A `const` alias follows that rule.
 
 An inner function uses the same `function` form inside a block, and it has a body.
 

@@ -1,0 +1,16 @@
+const row = [_]i32{1, 2, 3};
+const N = row.len;
+const M = 2 + 2;
+const K = 4;
+
+func main() i32 {
+    var from_len [N]i32;
+    var from_sum [M]i32;
+    var from_lit [K]i32;
+    if (from_len.len != 3 || from_sum.len != 4 || from_lit.len != 4) {
+        return 1;
+    }
+    from_len[0] = 40;
+    from_len[1] = 2;
+    return from_len[0] + from_len[1];
+}

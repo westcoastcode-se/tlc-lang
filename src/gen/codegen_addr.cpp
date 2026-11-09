@@ -913,6 +913,13 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                     shape.type = ptr_type();
                     return shape;
                 }
+                if (node.type_alias) {
+                    Shape shape;
+                    shape.depth = 1;
+                    shape.struct_id = type_struct_id_ >= 0 ? type_struct_id_ : synthetic_type_id;
+                    shape.type = ptr_type();
+                    return shape;
+                }
                 if (node.type_fields || node.type_methods) {
                     Shape shape;
                     shape.is_slice = true;

@@ -1,1 +1,1 @@
-compile-error: global initializer is not a constant
+compile-error: index out of range

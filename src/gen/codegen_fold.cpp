@@ -492,6 +492,16 @@ std::optional<std::string> CodeGen::constant_string(const Expr &expr, std::unord
 }
 
 std::optional<int32_t> CodeGen::known_len(const Expr &base) const {
+    if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
+        const auto file = files_.find(current_file_);
+        if (file != files_.end()) {
+            const auto found = file->second.globals.find(named->text);
+            if (found != file->second.globals.end() && found->second.is_array && !found->second.is_slice &&
+                found->second.array_len >= 0) {
+                return found->second.array_len;
+            }
+        }
+    }
     std::unordered_set<std::string> seen;
     if (const std::optional<std::string> text = constant_string(base, seen)) {
         if (text->size() > 2147483647) {

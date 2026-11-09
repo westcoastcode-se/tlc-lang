@@ -140,7 +140,23 @@ A slice parameter stays a slice. `a.len` and `a.len()` in `func take(a [3]i32)` 
 
 ## A named length
 
-At file scope, `const N = row.len` is an array length.
+At file scope, `const N = row.len` is an array length. `const M = 2 + 2` and `const K = 4` are too.
+
+```c
+const row = [_]i32{1, 2, 3};
+const N = row.len;
+
+func main() i32 {
+    var out [N]i32;
+    return out.len;
+}
+```
+
+```asm
+main:
+movl $3, %eax                    # out.len
+retq                             # return
+```
 
 Inside a function, `const n = 4` then `var row [n]i32` is `[4]i32`.
 

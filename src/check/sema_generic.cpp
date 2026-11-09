@@ -1599,6 +1599,11 @@ std::optional<int> Checker::array_length_value(const std::string &name) {
         return symbol->const_value;
     }
     // `lookup_const_value` stops when any local hides the file-scope constant.
+    // A file-scope `const` is folded by `note_promotable` and is not `runtime_const`.
+    // `const N = row.len` is that length. A `var`, including `var n const i32`, is not.
+    if (symbol != nullptr && !symbol->is_var && symbol->folded_init && plain_int_constant(symbol->type)) {
+        return symbol->const_value;
+    }
     // A runtime `const` whose initializer folds is still that length.
     if (symbol == nullptr || !symbol->runtime_const || !plain_int_constant(symbol->type)) {
         return std::nullopt;

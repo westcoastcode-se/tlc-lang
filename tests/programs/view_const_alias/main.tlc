@@ -1,0 +1,9 @@
+type C const i32;
+
+func C::get(self *this) i32 {
+    return i32(*self);
+}
+
+func main() i32 {
+    return 0;
+}

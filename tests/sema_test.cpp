@@ -1091,7 +1091,7 @@ int run_sema_tests() {
             "type Text []const u8;\n"
             "func Text::get(self *this) i32 { return 0; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "type mismatch");
     }
 
     {

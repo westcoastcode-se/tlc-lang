@@ -1,0 +1,11 @@
+type View []i32;
+
+func View::at(self *this, i i32) i32 {
+    return (*self)[i];
+}
+
+func main() i32 {
+    var row = [_]i32{40, 1, 2, 3};
+    var p View = row;
+    return p.at(0);
+}

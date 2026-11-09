@@ -1,0 +1,18 @@
+type View []i32;
+
+func View::at(self *const this, i i32) i32 {
+    return (*self)[i];
+}
+
+func View::first(self this) i32 {
+    return self[0];
+}
+
+func main() i32 {
+    var row = [_]i32{40, 1, 2, 3};
+    var view View = row;
+    if (view.at(0) != 40 || view.first() != 40) {
+        return 1;
+    }
+    return 40;
+}

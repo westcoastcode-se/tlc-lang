@@ -836,7 +836,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (node.trait_cast && node.args.size() == 1 && node.args.front() != nullptr) {
                     return emit_rvalue(*node.args.front());
                 }
-                if (node.type_name || node.type_fields || node.type_methods) {
+                if (node.type_name || node.type_fields || node.type_methods || node.type_alias) {
                     const auto *selector = node.callee == nullptr ? nullptr : std::get_if<Expr::Selector>(&node.callee->data);
                     if (selector == nullptr || selector->base == nullptr) {
                         error(node.loc, "type mismatch");
@@ -846,6 +846,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (desc == nullptr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
+                    }
+                    if (node.type_alias) {
+                        llvm::Value *slot = builder_.CreateInBoundsGEP(
+                            type_desc_type(), desc, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(3)});
+                        TypedValue out;
+                        out.value = builder_.CreateLoad(ptr_type(), slot);
+                        out.depth = 1;
+                        out.struct_id = type_struct_id_ >= 0 ? type_struct_id_ : synthetic_type_id;
+                        return out;
                     }
                     const int slot_index = node.type_methods ? 2 : (node.type_fields ? 1 : 0);
                     llvm::Value *slot = builder_.CreateInBoundsGEP(

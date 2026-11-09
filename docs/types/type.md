@@ -50,7 +50,9 @@ A function pointer is `Other`.
 
 ## `name`
 
-`name`, `fields`, and `methods` are comptime methods.
+`name`, `fields`, `methods`, and `alias` are comptime methods.
+
+`alias` returns the type an alias names, one step. It is null when the type is not an alias. `typeof(Row)` for `type Row [4]i32` stays `Row`. `typeof(Row).alias()` is `typeof([4]i32)`.
 
 `typeof(n).name()` calls `name`. `typeof n.x` is the type of the field. `comptime const t = typeof(n)` then `t.name()` calls it. A `var` or a `const` is `not supported yet`.
 

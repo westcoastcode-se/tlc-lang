@@ -1,9 +1,24 @@
-func width[N i32]() i32 {
-    return N;
-}
+type Wide struct {
+    n u32;
+};
 
 comptime const n = 3000000000u32;
+comptime const w = Wide{.n = 3000000000u32};
+
+comptime func field(p (u32, i32)) i32 {
+    return p[0] == 3000000000u32 && p[1] == 42 ? 42 : 0;
+}
+
+comptime func pick(p Wide) i32 {
+    return p.n == 3000000000u32 ? 42 : 0;
+}
 
 func main() i32 {
-    return width[n]();
+    if (field((n, 42)) != 42) {
+        return 1;
+    }
+    if (pick(w) != 42) {
+        return 2;
+    }
+    return 42;
 }
