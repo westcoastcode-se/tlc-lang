@@ -1,0 +1,15 @@
+comptime func bias(n i32) f64 {
+    var half = 0.5;
+    if (n > 0) {
+        return half;
+    }
+    return 0.0;
+}
+
+func main() i32 {
+    var x = bias(1);
+    if (x == 0.5) {
+        return 42;
+    }
+    return 1;
+}

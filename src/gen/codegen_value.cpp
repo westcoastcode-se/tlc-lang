@@ -807,6 +807,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 return rhs;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                // `var got = pair(40)` and `var made = move(origin)` copy the folded literal.
+                if (node.comptime_struct != nullptr) {
+                    return emit_rvalue(*node.comptime_struct);
+                }
+                if (node.comptime_float) {
+                    return {llvm::ConstantFP::get(f64_ty(), node.comptime_float_value), 0, false, -1, false, false,
+                            false, 64, false, -1, true};
+                }
                 if (const auto folded = fold(expr)) {
                     return {const_i32(*folded), 0};
                 }

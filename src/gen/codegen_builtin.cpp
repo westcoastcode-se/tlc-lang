@@ -696,21 +696,40 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         llvm::BasicBlock *empty = llvm::BasicBlock::Create(context_, "new.empty", function_);
         llvm::BasicBlock *ready = llvm::BasicBlock::Create(context_, "new.ready", function_);
         element_count = count_value.value;
+        auto *count_int = llvm::dyn_cast<llvm::IntegerType>(count_value.value->getType());
+        if (count_int == nullptr) {
+            error(node.loc, "type mismatch");
+            return {zero(), 0};
+        }
+        llvm::Value *count_zero = llvm::ConstantInt::get(count_int, 0);
         // `new [0]T` is an empty slice and does not call malloc. A negative count panics.
-        builder_.CreateCondBr(builder_.CreateICmpSLT(count_value.value, const_i32(0)), bad, check);
+        // An `i64` count is compared at its own width. The slice length stays `i32`.
+        builder_.CreateCondBr(builder_.CreateICmpSLT(count_value.value, count_zero), bad, check);
         builder_.SetInsertPoint(bad);
         abort_panic(node.loc, "count must be positive");
         builder_.SetInsertPoint(check);
-        builder_.CreateCondBr(builder_.CreateICmpEQ(count_value.value, const_i32(0)), empty, ready);
+        builder_.CreateCondBr(builder_.CreateICmpEQ(count_value.value, count_zero), empty, ready);
         have_slice = llvm::BasicBlock::Create(context_, "new.have", function_);
         empty_block = empty;
         builder_.SetInsertPoint(empty);
         empty_slice = llvm::ConstantAggregateZero::get(slice_type());
         empty_slice = builder_.CreateInsertValue(empty_slice, null_ptr(), 0);
-        empty_slice = builder_.CreateInsertValue(empty_slice, element_count, 1);
+        empty_slice = builder_.CreateInsertValue(empty_slice, const_i32(0), 1);
         builder_.CreateBr(have_slice);
         builder_.SetInsertPoint(ready);
-        llvm::Value *wide = builder_.CreateZExt(count_value.value, i64());
+        if (count_int->getBitWidth() > 32) {
+            llvm::BasicBlock *big = llvm::BasicBlock::Create(context_, "new.bigcount", function_);
+            llvm::BasicBlock *fits = llvm::BasicBlock::Create(context_, "new.fitcount", function_);
+            llvm::Value *limit = llvm::ConstantInt::get(count_int, 2147483647);
+            builder_.CreateCondBr(builder_.CreateICmpSGT(count_value.value, limit), big, fits);
+            builder_.SetInsertPoint(big);
+            abort_panic(node.loc, "size does not fit");
+            builder_.SetInsertPoint(fits);
+            element_count = builder_.CreateTrunc(count_value.value, i32());
+        } else if (count_int->getBitWidth() < 32) {
+            element_count = builder_.CreateSExt(count_value.value, i32());
+        }
+        llvm::Value *wide = builder_.CreateZExt(element_count, i64());
         if (size == 0) {
             buffer_bytes = llvm::ConstantInt::get(i64(), 1);
         } else {

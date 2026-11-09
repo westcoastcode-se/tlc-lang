@@ -2592,6 +2592,8 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
             }
         } else if (!call.type_args.empty()) {
             return try_method_template(expr, used);
+        } else if (std::optional<Type> inferred = try_infer_method_template(expr, used)) {
+            return *inferred;
         } else {
             return std::nullopt;
         }
@@ -3858,7 +3860,9 @@ void Checker::register_method_template(const FunctionDecl &fn) {
     // A tlc `extern` is one symbol per specialization. `...` and a trait parameter are
     // still not one concrete method. A method with no body is that specialization.
     // A comptime parameter on it needs a body.
-    if (fn.variadic || extern_generic_trait_param(file_id_, fn) || comptime_prototype(fn)) {
+    // `items Seq[T]` names `T`. `s Shape` beside `[T type]` does not.
+    if (fn.variadic || extern_generic_trait_param(file_id_, fn) || comptime_prototype(fn) ||
+        generic_trait_parameter(fn)) {
         error(fn.loc, "not supported yet");
         return;
     }
@@ -4234,7 +4238,13 @@ Checker::MethodTemplateChoice Checker::pick_method_template(uint32_t home, const
     std::vector<const FunctionDecl *> wanted;
     int other = 0;
     for (const FunctionDecl *item : found->second) {
-        if (item == nullptr || !type_arg_count_ok(*item, call)) {
+        if (item == nullptr) {
+            continue;
+        }
+        // An omitted list is inferred. `bag.read[i32](bag)` still requires that count.
+        const bool args_ok = call.type_args.empty() ? written_params(*item) == call.args.size()
+                                                    : type_arg_count_ok(*item, call);
+        if (!args_ok) {
             continue;
         }
         if (item->static_method == want_static) {
@@ -4327,6 +4337,68 @@ std::optional<Type> Checker::apply_method_template(Expr &expr, const FunctionDec
     selector->field = spec_name;
     call.type_args.clear();
     return check_raw(expr, used);
+}
+
+std::optional<Type> Checker::try_infer_method_template(Expr &expr, bool used) {
+    auto *call_ptr = std::get_if<Expr::Call>(&expr.data);
+    if (call_ptr == nullptr || call_ptr->callee == nullptr || !call_ptr->type_args.empty()) {
+        return std::nullopt;
+    }
+    Expr::Call &call = *call_ptr;
+    auto *selector = std::get_if<Expr::Selector>(&call.callee->data);
+    if (selector == nullptr || selector->base == nullptr) {
+        return std::nullopt;
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
+        const Symbol *symbol = lookup(named->text);
+        if (symbol != nullptr && (symbol->is_package || symbol->is_type)) {
+            return std::nullopt;
+        }
+    }
+    Type probe;
+    {
+        const bool saved = quiet_;
+        quiet_ = true;
+        InitQuiet init(*this);
+        probe = check_expr(*selector->base, true);
+        quiet_ = saved;
+    }
+    if (probe.kind == TypeKind::Invalid) {
+        return std::nullopt;
+    }
+    Type object;
+    bool through_pointer = false;
+    if (!dot_object(probe, object, through_pointer) || object.struct_id < 0 ||
+        object.struct_id >= static_cast<int>(structs_.size())) {
+        return std::nullopt;
+    }
+    (void)through_pointer;
+    const StructInfo &info = structs_[static_cast<std::size_t>(object.struct_id)];
+    // `v.get(2)` on `Vec[i32]` still writes `[i32]`. A concrete `Bag::read` infers `T`.
+    if (!info.template_name.empty()) {
+        return std::nullopt;
+    }
+    const uint32_t struct_file = info.file_id;
+    const std::string struct_name = info.name;
+    grant_covered_defaults(object.struct_id);
+    bool hidden = false;
+    if (find_visible_method(struct_file, struct_name, selector->field, hidden) != nullptr || hidden) {
+        return std::nullopt;
+    }
+    const MethodTemplateChoice choice = pick_method_template(struct_file, struct_name, selector->field, call, false);
+    if (choice.kind == 2) {
+        error(call.loc, "type mismatch");
+        return type_invalid();
+    }
+    if (choice.kind != 1 || choice.templ == nullptr) {
+        return std::nullopt;
+    }
+    // `s Shape` is rejected when the template is registered. A second check keeps the call on that error.
+    if (generic_trait_parameter(*choice.templ)) {
+        error(call.loc, "not supported yet");
+        return type_invalid();
+    }
+    return apply_method_template(expr, *choice.templ, struct_file, struct_name, true, used);
 }
 
 std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {

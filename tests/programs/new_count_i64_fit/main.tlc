@@ -1,0 +1,5 @@
+func main() i32 {
+    var n i64 = 3000000000;
+    var buf = new [n]i32;
+    return buf.len;
+}

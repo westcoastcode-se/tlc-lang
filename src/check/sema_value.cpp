@@ -1233,6 +1233,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return result;
                     }
+                    // `comptime func bias(n i32) f64` stays `f64`. A body with statements is compiled and run.
+                    if (result.kind == TypeKind::Float && result.rank >= 64 && result.alias_id == 0) {
+                        if (!fold_comptime_f64(node)) {
+                            if (diags_.size() == before) {
+                                error(node.loc, "not supported yet");
+                            }
+                            return type_invalid();
+                        }
+                        return result;
+                    }
                     if (!fold_int(expr)) {
                         if (diags_.size() == before) {
                             error(node.loc, "not supported yet");
@@ -2867,10 +2877,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (node.count) {
                         const Type got = check_expr(*node.count, true);
                         if (got.kind != TypeKind::Invalid) {
-                            expect(got, type_int(), expr_loc(*node.count));
+                            // The slice length is `i32`. The count may be `i64`. `u64` stays `i32`.
+                            const bool i64_count = got.kind == TypeKind::Int && got.rank == 5 && !got.is_unsigned &&
+                                                   got.alias_id == 0;
+                            if (!i64_count) {
+                                expect(got, type_int(), expr_loc(*node.count));
+                            }
                         }
                         // `new [0]T` is an empty slice. A negative constant is `type mismatch`.
                         if (const std::optional<int> folded = fold_int(*node.count); folded && *folded < 0) {
+                            error(expr_loc(*node.count), "type mismatch");
+                        } else if (const std::optional<WideInt> wide = fold_wide_int(*node.count);
+                                   wide && wide->bits == 64 && !wide->is_unsigned &&
+                                       (wide->value & (uint64_t{1} << 63)) != 0) {
                             error(expr_loc(*node.count), "type mismatch");
                         }
                     }

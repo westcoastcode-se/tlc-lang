@@ -502,8 +502,9 @@ class CodeGen {
         eval_aliases_ = aliases;
     }
     // Emit `fn` as `tlc.comptime.eval` after the package is declared. False when that emission reports a diagnostic.
+    // `f64` is true when the wrapper returns `f64`. Otherwise the result is `i32` or `bool`.
     bool define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
-                         const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs);
+                         const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs, bool f64 = false);
     bool define_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
                                 const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs);
     // Emit `fn` as a struct return and a `void (ptr)` wrapper that stores it. False when emission fails.

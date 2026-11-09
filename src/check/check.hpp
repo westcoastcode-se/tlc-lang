@@ -795,6 +795,8 @@ class Checker {
     // `bound` is the type argument. Null on `fence` and on a specialization.
     bool atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &call, const SpecArg *bound);
     std::optional<int> fold_comptime_call(const Expr::Call &call);
+    // `comptime func bias(n i32) f64`. A constant `return` folds. A body with statements is run.
+    bool fold_comptime_f64(const Expr::Call &call);
     // A `comptime func` whose result is a constant `[]const u8`. False when that call does not fold.
     bool fold_comptime_string(const Expr::Call &call);
     // Runs a comptime func that returns a struct. The literal is the result.
@@ -1390,6 +1392,9 @@ class Checker {
     std::optional<Type> apply_method_template(Expr &expr, const FunctionDecl &templ, uint32_t home,
                                               const std::string &owner, bool value_base, bool used);
     std::optional<Type> try_method_template(Expr &expr, bool used);
+    // `bag.read(bag)` infers `T` on `func Bag::read[T type](self *this, items Seq[T])`.
+    // Nullopt when the name is not a method template, so a concrete method stays on the ordinary path.
+    std::optional<Type> try_infer_method_template(Expr &expr, bool used);
     void drain_deferred();
     void flush_appends();
     TranslationUnit *unit_for(uint32_t file_id);

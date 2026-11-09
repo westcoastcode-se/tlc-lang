@@ -56,7 +56,7 @@ std::vector<PackageNode> CodeGen::take_comptime_specs(
 }
 
 bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
-                              const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) {
+                              const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs, bool f64) {
     if (graph.nodes.empty() || fn.body == nullptr) {
         return false;
     }
@@ -100,9 +100,11 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
     bind_imports(*home);
     llvm::FunctionType *ftype = function_type(fn, file);
     // A `bool` result is `i1`. The evaluator still reads an `i32` of 0 or 1.
+    // An `f64` result is read as a `double`.
     const bool bool_result = ftype != nullptr && ftype->getReturnType()->isIntegerTy(1);
-    if (ftype == nullptr || ftype->getNumParams() != 0 ||
-        !(bool_result || ftype->getReturnType()->isIntegerTy(32))) {
+    const bool f64_result = ftype != nullptr && ftype->getReturnType()->isDoubleTy();
+    const bool i32_result = ftype != nullptr && ftype->getReturnType()->isIntegerTy(32);
+    if (ftype == nullptr || ftype->getNumParams() != 0 || (f64 ? !f64_result : !(bool_result || i32_result))) {
         pop();
         graph_ = nullptr;
         return false;
@@ -533,6 +535,80 @@ std::optional<int32_t> eval_comptime_i32(
         return std::nullopt;
     }
     const int32_t value = call();
+    if (fault != nullptr) {
+        *fault = read_comptime_fault(*jit);
+        if (fault->valid()) {
+            return std::nullopt;
+        }
+    }
+    return value;
+}
+
+std::optional<double> eval_comptime_f64(
+    const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault,
+    const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs,
+    const std::vector<std::pair<uint32_t, const StructDecl *>> &structs,
+    const std::vector<std::pair<uint32_t, const TypedefDecl *>> &aliases) {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+    auto machine_or = llvm::orc::JITTargetMachineBuilder::detectHost();
+    if (!machine_or) {
+        llvm::consumeError(machine_or.takeError());
+        return std::nullopt;
+    }
+    llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
+    machine.setCPU("generic");
+    machine.setRelocationModel(llvm::Reloc::PIC_);
+    machine.getOptions().EmulatedTLS = false;
+    auto layout_or = machine.getDefaultDataLayoutForTarget();
+    if (!layout_or) {
+        llvm::consumeError(layout_or.takeError());
+        return std::nullopt;
+    }
+
+    SourceSet sources;
+    DiagnosticEngine diags(sources);
+    auto context = std::make_unique<llvm::LLVMContext>();
+    auto module = std::make_unique<llvm::Module>("tlc.comptime", *context);
+    module->setTargetTriple(machine.getTargetTriple());
+    module->setDataLayout(*layout_or);
+    {
+        CodeGen gen(*context, *module, diags);
+        gen.set_eval_structs(&structs);
+        gen.set_eval_aliases(&aliases);
+        if (!gen.define_comptime(graph, fn, file, specs, true)) {
+            return std::nullopt;
+        }
+    }
+    std::string verify_error;
+    llvm::raw_string_ostream verify_stream(verify_error);
+    if (llvm::verifyModule(*module, &verify_stream)) {
+        return std::nullopt;
+    }
+
+    llvm::orc::LLJITBuilder builder;
+    builder.setJITTargetMachineBuilder(std::move(machine));
+    auto jit_or = builder.create();
+    if (!jit_or) {
+        llvm::consumeError(jit_or.takeError());
+        return std::nullopt;
+    }
+    std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
+    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+        llvm::consumeError(std::move(err));
+        return std::nullopt;
+    }
+    auto addr = jit->lookup(kEvalName);
+    if (!addr) {
+        llvm::consumeError(addr.takeError());
+        return std::nullopt;
+    }
+    auto *call = addr->toPtr<double (*)()>();
+    if (call == nullptr) {
+        return std::nullopt;
+    }
+    const double value = call();
     if (fault != nullptr) {
         *fault = read_comptime_fault(*jit);
         if (fault->valid()) {

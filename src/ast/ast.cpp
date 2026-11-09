@@ -1016,6 +1016,8 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.comptime_ran = node.comptime_ran;
                 copy.comptime_failed = node.comptime_failed;
                 copy.comptime_value = node.comptime_value;
+                copy.comptime_float = node.comptime_float;
+                copy.comptime_float_value = node.comptime_float_value;
                 copy.comptime_struct = node.comptime_struct ? clone_expr(*node.comptime_struct) : nullptr;
                 copy.comptime_text = node.comptime_text;
                 copy.comptime_bytes = node.comptime_bytes;

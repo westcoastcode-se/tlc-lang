@@ -3119,13 +3119,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     }
                 }
-                // `var made = move(origin)` keeps the whole struct. A field, `var n = move(origin).x`, folds.
-                if (!node.is_comptime && !node.is_const && node.value != nullptr) {
-                    if (const auto *call = std::get_if<Expr::Call>(&node.value->data);
-                        call != nullptr && call->comptime_struct != nullptr) {
-                        error(node.loc, "not supported yet");
-                    }
-                }
                 // A runtime binding of that tuple has no signature on the loaded field.
                 if (!node.is_comptime && tuple_holds_fn(rhs)) {
                     error(node.loc, "type mismatch");
@@ -3478,13 +3471,6 @@ void Checker::check_stmt(const Stmt &stmt) {
                                         target != nullptr && target->init_id != 0) {
                                         live->pointee_id = target->init_id;
                                     }
-                                }
-                            }
-                            // `var made = move(origin)` keeps the whole struct. A field, `var n = move(origin).x`, folds.
-                            if (!var.is_comptime && !var.is_const_decl && var.init != nullptr) {
-                                if (const auto *call = std::get_if<Expr::Call>(&var.init->data);
-                                    call != nullptr && call->comptime_struct != nullptr) {
-                                    error(var.loc, "not supported yet");
                                 }
                             }
                         }

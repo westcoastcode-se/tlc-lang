@@ -188,6 +188,9 @@ struct Expr {
         // The call failed while compiling. A second check does not report it again.
         mutable bool comptime_failed = false;
         mutable int comptime_value = 0;
+        // An `f64` result of that run. Distinct from `comptime_value`: `fold_int` of the call stays empty.
+        mutable bool comptime_float = false;
+        mutable double comptime_float_value = 0;
         // A struct result of that run, as a literal. Distinct from `comptime_value`: `fold_int` of the call stays empty.
         mutable std::unique_ptr<Expr> comptime_struct;
         // A constant `[]const u8` result. Empty text is a real result, so `comptime_text` says it was kept.

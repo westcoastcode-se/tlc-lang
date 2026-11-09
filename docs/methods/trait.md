@@ -755,7 +755,7 @@ The trait has no size and no symbol.
 
 `extern(abi="c")` is reported as `extern(abi="c") on a trait or a generic`.
 
-`func use[T type](items Seq[T])` takes `T` from the value. `use(bag)` is `Seq[i32]` when `at` returns `i32`. `s Shape` beside `[T type]` is `not supported yet`.
+`func use[T type](items Seq[T])` takes `T` from the value. `use(bag)` is `Seq[i32]` when `at` returns `i32`. `func Bag::read[T type](self *this, items Seq[T])` is that parameter on a method. `bag.read(bag)` infers `T`. `s Shape` beside `[T type]` is `not supported yet`.
 
 ```c
 type Seq[T type] trait {

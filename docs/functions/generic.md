@@ -3149,8 +3149,6 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `**const T` when `T` is `[2](i32, i32)` is `not supported yet`.
 
-`*const *T` when `T` is a tuple is `not supported yet`.
-
 ```c
 func id[T type](value **const T) i32 {
     return (**value)[0] + (**value)[1];
@@ -3200,8 +3198,6 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `(**value)[0][0] = 1` is `type mismatch`.
 
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
-
-`*const *T` when `T` is a tuple is `not supported yet`.
 
 ```c
 func pair[T type](a T, b T) [2]T {
@@ -3303,8 +3299,6 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `(**value)[0] = 7` writes that element. `*value = &other` is `type mismatch`.
 
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
-
-`*const *T` when `T` is `[2](i32, i32)` is `not supported yet`.
 
 ```c
 func id[T type](value *const *T) i32 {

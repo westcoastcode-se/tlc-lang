@@ -342,7 +342,7 @@ func main() i32 {
 
 `at(5)` emits nothing. The error is `index out of range`, then `main.tlc:2:12: at` and `main.tlc:6:12: main`.
 
-A tuple result is that tuple. `pair(40)[0] + pair(40)[1]` is 82. `comptime const got = pair(40)` names it. `var got = pair(40)` is `not supported yet`.
+A tuple result is that tuple. `pair(40)[0] + pair(40)[1]` is 82. `comptime const got = pair(40)` names it. `var got = pair(40)` copies that folded tuple.
 
 ```c
 comptime func pair(n i32) ((i32, i32)) {
@@ -363,7 +363,59 @@ movl $82, %eax                   # got[0] + got[1]
 retq
 ```
 
-A result that is not `i32`, not a `bool`, not a struct, not a tuple, and not a constant `[]const u8` is `not supported yet`.
+`var got = pair(40)` is that same sum. The call is not emitted.
+
+```c
+func main() i32 {
+    var got = pair(40);
+    return got[0] + got[1];
+}
+```
+
+```asm
+main:
+movl $82, %eax                   # got[0] + got[1]
+retq
+```
+
+The program returns 82.
+
+A `comptime func` may return `f64`. `bias(1)` is `0.5`. A body that is one `return` of a constant folds. A body with statements is compiled and run. The call is not emitted.
+
+```c
+comptime func bias(n i32) f64 {
+    var half = 0.5;
+    if (n > 0) {
+        return half;
+    }
+    return 0.0;
+}
+
+func main() i32 {
+    var x = bias(1);
+    if (x == 0.5) {
+        return 42;
+    }
+    return 1;
+}
+```
+
+```asm
+main:
+movsd (%rip), %xmm0              # bias(1)
+movsd %xmm0, -8(%rsp)            # x
+movsd -8(%rsp), %xmm0            # x
+movsd (%rip), %xmm1              # 0.5
+ucomisd %xmm1, %xmm0             # x == 0.5
+jne .Lother
+jp .Lother
+movl $42, %eax                   # return
+retq
+```
+
+The program returns 42.
+
+A result that is not `i32`, not a `bool`, not an `f64`, not a struct, not a tuple, and not a constant `[]const u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 
@@ -843,7 +895,28 @@ addl $42, %eax                   # add
 retq                             # return
 ```
 
-A `var` of the struct is `not supported yet`.
+`var made = move(origin)` copies that struct. `made.x` is 42. The call is not emitted.
+
+```c
+func main() i32 {
+    var made = move(origin);
+    return made.x;
+}
+```
+
+```asm
+main:
+movl $42, -16(%rsp)              # made.x
+movl $1, -12(%rsp)               # made.y
+movl -16(%rsp), %eax             # made.x
+movl -12(%rsp), %ecx             # made.y
+movl %ecx, -4(%rsp)              # move
+movl %eax, -8(%rsp)              # move
+movl -8(%rsp), %eax              # made.x
+retq
+```
+
+The program returns 42.
 
 A field or a tuple element may be `3000000000u32`. That value keeps the suffix. The same bits passed to a comptime `i32`, or written as `3000000000i32`, are `value does not fit`.
 

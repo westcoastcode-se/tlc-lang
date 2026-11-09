@@ -112,7 +112,74 @@ A comptime parameter on that declaration is `not supported yet`.
 
 `...` on a method template is `not supported yet`.
 
-A parameter whose type is a trait, such as `s Shape` beside `[T type]`, is `not supported yet`.
+`func Bag::read[T type](self *this, items Seq[T])` takes `T` from the value. `bag.read(bag)` is `Seq[i32]` when `Bag.at` returns `i32`.
+
+The call is `main.Bag.read.spec.i32.spec.Bag`.
+
+A parameter whose type is a trait that does not use `T`, such as `s Shape` beside `[T type]`, is `not supported yet`.
+
+```c
+type Seq[T type] trait {
+    func at(i i32) T;
+};
+
+type Bag struct {
+    n i32;
+};
+
+func Bag::at(self this, i i32) i32 {
+    return self.n + i;
+}
+
+func Bag::read[T type](self *this, items Seq[T]) i32 {
+    return items.at(2);
+}
+
+func main() i32 {
+    var bag Bag;
+    bag.n = 40;
+    return bag.read(bag);
+}
+```
+
+```asm
+main:
+subq $40, %rsp                   # allocate
+movl $40, 32(%rsp)               # bag.n = 40
+movl 32(%rsp), %eax              # bag.n
+movl %eax, 20(%rsp)              # items
+# trace frame for the call, then the matching pop
+leaq 32(%rsp), %rdi              # &bag
+movl 20(%rsp), %esi              # items
+callq main.Bag.read.spec.i32.spec.Bag # call read
+movl %eax, 16(%rsp)              # read
+movl 16(%rsp), %eax              # read
+addq $40, %rsp                   # release
+retq                             # return
+
+main.Bag.at:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+
+main.Bag.read.spec.i32.spec.Bag:
+subq $40, %rsp                   # allocate
+movl %esi, 32(%rsp)              # items
+movl 32(%rsp), %eax              # items
+movl %eax, 20(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 20(%rsp), %edi              # items
+movl $2, %esi                    # 2
+callq main.Bag.at                # call at
+movl %eax, 16(%rsp)              # at
+movl 16(%rsp), %eax              # at
+addq $40, %rsp                   # release
+retq                             # return
+```
+
+The program returns 42.
 
 ## Export and extern on the method
 
