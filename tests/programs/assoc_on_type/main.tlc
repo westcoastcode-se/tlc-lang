@@ -1,18 +1,21 @@
 type Entity struct {
     id i32;
-    const spare = 2;
-    var next i32 = 26;
 };
+
+const Entity::spare = 2;
+var Entity::next i32 = 26;
 
 type Box[T type] struct {
     value T;
-    const extra = 8;
 };
+
+const Box[T]::extra = 8;
 
 type Buf[N i32, T type] struct {
     value T;
-    const count = N;
 };
+
+const Buf[N, T]::count = N;
 
 const Entity::mark = 1;
 

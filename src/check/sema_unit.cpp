@@ -873,6 +873,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             // including `var name const Type`.
             if (var->is_const_decl && !var->is_comptime) {
                 note_promotable(symbol, var->init.get());
+                // `const i = 1` then `const n = "hi"[i]`. The name stays a runtime `const`.
+                if (symbol.folded_init && plain_int_constant(symbol.type)) {
+                    const_cast<VarDecl *>(var)->has_const = true;
+                    const_cast<VarDecl *>(var)->const_value = symbol.const_value;
+                }
             }
             // `name := 10` stays comptime when no function in the package stores it.
             // `export` can be assigned from another package, so that name stays runtime.
@@ -1428,10 +1433,27 @@ bool Checker::constant_slice_expr(const Expr &expr, std::unordered_set<std::stri
         if (!index->is_range || index->base == nullptr || !constant_slice_expr(*index->base, seen)) {
             return false;
         }
-        if (index->index != nullptr && !fold_int(*index->index)) {
+        // A file-scope `const` is a bound of a constant string. It is not a bound of an array.
+        bool string_const_bound = false;
+        const auto bound_ok = [&](const Expr *bound) {
+            if (bound == nullptr || fold_int(*bound)) {
+                return true;
+            }
+            if (!string_bound(*bound, index->base.get())) {
+                return false;
+            }
+            string_const_bound = true;
+            return true;
+        };
+        if (!bound_ok(index->index.get()) || !bound_ok(index->end.get())) {
             return false;
         }
-        return index->end == nullptr || fold_int(*index->end).has_value();
+        if (!string_const_bound) {
+            return true;
+        }
+        // A bound past the string, or a high bound below the low bound, is not this slice.
+        std::unordered_set<std::string> text;
+        return constant_string(expr, text).has_value();
     }
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr || !seen.insert(named->text).second) {
@@ -1871,7 +1893,30 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 if (diags_.size() == before) {
                     // A folding call is the constant in the global. A store would write read-only memory.
                     // An i32 or a bool folds to an integer. A struct is the kept literal. A string is the bytes.
-                    if (var->is_const_decl && !var->is_comptime && !var->is_extern && runs_at_startup(*var->init)) {
+                    // `"hi"[i]` when `i` is a `var`, and `"hello"[1:9][0]`, are not that integer.
+                    const bool unfolded_string_index = [&]() {
+                        if (!var->is_const_decl || var->is_comptime || var->init == nullptr ||
+                            !plain_int_constant(want) || fold_int(*var->init)) {
+                            return false;
+                        }
+                        const auto *index = std::get_if<Expr::Index>(&var->init->data);
+                        if (index == nullptr || index->is_range || index->base == nullptr) {
+                            return false;
+                        }
+                        std::unordered_set<std::string> seen;
+                        if (constant_string(*index->base, seen)) {
+                            return true;
+                        }
+                        const auto *range = std::get_if<Expr::Index>(&index->base->data);
+                        if (range == nullptr || !range->is_range || range->base == nullptr) {
+                            return false;
+                        }
+                        std::unordered_set<std::string> again;
+                        return constant_string(*range->base, again).has_value();
+                    }();
+                    if (unfolded_string_index) {
+                        error(var->loc, "global initializer is not a constant");
+                    } else if (var->is_const_decl && !var->is_comptime && !var->is_extern && runs_at_startup(*var->init)) {
                         const Expr *cursor = var->init.get();
                         while (const auto *unary = std::get_if<Expr::Unary>(&cursor->data)) {
                             if (unary->op != TokenKind::KwUnsafe || unary->expr == nullptr) {

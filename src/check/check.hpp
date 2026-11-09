@@ -832,6 +832,13 @@ class Checker {
     const Expr *file_scope_const_array(const Expr &expr);
     // File-scope `const other = Integer(4)`. The initializer stays the cast. A local `const` is not.
     const Expr *file_scope_const_alias(const Expr &expr);
+    // A folded integer, or a file-scope `const` used as an index of a constant string.
+    // That `const` is not a comptime value on its own.
+    std::optional<int> string_bound(const Expr &bound, const Expr *base);
+    // A `comptime const` array, or an index of one. A runtime `const` is not.
+    const Type *comptime_array_type(const Expr &expr);
+    bool comptime_const_array(const Expr &expr);
+    std::optional<int> comptime_array_len(const Expr &expr);
     // A struct, float, alias, or function that a file-scope `const` can store. An enumerator is not one.
     // A `var`, a local `const`, and a tuple are not.
     bool comptime_constant(const Expr &expr);

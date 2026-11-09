@@ -53,8 +53,8 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
         std::unordered_set<std::string> seen;
         return constant_slice(expr, seen);
     }
-    // `Holder{.raw = {4, 6}}` at file scope is that constant array. A short list and
-    // `0...` are not a constant, the same way a file-scope array list is not.
+    // `Holder{.raw = {4, 6}}` at file scope is that constant array.
+    // `{4, 0...}` stores 4 and zero in the rest. A short list without `0...` is not a constant.
     if (slot.is_array) {
         auto *array_ty = llvm::dyn_cast_or_null<llvm::ArrayType>(slot.type);
         if (array_ty == nullptr) {
@@ -75,7 +75,7 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
             if (init->is_tuple || !init->fields.empty()) {
                 return nullptr;
             }
-            return fill_array(*init, array_ty, flags);
+            return fill_array(*init, array_ty, flags, true);
         }
         llvm::Constant *copied = const_array_base(expr);
         if (copied == nullptr || copied->getType() != array_ty) {
@@ -848,8 +848,15 @@ const VarDecl *CodeGen::global_decl(const std::string &name) const {
     return nullptr;
 }
 
-llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags) {
-    if (array_ty == nullptr || init.elements.size() != array_ty->getNumElements() || !init.fields.empty()) {
+llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags,
+                                    bool zero_pad) {
+    if (array_ty == nullptr || !init.fields.empty() || init.elements.size() > array_ty->getNumElements()) {
+        return nullptr;
+    }
+    // `{4, 0...}` on a struct field zero-fills the elements the list does not name.
+    // A short list without `0...`, and a file-scope array, stay uninitialized.
+    const bool pad = zero_pad && init.zero_rest;
+    if (init.elements.size() != array_ty->getNumElements() && !pad) {
         return nullptr;
     }
     llvm::Type *element = array_ty->getElementType();
@@ -872,7 +879,7 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
                 row.array_len = static_cast<int>(inner->getNumElements());
                 row.inner_array_len = 0;
                 row.value = nullptr;
-                value = fill_array(*nested, inner, row);
+                value = fill_array(*nested, inner, row, zero_pad);
             } else {
                 // `[_][2]i32{inner}` and `[_][2]i32{grid[1]}` copy that constant row.
                 value = const_array_base(*item);
@@ -889,6 +896,11 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
             return nullptr;
         }
         values.push_back(value);
+    }
+    if (pad) {
+        while (values.size() < array_ty->getNumElements()) {
+            values.push_back(llvm::Constant::getNullValue(element));
+        }
     }
     return llvm::ConstantArray::get(array_ty, values);
 }

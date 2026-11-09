@@ -1,0 +1,9 @@
+type Entity struct {
+    id i32;
+    const next = 40;
+    var spare i32 = 2;
+};
+
+func main() i32 {
+    return 0;
+}

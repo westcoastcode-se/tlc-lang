@@ -90,7 +90,7 @@ Another package reads `pkg.Type.name` or `pkg.Box[i32].name`.
 
 Another package reads and assigns `pkg.Entity.next` or `pkg.Box[i32].extra`.
 
-`const name = expr` and `var name type` inside the braces are the constant and the variable on that type.
+`const name = expr` and `var name type` inside the braces are `not supported yet`. The constant is `const Type::name` and the variable is `var Type::name`, written beside the type.
 
 `const Type::name` inside a function is `const on a type is only valid at file scope`. `var Type::name` inside a function is that file-scope variable.
 
@@ -224,11 +224,11 @@ An element may also be an enumerator, a tuple, a function, a pointer, or an arra
 
 `pair[0][0]` is `40`.
 
-A file-scope `const row = [_]i32{2, 0}` is that element. `field((row, 40))` folds when the body returns `p[0][0] + p[1]`.
+A file-scope `const row = [_]i32{2, 0}` in that tuple is `not supported yet`. `field((row, 40))` is that error. The element is `comptime const row`.
 
-`const grid = [_][2]i32{{2, 0}, {40, 0}}` is that element. `field((grid, 0))` folds when the body returns `p[0][0][0] + p[0][1][0]`.
+`const grid = [_][2]i32{{2, 0}, {40, 0}}` in that tuple is `not supported yet`.
 
-`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` is that element. `field((row, 0))` folds when the body returns `p[0][0].x + p[0][1].x`.
+`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` in that tuple is `not supported yet`. `comptime const row` of that array is the element.
 
 `take((row, 0), n)` with `comptime p ([2]Point, i32)` is `type mismatch`.
 
@@ -1370,9 +1370,9 @@ Another package reads and assigns `pkg.Box[i32].extra`.
 
 `const Entity::next = 1` and `const Box[T]::limit = 4` are constants on the type, written beside it.
 
-`const next = 1` inside the braces is that constant. `const Entity::next = 1` inside a function is `const on a type is only valid at file scope`.
+`const next = 1` and `var next i32 = 1` inside the braces are `not supported yet`.
 
-`var next i32 = 1` inside the braces is `var Entity::next i32 = 1`. `var Entity::next i32 = 1` inside a function is that variable.
+`const Entity::next = 1` inside a function is `const on a type is only valid at file scope`. `var Entity::next i32 = 1` inside a function is that variable.
 
 See [Variables on a type](methods/variable.md) and [Constants on a type](methods/constant.md).
 
@@ -1546,11 +1546,11 @@ A value on a trait field, `w i32 = 1`, is reported as `expected ';'`.
 
 `export x i32` publishes that member.
 
-`const name = expr` and `var name type` inside the struct are the constant and the variable on that type.
+`const name = expr` and `var name type` inside the struct are `not supported yet`.
 
 `export` and `extern` on those are `not supported yet`.
 
-A variable for the type is `var Type::name` beside the struct, or `var name` inside it.
+A variable for the type is `var Type::name` beside the struct. A constant is `const Type::name` beside it.
 
 `pkg.Box[i32].name` and `pkg.Buf[4, i32].name` read an exported constant on a generic struct.
 

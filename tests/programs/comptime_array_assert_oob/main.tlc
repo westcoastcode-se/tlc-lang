@@ -1,0 +1,6 @@
+comptime const row = [_]i32{40, 2};
+
+func main() i32 {
+    assert(row[2] == 0, "x");
+    return 0;
+}

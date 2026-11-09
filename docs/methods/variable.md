@@ -8,7 +8,7 @@ A variable may belong to a struct, an enum, or a primitive type alias.
 
 The variable is written beside the type, in the same file.
 
-`var next i32` inside the braces, and `var Entity::next` inside a function, are that same variable.
+`var next i32` inside the braces is `not supported yet`. `var Entity::next` inside a function is that same variable.
 
 The variable is not a field.
 
@@ -106,7 +106,7 @@ An unknown type is reported as `type mismatch`.
 
 A member is already a variable, so it is written `next i32` and not `var next i32`.
 
-`var next i32 = 40` inside the braces is `var Entity::next i32 = 40`.
+`var next i32 = 40` inside the braces is `not supported yet`. The variable is `var Entity::next i32 = 40` beside the struct.
 
 `var Entity::bias = 2` inside a function is that same file-scope variable.
 
@@ -119,8 +119,9 @@ It is reported as `expected a declaration`.
 ```c
 type Entity struct {
     id i32;
-    var next i32 = 40;
 };
+
+var Entity::next i32 = 40;
 
 func main() i32 {
     var Entity::bias = 2;

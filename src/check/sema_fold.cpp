@@ -667,7 +667,7 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
         }
         std::size_t low = 0;
         if (index->index != nullptr) {
-            const std::optional<int> at = fold_int(*index->index);
+            const std::optional<int> at = string_bound(*index->index, index->base.get());
             if (!at || *at < 0 || static_cast<std::size_t>(*at) > bytes->size()) {
                 return std::nullopt;
             }
@@ -675,7 +675,7 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
         }
         std::size_t high = bytes->size();
         if (index->end != nullptr) {
-            const std::optional<int> at = fold_int(*index->end);
+            const std::optional<int> at = string_bound(*index->end, index->base.get());
             if (!at || *at < 0 || static_cast<std::size_t>(*at) > bytes->size()) {
                 return std::nullopt;
             }
@@ -1420,8 +1420,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                     return std::nullopt;
                 }
                 // The tuple slot is chosen while checking. `const i = 0` then `pair[i]` is that field.
+                // A file-scope `const` is an index only when the base is a constant string.
                 const std::optional<int> at = node.tuple_index >= 0 ? std::optional<int>(node.tuple_index)
-                                                                    : fold_int(*node.index);
+                                                                    : string_bound(*node.index, node.base.get());
                 if (!at || *at < 0) {
                     if (comptime_explain_ > 0 && at && *at < 0) {
                         note_comptime_index(node.loc);
@@ -1429,7 +1430,7 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                     return std::nullopt;
                 }
                 // A tuple index selects that element. An array index counts only after one,
-                // so `pair[0][1][0]` folds and a lone `row[0]` still loads.
+                // so `pair[0][1][0]` folds. A lone `row[0]` still loads, unless `row` is `comptime const`.
                 const auto elements_at = [&](const auto &self, const Expr &value, int index, int depth,
                                              bool array_ok) -> const Expr * {
                     if (depth > 8 || index < 0) {
@@ -1491,7 +1492,7 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                         }
                         return elements_at(elements_at, *inner_value, index, depth + 1, true);
                     }
-                    return elements_at(elements_at, base, index, depth, false);
+                    return elements_at(elements_at, base, index, depth, comptime_const_array(base));
                 };
                 if (const Expr *element = indexed(indexed, *node.base, *at, 0)) {
                     return fold_int(*element);
@@ -1500,6 +1501,9 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                     if (const auto *init = std::get_if<Expr::Init>(&node.base->data);
                         init != nullptr && !init->elements.empty() &&
                         static_cast<std::size_t>(*at) >= init->elements.size()) {
+                        note_comptime_index(node.loc);
+                    } else if (const std::optional<int> length = comptime_array_len(*node.base);
+                               length && *at >= *length) {
                         note_comptime_index(node.loc);
                     }
                 }
@@ -1533,6 +1537,52 @@ std::optional<int> Checker::file_scope_const_int(const Expr &expr) {
         return std::nullopt;
     }
     return symbol->const_value;
+}
+
+std::optional<int> Checker::string_bound(const Expr &bound, const Expr *base) {
+    if (const std::optional<int> at = fold_int(bound)) {
+        return at;
+    }
+    // `const i = 1` then `"hi"[i]`. The name is not a comptime argument.
+    if (base == nullptr) {
+        return std::nullopt;
+    }
+    std::unordered_set<std::string> seen;
+    if (!constant_string(*base, seen)) {
+        return std::nullopt;
+    }
+    return file_scope_const_int(bound);
+}
+
+const Type *Checker::comptime_array_type(const Expr &expr) {
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        const Symbol *symbol = lookup(named->text);
+        if (symbol == nullptr || !symbol->is_constant || symbol->type.kind != TypeKind::Array ||
+            symbol->type.element == nullptr || is_slice(symbol->type) || symbol->type.length < 0) {
+            return nullptr;
+        }
+        return &symbol->type;
+    }
+    const auto *index = std::get_if<Expr::Index>(&expr.data);
+    if (index == nullptr || index->is_range || index->base == nullptr) {
+        return nullptr;
+    }
+    const Type *base = comptime_array_type(*index->base);
+    if (base == nullptr || base->element == nullptr || base->element->kind != TypeKind::Array ||
+        is_slice(*base->element) || base->element->length < 0) {
+        return nullptr;
+    }
+    return base->element.get();
+}
+
+bool Checker::comptime_const_array(const Expr &expr) { return comptime_array_type(expr) != nullptr; }
+
+std::optional<int> Checker::comptime_array_len(const Expr &expr) {
+    const Type *type = comptime_array_type(expr);
+    if (type == nullptr) {
+        return std::nullopt;
+    }
+    return type->length;
 }
 
 std::optional<bool> Checker::file_scope_const_bool(const Expr &expr) {

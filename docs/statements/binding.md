@@ -768,7 +768,7 @@ Assigning it is rejected the same way as any other constant.
 
 A constant without `export` is reported as `name is not exported`.
 
-`const Entity::next = expr` is a constant on that type, written beside the struct or inside its braces as `const next = expr`. Both are file scope. `const Entity::next` inside a function is `const on a type is only valid at file scope`.
+`const Entity::next = expr` is a constant on that type, written beside the struct. `const next = expr` inside the braces is `not supported yet`. `const Entity::next` inside a function is `const on a type is only valid at file scope`.
 
 See [Methods](../methods/constant.md).
 

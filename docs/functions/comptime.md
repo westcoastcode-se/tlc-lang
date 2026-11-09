@@ -1269,19 +1269,21 @@ A local `comptime const` of that tuple is the same.
 
 A `comptime func` whose body is `return value[0][0] + value[0][1]` folds the same way.
 
-`const row = [_]i32{2, 0}` then `return field((row, 40))` folds the same way.
+A file-scope `const row = [_]i32{2, 0}` then `return field((row, 40))` is `not supported yet`.
 
 That `field` is `comptime func field(p ([2]i32, i32)) i32 { return p[0][0] + p[1]; }`.
+
+The element is `comptime const row`. A `const` is a comptime argument only when it is also `comptime`.
 
 A local `const` of that array is `not supported yet`.
 
 A `var` array in that tuple is `var is not a compile-time constant`.
 
-`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` folds the same way.
+`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` in that tuple is `not supported yet`.
 
 That `field` is `comptime func field(p ([2]Point, i32)) i32 { return p[0][0].x + p[0][1].x; }`.
 
-`return field((row, 0))` is `movl $42, %eax` and `retq`.
+`comptime const row` of that array then `return field((row, 0))` is `movl $42, %eax` and `retq`.
 
 A local `const` of that array is `not supported yet`. A `var` of that array is `var is not a compile-time constant`.
 
@@ -1429,11 +1431,11 @@ addl -16(%rsp), %eax             # row[0] + nested[0][0][0]
 retq                             # return
 ```
 
-> **Warning:** These forms emit nothing.
+> **Warning:** A `var` array still loads.
 >
-> `comptime const n = row[0]` is `global initializer is not a constant`.
+> `comptime const n = row[0]` is 40. `assert(row[1] == 2, "x")` folds when `row` is `[_]i32{40, 2}`.
 >
-> A lone array index does not fold.
+> An index outside that array is `index out of range`. A lone index of a `var` array still loads.
 >
 > `var row = [_]i32{40, 2}` then `comptime const pair = (row, 0)` is `var is not a compile-time constant`.
 >

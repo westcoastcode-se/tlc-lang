@@ -1,0 +1,11 @@
+const i = 1;
+const n = "hi"[i];
+const N = 1;
+const label = "hello";
+const cut = label[N:4];
+const byte = cut[0];
+
+func main() i32 {
+    var wide [n]i32;
+    return wide.len == 105 && byte == 101 ? 42 : 0;
+}

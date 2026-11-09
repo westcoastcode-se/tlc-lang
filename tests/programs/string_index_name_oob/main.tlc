@@ -1,0 +1,6 @@
+const i = 5;
+const n = "hi"[i];
+
+func main() i32 {
+    return n;
+}

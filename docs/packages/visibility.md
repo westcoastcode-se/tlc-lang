@@ -173,7 +173,7 @@ A member without `export` is reported as `name is not exported`.
 
 A member is already a variable, written `name type` and not `var name type`.
 
-`var next i32` inside the braces is the variable on the type. It is not exported. `export var` inside the braces is `not supported yet`.
+`var next i32` inside the braces is `not supported yet`. The variable is `var Entity::next` beside the struct. `export var` inside the braces is `not supported yet`.
 
 `export var bonus = 4` and `export spare := 2` publish inferred globals.
 
@@ -267,7 +267,7 @@ An unexported generic struct is reported as `Box is not exported`.
 
 Another package names an exported generic struct as `pkg.Vec[i32]`.
 
-`const next = 1` inside the braces is the constant on the type. It is not exported. `export const` inside the braces is `not supported yet`.
+`const next = 1` inside the braces is `not supported yet`. The constant is `const Entity::next` beside the struct. `export const` inside the braces is `not supported yet`.
 
 ```c
 package math;

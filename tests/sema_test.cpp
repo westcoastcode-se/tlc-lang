@@ -9115,7 +9115,7 @@ int run_sema_tests() {
             "  var next i32 = 1;\n"
             "};\n"
             "func main() i32 { return Entity.next; }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
@@ -9349,7 +9349,7 @@ int run_sema_tests() {
             "  const next = 1;\n"
             "};\n"
             "func main() i32 { return Entity.next; }\n");
-        EXPECT(check, errors.empty());
+        EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {

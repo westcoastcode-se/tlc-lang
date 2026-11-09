@@ -52,6 +52,8 @@ A file-scope `const` in the same file whose initializer is a string literal is t
 
 The index may be another folded integer, so `const i = 1` then `"hi"[i]` is 105.
 
+`const n = "hi"[i]` is that integer, and it can be an array length.
+
 An escape is the decoded byte, so `"\n"[0]` is 10 and `"\xFF"[0]` is 255.
 
 An escape above 255 does not fit in that byte. `"\x100"` is `hex escape out of range`. `"\400"` is `octal escape out of range`.
@@ -86,7 +88,7 @@ A missing low bound is 0, and a missing high bound is the length.
 
 A further range is those bytes again: `"hello"[1:4][0:2][1]` is 108.
 
-The index may be another folded integer.
+The index may be another folded integer, so `const N = 1` then `const cut = label[N:4]` then `cut[0]` is 101.
 
 An escape is the decoded byte, so `"\n"[0:1][0]` is 10 and `"\xFF"[0:1][0]` is 255.
 

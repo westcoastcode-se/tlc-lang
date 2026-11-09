@@ -101,7 +101,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bo
 }
 
 Parser::StructMembers Parser::parse_struct_members(const std::string &owner, bool publish, bool extern_c,
-                                                    bool is_extern, const std::vector<std::string> &owner_params) {
+                                                    bool is_extern, const std::vector<std::string> &) {
     StructMembers body;
     auto skip_member = [&]() {
         while (!check(TokenKind::Semicolon) && !check(TokenKind::RBrace) && !eof()) {
@@ -143,21 +143,9 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
                                                               peek(1).kind == TokenKind::KwConst ||
                                                               peek(1).kind == TokenKind::KwExtern));
         if (check(TokenKind::KwConst) || check(TokenKind::KwVar)) {
-            // `const spare = 3` and `var next i32 = 1` are the constant and the variable on this type.
-            // A member is still `name type`. `export` and `extern` are not written here.
-            VarDecl var = check(TokenKind::KwConst) ? parse_const_decl(false, false)
-                                                    : parse_typed_var(false, false, false, false, true);
-            if (var.owner.empty()) {
-                if (owner.empty()) {
-                    diags_.error(var.loc, "not supported yet");
-                } else {
-                    var.owner = owner;
-                    var.owner_params = owner_params;
-                }
-            }
-            if (!var.owner.empty()) {
-                lift_assoc(std::move(var));
-            }
+            // A member is `name type`. A constant or a variable on the type is written beside it.
+            diags_.error(peek().loc, "not supported yet");
+            skip_member();
         } else if (rejected) {
             diags_.error(peek().loc, "not supported yet");
             skip_member();

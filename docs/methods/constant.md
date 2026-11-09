@@ -8,7 +8,7 @@ A compiler constant may belong to a struct, an enum, or a primitive type alias.
 
 It is written beside the type, in the same file: `comptime const Entity::next = 28`.
 
-`const spare = 2` inside the braces is that same constant.
+`const spare = 2` inside the braces is `not supported yet`. The constant is `const Entity::spare = 2` beside the struct.
 
 A plain `const Entity::next` is a runtime value that cannot be assigned.
 
@@ -22,7 +22,7 @@ Each specialization of a generic struct has its own constant.
 
 The use is `Entity.next`, `Box[i32].extra`, or `Buf[4, i32].count`.
 
-`const spare = 2` inside the braces is that constant. It is not a member.
+`const spare = 2` inside the braces is `not supported yet`. It is not a member.
 
 `const Entity::next` inside a function is `const on a type is only valid at file scope`.
 
@@ -106,14 +106,14 @@ The program returns 42.
 
 `Box[i32].extra` and `Box[Point].extra` are two constants.
 
-`const spare = 2` inside the braces and `const Entity::next = 40` beside the struct are the same kind of constant.
+`const Entity::spare = 2` and `const Entity::next = 40` beside the struct are the same kind of constant.
 
 ```c
 type Entity struct {
     id i32;
-    const spare = 2;
 };
 
+const Entity::spare = 2;
 const Entity::next = 40;
 
 func main() i32 {

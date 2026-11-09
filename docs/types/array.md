@@ -118,6 +118,14 @@ A range of `[N]Duo` or `[N][M]Duo` is `type mismatch`. A range of `[_][2]i32` is
 
 `row.len` on a sized array is `i32`, the number of elements, with the same spelling. `row.len()` is that same length. An empty array has length 0.
 
+`comptime const row = [_]i32{40, 2}` then `row[1]` is 2. `assert(row[1] == 2, "x")` folds.
+
+An index outside that array is `index out of range`. `assert(row[2] == 0, "x")` is that error.
+
+A `var` index still loads. `assert` on that index is `not supported yet`.
+
+A file-scope `const row = [_]i32{40, 2}` is not a comptime array. `assert(row[1] == 2, "x")` is `not supported yet`. The element is `comptime const row`.
+
 The length is a compile-time integer. At file scope, `const N = row.len` can be an array length.
 
 A `const` inside a function whose initializer folds to a non-negative `i32` is that length too.
@@ -403,11 +411,13 @@ A short list in that value stores only the named elements. Reading an omitted el
 
 `Holder{.raw = {4, 6, 8}}` is reported as `type mismatch`.
 
-A file-scope `var h Holder = {.raw = {4}}`, and a file-scope `var h Holder = {.raw = {4, 0...}}`, are accepted by `--check`. Emitting either is reported as `global initializer is not a constant`.
+A file-scope `var h Holder = {.raw = {4}}` is accepted by `--check`. Emitting it is reported as `global initializer is not a constant`.
+
+A file-scope `var h Holder = {.raw = {4, 0...}}` stores 4 and zero in the rest. `var h Holder = {.n = 40, .raw = {2, 0...}}` stores those fields.
 
 An inferred file-scope `var h = Holder{.raw = {4}}` is reported as `uninitialized`.
 
-An inferred file-scope `var h = Holder{.raw = {4, 0...}}`, when `raw` is the only field, is accepted by `--check`. Emitting it is reported as `global initializer is not a constant`.
+An inferred file-scope `var h = Holder{.raw = {4, 0...}}`, when `raw` is the only field, stores 4 and zero in the rest.
 
 `raw [2]i32 = {1, 2}` on the field is reported as `not supported yet`.
 

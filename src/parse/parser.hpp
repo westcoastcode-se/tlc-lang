@@ -159,8 +159,9 @@ class Parser {
     };
     // Members are `name type;` or `export name type;`. `name export struct { ... }` and
     // `name export union { ... }` are inline aggregates.
-    // `const name` and `var name` inside the braces are the constant and the variable on `owner`.
-    // `export` and `extern` on those stay rejected. `publish` marks every member exported,
+    // `const name` and `var name` inside the braces are `not supported yet`.
+    // The constant and the variable are written beside the type. `export` and `extern` on those
+    // stay rejected. `publish` marks every member exported,
     // which is what an exported inline struct does to the members inside it.
     // `owner_params` are the struct's type parameters, in order, for `type Box[T type]`.
     StructMembers parse_struct_members(const std::string &owner, bool publish = false, bool extern_c = false,

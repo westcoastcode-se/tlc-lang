@@ -2293,7 +2293,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 // `"hi"[2]` and `"hello"[1:4][3]` are outside the constant bytes.
                 // A `var` index still loads. A quiet probe does not record the diagnostic.
                 if (!quiet_ && !node.range_reported && node.base != nullptr && node.index != nullptr) {
-                    if (const std::optional<int> at = fold_int(*node.index)) {
+                    if (const std::optional<int> at = string_bound(*node.index, node.base.get())) {
                         std::unordered_set<std::string> seen;
                         if (const std::optional<std::string> bytes = constant_string(*node.base, seen)) {
                             if (*at < 0 || static_cast<std::size_t>(*at) >= bytes->size()) {
@@ -2301,6 +2301,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 error(expr_loc(*node.index), "index out of range");
                                 return type_invalid();
                             }
+                        }
+                    }
+                }
+                // `comptime const row = [_]i32{40, 2}` then `row[2]` is outside that array.
+                // A `var` index still loads. A file-scope `const` array does not fold.
+                if (!quiet_ && comptime_depth_ == 0 && !node.range_reported && node.base != nullptr &&
+                    node.index != nullptr && base.kind == TypeKind::Array && !is_slice(base) && base.length >= 0 &&
+                    comptime_const_array(*node.base)) {
+                    if (const std::optional<int> at = fold_int(*node.index)) {
+                        if (*at < 0 || *at >= base.length) {
+                            node.range_reported = true;
+                            error(expr_loc(*node.index), "index out of range");
+                            return type_invalid();
                         }
                     }
                 }
