@@ -124,6 +124,27 @@ void CodeGen::prepare_traits() {
             trait_decls_.push_back(item);
         }
     }
+    // `import { Parent } from "geom"` uses that trait under the bare name.
+    for (const PackageNode &node : graph_->nodes) {
+        for (const ImportDecl &import : node.unit.imports) {
+            if (import.form != ImportDecl::Form::Selective) {
+                continue;
+            }
+            const PackageNode *target = import_target(graph_, node.file_id, import);
+            if (target == nullptr) {
+                continue;
+            }
+            for (const std::string &name : import.names) {
+                if (trait_named(node.file_id, name) >= 0) {
+                    continue;
+                }
+                const int id = trait_named(target->file_id, name);
+                if (id >= 0) {
+                    trait_names_[node.file_id][name] = id;
+                }
+            }
+        }
+    }
 }
 
 void CodeGen::prepare_structs() {
@@ -1500,7 +1521,7 @@ const Binding *CodeGen::trait_spec_method(uint32_t caller, uint32_t resolved_fil
             return nullptr;
         }
         concrete = active_spec_[index];
-        const int trait_id = trait_named(caller, param.type_name);
+        const int trait_id = trait_named(trait_param_file(caller, param), param.type_name);
         if (trait_id < 0 || static_cast<std::size_t>(trait_id) >= trait_decls_.size()) {
             return nullptr;
         }

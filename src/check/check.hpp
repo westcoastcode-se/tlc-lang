@@ -805,7 +805,9 @@ class Checker {
     };
     KeptStruct fold_comptime_struct(const Expr::Call &call);
     // A field of a struct literal, or of a comptime call that kept one. A plain file-scope name is not one.
+    // An omitted field is the value written on the field. `0...` stores 0.
     const Expr *comptime_struct_field(const Expr &object, const std::string &field);
+    const Expr *fold_zero();
     // The comptime slice overload of `mem.memeql` or `mem.memcmp` when both arguments are
     // constant `[]const u8`. Null when that overload is not the one to fold.
     const FunctionDecl *mem_compare_callee(const Expr::Call &call);
@@ -1141,6 +1143,8 @@ class Checker {
     std::deque<OwnedFn> owned_fns_;
     std::deque<OwnedVar> owned_assoc_;
     std::deque<StructDecl> owned_structs_;
+    // Integer 0 used when a `comptime const` struct field is filled by `0...`.
+    std::unique_ptr<Expr> fold_zero_;
     std::deque<TypedefDecl> owned_typedefs_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::vector<FunctionDecl *>>> fn_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, StructDecl *>> struct_templates_;

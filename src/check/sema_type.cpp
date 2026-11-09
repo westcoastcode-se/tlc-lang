@@ -1065,7 +1065,7 @@ bool Checker::accept_iteration(const Type &got, const Type &want, SourceLoc loc)
     const Type *element = nullptr;
     if (got.kind == TypeKind::Array && got.element != nullptr) {
         element = got.element.get();
-    } else if (got.kind == TypeKind::Pointer && !got.optional && got.decayed_len > 0 && got.pointee != nullptr) {
+    } else if (is_decayed_array(got) && !got.optional && got.pointee != nullptr) {
         // A parameter `[N]T` is a pointer to the element. `*[N]T` has no decayed length.
         element = got.pointee.get();
     }
@@ -3140,12 +3140,6 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         error(loc, variable && stored ? "trait has no size" : "not supported yet");
         return type_invalid();
     }
-    // `s math.Shape` is not the constraint `T math.Shape`. A trait parameter is specialized
-    // only when the name is unqualified. Emitting the qualified parameter would be a type error.
-    if (mentions_trait(type) && !package.empty()) {
-        error(loc, "not supported yet");
-        return type_invalid();
-    }
     // Shells are the type. `[]T`, `[][][]T`, `*[]T`, and `[N][M]T` are the same walk.
     // A length that is still a name is a generic parameter. The flat path folds that name.
     bool shells_ready = !shells.empty();
@@ -3203,12 +3197,8 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             if (type.length < 0) {
                 return type;
             }
-            // `[0]T` would be the same pointer as `*T`. The length is not recorded.
-            if (type.length == 0) {
-                error(loc, "not supported yet");
-                return type_invalid();
-            }
             Type pointer = type_pointer(*type.element);
+            pointer.decayed_array = true;
             pointer.decayed_len = type.length;
             return pointer;
         }
@@ -3245,12 +3235,12 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         return type_invalid();
     }
     if (parameter) {
-        // A length of 0 would be the same pointer as `*T`.
-        if (array_len <= 0) {
+        if (array_len < 0) {
             error(loc, "not supported yet");
             return type_invalid();
         }
         Type pointer = type_pointer(std::move(type));
+        pointer.decayed_array = true;
         pointer.decayed_len = array_len;
         return pointer;
     }

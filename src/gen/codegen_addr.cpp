@@ -291,6 +291,8 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
             }
             if (llvm::Type *object = object_type(base.value); object != nullptr && object->isArrayTy()) {
                 limit = const_i32(static_cast<int>(llvm::cast<llvm::ArrayType>(object)->getNumElements()));
+            } else if (base.empty_decay) {
+                limit = const_i32(0);
             } else if (base.array_len > 0) {
                 limit = const_i32(base.array_len);
             }
@@ -405,9 +407,9 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
                 base.elem_unsigned, -1, base.elem_float};
     }
     const int depth = base.depth - 1;
-    // A parameter `[N]T`, and a pointer copied from it, still knows `N`.
-    if (base.array_len > 0) {
-        trap_index(offset, const_i32(base.array_len), loc);
+    // A parameter `[N]T`, and a pointer copied from it, still knows `N`. `[0]T` has no element.
+    if (base.empty_decay || base.array_len > 0) {
+        trap_index(offset, const_i32(base.empty_decay ? 0 : base.array_len), loc);
         if (terminated()) {
             return {};
         }

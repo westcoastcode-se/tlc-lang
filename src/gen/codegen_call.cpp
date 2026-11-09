@@ -1469,7 +1469,7 @@ llvm::Function *CodeGen::specialize(const FunctionDecl &fn, const Binding &meta,
         }
         const TypedValue &arg = arg_values[i];
         if (trait_fn_argument(arg)) {
-            if (trait_fn_lowered(fn.params[i].type_name).fn_ty == nullptr) {
+            if (trait_fn_lowered(trait_param_file(current_file_, fn.params[i]), fn.params[i].type_name).fn_ty == nullptr) {
                 error(loc, "type mismatch");
                 return nullptr;
             }
@@ -1946,7 +1946,8 @@ bool CodeGen::emit_iter_call(const Expr::Call &node, const Expr::Selector &selec
         return true;
     }
     int kind = 0;
-    const int trait_id = trait_named(current_file_, emitting_fn_->params[index].type_name);
+    const int trait_id = trait_named(trait_param_file(current_file_, emitting_fn_->params[index]),
+                                     emitting_fn_->params[index].type_name);
     if (trait_id >= 0 && static_cast<std::size_t>(trait_id) < trait_decls_.size()) {
         const TraitDecl *listed = trait_decls_[static_cast<std::size_t>(trait_id)];
         for (int guard = 0; listed != nullptr && kind == 0 && guard < static_cast<int>(trait_decls_.size()); ++guard) {

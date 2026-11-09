@@ -134,14 +134,14 @@ std::unique_ptr<Expr> folded_int(int value, SourceLoc loc) {
 
 // A field of a struct literal, including `literal.inner.x` and `row[0].x`.
 // `resolve` yields a comptime const struct or array, or a call that kept a literal.
-template <typename Resolve>
-const Expr *const_struct_field(const Expr &object, const std::string &field, Resolve &&resolve) {
+template <typename Resolve, typename Omitted>
+const Expr *const_struct_field(const Expr &object, const std::string &field, Resolve &&resolve, Omitted &&omitted) {
     const Expr *cursor = &object;
     if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
         if (selector->base == nullptr) {
             return nullptr;
         }
-        cursor = const_struct_field(*selector->base, selector->field, resolve);
+        cursor = const_struct_field(*selector->base, selector->field, resolve, omitted);
         if (cursor == nullptr) {
             return nullptr;
         }
@@ -193,7 +193,7 @@ const Expr *const_struct_field(const Expr &object, const std::string &field, Res
             return item.value.get();
         }
     }
-    return nullptr;
+    return omitted(*init, field);
 }
 
 std::string spec_int_piece(int value) {
@@ -738,7 +738,7 @@ std::optional<int> Checker::known_len(const Expr &base) {
             symbol->type.length >= 0) {
             return symbol->type.length;
         }
-        if (symbol != nullptr && symbol->type.kind == TypeKind::Pointer && symbol->type.decayed_len > 0) {
+        if (symbol != nullptr && is_decayed_array(symbol->type)) {
             return symbol->type.decayed_len;
         }
         if (symbol != nullptr && symbol->type.kind == TypeKind::Pointer && !symbol->type.optional &&
@@ -2977,11 +2977,56 @@ const Expr *Checker::comptime_struct_field(const Expr &object, const std::string
         if (literal == nullptr || literal->is_tuple) {
             return nullptr;
         }
-        if (!literal->fields.empty() || literal->array_literal) {
+        if (literal->array_literal || !literal->fields.empty() || literal->struct_id >= 0 || !literal->type_name.empty()) {
             return init;
         }
         return nullptr;
+    }, [&](const Expr::Init &init, const std::string &name) -> const Expr * {
+        int id = init.struct_id;
+        if (id < 0 && !init.type_name.empty()) {
+            id = init.type_package.empty() ? find_tag(file_id_, init.type_name)
+                                           : imported_tag(file_id_, init.type_package, init.type_name);
+        }
+        if (id < 0 || id >= static_cast<int>(structs_.size())) {
+            return nullptr;
+        }
+        const StructInfo &info = structs_[static_cast<std::size_t>(id)];
+        if (info.is_union) {
+            return nullptr;
+        }
+        const StructInfo::Field *slot = nullptr;
+        for (const StructInfo::Field &item : info.fields) {
+            if (item.name == name) {
+                slot = &item;
+            }
+        }
+        if (slot == nullptr) {
+            return nullptr;
+        }
+        // `{0...}` stores 0. It does not use the value written on the field.
+        if (init.zero_rest) {
+            const Type &type = slot->type;
+            if (type.alias_id == 0 &&
+                (type.kind == TypeKind::Int || type.kind == TypeKind::Bool || type.kind == TypeKind::Char)) {
+                return fold_zero();
+            }
+            return nullptr;
+        }
+        if (slot->has_init && slot->init != nullptr) {
+            return slot->init;
+        }
+        return nullptr;
     });
+}
+
+const Expr *Checker::fold_zero() {
+    if (fold_zero_ == nullptr) {
+        fold_zero_ = std::make_unique<Expr>();
+        Expr::Int number;
+        number.value = 0;
+        fold_zero_->data = std::move(number);
+    }
+    return fold_zero_.get();
 }
 
 Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {

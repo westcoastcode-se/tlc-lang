@@ -1676,8 +1676,7 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
                     leaf = leaf->element.get();
                     continue;
                 }
-                if (leaf->kind == TypeKind::Pointer && !leaf->optional && leaf->decayed_len > 0 &&
-                    leaf->pointee != nullptr) {
+                if (is_decayed_array(*leaf) && !leaf->optional && leaf->pointee != nullptr) {
                     leaf = leaf->pointee.get();
                     continue;
                 }
@@ -1874,7 +1873,7 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
                         core = core->element.get();
                         continue;
                     }
-                    if (core->kind == TypeKind::Pointer && !core->optional && core->decayed_len == shell.length &&
+                    if (is_decayed_array(*core) && !core->optional && core->decayed_len == shell.length &&
                         core->pointee != nullptr) {
                         core = core->pointee.get();
                         continue;
@@ -1888,7 +1887,7 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
                         core = core->element.get();
                         return true;
                     }
-                    if (core->kind == TypeKind::Pointer && !core->optional && core->decayed_len == length &&
+                    if (is_decayed_array(*core) && !core->optional && core->decayed_len == length &&
                         core->pointee != nullptr) {
                         core = core->pointee.get();
                         return true;
@@ -2602,6 +2601,7 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         }
         Type raw = check_raw(arg, true);
         raw.is_const = false;
+        raw.decayed_array = false;
         raw.decayed_len = 0;
         SpecArg spelled;
         if (!spell_type(raw, spelled) || !spelled.type_package.empty() || spelled.indirections != 0 ||

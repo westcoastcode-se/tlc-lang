@@ -38,6 +38,8 @@ retq                             # return
 | `import "math" as m` | The alias, as in `m.add(40, 2)`. |
 | `import { add, Point } from "math"` | Each listed export, as in `add(40, 2)`. |
 
+`import { Shape } from "math"` brings that exported trait in as `Shape`. A name that is not exported is `Shape is not exported`.
+
 `as` and `from` are ordinary identifiers in every other position.
 
 ## The path

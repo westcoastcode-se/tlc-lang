@@ -340,7 +340,7 @@ A negative length, `comptime const N = -1` then `[N]i32`, is `array length must 
 
 `const n = -1` inside a function is that same error.
 
-A parameter `[0]T` is `not supported yet`.
+A parameter `[0]T` is an empty array. `row.len` is 0. An index of it is `index out of range`.
 
 `new [0]i32` is an empty slice. `.len` is 0. A negative constant count is `type mismatch`.
 

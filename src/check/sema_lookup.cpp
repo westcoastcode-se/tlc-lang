@@ -407,7 +407,7 @@ bool Checker::indexed_type(const Type &base, Type &out, bool &pointee_void) cons
     if (pointee.kind == TypeKind::Array) {
         if (pointee.length < 0) {
             // A decayed `[N][]T` has a count of headers. A raw `*[]T` does not.
-            if (base.decayed_len <= 0) {
+            if (!is_decayed_array(base)) {
                 return false;
             }
             out = pointee;

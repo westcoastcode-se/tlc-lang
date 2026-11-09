@@ -113,10 +113,10 @@ inline bool from_slice_element(const Expr *expr) {
 // A parameter `[N]T` is a pointer that still records N. When `[N]T` is expected, that
 // pointer is the array. A read of a parameter stays that pointer.
 inline bool decayed_array_value(const Type &got, const Type &want) {
-    if (want.kind != TypeKind::Array || want.length <= 0 || want.element == nullptr) {
+    if (want.kind != TypeKind::Array || want.length < 0 || want.element == nullptr) {
         return false;
     }
-    if (got.kind != TypeKind::Pointer || got.optional || got.pointee == nullptr || got.decayed_len != want.length) {
+    if (!is_decayed_array(got) || got.optional || got.pointee == nullptr || got.decayed_len != want.length) {
         return false;
     }
     return same_type(*got.pointee, *want.element);

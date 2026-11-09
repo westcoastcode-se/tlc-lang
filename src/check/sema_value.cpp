@@ -113,8 +113,7 @@ Type Checker::increment_operand(const Expr &expr) {
             if (base.is_const) {
                 element.is_const = true;
             }
-        } else if (base.kind == TypeKind::Pointer && !base.optional && base.decayed_len > 0 &&
-                   base.pointee != nullptr) {
+        } else if (is_decayed_array(base) && !base.optional && base.pointee != nullptr) {
             // A parameter `[N]T` still carries `N`. `a[i] = n` stores that element.
             element = *base.pointee;
         } else {
@@ -950,8 +949,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (base.is_const) {
                             element.is_const = true;
                         }
-                    } else if (base.kind == TypeKind::Pointer && !base.optional && base.decayed_len > 0 &&
-                               base.pointee != nullptr) {
+                    } else if (is_decayed_array(base) && !base.optional && base.pointee != nullptr) {
                         // A parameter `[N]T` still carries `N`. `[N][M]T` yields the row.
                         element = *base.pointee;
                     } else if (!indexed_type(base, element, pointee_void)) {
@@ -1465,21 +1463,22 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             const bool slice = is_slice(base);
                             // `check_expr` drops `decayed_len`. The parameter `[N]T` still stores `N`.
                             int decayed = 0;
-                            if (!base.optional && base.kind == TypeKind::Pointer && selector->base != nullptr) {
+                            bool have_decayed = false;
+                            if (!base.optional && selector->base != nullptr) {
                                 if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
                                     if (const Symbol *symbol = lookup(named->text)) {
-                                        if (symbol->type.kind == TypeKind::Pointer && !symbol->type.optional &&
-                                            symbol->type.decayed_len > 0) {
+                                        if (is_decayed_array(symbol->type) && !symbol->type.optional) {
+                                            have_decayed = true;
                                             decayed = symbol->type.decayed_len;
                                         }
                                     }
                                 }
                             }
-                            if (!alias_method && (sized || slice || decayed > 0)) {
+                            if (!alias_method && (sized || slice || have_decayed)) {
                                 selector->slice_len = true;
                                 if (sized) {
                                     selector->len_value = base.length;
-                                } else if (decayed > 0) {
+                                } else if (have_decayed) {
                                     selector->len_value = decayed;
                                 } else if (const std::optional<int> known = known_len(*selector->base)) {
                                     selector->len_value = *known;
@@ -2114,7 +2113,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 // `a.len` on a parameter `[N]T`. The value is a pointer. The length is the one that was written.
                 // This stays ahead of the pointer-to-array check: `[N][M]T` decays to a pointer whose
                 // pointee is the row, and `.len` is the outer `N`, not that row.
-                if (raw.kind == TypeKind::Pointer && raw.decayed_len > 0 && node.field == "len") {
+                if (is_decayed_array(raw) && node.field == "len") {
                     node.slice_len = true;
                     node.len_value = raw.decayed_len;
                     return type_int();
@@ -2213,8 +2212,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return true;
                     };
                     // `row[0:2]` on `func open(row [4]i32)`. The pointer keeps the written length.
-                    if (base.kind == TypeKind::Pointer && base.decayed_len > 0 && base.pointee != nullptr &&
-                        !base.optional) {
+                    if (is_decayed_array(base) && base.pointee != nullptr && !base.optional) {
                         if (tuple_element(*base.pointee)) {
                             return type_invalid();
                         }
@@ -2235,7 +2233,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     // `p[0:n]` on `*T` is the block of `n - 0` elements. Both bounds are the length.
                     if (base.kind == TypeKind::Pointer && !base.optional && base.pointee != nullptr &&
-                        base.decayed_len <= 0 &&
+                        !is_decayed_array(base) &&
                         !(base.pointee->kind == TypeKind::Array && base.pointee->length >= 0)) {
                         if (node.index == nullptr || node.end == nullptr || base.pointee->kind == TypeKind::Void) {
                             error(node.loc, "type mismatch");
@@ -2354,8 +2352,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 // A parameter `[N]T` is a pointer that still carries `N`. `a[i]` is that element.
                 // A parameter `[N][M]T` points at the first row. `grid[i]` is that row.
-                if (base.kind == TypeKind::Pointer && base.decayed_len > 0 && base.pointee != nullptr &&
-                    !base.optional) {
+                if (is_decayed_array(base) && base.pointee != nullptr && !base.optional) {
                     if (base.pointee->kind == TypeKind::Array && base.pointee->length >= 0) {
                         return *base.pointee;
                     }

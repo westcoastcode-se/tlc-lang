@@ -1,0 +1,17 @@
+type Point struct {
+    x i32 = 40;
+    y i32 = 2;
+};
+
+comptime const p = Point{};
+comptime const n = p.x;
+
+func main() i32 {
+    comptime const q = Point{.x = 40};
+    comptime const m = q.y;
+    comptime const z = Point{0...};
+    assert(z.x == 0, "z");
+    assert(p.y == 2, "y");
+    assert(q.x == 40, "x");
+    return n + m;
+}

@@ -423,7 +423,11 @@ A qualifier that is not an imported package is `undeclared identifier`.
 
 The call is `Point.measure[Rect](r)`.
 
-`func use(s math.Shape)`, `func use(s *math.Shape)`, and `import { Shape }` are `not supported yet`.
+`func use(s math.Shape)` and `func use(s *math.Shape)` are that parameter. The call is `s.area()`.
+
+`import { Shape } from "math"` brings that trait in as `Shape`.
+
+`func use[T type](items Seq[T])` is `not supported yet`. `func use(items Seq[i32])` is that parameter.
 
 `var s math.Shape` is `trait has no size`.
 

@@ -285,8 +285,7 @@ void Checker::check_for_each(const Stmt::For &node) {
         if (got.is_const) {
             element.is_const = true;
         }
-    } else if (got.kind == TypeKind::Pointer && !got.optional && got.decayed_len > 0 && got.pointee != nullptr &&
-               got.alias_id == 0) {
+    } else if (is_decayed_array(got) && !got.optional && got.pointee != nullptr && got.alias_id == 0) {
         element = *got.pointee;
     } else if (got.kind == TypeKind::Struct && got.struct_id >= 0 && got.struct_id < static_cast<int>(structs_.size())) {
         const StructInfo &info = structs_[static_cast<std::size_t>(got.struct_id)];
@@ -3114,8 +3113,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (node.names.size() == 1 && node.value != nullptr && rhs.kind == TypeKind::Pointer) {
                     if (const auto *named = std::get_if<Expr::Name>(&node.value->data)) {
                         if (const Symbol *symbol = lookup(named->text);
-                            symbol != nullptr && symbol->type.kind == TypeKind::Pointer && !symbol->type.optional &&
-                            symbol->type.decayed_len > 0) {
+                            symbol != nullptr && is_decayed_array(symbol->type) && !symbol->type.optional) {
+                            rhs.decayed_array = true;
                             rhs.decayed_len = symbol->type.decayed_len;
                         }
                     }
@@ -4190,7 +4189,7 @@ bool Checker::spell_inferred_component(const Type &type, FnParam &out, bool allo
         return spell_inferred_fn_param(type, out);
     }
     // `[N]T` as a parameter is a pointer that still records N. `same_type` does not compare that length.
-    if (type.kind == TypeKind::Pointer && type.decayed_len > 0 && type.pointee != nullptr) {
+    if (is_decayed_array(type) && type.pointee != nullptr) {
         if (type.optional) {
             return false;
         }

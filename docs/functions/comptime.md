@@ -690,6 +690,8 @@ The literal is the same value.
 
 `comptime const n = origin.x` is that field. `assert(origin.x == 40, "x")` folds. `comptime if (origin.x == 40)` and `comptime switch (origin.x)` keep that arm.
 
+`x i32 = 40` is that value when the literal does not name the field. `comptime const p = Point{}` then `p.x` is 40. `Point{.x = 40}` then `p.y` is the value written on `y`. `Point{0...}` stores 0.
+
 `assert(row[0].x == 40, "x")` folds when `row` is a `comptime const` array of those structs.
 
 A `var` does not fold. `assert(p.x == 40, "x")` on `var p Point` is `not supported yet`. A `const` that is not `comptime` is `not supported yet` as that field and as an argument.

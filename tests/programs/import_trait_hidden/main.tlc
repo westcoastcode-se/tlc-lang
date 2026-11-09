@@ -1,0 +1,5 @@
+import { Parent } from "geom";
+
+func main() i32 {
+    return 0;
+}

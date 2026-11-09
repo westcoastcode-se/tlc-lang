@@ -1,0 +1,6 @@
+import "geom";
+
+func main() i32 {
+    var s geom.Parent;
+    return 0;
+}

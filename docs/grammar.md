@@ -1748,9 +1748,9 @@ Another package writes `T pkg.Shape`.
 
 `extern type Shape trait` is `not supported yet`.
 
-`import { Shape }` is `not supported yet`.
+`import { Shape }` brings that exported trait in as `Shape`. A name that is not exported is `Shape is not exported`.
 
-`func use(s pkg.Shape)` is `not supported yet`.
+`func use(s pkg.Shape)` and `func use(s *pkg.Shape)` are that parameter.
 
 `var s pkg.Shape` is `trait has no size`.
 

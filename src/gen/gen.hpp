@@ -392,6 +392,8 @@ struct Binding {
     // `type Row []i32`. Empty when this value is the slice itself.
     std::string alias_owner;
     uint32_t alias_file = 0;
+    // A parameter `[0]T`. `array_len` is 0, which is also an ordinary pointer.
+    bool empty_decay = false;
 };
 
 struct TypedValue {
@@ -441,6 +443,8 @@ struct TypedValue {
     // `type Row []i32`. Empty when this value is the slice itself.
     std::string alias_owner;
     uint32_t alias_file = 0;
+    // A parameter `[0]T`. Indexing it is out of range.
+    bool empty_decay = false;
 };
 
 // How an extern function passes one struct on x86-64 System V.
@@ -738,6 +742,8 @@ class CodeGen {
         // `type Row []i32`. Empty when the lowered type is the slice itself.
         std::string alias_owner;
         uint32_t alias_file = 0;
+        // A parameter `[0]T`. `array_len` stays 0.
+        bool empty_decay = false;
     };
     struct EnumLayout {
         std::string name;
@@ -1242,6 +1248,7 @@ class CodeGen {
             loaded.tuple_parts = binding.tuple_parts;
             // A parameter `[N][M]T` or `[N][]T` keeps `N` after the outer array decays.
             loaded.array_len = binding.array_len;
+            loaded.empty_decay = binding.empty_decay;
             return loaded;
         }
         TypedValue loaded = load_object(binding.value, binding.depth, binding.elem_char, binding.struct_id, binding.elem_void,
@@ -1255,6 +1262,7 @@ class CodeGen {
         loaded.tuple_parts = binding.tuple_parts;
         loaded.inner_array_len = binding.inner_array_len;
         loaded.array_len = binding.array_len;
+        loaded.empty_decay = binding.empty_decay;
         loaded.fn_ty = binding.fn_ty;
         loaded.fn_ret_depth = binding.fn_ret_depth;
         loaded.fn_ret_float = binding.fn_ret_float;
@@ -1422,9 +1430,11 @@ class CodeGen {
     int trait_named(uint32_t file, const std::string &name) const;
     const TraitDecl *trait_parent(uint32_t file, const TraitDecl *trait) const;
     bool param_is_trait(uint32_t file, const Param &param) const;
+    // `geom.Parent` is the trait in that package. An unqualified name stays in `file`.
+    uint32_t trait_param_file(uint32_t file, const Param &param) const;
     bool function_is_generic(uint32_t file, const FunctionDecl &fn) const;
     // A trait parameter specialized to the function pointer of its one method.
-    Lowered trait_fn_lowered(const std::string &trait_name) const;
+    Lowered trait_fn_lowered(uint32_t file, const std::string &trait_name) const;
     Lowered spec_param(const FunctionDecl &fn, std::size_t index, const std::vector<int> &spec) const;
     Lowered lower_param(const FunctionDecl &fn, std::size_t index) const;
     llvm::FunctionType *spec_type(const FunctionDecl &fn, const std::vector<int> &spec) const;

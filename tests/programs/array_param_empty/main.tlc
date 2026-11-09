@@ -1,0 +1,12 @@
+func take(row [0]i32) i32 {
+    return 42 + row.len;
+}
+
+func take_t[T type](row [0]T) i32 {
+    return row.len;
+}
+
+func main() i32 {
+    var row [0]i32;
+    return take(row) + take_t[i32](row);
+}

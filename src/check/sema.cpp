@@ -307,7 +307,7 @@ bool accepts_slice(const Type &got, const Type &want) {
     // A parameter `[N]T` is a pointer to the element, and `decayed_len` is that `N`.
     // `*[N]T` points at the array. A plain `*T` has no length. `?*[N]T` stays optional.
     if (got.kind == TypeKind::Pointer && !got.optional && got.alias_id == 0 && got.pointee != nullptr) {
-        if (got.decayed_len > 0 && allows_added_const(*got.pointee, *want.element)) {
+        if (is_decayed_array(got) && allows_added_const(*got.pointee, *want.element)) {
             return true;
         }
         const Type &array = *got.pointee;

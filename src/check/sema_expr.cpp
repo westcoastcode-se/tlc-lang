@@ -1006,7 +1006,7 @@ bool Checker::as_trait_cast(const std::string &package, const std::string &name,
         };
         const bool iteration_value = templ->name == "Seq" && package_is_iteration(owner) &&
                                      ((source.kind == TypeKind::Array && source.element != nullptr) ||
-                                      (source.kind == TypeKind::Pointer && source.decayed_len > 0 && source.pointee != nullptr));
+                                      (is_decayed_array(source) && source.pointee != nullptr));
         if (iteration_value) {
             Type element = source.kind == TypeKind::Array ? *source.element : *source.pointee;
             element.is_const = false;
@@ -1427,10 +1427,10 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
             pick_overload(const_cast<Expr &>(expr), *want.pointee)) {
             return want;
         }
-        const bool decayed_param = !want.optional && want.decayed_len > 0;
+        const bool decayed_param = !want.optional && is_decayed_array(want);
         // `var q ?*i32 = row` stays rejected. `row` is an array, not `*i32`.
         const bool element_pointer =
-            !want.optional && want.decayed_len == 0 && want.pointee->kind != TypeKind::Array;
+            !want.optional && !is_decayed_array(want) && want.pointee->kind != TypeKind::Array;
         if (decayed_param || element_pointer) {
             Type got = check_raw(expr, true);
             if (got.kind == TypeKind::Array && got.length >= 0 && got.element != nullptr && !is_slice(got)) {
@@ -1440,6 +1440,7 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
                 }
                 Type as_pointer = type_pointer(std::move(element));
                 if (decayed_param) {
+                    as_pointer.decayed_array = true;
                     as_pointer.decayed_len = got.length;
                 }
                 const bool matched = decayed_param ? got.length == want.decayed_len && accepts_pointer(as_pointer, want)
@@ -1478,6 +1479,7 @@ Type Checker::value_type(Type type) {
     // The cast `*T(array)` is that pointer. A slice is `array[:]`.
     // A parameter `[N]T` is already a pointer. Its length stays on that binding.
     type.is_const = false;
+    type.decayed_array = false;
     type.decayed_len = 0;
     if (type.kind == TypeKind::Function) {
         return type_pointer(type);

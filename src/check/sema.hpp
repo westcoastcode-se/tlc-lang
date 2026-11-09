@@ -35,11 +35,17 @@ struct Type {
     bool is_const = false;
     // `type Name T` is a distinct type with the same representation as T. Zero means T itself.
     int alias_id = 0;
-    // A parameter `[N]T` decays to a pointer. This is that `N`. Zero on every other type.
+    // A parameter `[N]T` decays to a pointer. This is that `N`, including 0.
     // It is not part of the type. Where `[]T` is expected, the pointer becomes that slice.
     // When `[N]T` is expected, the pointer is that array and the elements are copied.
+    // `decayed_array` is clear on an ordinary pointer, whose `decayed_len` is also 0.
+    bool decayed_array = false;
     int decayed_len = 0;
 };
+
+inline bool is_decayed_array(const Type &type) {
+    return type.kind == TypeKind::Pointer && type.decayed_array;
+}
 
 Type type_invalid();
 Type type_void();

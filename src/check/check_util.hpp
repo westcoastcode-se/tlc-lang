@@ -238,14 +238,11 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
             return type_invalid();
         }
         if (index == 0 && parameter) {
-            // A length of 0 would be the same pointer as `*T`. `decayed_len` stays 0 on every other type.
-            if (shell.length == 0) {
-                rejected = true;
-                return type_invalid();
-            }
-            // The value is a pointer to the element. The length stays for a range and `.len`.
+            // The value is a pointer to the element. `[0]T` keeps that length.
+            // An ordinary pointer leaves `decayed_array` clear.
             const int length = shell.length;
             type = type_pointer(std::move(type));
+            type.decayed_array = true;
             type.decayed_len = length;
             continue;
         }
@@ -278,7 +275,8 @@ inline Type quiet_object(const std::string &name, int indirections, bool is_arra
             return type_invalid();
         }
         Type pointer = type_pointer(std::move(type));
-        if (array_len > 0) {
+        if (array_len >= 0) {
+            pointer.decayed_array = true;
             pointer.decayed_len = array_len;
         }
         return pointer;

@@ -52,7 +52,7 @@ void CodeGen::finish_function() {
 bool CodeGen::param_is_trait(uint32_t file, const Param &param) const {
     // `Allocator` is supplied by the compiler. It is not a trait declaration in the unit.
     const bool allocator = param.type_name == "Allocator" && param.type_package.empty();
-    if (param.is_enum || param.is_array || !param.type_package.empty() || param.indirections > 1) {
+    if (param.is_enum || param.is_array || param.indirections > 1) {
         return false;
     }
     if (allocator) {
@@ -61,11 +61,23 @@ bool CodeGen::param_is_trait(uint32_t file, const Param &param) const {
     if (param.is_struct) {
         return false;
     }
+    if (!param.type_package.empty()) {
+        const uint32_t home = trait_param_file(file, param);
+        return home != file && trait_named(home, param.type_name) >= 0;
+    }
     if (has_typedef(file, param.type_name) || tag_id(file, param.type_name) >= 0 ||
         selective_tag(file, param.type_name) >= 0) {
         return false;
     }
     return trait_named(file, param.type_name) >= 0;
+}
+
+uint32_t CodeGen::trait_param_file(uint32_t file, const Param &param) const {
+    if (param.type_package.empty()) {
+        return file;
+    }
+    const uint32_t target = package_file(file, param.type_package);
+    return target == 0 ? file : target;
 }
 
 bool CodeGen::function_is_generic(uint32_t file, const FunctionDecl &fn) const {
@@ -85,8 +97,8 @@ bool CodeGen::function_is_generic(uint32_t file, const FunctionDecl &fn) const {
 }
 
 
-CodeGen::Lowered CodeGen::trait_fn_lowered(const std::string &trait_name) const {
-    const int id = trait_named(current_file_, trait_name);
+CodeGen::Lowered CodeGen::trait_fn_lowered(uint32_t file, const std::string &trait_name) const {
+    const int id = trait_named(file, trait_name);
     if (id < 0 || id >= static_cast<int>(trait_decls_.size()) || trait_decls_[static_cast<std::size_t>(id)] == nullptr) {
         return {};
     }
@@ -100,7 +112,7 @@ CodeGen::Lowered CodeGen::trait_fn_lowered(const std::string &trait_name) const 
             ++methods;
             only = &method;
         }
-        trait = trait_parent(current_file_, trait);
+        trait = trait_parent(file, trait);
     }
     if (methods != 1 || fields != 0 || only == nullptr) {
         return {};
@@ -109,7 +121,7 @@ CodeGen::Lowered CodeGen::trait_fn_lowered(const std::string &trait_name) const 
     Lowered out;
     out.depth = 1;
     out.type = ptr_type();
-    out.fn_ty = function_type(method, current_file_);
+    out.fn_ty = function_type(method, file);
     const bool many = method.results.size() > 1;
     const bool returns_void = !many && method.return_type == "void" && method.indirections == 0 && !method.is_struct &&
                               method.type_package.empty();
@@ -146,7 +158,7 @@ CodeGen::Lowered CodeGen::spec_param(const FunctionDecl &fn, std::size_t index, 
     }
     if (index < spec.size() && spec[index] == kFnSpec) {
         // `Shape` and `*Shape` are both this one function pointer. The call is `s.method(...)`.
-        return trait_fn_lowered(param.type_name);
+        return trait_fn_lowered(trait_param_file(current_file_, param), param.type_name);
     }
     if (index < spec.size() && spec[index] >= 0 && spec[index] < static_cast<int>(structs_.size())) {
         // The id is the struct that was passed. Its name may also exist in the function's package.

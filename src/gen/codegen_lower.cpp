@@ -618,8 +618,10 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
         const std::vector<ResultSlot> parts = leaf.tuple_parts;
         llvm::Type *element = leaf.type;
         int decayed_len = 0;
+        bool decayed_empty = false;
         if (parameter && !shells.empty() && shells.front().kind == TypeShell::Kind::Array) {
             decayed_len = shells.front().length;
+            decayed_empty = decayed_len == 0;
             shells.erase(shells.begin());
             if (shells.empty()) {
                 Lowered out;
@@ -627,6 +629,7 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
                 out.type = ptr_type();
                 out.tuple_parts = parts;
                 out.array_len = decayed_len;
+                out.empty_decay = decayed_empty;
                 return out;
             }
             TypeShell pointer;
@@ -658,15 +661,18 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
                            shells[1].kind == TypeShell::Kind::Array;
         out.ptr_array_len = out.ptr_to_array ? shells[1].length : 0;
         out.inner_array_len = shells.size() >= 2 && shells[1].kind == TypeShell::Kind::Array ? shells[1].length : 0;
-        if (decayed_len > 0 && !out.is_array && !out.is_slice) {
+        if ((decayed_len > 0 || decayed_empty) && !out.is_array && !out.is_slice) {
             out.array_len = decayed_len;
+            out.empty_decay = decayed_empty;
         }
         return out;
     }
     // A parameter `[N]T` is a pointer to the element. `array_len` keeps `N` for a range.
     int decayed_len = 0;
+    bool decayed_empty = false;
     if (parameter && !shells.empty() && shells.front().kind == TypeShell::Kind::Array) {
         decayed_len = shells.front().length;
+        decayed_empty = decayed_len == 0;
         shells.erase(shells.begin());
         if (shells.empty()) {
             leaf.depth += 1;
@@ -674,6 +680,7 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
             leaf.is_slice = false;
             leaf.is_array = false;
             leaf.array_len = decayed_len;
+            leaf.empty_decay = decayed_empty;
             leaf.shells.clear();
             return leaf;
         }
@@ -692,8 +699,9 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
                         shells[1].kind == TypeShell::Kind::Array;
     leaf.ptr_array_len = leaf.ptr_to_array ? shells[1].length : 0;
     leaf.inner_array_len = shells.size() >= 2 && shells[1].kind == TypeShell::Kind::Array ? shells[1].length : 0;
-    if (decayed_len > 0 && !leaf.is_array && !leaf.is_slice) {
+    if ((decayed_len > 0 || decayed_empty) && !leaf.is_array && !leaf.is_slice) {
         leaf.array_len = decayed_len;
+        leaf.empty_decay = decayed_empty;
     }
     return leaf;
 }
@@ -914,6 +922,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     if (parameter && (is_array || base_array)) {
         out.elem_slice = base_headers;
         out.array_len = is_array ? array_len : base.array_len;
+        out.empty_decay = out.array_len == 0;
         fill(out, base_depth + indirections + 1);
         out.type = ptr_type();
         return out;
@@ -1370,6 +1379,7 @@ void CodeGen::apply_low(Binding &binding, const Lowered &low) const {
     binding.shells = low.shells;
     binding.is_array = low.is_array;
     binding.array_len = low.array_len;
+    binding.empty_decay = low.empty_decay;
     binding.alias_owner = low.alias_owner;
     binding.alias_file = low.alias_file;
 }
